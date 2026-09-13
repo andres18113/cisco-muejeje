@@ -1443,11 +1443,13 @@ kernel was first proved by the governed artifact at `d37ba37`; the latest
 carried both evidenced tokens and produced real target evidence — three readings
 `OBSERVED`, and `platform.module_descriptors` unattributable — but its workspace
 fixture was corrected during execution, so it did not satisfy the procedure and
-is recorded as evidence rather than as a qualification. The new candidate changes
-the privilege policy to `FULL_TRUSTED_MODULE` and adds the stage a reading stops
-at: a different recipe id identifying different bytes, neither packaged nor run,
-so it holds none of those verdicts and they are written separately rather than
-inherited:
+is recorded as evidence rather than as a qualification. The `504a6e6` artifact
+carried all eleven tokens and read five readings `OBSERVED`, stopping
+`platform.module_descriptors` at a `null` from `ModuleDescriptor.getModuleAt`; no
+transcript of it is committed, so it too is recorded as evidence. The new
+candidate reads that `null` as an answer: a different recipe id identifying
+different bytes, neither packaged nor run, so it holds none of those verdicts and
+they are written separately rather than inherited:
 
 ```text
 LAST_QUALIFIED_ARTIFACT (718db50)
@@ -1460,11 +1462,16 @@ TARGET_EVIDENCE_ONLY (6233d86)
   CANONICAL_QUALIFICATION      = NO
   CHANGE_NETWORK_INFO_MEMBERS  = ANSWERED
 
+TARGET_EVIDENCE_ONLY (504a6e6)
+  FULL_TRUSTED_SET             = ALL_ELEVEN_SELECTED
+  READINGS_OBSERVED            = FIVE_OF_SIX
+  MODULE_DESCRIPTORS_STAGE     = ModuleDescriptor.getModuleAt(0)
+  CANONICAL_QUALIFICATION      = NOT_ESTABLISHED
+
 CURRENT_NEW_CANDIDATE
   PACKAGED                     = PENDING
   V6_LIVE                      = PENDING
-  FULL_TRUSTED_SET_LIVE        = PENDING
-  MODULE_DESCRIPTORS_STAGE     = PENDING
+  MODULE_DESCRIPTORS_LIVE      = PENDING
 ```
 
 `M1_CORE_READY = YES` stays exactly where the qualified artifacts' evidence put
@@ -1481,7 +1488,9 @@ out of that run's own transcript (MJ-011, MJ-015).
   and the workspace are reachable and three readings have been `OBSERVED` on the
   target. It is still not a canonical qualification — its workspace fixture was
   corrected during execution — so what it produced is recorded as target evidence
-  rather than as a baselined API.
+  rather than as a baselined API. The `504a6e6` run carried all eleven tokens and
+  read five readings `OBSERVED` with no reached call privilege-denied; with no
+  transcript committed, it is recorded as target evidence too.
 - **M0C** is not complete: it still includes batch and auth-boundary semantics.
   MJ-027 is the contract the first batch operation must satisfy, and no batch
   operation exists; the auth boundary is in the same position under MJ-026.
@@ -1501,10 +1510,12 @@ out of that run's own transcript (MJ-011, MJ-015).
   On that run `platform.device_descriptors` and `platform.module_type_support`
   answered `OBSERVED`, and `platform.module_descriptors` came back
   `PLATFORM_ANSWER_UNUSABLE` with no privilege diagnostic beside it — an
-  adapter-chain result, not a privilege one. What blocks `CORE_READY` is that the
-  run was not a canonical qualification and that the chassis reading is still
-  unexplained; an unavailable reading now names the `Interface.member` it stopped
-  at, so the next run can locate it.
+  adapter-chain result, not a privilege one. The `504a6e6` run then named the
+  member: `ModuleDescriptor.getModuleAt`, argument 0, a `null` inside a module
+  count that an investigation on the same build found is ordinary there, and the
+  walk now reads it as an answer. What blocks `CORE_READY` is that neither run is
+  established as a canonical qualification, and that the corrected walk has not
+  answered on the target.
 - **M3** is not `CORE_READY`: its read-only topology scope is incomplete. The
   workspace inventory, one device's identity and one device's ports are
   implemented; the workspace's links are not. Every documented route to a link
@@ -1515,9 +1526,10 @@ out of that run's own transcript (MJ-011, MJ-015).
   is. The `CONNECT_TYPES` list names no interface, and matching a value against
   a table of ours would be a mirror (MJ-014). Reading links waits on target
   evidence of what a Script Module is handed. `network.device_inventory` answered
-  `OBSERVED` on the `6233d86` run, naming the devices on the workspace; the other
-  two workspace capabilities stay `PENDING_TARGET` until a canonical
-  qualification reaches them (MJ-015, MJ-031).
+  `OBSERVED` on the `6233d86` run, naming the devices on the workspace, and all
+  three workspace readings answered on the `504a6e6` run; every workspace
+  capability stays `PENDING_TARGET` until a canonical qualification reaches it
+  (MJ-015, MJ-031).
 - **The zero-change cutover** is `NOT_ACHIEVED` (MJ-034): one artifact is
   packaged and kernel-qualified, no version is release-qualified, and no
   compatibility facade exists outside the V6 core.
@@ -1530,10 +1542,10 @@ is not a privilege experiment.** The privilege line is as far as evidence takes
 it — `[]` denied both roots at `d37ba37`, `GET_NETWORK_INFO` reached both roots
 at `718db50`, `CHANGE_NETWORK_INFO` reached the two members beneath them at
 `6233d86` — and the full set is a deployment decision rather than a reading of
-any of it. What the run has to produce is a canonical qualification none of
-those three was, and the `Interface.member` that `platform.module_descriptors`
-stops at. **The candidate carrying that declaration has not been packaged or
-run.** Four conditions make it capable of establishing anything: a **disposable
+any of it. What the run has to produce is a canonical qualification none of the
+earlier runs is established as, and a `platform.module_descriptors` reading under
+the corrected walk. **The `504a6e6` artifact carried that declaration; the
+candidate carrying the corrected walk has not been packaged or run.** Four conditions make it capable of establishing anything: a **disposable
 workspace holding two devices**, so a `network.*` root that answers actually
 exercises the members beneath it instead of qualifying them on an empty
 workspace; **every observed relay input read out of the reading that published

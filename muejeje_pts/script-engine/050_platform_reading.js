@@ -56,6 +56,12 @@ var MUEJEJE_PLATFORM_LIMITS = {
      * omit is still marked. */
     MAX_MODULE_NODES: 512,
     MAX_MODULE_DEPTH: 12,
+    /* A position is not a node. On 9.0.1.0858 the factory survey asked 1551
+     * `getModuleAt` positions over every descriptor, and 497 handed over a
+     * module: the rest answered null. So the calls one reading makes are bounded
+     * on their own, clear of that whole survey, and a null spends a position but
+     * never a node. Muejeje's own, like the rest — not a Packet Tracer limit. */
+    MAX_MODULE_POSITIONS: 2048,
     /* How long a model or a name — a device's or a port's — in one reading
      * may be. No ceiling on either has been measured; this bounds the size of
      * an answer, and the caller says which bound applies. */

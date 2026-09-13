@@ -100,7 +100,7 @@ MODULE_FAULTS = (
     ("ModuleDescriptor.getType", _root(module_type="'18'")),
     ("ModuleDescriptor.isHotSwappable", _root(hot_swappable="1")),
     ("ModuleDescriptor.getModuleCount", _root(module_count="-1")),
-    ("ModuleDescriptor.getModuleAt", _root(modules="[null]")),
+    ("ModuleDescriptor.getModuleAt", _root(modules="[undefined]")),
 )
 
 
@@ -158,11 +158,11 @@ def test_the_stage_carries_the_position_the_member_was_called_with():
     stopped in `getModuleAt`" is a different finding from "it stopped at the
     second position of the root".
     """
-    one_good_then_nothing = _root(
+    one_good_then_undefined = _root(
         modules="[{model: 'card', module_type: 4, hot_swappable: true,"
-                " slot_types: [], modules: []}, null]",
+                " slot_types: [], modules: []}, undefined]",
     )
-    result = reading(platform_stub(_chassis(one_good_then_nothing)))
+    result = reading(platform_stub(_chassis(one_good_then_undefined)))
 
     assert stage_of(result) == ("ModuleDescriptor.getModuleAt", 1)
 

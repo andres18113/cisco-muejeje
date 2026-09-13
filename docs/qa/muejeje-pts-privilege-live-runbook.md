@@ -13,8 +13,16 @@ and `network.device_inventory` named the workspace. `platform.module_descriptors
 at the same index came back `UNAVAILABLE` with `PLATFORM_ANSWER_UNUSABLE` — and
 **with no privilege diagnostic printed beside it**, which on this build is what
 a denial prints. So it is not a privilege result, it was not treated as one, and
-this run does not test a wider selection against it. What it tests is the
-`Interface.member` the reading now names.
+no run tests a wider selection against it.
+
+**The `504a6e6` run named the member, and it was a null.** Carrying all eleven
+tokens, it read five platform and workspace operations `OBSERVED` and stopped
+`platform.module_descriptors` at `ModuleDescriptor.getModuleAt`, argument 0. The
+target investigation after it found that inside a node's module count Packet
+Tracer `9.0.1.0858` hands over a `ModuleDescriptor` or `null`, and that a null is
+ordinary there. This candidate reads it as that answer and walks on
+([the offline audit](muejeje-pts-offline.md)). What this run tests is whether the
+corrected walk answers `OBSERVED` on the target.
 
 **The procedure is not restated here.** It is
 [the packaging recipe](muejeje-pts-packaging-recipe.md), followed from step 1.
@@ -49,8 +57,9 @@ else differs only where the governed source and the recipe force it.
 so rather than reading the requirement back as a result.** `d37ba37` captured
 none; `718db50` captured none, though the requirement was already in force;
 `6233d86` captured its header, the load and start, and one statement, and
-stopped — `PARTIAL`, recorded in the transcript's own post-run note. Everything
-those runs establish beyond that prefix is operator-reported target evidence,
+stopped — `PARTIAL`, recorded in the transcript's own post-run note; and no
+transcript of the `504a6e6` run is committed. Everything those runs establish
+beyond what they preserved is operator-reported target evidence,
 and [the offline audit](muejeje-pts-offline.md) records it as such. A
 requirement is not evidence that it was met, and no run's evidence level is
 raised afterwards to match what the procedure asked for.
@@ -61,7 +70,7 @@ the privilege model and the manifest schema — both declared tooling inputs, an
 therefore part of the recipe id — carry the policy, the vocabulary it is derived
 from, and the rule that **refuses any declaration but that exact set in that
 exact order**; the interface page and the README state what the module now
-requests; and the engine files carry one behavioural addition, below.
+requests; and the engine files carry the two behavioural changes below.
 
 **A manifest declaring less than the policy no longer builds.** The audit asks
 the vocabulary question and the declaration question separately, and a subset of
@@ -70,14 +79,20 @@ real tokens — `[]`, one token, the evidenced minimum — is now
 selection this run is taken under cannot silently be narrower than the policy
 it is packaged from (`MJ-032`).
 
-**One executable change, and it adds no reach.** An unavailable platform reading
-now also reports the `Interface.member` it stopped at, and the argument that call
-was made with — `unavailable_member` and `unavailable_argument`, beside the
-`unavailable_reason` that was already there. It is recorded at the platform-call
-boundary, published by the adapter that shapes the reading, and it names a place
-and never a cause. No operation, no admitted member, no bound and no failure code
-changed. No capability, transport, link operation, mutation or M4 work is in this
-artifact.
+**Two executable changes since `718db50`, and neither adds reach.** An
+unavailable platform reading reports the `Interface.member` it stopped at, and
+the argument that call was made with — `unavailable_member` and
+`unavailable_argument`, beside `unavailable_reason` — recorded at the
+platform-call boundary, and naming a place and never a cause. And a chassis walk
+reads a `null` from `ModuleDescriptor.getModuleAt` inside a node's count as an
+answer: each node publishes `null_module_positions`, the positions it asked that
+answered `null` and never a name for what that means, and the walk goes on past
+them. The boundary hands a `null` over as one for every member and refuses
+`undefined` or a primitive in an object's place; the walk is bounded by the
+positions it asks as well as by the modules it materializes, and says
+`module_positions_truncated` when the first runs out. No operation, no admitted
+member and no failure code changed. No capability, transport, link operation,
+mutation or M4 work is in this artifact.
 
 **Full Packet Tracer privileges is not all Muejeje capabilities.** The selection
 decides which IPC calls the Script Module *process* may make. What Muejeje
@@ -458,7 +473,9 @@ interpretation begins.
 | `getAvailableDeviceCount` / `getName` answer | consistent with `6233d86`: `CHANGE_NETWORK_INFO_LIVE_VERIFIED` stays `PASS`, for those two members and no others |
 | `platform.module_descriptors` answers `OBSERVED` | the chassis reading works on this target, and every node it reports is characterized individually. **The `6233d86` result is then explained only if the run also says what changed**, because nothing in this candidate was supposed to fix it |
 | `platform.module_descriptors` is `UNAVAILABLE` again | read `unavailable_member` and `unavailable_argument`. **That pair is the result this run exists for.** Record both verbatim, with `unavailable_reason` and whatever Packet Tracer printed. It names the stage; it does not name a cause, and nothing here is entitled to supply one |
-| the stage is `ModuleDescriptor.getModuleAt` | the platform handed over nothing at a position inside the count it reported itself. That is a **candidate semantic**, not a finding: it is what would make an empty slot ordinary, and it is a change to the adapter only once a run has said so (`MJ-015`) |
+| a node reports `null_module_positions` | the positions inside that node's count this reading asked that answered `null` — ordinary on this build since the `504a6e6` investigation. Record them as positions. **What a null means is still not a finding**: never an empty or a free slot, and never a claim that a module count equals a slot count (`MJ-015`) |
+| the stage is `ModuleDescriptor.getModuleAt` | no longer a null: `PLATFORM_CALL_FAILED` is a call that threw at that position, and `PLATFORM_ANSWER_UNUSABLE` an `undefined` or a primitive where a module is documented. Record the position |
+| `module_positions_truncated` or `nodes_truncated` is `true` | a Muejeje bound stopped the walk, and the node it stopped at says `children_truncated`. An omitted subtree is not an observed absence, and a position nobody asked is never in `null_module_positions` |
 | the stage is any other member | the answer that member gave could not be carried back unchanged, or it handed over something the reference documents as an object and was not one. Record the member; the next step is that member's own signature |
 | a descendant answers | a fact about that `Interface.member`, on the fixture it was asked over, characterized individually |
 | a descendant then fails | a fact about that `Interface.member`, characterized individually. It does **not** invalidate the root result |
@@ -548,11 +565,17 @@ TARGET_EVIDENCE_ONLY (6233d86)
   CHANGE_NETWORK_INFO_MEMBERS  = ANSWERED
   RAW_TRANSCRIPT               = PARTIAL
 
+TARGET_EVIDENCE_ONLY (504a6e6)
+  FULL_TRUSTED_SET             = ALL_ELEVEN_SELECTED
+  READINGS_OBSERVED            = FIVE_OF_SIX
+  MODULE_DESCRIPTORS_STAGE     = ModuleDescriptor.getModuleAt(0)
+  CANONICAL_QUALIFICATION      = NOT_ESTABLISHED
+  RAW_TRANSCRIPT               = NOT_COMMITTED
+
 CURRENT_NEW_CANDIDATE
   PACKAGED                     = PENDING
   V6_LIVE                      = PENDING
-  FULL_TRUSTED_SET_LIVE        = PENDING
-  MODULE_DESCRIPTORS_STAGE     = PENDING
+  MODULE_DESCRIPTORS_LIVE      = PENDING
   RAW_TRANSCRIPT               = REQUIRED_COMPLETE
 ```
 
@@ -574,8 +597,10 @@ CHANGE_NETWORK_INFO_MEMBER_EVIDENCE_RECORDED = PASS
 CHANGE_NETWORK_INFO_LIVE_VERIFIED            = PASS
 
 PRIVILEGE_POLICY                           = FULL_TRUSTED_MODULE
-FULL_TRUSTED_SET_LIVE_VERIFIED             = PENDING
-MODULE_DESCRIPTORS_STAGE_IDENTIFIED        = PENDING
+FULL_TRUSTED_SET_LIVE_VERIFIED             = PASS
+MODULE_DESCRIPTORS_STAGE_IDENTIFIED        = PASS
+GET_MODULE_AT_NULL_INSIDE_COUNT            = TARGET_OBSERVED
+MODULE_DESCRIPTORS_LIVE_OBSERVED           = PENDING
 
 CURRENT_NEW_CANDIDATE_PACKAGED             = PENDING
 CURRENT_NEW_CANDIDATE_V6_LIVE_VERIFIED     = PENDING

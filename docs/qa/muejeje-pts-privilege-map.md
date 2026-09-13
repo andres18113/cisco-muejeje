@@ -236,7 +236,7 @@ token's name is not a semantic this repository reads anything out of (`MJ-014`,
 
 ## Fact 3 — what the target did, run by run
 
-Three artifacts have been driven by hand on `9.0.1.0858`, and their observations
+Four artifacts have been driven by hand on `9.0.1.0858`, and their observations
 are kept apart because they carried different privilege sets:
 
 | Artifact | Privileges | `IPC.hardwareFactory()` / `IPC.network()` | Member calls beneath |
@@ -244,6 +244,7 @@ are kept apart because they carried different privilege sets:
 | `d37ba37` | `[]` | **denied** both roots for insufficient privilege | not reached |
 | `718db50` | `["GET_NETWORK_INFO"]` | **reachable** — both roots progressed | `getAvailableDeviceCount` and `getName` **privilege-denied** |
 | `6233d86` | `["CHANGE_NETWORK_INFO", "GET_NETWORK_INFO"]` | **reachable** | both those members **answered**; `platform.module_descriptors` then came back `PLATFORM_ANSWER_UNUSABLE`, with **no privilege diagnostic** beside it |
+| `504a6e6` | all eleven — `FULL_TRUSTED_MODULE` | **reachable** | no reached call **privilege-denied**; five readings `OBSERVED`, and `platform.module_descriptors` stopped at `ModuleDescriptor.getModuleAt`, argument 0, `PLATFORM_ANSWER_UNUSABLE` — a `null` its adapter refused, not a privilege result |
 
 The `d37ba37` run established that `privileges: []` is denied both roots. The
 `718db50` run established that `GET_NETWORK_INFO` lifts that denial at both roots
@@ -265,7 +266,12 @@ build a privilege denial prints a diagnostic and surfaces as
 `PLATFORM_CALL_FAILED` — both earlier runs show exactly that. So it is not
 answered by selecting more privileges, and it was not: it is an adapter-chain
 question, and what the artifact now reports about it is the `Interface.member` the
-reading stopped at (`MJ-022`, `MJ-032`).
+reading stopped at (`MJ-022`, `MJ-032`). The `504a6e6` run carried every token and
+named that member — `ModuleDescriptor.getModuleAt`, where a `null` inside the
+count turned out to be an ordinary answer on this build — so the question stays
+an adapter one, and no selection could have answered it. That run's workspace
+and factory readings are recorded in [the offline audit](muejeje-pts-offline.md);
+no transcript of it is committed.
 
 ## Fact 4 — the privilege policy
 

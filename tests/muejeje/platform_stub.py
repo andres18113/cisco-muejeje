@@ -74,8 +74,12 @@ def _module_descriptor_js() -> list[str]:
         "    },",
         "    getModuleAt: function (index) {",
         "      log('ModuleDescriptor.getModuleAt');",
-        "      return node.modules[index]",
-        "        ? moduleDescriptor(node.modules[index]) : null;",
+        "      var entry = node.modules[index];",
+        "      if (index >= node.modules.length || (entry && entry.throws)) {",
+        "        throw new Error('the platform refused this call');",
+        "      }",
+        "      return entry !== null && typeof entry === 'object'",
+        "        ? moduleDescriptor(entry) : entry;",
         "    }",
         "  };",
         "}",
@@ -267,19 +271,16 @@ def platform_stub(
 
     `models` is a JavaScript array literal of
     `{model, type, supported, module_types}` objects, each optionally carrying
-    `root`: a chassis-module tree of
-    `{model, module_type, hot_swappable, slot_types, modules}` nodes, where a
-    `null` entry in `modules` makes `getModuleAt` answer nothing at that index,
-    and `module_count` and `slot_count` override what `getModuleCount()` and
-    `getSlotCount()` answer — which is how each enumeration is driven past what
-    its own list holds, and how an unusable count is delivered. `count`
-    overrides what `getAvailableDeviceCount()` answers, which is how an
-    unusable answer is delivered; `fail` makes the first factory call throw,
-    which is how a refused call is delivered. `devices` is the workspace
-    `Network` enumerates, as `{name, model?, device_type?, ports?}` objects — a device
-    offers a getter only for a field it carries, a `null` entry is a device the
-    platform will not hand over, and `device_count` overrides what
-    `getDeviceCount()` answers.
+    `root`: a tree of `{model, module_type, hot_swappable, slot_types, modules}`
+    nodes. An entry of `modules` that is not an object — `null`, `undefined`, a
+    primitive — is what `getModuleAt` answers there, as it is; `{throws: true}`,
+    or a position past the list, makes that call throw, so a hole never reads as
+    a null. `module_count`, `slot_count` and `count` override `getModuleCount()`,
+    `getSlotCount()` and `getAvailableDeviceCount()`; `fail` makes the first
+    factory call throw. `devices` is the workspace `Network` enumerates, as
+    `{name, model?, device_type?, ports?}` objects — a device offers a getter
+    only for a field it carries, a `null` entry is a device the platform will
+    not hand over, and `device_count` overrides `getDeviceCount()`.
 
     `dense` makes both enumerations answer at *every* index by cycling their
     lists, so a reading can be driven at the far end of an address domain.

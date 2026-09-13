@@ -94,7 +94,7 @@ Eight operations are admitted, all read-only:
 | `runtime.identify` | *who is this* — name, version, session token, provenance, the lifecycle the module recorded |
 | `runtime.capabilities` | *what does it admit now* — session token, protocol versions, each whitelisted operation with its `read_only` flag, and the kernel features behind them |
 | `platform.device_descriptors` | *what does this Packet Tracer offer* — each available device model with the `factory_index` it was read at, the DeviceType and the module types the platform reports for it, or a reason the reading was unavailable |
-| `platform.module_descriptors` | *what is one model described as carrying* — the chassis of the model at a `factory_index`, node by node, each with where it sits in the chassis, its type, its slot types and its hot-swap flag, or a reason the reading was unavailable |
+| `platform.module_descriptors` | *what is one model described as carrying* — the chassis of the model at a `factory_index`, node by node, each with where it sits in the chassis, its type, its slot types, its hot-swap flag and the positions inside its module count that answered `null`, or a reason the reading was unavailable |
 | `platform.module_type_support` | *does this model accept this module type* — for the model at a `factory_index`, the descriptor's own answer for one type value, with the model and DeviceType read back beside it, or a reason the reading was unavailable |
 | `network.device_inventory` | *what does this Packet Tracer currently hold* — a bounded window over the devices on the workspace, each with the `workspace_index` it was read at and the name the platform gave it, or a reason the reading was unavailable |
 | `network.device_identity` | *what is the device at this position* — the name, model and DeviceType the platform reports for the device at a `workspace_index`, all read in that same observation, or a reason the reading was unavailable |
@@ -244,7 +244,7 @@ CHANGE_NETWORK_INFO_MEMBER_EVIDENCE_RECORDED = PASS
 CHANGE_NETWORK_INFO_LIVE_VERIFIED            = PASS
 ```
 
-**What a real Packet Tracer did is recorded, and not generalised.** Three
+**What a real Packet Tracer did is recorded, and not generalised.** Four
 artifacts have run on `9.0.1.0858`. The `d37ba37` artifact, carrying
 `privileges: []`, had its kernel answer — identify, capabilities, every refusal
 class, and a stop and a start — while every `platform.*` and `network.*` reading
@@ -258,7 +258,13 @@ explains. The `6233d86` artifact carried both tokens and both members answered:
 came back `PLATFORM_ANSWER_UNUSABLE` with no privilege diagnostic beside it. That
 run's workspace fixture was corrected during execution, so it is **target
 evidence and not a canonical qualification**, and those capabilities' target
-state stays pending rather than proven.
+state stays pending rather than proven. The `504a6e6` artifact carried all eleven
+tokens: five of the six platform and workspace readings came back `OBSERVED`, and
+`platform.module_descriptors` stopped at `ModuleDescriptor.getModuleAt`, argument
+0 — a `null` inside a module count. An investigation on the same build found a
+null there is an ordinary answer, so the walk now records it in
+`null_module_positions` and goes on; what a null means physically is not
+claimed, and no transcript of that run is committed.
 
 **An unavailable reading now names where it stopped.** Beside
 `unavailable_reason`, every platform and workspace reading reports

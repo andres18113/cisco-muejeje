@@ -228,13 +228,20 @@ def test_the_platform_object_itself_is_marked_as_ipc():
 @pytest.mark.parametrize(("answer", "expected"), [
     ("7", {"refused": "PLATFORM_ANSWER_UNUSABLE"}),
     ("'a string'", {"refused": "PLATFORM_ANSWER_UNUSABLE"}),
+    ("false", {"refused": "PLATFORM_ANSWER_UNUSABLE"}),
+    ("undefined", {"refused": "PLATFORM_ANSWER_UNUSABLE"}),
     ("null", {"answer": None}),
-    ("undefined", {"answer": None}),
 ])
 def test_an_answer_that_is_not_the_documented_object_cannot_be_attributed(
     answer: str, expected: dict,
 ):
-    """Nothing handed over is an answer; something else in its place is not."""
+    """`null` is the platform handing over nothing, and that is an answer.
+
+    `undefined` is not `null`, and neither is any other value in an object's
+    place: a boundary that folded `undefined` into `null` let an adapter read a
+    value nobody handed over as one that was. Which hand-over is ordinary where
+    is the adapter's to decide — this rule is the same for every member.
+    """
     observed = _probe(
         "attempt(function () { return muejejeAdapterCall("
         f" muejejeAdapterHandle('IPC', {{network: function () {{ return {answer}; }}}}),"

@@ -31,10 +31,9 @@ from tests.muejeje.support import REPO_ROOT, repo_manifest
 
 RUNBOOK = "docs/qa/muejeje-pts-privilege-live-runbook.md"
 
-# The state a person must find before starting the run. Written here as the
-# claim, and read back from the document, so the two cannot drift — a runbook
-# that promoted a milestone the repository has not is how a denied call becomes
-# a qualification (MJ-033).
+# The state a person must find before the run, written here as the claim and read
+# back from the document so the two cannot drift: a runbook promoting a milestone
+# the repository has not is how a denied call becomes a qualification (MJ-033).
 EXPECTED_ENTRY_STATE = """M1_CORE_READY = YES
 
 GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS
@@ -45,8 +44,10 @@ CHANGE_NETWORK_INFO_MEMBER_EVIDENCE_RECORDED = PASS
 CHANGE_NETWORK_INFO_LIVE_VERIFIED            = PASS
 
 PRIVILEGE_POLICY                           = FULL_TRUSTED_MODULE
-FULL_TRUSTED_SET_LIVE_VERIFIED             = PENDING
-MODULE_DESCRIPTORS_STAGE_IDENTIFIED        = PENDING
+FULL_TRUSTED_SET_LIVE_VERIFIED             = PASS
+MODULE_DESCRIPTORS_STAGE_IDENTIFIED        = PASS
+GET_MODULE_AT_NULL_INSIDE_COUNT            = TARGET_OBSERVED
+MODULE_DESCRIPTORS_LIVE_OBSERVED           = PENDING
 
 CURRENT_NEW_CANDIDATE_PACKAGED             = PENDING
 CURRENT_NEW_CANDIDATE_V6_LIVE_VERIFIED     = PENDING
@@ -58,12 +59,9 @@ M2_CORE_READY            = NO
 M3_CORE_READY            = NO
 ZERO_CHANGE_CUTOVER      = NOT_ACHIEVED"""
 
-# The three artifacts the run has to keep apart: the one whose verdicts exist,
-# the one that produced target evidence without satisfying the procedure, and
-# the one being built. `6233d86` is its own row because it observed both index-2
-# members answering *and* had its fixture corrected mid-run. Each block carries
-# its own `RAW_TRANSCRIPT`, the fact most easily read upwards later: no run has
-# produced a complete one, and the requirement may not stand in for one.
+# The four artifacts the run keeps apart — the one whose verdicts exist, two whose
+# target evidence no record establishes as a qualification, the one being built —
+# each with its own `RAW_TRANSCRIPT`, since no run has committed a complete one.
 ARTIFACT_SPLIT = """LAST_QUALIFIED_ARTIFACT (718db50)
   PACKAGING                    = PASS
   V6_KERNEL                    = PASS
@@ -76,32 +74,33 @@ TARGET_EVIDENCE_ONLY (6233d86)
   CHANGE_NETWORK_INFO_MEMBERS  = ANSWERED
   RAW_TRANSCRIPT               = PARTIAL
 
+TARGET_EVIDENCE_ONLY (504a6e6)
+  FULL_TRUSTED_SET             = ALL_ELEVEN_SELECTED
+  READINGS_OBSERVED            = FIVE_OF_SIX
+  MODULE_DESCRIPTORS_STAGE     = ModuleDescriptor.getModuleAt(0)
+  CANONICAL_QUALIFICATION      = NOT_ESTABLISHED
+  RAW_TRANSCRIPT               = NOT_COMMITTED
+
 CURRENT_NEW_CANDIDATE
   PACKAGED                     = PENDING
   V6_LIVE                      = PENDING
-  FULL_TRUSTED_SET_LIVE        = PENDING
-  MODULE_DESCRIPTORS_STAGE     = PENDING
+  MODULE_DESCRIPTORS_LIVE      = PENDING
   RAW_TRANSCRIPT               = REQUIRED_COMPLETE"""
 
-# The disposable fixture the run is taken over. Two devices, because one that
-# answers is what makes the members below the root actually run; no cable and
-# no configuration, because nothing below a link or an address is admitted; not
-# saved, because the run touches nobody's work (MJ-002).
-#
-# What it deliberately does **not** say is where either device sits. A
-# `workspace_index` is the position the platform handed a device over at in one
-# reading; it is not identity and not placement order, so a fixture that
-# assigned one would be declaring a workspace ordering the runtime refuses to
-# promise.
+# The disposable fixture the run is taken over: two devices, so the members below
+# the root actually run; no cable and no configuration, since nothing below a link
+# or an address is admitted; not saved, since the run touches nobody's work
+# (MJ-002). It deliberately says nowhere where either device sits: a
+# `workspace_index` is where one reading handed a device over, not identity or
+# placement order, so a fixture assigning one would promise an ordering.
 WORKSPACE_FIXTURE = """2960-24TT named Switch0
 PC-PT named PC0
 no cable
 no configuration
 not saved"""
 
-# The members a `network.*` root that answers has to reach over that fixture.
-# An empty workspace reaches none of them: `available_count: 0` is a valid
-# reading that calls nothing further.
+# The members an answering `network.*` root has to reach over that fixture. An
+# empty workspace reaches none: `available_count: 0` calls nothing further.
 EXERCISED_MEMBERS = (
     "Network.getDeviceCount",
     "Network.getDeviceAt",

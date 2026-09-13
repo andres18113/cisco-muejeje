@@ -187,8 +187,8 @@ review rather than a hypothetical:
 
 ## Where an unavailable reading stopped
 
-The one executable change in this candidate, and the only thing in it that the
-`6233d86` result asked for.
+The executable change at `30ac927`, and the only thing in it that the `6233d86`
+result asked for.
 
 **The defect.** Every unavailable platform reading said *what* happened —
 `PLATFORM_ABSENT`, `PLATFORM_MEMBER_ABSENT`, `PLATFORM_CALL_FAILED`,
@@ -220,13 +220,14 @@ a result.
 **It names a place, never a cause.** The reason stays the authority on what
 happened; a privilege denial is still only what Packet Tracer printed beside the
 call; and nothing the adapters refuse becomes acceptable because it is now
-identified. In particular a `null` handed back inside a reported count is still
-`PLATFORM_ANSWER_UNUSABLE` and is **not** read as "this position is empty" — that
-would be a semantic for `null` no target reading supports (`MJ-015`, `MJ-022`,
-`MJ-031`).
+identified. At that candidate a `null` handed back inside a reported count was
+still `PLATFORM_ANSWER_UNUSABLE`, and it was **not** read as "this position is
+empty" — no target reading supported any semantic for it yet (`MJ-015`,
+`MJ-022`, `MJ-031`). The `504a6e6` run stopped exactly there; the next section is
+what changed the first half, and nothing changed the second.
 
-**What it is not.** It is not a fix. Nothing in this candidate was supposed to
-make `platform.module_descriptors` answer, and nothing in it does. The cause of
+**What it is not.** It is not a fix. Nothing in that candidate was supposed to
+make `platform.module_descriptors` answer, and nothing in it did. The cause of
 the `6233d86` result is **not established**, and this record does not guess one:
 what is established offline is that the chain is target-proven up to and
 including `DeviceDescriptor.getType()` — `platform.device_descriptors` and
@@ -243,6 +244,91 @@ it is recorded as one. The discriminating cases pin the exact member for each of
 the eight stages, one planted fault at a time, so a stage that drifted one call
 early or late fails here rather than sending the next run's reader to the wrong
 member.
+
+## A null inside the module count — what `504a6e6` found, and the correction
+
+The one executable change in this candidate. It exists because the `504a6e6`
+run, carrying all eleven tokens, did what the stage was added for and named the
+member: `platform.module_descriptors` stopped at `ModuleDescriptor.getModuleAt`,
+argument 0, `PLATFORM_ANSWER_UNUSABLE`. The run is recorded under *The run at
+`504a6e6`*, below.
+
+**What the target investigation after it found, on `9.0.1.0858` and nowhere
+else.** It was performed by hand outside this session and reported to it; no
+transcript of it is committed:
+
+```text
+inside 0 <= i < getModuleCount()   getModuleAt(i) answered a ModuleDescriptor or null
+outside that range                 Packet Tracer raised "invalid vector subscript"
+survey                             172 DeviceDescriptor entries, 669 ModuleDescriptor nodes
+positions asked                    1551: 497 objects, 1054 null, 0 errors inside the range
+mixed nodes                        a null can precede a module at a later position
+first failing shape                a root handing over one module whose count of two answered null, null
+```
+
+So a `null` there is **not** an index this runtime got wrong, and on that build
+it is ordinary. Refusing it made the reading unavailable on the first chassis
+that had one, and a walk that stopped at it would lose every module after it.
+
+**What a null means is not established**, and the reading says only what was
+seen. Each node publishes
+
+```text
+null_module_positions   positions actually asked below module_count where Packet Tracer handed back JavaScript null
+```
+
+and nothing else about them: not an empty slot, not a free or unused slot, not
+absent hardware. Nor does any of this say that a module count equals a slot
+count: `getSlotCount()` stays a second enumeration the reading keeps apart
+(`MJ-014`, `MJ-015`).
+
+**How each answer at a position is read.**
+
+| `getModuleAt(i)` inside the count | Reading |
+| --- | --- |
+| a `ModuleDescriptor` | handed over, queued and walked; the walk continues |
+| `null` | `i` is appended to that node's `null_module_positions`; the walk continues |
+| the call throws | `PLATFORM_CALL_FAILED`, stage `ModuleDescriptor.getModuleAt` with argument `i` |
+| `undefined` | `PLATFORM_ANSWER_UNUSABLE`, the same stage |
+| any other value that is not an object | `PLATFORM_ANSWER_UNUSABLE`, the same stage — `0`, `false` and `''` included, which a truthiness test would have read as a null |
+
+**The boundary change is generic, not a module workaround.** Every member that
+hands over an object — eight of the 27 — used to fold `undefined` into `null`.
+The boundary now hands `null` over as `null` and refuses `undefined` and every
+primitive as `PLATFORM_ANSWER_UNUSABLE`, for all eight alike. Which `null` is an
+answer stays each adapter's decision: a null root module is still an observed
+absence, and a null device or port inside a count is still unusable.
+
+**Two budgets, because a position is not a node.** The survey's 1551 positions
+produced 497 children. Every bound is Muejeje's own, not a Packet Tracer limit
+(`MJ-029`):
+
+| Bound | Spent by | When it runs out |
+| --- | --- | --- |
+| `MAX_MODULE_POSITIONS` = 2048 | every `getModuleAt` call, a null and a module alike | a node's positions are reserved before any is asked; a node that does not fit asks none, and says `children_truncated` while the reading says `module_positions_truncated` |
+| `MAX_MODULE_NODES` = 512 | each module handed over and materialized, never a null | judged once a node's positions have answered; a child set that does not fit is refused whole, `children_truncated` and `nodes_truncated` |
+| `MAX_MODULE_DEPTH` = 12 | depth, unchanged | refused before any position is asked, `children_truncated` and `depth_truncated` |
+| `MAX_SLOTS` = 64 | slot types, the other enumeration, unchanged | `slot_types_truncated` |
+
+A position nobody asked is never in `null_module_positions`. A node refused on
+the node budget did ask its positions, so the nulls it saw are still reported
+beside its `children_truncated`.
+
+**The result grew and nothing else moved.** `module_positions_truncated` joins
+`nodes_truncated` and `depth_truncated`, and every node gains
+`null_module_positions`; both are frozen in the V6 shape gates, and nothing was
+removed, renamed or retyped. Eight read-only operations, one `mcpDispatchV6`, the
+same 27 admitted `Interface.member` entries — `ModuleDescriptor.getModuleAt`
+among them already — and `FULL_TRUSTED_MODULE` with its eleven tokens are all
+unchanged and gated. No mutation, transport, link or M4 work is in it.
+
+**Written RED first, and the RED was measured.** The new gate module
+`test_platform_module_positions` and the updated shape, boundary, stage, modules,
+walk and relay-closure gates were run against the unchanged engine:
+`26 failed, 107 passed`. The passes include guards rather than discriminators: an
+`undefined` at position 0 was already unusable, through the old fold into `null`.
+Against the changed engine, with the stage-scope, compatibility and architecture
+gates beside them: `176 passed`.
 
 ## Current offline result
 
@@ -313,7 +399,9 @@ that holds the manifest to that order, and the refusal, restart and diagnostics
 steps of the official run, and to `908` with this line: the
 `FULL_TRUSTED_MODULE` privilege policy, a privilege-scope baseline frozen as
 literals rather than aliased to the collections it checks, and the stage an
-unavailable platform reading stops at.
+unavailable platform reading stops at; and to `959` with `null_module_positions`,
+a position budget kept apart from the node budget, and a boundary that no
+longer folds `undefined` into `null`.
 
 Twenty-one test modules have been split out along the way, each because its
 predecessor crossed the 300-line budget rather than because anyone chose to —
@@ -423,15 +511,16 @@ engine files carried names no recipe declared — kept as evidence about Packet
 Tracer, promoting nothing.
 
 **Every row below names the artifact it is about.** A verdict belongs to the
-bytes that produced it. Three artifacts have run — `d37ba37` (`[]`), `718db50`
-(`GET_NETWORK_INFO`) and `6233d86` (both evidenced tokens) — and the latest
-*qualified* one is still `718db50`. The `6233d86` run produced real target
-evidence and is **not** a canonical qualification: its workspace fixture was
-corrected during execution, so it did not satisfy the procedure as written, and
-what it observed is recorded for what it is. The new candidate changes the
-privilege policy to `FULL_TRUSTED_MODULE` and adds the stage an unavailable
-reading stops at: a different recipe id identifying different bytes, neither
-packaged nor run. Reading any earlier artifact's `PASS` as the candidate's would
+bytes that produced it. Four artifacts have run — `d37ba37` (`[]`), `718db50`
+(`GET_NETWORK_INFO`), `6233d86` (both evidenced tokens) and `504a6e6` (all
+eleven) — and the latest *qualified* one is still `718db50`. The `6233d86` run
+produced real target evidence and is **not** a canonical qualification: its
+workspace fixture was corrected during execution, so it did not satisfy the
+procedure as written, and what it observed is recorded for what it is. The
+`504a6e6` run is target evidence too: no transcript of it is committed, so this
+record cannot establish it as a canonical qualification. The new candidate reads
+a `null` inside a module count as an answer: a different recipe id identifying
+different bytes, neither packaged nor run. Reading any earlier artifact's `PASS` as the candidate's would
 let a run that never happened look like one that did, so they are separated here
 and stay separated.
 
@@ -448,11 +537,17 @@ TARGET_EVIDENCE_ONLY (6233d86)
   CHANGE_NETWORK_INFO_MEMBERS  = ANSWERED
   RAW_TRANSCRIPT               = PARTIAL
 
+TARGET_EVIDENCE_ONLY (504a6e6)
+  FULL_TRUSTED_SET             = ALL_ELEVEN_SELECTED
+  READINGS_OBSERVED            = FIVE_OF_SIX
+  MODULE_DESCRIPTORS_STAGE     = ModuleDescriptor.getModuleAt(0)
+  CANONICAL_QUALIFICATION      = NOT_ESTABLISHED
+  RAW_TRANSCRIPT               = NOT_COMMITTED
+
 CURRENT_NEW_CANDIDATE
   PACKAGED                     = PENDING
   V6_LIVE                      = PENDING
-  FULL_TRUSTED_SET_LIVE        = PENDING
-  MODULE_DESCRIPTORS_STAGE     = PENDING
+  MODULE_DESCRIPTORS_LIVE      = PENDING
   RAW_TRANSCRIPT               = REQUIRED_COMPLETE
 ```
 
@@ -465,19 +560,23 @@ candidate produces its own evidence, out of its own transcript.
 | `OFFICIAL_PACKAGING_PROVED` | `PASS` **for `d37ba37` and `718db50`** | each recipe produced a saved `dist/muejeje.pts` that Packet Tracer loaded and started, and each artifact was measured externally |
 | `V6_KERNEL_VERIFIED` | `PASS` **for `d37ba37` and `718db50`** | each saved artifact's own engine answered: `mcpDispatchV6` present, identify and capabilities, all five refusal classes, and identify again across a stop and a start |
 | `GET_NETWORK_INFO_ROOT_ACCESS` | `PASS` **for `718db50`** | carrying `GET_NETWORK_INFO`, that artifact reached `IPC.hardwareFactory()` and `IPC.network()` — both roots progressed where the `[]` artifact was denied |
-| `TARGET_API_BASELINED` | `PENDING_TARGET` | members have now answered — the `6233d86` run reached `getAvailableDeviceCount` and `getName`, and three readings came back `OBSERVED` — but that run was not a canonical qualification, and `platform.module_descriptors` is still unexplained. A baseline waits on a run that satisfies the procedure |
-| `CAPABILITY_RESOLUTION_VERIFIED` | `PENDING_TARGET` | three of the six platform and workspace capabilities answered on the `6233d86` run and three did not run or did not resolve; no capability is resolved off a run that was not a canonical qualification |
+| `TARGET_API_BASELINED` | `PENDING_TARGET` | members have now answered — the `6233d86` run reached `getAvailableDeviceCount` and `getName` and read three readings `OBSERVED`, and the `504a6e6` run read five — but neither is a canonical qualification this record can establish. A baseline waits on a run that satisfies the procedure |
+| `CAPABILITY_RESOLUTION_VERIFIED` | `PENDING_TARGET` | three of the six platform and workspace capabilities answered on the `6233d86` run and five on the `504a6e6` run; no capability is resolved off a run this record cannot establish as a canonical qualification |
 | `GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED` | `PASS` | both root calls require privilege index 1 in the pinned binary, and index 1 serializes as `GET_NETWORK_INFO`. Recorded, against a pinned SHA-256 ([the privilege map](muejeje-pts-privilege-map.md)) |
 | `BINARY_MAP_REPRODUCIBILITY` | `PENDING` | the root map was supplied from outside this repository and the member requirements are a Ghidra reading with exact addresses; nothing here re-derives either by running it, so no reader of this checkout can reproduce a row from the repository alone |
 | `GET_NETWORK_INFO_LIVE_VERIFIED` | `PASS` | the `718db50` run carried the token and reached both roots on `9.0.1.0858` |
 | `CHANGE_NETWORK_INFO_MEMBER_EVIDENCE_RECORDED` | `PASS` | two read members require privilege index 2 (`CHANGE_NETWORK_INFO`), read from the pinned binary by Ghidra with verbatim addresses ([the privilege map](muejeje-pts-privilege-map.md)) |
 | `CHANGE_NETWORK_INFO_LIVE_VERIFIED` | `PASS` | the `6233d86` run carried the token and both index-2 members answered on `9.0.1.0858` — for those two members, and for no others |
 | `CURRENT_NEW_CANDIDATE_PACKAGED` | `PENDING` | the candidate's recipe reaches `PACKAGING_MANUAL_AVAILABLE`, and no `.pts` has been saved from it |
-| `CURRENT_NEW_CANDIDATE_V6_LIVE_VERIFIED` | `PENDING` | the kernel verdict belongs to the artifact that ran. This candidate has not run, so it inherits nothing from `718db50` or `6233d86` |
+| `CURRENT_NEW_CANDIDATE_V6_LIVE_VERIFIED` | `PENDING` | the kernel verdict belongs to the artifact that ran. This candidate has not run, so it inherits nothing from `718db50`, `6233d86` or `504a6e6` |
 | `PRIVILEGE_POLICY` | `FULL_TRUSTED_MODULE` | a deployment decision, not a reading: Muejeje is a private local tool packaged as a trusted Script Module, so the manifest declares all eleven serialized tokens. No token is recorded as required ([the privilege map](muejeje-pts-privilege-map.md)) |
-| `FULL_TRUSTED_SET_LIVE_VERIFIED` | `PENDING` | no artifact declaring the full set has been run. Nine of the eleven tokens are carried by no call evidence at all, and the run tests the selection rather than any claim about them |
-| `PRIVILEGE_SCOPE_UNCHANGED` | `PASS` | the full-trust change adds no V6 operation and no admitted `Interface.member`: eight read-only operations and 27 members, both frozen as literals in `test_privilege_scope` rather than read from the collections they check |
-| `MODULE_DESCRIPTORS_STAGE_IDENTIFIED` | `PENDING` | the `6233d86` run returned `PLATFORM_ANSWER_UNUSABLE` with no privilege diagnostic, and the result could not say which of eight members it stopped at. An unavailable reading now reports that member; which one the target stops at is what the next run measures |
+| `FULL_TRUSTED_SET_LIVE_VERIFIED` | `PASS` **for `504a6e6`** | that artifact declared all eleven, was run with every box selected, and the operator reported no reached call privilege-denied. It is a verdict about the selection working; nine of the eleven tokens are still carried by no call evidence at all |
+| `PRIVILEGE_SCOPE_UNCHANGED` | `PASS` | the full-trust change adds no V6 operation and no admitted `Interface.member`, and neither does the null-position correction: eight read-only operations and 27 members, both frozen as literals in `test_privilege_scope` rather than read from the collections they check |
+| `MODULE_DESCRIPTORS_STAGE_IDENTIFIED` | `PASS` **for `504a6e6`** | the reading stopped at `ModuleDescriptor.getModuleAt`, argument 0, `PLATFORM_ANSWER_UNUSABLE`: a `null` inside the count, which that artifact's adapter refused |
+| `GET_MODULE_AT_NULL_INSIDE_COUNT` | `TARGET_OBSERVED` | on `9.0.1.0858` only: 1551 positions over 172 descriptors, 497 modules and 1054 nulls, no error inside the range. Operator-reported, no transcript committed, and what a null means is not observed |
+| `MODULE_DESCRIPTORS_LIVE_OBSERVED` | `PENDING` | the corrected walk has run under Node only. Whether it answers `OBSERVED` inside Packet Tracer is what this candidate's run measures |
+| `DEVICE_DESCRIPTOR_ADDRESS` | `FACTORY_INDEX_WITHIN_ONE_OBSERVATION` | neither a model nor a model and DeviceType is unique on that build, so `factory_index` stays an address inside one observation and never a persistent identifier — see *What addresses a device descriptor* |
+| `DEFAULT_VARIANT_ON_CREATION` | `TARGET_OBSERVED_NOT_IMPLEMENTED` | recorded for the models tested on `9.0.1.0858`; no creation logic exists or changed — see *Which variant a creation selects* |
 
 ### The official LIVE run at `d37ba37` — the governed artifact
 
@@ -724,9 +823,86 @@ the stage lies at or beyond `DeviceDescriptor.getRootModule()`.
 candidate after this run adds the missing discrimination rather than a fix: an
 unavailable reading now reports `unavailable_member` and `unavailable_argument`
 beside its reason, so the next run names the member. A `null` handed back inside
-a reported count is still refused rather than read as an empty position — that
-would be a semantic for `null` no target reading supports — and it becomes a
-reported position only once a run says it is ordinary (`MJ-015`, `MJ-022`).
+a reported count was still refused at that candidate rather than read as an
+empty position — that would have been a semantic for `null` no target reading
+supported — and it was to become a reported position only once a run said it is
+ordinary. The `504a6e6` run and the investigation after it said so, and it is
+still never read as an empty position (`MJ-015`, `MJ-022`).
+
+### The run at `504a6e6` — full trust, target evidence
+
+Performed by hand on Packet Tracer `9.0.1.0858`, outside the session that wrote
+this record, carrying all eleven serialized tokens.
+
+| Record | Value |
+| --- | --- |
+| candidate | `504a6e6e63b0fb1ad5af5daf6dee114275d0ccf5`, tree `9668bb40436147bbc62a5821ad52405c0edbcb43` |
+| `build_recipe_id` | `b4a26d8a07add4cea5dbcae4c7832e7d85bbb3c633bee3c2feb2134a09a4cc60`, as the run's header records it |
+| artifact | SHA-256 `5066fff38a6d908d3697cc357ed04ac328c67470a399ce657bf6ea328ddf41d1`, 50872 bytes, as the run's header records it |
+| Packet Tracer | `9.0.1.0858`, `PacketTracer.exe` SHA-256 `843579cc806a41d57a4ca524d6805b97ee1f91e0ddd02ac09be8461db04b94a1` |
+| privileges | all eleven selected, none clear |
+| workspace | `2960-24TT` `Switch0` and `PC-PT` `PC0`, no cable, no configuration |
+| run id | `20260913T151440Z` |
+| raw transcript | **not committed** with this record: `RUN_504A6E6_RAW_TRANSCRIPT = NOT_COMMITTED` |
+
+**What the operator reported.**
+
+```text
+privilege selection            11 of 11
+platform.device_descriptors    OBSERVED
+platform.module_type_support   OBSERVED
+network.device_inventory       OBSERVED
+network.device_identity        OBSERVED
+network.device_ports           OBSERVED
+platform.module_descriptors    UNAVAILABLE  PLATFORM_ANSWER_UNUSABLE
+  unavailable_member           ModuleDescriptor.getModuleAt
+  unavailable_argument         0
+```
+
+**What it establishes.** Under the full selection no reached call was
+privilege-denied, which is `FULL_TRUSTED_SET_LIVE_VERIFIED = PASS` for this
+artifact — a verdict about the selection, not call evidence for any of the nine
+tokens no member is evidenced to need. And the stage did its job:
+`MODULE_DESCRIPTORS_STAGE_IDENTIFIED = PASS`, `ModuleDescriptor.getModuleAt`,
+argument 0. `network.device_identity` and `network.device_ports` answered on the
+target for the first time.
+
+**What it does not establish.** With no transcript committed, this record cannot
+establish the run as a canonical qualification:
+`RUN_504A6E6_CANONICAL_QUALIFICATION = NOT_ESTABLISHED`. No capability resolves
+off it, no API is baselined by it, and no milestone moves. It is recorded as
+target evidence, like `6233d86`.
+
+**The investigation after it** is what the correction in this candidate rests
+on — see *A null inside the module count*, above. It also read two things about
+device descriptors, recorded here because they bound how this runtime may
+address one, and both are about `9.0.1.0858` only.
+
+#### What addresses a device descriptor
+
+- `model` does not identify one descriptor, and neither does
+  `(model, device_type)`: distinct `factory_index` entries share both and carry
+  different module trees.
+- `getDescriptor(type, model)` does not necessarily hand back the entry an
+  enumeration listed.
+- `===` between two hand-overs is not a stable identity for a descriptor.
+- `factory_index` addressed the same entry, semantically, across 20 repetitions.
+
+So the architecture stays as it is. `factory_index` addresses one concrete entry
+of the enumeration **within one observation or session**. It is not replaced by a
+model or a type, no entry is reconstructed through `getDescriptor(type, model)`,
+and it is **not** promoted to a persistent or global identifier: twenty stable
+repetitions on one build are evidence about that build, not a contract
+(`MJ-002`, `MJ-029`).
+
+#### Which variant a creation selects — recorded, not implemented
+
+For the models it tested, `getDescriptor(type, model)` and
+`LogicalWorkspace.addDevice(type, model, …)` selected the same default variant:
+64 controlled creations, repeated after a full restart of Packet Tracer, with no
+contradiction. It is recorded as evidence about `9.0.1.0858` and those models.
+**No creation logic changed** — Muejeje creates nothing — and it is not read as a
+Cisco contract for any other build or model (`MJ-015`).
 
 ### The exploratory run at `ed3a0b0` — evidence, not an artifact
 
@@ -849,8 +1025,8 @@ platform was, which is why no other milestone moved with it.
 | --- | --- |
 | `M0B` | a canonical qualification first, then credential and transport API qualification. The privilege question is answered as far as evidence answers it — `[]` denied both roots at `d37ba37`, `GET_NETWORK_INFO` reached them at `718db50`, `CHANGE_NETWORK_INFO` reached the two members beneath them at `6233d86` — but no run that satisfied the procedure has reached them, so no API is baselined. No transport exists, so `MJ-026`'s terms are baselined rather than exercised |
 | `M0C` | batch and auth-boundary semantics. `MJ-027` is the contract the first batch operation must satisfy and no batch operation exists; the auth boundary is in the same position |
-| `M2_CORE_READY` | target evidence. The root is reachable and two of three platform readings answered on the `6233d86` run, which was not a canonical qualification; `platform.module_descriptors` came back unattributable there and the member it stopped at is what the next run reports |
-| `M3_CORE_READY` | complete intended scope and target evidence. The workspace inventory, one device's identity and one device's ports are implemented; the workspace's links are not (see below). `network.device_inventory` answered on the `6233d86` run; every workspace capability stays `PENDING_TARGET` until a canonical qualification reaches it |
+| `M2_CORE_READY` | target evidence. Two of three platform readings answered on the `6233d86` and `504a6e6` runs, neither established as a canonical qualification; `platform.module_descriptors` stopped at a `null` inside a module count at `504a6e6`, and whether the corrected walk answers is what the next run reports |
+| `M3_CORE_READY` | complete intended scope and target evidence. The workspace inventory, one device's identity and one device's ports are implemented; the workspace's links are not (see below). `network.device_inventory` answered on the `6233d86` run, and all three workspace readings on the `504a6e6` run; every workspace capability stays `PENDING_TARGET` until a canonical qualification reaches it |
 | `ZERO_CHANGE_CUTOVER` | a release-qualified artifact, and a compatibility facade outside the V6 core (`MJ-034`). One artifact is now packaged and kernel-qualified, no version is release-qualified, no facade exists, and no consumer has been cut over |
 
 **A green offline run still moves none of them, and neither does binary
@@ -865,13 +1041,14 @@ qualification, not more implementation.** The privilege question the earlier
 runs were about is answered as far as evidence can answer it: `[]` was denied
 both roots at `d37ba37`, `GET_NETWORK_INFO` reached both roots at `718db50`,
 and `CHANGE_NETWORK_INFO` reached the two members beneath them at `6233d86`.
-The manifest now declares all eleven serialized tokens under
+The manifest declares all eleven serialized tokens under
 `PRIVILEGE_POLICY = FULL_TRUSTED_MODULE` — a deployment decision, not a reading
 of that evidence ([the privilege map](muejeje-pts-privilege-map.md), fact 4) —
-and **the candidate carrying it has not been packaged or run**. What that run
-must establish is not a privilege result: it is a canonical qualification with a
-stable fixture and a complete raw transcript, and the `Interface.member` that
-`platform.module_descriptors` stops at
+and the `504a6e6` artifact carried it with no reached call privilege-denied.
+What the next run must establish is not a privilege result: it is a canonical
+qualification with a stable fixture and a complete raw transcript, and whether
+`platform.module_descriptors` — stopped at a `null` from
+`ModuleDescriptor.getModuleAt` there — answers under the corrected walk
 ([the full-trust LIVE runbook](muejeje-pts-privilege-live-runbook.md)).
 
 **Where M3 stands.** `network.device_ports` is implemented and tested. The
@@ -1080,16 +1257,16 @@ record those envelopes have been required to go into **one raw transcript per
 execution**, named by the artifact SHA-256 and the run's own `run_id`,
 append-only and unnormalized, and this page interprets that file rather than
 standing in for it; a summary is what a run establishes only as far as the
-transcript behind it goes, which is why **none of the three runs above
-establishes a result shape** — `d37ba37` and `718db50` captured no transcript
-and `6233d86` captured a prefix. The target gates change only
+transcript behind it goes, which is why **none of the runs above establishes a
+result shape** — `d37ba37` and `718db50` captured no transcript, `6233d86`
+captured a prefix, and nothing of `504a6e6`'s is committed. The target gates change only
 as far as that
 evidence goes: `OFFICIAL_PACKAGING_PROVED` and `V6_KERNEL_VERIFIED` from the
 saved artifact loading and its kernel answering, which the `d37ba37` and
 `718db50` runs did; `TARGET_API_BASELINED` and `CAPABILITY_RESOLUTION_VERIFIED`
 only from platform readings that answered **in a canonical qualification**.
-Three answered on the `6233d86` run and that run was not one, so neither gate
-has moved. Never from a clean offline report, never
+Three answered on the `6233d86` run and five on the `504a6e6` run, and neither
+is established as one, so neither gate has moved. Never from a clean offline report, never
 from the operations that make no platform call, never from a call Packet Tracer
 denied, and never from a requirement read out of the binary.
 
@@ -1097,9 +1274,10 @@ denied, and never from a requirement read out of the binary.
 `11073b67603fe795657f4c38aee1039063a6e87c299e618bc63ffafdd17857a8`, 48698
 bytes: the most recent artifact that was packaged, loaded and driven through the
 whole kernel qualification. `dist/` is git-ignored machine-local output, so no
-`.pts` is tracked in the checkout and none is expected to be. **No artifact
-exists for the current manifest**, whose privilege set is all eleven tokens and
-whose recipe id therefore differs from every artifact above.
+`.pts` is tracked in the checkout and none is expected to be. The `504a6e6`
+artifact was built from the same eleven-token manifest; **no artifact exists for
+the current recipe**, whose engine sources differ from that artifact's and whose
+recipe id therefore differs from every artifact above.
 
 `Cisco Packet Tracer 9.0.1\extensions\` holds **no Muejeje entry** — and it is
 not empty, which is what an earlier revision of this file recorded. It carries
@@ -1116,18 +1294,20 @@ directory, which is what the recipe prescribes.
 This page's *offline* half is **validator** qualification only: it establishes
 nothing about a candidate `.pts`, its content, or its runtime behaviour. What
 is established about an artifact comes from the LIVE runs recorded above — the
-official ones at `d37ba37` and `718db50`, the target-evidence run at `6233d86`,
-and the earlier exploratory one at `ed3a0b0` — each performed by hand, outside
-the sessions that wrote this record, and none of them preserving a complete set
-of raw envelopes. **This session performed no LIVE run**; it made the build
-audit enforce `FULL_TRUSTED_MODULE`, corrected what this repository asserts
-about each run's evidence level, and declared what the next run must capture —
-all of which is offline work.
+official ones at `d37ba37` and `718db50`, the target-evidence runs at `6233d86`
+and `504a6e6`, and the earlier exploratory one at `ed3a0b0` — each performed by
+hand, outside the sessions that wrote this record, and no complete set of raw
+envelopes from any of them committed here. **This session performed no LIVE
+run**; it corrected how the chassis walk reads a `null` inside a module count,
+recorded the target evidence that correction rests on, and declared what the
+next run must capture — all of which is offline work.
 
-The platform surface's executions inside Packet Tracer are those three official
-runs': denied at its root call at `d37ba37`; reaching the root at `718db50` and
-denied at the member beneath it; and at `6233d86` reaching past both, with three
-readings `OBSERVED` and `platform.module_descriptors` unattributable. Everywhere
+The platform surface's executions inside Packet Tracer are those four runs':
+denied at its root call at `d37ba37`; reaching the root at `718db50` and denied
+at the member beneath it; at `6233d86` reaching past both, with three readings
+`OBSERVED` and `platform.module_descriptors` unattributable; and at `504a6e6`,
+with five readings `OBSERVED` and `platform.module_descriptors` stopped at
+`ModuleDescriptor.getModuleAt`, argument 0. Everywhere
 else it has run under Node — against no platform object, and against a stub —
 and neither is a Packet Tracer reading.
 
@@ -1160,9 +1340,13 @@ EMPTY_PRIVILEGES_ROOT_IPC        = TARGET_OBSERVED_DENIED
 GET_NETWORK_INFO_ROOT_IPC        = TARGET_OBSERVED_REACHABLE
 CHANGE_NETWORK_INFO_MEMBERS      = TARGET_OBSERVED_ANSWERED
 PRIVILEGE_POLICY                 = FULL_TRUSTED_MODULE
-FULL_TRUSTED_SET_LIVE_VERIFIED   = PENDING
+FULL_TRUSTED_SET_LIVE_VERIFIED   = PASS
 PRIVILEGE_SCOPE_UNCHANGED        = PASS
-MODULE_DESCRIPTORS_STAGE_IDENTIFIED = PENDING
+MODULE_DESCRIPTORS_STAGE_IDENTIFIED = PASS
+GET_MODULE_AT_NULL_INSIDE_COUNT  = TARGET_OBSERVED
+MODULE_DESCRIPTORS_LIVE_OBSERVED = PENDING
+DEVICE_DESCRIPTOR_ADDRESS        = FACTORY_INDEX_WITHIN_ONE_OBSERVATION
+DEFAULT_VARIANT_ON_CREATION      = TARGET_OBSERVED_NOT_IMPLEMENTED
 GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS
 BINARY_MAP_REPRODUCIBILITY                = PENDING
 GET_NETWORK_INFO_LIVE_VERIFIED            = PASS
@@ -1179,6 +1363,8 @@ OFFICIAL_RUN_718DB50_RAW_TRANSCRIPT       = NOT_CAPTURED
 RUN_6233D86_RAW_TRANSCRIPT                = PARTIAL
 RUN_6233D86_WORKSPACE_FIXTURE_STABLE      = NO
 RUN_6233D86_CANONICAL_QUALIFICATION       = NO
+RUN_504A6E6_RAW_TRANSCRIPT                = NOT_COMMITTED
+RUN_504A6E6_CANONICAL_QUALIFICATION       = NOT_ESTABLISHED
 NEXT_LIVE_RUN_RAW_TRANSCRIPT              = REQUIRED_PER_EXECUTION
 NEXT_LIVE_RUN_TRANSCRIPT_IDENTITY         = ARTIFACT_SHA256_AND_RUN_ID
 NEXT_LIVE_RUN_TRANSCRIPT_HEADER           = PRE_RUN_FACTS_ONLY
@@ -1228,16 +1414,25 @@ roots with the token selected. `CHANGE_NETWORK_INFO_LIVE_VERIFIED = PASS`
 because the `6233d86` run carried that token and the two members it is
 evidenced for both answered — **for those two members and no others**, and on a
 run that was target evidence rather than a canonical qualification.
-`FULL_TRUSTED_SET_LIVE_VERIFIED = PENDING` is the half neither run touched: no
-artifact carrying the whole eleven-token declaration has been packaged or run,
-so nothing says what the target does with the nine tokens no run has selected.
+`FULL_TRUSTED_SET_LIVE_VERIFIED = PASS` because the `504a6e6` artifact carried
+the whole eleven-token declaration with every box selected, and the operator
+reported no reached call privilege-denied. It says the selection works on this
+build, and nothing about which call needs any of the nine tokens no member is
+evidenced to need. `MODULE_DESCRIPTORS_STAGE_IDENTIFIED = PASS` because that run
+named `ModuleDescriptor.getModuleAt`, argument 0.
+`GET_MODULE_AT_NULL_INSIDE_COUNT = TARGET_OBSERVED` is the investigation after
+it, and `MODULE_DESCRIPTORS_LIVE_OBSERVED = PENDING` the corrected walk, which
+has run under Node only. `DEVICE_DESCRIPTOR_ADDRESS` and
+`DEFAULT_VARIANT_ON_CREATION` are that investigation's other two findings,
+recorded under *The run at `504a6e6`* and bounded there to `9.0.1.0858`.
 
 `OFFICIAL_RUN_D37BA37_RAW_TRANSCRIPT = NOT_CAPTURED`,
-`OFFICIAL_RUN_718DB50_RAW_TRANSCRIPT = NOT_CAPTURED` and
-`RUN_6233D86_RAW_TRANSCRIPT = PARTIAL` are why all three runs are read narrowly:
-the first two preserved only the operator-reported observations, the third a
-header and one statement, and no complete set of raw envelopes reached this
-record. The six `NEXT_LIVE_RUN_*` states are the conditions the next run
+`OFFICIAL_RUN_718DB50_RAW_TRANSCRIPT = NOT_CAPTURED`,
+`RUN_6233D86_RAW_TRANSCRIPT = PARTIAL` and
+`RUN_504A6E6_RAW_TRANSCRIPT = NOT_COMMITTED` are why all four runs are read
+narrowly: the first two preserved only the operator-reported observations, the
+third a header and one statement, the fourth nothing committed here, and no
+complete set of raw envelopes reached this record. The six `NEXT_LIVE_RUN_*` states are the conditions the next run
 carries so that it can establish what these could not.
 
 - **One unnormalized, append-only transcript per execution**, named by the
@@ -1308,11 +1503,13 @@ procedure. No offline, Node, exploratory or binary-reading result is promoted
 into that evidence, and neither is a run that departed from the procedure. What
 is no longer unknown: `privileges: []` is denied both root calls; index 1
 (`GET_NETWORK_INFO`) lifts that denial at both; index 2
-(`CHANGE_NETWORK_INFO`) lifts it at the two members evidenced for it. What is
-still unmeasured is what a canonical run over the whole read-only surface
-returns, and — the question this candidate exists to make answerable — which
-`Interface.member` `platform.module_descriptors` stops at (MJ-015, MJ-022,
-MJ-032).
+(`CHANGE_NETWORK_INFO`) lifts it at the two members evidenced for it; and the
+full set was denied no call the `504a6e6` run reached. What is still unmeasured
+is what a canonical run over the whole read-only surface returns, and — the
+question this candidate exists to make answerable — whether
+`platform.module_descriptors`, which stopped at a `null` from
+`ModuleDescriptor.getModuleAt` at `504a6e6`, answers under the corrected walk
+(MJ-015, MJ-022, MJ-032).
 
-`LIVE: NO_LIVE_THIS_SESSION` — all three runs above were performed by hand,
-outside the sessions that wrote this record.
+`LIVE: NO_LIVE_THIS_SESSION` — every run above was performed by hand, outside
+the sessions that wrote this record.

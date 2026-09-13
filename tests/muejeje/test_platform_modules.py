@@ -42,12 +42,12 @@ RESULT_FIELDS = {
     "unavailable_member", "unavailable_argument",
     "factory_index", "available_count",
     "descriptor_present", "model", "device_type", "root_present", "nodes",
-    "nodes_truncated", "depth_truncated",
+    "nodes_truncated", "depth_truncated", "module_positions_truncated",
 }
 NODE_FIELDS = {
     "index", "parent_index", "depth", "module_index", "model", "module_type",
     "hot_swappable", "slot_types", "slot_types_truncated", "module_count",
-    "children_truncated",
+    "null_module_positions", "children_truncated",
 }
 
 requires_node = pytest.mark.skipif(
@@ -158,31 +158,6 @@ def test_the_numbers_come_back_from_the_platform_untranslated():
     assert [node["module_type"] for node in nodes] == [18, 6, 18]
     assert [node["hot_swappable"] for node in nodes] == [False, False, False]
     assert [node["module_count"] for node in nodes] == [2, 0, 0]
-
-
-@requires_node
-def test_a_missing_module_inside_the_reported_count_is_unusable():
-    """`null` from `getModuleAt` is not read as "this position is empty".
-
-    That semantic was published once and withdrawn: nothing this repository has
-    observed on `9.0.1.0858` says a null inside `0..getModuleCount()-1` means an
-    empty bay, and inventing the meaning would state a fact about Packet
-    Tracer's model that nobody measured. A missing module inside a count the
-    platform itself reported is an answer that cannot be attributed — exactly
-    what a missing descriptor inside the device count already is (MJ-015).
-    """
-    models = (
-        "[{model: 'half', type: 1, supported: true, module_types: [], root:"
-        " {model: 'root', module_type: 18, hot_swappable: false,"
-        " slot_types: [1, 1], modules: [null,"
-        " {model: 'card', module_type: 4, hot_swappable: true,"
-        " slot_types: [], modules: []}]}}]"
-    )
-    result = _observed(models)
-
-    assert result["resolution"] == "UNAVAILABLE"
-    assert result["unavailable_reason"] == "PLATFORM_ANSWER_UNUSABLE"
-    assert result["nodes"] == []
 
 
 @requires_node

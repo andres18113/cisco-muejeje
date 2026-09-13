@@ -126,7 +126,7 @@ REQUIRED_RESULT_FIELDS = {
         "unavailable_member", "unavailable_argument",
         "factory_index", "available_count",
         "descriptor_present", "model", "device_type", "root_present", "nodes",
-        "nodes_truncated", "depth_truncated",
+        "nodes_truncated", "depth_truncated", "module_positions_truncated",
     },
     "platform.module_type_support": {
         "resolution", "unavailable_reason",
@@ -179,7 +179,7 @@ REQUIRED_NESTED_FIELDS = {
             "module_index": (int, type(None)), "model": str,
             "module_type": int, "hot_swappable": bool, "slot_types": list,
             "slot_types_truncated": bool, "module_count": int,
-            "children_truncated": bool,
+            "null_module_positions": list, "children_truncated": bool,
         },
     },
     # No nested object of its own: one flag, and the identity that attributes

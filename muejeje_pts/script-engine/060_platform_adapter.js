@@ -216,18 +216,18 @@ function muejejeAdapterAdmitted(receiver, member, arity, argument) {
  *
  * A value is returned as it came, for a reading's own validators to hold to
  * their rules. An object is handed over marked with the interface its entry
- * documents, which is the only place a receiver's interface is ever decided.
- * Nothing handed over comes back as null, for the adapter to read as what the
- * platform said: an absent root module is an answer, while a missing device
- * inside a count is not, and only the adapter knows which it asked for. An
- * answer that is neither, where the reference documents an object, cannot be
- * attributed. */
+ * documents, the only place a receiver's interface is ever decided. `null` is
+ * the platform handing over nothing and comes back as null, for the adapter to
+ * read as what the platform said — an absent root module, a null module
+ * position, a missing device inside a count — since only it knows which it
+ * asked for. `undefined` is not `null`: like any other value in an object's
+ * place it cannot be attributed, and that holds for every member alike. */
 function muejejeAdapterAnswer(member, answer) {
     var handsOver = MUEJEJE_PLATFORM_READ_ONLY_CALLS[member].hands_over;
     if (handsOver === null) {
         return answer;
     }
-    if (answer === null || answer === undefined) {
+    if (answer === null) {
         return null;
     }
     if (typeof answer !== "object") {

@@ -108,8 +108,9 @@ def test_more_nodes_than_the_bound_reads_are_marked_truncated():
     assert result["nodes"][1]["module_count"] == 0
     assert result["nodes_truncated"] is False
 
-    deeper = models.replace("modules: []}", "modules: [null, null]}", 1)
-    assert _observed(deeper)["nodes_truncated"] is False
+    deeper = _observed(models.replace("modules: []}", "modules: [null, null]}", 1))
+    assert deeper["resolution"] == "OBSERVED", "two nulls spend positions, not nodes"
+    assert deeper["nodes_truncated"] is False
 
 
 @requires_node
