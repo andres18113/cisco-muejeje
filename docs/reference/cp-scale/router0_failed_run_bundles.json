@@ -144,6 +144,34 @@
       },
       "successful_closure": false,
       "evidence_authority": "FAILED_RUN_ONLY"
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260913T015449677311Z-5051c280d3cb",
+      "executed_sha": "5051c280d3cb25e8c7839b79bd728dc6d84b1762",
+      "requested_target_field": "router0-branch",
+      "failed_stage": "floor3",
+      "classification": "FAILED",
+      "failure": "CanonicalLiveFailure: Configuration at 'floor3' contradicted the plan: Configuration read-back contradicted the plan for: cfg/verify/dcae792eeaa65ef5. An observed contradiction is not an unobserved field, and it discredits this run's model of the device.",
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260913T015449677311Z-5051c280d3cb-failure-precleanup.json",
+          "sha256": "0fdc8fe07489460e283f98b96f5ecfb6dfd990ae8a7dca901fb1a35e11908cff"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260913T015449677311Z-5051c280d3cb-cleanup.json",
+          "sha256": "00215c0f3ff000d84a4b49a906fe9becab7d948afa140fc96b4fdd5e86d860a1"
+        }
+      ],
+      "cleanup": {
+        "verified": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "realtime_verified": true
+      },
+      "successful_closure": false,
+      "evidence_authority": "FAILED_RUN_ONLY"
     }
   ]
 }

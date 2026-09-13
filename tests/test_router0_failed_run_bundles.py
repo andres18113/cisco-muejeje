@@ -49,6 +49,12 @@ EXPECTED = {
         "failure_sha256": "a34ab13d9e401b7c5e802de364fa71a1f62fc8c86fef16460c09b07a6306ab89",
         "cleanup_sha256": "e297ea759ca2a0959ce71dba5b1cab3096c38be9cc8824d0c463c02fface8383",
     },
+    "canonical-cp-scale-voice-20260913T015449677311Z-5051c280d3cb": {
+        "executed_sha": "5051c280d3cb25e8c7839b79bd728dc6d84b1762",
+        "failed_stage": "floor3",
+        "failure_sha256": "0fdc8fe07489460e283f98b96f5ecfb6dfd990ae8a7dca901fb1a35e11908cff",
+        "cleanup_sha256": "00215c0f3ff000d84a4b49a906fe9becab7d948afa140fc96b4fdd5e86d860a1",
+    },
 }
 
 
@@ -99,7 +105,7 @@ def test_current_state_points_to_the_complete_failed_bundle_index():
     assert pointer == {
         "path": "docs/reference/cp-scale/router0_failed_run_bundles.json",
         "sha256": hashlib.sha256(raw).hexdigest(),
-        "run_count": 5,
+        "run_count": 6,
         "classification": "FAILED",
         "successful_closure": False,
     }
