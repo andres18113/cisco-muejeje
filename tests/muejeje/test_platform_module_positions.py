@@ -14,10 +14,14 @@ actually asked that answered `null` — never an empty or a free slot, because
 what it means was not observed (MJ-015). The record is
 `docs/qa/muejeje-pts-offline.md`, and it is about that build only.
 
-**Positions are not nodes**: `MAX_MODULE_POSITIONS` bounds the calls and
-`MAX_MODULE_NODES` the modules materialized. A null spends a position; a module
-spends both. Both are Muejeje's own (MJ-029) and read from the kernel here.
-Everything runs under Node against a stub and establishes our walker only.
+**Positions are not nodes**: `MAX_MODULE_POSITIONS` bounds the `getModuleAt`
+calls one reading makes, `MAX_MODULE_NODES` the nodes it keeps — queued, walked
+and published, never what Packet Tracer built on its own side. A null spends a
+position; a module spends both, unless it is dropped with a child set that did
+not fit. Both are Muejeje's own (MJ-029) and read from the kernel here, and the
+position budget stays within the node budget, which reserved these same calls
+before the two were separated. Everything runs under Node against a stub and
+establishes our walker only.
 """
 
 from __future__ import annotations
@@ -133,16 +137,6 @@ def test_a_null_before_a_module_does_not_end_the_walk():
 
 
 @requires_node
-def test_a_node_whose_every_position_is_null_is_still_observed():
-    result = _read(_chassis(_entries("null", "null", "null")))["result"]
-
-    assert result["resolution"] == "OBSERVED"
-    assert len(result["nodes"]) == 1
-    assert result["nodes"][0]["null_module_positions"] == [0, 1, 2]
-    assert result["nodes"][0]["children_truncated"] is False
-
-
-@requires_node
 def test_a_chassis_with_no_null_reads_as_it_did_and_says_so():
     """The recorded access-point shape, every position a module."""
     observed = _read(CHASSIS_MODELS)
@@ -201,36 +195,42 @@ def test_a_primitive_where_a_module_is_documented_cannot_be_attributed(primitive
 
 @requires_node
 def test_nulls_spend_positions_and_never_the_node_budget():
-    count = declared_platform_bound("MAX_MODULE_NODES") + 88
-    assert count <= declared_platform_bound("MAX_MODULE_POSITIONS")
+    """A whole position budget of nulls on one node: every one asked, one node
+    read, and no more calls than the node budget reserved before.
+    """
+    count = declared_platform_bound("MAX_MODULE_POSITIONS")
+    nodes = declared_platform_bound("MAX_MODULE_NODES")
+    assert 1 + count > nodes, "sized so a null charged as a node would truncate"
     observed = _read(_chassis(_entries(*["null"] * count)))
     result = observed["result"]
 
     assert (result["resolution"], len(result["nodes"])) == ("OBSERVED", 1)
-    assert result["nodes_truncated"] is False
-    assert result["module_positions_truncated"] is False
+    assert (result["nodes_truncated"], result["module_positions_truncated"]) == (
+        False, False,
+    )
     assert result["nodes"][0]["null_module_positions"] == list(range(count))
-    assert observed["asked"] == count
+    assert observed["asked"] == count <= nodes, "the widest reading, still bounded"
 
 
 @requires_node
-def test_modules_spend_the_node_budget_whatever_nulls_sit_between_them():
-    """One module short of the ceiling fits; at it, the set is refused whole."""
+def test_modules_spend_both_budgets_and_a_node_costs_one_only_if_it_is_kept():
+    """One module short of the ceiling fits; at it, the set is refused whole —
+    after every one of its positions was asked and every module handed over. The
+    node budget counts what this reading keeps, not what Packet Tracer built to
+    answer the calls it did make.
+    """
     nodes = declared_platform_bound("MAX_MODULE_NODES")
-    assert 2 * nodes <= declared_platform_bound("MAX_MODULE_POSITIONS")
-    fits = _read(_chassis(_entries(*["null", CARD] * (nodes - 1))))["result"]
-    crosses = _read(_chassis(_entries(*["null", CARD] * nodes)))
-    root = crosses["result"]["nodes"][0]
+    assert nodes <= declared_platform_bound("MAX_MODULE_POSITIONS"), "the nodes run out first"
+    fits = _read(_chassis(_entries(*[CARD] * (nodes - 1))))["result"]
+    crosses = _read(_chassis(_entries(*[CARD] * nodes)))
+    result = crosses["result"]
+    root = result["nodes"][0]
 
     assert (fits["nodes_truncated"], len(fits["nodes"])) == (False, nodes)
-    assert crosses["result"]["nodes"] == [root]
-    assert crosses["result"]["nodes_truncated"] is True
-    assert crosses["result"]["module_positions_truncated"] is False
-    assert root["children_truncated"] is True
-    assert root["null_module_positions"] == list(range(0, 2 * nodes, 2)), (
-        "every position was asked, so every null it answered is reported"
-    )
-    assert crosses["asked"] == 2 * nodes
+    assert result["nodes"] == [root]
+    assert (result["nodes_truncated"], result["module_positions_truncated"]) == (True, False)
+    assert (root["children_truncated"], root["null_module_positions"]) == (True, [])
+    assert crosses["asked"] == nodes, "every position was asked before the refusal"
 
 
 @requires_node

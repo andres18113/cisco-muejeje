@@ -299,20 +299,30 @@ primitive as `PLATFORM_ANSWER_UNUSABLE`, for all eight alike. Which `null` is an
 answer stays each adapter's decision: a null root module is still an observed
 absence, and a null device or port inside a count is still unusable.
 
-**Two budgets, because a position is not a node.** The survey's 1551 positions
-produced 497 children. Every bound is Muejeje's own, not a Packet Tracer limit
-(`MJ-029`):
+**Two budgets, because a position is not a node.** A null answers a call and
+costs no node, so the calls are counted as calls. Every bound is Muejeje's own,
+not a Packet Tracer limit (`MJ-029`):
 
 | Bound | Spent by | When it runs out |
 | --- | --- | --- |
-| `MAX_MODULE_POSITIONS` = 2048 | every `getModuleAt` call, a null and a module alike | a node's positions are reserved before any is asked; a node that does not fit asks none, and says `children_truncated` while the reading says `module_positions_truncated` |
-| `MAX_MODULE_NODES` = 512 | each module handed over and materialized, never a null | judged once a node's positions have answered; a child set that does not fit is refused whole, `children_truncated` and `nodes_truncated` |
+| `MAX_MODULE_POSITIONS` = 512 | every `getModuleAt` call one reading makes, a null and a module alike | a node's positions are reserved before any is asked; a node that does not fit asks none, and says `children_truncated` while the reading says `module_positions_truncated` |
+| `MAX_MODULE_NODES` = 512 | each node this reading keeps — queued, walked and published — never a null, and never a module dropped with a refused child set | judged once a node's positions have answered; a child set that does not fit is refused whole, `children_truncated` and `nodes_truncated` |
 | `MAX_MODULE_DEPTH` = 12 | depth, unchanged | refused before any position is asked, `children_truncated` and `depth_truncated` |
 | `MAX_SLOTS` = 64 | slot types, the other enumeration, unchanged | `slot_types_truncated` |
 
-A position nobody asked is never in `null_module_positions`. A node refused on
-the node budget did ask its positions, so the nulls it saw are still reported
-beside its `children_truncated`.
+**Separate units, and the same worst case as before.** Until this correction the
+node ceiling reserved these calls itself, so one reading asked at most
+`MAX_MODULE_NODES` of them; the position budget stays within that, and a gate
+holds the two in that order. The survey's 1551 positions were one sweep of all
+172 descriptors at once, not one reading of one of them, and size no per-request
+bound: a descriptor that needs more positions than this would be evidence about
+that descriptor, to weigh on its own.
+
+**What each budget can and cannot say.** A position nobody asked is never in
+`null_module_positions`. A node refused on the node budget did ask its positions
+first, so Packet Tracer had already handed those modules over and this reading
+keeps none of them: `MAX_MODULE_NODES` bounds what a reading retains, never what
+the platform built on its own side to answer the calls it did make.
 
 **The result grew and nothing else moved.** `module_positions_truncated` joins
 `nodes_truncated` and `depth_truncated`, and every node gains
@@ -330,7 +340,17 @@ walk and relay-closure gates were run against the unchanged engine:
 Against the changed engine, with the stage-scope, compatibility and architecture
 gates beside them: `176 passed`.
 
-## Current offline result
+**And the bound was corrected before anything was packaged.** `MAX_MODULE_POSITIONS`
+was first set to `2048`, sized against the survey total, which widened the
+`getModuleAt` calls one reading could make past the `512` the node ceiling had
+reserved for them. The correction was written as RED first: against the `c0b654a`
+engine the position and walk gates ran `2 failed, 32 passed` — the declared bounds
+in the wrong order, and the widest reading asking `2048` calls where at most `512`
+had been asked before — and `33 passed` against the corrected bound. No other
+semantics moved with it: `null` versus `undefined`, `null_module_positions`, the
+truncation marks, the failure taxonomy and the V6 shape are as `c0b654a` left them.
+
+## Recorded offline results
 
 Two environments have run this suite, and the record keeps them apart: a
 measurement is only comparable with another taken the same way.

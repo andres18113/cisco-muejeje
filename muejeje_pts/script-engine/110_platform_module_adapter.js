@@ -200,8 +200,9 @@ function muejejeAdapterSlotTypes(descriptor) {
  * child set, never a prefix: half a module list read as a complete one is what
  * the marking exists to prevent. TWO BUDGETS, because a position is not a node:
  * positions are reserved from `MAX_MODULE_POSITIONS` before any is asked, so a
- * refused node reports no null it never saw; only a module handed over spends
- * `MAX_MODULE_NODES`, judged once the positions answered, so a null costs none. */
+ * refused node reports no null it never saw; `MAX_MODULE_NODES` counts what the
+ * walk keeps, judged once the positions answered — a null costs none, and a
+ * module handed over into a set that does not fit is dropped with it. */
 function muejejeAdapterQueueChildren(reading, walk, item, node) {
     if (node.module_count === 0) {
         return;

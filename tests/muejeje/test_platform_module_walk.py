@@ -29,6 +29,7 @@ import json
 import pytest
 
 from tests.muejeje.engine_harness import dispatch_v6, node_available
+from tests.muejeje.measure import declared_platform_bound
 from tests.muejeje.platform_stub import CHASSIS_MODELS, platform_stub
 
 OPERATION = "platform.module_descriptors"
@@ -113,11 +114,30 @@ def test_more_nodes_than_the_bound_reads_are_marked_truncated():
     assert deeper["nodes_truncated"] is False
 
 
+def test_the_position_budget_stays_within_the_one_that_reserved_these_calls():
+    """Two ceilings on one walk, and separating the units is not a licence to
+    ask Packet Tracer for more. A node's positions used to be reserved from
+    `MAX_MODULE_NODES`, so that is the worst case `MAX_MODULE_POSITIONS` may
+    not widen. The `9.0.1.0858` survey's 1551 positions were one sweep of all
+    172 descriptors, not one reading of one of them, and size nothing here: a
+    descriptor needing more is that evidence's own case to make (MJ-029).
+    """
+    assert (
+        declared_platform_bound("MAX_MODULE_POSITIONS")
+        <= declared_platform_bound("MAX_MODULE_NODES")
+    )
+
+
 @requires_node
 def test_a_child_set_that_would_cross_the_node_ceiling_is_refused_whole():
+    """Sized from the node bound itself, and the mark says which ran out: these
+    positions were all asked, so it is the nodes they would have cost — never
+    the calls — that the reading could not afford.
+    """
+    count = declared_platform_bound("MAX_MODULE_NODES")
     wide = ", ".join(
         "{model: 'card', module_type: 4, hot_swappable: true,"
-        " slot_types: [], modules: []}" for _ in range(600)
+        " slot_types: [], modules: []}" for _ in range(count)
     )
     models = (
         "[{model: 'wider', type: 1, supported: true, module_types: [], root:"
@@ -127,9 +147,10 @@ def test_a_child_set_that_would_cross_the_node_ceiling_is_refused_whole():
     result = _observed(models)
 
     assert result["nodes_truncated"] is True
+    assert result["module_positions_truncated"] is False
     assert result["nodes"] == [result["nodes"][0]]
     assert result["nodes"][0]["children_truncated"] is True
-    assert result["nodes"][0]["module_count"] == 600
+    assert result["nodes"][0]["module_count"] == count
 
 
 @requires_node

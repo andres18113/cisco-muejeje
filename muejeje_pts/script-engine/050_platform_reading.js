@@ -53,15 +53,21 @@ var MUEJEJE_PLATFORM_LIMITS = {
      * truncated, and a bound that routinely truncates a correct answer teaches
      * a reader to ignore the truncation mark. So they are set well clear of
      * the largest tree anybody here has recorded, and every subtree they do
-     * omit is still marked. */
+     * omit is still marked.
+     *
+     * MAX_MODULE_NODES counts the nodes one reading keeps — queued, walked and
+     * published — and says nothing about Packet Tracer's side: a module handed
+     * over, then dropped with a child set that did not fit, cost no node here. */
     MAX_MODULE_NODES: 512,
     MAX_MODULE_DEPTH: 12,
-    /* A position is not a node. On 9.0.1.0858 the factory survey asked 1551
-     * `getModuleAt` positions over every descriptor, and 497 handed over a
-     * module: the rest answered null. So the calls one reading makes are bounded
-     * on their own, clear of that whole survey, and a null spends a position but
-     * never a node. Muejeje's own, like the rest — not a Packet Tracer limit. */
-    MAX_MODULE_POSITIONS: 2048,
+    /* A position is not a node: this bounds the `getModuleAt` calls one reading
+     * makes, a null and a module alike, because on 9.0.1.0858 a null inside the
+     * count is an ordinary answer and a node full of them keeps no node at all.
+     * Separating the units is not a licence to ask for more, so it stays within
+     * the node ceiling that reserved these same calls before it existed. A
+     * descriptor needing more is evidence about that descriptor to weigh on its
+     * own, never the factory survey's total over all 172 at once. */
+    MAX_MODULE_POSITIONS: 512,
     /* How long a model or a name — a device's or a port's — in one reading
      * may be. No ceiling on either has been measured; this bounds the size of
      * an answer, and the caller says which bound applies. */
