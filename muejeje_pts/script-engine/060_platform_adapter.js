@@ -24,25 +24,26 @@
  * instantiates a device, powers one, or touches a workspace (MJ-014, MJ-031).
  *
  * WHOSE FAILURE WAS IT. Only two things become an unavailable reading: a call
- * made at this boundary, and an answer a reading's validators refused.
- * Anything else that throws in a platform adapter is a defect in this
- * artifact, and it is left to reach the dispatcher as `ENGINE_EXCEPTION` —
- * reporting it as `PLATFORM_CALL_FAILED` would manufacture an observation
- * about Packet Tracer that Packet Tracer never produced, and a consumer
- * recording target evidence could not tell the two apart (MJ-022).
+ * made at this boundary, and an answer a reading's validators refused. Anything
+ * else that throws in a platform adapter is a defect in this artifact, and it
+ * reaches the dispatcher as `ENGINE_EXCEPTION` — reporting it as
+ * `PLATFORM_CALL_FAILED` would manufacture an observation about Packet Tracer
+ * that Packet Tracer never produced, and a consumer recording target evidence
+ * could not tell the two apart (MJ-022). *Where* a reading failed is recorded
+ * in `muejejeReadingStage`, since only this file knows.
  *
- * WHAT IS READ THROUGH IT lives beside it, one adapter per subject: a boundary
- * and the things read across it are different responsibilities, and this file
- * is the one that has to stay short enough to check in full (MJ-018, MJ-020).
- * Those adapters name no platform object of their own.
+ * WHAT IS READ THROUGH IT lives beside it, one adapter per subject, naming no
+ * platform object of its own: a boundary and the things read across it are
+ * different responsibilities, and this is the file that has to stay short
+ * enough to check in full (MJ-018, MJ-020).
  *
  * IT REACHES NO VERDICT. Whether an answer qualifies anything is decided in
- * Python, from outside the artifact (MJ-011). The module declares one
- * privilege, GET_NETWORK_INFO, which is what a recorded reading of the pinned
- * binary says both root calls require; what a target actually does with them
- * is unknown until a target does it, and this artifact predicts neither an
- * answer nor a refusal. Whatever happens is reported as a reading with its
- * reason (MJ-032).
+ * Python, from outside the artifact (MJ-011). The module runs as a trusted
+ * local Script Module with Packet Tracer's full privilege set, so the
+ * selection bounds none of this: the list below does, and it is the list it
+ * was before the selection grew (MJ-032). What a target does with a call is
+ * unknown until a target does it, so whatever happens is reported as a reading
+ * with its reason, and neither an answer nor a refusal is predicted here.
  */
 
 /* The platform members this artifact may call, and the whole of what it may
@@ -140,7 +141,7 @@ function muejejeAdapterHandle(platformInterface, platformObject) {
  * different observations with different next steps, and collapsing them would
  * invent a refusal nobody performed. */
 function muejejeAdapterCall(receiver, member) {
-    var name = muejejeAdapterAdmitted(receiver, member, 0);
+    var name = muejejeAdapterAdmitted(receiver, member, 0, null);
     var answer;
     try {
         answer = receiver.platform_object[name]();
@@ -162,7 +163,7 @@ function muejejeAdapterCall(receiver, member) {
  * space is an enumeration this artifact walks, which is the numeric-mirror
  * reading MJ-014 exists to prevent. */
 function muejejeAdapterCallWith(receiver, member, argument) {
-    var name = muejejeAdapterAdmitted(receiver, member, 1);
+    var name = muejejeAdapterAdmitted(receiver, member, 1, argument);
     var answer;
     try {
         answer = receiver.platform_object[name](argument);
@@ -179,7 +180,7 @@ function muejejeAdapterCallWith(receiver, member, argument) {
  * A null receiver is the one receiver problem that is the platform's: it is
  * what a member that handed over nothing returned, relayed by an adapter that
  * needed an object there. Every other receiver problem is ours. */
-function muejejeAdapterAdmitted(receiver, member, arity) {
+function muejejeAdapterAdmitted(receiver, member, arity, argument) {
     if (!Object.prototype.hasOwnProperty.call(
         MUEJEJE_PLATFORM_READ_ONLY_CALLS, member
     )) {
@@ -188,6 +189,10 @@ function muejejeAdapterAdmitted(receiver, member, arity) {
     if (MUEJEJE_PLATFORM_READ_ONLY_CALLS[member].arity !== arity) {
         throw new Error("muejeje: platform call with the wrong number of arguments");
     }
+    /* Both checks above are defects here and become no reading, so the stage
+     * starts below them. From here on this member is where a reading stopped,
+     * an adapter's own validator included: it refused this call's answer. */
+    muejejeReadingStage(member, argument);
     if (receiver === null) {
         throw MUEJEJE_PLATFORM_UNUSABLE;
     }
@@ -234,8 +239,10 @@ function muejejeAdapterAnswer(member, answer) {
 /* The platform object, or null when there is none. Asking "is there a Packet
  * Tracer here" is a platform question, so it is answered here rather than in
  * every adapter that would otherwise have to name `ipc` to ask it — and what
- * comes back is already marked as the interface Cisco documents `ipc` to be. */
+ * comes back is already marked as the interface Cisco documents `ipc` to be.
+ * Every reading starts here, so the stage is cleared here too. */
 function muejejeAdapterPlatform() {
+    muejejeReadingStage(null, null);
     if (typeof ipc === "undefined" || ipc === null) {
         return null;
     }

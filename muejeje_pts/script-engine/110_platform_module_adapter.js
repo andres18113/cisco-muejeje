@@ -36,6 +36,8 @@ function muejejeAdapterModuleReading(resolution, reason, factoryIndex) {
     return {
         resolution: resolution,
         unavailable_reason: reason,
+        unavailable_member: muejejeReadingStageMember(reason),
+        unavailable_argument: muejejeReadingStageArgument(reason),
         factory_index: factoryIndex,
         available_count: null,
         descriptor_present: false,
@@ -231,8 +233,9 @@ function muejejeAdapterQueueChildren(reading, item, node, pending) {
  * count is. It is deliberately *not* read as "this position is empty": that
  * would be a semantic for `null` that no target reading supports, and inventing
  * one here would publish a fact about Packet Tracer's model that nobody
- * observed. If a target run shows a null is ordinary there, this becomes a
- * reported position with that evidence behind it — not before (MJ-015). */
+ * observed. A reading that stops here names this member and this position, so a
+ * run can say whether that is what happens — and only then does this become a
+ * reported position, with that evidence behind it (MJ-015). */
 function muejejeAdapterQueueChild(item, node, pending, position) {
     var child = muejejeAdapterCallWith(item.descriptor, "ModuleDescriptor.getModuleAt", position);
     if (!child) {

@@ -100,6 +100,47 @@ var MUEJEJE_PLATFORM_UNUSABLE = "PLATFORM_ANSWER_UNUSABLE";
 var MUEJEJE_PLATFORM_OBSERVED = "OBSERVED";
 var MUEJEJE_PLATFORM_UNAVAILABLE = "UNAVAILABLE";
 
+/* WHERE A READING STOPPED. The reason above says *what* the platform did; this
+ * says at which `Interface.member` it did it, and with which argument.
+ *
+ * The boundary records it, because by the time a thrown sentinel reaches an
+ * adapter's catch it carries no location at all — deliberately, since a
+ * consumer that could read the thrown value would be depending on an internal
+ * (MJ-005). Without this, every one of a reading's calls is equally suspect:
+ * `PLATFORM_ANSWER_UNUSABLE` is the same word for a `getModel` that answered
+ * something this runtime cannot carry and for a `getModuleAt` that handed over
+ * nothing inside a count the platform itself reported, and those two send a
+ * reader to two different places.
+ *
+ * IT NAMES A PLACE, NEVER A CAUSE. A member is where a reading stopped, not
+ * why it stopped: the reason stays the authority on that, and a privilege
+ * denial is still only what a Packet Tracer diagnostic printed beside the call
+ * says it is (MJ-022, MJ-031). The member is one of the names the boundary
+ * admits; the argument is the value that call was made with — a position, or a
+ * value the platform itself produced — and null for a member that takes none.
+ *
+ * One record, reset where a reading begins, so what it holds is always about
+ * the reading being shaped and never about the one before it. */
+var MUEJEJE_PLATFORM_STAGE = {member: null, argument: null};
+
+function muejejeReadingStage(member, argument) {
+    MUEJEJE_PLATFORM_STAGE.member = member;
+    MUEJEJE_PLATFORM_STAGE.argument = argument;
+}
+
+/* The stage an *unavailable* reading stopped at, and nothing for one that was
+ * observed: a reading that answered stopped nowhere, and publishing the last
+ * member it called successfully would read as the member that failed. The
+ * caller passes its own `unavailable_reason`, which is null on exactly the
+ * readings that have no stage. */
+function muejejeReadingStageMember(reason) {
+    return reason === null ? null : MUEJEJE_PLATFORM_STAGE.member;
+}
+
+function muejejeReadingStageArgument(reason) {
+    return reason === null ? null : MUEJEJE_PLATFORM_STAGE.argument;
+}
+
 /* Which thrown values are a reading, and which are this artifact's own bug.
  *
  * These three sentinels are the only failures an adapter attributed to the

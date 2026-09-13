@@ -3,10 +3,11 @@
  *
  * Read-only. It reports what this artifact can truthfully say about itself and
  * asserts nothing about Packet Tracer, so it performs no Cisco IPC call and
- * this operation needs no privilege to answer. The module declares exactly one
- * (MJ-025), the token a recorded reading of the pinned binary says both root
- * IPC calls require, and nothing wider: a name nobody can point at evidence
- * for is refused at audit time rather than shipped to find out (MJ-032).
+ * this operation needs no privilege to answer. The module runs as a trusted
+ * local Script Module with Packet Tracer's full privilege set (MJ-025), which
+ * decides what the process may *call* and nothing about what this runtime
+ * exposes: what it exposes is the V6 whitelist, and every operation on it is
+ * read-only (MJ-031, MJ-032).
  *
  * The operation list is handed in by the dispatcher rather than read from it.
  * The whitelist has one owner, and the arrow still points from dispatch to

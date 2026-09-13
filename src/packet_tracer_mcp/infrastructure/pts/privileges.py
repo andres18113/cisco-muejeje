@@ -18,19 +18,41 @@ because the other exists would admit a name on a resemblance, which is exactly
 the failure `MJ-032` exists to refuse — so the symbols are recorded here as
 what they are, and refused with their own reason.
 
-**Nothing is inferred from a token's name.** `CHANGE_NETWORK_INFO` reads like
-the privilege a mutation would want. It is required here for the opposite
-reason: the target binary demands it for two **read** members —
-`DeviceFactory.getAvailableDeviceCount()` and `Device.getName()` — and index 2
-serializes as `CHANGE_NETWORK_INFO`. The token broadens what Packet Tracer
-would let the Script Module process *call*; it says nothing about what Muejeje
-exposes. The Runtime V6 surface stays read-only, and the positive V6 allowlist
-remains the authority on what this artifact does (`MJ-031`, `MJ-032`).
+## The policy: `FULL_TRUSTED_MODULE`
 
-Declaring the wrong token is invisible until the target runs: Cisco is explicit
+Muejeje is a private, local tool run by the owner of this repository, and it is
+packaged as a **trusted local Script Module**. So the declared set is every
+serialized token the pinned binary carries — all eleven — and not a minimum
+derived from call evidence. `PRIVILEGE_POLICY` says which rule is in force, and
+`DECLARED_PRIVILEGES` is derived from the observed vocabulary rather than typed,
+so the two cannot drift.
+
+**These privileges are not "required", and nothing here says they are.** What is
+true is narrower and has to stay written that way:
+
+    Muejeje runs as a trusted local Script Module with the full Packet Tracer
+    privilege set. Runtime V6 remains the capability/security boundary.
+
+The two policies are different things and are not allowed to be read as one.
+Packet Tracer's privileges decide which IPC calls the Script Module *process* may
+make; Muejeje's V6 whitelist decides which operations this runtime *exposes*. So
+**full privileges is not all capabilities**: the eight admitted V6 operations,
+every one `read_only`, and the read-only `Interface.member` allowlist in
+`060_platform_adapter.js` are unchanged by the policy, and `test_privilege_scope`
+holds both against a frozen baseline (`MJ-031`, `MJ-032`).
+
+`EVIDENCED_MINIMUM_PRIVILEGES` is kept beside the policy, still derived from
+`CALL_PRIVILEGE_INDEX`, because the call evidence is a separate fact that stays
+true and stays useful: it is what a *least-privilege* selection would be, and it
+is what a target denial is read against. It is no longer what the manifest
+declares.
+
+Declaring a wrong token is invisible until the target runs: Cisco is explicit
 that *"the security privileges indicate which IPC calls this Script Module can
 make. Calls to unselected privileges will be denied"*. The audit is the last
-point at which a name can still be refused.
+point at which a name can still be refused, so the vocabulary gate stays exactly
+as strict as it was — an invented token, an IpcAPI symbol, and the binary's own
+name for *no privilege* are each refused with their own reason.
 
 **The binary evidence below was read outside this repository**, against the
 pinned `PacketTracer.exe`. Nothing here re-derives it: no test, tool or
@@ -40,11 +62,12 @@ constants rather than one word — even now that the member evidence carries exa
 Ghidra addresses. Recording an externally read reading as if this repository had
 performed it is the same failure as inventing an offset, one step later.
 
-It is still what the production decision is made on, and that is deliberate: the
+It is still what the vocabulary is made of, and that is deliberate: the
 `718db50` official LIVE run selected exactly the `GET_NETWORK_INFO` this evidence
-names and reached both root calls, and the next official LIVE run selects the
-two tokens and tests the member requirement independently. A run denied where
-the evidence says it should progress is recorded as a contradiction (MJ-032).
+names and reached both root calls, and the `6233d86` run added the
+`CHANGE_NETWORK_INFO` the member evidence names and reached both members. A run
+denied where this evidence says it should progress is recorded as a contradiction
+(MJ-032).
 """
 
 from __future__ import annotations
@@ -80,24 +103,26 @@ MEMBER_CALL_EVIDENCE_PROVENANCE = "GHIDRA_STATIC_DISASSEMBLY"
 #                    any tool here — so this stays PENDING.
 #   *_LIVE_VERIFIED  whether selecting the token makes the calls it is evidenced
 #                    for progress on the target. Only a run can say.
-#                    `GET_NETWORK_INFO` reached both roots in the `718db50` run,
-#                    so it is PASS. `CHANGE_NETWORK_INFO` has been carried by no
-#                    run yet, so it is PENDING.
+#                    `GET_NETWORK_INFO` reached both roots in the `718db50` run;
+#                    `CHANGE_NETWORK_INFO` reached both members it was
+#                    introduced for in the `6233d86` run. Both PASS, and neither
+#                    says anything about a token no run has tested.
 BINARY_EVIDENCE_RECORDED = "PASS"
 MEMBER_STATIC_EVIDENCE_RECORDED = "PASS"
 BINARY_MAP_REPRODUCIBILITY = "PENDING"
 GET_NETWORK_INFO_LIVE_VERIFIED = "PASS"
-CHANGE_NETWORK_INFO_LIVE_VERIFIED = "PENDING"
+CHANGE_NETWORK_INFO_LIVE_VERIFIED = "PASS"
 
 # The serialized privilege tokens, by internal index, as read from that binary.
 # Recorded as the evidence stated it, index 0 included: the binary's own name
 # for *no privilege* is `none`, and whether that is a storable token or the
-# absence of one was not established. Nothing needs it decided — the requestable
-# set below is derived from call evidence, never from this tuple, so no entry
-# here is admitted merely by being listed.
+# absence of one was not established. Nothing needs it decided — it is excluded
+# from the declared set by name, and refused with its own reason, so no run
+# depends on the question being settled.
 #
-# A name in this tuple is **a token that exists**, not a token this module may
-# ask for. The two are different claims and stay different.
+# A name in this tuple is **a token the target binary carries**. Under the
+# `FULL_TRUSTED_MODULE` policy every one of them except `none` is also a token
+# this module declares, and the two claims stay separate constants.
 SERIALIZED_BY_INDEX = (
     "none",                 # 0
     "GET_NETWORK_INFO",     # 1
@@ -112,6 +137,10 @@ SERIALIZED_BY_INDEX = (
     "IPC",                  # 10
     "APPLICATION",          # 11
 )
+# The binary's own name for *no privilege*. It is not a privilege, so it is
+# excluded from the declared set and refused by name rather than left to be
+# caught by a rule that was written for something else.
+NON_PRIVILEGE_TOKEN = "none"
 
 # Which privilege index a call requires, one entry per call this repository has
 # target-binary evidence for. Root-call and member-call evidence are kept in
@@ -136,18 +165,31 @@ MEMBER_CALL_PRIVILEGE_INDEX = {
     "DeviceFactory.getAvailableDeviceCount()": 2,
     "Device.getName()": 2,
 }
-# The one authoritative evidenced call -> index relation. The minimum privilege
-# set is derived from this, never typed, so the manifest and the call evidence
-# cannot drift apart in the one direction that matters — a privilege declared
-# with nothing behind it. Root and member evidence stay separable above.
+# The one authoritative evidenced call -> index relation. Root and member
+# evidence stay separable above. It is **not** what the manifest declares any
+# more: under `FULL_TRUSTED_MODULE` it is the record of what each known call
+# demands, which is what a target denial is read against.
 CALL_PRIVILEGE_INDEX = {**ROOT_CALL_PRIVILEGE_INDEX, **MEMBER_CALL_PRIVILEGE_INDEX}
 
-# The minimum set: exactly the tokens the recorded calls require, derived and
-# never typed. Deterministically ordered by `sorted`, which is the manifest's
-# canonical order for this field.
-REQUIRED_PRIVILEGES = tuple(sorted({
+# What a least-privilege selection would be: exactly the tokens the recorded
+# calls require, derived and never typed. Kept because the call evidence is a
+# fact of its own, and because a denial on the target is read against it.
+EVIDENCED_MINIMUM_PRIVILEGES = tuple(sorted({
     SERIALIZED_BY_INDEX[index] for index in CALL_PRIVILEGE_INDEX.values()
 }))
+
+# The policy in force, and the set it produces.
+#
+# `FULL_TRUSTED_MODULE` is a decision about how this module is deployed — a
+# private, local, trusted tool — and not a reading of any evidence, so it is
+# written here as the one word that names it. The set is derived from the
+# observed vocabulary minus the non-privilege, never from `CALL_PRIVILEGE_INDEX`
+# and never typed out, and is ordered by `sorted`, which is the manifest's
+# canonical order for this field.
+PRIVILEGE_POLICY = "FULL_TRUSTED_MODULE"
+DECLARED_PRIVILEGES = tuple(sorted(
+    set(SERIALIZED_BY_INDEX) - {NON_PRIVILEGE_TOKEN}
+))
 
 # Identifiers Cisco's installed IpcAPI reference leaks through its event
 # declarations. They are **documentation symbols**, kept so the gate can refuse
@@ -157,36 +199,37 @@ REQUIRED_PRIVILEGES = tuple(sorted({
 IPC_API_SYMBOLS = ("PrivActivityWizard", "PrivApplication", "PrivGetNetwork")
 
 
-def evidence_error(names: Iterable[Any]) -> str | None:
+def policy_error(names: Iterable[Any]) -> str | None:
     """Why this set of tokens may not be declared, or `None` when it may.
 
     Shape is somebody else's job: `manifest` checks that the value is a bounded,
     duplicate-free list of non-empty strings before asking this, so a typo is
     reported as a typo rather than as a missing privilege catalogue.
 
-    Each way of being wrong gets its own reason, because they send a reader to
-    three different places: an API symbol means the wrong namespace, a real
-    token means the evidence for the *call* is missing, and anything else means
-    the name is not a privilege at all.
+    Under `FULL_TRUSTED_MODULE` the admissible set is `DECLARED_PRIVILEGES`, so
+    what is refused is a name the policy does not cover — and each way of being
+    wrong keeps its own reason, because they send a reader to three different
+    places: an API symbol means the wrong namespace, `none` means the binary's
+    name for no privilege rather than a privilege, and anything else means the
+    pinned binary carries no such token at all.
     """
-    unproven = sorted(set(names) - set(REQUIRED_PRIVILEGES))
-    if not unproven:
+    unknown = sorted(set(names) - set(DECLARED_PRIVILEGES))
+    if not unknown:
         return None
-    symbols = [name for name in unproven if name in IPC_API_SYMBOLS]
+    symbols = [name for name in unknown if name in IPC_API_SYMBOLS]
     if symbols:
         return (
             "must name serialized privilege tokens, not IpcAPI symbols: "
             f"{', '.join(symbols)} is a documented API identifier, and nothing "
             "maps one onto a privilege Packet Tracer stores"
         )
-    existing = [name for name in unproven if name in SERIALIZED_BY_INDEX]
-    if existing:
+    if NON_PRIVILEGE_TOKEN in unknown:
         return (
-            "must name only privileges an evidenced call requires; the target "
-            f"binary carries {', '.join(existing)}, and no call this module "
-            "makes is evidenced to require it"
+            f"must name a privilege; {NON_PRIVILEGE_TOKEN} is the target "
+            "binary's own name for the absence of one, and whether it is even "
+            "storable was never established"
         )
     return (
         "must name a serialized privilege token the target binary carries; "
-        f"this repository has no evidence for {', '.join(unproven)}"
+        f"this repository has no evidence for {', '.join(unknown)}"
     )

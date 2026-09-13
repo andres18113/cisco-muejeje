@@ -38,7 +38,9 @@ from tests.muejeje.support import SCRIPT_ENGINE
 
 OPERATION = "network.device_ports"
 RESULT_FIELDS = {
-    "resolution", "unavailable_reason", "workspace_index", "available_count",
+    "resolution", "unavailable_reason",
+    "unavailable_member", "unavailable_argument",
+    "workspace_index", "available_count",
     "device_present", "name", "model", "port_offset", "limit", "port_count",
     "ports", "window_truncated",
 }

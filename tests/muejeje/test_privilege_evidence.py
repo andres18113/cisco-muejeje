@@ -1,56 +1,35 @@
-"""The evidence the privilege rule rests on, measured rather than restated.
+"""The binary evidence the privilege map rests on, recorded rather than restated.
 
 Split out of `test_privileges` when that module crossed its line budget. The
 two responsibilities are genuinely different: there, what the validator accepts
-and refuses; here, that the things it accepts on were actually *read* — the
-binary map and its pin to one `PacketTracer.exe`, the QA record that carries
-the same map, and the IpcAPI symbols re-derived from Cisco's own installed
-bytes (MJ-018, MJ-020, MJ-032).
+and refuses; here, that what it rests on was actually *read* — the index map and
+its pin to one `PacketTracer.exe`, the call descriptors, and the QA record that
+carries the same map (MJ-018, MJ-020, MJ-032).
 
-This module owns the measured constants, and `test_privileges` imports the ones
-it names in a refusal. Two copies of them could disagree.
+**None of it was measured here, and that is the point.** The map and the call
+descriptors were read outside this checkout — the root map a supplied summary,
+the member requirements a Ghidra reading — so they are *recorded* evidence and
+not *reproducible* evidence, and the gates below hold the code and the QA record
+to saying so. The IpcAPI symbols, which this repository *can* re-derive from
+Cisco's installed bytes, are `test_privilege_api_symbols`, split out when this
+module reached its own budget: evidence nobody here can reproduce and evidence
+re-read on every run are two different things to be responsible for.
 
-**Not all of it was measured here, and that is the point of the last section.**
-The IpcAPI symbols are re-derived from Cisco's installed bytes by this module.
-The binary map and the call descriptors are not — the root map was supplied
-from outside this repository and the member requirements are a Ghidra reading —
-so they are *recorded* evidence and not *reproducible* evidence, and the gates
-below hold the code and the QA record to saying so (MJ-032).
+**The declared set is no longer derived from any of it.** The policy is
+`FULL_TRUSTED_MODULE`, a deployment decision, and the last gate here holds the
+record to stating that as a decision rather than as a requirement — and to
+keeping it apart from what Muejeje exposes.
 """
 
 from __future__ import annotations
 
-import hashlib
 import re
 
 import pytest
 
-from tests.muejeje.support import (
-    INSTALLED_HELP,
-    REPO_ROOT,
-    repo_manifest,
-)
+from tests.muejeje.support import REPO_ROOT, repo_manifest
 
 PRIVILEGE_RECORD = "docs/qa/muejeje-pts-privilege-map.md"
-API_REFERENCE = "IpcAPI"
-
-# Where each IpcAPI *symbol* was read from, with the bytes it was read in.
-# Recorded so "Cisco names this identifier" can be re-checked rather than
-# believed. None of these is a privilege token.
-API_SYMBOL_EVIDENCE = {
-    "PrivActivityWizard": (
-        "class_activity_file.html",
-        "350ceb374c5c7a118f64240994b7ddbc148c18ffae2ca29bdec7f95dbcb0f709",
-    ),
-    "PrivApplication": (
-        "class_app_window.html",
-        "0320f00edda413d760412de92c4c5166def03f42afa6f2cdca185cca0df969cb",
-    ),
-    "PrivGetNetwork": (
-        "class_logical_workspace.html",
-        "9828ee18b2886841821acd4d962b9ece08d4f9901da743098ed7cbba992558b1",
-    ),
-}
 
 # The map and the call descriptors as the QA record writes them, so the record
 # and the code cannot drift. A call row is any `Interface.member()` — a root or
@@ -76,12 +55,6 @@ def record_prose() -> str:
     changed nothing, and teach the next reader to stop reflowing.
     """
     return " ".join(record_body().split())
-
-
-requires_installed_reference = pytest.mark.skipif(
-    not (INSTALLED_HELP / API_REFERENCE).is_dir(),
-    reason="the target build is not installed; its reference cannot be read",
-)
 
 
 # ---------------------------------------------------------------------------
@@ -136,8 +109,9 @@ def test_recorded_reproducible_and_live_verified_are_three_states():
     A reading can be written down against a pinned SHA-256 (`RECORDED`) while no
     tool here re-derives a row (`REPRODUCIBILITY = PENDING`); whether the target
     honours a token is a third question a run answers. `GET_NETWORK_INFO` was
-    reached by the `718db50` run (`PASS`); `CHANGE_NETWORK_INFO` has not been run
-    (`PENDING`).
+    reached by the `718db50` run and `CHANGE_NETWORK_INFO` by the `6233d86` run,
+    so both are `PASS` — and neither makes the map reproducible here, which is
+    why three states and not two.
     """
     module = privileges()
 
@@ -145,7 +119,7 @@ def test_recorded_reproducible_and_live_verified_are_three_states():
     assert module.MEMBER_STATIC_EVIDENCE_RECORDED == "PASS"
     assert module.BINARY_MAP_REPRODUCIBILITY == "PENDING"
     assert module.GET_NETWORK_INFO_LIVE_VERIFIED == "PASS"
-    assert module.CHANGE_NETWORK_INFO_LIVE_VERIFIED == "PENDING"
+    assert module.CHANGE_NETWORK_INFO_LIVE_VERIFIED == "PASS"
     assert len({
         module.MEMBER_STATIC_EVIDENCE_RECORDED,
         module.BINARY_MAP_REPRODUCIBILITY,
@@ -196,105 +170,27 @@ def test_the_record_keeps_the_three_facts_apart():
         assert heading in body, heading
 
 
-def test_the_record_says_the_manifest_may_act_on_recorded_evidence():
-    """Acting on a reading and over-stating it are different things.
+def test_the_record_states_the_policy_as_a_policy_and_not_as_evidence():
+    """A deployment decision and a measurement are different kinds of claim.
 
-    The decision rests on evidence nobody here can reproduce, defensible because
-    the next LIVE run selects the tokens it names and tests them; the record
-    must say so, or the declaration reads as evidence being promoted.
+    The declared set is `FULL_TRUSTED_MODULE` — a decision about how this module
+    is deployed — while the call descriptors are readings of a binary. A record
+    that stated the eleven tokens as *requirements* would present a decision as
+    evidence, and one that let "full privileges" read as "all capabilities" would
+    turn an eleven-token manifest into eleven new powers. Packet Tracer's
+    privileges bound what the process may *call*; the V6 whitelist bounds what
+    Muejeje *exposes*.
     """
     prose = record_prose()
 
-    assert "the next official LIVE run selects exactly those two tokens" in prose
-    assert "tests the member requirement independently rather than inheriting it" in prose
-
-
-
-# ---------------------------------------------------------------------------
-# The IpcAPI symbols, re-derived from Cisco's own bytes.
-# ---------------------------------------------------------------------------
-
-@requires_installed_reference
-@pytest.mark.parametrize("symbol", sorted(API_SYMBOL_EVIDENCE))
-def test_each_api_symbol_is_named_by_the_installed_reference(symbol: str):
-    """Read out of Cisco's bytes, not out of our memory of them.
-
-    The page is hashed as well as read: a future installed build that words
-    this differently fails here, and the constant is re-derived against the new
-    reference instead of being assumed to still hold (`AGENTS.md` rule 6).
-    """
-    page_name, digest = API_SYMBOL_EVIDENCE[symbol]
-    page = INSTALLED_HELP / API_REFERENCE / page_name
-
-    assert hashlib.sha256(page.read_bytes()).hexdigest() == digest, page_name
-    assert symbol in page.read_text(encoding="utf-8", errors="replace")
-
-
-@requires_installed_reference
-def test_the_installed_reference_names_no_api_symbol_this_repository_missed():
-    """The other direction: a symbol we did not record is one we cannot refuse.
-
-    Sweeping the whole reference is what keeps the set a measurement. If a
-    future build generates more of the `.pki` declarations into HTML, this
-    fails and the set grows from evidence rather than from a guess.
-    """
-    pattern = re.compile(r"Priv[A-Z][A-Za-z]*")
-    reference = INSTALLED_HELP / API_REFERENCE
-    named: set[str] = set()
-    for page in reference.glob("*.html"):
-        named |= set(pattern.findall(page.read_text(encoding="utf-8", errors="replace")))
-
-    assert named == set(API_SYMBOL_EVIDENCE), (
-        "the installed reference names IpcAPI symbols this repository has not "
-        f"recorded: {sorted(named - set(API_SYMBOL_EVIDENCE))}"
+    assert "## Fact 4" in record_body(), "the policy is its own fact"
+    assert "FULL_TRUSTED_MODULE" in prose
+    assert (
+        "trusted local Script Module with the full Packet Tracer privilege set"
+        in prose
     )
-
-
-# The serialized tokens that are *discriminating* in a generated C++ reference:
-# the compound ones. The single-word tokens are ordinary identifiers there and
-# their presence proves nothing — `IPC` is the name of a documented class,
-# `FILE` a C type, and `MULTIUSER` and `APPLICATION` appear inside unrelated
-# enums such as `MULTIUSERITEM`. Sweeping for those would report a mapping on
-# every page that mentions the IPC class, which is not a measurement.
-DISCRIMINATING_TOKENS = tuple(
-    token for token in (
-        "GET_NETWORK_INFO", "CHANGE_NETWORK_INFO", "SIMULATION_MODE",
-        "MISC_GUI", "CHANGE_PREFERENCES", "CHANGE_GUI", "ACTIVITY_WIZARD",
-    )
-)
-
-
-def test_the_discriminating_tokens_are_the_compound_ones():
-    """The exclusion is a rule, not a list someone trimmed until it passed."""
-    module = privileges()
-    assert set(DISCRIMINATING_TOKENS) == {
-        token for token in module.SERIALIZED_BY_INDEX if "_" in token
-    }
-
-
-@requires_installed_reference
-def test_the_installed_reference_maps_no_symbol_onto_a_serialized_token():
-    """The mapping the validator refuses to assume, checked rather than asserted.
-
-    If a future build ever prints a serialized token in the API reference, that
-    is the first evidence a mapping between the two namespaces exists — and it
-    must be read and recorded, not discovered by a module being denied on a
-    target.
-    """
-    reference = INSTALLED_HELP / API_REFERENCE
-    word = {
-        token: re.compile(rf"(?<![A-Za-z0-9_]){re.escape(token)}(?![A-Za-z0-9_])")
-        for token in DISCRIMINATING_TOKENS
-    }
-    found = [
-        f"{page.name}: {token}"
-        for page in reference.glob("*.html")
-        for body in [page.read_text(encoding="utf-8", errors="replace")]
-        for token, pattern in word.items()
-        if pattern.search(body)
-    ]
-
-    assert not found, (
-        "the installed reference now names serialized privilege tokens; record "
-        f"what it says before the validator assumes anything: {found}"
-    )
+    assert "Runtime V6 remains the capability/security boundary" in prose
+    assert "No privilege on this page is recorded as required" in prose
+    assert "full Packet Tracer privileges is not all Muejeje capabilities" in prose
+    assert "decides which IPC calls the Script Module process may make" in prose
+    assert "decides which operations Muejeje exposes" in prose

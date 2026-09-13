@@ -91,31 +91,47 @@ FEATURE_EVIDENCE = {
 # `descriptors[].factory_index` is frozen for the reason it was added: it is a
 # reading's *reusable input*, and relay closure turns on it being reported
 # rather than derived (`test_relay_closure`).
+# `unavailable_member` and `unavailable_argument` are frozen for the reason they
+# were added: an unavailable reading that cannot say which `Interface.member` it
+# stopped at leaves a target run unable to locate what it observed
+# (`test_platform_stage`).
 REQUIRED_RESULT_FIELDS = {
     "network.device_identity": {
-        "resolution", "unavailable_reason", "workspace_index", "available_count",
-        "device_present", "name", "model", "device_type",
+        "resolution", "unavailable_reason",
+        "unavailable_member", "unavailable_argument",
+        "workspace_index", "available_count", "device_present",
+        "name", "model", "device_type",
     },
     "network.device_inventory": {
-        "resolution", "unavailable_reason", "available_count", "workspace_offset",
+        "resolution", "unavailable_reason",
+        "unavailable_member", "unavailable_argument",
+        "available_count", "workspace_offset",
         "limit", "devices", "window_truncated",
     },
     "network.device_ports": {
-        "resolution", "unavailable_reason", "workspace_index", "available_count",
-        "device_present", "name", "model", "port_offset", "limit", "port_count",
+        "resolution", "unavailable_reason",
+        "unavailable_member", "unavailable_argument",
+        "workspace_index", "available_count", "device_present",
+        "name", "model", "port_offset", "limit", "port_count",
         "ports", "window_truncated",
     },
     "platform.device_descriptors": {
-        "resolution", "unavailable_reason", "available_count", "factory_offset",
+        "resolution", "unavailable_reason",
+        "unavailable_member", "unavailable_argument",
+        "available_count", "factory_offset",
         "limit", "descriptors", "window_truncated",
     },
     "platform.module_descriptors": {
-        "resolution", "unavailable_reason", "factory_index", "available_count",
+        "resolution", "unavailable_reason",
+        "unavailable_member", "unavailable_argument",
+        "factory_index", "available_count",
         "descriptor_present", "model", "device_type", "root_present", "nodes",
         "nodes_truncated", "depth_truncated",
     },
     "platform.module_type_support": {
-        "resolution", "unavailable_reason", "factory_index", "module_type",
+        "resolution", "unavailable_reason",
+        "unavailable_member", "unavailable_argument",
+        "factory_index", "module_type",
         "available_count", "descriptor_present", "model", "device_type",
         "module_type_supported",
     },

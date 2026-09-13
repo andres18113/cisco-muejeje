@@ -55,7 +55,7 @@ here: the manifest is the source, this table is the reading of it.
 | --- | --- |
 | Module ID | `io.github.andres18113.muejeje.runtime` |
 | Startup | `On Startup` |
-| Privileges | `GET_NETWORK_INFO` and `CHANGE_NETWORK_INFO`, and nothing else |
+| Privileges | **every privilege the module offers, all eleven, and no box left clear** (`PRIVILEGE_POLICY = FULL_TRUSTED_MODULE`) |
 | Signing | none (`TODO-SIGNING` is open; an unsigned module is what this recipe produces) |
 | Custom Interfaces | `muejeje_pts/interface/index.html` |
 | Script Engine files | every file below, all from `muejeje_pts/script-engine/`, and listed by Packet Tracer **in this order** |
@@ -116,35 +116,51 @@ the GUI.
 1. Open Packet Tracer `9.0.1.0858`.
 2. **Extensions → Scripting → New PT Script Module**. The editor opens with six
    parts: Info, General, Script Engine, Custom Interfaces, Data Store, Debug.
-3. **General**: set the Module ID, set Startup to `On Startup`, and select
-   **`GET_NETWORK_INFO` and `CHANGE_NETWORK_INFO`, and no other privilege**.
+3. **General**: set the Module ID, set Startup to `On Startup`, and **select
+   every privilege the dialog offers — all eleven, leaving no box clear**.
    *"The security privileges indicate which IPC calls this Script Module can
    make. Calls to unselected privileges will be denied"*.
 
-   **Then read the selection back and record it**, before importing anything.
-   Every other privilege must be unselected. If the module shows any third
-   privilege selected, or either of these two missing, stop: a module carrying a
-   different set is a different recipe, and nothing it answered would be evidence
-   about this one.
+   The dialog shows UI labels, and the manifest stores serialized tokens. They
+   are two namespaces and this is the only place they meet, so the mapping is
+   written out rather than left to be matched by eye:
 
-   **This is a deliberate, and consequential, choice.** The `runtime.*`
-   operations make no IPC call, so nothing selected here changes what they do.
-   The `platform.*` and `network.*` ones do. The two root calls —
-   `IPC.hardwareFactory()` and `IPC.network()` — require privilege index 1,
-   which serializes as `GET_NETWORK_INFO`; the `718db50` run confirmed both
-   roots answer with it. Two read members beneath them —
-   `DeviceFactory.getAvailableDeviceCount()` and `Device.getName()` — require
-   index 2, which serializes as `CHANGE_NETWORK_INFO`, read from the pinned
-   `PacketTracer.exe` by Ghidra. That evidence, the whole privilege map and what
-   it does *not* establish — in particular that `CHANGE_NETWORK_INFO` is a call
-   requirement and not a mutation claim — are recorded in
+   | Label in the dialog | Serialized token |
+   | --- | --- |
+   | Application | `APPLICATION` |
+   | Activity | `ACTIVITY_WIZARD` |
+   | File Operations | `FILE` |
+   | Change User Interface | `CHANGE_GUI` |
+   | Multiuser | `MULTIUSER` |
+   | IPC | `IPC` |
+   | Get Network Info | `GET_NETWORK_INFO` |
+   | Change Network Info | `CHANGE_NETWORK_INFO` |
+   | Simulation | `SIMULATION_MODE` |
+   | User Preferences | `CHANGE_PREFERENCES` |
+   | Miscellaneous UI | `MISC_GUI` |
+
+   The labels are read off the dialog and recorded as what the operator saw; the
+   tokens are what the manifest declares. Nothing here claims the two lists are
+   a measured mapping — only that eleven boxes are to be selected, and that
+   eleven tokens are declared.
+
+   **Then read the selection back and record it**, before importing anything.
+   Every privilege must be selected. If the module shows any privilege clear,
+   stop: a module carrying a different set is a different recipe, and nothing it
+   answered would be evidence about this one.
+
+   **This is a deliberate, and consequential, choice: `FULL_TRUSTED_MODULE`.**
+   Muejeje is a private local tool and is packaged as a trusted Script Module, so
+   the selection is the whole vocabulary rather than a minimum. Packet Tracer's
+   privileges decide which IPC calls the module's process may **make**; they
+   decide nothing about what Muejeje **exposes**, which is the V6 whitelist —
+   eight operations, every one read-only. **Full Packet Tracer privileges is not
+   all Muejeje capabilities.** The policy, the call evidence it is *not* derived
+   from, and what it explicitly does not authorise are in
    [the privilege map](muejeje-pts-privilege-map.md).
 
-   **Least privilege is the rule, not the starting point.** Nothing else is
-   selected, because no other call this module makes is evidenced to require
-   anything else — and a privilege is a build option, so a different set is a
-   different recipe id identifying a different artifact.
-   **Never change the privileges during a run.**
+   A privilege is a build option, so a different set is a different recipe id
+   identifying a different artifact. **Never change the privileges during a run.**
 4. **Script Engine**: import every engine file above, under the name it has in
    the tree. Import; do not paste. Pasted source loses its newlines in the
    Builder Code Editor, and these files are ordinary multi-line JavaScript with

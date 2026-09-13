@@ -34,7 +34,9 @@ from tests.muejeje.support import SCRIPT_ENGINE
 OPERATION = "platform.module_type_support"
 
 RESULT_FIELDS = {
-    "resolution", "unavailable_reason", "factory_index", "module_type",
+    "resolution", "unavailable_reason",
+    "unavailable_member", "unavailable_argument",
+    "factory_index", "module_type",
     "available_count", "descriptor_present", "model", "device_type",
     "module_type_supported",
 }

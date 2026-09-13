@@ -60,7 +60,9 @@ def _module_descriptor_js() -> list[str]:
         "      log('ModuleDescriptor.isHotSwappable'); return node.hot_swappable;",
         "    },",
         "    getSlotCount: function () {",
-        "      log('ModuleDescriptor.getSlotCount'); return node.slot_types.length;",
+        "      log('ModuleDescriptor.getSlotCount');",
+        "      return node.slot_count === undefined",
+        "        ? node.slot_types.length : node.slot_count;",
         "    },",
         "    getSlotTypeAt: function (index) {",
         "      log('ModuleDescriptor.getSlotTypeAt'); return node.slot_types[index];",
@@ -268,7 +270,9 @@ def platform_stub(
     `root`: a chassis-module tree of
     `{model, module_type, hot_swappable, slot_types, modules}` nodes, where a
     `null` entry in `modules` makes `getModuleAt` answer nothing at that index,
-    and `module_count` overrides what `getModuleCount()` answers. `count`
+    and `module_count` and `slot_count` override what `getModuleCount()` and
+    `getSlotCount()` answer — which is how each enumeration is driven past what
+    its own list holds, and how an unusable count is delivered. `count`
     overrides what `getAvailableDeviceCount()` answers, which is how an
     unusable answer is delivered; `fail` makes the first factory call throw,
     which is how a refused call is delivered. `devices` is the workspace

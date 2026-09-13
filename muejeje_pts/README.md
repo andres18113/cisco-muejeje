@@ -198,23 +198,37 @@ exist at all — and the gates forbid the mirror rather than the vocabulary: no
 Cisco enum identifier in any packaged source, and no numeric literal in an
 adapter but its own declared bounds.
 
-**The module requests exactly two privileges** (`privileges:
-["CHANGE_NETWORK_INFO", "GET_NETWORK_INFO"]`). Index 1, `GET_NETWORK_INFO`, is
-required for both `IPC.hardwareFactory()` and `IPC.network()` — the two calls the
-whole read-only surface roots on. Index 2, `CHANGE_NETWORK_INFO`, is required for
-two **read** members, `DeviceFactory.getAvailableDeviceCount()` and
-`Device.getName()`, read from the pinned `PacketTracer.exe` by Ghidra. The token
-reads like a write privilege and is here for the opposite reason: the target
-demands it for two reads. It broadens what Packet Tracer would let the process
-*call*, not what this module exposes — every operation still reads. Nothing else
-is requested: a name nobody can cite for a call this module makes is refused at
-audit time (`MJ-032`).
+**The module requests every privilege Packet Tracer offers a Script Module** —
+all eleven serialized tokens, under `PRIVILEGE_POLICY = FULL_TRUSTED_MODULE`.
+Muejeje is a private, local tool run by its owner, packaged as a **trusted Script
+Module**, so the declared set is the pinned binary's whole vocabulary minus
+`none` — derived from it, never typed out. It is a deployment decision, and **no
+token is declared as required**. What the audit still refuses is a name outside
+that vocabulary: an IpcAPI symbol such as `PrivGetNetwork`, the non-privilege
+`none`, or an invented token (`MJ-032`).
+
+> Muejeje runs as a
+> trusted local Script Module with the full Packet Tracer privilege set.
+> Runtime V6 remains the capability/security boundary.
+
+**Full Packet Tracer privileges is not all Muejeje capabilities.** Packet
+Tracer's privileges decide which IPC calls this module's *process* may make. What
+Muejeje *exposes* is the V6 whitelist — eight operations, every one read-only,
+over a 27-entry `Interface.member` allowlist — and the full-trust change moved
+neither (`MJ-031`).
+
+Which privilege each *call* requires is a separate fact, and it still holds.
+Index 1, `GET_NETWORK_INFO`, is required for both `IPC.hardwareFactory()` and
+`IPC.network()` — the two calls the whole read-only surface roots on. Index 2,
+`CHANGE_NETWORK_INFO`, is required for two **read** members,
+`DeviceFactory.getAvailableDeviceCount()` and `Device.getName()`, read from the
+pinned `PacketTracer.exe` by Ghidra; the token reads like a write privilege and
+is evidenced for the opposite reason.
 
 The root map was **supplied from outside this repository** and the member
 requirements are a **Ghidra static disassembly**; nothing here re-derives
-either, so they are recorded evidence and not reproducible evidence.
-`GET_NETWORK_INFO` was reached live by the `718db50` run; `CHANGE_NETWORK_INFO`
-has not been carried by a run yet:
+either, so they are recorded evidence and not reproducible evidence. Both have
+since been reached live:
 
 ```text
 GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS
@@ -224,10 +238,10 @@ GET_NETWORK_INFO_LIVE_VERIFIED            = PASS
 
 ```text
 CHANGE_NETWORK_INFO_MEMBER_EVIDENCE_RECORDED = PASS
-CHANGE_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+CHANGE_NETWORK_INFO_LIVE_VERIFIED            = PASS
 ```
 
-**What a real Packet Tracer did is recorded, and not generalised.** Two governed
+**What a real Packet Tracer did is recorded, and not generalised.** Three
 artifacts have run on `9.0.1.0858`. The `d37ba37` artifact, carrying
 `privileges: []`, had its kernel answer — identify, capabilities, every refusal
 class, and a stop and a start — while every `platform.*` and `network.*` reading
@@ -235,9 +249,20 @@ came back `PLATFORM_CALL_FAILED`, Packet Tracer printing that the module lacked
 the privilege for the root call. The `718db50` artifact, carrying
 `GET_NETWORK_INFO`, reached both roots and was then denied the two members
 `getAvailableDeviceCount` and `getName` — the denial the index-2 Ghidra evidence
-explains. So the roots are target-verified; whether `CHANGE_NETWORK_INFO` makes
-those members answer is not, and those capabilities' target state stays pending,
-not proven.
+explains. The `6233d86` artifact carried both tokens and both members answered:
+`platform.device_descriptors`, `platform.module_type_support` and
+`network.device_inventory` were `OBSERVED`, while `platform.module_descriptors`
+came back `PLATFORM_ANSWER_UNUSABLE` with no privilege diagnostic beside it. That
+run's workspace fixture was corrected during execution, so it is **target
+evidence and not a canonical qualification**, and those capabilities' target
+state stays pending rather than proven.
+
+**An unavailable reading now names where it stopped.** Beside
+`unavailable_reason`, every platform and workspace reading reports
+`unavailable_member` — the `Interface.member` the reading stopped at — and
+`unavailable_argument`, the position or value that call was made with. It names a
+place and never a cause: the reason stays what happened, and a privilege denial
+is still only what Packet Tracer printed beside the call (`MJ-022`, `MJ-031`).
 
 ## Relationship to `EXTENSION/`
 

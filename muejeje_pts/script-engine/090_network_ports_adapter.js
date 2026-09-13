@@ -52,11 +52,15 @@
 /* One result shape for every outcome, so a consumer parses one thing whether
  * the platform answered or not. It starts with every fact empty: a field is
  * filled in only once it was read, in this reading, so nothing this adapter
- * never obtained can be left looking like an answer. */
+ * never obtained can be left looking like an answer. The stage says which
+ * `Interface.member` an unavailable reading stopped at; the reason stays the
+ * only thing that says what happened there. */
 function muejejeAdapterPortsReading(resolution, reason, workspaceIndex, window) {
     return {
         resolution: resolution,
         unavailable_reason: reason,
+        unavailable_member: muejejeReadingStageMember(reason),
+        unavailable_argument: muejejeReadingStageArgument(reason),
         workspace_index: workspaceIndex,
         available_count: null,
         device_present: false,

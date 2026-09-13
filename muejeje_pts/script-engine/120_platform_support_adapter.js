@@ -26,11 +26,14 @@
 
 /* One result shape for every outcome, so a consumer parses one thing whether
  * the platform answered or not. A field is filled in only once something was
- * actually read. */
+ * actually read. The stage says which `Interface.member` an unavailable reading
+ * stopped at; the reason stays the only thing that says what happened there. */
 function muejejeAdapterSupportReading(resolution, reason, factoryIndex, type) {
     return {
         resolution: resolution,
         unavailable_reason: reason,
+        unavailable_member: muejejeReadingStageMember(reason),
+        unavailable_argument: muejejeReadingStageArgument(reason),
         factory_index: factoryIndex,
         module_type: type,
         available_count: null,

@@ -50,19 +50,26 @@ path that runs a caller's JavaScript.</p>
 </ul>
 
 <h2>Privileges</h2>
-<p>The module requests two: <code>GET_NETWORK_INFO</code> and
-<code>CHANGE_NETWORK_INFO</code>. Cisco's security privileges decide which IPC
-calls a Script Module may make. A recorded reading of the pinned Packet Tracer
-binary says the two root calls the whole read-only surface goes through require
-the first, and two read members beneath them — a device count and a device
-name — require the second. The second token reads like a write privilege and is
-requested for the opposite reason: the target demands it for those reads. It
-widens what Packet Tracer would let this module call, never what the module
-does — every operation reads, and nothing here changes anything. Nothing else
-is requested, because no other call this module makes is evidenced to need
-anything else. Whether Packet Tracer then lets a member call through is
-unmeasured, and a reading it declines still comes back marked unavailable, with
-its reason, rather than as an answer about what Packet Tracer offers.</p>
+<p>The module requests all of them — every privilege Packet Tracer offers a
+Script Module. Muejeje is a private, local tool run by its owner, packaged as a
+trusted module, so it asks for the whole set rather than a minimum. That is a
+deployment decision, and no privilege here is claimed to be required.</p>
+
+<p><strong>Full Packet Tracer privileges is not all Muejeje capabilities.</strong>
+Cisco's security privileges decide which IPC calls this module's process may
+make. What the module <em>offers</em> is a fixed list of eight operations, and
+every one of them reads: nothing here creates, changes, powers, moves or saves
+anything, whatever is selected. A recorded reading of the pinned Packet Tracer
+binary says which privilege each known call needs — the two root calls the whole
+read-only surface goes through need <code>GET_NETWORK_INFO</code>, and two read
+members beneath them, a device count and a device name, need
+<code>CHANGE_NETWORK_INFO</code> — and that is evidence about those calls, not a
+requirement for the rest.</p>
+
+<p>Whether Packet Tracer then lets a call through is its own answer. A reading it
+declines comes back marked unavailable, with its reason and with the interface
+member the reading stopped at, rather than as an answer about what Packet Tracer
+offers.</p>
 
 <p>Module state lives in the script engine as
 <code>muejejeLifecycleState()</code>, and the same facts are reported through

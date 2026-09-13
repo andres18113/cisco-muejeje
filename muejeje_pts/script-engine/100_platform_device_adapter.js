@@ -19,11 +19,15 @@
  */
 
 /* One result shape for every outcome, so a consumer parses one thing whether
- * the platform answered or not. */
+ * the platform answered or not. The stage says which `Interface.member` the
+ * reading stopped at; the reason stays the only thing that says what happened
+ * there. */
 function muejejeAdapterUnavailable(reason, offset, limit) {
     return {
         resolution: MUEJEJE_PLATFORM_UNAVAILABLE,
         unavailable_reason: reason,
+        unavailable_member: muejejeReadingStageMember(reason),
+        unavailable_argument: muejejeReadingStageArgument(reason),
         available_count: null,
         factory_offset: offset,
         limit: limit,
@@ -102,6 +106,8 @@ function muejejeAdapterRead(platform, window) {
     return {
         resolution: MUEJEJE_PLATFORM_OBSERVED,
         unavailable_reason: null,
+        unavailable_member: null,
+        unavailable_argument: null,
         available_count: count,
         factory_offset: window.offset,
         limit: window.limit,

@@ -38,7 +38,9 @@ from tests.muejeje.support import SCRIPT_ENGINE
 OPERATION = "platform.module_descriptors"
 
 RESULT_FIELDS = {
-    "resolution", "unavailable_reason", "factory_index", "available_count",
+    "resolution", "unavailable_reason",
+    "unavailable_member", "unavailable_argument",
+    "factory_index", "available_count",
     "descriptor_present", "model", "device_type", "root_present", "nodes",
     "nodes_truncated", "depth_truncated",
 }

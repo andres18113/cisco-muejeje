@@ -35,7 +35,9 @@ from tests.muejeje.support import SCRIPT_ENGINE
 OPERATION = "network.device_inventory"
 
 RESULT_FIELDS = {
-    "resolution", "unavailable_reason", "available_count", "workspace_offset",
+    "resolution", "unavailable_reason",
+    "unavailable_member", "unavailable_argument",
+    "available_count", "workspace_offset",
     "limit",
     "devices", "window_truncated",
 }

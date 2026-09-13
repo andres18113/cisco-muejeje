@@ -43,7 +43,9 @@ from tests.muejeje.support import SCRIPT_ENGINE
 OPERATION = "network.device_identity"
 
 RESULT_FIELDS = {
-    "resolution", "unavailable_reason", "workspace_index", "available_count",
+    "resolution", "unavailable_reason",
+    "unavailable_member", "unavailable_argument",
+    "workspace_index", "available_count",
     "device_present", "name", "model", "device_type",
 }
 # Every identity fact, so a test can assert the whole set is absent at once

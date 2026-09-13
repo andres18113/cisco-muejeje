@@ -1,10 +1,20 @@
-# Muejeje — the minimum-privilege LIVE run
+# Muejeje — the full-trust LIVE run
 
 The declaration for the next official manual run. It changes exactly one thing
-against the artifact already qualified — it adds the second evidenced privilege,
-`CHANGE_NETWORK_INFO`, to the `GET_NETWORK_INFO` the last run carried — and it
-says in advance what each outcome would establish, so the verdict is decided
-before the run rather than argued after it (`MJ-011`).
+about what is packaged — the privilege selection becomes the whole vocabulary,
+`PRIVILEGE_POLICY = FULL_TRUSTED_MODULE` — and it says in advance what each
+outcome would establish, so the verdict is decided before the run rather than
+argued after it (`MJ-011`).
+
+**Its investigative target is `platform.module_descriptors`.** The `6233d86`
+run reached the factory: `platform.device_descriptors` and
+`platform.module_type_support` both answered `OBSERVED` at `factory_index` 0,
+and `network.device_inventory` named the workspace. `platform.module_descriptors`
+at the same index came back `UNAVAILABLE` with `PLATFORM_ANSWER_UNUSABLE` — and
+**with no privilege diagnostic printed beside it**, which on this build is what
+a denial prints. So it is not a privilege result, it was not treated as one, and
+this run does not test a wider selection against it. What it tests is the
+`Interface.member` the reading now names.
 
 **The procedure is not restated here.** It is
 [the packaging recipe](muejeje-pts-packaging-recipe.md), followed from step 1.
@@ -18,7 +28,7 @@ its results are read under.
 | source | `718db5054261d95a2dd8b86247dc6b38ae426c7b` | the candidate checked out, read back from `report.source` |
 | recipe id | `1d836e478ff3caf5d7a3cc2fa3823005943d6a07c637820f1a23d6ff274a37a7` | read back from `report.build_recipe_id` |
 | artifact | `11073b67603fe795657f4c38aee1039063a6e87c299e618bc63ffafdd17857a8`, 48698 bytes | measured after saving |
-| privileges | `["GET_NETWORK_INFO"]` | **`GET_NETWORK_INFO` and `CHANGE_NETWORK_INFO`, and nothing else** |
+| privileges | `["GET_NETWORK_INFO"]` | **every privilege the module offers, all eleven, and no box left clear** |
 | workspace | the two-device fixture below | **the same two-device fixture, required before qualification** |
 | observed relay inputs | read out of the reading that published them | **read out of the reading that published them** |
 | qualification accounting | every operation `EXECUTED` or `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE` | **every operation `EXECUTED` or `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`** |
@@ -35,23 +45,28 @@ inputs, the accounting and the transcript are what make the run capable of
 establishing anything, and none of them changes what is packaged. Everything
 else differs only where the governed source and the recipe force it.
 
-**The declared inputs differ from the `718db50` artifact's in three governed
-places, and saying otherwise would be wrong.** The manifest declares the second
-privilege; the interface page states that the module now requests two; and the
-privilege model — a declared tooling input, and therefore part of the recipe id
-— records the two member-call descriptors that evidence the new token. **No
-executable V6 behaviour changed**: the dispatcher, the operations, the adapters
-and every bound are unchanged, and the added privilege authorises calls Packet
-Tracer would permit rather than adding any the artifact makes. No capability,
-transport, link operation, mutation or M4 work is in this artifact.
+**The declared inputs differ from the `718db50` artifact's in governed places,
+and saying otherwise would be wrong.** The manifest declares all eleven tokens;
+the privilege model — a declared tooling input, and therefore part of the recipe
+id — carries the policy and the vocabulary it is derived from; the interface page
+and the README state what the module now requests; and the engine files carry one
+behavioural addition, below.
 
-**`CHANGE_NETWORK_INFO` is not a mutation claim.** The target requires index 2
-for two *read* members — `DeviceFactory.getAvailableDeviceCount()` and
-`Device.getName()` — and index 2 serializes as that token. It broadens what
-Packet Tracer would let the Script Module process call; the positive V6
-allowlist stays the authority on what Muejeje exposes, and a gate holds that
-this privilege adds no mutating operation and no new admitted `Interface.member`
-([the privilege map](muejeje-pts-privilege-map.md), `MJ-032`).
+**One executable change, and it adds no reach.** An unavailable platform reading
+now also reports the `Interface.member` it stopped at, and the argument that call
+was made with — `unavailable_member` and `unavailable_argument`, beside the
+`unavailable_reason` that was already there. It is recorded at the platform-call
+boundary, published by the adapter that shapes the reading, and it names a place
+and never a cause. No operation, no admitted member, no bound and no failure code
+changed. No capability, transport, link operation, mutation or M4 work is in this
+artifact.
+
+**Full Packet Tracer privileges is not all Muejeje capabilities.** The selection
+decides which IPC calls the Script Module *process* may make. What Muejeje
+*exposes* is the V6 whitelist — the same eight operations, every one read-only —
+and a gate holds both that whitelist and the 27-entry `Interface.member`
+allowlist against a baseline frozen at this change
+([the privilege map](muejeje-pts-privilege-map.md), `MJ-031`, `MJ-032`).
 
 **No `.pts` exists for this candidate yet**, so nothing here says what its bytes
 are. The saved artifact gets its own SHA-256, measured outside it after saving.
@@ -62,9 +77,10 @@ build, never about what came out of it.
 
 The recipe's four preconditions, and two more that belong to this run:
 
-5. **The manifest declares exactly `["CHANGE_NETWORK_INFO", "GET_NETWORK_INFO"]`.**
-   A gate holds this, so a green suite is the check; it is named here because the
-   second token is the one field the run exists to change.
+5. **The manifest declares all eleven serialized privilege tokens**, in the
+   canonical order, under `PRIVILEGE_POLICY = FULL_TRUSTED_MODULE`. A gate holds
+   this, so a green suite is the check; it is named here because the selection
+   is the one packaged field this run changes.
 6. **A disposable workspace holding two devices is open**, prepared by hand
    before the module is started. What it must contain, and the whole of it:
 
@@ -301,13 +317,13 @@ not a status.
 
 ## The first observation, before any statement is entered
 
-**Confirm on the module itself that exactly `GET_NETWORK_INFO` and
-`CHANGE_NETWORK_INFO` are selected**, and record what the General tab shows.
-Every other privilege must be unselected.
+**Confirm on the module itself that every privilege is selected**, and record
+what the General tab shows, label by label. Under `FULL_TRUSTED_MODULE` no box
+is left clear.
 
-If any third privilege is selected, or either of these two is not, **stop and do
-not package**. A module carrying a different set is a different recipe, and
-nothing it answered would be evidence about this one.
+If any privilege is clear, **stop and do not package**. A module carrying a
+different set is a different recipe, and nothing it answered would be evidence
+about this one.
 
 ## Then the complete read-only qualification
 
@@ -420,15 +436,26 @@ interpretation begins.
 
 | Observation | What it establishes |
 | --- | --- |
-| both roots answer | consistent with `718db50`: `GET_NETWORK_INFO_LIVE_VERIFIED` stays `PASS`. The `718db50` run already established the roots, so this run's interest is what happens beneath them |
-| `getAvailableDeviceCount` / `getName` now answer | the two members the index-2 evidence names progressed with `CHANGE_NETWORK_INFO` selected. `CHANGE_NETWORK_INFO_LIVE_VERIFIED = PASS` for the members it reached, and for those members only |
+| both roots answer | consistent with `718db50` and `6233d86`: `GET_NETWORK_INFO_LIVE_VERIFIED` stays `PASS`. The roots are established, so this run's interest is what happens beneath them |
+| `getAvailableDeviceCount` / `getName` answer | consistent with `6233d86`: `CHANGE_NETWORK_INFO_LIVE_VERIFIED` stays `PASS`, for those two members and no others |
+| `platform.module_descriptors` answers `OBSERVED` | the chassis reading works on this target, and every node it reports is characterized individually. **The `6233d86` result is then explained only if the run also says what changed**, because nothing in this candidate was supposed to fix it |
+| `platform.module_descriptors` is `UNAVAILABLE` again | read `unavailable_member` and `unavailable_argument`. **That pair is the result this run exists for.** Record both verbatim, with `unavailable_reason` and whatever Packet Tracer printed. It names the stage; it does not name a cause, and nothing here is entitled to supply one |
+| the stage is `ModuleDescriptor.getModuleAt` | the platform handed over nothing at a position inside the count it reported itself. That is a **candidate semantic**, not a finding: it is what would make an empty slot ordinary, and it is a change to the adapter only once a run has said so (`MJ-015`) |
+| the stage is any other member | the answer that member gave could not be carried back unchanged, or it handed over something the reference documents as an object and was not one. Record the member; the next step is that member's own signature |
 | a descendant answers | a fact about that `Interface.member`, on the fixture it was asked over, characterized individually |
 | a descendant then fails | a fact about that `Interface.member`, characterized individually. It does **not** invalidate the root result |
 | a root answers over an empty workspace | the root result, and **nothing** about any member below it — the run did not reach them |
 | a dependent operation's relay input was not published | `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`: incomplete target evidence for that operation — neither its failure nor a platform finding |
 | a descendant re-reports a different device | `WORKSPACE_ATTRIBUTION_UNSTABLE`: the cross-reading chain is **not** qualified, and each call's own answer still stands in the reading that made it |
-| a member evidenced at index 2 is still denied while both tokens are carried | a **contradiction** between the member Ghidra evidence and the artifact's behaviour: record the exact member and diagnostic, add no privilege |
-| a root is denied | a **contradiction** with the `718db50` root result and the recorded binary evidence |
+| any call is privilege-denied while the full set is carried | a **contradiction**: with every token selected there is no wider selection, so the denial is a fact about the call. Record the exact member and diagnostic |
+| a root is denied | a **contradiction** with the `718db50` and `6233d86` root results and the recorded binary evidence |
+
+**`PLATFORM_ANSWER_UNUSABLE` is not a privilege result, and this run may not
+turn it into one.** A privilege denial on this build prints a diagnostic beside
+the call and reaches the runtime as `PLATFORM_CALL_FAILED`; both earlier runs
+recorded exactly that. An answer that came back and could not be attributed is a
+different observation with a different next step, and the two stay apart
+(`MJ-022`, `MJ-031`).
 
 **Root privilege qualification and descendant API qualification are separate
 verdicts.** If `IPC.network()` answers and a reading below it comes back
@@ -445,9 +472,10 @@ if the members beneath it had.
 
 ## If a root is still denied
 
-**Do not add privileges.** Not the other eleven tokens the binary carries, not
-`IPC` because it reads like the privilege an IPC call would want, and not one
-selected mid-run to see what happens. Instead:
+**Do not add privileges.** There are none left to add — that is the point of
+`FULL_TRUSTED_MODULE`, and it is what makes a denial under it a fact about the
+call rather than about the selection. Nor is one *removed* mid-run to see what
+happens. Instead:
 
 1. record the diagnostic verbatim in the transcript, for each denied call;
 2. finish the rest of the qualification anyway — a denied reading is still a
@@ -495,10 +523,16 @@ LAST_QUALIFIED_ARTIFACT (718db50)
   V6_KERNEL                    = PASS
   GET_NETWORK_INFO_ROOT_ACCESS = PASS
 
+TARGET_EVIDENCE_ONLY (6233d86)
+  FIXTURE_CORRECTED_DURING_RUN = YES
+  CANONICAL_QUALIFICATION      = NO
+  CHANGE_NETWORK_INFO_MEMBERS  = ANSWERED
+
 CURRENT_NEW_CANDIDATE
-  PACKAGED                 = PENDING
-  V6_LIVE                  = PENDING
-  CHANGE_NETWORK_INFO_LIVE = PENDING
+  PACKAGED                     = PENDING
+  V6_LIVE                      = PENDING
+  FULL_TRUSTED_SET_LIVE        = PENDING
+  MODULE_DESCRIPTORS_STAGE     = PENDING
 ```
 
 `M1_CORE_READY = YES` is the milestone state the **previous** governed artifact
@@ -516,7 +550,11 @@ BINARY_MAP_REPRODUCIBILITY                = PENDING
 GET_NETWORK_INFO_LIVE_VERIFIED            = PASS
 
 CHANGE_NETWORK_INFO_MEMBER_EVIDENCE_RECORDED = PASS
-CHANGE_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+CHANGE_NETWORK_INFO_LIVE_VERIFIED            = PASS
+
+PRIVILEGE_POLICY                           = FULL_TRUSTED_MODULE
+FULL_TRUSTED_SET_LIVE_VERIFIED             = PENDING
+MODULE_DESCRIPTORS_STAGE_IDENTIFIED        = PENDING
 
 CURRENT_NEW_CANDIDATE_PACKAGED             = PENDING
 CURRENT_NEW_CANDIDATE_V6_LIVE_VERIFIED     = PENDING

@@ -82,8 +82,17 @@
     "module_id": "io.github.andres18113.muejeje.runtime",
     "startup": "on_startup",
     "privileges": [
+      "ACTIVITY_WIZARD",
+      "APPLICATION",
+      "CHANGE_GUI",
       "CHANGE_NETWORK_INFO",
-      "GET_NETWORK_INFO"
+      "CHANGE_PREFERENCES",
+      "FILE",
+      "GET_NETWORK_INFO",
+      "IPC",
+      "MISC_GUI",
+      "MULTIUSER",
+      "SIMULATION_MODE"
     ]
   },
   "packaging": {

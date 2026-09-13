@@ -17,12 +17,27 @@
  * whether anything is qualified by it — the engine cannot audit the engine, so
  * Python decides what an observation establishes (MJ-011).
  *
- * A reading may be unavailable, and that is an answer. This module declares
- * the one privilege a recorded reading of the pinned binary says this call's
- * root requires — and what a target then does with the call is not something
- * this artifact knows in advance. Whatever comes back is reported as a reading
- * with its reason, and never as a claim about what the platform does or does
- * not have (MJ-032).
+ * A reading may be unavailable, and that is an answer. The module carries
+ * Packet Tracer's full privilege set, so a refusal here is no longer a
+ * statement about the selection — and what a target does with the call is still
+ * not something this artifact knows in advance. Whatever comes back is reported
+ * as a reading with its reason, and never as a claim about what the platform
+ * does or does not have (MJ-032).
+ *
+ * AN UNAVAILABLE READING HERE NAMES WHERE IT STOPPED, and this operation is
+ * why that exists. Eight interface members sit between a `factory_index` and a
+ * finished tree — one to reach the chassis root, seven to read a node of it —
+ * and `PLATFORM_ANSWER_UNUSABLE` is the same word for every one of them: an
+ * answer this runtime cannot carry back unchanged, or a descriptor the platform
+ * would not hand over inside a count it reported itself. The first target run to
+ * reach this operation answered exactly that word and nothing else, so which of
+ * the eight it was could not be read off the result at all.
+ *
+ * So an unavailable reading reports the member it stopped at, and the position
+ * or value that call was made with. Neither is a cause: the reason stays what
+ * happened, a privilege denial is still only what a Packet Tracer diagnostic
+ * beside the call says, and nothing the adapter refuses becomes acceptable
+ * because it is now identified (MJ-015, MJ-022, MJ-031).
  */
 
 /* The argument this operation admits, and the rule its value must satisfy.

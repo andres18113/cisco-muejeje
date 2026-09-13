@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ...shared.utils import resolve_within
-from .privileges import evidence_error
+from .privileges import policy_error
 
 SCHEMA_VERSION = 2
 MAX_MANIFEST_BYTES = 256 * 1024
@@ -193,18 +193,18 @@ def _startup_error(value: Any) -> str | None:
 
 
 def _privileges_error(value: Any) -> str | None:
-    """A bounded list of evidenced serialized privilege tokens, or an empty one.
+    """A bounded list of serialized privilege tokens the policy admits, or none.
 
     The shape rules run first, so a typo is reported as a typo rather than as
-    a missing privilege catalogue. Which names are admissible, and why a given
-    one is not, is `privileges`: only the faulty names are reported back, since
-    a reason listing the valid ones alongside them would read as if all of them
-    were at fault.
+    a missing privilege catalogue. Which names are admissible, under which
+    policy, and why a given one is not, is `privileges`: only the faulty names
+    are reported back, since a reason listing the valid ones alongside them
+    would read as if all of them were at fault.
     """
     reason = _string_list_error(value)
     if reason is not None:
         return reason
-    return evidence_error(value)
+    return policy_error(value)
 
 
 _OPTION_VALIDATORS = {

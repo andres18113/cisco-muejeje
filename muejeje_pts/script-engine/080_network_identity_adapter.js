@@ -50,11 +50,15 @@
 /* One result shape for every outcome, so a consumer parses one thing whether
  * the platform answered or not. It starts with every identity field empty: a
  * field is filled in only once it was actually read, in this reading, so a fact
- * this adapter never obtained cannot be left looking like one. */
+ * this adapter never obtained cannot be left looking like one. The stage says
+ * which `Interface.member` an unavailable reading stopped at; the reason stays
+ * the only thing that says what happened there. */
 function muejejeAdapterIdentityReading(resolution, reason, workspaceIndex) {
     return {
         resolution: resolution,
         unavailable_reason: reason,
+        unavailable_member: muejejeReadingStageMember(reason),
+        unavailable_argument: muejejeReadingStageArgument(reason),
         workspace_index: workspaceIndex,
         available_count: null,
         device_present: false,

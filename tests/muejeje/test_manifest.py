@@ -177,11 +177,10 @@ INVALID_OPTIONS = [
     ("privileges", [""], "non-empty strings"),
     ("privileges", ["GET_NETWORK_INFO", "GET_NETWORK_INFO"], "must not repeat"),
     ("privileges", ["GET_EVERYTHING"], "no evidence"),
-    # A token the binary really carries, that no evidenced call requires.
-    # `CHANGE_NETWORK_INFO` is now evidenced (two read members need index 2), so
-    # the unevidenced example is another real token this module never calls.
-    ("privileges", ["GET_NETWORK_INFO", "SIMULATION_MODE"],
-     "no call this module makes is evidenced to require it"),
+    # Index 0 of the binary map: the target's own name for having no privilege.
+    # `FULL_TRUSTED_MODULE` declares every token except this one, and it is
+    # refused as what it is rather than as a name nobody has evidence for.
+    ("privileges", ["GET_NETWORK_INFO", "none"], "absence of one"),
     # The API namespace, which never substitutes for the serialized one.
     ("privileges", ["PrivGetNetwork"], "not IpcAPI symbols"),
     ("engine_script_order", ["muejeje_pts/script-engine/010_core.js"],
@@ -245,9 +244,9 @@ def test_an_unset_option_is_unresolved_rather_than_invalid(tmp_path: Path):
 def test_an_empty_privilege_set_is_a_decision_not_an_omission(tmp_path: Path):
     """`privileges: []` is resolved: a module may ask for nothing (MJ-025).
 
-    This repository no longer declares it — the minimum evidenced set is
-    `["CHANGE_NETWORK_INFO", "GET_NETWORK_INFO"]` — but an empty list stays a
-    *resolved* value rather
+    This repository no longer declares it — the policy is `FULL_TRUSTED_MODULE`
+    and the declared set is all eleven serialized tokens — but an empty list
+    stays a *resolved* value rather
     than an unset one, because "asks for nothing" and "nobody has decided" are
     different facts and the audit must keep reporting them differently.
     """

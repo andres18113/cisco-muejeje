@@ -19,8 +19,10 @@ document to them.
 How the run must *obtain and preserve* its evidence is split the same way, one
 module per concern: `test_live_evidence` for where its relay inputs come from
 and what an unstable attribution invalidates, `test_live_transcript` for what
-survives the run, and `test_live_accounting` for the status every operation
-receives. Declaring a run and capturing it are different work (MJ-018, MJ-020).
+survives the run, `test_live_accounting` for the status every operation
+receives, and `test_live_outcomes` for what each result may and may not be read
+as. Declaring a run, capturing it and interpreting it are different work
+(MJ-018, MJ-020).
 """
 
 from __future__ import annotations
@@ -40,7 +42,11 @@ BINARY_MAP_REPRODUCIBILITY                = PENDING
 GET_NETWORK_INFO_LIVE_VERIFIED            = PASS
 
 CHANGE_NETWORK_INFO_MEMBER_EVIDENCE_RECORDED = PASS
-CHANGE_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+CHANGE_NETWORK_INFO_LIVE_VERIFIED            = PASS
+
+PRIVILEGE_POLICY                           = FULL_TRUSTED_MODULE
+FULL_TRUSTED_SET_LIVE_VERIFIED             = PENDING
+MODULE_DESCRIPTORS_STAGE_IDENTIFIED        = PENDING
 
 CURRENT_NEW_CANDIDATE_PACKAGED             = PENDING
 CURRENT_NEW_CANDIDATE_V6_LIVE_VERIFIED     = PENDING
@@ -52,17 +58,29 @@ M2_CORE_READY            = NO
 M3_CORE_READY            = NO
 ZERO_CHANGE_CUTOVER      = NOT_ACHIEVED"""
 
-# The two artifacts the run has to keep apart: the one whose verdicts exist,
-# and the one being built. Written as the block the runbook must carry.
+# The three artifacts the run has to keep apart: the one whose verdicts exist,
+# the one that produced target evidence without satisfying the procedure, and
+# the one being built. Written as the block the runbook must carry.
+#
+# `6233d86` is its own row on purpose: its workspace fixture was corrected during
+# execution, so it is not a canonical qualification — and it still observed both
+# index-2 members answering, which the next run inherits rather than
+# re-establishes. Folding it into either neighbour would lose one of the two.
 ARTIFACT_SPLIT = """LAST_QUALIFIED_ARTIFACT (718db50)
   PACKAGING                    = PASS
   V6_KERNEL                    = PASS
   GET_NETWORK_INFO_ROOT_ACCESS = PASS
 
+TARGET_EVIDENCE_ONLY (6233d86)
+  FIXTURE_CORRECTED_DURING_RUN = YES
+  CANONICAL_QUALIFICATION      = NO
+  CHANGE_NETWORK_INFO_MEMBERS  = ANSWERED
+
 CURRENT_NEW_CANDIDATE
-  PACKAGED                 = PENDING
-  V6_LIVE                  = PENDING
-  CHANGE_NETWORK_INFO_LIVE = PENDING"""
+  PACKAGED                     = PENDING
+  V6_LIVE                      = PENDING
+  FULL_TRUSTED_SET_LIVE        = PENDING
+  MODULE_DESCRIPTORS_STAGE     = PENDING"""
 
 # The disposable fixture the run is taken over. Two devices, because one that
 # answers is what makes the members below the root actually run; no cable and
@@ -125,23 +143,22 @@ def runbook_flush_left() -> str:
 # ---------------------------------------------------------------------------
 
 def test_the_runbook_declares_the_privilege_set_the_manifest_does():
-    """The one field the run exists to change, read from the manifest.
+    """The one packaged field the run changes, read from the manifest.
 
-    A runbook naming a set the manifest does not declare would have a person
-    package an artifact no recipe id identifies.
+    A set the manifest does not declare packages an artifact no recipe id
+    identifies; under `FULL_TRUSTED_MODULE` a box left *clear* is what stops it.
     """
     body = runbook_body()
+    prose = runbook_prose()
 
-    assert repo_manifest()["build_options"]["privileges"] == [
-        "CHANGE_NETWORK_INFO", "GET_NETWORK_INFO",
-    ]
+    assert len(repo_manifest()["build_options"]["privileges"]) == 11
+    assert "PRIVILEGE_POLICY = FULL_TRUSTED_MODULE" in body
     assert (
-        "**`GET_NETWORK_INFO` and `CHANGE_NETWORK_INFO`, and nothing else**" in body
+        "**every privilege the module offers, all eleven, and no box left "
+        "clear**" in body
     )
-    assert (
-        "Confirm on the module itself that exactly `GET_NETWORK_INFO` and "
-        "`CHANGE_NETWORK_INFO` are selected" in runbook_prose()
-    )
+    assert "Confirm on the module itself that every privilege is selected" in prose
+    assert "If any privilege is clear, **stop and do not package**" in prose
 
 
 def test_the_runbook_drives_the_whole_qualification_not_just_the_roots():
@@ -152,21 +169,6 @@ def test_the_runbook_drives_the_whole_qualification_not_just_the_roots():
         "continue through all the platform and network operations in the same "
         "run" in prose
     )
-
-
-def test_the_runbook_keeps_root_and_descendant_qualification_apart():
-    prose = runbook_prose()
-
-    assert "It does **not** invalidate the root result" in prose
-    assert "record the exact `Interface.member` that was reached" in prose
-
-
-def test_the_runbook_forbids_widening_privilege_on_a_denial():
-    prose = runbook_prose()
-
-    assert "**Do not add privileges.**" in prose
-    assert "**No privilege is changed mid-artifact.**" in prose
-    assert "contradiction" in prose
 
 
 def test_the_runbook_states_the_entry_state_this_repository_actually_holds():

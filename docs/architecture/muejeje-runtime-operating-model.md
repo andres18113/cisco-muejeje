@@ -137,28 +137,37 @@ allowlist is the proof rather than a list of forbidden verbs, which admits
 every name nobody thought of; and a defect inside an adapter is reported as
 `ENGINE_EXCEPTION`, never as a platform reading.
 
-**The module requests exactly two privileges, `GET_NETWORK_INFO` and
-`CHANGE_NETWORK_INFO`.** They are the minimum evidenced set and not a starting
-point. `IPC.hardwareFactory()` and `IPC.network()` — the two calls the whole
-read-only surface roots on — require privilege index 1, `GET_NETWORK_INFO`; two
-**read** members beneath them, `DeviceFactory.getAvailableDeviceCount()` and
-`Device.getName()`, require index 2, `CHANGE_NETWORK_INFO`. Nothing else is
-declared, because no other call this module makes is evidenced to need anything
-(`MJ-032`). The token reads like the privilege a write would want and is here
-for the opposite reason — the target demands it for two reads — and it broadens
-what Packet Tracer would let the process *call*, never what Muejeje exposes,
-which stays read-only.
+**The module requests every privilege Packet Tracer offers a Script Module —
+all eleven serialized tokens — under `PRIVILEGE_POLICY = FULL_TRUSTED_MODULE`.**
+Muejeje is a private, local tool run by its owner and packaged as a trusted
+module, so the selection is the pinned binary's whole vocabulary rather than a
+minimum. **It is a deployment decision, and no token is declared as required.**
+
+**Full Packet Tracer privileges is not all Muejeje capabilities**, and the two
+must never be read as one. Packet Tracer's privileges decide which IPC calls the
+Script Module *process* may make; Muejeje's V6 whitelist decides which operations
+it *exposes* — eight, every one read-only, over a 27-entry `Interface.member`
+allowlist. The full-trust change moved neither, and a gate holds both against a
+baseline frozen at it (`MJ-031`, `MJ-032`).
+
+Which privilege each *call* requires is a separate fact that still holds:
+`IPC.hardwareFactory()` and `IPC.network()` — the two calls the whole read-only
+surface roots on — require index 1, `GET_NETWORK_INFO`; two **read** members
+beneath them, `DeviceFactory.getAvailableDeviceCount()` and `Device.getName()`,
+require index 2, `CHANGE_NETWORK_INFO`. That token reads like the privilege a
+write would want and is evidenced for the opposite reason — the target demands it
+for two reads.
 
 The `d37ba37` run carried `privileges: []` and was denied both roots. The
 `718db50` run carried `GET_NETWORK_INFO` and reached both roots, then Packet
-Tracer denied the two members beneath them — which is the denial the index-2
-Ghidra evidence explains. Whether `CHANGE_NETWORK_INFO` makes those members
-progress is unmeasured until a governed artifact carrying both tokens is run.
-The operation still reports only the reading that comes back —
-`PLATFORM_CALL_FAILED` names no cause — and the diagnostic recorded beside it is
-what attributes one. The artifact contains no HTTP listener, no file mailbox and
-no polling loop, and the Custom Interface is a static page that calls nothing
-and therefore reports no module state.
+Tracer denied the two members beneath them — the denial the index-2 Ghidra
+evidence explains. The `6233d86` run carried both tokens and both members
+answered. An operation still reports only the reading that comes back:
+`PLATFORM_CALL_FAILED` names no cause, the diagnostic recorded beside it is what
+attributes one, and an unavailable reading now also names the `Interface.member`
+it stopped at — a place, never a cause. The artifact contains no HTTP listener,
+no file mailbox and no polling loop, and the Custom Interface is a static page
+that calls nothing and therefore reports no module state.
 
 **What is not built.** The transport, every mutating operation, and every
 reading beyond the hardware factory, the workspace inventory, one device's
