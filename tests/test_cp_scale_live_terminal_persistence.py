@@ -19,7 +19,7 @@ from src.packet_tracer_mcp.application.cp_scale_live.cleanup import CPScaleClean
 from src.packet_tracer_mcp.application.cp_scale_live.completion import (
     CPScaleClosurePlan,
     CPScaleCompletion,
-    CPScaleRouter0Review,
+    CPScaleBoundedTargetReview,
 )
 from src.packet_tracer_mcp.application.cp_scale_live.coordinator import (
     CPScaleLiveCoordinator,
@@ -231,7 +231,9 @@ def _controlled_coordinator(
                 raise OSError(incomplete_error)
 
     completion = CPScaleCompletion(cleanup=CPScaleCleanup(), clock=lambda: FIXED_TIME)
-    completion.review_router0 = lambda *args: CPScaleRouter0Review(None, "")
+    completion.review_bounded_target = (
+        lambda *args: CPScaleBoundedTargetReview(None, "")
+    )
     completion.plan = lambda *args, **kwargs: CPScaleClosurePlan(
         CPScaleFinalDisposition.CLEANUP,
         "ROUTER0_BRANCH_VERIFIED_PRECLEANUP",

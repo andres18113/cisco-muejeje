@@ -160,6 +160,7 @@ class CPScaleCanonicalTarget(str, Enum):
 
     FULL_QUALIFICATION = "full-qualification"
     ROUTER0_BRANCH = CPScaleCanonicalStage.ROUTER0_BRANCH.value
+    ROUTER3_BRANCH = CPScaleCanonicalStage.ROUTER3_BRANCH.value
 
 
 @dataclass(frozen=True)
@@ -172,6 +173,7 @@ class CPScaleCanonicalTargetContract:
     run_remaining_reconciliation: bool
     run_full_qualification: bool
     allow_retention: bool
+    require_cleanup: bool
     precleanup_closure: str
     cleaned_closure: str
 
@@ -331,9 +333,13 @@ def canonical_cp_scale_target_contract(
         stage for stage in CPScaleCanonicalStage
         if stage is not CPScaleCanonicalStage.REMAINING
     )
-    if target is CPScaleCanonicalTarget.ROUTER0_BRANCH:
-        terminal = CPScaleCanonicalStage.ROUTER0_BRANCH
+    if target in (
+        CPScaleCanonicalTarget.ROUTER0_BRANCH,
+        CPScaleCanonicalTarget.ROUTER3_BRANCH,
+    ):
+        terminal = CPScaleCanonicalStage(target.value)
         terminal_index = full_build_stages.index(terminal)
+        closure_prefix = terminal.name
         return CPScaleCanonicalTargetContract(
             target=target,
             build_stages=full_build_stages[:terminal_index + 1],
@@ -341,8 +347,9 @@ def canonical_cp_scale_target_contract(
             run_remaining_reconciliation=False,
             run_full_qualification=False,
             allow_retention=False,
-            precleanup_closure="ROUTER0_BRANCH_VERIFIED_PRECLEANUP",
-            cleaned_closure="ROUTER0_BRANCH_VERIFIED_AND_CLEANED",
+            require_cleanup=True,
+            precleanup_closure=f"{closure_prefix}_VERIFIED_PRECLEANUP",
+            cleaned_closure=f"{closure_prefix}_VERIFIED_AND_CLEANED",
         )
     return CPScaleCanonicalTargetContract(
         target=target,
@@ -351,6 +358,7 @@ def canonical_cp_scale_target_contract(
         run_remaining_reconciliation=True,
         run_full_qualification=True,
         allow_retention=True,
+        require_cleanup=False,
         precleanup_closure="CP_SCALE_GOVERNED_VOICE_VERIFIED_PRECLEANUP",
         cleaned_closure="CP_SCALE_GOVERNED_VOICE_VERIFIED_AND_CLEANED",
     )
@@ -595,12 +603,15 @@ def project_cp_scale_canonical_stage(
         forwarding_checks=dict(_CORE_FORWARDING_CHECKS),
         voice=_compile_stage_voice(composition, topology, configuration, stage),
     )
-    if stage is CPScaleCanonicalStage.ROUTER0_BRANCH:
-        branch_checks = derive_cp_scale_site_forwarding_checks(
+    joining_site_id = {
+        CPScaleCanonicalStage.ROUTER0_BRANCH: MULTILAYER,
+        CPScaleCanonicalStage.ROUTER3_BRANCH: SMALL,
+    }.get(stage)
+    if joining_site_id is not None:
+        branch_checks = derive_cp_scale_branch_forwarding_checks(
             composition,
             projection,
-            source_site_id=LARGE,
-            destination_site_id=MULTILAYER,
+            joining_site_id=joining_site_id,
         )
         projection = replace(
             projection,
@@ -1133,64 +1144,162 @@ def derive_cp_scale_site_forwarding_checks(
     return tuple(checks)
 
 
+def derive_cp_scale_branch_forwarding_checks(
+    composition: EnterpriseReferenceComposition,
+    projection: CPScaleCanonicalStageProjection,
+    *,
+    joining_site_id: str,
+) -> tuple[CPScaleSiteForwardingCheck, ...]:
+    """Derive the new branch's pairs from projected E9-backed E4 flows.
+
+    The stage-to-site association is product policy. Flow identity, direction,
+    representative workload, addressing action, and reverse-path authority all
+    come from the current typed E4/E5/E9 plans.
+    """
+
+    if composition.enterprise is None:
+        raise ValueError(
+            f"Canonical stage {projection.stage.value!r} requires its E4 plan "
+            "to derive branch forwarding."
+        )
+    projected_flow_ids = {
+        item.source_traffic_flow_id
+        for item in projection.control_plane.verification_expectations
+        if item.source_traffic_flow_id and item.forwarding_endpoint is not None
+    }
+    flows = sorted(
+        (
+            item
+            for item in composition.enterprise.traffic_flows
+            if item.id in projected_flow_ids
+            and joining_site_id in (
+                item.source_site_id,
+                item.destination_site_id,
+            )
+        ),
+        key=lambda item: item.id,
+    )
+    if not flows:
+        raise ValueError(
+            f"Canonical stage {projection.stage.value!r} has no projected "
+            f"E4/E9 forwarding flow for joining site {joining_site_id!r}."
+        )
+
+    checks: list[CPScaleSiteForwardingCheck] = []
+    derived_pairs: set[tuple[str, str]] = set()
+    for flow in flows:
+        pair = tuple(sorted((flow.source_site_id, flow.destination_site_id)))
+        if len(set(pair)) != 2:
+            raise ValueError(
+                f"Canonical stage {projection.stage.value!r} forwarding flow "
+                f"{flow.id!r} does not connect two distinct sites."
+            )
+        if pair in derived_pairs:
+            continue
+        derived_pairs.add(pair)
+        checks.extend(derive_cp_scale_site_forwarding_checks(
+            composition,
+            projection,
+            source_site_id=flow.source_site_id,
+            destination_site_id=flow.destination_site_id,
+        ))
+    if len({item.id for item in checks}) != len(checks):
+        raise ValueError(
+            f"Canonical stage {projection.stage.value!r} branch forwarding "
+            "produced duplicate check IDs."
+        )
+    return tuple(checks)
+
+
 def derive_cp_scale_user_forwarding_checks(
     site_checks: tuple[CPScaleSiteForwardingCheck, ...],
 ) -> tuple[CPScaleUserCommunicationCheck, ...]:
-    """Use the exact two selected workloads for opposite PC-origin probes."""
+    """Use each exact selected site pair for opposite PC-origin probes."""
 
     selected = [
         item
         for item in site_checks
         if isinstance(item, CPScaleSelectedSiteForwardingCheck)
     ]
-    if len(selected) != 2 or len({item.destination_site_id for item in selected}) != 2:
+    if len(selected) != len(site_checks) or not selected:
         raise ValueError(
-            "Representative user communication requires two distinct selected sites."
+            "Representative user communication requires selected site checks."
         )
-    by_site = {
-        item.destination_site_id: item.destination_selection for item in selected
-    }
-    policy_identities = {
-        (item.policy_id, item.policy_version) for item in by_site.values()
-    }
-    topology_hashes = {item.source_topology_hash for item in by_site.values()}
-    configuration_hashes = {
-        item.source_configuration_hash for item in by_site.values()
-    }
-    if (
-        len(policy_identities) != 1
-        or len(topology_hashes) != 1
-        or len(configuration_hashes) != 1
-    ):
+    grouped: dict[tuple[str, str], list[CPScaleSelectedSiteForwardingCheck]] = (
+        defaultdict(list)
+    )
+    pair_order: list[tuple[str, str]] = []
+    for item in selected:
+        pair = tuple(sorted((item.source_site_id, item.destination_site_id)))
+        if pair not in grouped:
+            pair_order.append(pair)
+        grouped[pair].append(item)
+
+    checks: list[CPScaleUserCommunicationCheck] = []
+    for pair in pair_order:
+        pair_checks = grouped[pair]
+        directions = {
+            (item.source_site_id, item.destination_site_id)
+            for item in pair_checks
+        }
+        expected_directions = {(pair[0], pair[1]), (pair[1], pair[0])}
+        if len(pair_checks) != 2 or directions != expected_directions:
+            raise ValueError(
+                "Representative user communication requires exactly two "
+                f"opposite selected directions for sites {pair!r}."
+            )
+        by_site = {
+            item.destination_site_id: item.destination_selection
+            for item in pair_checks
+        }
+        policy_identities = {
+            (item.policy_id, item.policy_version) for item in by_site.values()
+        }
+        topology_hashes = {
+            item.source_topology_hash for item in by_site.values()
+        }
+        configuration_hashes = {
+            item.source_configuration_hash for item in by_site.values()
+        }
+        if (
+            len(by_site) != 2
+            or len(policy_identities) != 1
+            or len(topology_hashes) != 1
+            or len(configuration_hashes) != 1
+        ):
+            raise ValueError(
+                "Representative user communication selections do not share "
+                f"one policy and plan provenance for sites {pair!r}."
+            )
+        policy_id, policy_version = next(iter(policy_identities))
+        for item in pair_checks:
+            source_site_id = item.source_site_id
+            destination_site_id = item.destination_site_id
+            source = by_site[source_site_id]
+            destination = by_site[destination_site_id]
+            direction = f"{source_site_id}-pc-to-{destination_site_id}-pc"
+            checks.append(CPScaleUserCommunicationCheck(
+                id=(
+                    f"user-forwarding/{policy_id}/{direction}/"
+                    f"{source.configuration_action_id}/"
+                    f"{destination.configuration_action_id}"
+                ),
+                direction=direction,
+                authority="cp-scale-selected-wired-data-workload-pair",
+                scope="one-selected-wired-data-workload-per-site",
+                source_site_id=source_site_id,
+                destination_site_id=destination_site_id,
+                source_endpoint=source,
+                destination_endpoint=destination,
+                target_policy_id=policy_id,
+                target_policy_version=policy_version,
+                source_topology_hash=next(iter(topology_hashes)),
+                source_configuration_hash=next(iter(configuration_hashes)),
+            ))
+    if len({item.id for item in checks}) != len(checks):
         raise ValueError(
-            "Representative user communication selections do not share one policy and plan provenance."
+            "Representative user communication produced duplicate check IDs."
         )
-    policy_id, policy_version = next(iter(policy_identities))
-    checks = []
-    for source_site_id, destination_site_id in (
-        (LARGE, MULTILAYER),
-        (MULTILAYER, LARGE),
-    ):
-        source = by_site[source_site_id]
-        destination = by_site[destination_site_id]
-        direction = f"{source_site_id}-pc-to-{destination_site_id}-pc"
-        checks.append(CPScaleUserCommunicationCheck(
-            id=(
-                f"user-forwarding/{policy_id}/{direction}/"
-                f"{source.configuration_action_id}/{destination.configuration_action_id}"
-            ),
-            direction=direction,
-            authority="authorized-router0-representative-user-pair",
-            scope="one-selected-wired-data-workload-per-site",
-            source_site_id=source_site_id,
-            destination_site_id=destination_site_id,
-            source_endpoint=source,
-            destination_endpoint=destination,
-            target_policy_id=policy_id,
-            target_policy_version=policy_version,
-            source_topology_hash=next(iter(topology_hashes)),
-            source_configuration_hash=next(iter(configuration_hashes)),
-        ))
     return tuple(checks)
 
 

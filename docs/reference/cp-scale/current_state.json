@@ -1,8 +1,8 @@
 {
   "schema": "cp-scale-current-state-v3",
-  "updated_at": "2026-09-13T17:13:14.6419664Z",
+  "updated_at": "2026-09-13T18:00:31.5299551Z",
   "operational_state": {
-    "authority": "HASH_PINNED_ROUTER0_SUCCESS_INDEX",
+    "authority": "HASH_PINNED_ROUTER0_SUCCESS_INDEX_AND_TYPED_ROUTER3_OFFLINE_PROJECTION",
     "router0": {
       "executed": true,
       "status": "VERIFIED_AND_CLEANED",
@@ -20,13 +20,59 @@
     },
     "router3": {
       "executed": false,
-      "status": "PENDING_OFFLINE_PREPARATION",
+      "status": "ROUTER3_OFFLINE_PREPARED",
       "verification": "NOT_VERIFIED",
       "live_evidence": "UNKNOWN",
       "live_evidence_acquired": false,
-      "live_execution_authorized": false
+      "live_execution_authorized": false,
+      "offline_preparation": {
+        "target": "router3-branch",
+        "build_stages": [
+          "routing-core",
+          "router4-switch10",
+          "floor1",
+          "floor2",
+          "floor3",
+          "router0-branch",
+          "router3-branch"
+        ],
+        "terminal_stage": "router3-branch",
+        "run_remaining_reconciliation": false,
+        "run_full_qualification": false,
+        "allow_retention": false,
+        "require_cleanup": true,
+        "precleanup_closure": "ROUTER3_BRANCH_VERIFIED_PRECLEANUP",
+        "cleaned_closure": "ROUTER3_BRANCH_VERIFIED_AND_CLEANED",
+        "transition": {
+          "previous_stage": "router0-branch",
+          "current_stage": "router3-branch",
+          "new_devices": 24,
+          "new_links": 17,
+          "new_phones": 7,
+          "configuration_mutations": 33,
+          "configuration_retained": 412,
+          "control_plane_mutations": 17,
+          "control_plane_retained": 200,
+          "voice_mutations": 19,
+          "voice_retained": 134,
+          "claim": "MUTATION_SCOPE_DISJOINT",
+          "runtime_replay_claim": "NOT_ACQUIRED"
+        },
+        "forwarding": {
+          "declared_flow_ids": [
+            "flow/multilayer-to-small",
+            "flow/small-to-large"
+          ],
+          "router_to_workload_checks": 4,
+          "representative_pc_checks": 4,
+          "authority_kinds": [
+            "declared-traffic-flow",
+            "reverse-path-of-declared-flow"
+          ]
+        }
+      }
     },
-    "next_active_step": "PREPARE_ROUTER3_OFFLINE_GOVERNED",
+    "next_active_step": "AWAIT_EXPLICIT_ROUTER3_LIVE_AUTHORIZATION",
     "live_execution_authorized": false
   },
   "historical_pre_router0": {

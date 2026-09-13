@@ -7,12 +7,12 @@ from datetime import datetime, timezone
 from .cleanup import CPScaleCleanup
 from .checkpoint import CPScaleCheckpointDecision
 from .run_contracts import CPScaleStageProgress, CPScaleRunReplayAudit, CPScaleTerminalEvent, CPScaleCleanupResult, CPScaleCleanupRealtime
-from ..use_cases.compose_cp_scale_canonical import CPScaleCanonicalTarget, CPScaleCanonicalStage, CPScaleCanonicalTargetContract
+from ..use_cases.compose_cp_scale_canonical import CPScaleCanonicalStage, CPScaleCanonicalTargetContract
 from ..use_cases.qualify_cp_scale_live import CPScaleFinalDisposition, canonical_final_disposition
 
 
 @dataclass(frozen=True)
-class CPScaleRouter0Review:
+class CPScaleBoundedTargetReview:
     replay: CPScaleRunReplayAudit | None
     error: str
 
@@ -26,7 +26,7 @@ class CPScaleClosurePlan:
     scope: str
     checkpoint: str
     final_checkpoint: bool
-    router0: bool
+    bounded_target: bool
     event: CPScaleTerminalEvent
 
 
@@ -41,8 +41,11 @@ class CPScaleCompletion:
         self.cleanup = cleanup
         self.clock = clock
 
-    def review_router0(self, target: CPScaleCanonicalTargetContract,
-                       stages: tuple[CPScaleStageProgress, ...]) -> CPScaleRouter0Review:
+    def review_bounded_target(
+        self,
+        target: CPScaleCanonicalTargetContract,
+        stages: tuple[CPScaleStageProgress, ...],
+    ) -> CPScaleBoundedTargetReview:
         latest = stages[-1].result if stages else None
         forwarding = latest.report.forwarding if latest else None
         checks = latest.report.site_forwarding_checks if latest else ()
@@ -72,8 +75,8 @@ class CPScaleCompletion:
                 )
             )
         )
-        if (target.target is not CPScaleCanonicalTarget.ROUTER0_BRANCH
-            or latest is None or latest.stage is not CPScaleCanonicalStage.ROUTER0_BRANCH
+        if (not target.require_cleanup or target.run_full_qualification
+            or latest is None or latest.stage is not target.terminal_stage
             or latest.outcome != "verified" or forwarding is None or forwarding.site_verified is not True
             or latest.report.workspace_verified is not True or not covered
             or (
@@ -81,7 +84,11 @@ class CPScaleCompletion:
                 and forwarding.user_verified is not True
             )
             or not user_covered):
-            return CPScaleRouter0Review(None, "Router0 terminal closure lacks verified stage, forwarding, or double workspace evidence.")
+            return CPScaleBoundedTargetReview(
+                None,
+                f"Bounded target {target.terminal_stage.value!r} closure lacks "
+                "verified stage, forwarding, or double workspace evidence.",
+            )
         audits = tuple(item.result.replay_audit if item.result else None for item in stages)
         missing = tuple(item.projection.stage.value for item, audit in zip(stages, audits)
             if audit is None or audit.verified is not True or audit.claim != "NO_MUTATION_REPLAY")
@@ -89,25 +96,29 @@ class CPScaleCompletion:
             for surface in audit.surfaces for identifier in surface.replayed_retained_ids}))
         replay = CPScaleRunReplayAudit(tuple(item.projection.stage.value for item in stages), missing, replayed)
         detail = "; replayed retained actions: " + ", ".join(replayed) if replayed else ""
-        error = ("Router0 terminal closure cannot attest NO_MUTATION_REPLAY; stages without a verified runtime audit: "
+        error = (f"Bounded target {target.terminal_stage.value!r} closure cannot attest NO_MUTATION_REPLAY; stages without a verified runtime audit: "
             + ", ".join(missing) + detail if missing else "")
-        return CPScaleRouter0Review(replay, error)
+        return CPScaleBoundedTargetReview(replay, error)
 
     def plan(self, target: CPScaleCanonicalTargetContract, command: CPScaleCheckpointDecision,
              *, retain_authorized: bool) -> CPScaleClosurePlan:
-        router0 = target.target is CPScaleCanonicalTarget.ROUTER0_BRANCH
-        disposition = CPScaleFinalDisposition.CLEANUP if router0 else canonical_final_disposition(command.value, retain_authorized=retain_authorized)
+        bounded = target.require_cleanup and not target.run_full_qualification
+        disposition = CPScaleFinalDisposition.CLEANUP if bounded else canonical_final_disposition(command.value, retain_authorized=retain_authorized)
         event = CPScaleTerminalEvent.RETAINED if disposition is CPScaleFinalDisposition.RETAIN else (
-            CPScaleTerminalEvent.ROUTER0_CLEANED if router0 else CPScaleTerminalEvent.CANONICAL_CLEANED)
+            CPScaleTerminalEvent(target.cleaned_closure)
+            if bounded else CPScaleTerminalEvent.CANONICAL_CLEANED)
         return CPScaleClosurePlan(disposition, target.precleanup_closure, target.cleaned_closure,
-            "CP_SCALE_GOVERNED_VOICE_VERIFIED_RETAINED", CPScaleCanonicalStage.ROUTER0_BRANCH.value if router0 else "",
-            "router0-branch" if router0 else "full-qualification", not router0, router0, event)
+            "CP_SCALE_GOVERNED_VOICE_VERIFIED_RETAINED", target.terminal_stage.value if bounded else "",
+            target.target.value if bounded else "full-qualification", not bounded, bounded, event)
 
     def review_cleanup(self, cleanup: CPScaleCleanupResult, realtime: CPScaleCleanupRealtime,
-                       *, router0: bool) -> CPScaleCleanupReview:
+                       *, target_stage: CPScaleCanonicalStage | None) -> CPScaleCleanupReview:
         if cleanup.verified and realtime.verified:
             return CPScaleCleanupReview("")
-        prefix = "Router0" if router0 else "Canonical"
+        prefix = (
+            target_stage.value.partition("-")[0].capitalize()
+            if target_stage is not None else "Canonical"
+        )
         secondaries = ("cleanup_realtime: " + realtime.error,) if (
             (cleanup.error or cleanup.restoration_error) and realtime.error
         ) else ()

@@ -119,7 +119,10 @@ def test_current_state_separates_operational_authority_from_history():
     authority_raw = authority_path.read_bytes()
     index = json.loads(authority_raw)
 
-    assert operational["authority"] == "HASH_PINNED_ROUTER0_SUCCESS_INDEX"
+    assert operational["authority"] == (
+        "HASH_PINNED_ROUTER0_SUCCESS_INDEX_AND_TYPED_"
+        "ROUTER3_OFFLINE_PROJECTION"
+    )
     assert authority_path == (
         ROOT / "docs/reference/cp-scale/router0_successful_run.json"
     )
@@ -142,14 +145,16 @@ def test_current_state_separates_operational_authority_from_history():
 
     router3 = operational["router3"]
     assert router3["executed"] is False
-    assert router3["status"] == "PENDING_OFFLINE_PREPARATION"
+    assert router3["status"] == "ROUTER3_OFFLINE_PREPARED"
     assert router3["verification"] == "NOT_VERIFIED"
     assert router3["verification"] != "VERIFIED"
     assert router3["live_evidence"] == "UNKNOWN"
     assert router3["live_evidence_acquired"] is False
     assert router3["live_execution_authorized"] is False
     assert operational["live_execution_authorized"] is False
-    assert operational["next_active_step"] == "PREPARE_ROUTER3_OFFLINE_GOVERNED"
+    assert operational["next_active_step"] == (
+        "AWAIT_EXPLICIT_ROUTER3_LIVE_AUTHORIZATION"
+    )
 
     history = document["historical_pre_router0"]
     assert history["classification"] == "HISTORICAL_PRE_ROUTER0_NON_GOVERNING"

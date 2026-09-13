@@ -164,8 +164,11 @@ def run_evidence(report: CPScaleRunReport) -> dict[str, object]:
         value["baseline"] = report.baseline.compact_summary()
     if report.active_stage is not None:
         value["active_stage"] = stage_progress_evidence(report.active_stage)
-    if report.router0_transition is not None:
-        value["router0_transition_contract"] = transition_evidence(report.router0_transition)
+    if report.branch_transition is not None:
+        branch_name = report.branch_transition.current_stage.value.partition("-")[0]
+        value[f"{branch_name}_transition_contract"] = transition_evidence(
+            report.branch_transition
+        )
     if report.full_qualification is not None:
         value["full_qualification"] = {**stage_result_evidence(report.full_qualification), "stage": "full-qualification"}
     if report.resume_gates:

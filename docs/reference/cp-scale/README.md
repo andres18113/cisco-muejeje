@@ -4,9 +4,18 @@ Use [current_state.json](current_state.json) for the compact authoritative
 operational state. Router0 is closed by the hash-pinned success index executed
 at `8980ada7ab993cbe5b5b915cefde24deb04b3e3f`; the closure is valid only with
 its cleanup attestation, and no Router0 re-execution is authorized. Router3 has
-not been executed, has no acquired LIVE evidence, and is not `VERIFIED`. The
-only active next step is governed offline Router3 preparation; no LIVE Router3
-execution is authorized yet.
+an independent governed offline target and its preparation is closed as
+`ROUTER3_OFFLINE_PREPARED`. It has not been executed, has no acquired LIVE
+evidence, and is not `VERIFIED`; its preflight remains explicitly blocked until
+a separate LIVE authorization exists.
+
+Router3 architecture ownership is intentionally narrow. E1/E4 owns the two
+Small Branch traffic-flow authorities; E4/E5/E9 own topology, selected wired
+DATA workloads and plan provenance; application owns target, cumulative stage,
+transition, forwarding and cleanup contracts. Infrastructure only serializes
+the typed transition under its branch name, and the CLI only presents the
+contract and its rejection. No new transport, MCP surface, raw command path or
+mutable global state was introduced.
 
 The `historical_pre_router0` section retains the former LIVE state, PoE gates,
 authorizations, next steps, and legacy `handoff.md` projection for audit. It is

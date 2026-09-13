@@ -172,6 +172,23 @@ def test_request_rejection_marks_every_check_not_run_and_reads_no_boundary():
     assert result.process.state is CPScaleCheckState.NOT_RUN
 
 
+def test_router3_live_is_rejected_while_offline_preparation_is_the_authority():
+    events = []
+    result = _inspect(
+        _service(events=events),
+        _request(target_stage="router3-branch"),
+    )
+
+    assert events == ["runtime"]
+    assert result.outcome is CPScalePreflightOutcome.REJECTED
+    assert result.issues == (
+        "Router3 LIVE execution is not authorized; offline preparation only.",
+    )
+    assert result.import_isolation.state is CPScaleCheckState.NOT_RUN
+    assert result.repository.state is CPScaleCheckState.NOT_RUN
+    assert result.process.state is CPScaleCheckState.NOT_RUN
+
+
 def test_import_rejection_short_circuits_before_repository_and_processes():
     events = []
     result = _inspect(_service(

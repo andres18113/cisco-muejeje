@@ -45,7 +45,6 @@ from packet_tracer_mcp.application.use_cases.apply_configuration import Configur
 from packet_tracer_mcp.application.use_cases.apply_control_plane import ControlPlaneApplicator
 from packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
-    CPScaleCanonicalStage,
     CPScaleCanonicalTarget,
     canonical_cp_scale_target_contract,
 )
@@ -182,8 +181,9 @@ class CPScaleConsolePresentation:
         payload = {"event": event, "devices": report.live_devices, "links": report.live_links,
                    "evidence_path": str(self.evidence_path),
                    "canonical_archive": report.canonical_evidence_precleanup.model_dump(mode="json")}
-        if event == "ROUTER0_BRANCH_VERIFIED_AND_CLEANED":
-            payload["stage"] = CPScaleCanonicalStage.ROUTER0_BRANCH.value
+        target = report.preflight.target
+        if target.require_cleanup and not target.run_full_qualification:
+            payload["stage"] = target.terminal_stage.value
         if report.cleanup_attestation is not None:
             payload["cleanup_attestation"] = report.cleanup_attestation.model_dump(mode="json")
         print(json.dumps(payload), flush=True)
@@ -284,7 +284,10 @@ def main() -> int:
         "--target-stage",
         choices=[item.value for item in CPScaleCanonicalTarget],
         default=CPScaleCanonicalTarget.FULL_QUALIFICATION.value,
-        help="Stop with governed cleanup at Router0 or run full qualification.",
+        help=(
+            "Select full qualification or a bounded branch target; Router3 "
+            "remains offline-only and is rejected by preflight."
+        ),
     )
     parser.add_argument(
         "--retain-on-full-verification",

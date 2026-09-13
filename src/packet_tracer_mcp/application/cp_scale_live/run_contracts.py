@@ -114,6 +114,7 @@ class CPScaleRunOutcome(str, Enum):
 
 class CPScaleTerminalEvent(str, Enum):
     ROUTER0_CLEANED = "ROUTER0_BRANCH_VERIFIED_AND_CLEANED"
+    ROUTER3_CLEANED = "ROUTER3_BRANCH_VERIFIED_AND_CLEANED"
     CANONICAL_CLEANED = "CANONICAL_VERIFIED_AND_CLEANED"
     RETAINED = "PRESENTATION_RETAINED"
 
@@ -176,7 +177,7 @@ class CPScaleRunReport:
     baseline: PhysicalWorkspaceObservation | None = None
     capability_prequalification: CPScaleCapabilityQualification | None = None
     active_stage: CPScaleStageProgress | None = None
-    router0_transition: CPScaleCanonicalStageTransition | None = None
+    branch_transition: CPScaleCanonicalStageTransition | None = None
     resume_gates: tuple[CPScaleResumeGate, ...] = ()
     network_boundaries: tuple[tuple[str, CPScaleObservationRecord], ...] = ()
     full_qualification: CPScaleLiveStageResult | None = None

@@ -312,8 +312,13 @@ def _request_error(
     request: CPScaleLiveRequest,
     target: CPScaleCanonicalTargetContract,
 ) -> str:
-    """The existing CP-SCALE retention rule, separate from every reader."""
+    """Reject unauthorized target/retention combinations before readers."""
 
+    if target.target is CPScaleCanonicalTarget.ROUTER3_BRANCH:
+        return (
+            "Router3 LIVE execution is not authorized; "
+            "offline preparation only."
+        )
     if (
         request.retain_on_full_verification
         and not target.allow_retention

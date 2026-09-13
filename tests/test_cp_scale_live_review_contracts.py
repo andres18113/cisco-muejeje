@@ -253,9 +253,11 @@ print(json.dumps({"outcome": result.outcome.value if result else None, "raised":
 def test_completion_cleanup_policy_keeps_the_exact_first_cause(restoration_error, realtime_error):
     from src.packet_tracer_mcp.application.cp_scale_live.completion import CPScaleCompletion
     from src.packet_tracer_mcp.application.cp_scale_live.run_contracts import CPScaleCleanupResult, CPScaleCleanupRealtime
+    from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import CPScaleCanonicalStage
 
     policy = CPScaleCompletion(cleanup=None)
     result = policy.review_cleanup(CPScaleCleanupResult(not restoration_error, restoration_error),
-        CPScaleCleanupRealtime(not realtime_error, realtime_error), router0=True)
+        CPScaleCleanupRealtime(not realtime_error, realtime_error),
+        target_stage=CPScaleCanonicalStage.ROUTER0_BRANCH)
     assert result.error == "Router0 verification completed, but cleanup/restoration did not verify: " + (restoration_error or realtime_error)
     assert result.secondary_failures == (("cleanup_realtime: " + realtime_error,) if restoration_error and realtime_error else ())

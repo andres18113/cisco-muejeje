@@ -162,6 +162,67 @@ print(json.dumps({"outcome": result.outcome.value, "closure": result.closure,
         "archives": ["precleanup", "cleanup"]}
 
 
+def test_runner_future_router3_contract_stops_at_router3_and_cleans_up():
+    verdict = _probe(RUN_DOUBLES + r'''
+from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router3-branch")
+coordinator = offline_coordinator(request)
+coordinator.presentation.terminal = lambda event, report: record(
+    "terminal", terminal_event=event.value,
+)
+result = coordinator.run(request)
+print(json.dumps({
+    "outcome": result.outcome.value,
+    "closure": result.closure,
+    "scope": result.target.value,
+    "stages": [item.stage.value for item in result.progress.completed_stages],
+    "remaining": result.progress.remaining_reconciled,
+    "full": result.progress.full_qualification is not None,
+    "transition": [
+        [item["previous"], item["current"]]
+        for item in calls if item["event"] == "transition"
+    ],
+    "events": [
+        item["event"] for item in calls
+        if item["event"] in (
+            "archive", "cleanup", "summary", "transport.stop", "terminal"
+        )
+    ],
+    "terminal_event": next(
+        item["terminal_event"] for item in calls
+        if item["event"] == "terminal"
+    ),
+}))
+''')
+
+    assert verdict == {
+        "outcome": "completed",
+        "closure": "ROUTER3_BRANCH_VERIFIED_AND_CLEANED",
+        "scope": "router3-branch",
+        "stages": [
+            "routing-core",
+            "router4-switch10",
+            "floor1",
+            "floor2",
+            "floor3",
+            "router0-branch",
+            "router3-branch",
+        ],
+        "remaining": False,
+        "full": False,
+        "transition": [["router0-branch", "router3-branch"]],
+        "events": [
+            "archive",
+            "cleanup",
+            "archive",
+            "summary",
+            "transport.stop",
+            "terminal",
+        ],
+        "terminal_event": "ROUTER3_BRANCH_VERIFIED_AND_CLEANED",
+    }
+
+
 @pytest.mark.parametrize(
     ("failure", "expected_events"),
     [
@@ -464,7 +525,10 @@ def projection_for(composition, stage, **kwargs):
         forwarding_checks={},
         branch_forwarding_checks=(
             (ForwardingCheck(id="forward-1"),)
-            if stage is CPScaleCanonicalStage.ROUTER0_BRANCH else ()
+            if stage in (
+                CPScaleCanonicalStage.ROUTER0_BRANCH,
+                CPScaleCanonicalStage.ROUTER3_BRANCH,
+            ) else ()
         ),
     )
 

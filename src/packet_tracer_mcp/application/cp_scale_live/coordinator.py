@@ -22,7 +22,7 @@ from .run_ports import CPScalePreflightPort, CPScaleEvidencePort, CPScaleCheckpo
 from .session import CPScaleSessionPort, CPScaleRunObservationPort, CPScaleRuntimeResources
 from .sequence import execute_stage_sequence, StageStepResult
 from .step_policy import CPScaleStepContinuity, canonical_step_decision, canonical_step_result_error, advance_canonical_continuity
-from ..use_cases.compose_cp_scale_canonical import CPScaleCanonicalStage, CPScaleCanonicalTarget, CPScaleCanonicalStageProjection
+from ..use_cases.compose_cp_scale_canonical import CPScaleCanonicalStage, CPScaleCanonicalStageProjection
 from ..use_cases.compose_enterprise_reference import EnterpriseReferenceComposition
 from ..use_cases.deploy_enterprise_topology import disposable_workspace_error
 from ..use_cases.qualify_cp_scale_live import CPScaleFinalDisposition, CPScaleEvidenceArchive
@@ -190,7 +190,7 @@ class CPScaleLiveCoordinator:
                 raise CanonicalLiveFailure(acquired.error)
 
         def prepare_stage(projection: CPScaleCanonicalStageProjection, continuity: CPScaleStageContinuity,
-                          *, router0: bool) -> tuple[PhysicalDeploymentResult, PhysicalDeploymentResult, tuple[CPScaleObservationRecord, ...]]:
+                          *, terminal_boundary: bool) -> tuple[PhysicalDeploymentResult, PhysicalDeploymentResult, tuple[CPScaleObservationRecord, ...]]:
             nonlocal progress
             first = continuity.previous_projection is None
             progress = replace(progress, active_stage=CPScaleStageProgress(projection))
@@ -205,13 +205,27 @@ class CPScaleLiveCoordinator:
                 boundaries = (boundary,)
                 progress = replace(progress, network_boundaries=(*progress.network_boundaries, (projection.stage.value, boundary)))
                 delta_topology = self.build.delta(previous.topology, projection.topology)
-                if router0:
+                if terminal_boundary:
                     transition = self.build.transition(previous, projection)
                     progress = replace(progress, active_stage=replace(progress.active_stage, transition=transition),
-                                       router0_transition=transition)
+                                       branch_transition=transition)
                     self.persistence.write_progress(snapshot())
-                    if previous.stage is not CPScaleCanonicalStage.FLOOR3 or not transition.mutation_scope_disjoint:
-                        raise CanonicalLiveFailure("Router0 target refused its incremental boundary: " + transition.claim)
+                    expected_previous = preflight.target.build_stages[-2]
+                    if (
+                        previous.stage is not expected_previous
+                        or transition.previous_stage is not expected_previous
+                        or transition.current_stage is not preflight.target.terminal_stage
+                        or not transition.mutation_scope_disjoint
+                    ):
+                        raise CanonicalLiveFailure(
+                            f"Bounded target {preflight.target.target.value!r} "
+                            "refused its terminal transition contract: "
+                            f"expected {expected_previous.value!r} -> "
+                            f"{preflight.target.terminal_stage.value!r}; "
+                            f"observed {transition.previous_stage.value!r} -> "
+                            f"{transition.current_stage.value!r}; "
+                            + transition.claim
+                        )
             delta = physical_stages.deploy(projection, delta_topology, first=first)
             progress = replace(progress, active_stage=replace(progress.active_stage, delta=delta),
                 physical=replace(progress.physical, owned=progress.physical.owned | attempted_device_ids(delta)))
@@ -235,9 +249,15 @@ class CPScaleLiveCoordinator:
 
         def complete(command: CPScaleCheckpointDecision) -> None:
             nonlocal terminal
-            router0 = preflight.target.target is CPScaleCanonicalTarget.ROUTER0_BRANCH
-            if router0:
-                review = self.completion.review_router0(preflight.target, progress.stages)
+            bounded = (
+                preflight.target.require_cleanup
+                and not preflight.target.run_full_qualification
+            )
+            if bounded:
+                review = self.completion.review_bounded_target(
+                    preflight.target,
+                    progress.stages,
+                )
                 terminal = replace(terminal, replay=review.replay)
                 if review.error:
                     raise CanonicalLiveFailure(review.error)
@@ -259,22 +279,26 @@ class CPScaleLiveCoordinator:
             terminal = replace(terminal, cleanup=cleanup)
             realtime = observations.cleanup_realtime()
             terminal = replace(terminal, realtime=realtime)
-            review = self.completion.review_cleanup(cleanup, realtime, router0=router0)
+            review = self.completion.review_cleanup(
+                cleanup,
+                realtime,
+                target_stage=(preflight.target.terminal_stage if bounded else None),
+            )
             terminal = replace(terminal, secondary_failures=terminal.secondary_failures + review.secondary_failures)
             if review.error:
                 raise CanonicalLiveFailure(review.error)
             completed_at = self.completion.clock()
-            if not router0:
+            if not bounded:
                 terminal = replace(terminal, closure=plan.cleaned_closure, cleanup_completed_at=completed_at)
             attestation = CPScaleCleanupAttestation(run_identity, preflight.identity.source_head,
                 receipt, cleanup, realtime, completed_at, closure=plan.cleaned_closure,
-                target_stage=preflight.target.target.value if router0 else "", closure_scope=plan.scope,
-                replay=terminal.replay if router0 else None)
+                target_stage=preflight.target.target.value if bounded else "", closure_scope=plan.scope,
+                replay=terminal.replay if bounded else None)
             receipt = archive("cleanup", attestation)
             terminal = replace(terminal, attestation=receipt, closure=plan.cleaned_closure, cleanup_completed_at=completed_at)
             self.persistence.write_progress(snapshot())
             self.persistence.checkpoint(plan.checkpoint, snapshot(), final=plan.final_checkpoint)
-            terminal = replace(terminal, terminal_cleanup_complete=router0, event=plan.event)
+            terminal = replace(terminal, terminal_cleanup_complete=bounded, event=plan.event)
 
         def prepare_finalization() -> None:
             nonlocal terminal
@@ -343,7 +367,11 @@ class CPScaleLiveCoordinator:
                 nonlocal progress, terminal
                 decision = canonical_step_decision(preflight.target, stage)
                 projection = self.build.projection(composition, stage)
-                deployment, delta, boundaries = prepare_stage(projection, continuity.stage, router0=decision.site_forwarding)
+                deployment, delta, boundaries = prepare_stage(
+                    projection,
+                    continuity.stage,
+                    terminal_boundary=decision.site_forwarding,
+                )
                 acquired = executor.execute(CPScaleStageExecutionInput(projection, composition, deployment, delta, fingerprint,
                     request.packet_tracer_version, continuity.stage,
                     statistics_target if decision.floor1_statistics else None,
@@ -379,11 +407,26 @@ class CPScaleLiveCoordinator:
             terminal = replace(terminal, secondary_failures=sequence.secondary_failures)
             if not sequence.succeeded:
                 raise CanonicalLiveFailure(sequence.steps[-1].value.failure)
-            if preflight.target.target is CPScaleCanonicalTarget.ROUTER0_BRANCH:
+            bounded = (
+                preflight.target.require_cleanup
+                and not preflight.target.run_full_qualification
+            )
+            if bounded:
+                if preflight.target.run_remaining_reconciliation:
+                    raise CanonicalLiveFailure(
+                        f"Bounded target {preflight.target.target.value!r} "
+                        "cannot run remaining reconciliation."
+                    )
                 complete(CPScaleCheckpointDecision.CONTINUE)
                 return CPScaleRunOutcome.COMPLETED
-            assert preflight.target.run_remaining_reconciliation
-            assert preflight.target.run_full_qualification
+            if (
+                not preflight.target.run_remaining_reconciliation
+                or not preflight.target.run_full_qualification
+            ):
+                raise CanonicalLiveFailure(
+                    f"Target {preflight.target.target.value!r} has an "
+                    "incomplete full-qualification contract."
+                )
             continuity = sequence.continuity.stage
             remaining = self.build.remaining_projection(composition, continuity)
             deployment = physical_stages.cumulative(remaining, "cp-scale-canonical/remaining/reconciliation", progress.physical)

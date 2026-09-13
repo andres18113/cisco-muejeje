@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .contracts import CPScaleStageContinuity, CPScaleObservationRecord, CPScaleLiveStageResult
-from ..use_cases.compose_cp_scale_canonical import CPScaleCanonicalStage, CPScaleCanonicalTarget, CPScaleCanonicalTargetContract
+from ..use_cases.compose_cp_scale_canonical import CPScaleCanonicalStage, CPScaleCanonicalTargetContract
 
 
 @dataclass(frozen=True)
@@ -23,11 +23,11 @@ class CPScaleStepDecision:
 
 
 def canonical_step_decision(target: CPScaleCanonicalTargetContract, stage: CPScaleCanonicalStage) -> CPScaleStepDecision:
-    router0 = target.target is CPScaleCanonicalTarget.ROUTER0_BRANCH
+    bounded_terminal = target.require_cleanup and not target.run_full_qualification
     return CPScaleStepDecision(stage is CPScaleCanonicalStage.FLOOR1,
         stage is CPScaleCanonicalStage.ROUTER4_SWITCH10, stage is CPScaleCanonicalStage.ROUTING_CORE,
-        router0 and stage is CPScaleCanonicalStage.ROUTER0_BRANCH,
-        not (router0 and stage is target.terminal_stage))
+        bounded_terminal and stage is target.terminal_stage,
+        not (bounded_terminal and stage is target.terminal_stage))
 
 
 def canonical_step_result_error(result: CPScaleLiveStageResult) -> str:
