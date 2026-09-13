@@ -12,6 +12,10 @@ from ..use_cases.qualify_cp_scale_live import (
     canonical_configuration_retryable_operational_unknown,
     canonical_stage_configuration_error,
 )
+from .endpoint_dhcp_reassertion import (
+    endpoint_dhcp_reassertion_scope,
+    retryable_endpoint_dhcp_absence,
+)
 from ...domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus, ConfigurationApplicationResult, ConfigurationRuntimeContext,
 )
@@ -43,12 +47,20 @@ class CPScaleConfigurationStage:
         serial_wait: Callable,
         acceptance_policy: Callable = canonical_stage_configuration_error,
         retry_policy: Callable = canonical_configuration_retryable_operational_unknown,
+        endpoint_retry_policy: Callable = (
+            retryable_endpoint_dhcp_absence
+        ),
+        endpoint_retry_scope: Callable = (
+            endpoint_dhcp_reassertion_scope
+        ),
         contradiction_policy: Callable = configuration_application_contradiction,
     ) -> None:
         self.applicator = applicator
         self.serial_wait = serial_wait
         self.acceptance_policy = acceptance_policy
         self.retry_policy = retry_policy
+        self.endpoint_retry_policy = endpoint_retry_policy
+        self.endpoint_retry_scope = endpoint_retry_scope
         self.contradiction_policy = contradiction_policy
 
     def execute(
@@ -68,7 +80,7 @@ class CPScaleConfigurationStage:
         previous = request.continuity.previous_configuration
         context = ConfigurationRuntimeContext(environment_fingerprint=request.fingerprint)
 
-        def apply(ids, retained, deferred=()):
+        def apply(ids, retained, deferred=(), *, allow_contradiction=False):
             result = self.applicator.apply(
                 plan,
                 actual_source_topology_hash=projection.topology.physical_identity_hash,
@@ -82,8 +94,11 @@ class CPScaleConfigurationStage:
             attempts.append(result)
             contradiction = self.contradiction_policy(result)
             contradictions.append(contradiction)
-            if contradiction:
-                label = " re-read" if len(attempts) > 1 else ""
+            if contradiction and not allow_contradiction:
+                label = (
+                    " reassertion" if len(attempts) > 1 and ids
+                    else " re-read" if len(attempts) > 1 else ""
+                )
                 raise _ConfigurationStopped(
                     f"Configuration{label} at {projection.stage.value!r} contradicted the plan: "
                     + contradiction
@@ -94,7 +109,43 @@ class CPScaleConfigurationStage:
             configuration = apply(
                 configuration_mutation_ids,
                 previous.action_results if previous is not None else (),
+                allow_contradiction=True,
             )
+            reasserted_endpoint_dhcp = False
+            if contradictions[-1]:
+                if not self.endpoint_retry_policy(
+                    plan,
+                    configuration,
+                    allow_deferred_voice_signal=defer_voice_signal,
+                ):
+                    raise _ConfigurationStopped(
+                        f"Configuration at {projection.stage.value!r} "
+                        "contradicted the plan: " + contradictions[-1]
+                    )
+                try:
+                    ids, retained = self.endpoint_retry_scope(
+                        plan,
+                        configuration,
+                        allow_deferred_voice_signal=defer_voice_signal,
+                    )
+                except ValueError as exc:
+                    reread = CPScaleRereadScope(False, error=str(exc))
+                    raise _ConfigurationStopped(str(exc)) from exc
+                barrier = configuration.voice_signal_barrier
+                deferred = (
+                    tuple(barrier.deferred_action_ids)
+                    if barrier is not None
+                    and barrier.required
+                    else ()
+                )
+                reread = CPScaleRereadScope(
+                    False,
+                    tuple(ids),
+                    tuple(item.action_id for item in retained),
+                    deferred,
+                )
+                configuration = apply(ids, retained, deferred)
+                reasserted_endpoint_dhcp = True
             ready, readings = self.serial_wait(projection)
             serial = CPScaleObservationRecord(
                 "serial_interfaces", projection.stage, "required_serial_readback",
@@ -107,7 +158,7 @@ class CPScaleConfigurationStage:
             candidate_error = self.acceptance_policy(
                 plan, configuration, allow_deferred_voice_signal=defer_voice_signal,
             )
-            if candidate_error and self.retry_policy(
+            if candidate_error and not reasserted_endpoint_dhcp and self.retry_policy(
                 plan, configuration, allow_deferred_voice_signal=defer_voice_signal,
             ):
                 try:

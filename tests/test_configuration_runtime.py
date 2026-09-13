@@ -1353,10 +1353,10 @@ def test_endpoint_timeout_cannot_be_promoted_by_a_late_matching_read():
 
     result = runtime.verify([expectation])[0]
 
-    assert calls == 2
+    assert calls == 1
     assert result.status is ActionExecutionStatus.FAILED
-    assert result.convergence is not None
-    assert result.convergence.last_observable_state == "convergence_timeout"
+    assert result.convergence.details["last_observation"]["ipv4"] == ""
+    assert result.convergence.details["last_observation"]["netmask"] == ""
 
 
 def test_runtime_never_accepts_or_emits_a_raw_ios_action_type():

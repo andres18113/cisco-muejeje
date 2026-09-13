@@ -2194,7 +2194,14 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 expectation,
                 message="The expectation names no addressed interface to read.",
             )
+        latest: dict[str, object] = {}
+        transitions: list[dict[str, object]] = []
+        signature: tuple[object, ...] | None = None
+        sample_round = 0
+
         def inspect() -> dict:
+            nonlocal sample_round, signature
+            sample_round += 1
             read = self._endpoint_addresses.observe(
                 expectation.device_name,
                 interface,
@@ -2214,6 +2221,25 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 "failure_reason": read.failure_reason,
             }
             observed["configuration_channel"] = self._endpoint_matches(expected, observed)
+            transition = {
+                "device_found": observed["found"],
+                "port_found": observed["port_found"],
+                "address_channel": observed["address_channel"],
+                "interface": observed["interface"],
+                "ipv4": observed["ipv4"],
+                "netmask": observed["netmask"],
+                "fresh_evidence": observed["fresh_evidence"],
+                "failure_reason": observed["failure_reason"],
+            }
+            current_signature = tuple(transition.values())
+            if current_signature != signature:
+                transitions.append({
+                    "sample_round": sample_round,
+                    **transition,
+                })
+                signature = current_signature
+            latest.clear()
+            latest.update(observed)
             return observed
 
         convergence = StateConvergenceWaiter(
@@ -2221,7 +2247,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             timeout_seconds=self._endpoint_timeout,
             interval_seconds=self._convergence_interval,
         ).wait()
-        observed = inspect()
+        observed = dict(latest)
         if not observed.get("port_found"):
             return self._unobservable(
                 expectation,
@@ -2285,10 +2311,35 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 attempts=convergence.attempts,
                 elapsed_ms=convergence.elapsed_ms,
                 final_status=status,
-                last_observable_state=(
-                    str(observed.get("ipv4") or "no-ip")
-                    if converged else "convergence_timeout"
+                last_observable_state=json.dumps(
+                    {
+                        key: observed.get(key)
+                        for key in (
+                            "found", "port_found", "address_channel",
+                            "interface", "ipv4", "netmask",
+                            "fresh_evidence", "failure_reason",
+                        )
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
                 ),
+                details={
+                    "kind": "endpoint_addressing",
+                    "device_name": expectation.device_name,
+                    "interface": interface,
+                    "sample_rounds": sample_round,
+                    "transitions": transitions,
+                    "last_observation": {
+                        "device_found": observed.get("found"),
+                        "port_found": observed.get("port_found"),
+                        "address_channel": observed.get("address_channel"),
+                        "interface": observed.get("interface"),
+                        "ipv4": observed.get("ipv4"),
+                        "netmask": observed.get("netmask"),
+                        "fresh_evidence": observed.get("fresh_evidence"),
+                        "failure_reason": observed.get("failure_reason"),
+                    },
+                },
             ),
         )
 
