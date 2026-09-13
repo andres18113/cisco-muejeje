@@ -1,7 +1,39 @@
 {
-  "schema": "cp-scale-current-state-v2",
-  "updated_at": "2026-09-13T15:07:21.165728Z",
-  "last_live_state": {
+  "schema": "cp-scale-current-state-v3",
+  "updated_at": "2026-09-13T17:13:14.6419664Z",
+  "operational_state": {
+    "authority": "HASH_PINNED_ROUTER0_SUCCESS_INDEX",
+    "router0": {
+      "executed": true,
+      "status": "VERIFIED_AND_CLEANED",
+      "closure": "ROUTER0_BRANCH_VERIFIED_AND_CLEANED",
+      "closure_requires_cleanup": true,
+      "reexecution_authorized": false,
+      "evidence": {
+        "path": "docs/reference/cp-scale/router0_successful_run.json",
+        "sha256": "5deadcc1942978d4bfdaa440e9832d519b3cc19506be1e746956ce0a5bd9cff1",
+        "run_identity": "canonical-cp-scale-voice-20260913T142038552603Z-8980ada7ab99",
+        "executed_sha": "8980ada7ab993cbe5b5b915cefde24deb04b3e3f",
+        "classification": "VERIFIED",
+        "successful_closure": true
+      }
+    },
+    "router3": {
+      "executed": false,
+      "status": "PENDING_OFFLINE_PREPARATION",
+      "verification": "NOT_VERIFIED",
+      "live_evidence": "UNKNOWN",
+      "live_evidence_acquired": false,
+      "live_execution_authorized": false
+    },
+    "next_active_step": "PREPARE_ROUTER3_OFFLINE_GOVERNED",
+    "live_execution_authorized": false
+  },
+  "historical_pre_router0": {
+    "classification": "HISTORICAL_PRE_ROUTER0_NON_GOVERNING",
+    "governs_current_operation": false,
+    "authorization_effect": "NONE",
+    "live_state": {
     "schema": "cp-scale-current-state-v1",
     "updated_at": "2026-09-03T03:41:52.104318Z",
     "source_head": "6c6db55566890f1d9ca9cc06bfc13ae24505e793",
@@ -201,7 +233,7 @@
       "CP_SCALE_STATUS": "FLOOR2_VOICE_VERIFIED_35_OF_35 | FLOOR3_SWITCH9_VLAN20_LRN_AFTER_SINGLE_EXTENSION | ROUTER0_NOT_REACHED | PVST_SIM_TIME_FIX_OFFLINE_VALIDATED"
     }
   },
-  "current_offline_operational_gate": {
+  "offline_operational_gate": {
     "source_head": "247294b619dfd7805a542a27019d3f78f94713c0",
     "source_head_role": "read_only_router0_product_admission_source",
     "poe_delivery": "supported",
@@ -418,5 +450,6 @@
     "NEXT_ACTIVE_STEP": "POE2_ACCESSPOINT_PT_USING_THE_CALIBRATED_PSE_OBSERVABLE",
     "CP_SCALE_STATUS": "PRIOR_POE_EXACT_BINDING_VERIFIED | FACTORY_STRUCTURE_OBSERVED_NO_PROMOTION | ROUTER0_OPERATOR_AUTHORIZED_ONE_UNCONSUMED | PRODUCT_PRECONDITION_BLOCKED",
     "POE_INLINE_OBSERVABLE": "CALIBRATED_EXACT_BINDING_3560_24PS_FA0_1_7960_SWITCH | NEVER_IS_ROW_ABSENCE | SUMMARY_NOT_AUTHORITY | NO_PORT_EXTRAPOLATION"
+  }
   }
 }

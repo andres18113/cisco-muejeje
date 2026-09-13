@@ -1,8 +1,17 @@
 # CP-SCALE state and evidence index
 
 Use [current_state.json](current_state.json) for the compact authoritative
-phase state. It names the active boundary, the evidence that supports it, and
-the small set of keys still projected into `handoff.md` for compatibility.
+operational state. Router0 is closed by the hash-pinned success index executed
+at `8980ada7ab993cbe5b5b915cefde24deb04b3e3f`; the closure is valid only with
+its cleanup attestation, and no Router0 re-execution is authorized. Router3 has
+not been executed, has no acquired LIVE evidence, and is not `VERIFIED`. The
+only active next step is governed offline Router3 preparation; no LIVE Router3
+execution is authorized yet.
+
+The `historical_pre_router0` section retains the former LIVE state, PoE gates,
+authorizations, next steps, and legacy `handoff.md` projection for audit. It is
+explicitly non-governing: none of those historical fields authorizes another
+Router0 run or controls the current next step.
 
 Supporting records:
 
@@ -13,11 +22,11 @@ Supporting records:
   indexes the nine post-ledger executions by complete run identity, executed
   SHA, immutable artifact hashes and verified cleanup. Every entry is
   `FAILED`; publication supplies neither success authority nor Router0 closure.
-- [Operator runbook for the one governed observation](ROUTER0_POE_OPERATOR_RUNBOOK.md)
-  is the mechanical form of the only remaining step that needs a person:
-  which episode to run first and why, the gates the harness enforces, the
-  exact receipt the validator accepts, and why both arms powered is a real
-  result rather than a failed run. It authorizes nothing new.
+- [Operator runbook for the governed observation](ROUTER0_POE_OPERATOR_RUNBOOK.md)
+  preserves the historical mechanical procedure, the gates the harness
+  enforced, the exact receipt the validator accepted, and why both arms
+  powered was a real result rather than a failed run. It is not a current step
+  and authorizes nothing new.
 - [The access-point differential, measured, 2026-09-07](POE_ACCESSPOINT_DIFFERENTIAL_20260907.md)
   records the first access-point episode a person actually watched. Both arms
   were OBSERVED powered, so the differential the scope requires was not
@@ -62,18 +71,19 @@ Supporting records:
   design intent.
 - [canonical-live-evidence](canonical-live-evidence/) contains immutable LIVE
   archives. Hashes used by the current decision are in `current_state.json`.
-- [prelive-evidence](prelive-evidence/) contains read-only product admission
-  decisions. These are not LIVE attempts; the current Router0 record preserves
-  the exact missing PoE bindings, source and snapshot hashes, and the unconsumed
-  one-attempt operator authorization. Intended scope is distinct from a compiled
-  topology, which the current product refuses to materialize.
+- [prelive-evidence](prelive-evidence/) contains historical read-only product
+  admission decisions. These are not LIVE attempts; the retained Router0
+  record preserves the exact missing PoE bindings, source and snapshot hashes,
+  and the then-unconsumed one-attempt operator authorization. That
+  authorization is historical and has no present effect.
 - [canonical_voice_runs.json](canonical_voice_runs.json) is the curated Voice
   judgment ledger through its explicit `scope.exhaustive_through` cutoff. It is
   intentionally not an exhaustive attempt counter after that boundary: adding
   a 19-field retrospective judgment would invent provenance.
-- `current_state.json#run_accounting` is the attempt-count authority after that
-  cutoff. It indexes later runs only from their hash-pinned cleanup archives and
-  governed state, and does not manufacture methodology or conclusions.
+- `current_state.json#historical_pre_router0/live_state/run_accounting` retains
+  the attempt accounting after that cutoff. It indexes later failed runs and
+  the successful Router0 record through hash-pinned archives without turning
+  the historical pre-Router0 gates into current authority.
 - [voice_root_cause_implementation_retrospective.md](voice_root_cause_implementation_retrospective.md)
   preserves the causal Voice methodology and closed correction.
 - [`handoff.md`](../../../handoff.md) remains historical context and a legacy

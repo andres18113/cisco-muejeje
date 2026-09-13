@@ -149,7 +149,7 @@ def test_router0_success_index_pins_complete_product_evidence() -> None:
 
 def test_current_state_points_to_the_router0_success_index() -> None:
     state = json.loads(STATE.read_text(encoding="utf-8"))
-    pointer = state["last_live_state"]["run_accounting"]["router0_successful_run"]
+    pointer = state["operational_state"]["router0"]["evidence"]
     raw = INDEX.read_bytes()
 
     assert pointer == {
