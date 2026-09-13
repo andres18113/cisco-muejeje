@@ -153,7 +153,7 @@ def test_current_state_separates_operational_authority_from_history():
     assert router3["live_execution_authorized"] is False
     assert operational["live_execution_authorized"] is False
     assert operational["next_active_step"] == (
-        "AWAIT_EXPLICIT_ROUTER3_LIVE_AUTHORIZATION"
+        "READY_FOR_EXPLICIT_ROUTER3_LIVE_AUTHORIZATION"
     )
 
     history = document["historical_pre_router0"]

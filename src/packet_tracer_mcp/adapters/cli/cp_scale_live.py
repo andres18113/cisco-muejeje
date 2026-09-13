@@ -21,6 +21,7 @@ from pathlib import Path
 from packet_tracer_mcp.application.cp_scale_live import (
     CPScaleLiveRequest,
     CPScaleLocalPreflight,
+    CPScaleRouter3LiveAuthorizationRequest,
 )
 from packet_tracer_mcp.application.cp_scale_live.backend import CPScaleBackendQualification
 from packet_tracer_mcp.application.cp_scale_live.build_policy import CPScaleBuildPolicy
@@ -256,6 +257,9 @@ def run(
     target_stage: CPScaleCanonicalTarget | str = (
         CPScaleCanonicalTarget.FULL_QUALIFICATION
     ),
+    router3_live_authorization: (
+        CPScaleRouter3LiveAuthorizationRequest | None
+    ) = None,
 ) -> int:
     governed_root = governed_root_from_env()
     if governed_root is None:
@@ -266,7 +270,13 @@ def run(
             ),
         }))
         return 2
-    request = CPScaleLiveRequest(packet_tracer_version, expected_head, retain_on_full_verification, target_stage)
+    request = CPScaleLiveRequest(
+        packet_tracer_version,
+        expected_head,
+        retain_on_full_verification,
+        target_stage,
+        router3_live_authorization,
+    )
     result = build_coordinator(request, governed_root=governed_root).run(request)
     return {CPScaleRunOutcome.COMPLETED: 0, CPScaleRunOutcome.FAILED: 1, CPScaleRunOutcome.REJECTED: 2}[result.outcome]
 
@@ -285,9 +295,18 @@ def main() -> int:
         choices=[item.value for item in CPScaleCanonicalTarget],
         default=CPScaleCanonicalTarget.FULL_QUALIFICATION.value,
         help=(
-            "Select full qualification or a bounded branch target; Router3 "
-            "remains offline-only and is rejected by preflight."
+            "Select full qualification or a bounded branch target. Router3 "
+            "requires an explicit target- and SHA-scoped authorization."
         ),
+    )
+    parser.add_argument(
+        "--authorized-live-target",
+        choices=[item.value for item in CPScaleCanonicalTarget],
+        help="Target named by an explicit Router3 LIVE authorization.",
+    )
+    parser.add_argument(
+        "--authorized-live-sha",
+        help="Exact commit SHA explicitly authorized for Router3 LIVE.",
     )
     parser.add_argument(
         "--retain-on-full-verification",
@@ -300,11 +319,24 @@ def main() -> int:
             "hard_stop": "--execute is required; no Packet Tracer mutation occurred.",
         }))
         return 2
+    authorization = None
+    if (
+        args.authorized_live_target is not None
+        or args.authorized_live_sha is not None
+    ):
+        authorization = CPScaleRouter3LiveAuthorizationRequest(
+            target=(
+                CPScaleCanonicalTarget(args.authorized_live_target)
+                if args.authorized_live_target is not None else ""
+            ),
+            authorized_sha=args.authorized_live_sha or "",
+        )
     return run(
         args.packet_tracer_version,
         expected_head=args.expected_head,
         retain_on_full_verification=args.retain_on_full_verification,
         target_stage=args.target_stage,
+        router3_live_authorization=authorization,
     )
 
 

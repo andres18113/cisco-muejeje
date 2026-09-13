@@ -1,6 +1,6 @@
 {
   "schema": "cp-scale-current-state-v3",
-  "updated_at": "2026-09-13T18:00:31.5299551Z",
+  "updated_at": "2026-09-13T19:24:02.2828080Z",
   "operational_state": {
     "authority": "HASH_PINNED_ROUTER0_SUCCESS_INDEX_AND_TYPED_ROUTER3_OFFLINE_PROJECTION",
     "router0": {
@@ -72,7 +72,7 @@
         }
       }
     },
-    "next_active_step": "AWAIT_EXPLICIT_ROUTER3_LIVE_AUTHORIZATION",
+    "next_active_step": "READY_FOR_EXPLICIT_ROUTER3_LIVE_AUTHORIZATION",
     "live_execution_authorized": false
   },
   "historical_pre_router0": {

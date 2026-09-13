@@ -17,6 +17,8 @@ from .contracts import (
     CPScaleProcessEvidence,
     CPScaleProcessRecord,
     CPScaleRepositoryEvidence,
+    CPScaleRouter3LiveAuthorizationEvidence,
+    CPScaleRouter3LiveAuthorizationRequest,
     CPScaleRuntimeEvidence,
 )
 
@@ -34,6 +36,8 @@ __all__ = [
     "CPScaleProcessRecord",
     "CPScaleRepositoryEvidence",
     "CPScaleRepositoryObservation",
+    "CPScaleRouter3LiveAuthorizationEvidence",
+    "CPScaleRouter3LiveAuthorizationRequest",
     "CPScaleRuntimeEvidence",
     "process_record_mapping",
 ]

@@ -164,8 +164,17 @@ print(json.dumps({"outcome": result.outcome.value, "closure": result.closure,
 
 def test_runner_future_router3_contract_stops_at_router3_and_cleans_up():
     verdict = _probe(RUN_DOUBLES + r'''
-from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router3-branch")
+from packet_tracer_mcp.application.cp_scale_live.contracts import (
+    CPScaleLiveRequest,
+    CPScaleRouter3LiveAuthorizationRequest,
+)
+request = CPScaleLiveRequest(
+    "9.0.1.0858",
+    HEAD,
+    False,
+    "router3-branch",
+    CPScaleRouter3LiveAuthorizationRequest("router3-branch", HEAD),
+)
 coordinator = offline_coordinator(request)
 coordinator.presentation.terminal = lambda event, report: record(
     "terminal", terminal_event=event.value,
@@ -221,6 +230,49 @@ print(json.dumps({
         ],
         "terminal_event": "ROUTER3_BRANCH_VERIFIED_AND_CLEANED",
     }
+
+
+def test_bounded_transition_is_persisted_without_forwarding_dispatch():
+    verdict = _probe(RUN_DOUBLES + r'''
+from dataclasses import replace
+import packet_tracer_mcp.application.cp_scale_live.coordinator as coordinator_module
+from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
+
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+coordinator = offline_coordinator(request)
+evidence = []
+seams._write_evidence = evidence.append
+original_decision = coordinator_module.canonical_step_decision
+def transition_without_forwarding(target, stage):
+    decision = original_decision(target, stage)
+    if stage is target.terminal_stage:
+        return replace(decision, site_forwarding=False)
+    return decision
+coordinator_module.canonical_step_decision = transition_without_forwarding
+result = coordinator.run(request)
+terminal_request = next(
+    item for item in stage_requests
+    if item.projection.stage is CPScaleCanonicalStage.ROUTER0_BRANCH
+)
+print(json.dumps({
+    "outcome": result.outcome.value,
+    "error": result.primary_failure,
+    "forwarding_checks": len(terminal_request.site_forwarding_checks),
+    "transitions": [
+        [item["previous"], item["current"]]
+        for item in calls if item["event"] == "transition"
+    ],
+    "transition_persisted": any(
+        "router0_transition_contract" in item for item in evidence
+    ),
+}))
+''')
+
+    assert verdict["outcome"] == "failed"
+    assert "forwarding" in verdict["error"]
+    assert verdict["forwarding_checks"] == 0
+    assert verdict["transitions"] == [["floor3", "router0-branch"]]
+    assert verdict["transition_persisted"] is True
 
 
 @pytest.mark.parametrize(
@@ -422,11 +474,13 @@ from packet_tracer_mcp.application.cp_scale_live import (
     CPScaleProcessEvidence,
     CPScaleProcessRecord,
     CPScaleRepositoryEvidence,
+    CPScaleRouter3LiveAuthorizationEvidence,
     CPScaleRuntimeEvidence,
 )
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     CPScaleCanonicalStageTransition,
+    CPScaleCanonicalTarget,
     canonical_cp_scale_target_contract,
 )
 from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
@@ -685,6 +739,17 @@ class LocalPreflight:
                 executable_path=r"C:\\PacketTracer.exe",
             ),),
         )
+        authorization = None
+        if target.target is CPScaleCanonicalTarget.ROUTER3_BRANCH:
+            declaration = request.router3_live_authorization
+            authorization = CPScaleRouter3LiveAuthorizationEvidence(
+                authorized_target=CPScaleCanonicalTarget(declaration.target),
+                authorized_sha=declaration.authorized_sha,
+                expected_head=request.expected_head,
+                repository_head=repository.head,
+                upstream_head=repository.upstream_head,
+                source_tree=repository.source_tree,
+            )
         return CPScalePreflightResult(
             target=target,
             runtime=runtime,
@@ -708,6 +773,7 @@ class LocalPreflight:
                 loaded_namespace="packet_tracer_mcp",
             ),
             issues=(),
+            router3_live_authorization=authorization,
         )
 
 

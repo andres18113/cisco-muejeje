@@ -113,6 +113,16 @@ def run_evidence(report: CPScaleRunReport) -> dict[str, object]:
                                "head": preflight.repository.head, "error": preflight.repository.error}
         if preflight.repository.upstream_head_error:
             value["initial_upstream_error"] = preflight.repository.upstream_head_error
+    if preflight.router3_live_authorization is not None:
+        authorization = preflight.router3_live_authorization
+        value["router3_live_authorization"] = {
+            "authorized_target": authorization.authorized_target.value,
+            "authorized_sha": authorization.authorized_sha,
+            "expected_head": authorization.expected_head,
+            "repository_head": authorization.repository_head,
+            "upstream_head": authorization.upstream_head,
+            "source_tree": authorization.source_tree,
+        }
     if preflight.process.state is not CPScaleCheckState.NOT_RUN:
         value["packet_tracer_processes"] = [process_record_mapping(item) for item in preflight.process.processes]
     for name in ("hard_stop", "failure", "closure_scope", "closure",

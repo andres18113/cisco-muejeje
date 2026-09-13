@@ -6,8 +6,11 @@ at `8980ada7ab993cbe5b5b915cefde24deb04b3e3f`; the closure is valid only with
 its cleanup attestation, and no Router0 re-execution is authorized. Router3 has
 an independent governed offline target and its preparation is closed as
 `ROUTER3_OFFLINE_PREPARED`. It has not been executed, has no acquired LIVE
-evidence, and is not `VERIFIED`; its preflight remains explicitly blocked until
-a separate LIVE authorization exists.
+evidence, and is not `VERIFIED`. Its preflight now accepts only an explicit
+`router3-branch` authorization whose operator SHA equals the requested HEAD and
+the observed repository/upstream HEAD; the observed source tree is retained in
+the authorization evidence. Absence or mismatch is rejected before Packet
+Tracer contact. `current_state.json` records no authorization instance.
 
 Router3 architecture ownership is intentionally narrow. E1/E4 owns the two
 Small Branch traffic-flow authorities; E4/E5/E9 own topology, selected wired

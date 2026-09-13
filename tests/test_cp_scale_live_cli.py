@@ -7,7 +7,11 @@ import json
 import sys
 from pathlib import Path
 
-from tests.subprocess_harness import run_isolated_command, subprocess_failure
+from tests.subprocess_harness import (
+    run_isolated_command,
+    run_isolated_python,
+    subprocess_failure,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +26,45 @@ def test_cli_refuses_without_execute_in_a_subprocess():
     assert result.returncode == 2, subprocess_failure(result)
     assert json.loads(result.stdout) == {
         "hard_stop": "--execute is required; no Packet Tracer mutation occurred."
+    }
+
+
+def test_cli_passes_explicit_typed_router3_authorization():
+    source = r'''
+import json
+import sys
+import packet_tracer_mcp.adapters.cli.cp_scale_live as live
+
+captured = {}
+def run(*args, **kwargs):
+    captured.update(kwargs)
+    return 0
+live.run = run
+sys.argv = [
+    "cp-scale-live",
+    "--execute",
+    "--packet-tracer-version", "9.0.1.0858",
+    "--expected-head", "a" * 40,
+    "--target-stage", "router3-branch",
+    "--authorized-live-target", "router3-branch",
+    "--authorized-live-sha", "a" * 40,
+]
+exit_code = live.main()
+authorization = captured["router3_live_authorization"]
+print(json.dumps({
+    "exit_code": exit_code,
+    "target_stage": captured["target_stage"],
+    "authorized_target": authorization.target.value,
+    "authorized_sha": authorization.authorized_sha,
+}))
+'''
+    completed = run_isolated_python(source, cwd=ROOT, governed_root=ROOT)
+    assert completed.returncode == 0, subprocess_failure(completed)
+    assert json.loads(completed.stdout) == {
+        "exit_code": 0,
+        "target_stage": "router3-branch",
+        "authorized_target": "router3-branch",
+        "authorized_sha": "a" * 40,
     }
 
 

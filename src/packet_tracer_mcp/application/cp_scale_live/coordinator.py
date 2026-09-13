@@ -190,7 +190,7 @@ class CPScaleLiveCoordinator:
                 raise CanonicalLiveFailure(acquired.error)
 
         def prepare_stage(projection: CPScaleCanonicalStageProjection, continuity: CPScaleStageContinuity,
-                          *, terminal_boundary: bool) -> tuple[PhysicalDeploymentResult, PhysicalDeploymentResult, tuple[CPScaleObservationRecord, ...]]:
+                          *, bounded_terminal_transition: bool) -> tuple[PhysicalDeploymentResult, PhysicalDeploymentResult, tuple[CPScaleObservationRecord, ...]]:
             nonlocal progress
             first = continuity.previous_projection is None
             progress = replace(progress, active_stage=CPScaleStageProgress(projection))
@@ -205,7 +205,7 @@ class CPScaleLiveCoordinator:
                 boundaries = (boundary,)
                 progress = replace(progress, network_boundaries=(*progress.network_boundaries, (projection.stage.value, boundary)))
                 delta_topology = self.build.delta(previous.topology, projection.topology)
-                if terminal_boundary:
+                if bounded_terminal_transition:
                     transition = self.build.transition(previous, projection)
                     progress = replace(progress, active_stage=replace(progress.active_stage, transition=transition),
                                        branch_transition=transition)
@@ -370,7 +370,9 @@ class CPScaleLiveCoordinator:
                 deployment, delta, boundaries = prepare_stage(
                     projection,
                     continuity.stage,
-                    terminal_boundary=decision.site_forwarding,
+                    bounded_terminal_transition=(
+                        decision.bounded_terminal_transition
+                    ),
                 )
                 acquired = executor.execute(CPScaleStageExecutionInput(projection, composition, deployment, delta, fingerprint,
                     request.packet_tracer_version, continuity.stage,

@@ -22,6 +22,8 @@ from .contracts import (
     CPScaleProcessEvidence,
     CPScaleProcessRecord,
     CPScaleRepositoryEvidence,
+    CPScaleRouter3LiveAuthorizationEvidence,
+    CPScaleRouter3LiveAuthorizationRequest,
     CPScaleRuntimeEvidence,
 )
 
@@ -163,6 +165,11 @@ class CPScaleLocalPreflight:
             )
 
         repository = self._inspect_repository()
+        authorization = _router3_authorization_evidence(
+            request,
+            target,
+            repository,
+        )
         repository_issues = _repository_issues(
             repository,
             expected_branch=self._expected_branch,
@@ -179,6 +186,28 @@ class CPScaleLocalPreflight:
                 process=not_run_process,
                 identity=None,
                 issues=repository_issues,
+                router3_live_authorization=authorization,
+            )
+
+        if (
+            target.target is CPScaleCanonicalTarget.ROUTER3_BRANCH
+            and (
+                authorization is None
+                or not authorization.passed_coherently
+            )
+        ):
+            return CPScalePreflightResult(
+                target=target,
+                runtime=runtime,
+                import_isolation=import_evidence,
+                repository=repository,
+                process=not_run_process,
+                identity=None,
+                issues=(
+                    "Router3 LIVE authorization provenance is incomplete or "
+                    "inconsistent after repository inspection.",
+                ),
+                router3_live_authorization=authorization,
             )
 
         identity = CPScaleLiveSessionIdentity(
@@ -203,6 +232,7 @@ class CPScaleLocalPreflight:
             process=process,
             identity=identity,
             issues=process_issues,
+            router3_live_authorization=authorization,
         )
 
     def _read_runtime(self) -> CPScaleRuntimeEvidence:
@@ -314,17 +344,92 @@ def _request_error(
 ) -> str:
     """Reject unauthorized target/retention combinations before readers."""
 
-    if target.target is CPScaleCanonicalTarget.ROUTER3_BRANCH:
-        return (
-            "Router3 LIVE execution is not authorized; "
-            "offline preparation only."
-        )
+    authorization_error = _router3_authorization_request_error(
+        request,
+        target,
+    )
+    if authorization_error:
+        return authorization_error
     if (
         request.retain_on_full_verification
         and not target.allow_retention
     ):
-        return "Router0 target cannot be combined with full-scale retention."
+        target_name = target.terminal_stage.value.partition("-")[0].capitalize()
+        return (
+            f"{target_name} target cannot be combined with "
+            "full-scale retention."
+        )
     return ""
+
+
+def _router3_authorization_request_error(
+    request: CPScaleLiveRequest,
+    target: CPScaleCanonicalTargetContract,
+) -> str:
+    authorization = request.router3_live_authorization
+    if authorization is None:
+        return (
+            "Router3 LIVE authorization is required and must be supplied "
+            "explicitly."
+            if target.target is CPScaleCanonicalTarget.ROUTER3_BRANCH
+            else ""
+        )
+    if not isinstance(authorization, CPScaleRouter3LiveAuthorizationRequest):
+        return "Router3 LIVE authorization request has an invalid type."
+    try:
+        authorized_target = CPScaleCanonicalTarget(authorization.target)
+    except (TypeError, ValueError):
+        return (
+            "Router3 LIVE authorization target is invalid; observed "
+            f"{authorization.target!r}."
+        )
+    if authorized_target is not CPScaleCanonicalTarget.ROUTER3_BRANCH:
+        return (
+            "Router3 LIVE authorization target must be "
+            f"'router3-branch'; observed {authorized_target.value!r}."
+        )
+    if target.target is not authorized_target:
+        return (
+            "Router3 LIVE authorization does not authorize requested target "
+            f"{target.target.value!r}."
+        )
+    authorized_sha = authorization.authorized_sha
+    if not isinstance(authorized_sha, str) or not authorized_sha:
+        return "Router3 LIVE authorization requires an explicit authorized SHA."
+    if (
+        len(authorized_sha) != 40
+        or any(character not in "0123456789abcdef" for character in authorized_sha)
+    ):
+        return (
+            "Router3 LIVE authorized SHA must be exactly 40 lowercase "
+            "hexadecimal characters."
+        )
+    if authorized_sha != request.expected_head:
+        return (
+            f"Router3 LIVE authorized SHA {authorized_sha!r} does not match "
+            f"request expected HEAD {request.expected_head!r}."
+        )
+    return ""
+
+
+def _router3_authorization_evidence(
+    request: CPScaleLiveRequest,
+    target: CPScaleCanonicalTargetContract,
+    repository: CPScaleRepositoryEvidence,
+) -> CPScaleRouter3LiveAuthorizationEvidence | None:
+    if target.target is not CPScaleCanonicalTarget.ROUTER3_BRANCH:
+        return None
+    authorization = request.router3_live_authorization
+    if not isinstance(authorization, CPScaleRouter3LiveAuthorizationRequest):
+        return None
+    return CPScaleRouter3LiveAuthorizationEvidence(
+        authorized_target=CPScaleCanonicalTarget(authorization.target),
+        authorized_sha=authorization.authorized_sha,
+        expected_head=request.expected_head,
+        repository_head=repository.head,
+        upstream_head=repository.upstream_head,
+        source_tree=repository.source_tree,
+    )
 
 
 def _repository_issues(

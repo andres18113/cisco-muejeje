@@ -365,6 +365,14 @@ class CPScalePreflightOutcome(str, Enum):
 
 
 @dataclass(frozen=True)
+class CPScaleRouter3LiveAuthorizationRequest:
+    """One explicit operator authorization, scoped only to Router3 and a SHA."""
+
+    target: CPScaleCanonicalTarget | str
+    authorized_sha: str
+
+
+@dataclass(frozen=True)
 class CPScaleLiveRequest:
     packet_tracer_version: str
     expected_head: str
@@ -372,6 +380,9 @@ class CPScaleLiveRequest:
     target_stage: CPScaleCanonicalTarget | str = (
         CPScaleCanonicalTarget.FULL_QUALIFICATION
     )
+    router3_live_authorization: (
+        CPScaleRouter3LiveAuthorizationRequest | None
+    ) = None
 
 
 @dataclass(frozen=True)
@@ -446,6 +457,33 @@ class CPScaleRepositoryEvidence:
             and not self.dirty_error
             and not self.upstream_head_error
             and not self.source_tree_error
+        )
+
+
+@dataclass(frozen=True)
+class CPScaleRouter3LiveAuthorizationEvidence:
+    """Repository-bound provenance for one admitted Router3 authorization."""
+
+    authorized_target: CPScaleCanonicalTarget
+    authorized_sha: str
+    expected_head: str
+    repository_head: str
+    upstream_head: str
+    source_tree: str
+
+    @property
+    def passed_coherently(self) -> bool:
+        shas = (
+            self.authorized_sha,
+            self.expected_head,
+            self.repository_head,
+            self.upstream_head,
+        )
+        return bool(
+            self.authorized_target is CPScaleCanonicalTarget.ROUTER3_BRANCH
+            and all(_is_full_sha(item) for item in shas)
+            and len(set(shas)) == 1
+            and _is_full_sha(self.source_tree)
         )
 
 
@@ -545,6 +583,9 @@ class CPScalePreflightResult:
     process: CPScaleProcessEvidence
     identity: CPScaleLiveSessionIdentity | None
     issues: tuple[str, ...]
+    router3_live_authorization: (
+        CPScaleRouter3LiveAuthorizationEvidence | None
+    ) = None
 
     @property
     def evidence_coherent(self) -> bool:
@@ -560,6 +601,16 @@ class CPScalePreflightResult:
             and isinstance(self.target, CPScaleCanonicalTargetContract)
         ):
             return False
+        authorization = self.router3_live_authorization
+        authorization_coherent = (
+            isinstance(
+                authorization,
+                CPScaleRouter3LiveAuthorizationEvidence,
+            )
+            and authorization.passed_coherently
+            if self.target.target is CPScaleCanonicalTarget.ROUTER3_BRANCH
+            else authorization is None
+        )
         return bool(
             self.runtime.coherent
             and self.import_isolation.passed_coherently
@@ -573,6 +624,7 @@ class CPScalePreflightResult:
             and identity.python_executable == self.runtime.python_executable
             and identity.package_file == self.runtime.package_file
             and identity.loaded_namespace == self.runtime.loaded_namespaces[0]
+            and authorization_coherent
             and _processes_match_version_and_path(
                 self.process.processes,
                 identity.packet_tracer_version,
@@ -603,6 +655,14 @@ class CPScalePreflightResult:
             )
             else CPScalePreflightOutcome.REJECTED
         )
+
+
+def _is_full_sha(value: object) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 40
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def _processes_match_version_and_path(
