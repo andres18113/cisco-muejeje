@@ -142,6 +142,20 @@ def test_rolled_buffer_is_resynchronised_by_the_retained_suffix():
     assert window.output == "show ip route\nS* 0.0.0.0\nRouter#"
 
 
+def test_a_buffer_reduced_to_an_old_suffix_contains_no_fresh_window():
+    """A retained prompt alone cannot become fresh empty command output."""
+
+    before = "history\nSwitch0>show interfaces trunk\nrows\nSwitch0>"
+    after = "rows\nSwitch0>"
+
+    window = fresh_command_window(before, after)
+
+    assert not window.fresh
+    assert window.rolled
+    assert window.strategy is FreshWindowStrategy.ROLLED_UNATTRIBUTABLE
+    assert window.output == ""
+
+
 def test_pager_erasing_its_own_marker_is_not_mistaken_for_a_rolled_buffer():
     """Medido en vivo: al salir del pager, IOS borra el `--More--` que imprimio.
 

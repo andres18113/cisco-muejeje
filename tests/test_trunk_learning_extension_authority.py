@@ -228,3 +228,54 @@ def test_old_fwd_row_flicker_cannot_join_the_fresh_boundary_cohort() -> None:
     assert details["learning_extension_expectation_ids"] == [new.id]
     assert details["learning_extension_authorized"] is True
     assert details["learning_extension_stop_reason"] == "converged"
+
+
+def test_lrn_cohort_progressing_to_fwd_keeps_its_earned_observation_window() -> None:
+    """FWD may continue a window earned at LRN, but cannot verify trunk data.
+
+    Floor3 ``...T011017280517Z-008da3f6c4c9`` entered its one extension from
+    an exact LRN boundary.  On the first extension sample STP advanced to FWD
+    while the independent trunk table still reported no forwarding VLANs.
+    Revoking the already-earned window there prevented the next bounded SHOW
+    from observing the trunk table catch up.
+    """
+
+    trunk = _expectation("floor3", "GigabitEthernet0/2")
+    nonforwarding = _trunk_output(old_present=True, new_forwarding=False)
+    forwarding = _trunk_output(old_present=True, new_forwarding=True)
+    stp_states = iter(("LIS", "LRN", "FWD", "FWD"))
+
+    def stp(_device_name: str) -> dict[str, object]:
+        state = next(stp_states)
+        return _stp_observation({
+            "GigabitEthernet0/1": state,
+            "GigabitEthernet0/2": state,
+        })
+
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=lambda _payload, _timeout: None,
+        trunk_timeout_seconds=0.0,
+        convergence_interval_seconds=0.0,
+        trunk_transition_observer=stp,
+        simulation_time_observer=_simulation_clock(0, 0, 1_000),
+    )
+    runtime._ios = _SequenceIos([
+        _trunk_result(nonforwarding),
+        _trunk_result(nonforwarding),
+        _trunk_result(nonforwarding),
+        _trunk_result(forwarding),
+    ])
+
+    result = runtime.verify([trunk])[0]
+
+    assert result.status is ActionExecutionStatus.VERIFIED
+    details = result.convergence.details
+    assert details["learning_extension_candidate"] is True
+    assert details["learning_extension_authorized"] is True
+    assert details["learning_extension_stop_reason"] == "converged"
+    assert details["learning_extension_sample_count"] == 2
+    assert details["learning_boundary_stp"]["instances"][0]["ports"][0][
+        "state"
+    ] == "FWD"

@@ -321,6 +321,12 @@ def fresh_command_window(before: str, after: str) -> FreshWindow:
         # frescura explicita, no una ventana vacia que alguien pueda confundir
         # con "el comando no imprimio nada".
         return FreshWindow("", False, FreshWindowStrategy.ROLLED_UNATTRIBUTABLE, rolled=True)
+    if retained == len(after):
+        # El buffer sólo perdió historia: todo byte que quedó ya pertenecía al
+        # baseline. No existe un delta que se pueda atribuir al comando actual.
+        return FreshWindow(
+            "", False, FreshWindowStrategy.ROLLED_UNATTRIBUTABLE, rolled=True,
+        )
     return FreshWindow(
         after[retained:], True, FreshWindowStrategy.ROLLED_SUFFIX_ANCHOR, rolled=True,
     )

@@ -1076,6 +1076,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
 
         def expectation_learning_progress_target_ms(
             expectation: VerificationExpectation,
+            *,
+            allow_forwarding: bool = False,
         ) -> float | None:
             observed = latest.get(expectation.id, {})
             fields = observed.get("fields")
@@ -1136,10 +1138,16 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         expected_interface,
                     )
                 ), None)
+                state = str(
+                    port.get("state") if isinstance(port, dict) else ""
+                ).upper()
+                allowed_states = (
+                    {"LRN", "FWD"} if allow_forwarding else {"LRN"}
+                )
                 if (
                     port is None
                     or port.get("row_present") is not True
-                    or str(port.get("state") or "").upper() != "LRN"
+                    or state not in allowed_states
                 ):
                     return None
             if len(progress_targets) != 1:
@@ -1186,7 +1194,10 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 observed = latest.get(expectation.id, {})
                 if self._trunk_observation_verified(observed):
                     continue
-                if expectation_learning_progress_target_ms(expectation) is None:
+                if expectation_learning_progress_target_ms(
+                    expectation,
+                    allow_forwarding=True,
+                ) is None:
                     return False
             return True
 
