@@ -172,6 +172,34 @@
       },
       "successful_closure": false,
       "evidence_authority": "FAILED_RUN_ONLY"
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260913T031542845385Z-ccfb555f685a",
+      "executed_sha": "ccfb555f685ae460a4ced023aab7fc66b981b9f2",
+      "requested_target_field": "router0-branch",
+      "failed_stage": "router0-branch",
+      "classification": "FAILED",
+      "failure": "CanonicalLiveFailure: Control plane at 'router0-branch' was not VERIFIED: failed/foundational_configuration_missing",
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260913T031542845385Z-ccfb555f685a-failure-precleanup.json",
+          "sha256": "dff81031a11f4a5082becd50cd6668485496ec3b2ee50ce9e27be41cc438b696"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260913T031542845385Z-ccfb555f685a-cleanup.json",
+          "sha256": "173b72fd9b808f300855b8b619f776a554fefdfabf9e47af163badfa454f6786"
+        }
+      ],
+      "cleanup": {
+        "verified": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "realtime_verified": true
+      },
+      "successful_closure": false,
+      "evidence_authority": "FAILED_RUN_ONLY"
     }
   ]
 }

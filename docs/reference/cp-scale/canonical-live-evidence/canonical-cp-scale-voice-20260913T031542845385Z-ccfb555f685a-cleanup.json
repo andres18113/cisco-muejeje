@@ -1,0 +1,2709 @@
+{
+  "canonical_evidence_precleanup": {
+    "path": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP\\.claude\\worktrees\\runtime-ripv2\\docs\\reference\\cp-scale\\canonical-live-evidence\\canonical-cp-scale-voice-20260913T031542845385Z-ccfb555f685a-failure-precleanup.json",
+    "phase": "failure-precleanup",
+    "run_identity": "canonical-cp-scale-voice-20260913T031542845385Z-ccfb555f685a",
+    "sha256": "dff81031a11f4a5082becd50cd6668485496ec3b2ee50ce9e27be41cc438b696"
+  },
+  "cleanup": {
+    "first": {
+      "backend_managed_device_count": 4,
+      "devices": [
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device0",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device1",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device4",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device6",
+          "ports": []
+        }
+      ],
+      "link_count": 0,
+      "links": [],
+      "message": "fresh_complete_workspace_inventory",
+      "observed": true,
+      "semantic_device_count": 0
+    },
+    "mutations": [
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "sw-dist-multilayer-branch-01",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "sw-dist-large-branch-01",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "sw-acc-multilayer-branch-mls6-01",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "sw-acc-multilayer-branch-mls5-01",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "sw-acc-multilayer-branch-mls4-01",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "sw-acc-multilayer-branch-mls3-01",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "sw-acc-large-branch-zone-d-02",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "sw-acc-large-branch-zone-d-01",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "sw-acc-large-branch-zone-c-02",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "sw-acc-large-branch-zone-c-01",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "sw-acc-large-branch-zone-b-02",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "sw-acc-large-branch-zone-b-01",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "sw-acc-large-branch-zone-a-02",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "sw-acc-large-branch-zone-a-01",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "r-edge-small-branch-01",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "r-edge-multilayer-branch-01",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "r-edge-large-branch-01",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls6/webcam/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls6/user_pc/010",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls6/user_pc/009",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls6/user_pc/008",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls6/user_pc/007",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls6/user_pc/006",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls6/user_pc/005",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls6/user_pc/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls6/user_pc/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls6/user_pc/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls6/user_pc/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls6/smoke_detector/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls6/motion_detector/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls6/laptop/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls6/laptop/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls6/access_point/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls5/ip_phone/008",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls5/ip_phone/007",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls5/ip_phone/006",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls5/ip_phone/005",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls5/ip_phone/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls5/ip_phone/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls5/ip_phone/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls5/ip_phone/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls4/webcam/008",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls4/webcam/007",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls4/webcam/006",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls4/webcam/005",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls4/webcam/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls4/webcam/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls4/webcam/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls4/webcam/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls4/temperature_monitor/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls4/ip_phone/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls4/access_point/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/webcam/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/user_pc/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/user_pc/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/temperature_monitor/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/motion_detector/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/motion_detector/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/ip_phone/011",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/ip_phone/010",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/ip_phone/009",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/ip_phone/008",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/ip_phone/007",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/ip_phone/006",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/ip_phone/005",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/ip_phone/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/ip_phone/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/ip_phone/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/ip_phone/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/multilayer-branch/multilayer-campus/access/mls3/access_point/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/webcam/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/webcam/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/webcam/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/webcam/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/020",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/019",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/018",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/017",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/016",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/015",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/014",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/013",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/012",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/011",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/010",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/009",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/008",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/007",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/006",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/005",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/user_pc/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/smoke_detector/008",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/smoke_detector/007",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/smoke_detector/006",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/smoke_detector/005",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/smoke_detector/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/smoke_detector/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/smoke_detector/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/smoke_detector/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/printer/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/printer/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/motion_detector/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/motion_detector/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/motion_detector/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/motion_detector/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/ip_phone/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/ip_phone/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/ip_phone/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/ip_phone/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/access_point/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/access_point/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-d/access_point/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/webcam/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/webcam/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/webcam/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/webcam/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/023",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/022",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/021",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/020",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/019",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/018",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/017",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/016",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/015",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/014",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/013",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/012",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/011",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/010",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/009",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/008",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/007",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/006",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/005",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/user_pc/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/smoke_detector/010",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/smoke_detector/009",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/smoke_detector/008",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/smoke_detector/007",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/smoke_detector/006",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/smoke_detector/005",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/smoke_detector/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/smoke_detector/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/smoke_detector/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/smoke_detector/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/printer/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/printer/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/motion_detector/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/motion_detector/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/motion_detector/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/motion_detector/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/ip_phone/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/ip_phone/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/ip_phone/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/humiture_monitor/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/humiture_monitor/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/access_point/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/access_point/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-3/zone-c/access_point/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/webcam/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/webcam/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/webcam/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/webcam/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/020",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/019",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/018",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/017",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/016",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/015",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/014",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/013",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/012",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/011",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/010",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/009",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/008",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/007",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/006",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/005",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/user_pc/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/smoke_detector/009",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/smoke_detector/008",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/smoke_detector/007",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/smoke_detector/006",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/smoke_detector/005",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/smoke_detector/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/smoke_detector/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/smoke_detector/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/smoke_detector/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/printer/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/printer/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/motion_detector/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/motion_detector/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/motion_detector/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/motion_detector/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/ip_phone/014",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/ip_phone/013",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/ip_phone/012",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/ip_phone/011",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/ip_phone/010",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/ip_phone/009",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/ip_phone/008",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/ip_phone/007",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/ip_phone/006",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/ip_phone/005",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/ip_phone/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/ip_phone/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/ip_phone/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/ip_phone/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/access_point/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/access_point/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-2/zone-b/access_point/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/webcam/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/webcam/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/webcam/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/webcam/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/023",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/022",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/021",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/020",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/019",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/018",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/017",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/016",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/015",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/014",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/013",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/012",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/011",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/010",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/009",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/008",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/007",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/006",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/005",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/user_pc/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/smoke_detector/011",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/smoke_detector/010",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/smoke_detector/009",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/smoke_detector/008",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/smoke_detector/007",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/smoke_detector/006",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/smoke_detector/005",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/smoke_detector/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/smoke_detector/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/smoke_detector/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/smoke_detector/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/printer/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/printer/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/motion_detector/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/motion_detector/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/motion_detector/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/motion_detector/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/021",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/020",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/019",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/018",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/017",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/016",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/015",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/014",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/013",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/012",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/011",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/010",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/009",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/008",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/007",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/006",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/005",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/004",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/ip_phone/001",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/access_point/003",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/access_point/002",
+        "target_kind": "device"
+      },
+      {
+        "applied": true,
+        "disposition": "changed",
+        "inverse_action_id": "",
+        "inverse_available": false,
+        "message": "Exact disposable device cleanup was acknowledged.",
+        "target_id": "endpoint/large-branch/campus/floor-1/zone-a/access_point/001",
+        "target_kind": "device"
+      }
+    ],
+    "restoration_error": "",
+    "second": {
+      "backend_managed_device_count": 4,
+      "devices": [
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device0",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device1",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device4",
+          "ports": []
+        },
+        {
+          "backend_managed": true,
+          "model": "Power Distribution Device",
+          "name": "Power Distribution Device6",
+          "ports": []
+        }
+      ],
+      "link_count": 0,
+      "links": [],
+      "message": "fresh_complete_workspace_inventory",
+      "observed": true,
+      "semantic_device_count": 0
+    },
+    "verified": true
+  },
+  "cleanup_completed_at": "2026-09-13T03:51:46.593891+00:00",
+  "cleanup_realtime": {
+    "error": "",
+    "state": {
+      "current_index": 0,
+      "frames": 0,
+      "message": "simulation_state_readback",
+      "observed": true,
+      "sim_time": 1711939,
+      "simulation_mode": false
+    },
+    "verified": true
+  },
+  "failure": "CanonicalLiveFailure: Control plane at 'router0-branch' was not VERIFIED: failed/foundational_configuration_missing",
+  "run_identity": "canonical-cp-scale-voice-20260913T031542845385Z-ccfb555f685a",
+  "schema": "cp-scale-canonical-cleanup-attestation-v1",
+  "source_head": "ccfb555f685ae460a4ced023aab7fc66b981b9f2"
+}
