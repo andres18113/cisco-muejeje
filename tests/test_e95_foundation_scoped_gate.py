@@ -21,8 +21,9 @@ halves of it:
 * every declared foundation must still be VERIFIED, and anything less blocks
   E9 with zero mutation.
 
-Nothing here promotes a status. Nothing here hardcodes the bounded topology's
-ids or counts: the required set is read from the typed plan.
+Only the separately tested endpoint-core translation may resolve a PARTIAL
+ceiling. Nothing here hardcodes the bounded topology's ids or counts: the
+required set is read from the typed plan.
 """
 
 from __future__ import annotations
@@ -53,6 +54,9 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
 from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     VerificationKind,
 )
+from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+    ControlPlanePlan,
+)
 from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import VoiceIntent
 
 from test_e95_e5_capability_evidence import (
@@ -79,6 +83,16 @@ RUN5_SHAPE = {
     VerificationKind.ACCESS_PORT: ActionExecutionStatus.UNOBSERVABLE,
     VerificationKind.ENDPOINT_ADDRESSING: ActionExecutionStatus.PARTIAL,
 }
+
+
+def _empty_control_plane_plan() -> ControlPlanePlan:
+    return ControlPlanePlan(
+        id="cp/empty",
+        source_topology_id="topology",
+        source_topology_hash="topology-hash",
+        source_configuration_id="configuration",
+        source_configuration_hash="configuration-hash",
+    )
 
 
 class _ShapedConfigurationRuntime:
@@ -384,7 +398,11 @@ def test_a_required_link_foundation_that_was_not_observed_blocks_e9(measured_sto
     physical.bind(topology)
     configuration = _ShapedConfigurationRuntime(physical, topology)
     control_plane = _RecordingControlPlaneRuntime()
-    statuses = derive_foundational_statuses(physical_result=None, configuration_result=None)
+    statuses = derive_foundational_statuses(
+        _empty_control_plane_plan(),
+        physical_result=None,
+        configuration_result=None,
+    )
 
     assert statuses == {}
 
@@ -420,8 +438,10 @@ def test_no_foundational_status_is_ever_supplied_rather_than_derived():
 
     signature = inspect.signature(derive_foundational_statuses)
 
-    assert set(signature.parameters) == {"configuration_result", "physical_result"}
-    assert derive_foundational_statuses() == {}
+    assert set(signature.parameters) == {
+        "plan", "configuration_result", "physical_result",
+    }
+    assert derive_foundational_statuses(_empty_control_plane_plan()) == {}
 
 
 # --------------------------------------------------------------------------

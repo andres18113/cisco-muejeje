@@ -13,11 +13,13 @@ gate is real product code; fed that way it decides nothing. Closing
 `TD-ACCEPTANCE-001` row 4 means deriving the same mapping from executed
 results, which is what this module does.
 
-The single rule everything here follows: **VERIFIED is only ever copied, never
-minted.** A configuration foundation is VERIFIED when its verification result
-says so, and a link foundation is VERIFIED when the deployment actually
-observed it. Every other disposition is carried through at its own strength,
-so the gate refuses instead of being talked into agreeing.
+The single rule everything here follows: **VERIFIED is derived only from
+attributable evidence, never assumed.** A configuration foundation normally
+copies its verification result, a link foundation requires deployment
+read-back, and an endpoint foundation may resolve the backend's legitimate
+PARTIAL ceiling only from its fresh, exact IPv4/netmask observation. Every
+other disposition stays bounded so the gate refuses instead of being talked
+into agreeing.
 """
 
 from __future__ import annotations
@@ -27,8 +29,13 @@ from collections.abc import Mapping
 from ...domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationResult,
+    FieldVerificationStatus,
+    VerificationResult,
 )
-from ...domain.enterprise.models.control_plane import ControlPlanePlan
+from ...domain.enterprise.models.control_plane import (
+    ControlPlaneFoundationRequirement,
+    ControlPlanePlan,
+)
 from ...domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentItemStatus,
     PhysicalDeploymentResult,
@@ -65,6 +72,10 @@ _PHYSICAL_TO_ACTION: dict[PhysicalDeploymentItemStatus, ActionExecutionStatus] =
     PhysicalDeploymentItemStatus.FAILED: ActionExecutionStatus.FAILED,
 }
 
+_CONFIGURATION_FOUNDATION_KINDS = frozenset({
+    "l3_interface", "endpoint_address", "vlan", "access_port", "trunk",
+})
+
 
 def _weakest(
     left: ActionExecutionStatus, right: ActionExecutionStatus,
@@ -87,12 +98,87 @@ def _merge(
     target[source_id] = status if existing is None else _weakest(existing, status)
 
 
+def _endpoint_core_is_verified(
+    plan: ControlPlanePlan,
+    requirement: ControlPlaneFoundationRequirement,
+    configuration_result: ConfigurationApplicationResult,
+    verification: VerificationResult,
+) -> bool:
+    """Whether one E5 row can satisfy its exact E9 endpoint foundation."""
+    if (
+        requirement.source_hash != plan.source_configuration_hash
+        or configuration_result.config_plan_id != plan.source_configuration_id
+        or configuration_result.config_semantic_hash
+        != plan.source_configuration_hash
+        or verification.action_id != requirement.source_id
+        or not verification.expectation_id
+        or verification.status not in {
+            ActionExecutionStatus.PARTIAL,
+            ActionExecutionStatus.VERIFIED,
+        }
+        or verification.evidence_method != "structured_endpoint_getters"
+        or not verification.fresh_evidence
+        or verification.fields.get("ipv4")
+        is not FieldVerificationStatus.VERIFIED
+        or verification.fields.get("netmask")
+        is not FieldVerificationStatus.VERIFIED
+        or verification.convergence is None
+        or verification.convergence.final_status is not verification.status
+    ):
+        return False
+
+    details = verification.convergence.details
+    observation = details.get("last_observation")
+    if (
+        details.get("kind") != "endpoint_addressing"
+        or not isinstance(observation, Mapping)
+        or observation.get("device_found") is not True
+        or observation.get("port_found") is not True
+        or observation.get("address_channel") is not True
+        or observation.get("fresh_evidence") is not True
+        or observation.get("failure_reason") not in (None, "")
+    ):
+        return False
+
+    device_name = details.get("device_name")
+    interface = details.get("interface")
+    return bool(
+        isinstance(device_name, str)
+        and device_name.strip()
+        and isinstance(interface, str)
+        and interface.strip()
+        and observation.get("interface") == interface
+        and str(observation.get("ipv4") or "").strip()
+        and str(observation.get("netmask") or "").strip()
+    )
+
+
+def _configuration_foundation_status(
+    plan: ControlPlanePlan,
+    requirement: ControlPlaneFoundationRequirement,
+    configuration_result: ConfigurationApplicationResult,
+    verification: VerificationResult,
+) -> ActionExecutionStatus:
+    if requirement.kind != "endpoint_address":
+        return verification.status
+    if _endpoint_core_is_verified(
+        plan, requirement, configuration_result, verification,
+    ):
+        return ActionExecutionStatus.VERIFIED
+    # A contradictory aggregate VERIFIED cannot outrank missing or stale core
+    # evidence. Preserve every already-bounded status at its original strength.
+    if verification.status is ActionExecutionStatus.VERIFIED:
+        return ActionExecutionStatus.UNKNOWN
+    return verification.status
+
+
 def derive_foundational_statuses(
+    plan: ControlPlanePlan,
     *,
     configuration_result: ConfigurationApplicationResult | None = None,
     physical_result: PhysicalDeploymentResult | None = None,
 ) -> dict[str, ActionExecutionStatus]:
-    """Map every foundation `source_id` to the status its evidence supports.
+    """Map the plan's foundation `source_id` values to supported statuses.
 
     Configuration foundations (`l3_interface`, `vlan`, `trunk`, `access_port`,
     `endpoint_address`) are keyed by a `ConfigurationAction.id`, and their
@@ -104,19 +190,49 @@ def derive_foundational_statuses(
     configuration result at all; their evidence is the physical deployment's
     own read-back, translated through `_PHYSICAL_TO_ACTION`.
 
+    Endpoint requirements are the deliberate exception to copying the aggregate
+    E5 status: PT 9.0.1 can freshly verify IPv4 and netmask while gateway and DNS
+    remain unobservable, leaving the E5 aggregate PARTIAL. That exact,
+    attributable core observation satisfies only its matching E9
+    `endpoint_address` requirement. No other PARTIAL status is promoted.
+
     Passing neither result returns an empty mapping, which makes the gate
-    refuse. That is the correct answer to "no evidence", and it is why this
-    function has no parameter that could supply a status directly.
+    refuse. The plan scopes which executed rows are eligible; it cannot supply
+    a status directly.
     """
     statuses: dict[str, ActionExecutionStatus] = {}
+    requirements_by_source: dict[
+        str, list[ControlPlaneFoundationRequirement]
+    ] = {}
+    for requirement in plan.foundational_requirements:
+        if requirement.source_id:
+            requirements_by_source.setdefault(requirement.source_id, []).append(
+                requirement,
+            )
 
     if configuration_result is not None:
         for item in configuration_result.verification_results:
-            _merge(statuses, item.action_id, item.status)
+            for requirement in requirements_by_source.get(item.action_id, ()):
+                if requirement.kind not in _CONFIGURATION_FOUNDATION_KINDS:
+                    continue
+                _merge(
+                    statuses,
+                    requirement.source_id,
+                    _configuration_foundation_status(
+                        plan, requirement, configuration_result, item,
+                    ),
+                )
 
     if physical_result is not None:
         for item in physical_result.item_results:
             if item.target_kind is not PhysicalObjectKind.LINK:
+                continue
+            requirements = [
+                requirement
+                for requirement in requirements_by_source.get(item.target_id, ())
+                if requirement.kind == "link"
+            ]
+            if not requirements:
                 continue
             status = _PHYSICAL_TO_ACTION.get(
                 item.status, ActionExecutionStatus.UNKNOWN,
@@ -125,7 +241,8 @@ def derive_foundational_statuses(
             # A row claiming OBSERVED without it is not evidence of anything.
             if status is ActionExecutionStatus.VERIFIED and not item.observed:
                 status = ActionExecutionStatus.UNKNOWN
-            _merge(statuses, item.target_id, status)
+            for requirement in requirements:
+                _merge(statuses, requirement.source_id, status)
 
     return statuses
 
@@ -137,16 +254,25 @@ def derive_foundational_hashes(
 ) -> dict[str, str]:
     """Hashes for the foundations that actually declare one.
 
-    Only `kind="security"` requirements carry a non-empty `source_hash`; every
-    other kind leaves it blank and the gate skips the comparison. So an empty
-    mapping is the honest answer for a routing-only plan, and inventing entries
-    for the other kinds would compare a value against nothing.
+    An endpoint requirement may carry the source configuration hash. It is
+    projected only when it exactly matches the plan's own configuration hash;
+    the requirement cannot bootstrap its arbitrary value into authority.
+    Security keeps the same rule against its separately supplied hash.
     """
     hashes: dict[str, str] = {}
     for requirement in plan.foundational_requirements:
         if not requirement.source_hash:
             continue
-        if requirement.kind == "security" and security_plan_hash:
+        if (
+            requirement.kind == "endpoint_address"
+            and requirement.source_hash == plan.source_configuration_hash
+        ):
+            hashes[requirement.source_id] = plan.source_configuration_hash
+        elif (
+            requirement.kind == "security"
+            and security_plan_hash
+            and requirement.source_hash == security_plan_hash
+        ):
             hashes[requirement.source_id] = security_plan_hash
     return hashes
 

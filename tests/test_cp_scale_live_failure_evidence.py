@@ -681,7 +681,13 @@ projection = SimpleNamespace(
         actions=[SimpleNamespace(id="cfg-1")],
     ),
     control_plane=SimpleNamespace(
-        semantic_hash="control-hash", actions=[], verification_expectations=[],
+        id="control-plane/floor1",
+        semantic_hash="control-hash",
+        source_configuration_id="configuration/floor1",
+        source_configuration_hash="config-hash",
+        foundational_requirements=[],
+        actions=[],
+        verification_expectations=[],
     ),
     voice=None,
 )

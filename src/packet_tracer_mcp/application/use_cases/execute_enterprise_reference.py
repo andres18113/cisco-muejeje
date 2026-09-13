@@ -829,6 +829,7 @@ def _execute_mutating_stages(
         # Derivada de resultados ejecutados. No hay parametro por el que un
         # estado pudiera suministrarse: esa es la diferencia con el harness.
         foundational_statuses = derive_foundational_statuses(
+            composed.control_plane,
             configuration_result=configuration_result,
             physical_result=state.deployment,
         )
@@ -869,6 +870,7 @@ def _execute_mutating_stages(
                 )
                 state.configuration_result = configuration_result
                 foundational_statuses = derive_foundational_statuses(
+                    composed.control_plane,
                     configuration_result=configuration_result,
                     physical_result=state.deployment,
                 )

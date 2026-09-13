@@ -206,7 +206,11 @@ class CPScaleStageExecutor:
                 raise _StageStopped(configured.error)
 
             boundary = "voice"
-            statuses = derive_foundational_statuses(configuration_result=configuration, physical_result=deployment)
+            statuses = derive_foundational_statuses(
+                projection.control_plane,
+                configuration_result=configuration,
+                physical_result=deployment,
+            )
             barrier = getattr(configuration, "voice_signal_barrier", None)
             if (
                 has_voice and barrier is not None
@@ -238,7 +242,11 @@ class CPScaleStageExecutor:
                 configuration_accepted = not completion_error
                 if completion_error:
                     raise RuntimeError(completion_error)
-                statuses = derive_foundational_statuses(configuration_result=configuration, physical_result=deployment)
+                statuses = derive_foundational_statuses(
+                    projection.control_plane,
+                    configuration_result=configuration,
+                    physical_result=deployment,
+                )
                 return statuses
 
             voice = self.voice.apply(

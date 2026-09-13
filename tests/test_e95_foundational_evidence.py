@@ -19,6 +19,8 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
     ActionExecutionStatus,
     ConfigurationApplicationResult,
     ConfigurationApplicationStatus,
+    ConvergenceReport,
+    FieldVerificationStatus,
     VerificationResult,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
@@ -66,6 +68,44 @@ def _verification(
     )
 
 
+def _endpoint_verification(
+    action_id: str = "cfg/endpoint-dhcp/pc-01",
+) -> VerificationResult:
+    """Mirror the fresh E5 endpoint evidence measured in Router0."""
+    return VerificationResult(
+        expectation_id="cfg/verify/endpoint-pc-01",
+        action_id=action_id,
+        status=ActionExecutionStatus.PARTIAL,
+        evidence_method="structured_endpoint_getters",
+        fresh_evidence=True,
+        fields={
+            "ipv4": FieldVerificationStatus.VERIFIED,
+            "netmask": FieldVerificationStatus.VERIFIED,
+            "gateway": FieldVerificationStatus.UNOBSERVABLE,
+            "dns": FieldVerificationStatus.UNOBSERVABLE,
+        },
+        convergence=ConvergenceReport(
+            attempts=1,
+            final_status=ActionExecutionStatus.PARTIAL,
+            details={
+                "kind": "endpoint_addressing",
+                "device_name": "MULTILAYER-BRANCH-MLS3-PC-01",
+                "interface": "FastEthernet0",
+                "last_observation": {
+                    "device_found": True,
+                    "port_found": True,
+                    "address_channel": True,
+                    "interface": "FastEthernet0",
+                    "ipv4": "172.18.10.7",
+                    "netmask": "255.255.255.0",
+                    "fresh_evidence": True,
+                    "failure_reason": "",
+                },
+            },
+        ),
+    )
+
+
 def _physical(items: list[PhysicalDeploymentItemResult]) -> PhysicalDeploymentResult:
     return PhysicalDeploymentResult(
         topology_id="uce-topo",
@@ -107,11 +147,22 @@ def _plan(
     )
 
 
+def _plan_for(kind: str, source_id: str) -> ControlPlanePlan:
+    return _plan([
+        ControlPlaneFoundationRequirement(
+            id=f"foundation/{kind}/{source_id}",
+            kind=kind,
+            source_id=source_id,
+        ),
+    ])
+
+
 # ============ A. VERIFIED is copied from evidence, never minted ============
 
 
 def test_a_verified_configuration_foundation_comes_from_its_verification():
     statuses = derive_foundational_statuses(
+        _plan_for("l3_interface", "cfg/routed/r1-lan"),
         configuration_result=_config([
             _verification("cfg/routed/r1-lan", ActionExecutionStatus.VERIFIED),
         ]),
@@ -122,7 +173,7 @@ def test_a_verified_configuration_foundation_comes_from_its_verification():
 
 def test_no_evidence_at_all_yields_no_statuses():
     """The gate must refuse, and refusing is what an empty mapping does."""
-    assert derive_foundational_statuses() == {}
+    assert derive_foundational_statuses(_plan([])) == {}
 
 
 @pytest.mark.parametrize(
@@ -139,6 +190,7 @@ def test_no_evidence_at_all_yields_no_statuses():
 )
 def test_a_non_verified_verification_is_never_promoted(status):
     statuses = derive_foundational_statuses(
+        _plan_for("l3_interface", "cfg/routed/r1"),
         configuration_result=_config([_verification("cfg/routed/r1", status)]),
     )
 
@@ -154,6 +206,7 @@ def test_an_applied_action_result_never_becomes_a_foundation():
     dispatched action as satisfying the gate.
     """
     statuses = derive_foundational_statuses(
+        _plan_for("l3_interface", "cfg/routed/r1"),
         configuration_result=_config(
             verifications=[],
             actions=[ActionApplicationResult(
@@ -171,6 +224,7 @@ def test_an_applied_action_result_never_becomes_a_foundation():
 
 def test_an_observed_link_is_verified():
     statuses = derive_foundational_statuses(
+        _plan_for("link", "link/wan-r1-r2"),
         physical_result=_physical([
             _link_item("link/wan-r1-r2", PhysicalDeploymentItemStatus.OBSERVED),
         ]),
@@ -185,6 +239,7 @@ def test_an_observed_row_without_the_observed_flag_is_not_verified():
     Fail closed rather than trusting the label over the evidence field.
     """
     statuses = derive_foundational_statuses(
+        _plan_for("link", "link/wan-r1-r2"),
         physical_result=_physical([
             _link_item(
                 "link/wan-r1-r2",
@@ -208,6 +263,7 @@ def test_an_observed_row_without_the_observed_flag_is_not_verified():
 )
 def test_only_an_observed_link_can_reach_verified(physical, expected):
     statuses = derive_foundational_statuses(
+        _plan_for("link", "link/a"),
         physical_result=_physical([_link_item("link/a", physical)]),
     )
 
@@ -218,6 +274,7 @@ def test_only_an_observed_link_can_reach_verified(physical, expected):
 def test_a_non_link_physical_item_is_not_a_foundation():
     """Device foundations do not exist; only links are keyed by a plan id."""
     statuses = derive_foundational_statuses(
+        _plan_for("link", "r1"),
         physical_result=_physical([
             PhysicalDeploymentItemResult(
                 target_id="r1",
@@ -236,6 +293,16 @@ def test_a_non_link_physical_item_is_not_a_foundation():
 
 def test_two_sources_disagreeing_resolve_to_the_weaker():
     statuses = derive_foundational_statuses(
+        _plan([
+            ControlPlaneFoundationRequirement(
+                id="foundation/l3_interface/shared/id",
+                kind="l3_interface", source_id="shared/id",
+            ),
+            ControlPlaneFoundationRequirement(
+                id="foundation/link/shared/id",
+                kind="link", source_id="shared/id",
+            ),
+        ]),
         configuration_result=_config([
             _verification("shared/id", ActionExecutionStatus.VERIFIED),
         ]),
@@ -249,6 +316,7 @@ def test_two_sources_disagreeing_resolve_to_the_weaker():
 
 def test_conflict_resolution_does_not_depend_on_argument_order():
     duplicated = derive_foundational_statuses(
+        _plan_for("l3_interface", "cfg/a"),
         configuration_result=_config([
             _verification("cfg/a", ActionExecutionStatus.FAILED),
             _verification("cfg/a", ActionExecutionStatus.VERIFIED),
@@ -260,6 +328,7 @@ def test_conflict_resolution_does_not_depend_on_argument_order():
 
 def test_an_empty_source_id_is_never_recorded():
     statuses = derive_foundational_statuses(
+        _plan_for("l3_interface", ""),
         configuration_result=_config([
             _verification("", ActionExecutionStatus.VERIFIED),
         ]),
@@ -426,8 +495,8 @@ def test_the_preview_agrees_with_the_applicator_gate(statuses, hashes):
 def test_the_helper_exposes_no_way_to_supply_a_status_directly():
     """The defect was a caller-supplied mapping of VERIFIED.
 
-    `derive_foundational_statuses` takes only executed results, so the
-    fabricated shape has no parameter to enter through.
+    `derive_foundational_statuses` takes the typed requirement scope and only
+    executed results, so the fabricated shape has no parameter to enter through.
     """
     import inspect
 
@@ -435,20 +504,11 @@ def test_the_helper_exposes_no_way_to_supply_a_status_directly():
         inspect.signature(derive_foundational_statuses).parameters,
     )
 
-    assert parameters == {"configuration_result", "physical_result"}
+    assert parameters == {"plan", "configuration_result", "physical_result"}
 
 
 def test_a_full_reference_shape_verifies_only_what_was_observed():
     """One L3 interface verified, one unobservable, one link observed."""
-    statuses = derive_foundational_statuses(
-        configuration_result=_config([
-            _verification("cfg/routed/r1-lan", ActionExecutionStatus.VERIFIED),
-            _verification("cfg/endpoint/pc-a01", ActionExecutionStatus.PARTIAL),
-        ]),
-        physical_result=_physical([
-            _link_item("link/wan-r1-r2", PhysicalDeploymentItemStatus.OBSERVED),
-        ]),
-    )
     plan = _plan([
         ControlPlaneFoundationRequirement(
             id="foundation/l3_interface/cfg/routed/r1-lan",
@@ -463,6 +523,16 @@ def test_a_full_reference_shape_verifies_only_what_was_observed():
             kind="link", source_id="link/wan-r1-r2",
         ),
     ])
+    statuses = derive_foundational_statuses(
+        plan,
+        configuration_result=_config([
+            _verification("cfg/routed/r1-lan", ActionExecutionStatus.VERIFIED),
+            _verification("cfg/endpoint/pc-a01", ActionExecutionStatus.PARTIAL),
+        ]),
+        physical_result=_physical([
+            _link_item("link/wan-r1-r2", PhysicalDeploymentItemStatus.OBSERVED),
+        ]),
+    )
 
     assert statuses["cfg/routed/r1-lan"] is ActionExecutionStatus.VERIFIED
     assert statuses["link/wan-r1-r2"] is ActionExecutionStatus.VERIFIED
@@ -471,3 +541,118 @@ def test_a_full_reference_shape_verifies_only_what_was_observed():
     assert unmet_foundations(plan, statuses) == [
         "endpoint_address:cfg/endpoint/pc-a01 is partial, not verified.",
     ]
+
+
+# ============ H. E5 endpoint evidence resolves its exact E9 requirement ============
+
+
+def _endpoint_plan(
+    *, source_hash: str = "cfg-hash",
+) -> ControlPlanePlan:
+    return _plan([
+        ControlPlaneFoundationRequirement(
+            id="foundation/endpoint_address/cfg/endpoint-dhcp/pc-01",
+            kind="endpoint_address",
+            source_id="cfg/endpoint-dhcp/pc-01",
+            source_hash=source_hash,
+        ),
+    ])
+
+
+def test_fresh_e5_ipv4_and_netmask_satisfy_the_matching_e9_endpoint_requirement():
+    """Catch treating the legitimate gateway/DNS ceiling as an E9 failure."""
+    plan = _endpoint_plan()
+
+    statuses = derive_foundational_statuses(
+        plan,
+        configuration_result=_config([_endpoint_verification()]),
+    )
+
+    assert statuses == {
+        "cfg/endpoint-dhcp/pc-01": ActionExecutionStatus.VERIFIED,
+    }
+    assert derive_foundational_hashes(plan) == {
+        "cfg/endpoint-dhcp/pc-01": "cfg-hash",
+    }
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected"),
+    [
+        ("stale", ActionExecutionStatus.PARTIAL),
+        ("ipv4_failed", ActionExecutionStatus.PARTIAL),
+        ("netmask_failed", ActionExecutionStatus.PARTIAL),
+        ("channel_absent", ActionExecutionStatus.PARTIAL),
+        ("observation_absent", ActionExecutionStatus.PARTIAL),
+        ("convergence_status_mismatch", ActionExecutionStatus.PARTIAL),
+    ],
+)
+def test_endpoint_requirement_stays_closed_without_exact_fresh_core_evidence(
+    mutation: str,
+    expected: ActionExecutionStatus,
+):
+    """Catch broad promotion of PARTIAL or trust in an incomplete E5 row."""
+    evidence = _endpoint_verification()
+    if mutation == "stale":
+        evidence.fresh_evidence = False
+    elif mutation == "ipv4_failed":
+        evidence.fields["ipv4"] = FieldVerificationStatus.FAILED
+    elif mutation == "netmask_failed":
+        evidence.fields["netmask"] = FieldVerificationStatus.FAILED
+    elif mutation == "channel_absent":
+        evidence.convergence.details["last_observation"]["address_channel"] = False
+    elif mutation == "observation_absent":
+        evidence.convergence = None
+    elif mutation == "convergence_status_mismatch":
+        evidence.convergence.final_status = ActionExecutionStatus.FAILED
+
+    statuses = derive_foundational_statuses(
+        _endpoint_plan(),
+        configuration_result=_config([evidence]),
+    )
+
+    assert statuses["cfg/endpoint-dhcp/pc-01"] is expected
+
+
+def test_endpoint_evidence_is_scoped_to_the_requirement_and_configuration_identity():
+    """Catch evidence reuse across an action id or configuration hash boundary."""
+    plan = _endpoint_plan()
+    wrong_action = derive_foundational_statuses(
+        plan,
+        configuration_result=_config([
+            _endpoint_verification("cfg/endpoint-dhcp/other"),
+        ]),
+    )
+    wrong_configuration = _config([_endpoint_verification()])
+    wrong_configuration.config_semantic_hash = "other-cfg-hash"
+
+    assert wrong_action == {}
+    assert derive_foundational_statuses(
+        plan,
+        configuration_result=wrong_configuration,
+    )["cfg/endpoint-dhcp/pc-01"] is ActionExecutionStatus.PARTIAL
+
+
+def test_non_endpoint_partial_is_not_promoted_by_endpoint_shaped_fields():
+    """Catch a global PARTIAL-to-VERIFIED translation."""
+    plan = _plan([
+        ControlPlaneFoundationRequirement(
+            id="foundation/l3_interface/cfg/endpoint-dhcp/pc-01",
+            kind="l3_interface",
+            source_id="cfg/endpoint-dhcp/pc-01",
+        ),
+    ])
+
+    statuses = derive_foundational_statuses(
+        plan,
+        configuration_result=_config([_endpoint_verification()]),
+    )
+
+    assert statuses["cfg/endpoint-dhcp/pc-01"] is ActionExecutionStatus.PARTIAL
+
+
+def test_endpoint_hash_is_not_projected_across_a_configuration_hash_mismatch():
+    """Catch copying a requirement's arbitrary source hash into E9 authority."""
+    plan = _endpoint_plan(source_hash="other-cfg-hash")
+
+    assert derive_foundational_hashes(plan) == {}
