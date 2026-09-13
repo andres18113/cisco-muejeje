@@ -626,7 +626,10 @@ def test_endpoint_evidence_is_scoped_to_the_requirement_and_configuration_identi
     wrong_configuration = _config([_endpoint_verification()])
     wrong_configuration.config_semantic_hash = "other-cfg-hash"
 
-    assert wrong_action == {}
+    assert wrong_action == {
+        "cfg/endpoint-dhcp/other": ActionExecutionStatus.PARTIAL,
+    }
+    assert "cfg/endpoint-dhcp/pc-01" not in wrong_action
     assert derive_foundational_statuses(
         plan,
         configuration_result=wrong_configuration,
@@ -649,6 +652,22 @@ def test_non_endpoint_partial_is_not_promoted_by_endpoint_shaped_fields():
     )
 
     assert statuses["cfg/endpoint-dhcp/pc-01"] is ActionExecutionStatus.PARTIAL
+
+
+def test_control_plane_scope_does_not_hide_verified_foundations_from_voice():
+    """Catch dropping E5 rows that another downstream applicator consumes."""
+    statuses = derive_foundational_statuses(
+        _endpoint_plan(),
+        configuration_result=_config([
+            _verification("cfg/access/phone-01", ActionExecutionStatus.VERIFIED),
+            _verification("cfg/dhcp/voice", ActionExecutionStatus.VERIFIED),
+        ]),
+    )
+
+    assert statuses == {
+        "cfg/access/phone-01": ActionExecutionStatus.VERIFIED,
+        "cfg/dhcp/voice": ActionExecutionStatus.VERIFIED,
+    }
 
 
 def test_endpoint_hash_is_not_projected_across_a_configuration_hash_mismatch():

@@ -72,11 +72,6 @@ _PHYSICAL_TO_ACTION: dict[PhysicalDeploymentItemStatus, ActionExecutionStatus] =
     PhysicalDeploymentItemStatus.FAILED: ActionExecutionStatus.FAILED,
 }
 
-_CONFIGURATION_FOUNDATION_KINDS = frozenset({
-    "l3_interface", "endpoint_address", "vlan", "access_port", "trunk",
-})
-
-
 def _weakest(
     left: ActionExecutionStatus, right: ActionExecutionStatus,
 ) -> ActionExecutionStatus:
@@ -178,7 +173,7 @@ def derive_foundational_statuses(
     configuration_result: ConfigurationApplicationResult | None = None,
     physical_result: PhysicalDeploymentResult | None = None,
 ) -> dict[str, ActionExecutionStatus]:
-    """Map the plan's foundation `source_id` values to supported statuses.
+    """Map executed foundation `source_id` values to supported statuses.
 
     Configuration foundations (`l3_interface`, `vlan`, `trunk`, `access_port`,
     `endpoint_address`) are keyed by a `ConfigurationAction.id`, and their
@@ -197,8 +192,9 @@ def derive_foundational_statuses(
     `endpoint_address` requirement. No other PARTIAL status is promoted.
 
     Passing neither result returns an empty mapping, which makes the gate
-    refuse. The plan scopes which executed rows are eligible; it cannot supply
-    a status directly.
+    refuse. The plan scopes only the endpoint translation; it cannot supply a
+    status directly. Other executed rows remain available to downstream gates
+    such as Voice, which declare their own required source ids.
     """
     statuses: dict[str, ActionExecutionStatus] = {}
     requirements_by_source: dict[
@@ -212,9 +208,11 @@ def derive_foundational_statuses(
 
     if configuration_result is not None:
         for item in configuration_result.verification_results:
-            for requirement in requirements_by_source.get(item.action_id, ()):
-                if requirement.kind not in _CONFIGURATION_FOUNDATION_KINDS:
-                    continue
+            requirements = requirements_by_source.get(item.action_id, ())
+            if not requirements:
+                _merge(statuses, item.action_id, item.status)
+                continue
+            for requirement in requirements:
                 _merge(
                     statuses,
                     requirement.source_id,
@@ -227,13 +225,6 @@ def derive_foundational_statuses(
         for item in physical_result.item_results:
             if item.target_kind is not PhysicalObjectKind.LINK:
                 continue
-            requirements = [
-                requirement
-                for requirement in requirements_by_source.get(item.target_id, ())
-                if requirement.kind == "link"
-            ]
-            if not requirements:
-                continue
             status = _PHYSICAL_TO_ACTION.get(
                 item.status, ActionExecutionStatus.UNKNOWN,
             )
@@ -241,8 +232,7 @@ def derive_foundational_statuses(
             # A row claiming OBSERVED without it is not evidence of anything.
             if status is ActionExecutionStatus.VERIFIED and not item.observed:
                 status = ActionExecutionStatus.UNKNOWN
-            for requirement in requirements:
-                _merge(statuses, requirement.source_id, status)
+            _merge(statuses, item.target_id, status)
 
     return statuses
 

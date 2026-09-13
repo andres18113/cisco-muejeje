@@ -28,6 +28,16 @@ from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical impo
     CPScaleCanonicalStage,
     project_cp_scale_canonical_stage,
 )
+from src.packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
+from src.packet_tracer_mcp.application.use_cases.foundational_evidence import (
+    derive_foundational_statuses,
+)
+from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    ActionExecutionStatus,
+    ConfigurationApplicationResult,
+    ConfigurationApplicationStatus,
+    VerificationResult,
+)
 from tests.poe_delivery_capabilities import (
     compose_delivery_qualified_cp_scale_canonical as compose_cp_scale_canonical,
 )
@@ -86,6 +96,66 @@ def test_floor1_stages_voice_for_exactly_the_phones_it_deployed(composition):
     assert {
         item.phone_id for item in projection.voice.phone_assignments
     } == deployed
+
+
+@pytest.mark.parametrize(
+    ("stage", "phone_count"),
+    [
+        (CPScaleCanonicalStage.FLOOR1, 21),
+        (CPScaleCanonicalStage.FLOOR2, 35),
+        (CPScaleCanonicalStage.FLOOR3, 42),
+    ],
+)
+def test_each_floor_preserves_every_voice_foundation_through_e5_derivation(
+    composition,
+    stage: CPScaleCanonicalStage,
+    phone_count: int,
+):
+    """The ControlPlane scope may not hide evidence consumed first by Voice."""
+    projection = _stage(composition, stage)
+    assert projection.voice is not None
+    assert len(projection.voice.phone_assignments) == phone_count
+
+    requirements = {
+        item.source_id: item.kind
+        for item in projection.voice.foundational_requirements
+    }
+    observed = {
+        source_id: (
+            ActionExecutionStatus.UNOBSERVABLE
+            if kind == "voice_dhcp_pool"
+            else ActionExecutionStatus.VERIFIED
+        )
+        for source_id, kind in requirements.items()
+    }
+    configuration = ConfigurationApplicationResult(
+        config_plan_id=projection.configuration.id,
+        config_semantic_hash=projection.configuration.semantic_hash,
+        source_topology_hash=projection.configuration.source_topology_hash,
+        status=ConfigurationApplicationStatus.PARTIAL,
+        verification_results=[
+            VerificationResult(
+                expectation_id=f"verify/{source_id}",
+                action_id=source_id,
+                status=status,
+                evidence_method="floor_voice_foundation_readback",
+                fresh_evidence=True,
+            )
+            for source_id, status in observed.items()
+        ],
+    )
+
+    statuses = derive_foundational_statuses(
+        projection.control_plane,
+        configuration_result=configuration,
+    )
+
+    assert {source_id: statuses.get(source_id) for source_id in observed} == observed
+    assert VoiceApplicator._missing_foundations(
+        projection.voice,
+        statuses,
+        allow_pending_voice_signal=False,
+    ) == []
 
 
 def test_each_active_call_control_uses_its_final_designed_site_capacity(
