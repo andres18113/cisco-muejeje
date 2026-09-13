@@ -544,10 +544,10 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
         "post_ledger_failed_run_bundles": {
             "path": "docs/reference/cp-scale/router0_failed_run_bundles.json",
             "sha256": (
-                "22e05d9866c025dfdef167a039b946f2"
-                "58ea087bd8262c62cafed4db57691719"
+                "d1799aad3e61b1030f4fa83752baa0ca"
+                "c76832d7d5dc14f6cd362c572afdb6dd"
             ),
-            "run_count": 8,
+            "run_count": 9,
             "classification": "FAILED",
             "successful_closure": False,
         },

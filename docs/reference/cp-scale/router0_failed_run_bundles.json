@@ -228,6 +228,34 @@
       },
       "successful_closure": false,
       "evidence_authority": "FAILED_RUN_ONLY"
+    },
+    {
+      "run_identity": "canonical-cp-scale-voice-20260913T134138442128Z-814d25880d87",
+      "executed_sha": "814d25880d875a12efab4de7701645afaad8e5b6",
+      "requested_target_field": "router0-branch",
+      "failed_stage": "floor2",
+      "classification": "FAILED",
+      "failure": "CanonicalLiveFailure: Configuration at 'floor2' exceeded its governed observability envelope: Configuration did not retain a VERIFIED network foundation with Voice signalling pending bootstrap.",
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260913T134138442128Z-814d25880d87-failure-precleanup.json",
+          "sha256": "c9fb5997c844fef8f0e6706cbca8553c8150beb9d0bd4b6001d6b299a4ae2737"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260913T134138442128Z-814d25880d87-cleanup.json",
+          "sha256": "ec76d14c2e6d83b966a1baec1ea846bd33db35a08cb2a7599829f36b1e6af323"
+        }
+      ],
+      "cleanup": {
+        "verified": true,
+        "semantic_device_count": 0,
+        "link_count": 0,
+        "realtime_verified": true
+      },
+      "successful_closure": false,
+      "evidence_authority": "FAILED_RUN_ONLY"
     }
   ]
 }
