@@ -6,6 +6,9 @@ the small set of keys still projected into `handoff.md` for compatibility.
 
 Supporting records:
 
+- [Router0 successful run](router0_successful_run.json) pins the first governed
+  `ROUTER0_BRANCH_VERIFIED_AND_CLEANED` closure, its complete pre-cleanup
+  evidence and cleanup attestation. It is the Router0 success authority.
 - [Router0 failed run bundles](router0_failed_run_bundles.json) canonically
   indexes the nine post-ledger executions by complete run identity, executed
   SHA, immutable artifact hashes and verified cleanup. Every entry is

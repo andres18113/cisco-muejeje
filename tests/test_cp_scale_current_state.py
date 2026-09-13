@@ -551,6 +551,22 @@ def test_compact_current_state_is_bounded_and_matches_the_handoff_projection():
             "classification": "FAILED",
             "successful_closure": False,
         },
+        "router0_successful_run": {
+            "path": "docs/reference/cp-scale/router0_successful_run.json",
+            "sha256": (
+                "5deadcc1942978d4bfdaa440e9832d519"
+                "b3cc19506be1e746956ce0a5bd9cff1"
+            ),
+            "run_identity": (
+                "canonical-cp-scale-voice-20260913T142038552603Z-"
+                "8980ada7ab99"
+            ),
+            "executed_sha": (
+                "8980ada7ab993cbe5b5b915cefde24deb04b3e3f"
+            ),
+            "classification": "VERIFIED",
+            "successful_closure": True,
+        },
     }
     assert state["unresolved_debt"] == []
 

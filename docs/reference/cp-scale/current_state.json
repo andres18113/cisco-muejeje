@@ -1,6 +1,6 @@
 {
   "schema": "cp-scale-current-state-v2",
-  "updated_at": "2026-09-07T13:05:00Z",
+  "updated_at": "2026-09-13T15:07:21.165728Z",
   "last_live_state": {
     "schema": "cp-scale-current-state-v1",
     "updated_at": "2026-09-03T03:41:52.104318Z",
@@ -132,6 +132,14 @@
         "run_count": 9,
         "classification": "FAILED",
         "successful_closure": false
+      },
+      "router0_successful_run": {
+        "path": "docs/reference/cp-scale/router0_successful_run.json",
+        "sha256": "5deadcc1942978d4bfdaa440e9832d519b3cc19506be1e746956ce0a5bd9cff1",
+        "run_identity": "canonical-cp-scale-voice-20260913T142038552603Z-8980ada7ab99",
+        "executed_sha": "8980ada7ab993cbe5b5b915cefde24deb04b3e3f",
+        "classification": "VERIFIED",
+        "successful_closure": true
       }
     },
     "unresolved_debt": [],
