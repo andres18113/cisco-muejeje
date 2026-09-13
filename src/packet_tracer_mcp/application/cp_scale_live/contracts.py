@@ -608,6 +608,11 @@ class CPScalePreflightResult:
                 CPScaleRouter3LiveAuthorizationEvidence,
             )
             and authorization.passed_coherently
+            and _authorization_matches_observed_provenance(
+                authorization,
+                self.repository,
+                identity,
+            )
             if self.target.target is CPScaleCanonicalTarget.ROUTER3_BRANCH
             else authorization is None
         )
@@ -662,6 +667,24 @@ def _is_full_sha(value: object) -> bool:
         isinstance(value, str)
         and len(value) == 40
         and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _authorization_matches_observed_provenance(
+    authorization: CPScaleRouter3LiveAuthorizationEvidence,
+    repository: CPScaleRepositoryEvidence,
+    identity: CPScaleLiveSessionIdentity,
+) -> bool:
+    """The observed repository and identity certify authorization, not itself."""
+    return bool(
+        authorization.authorized_sha == repository.head
+        and authorization.expected_head == repository.head
+        and authorization.repository_head == repository.head
+        and authorization.upstream_head == repository.upstream_head
+        and authorization.authorized_sha == identity.source_head
+        and authorization.expected_head == identity.source_head
+        and authorization.source_tree == repository.source_tree
+        and authorization.source_tree == identity.source_tree
     )
 
 

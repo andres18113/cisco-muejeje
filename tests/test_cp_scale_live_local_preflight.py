@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -338,6 +339,54 @@ def test_router3_authorization_binds_exact_repository_provenance():
     assert authorization.source_tree == TREE
     assert authorization.passed_coherently is True
     assert result.evidence_coherent is True
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        pytest.param({"authorized_sha": "c" * 40}, id="authorized-sha"),
+        pytest.param({"expected_head": "c" * 40}, id="expected-head"),
+        pytest.param({"repository_head": "c" * 40}, id="repository-head"),
+        pytest.param({"upstream_head": "c" * 40}, id="upstream-head"),
+        pytest.param({"source_tree": "d" * 40}, id="source-tree"),
+        pytest.param(
+            dict.fromkeys(
+                (
+                    "authorized_sha",
+                    "expected_head",
+                    "repository_head",
+                    "upstream_head",
+                ),
+                "c" * 40,
+            ),
+            id="self-consistent-foreign-head",
+        ),
+    ],
+)
+def test_router3_authorization_cannot_contradict_observed_provenance(changes):
+    admitted = _inspect(
+        _service(),
+        _request(
+            target_stage="router3-branch",
+            router3_live_authorization=_authorization(),
+        ),
+    )
+    assert admitted.outcome is CPScalePreflightOutcome.ADMITTED
+    assert all(
+        re.fullmatch(r"[0-9a-f]{40}", value) for value in changes.values()
+    )
+
+    candidate = replace(
+        admitted,
+        router3_live_authorization=replace(
+            admitted.router3_live_authorization,
+            **changes,
+        ),
+    )
+
+    assert candidate.issues == ()
+    assert candidate.evidence_coherent is False
+    assert candidate.outcome is CPScalePreflightOutcome.REJECTED
 
 
 def test_router3_authorization_provenance_is_persisted_without_secrets():
