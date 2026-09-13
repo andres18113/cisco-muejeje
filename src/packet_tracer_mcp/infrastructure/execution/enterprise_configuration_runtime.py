@@ -1390,6 +1390,10 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 show.device_identity_provenance
             ),
             "failure_reason": show.failure_reason,
+            # Retain exactly the current-command window that fed the parser.
+            # Without it, a later missing row cannot be separated from a
+            # delimiter/completion defect using the immutable LIVE artifact.
+            "raw_output": show.output,
             "row_present": row is not None,
             "row_interface": row.interface if row is not None else "",
             "status": row.status if row is not None else "",
@@ -1452,6 +1456,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 "observed_device_name",
                 "device_identity_provenance",
                 "failure_reason",
+                "raw_output",
                 "row_present",
                 "row_interface",
                 "status",

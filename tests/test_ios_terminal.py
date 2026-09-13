@@ -159,8 +159,8 @@ def test_ios_executor_only_emits_registered_query():
     responses = iter((
         '{"found":true,"booting":false,"terminal":true,"prompt":"Router>","output":""}',
         '{"ok":true,"before":""}',
-        '{"found":true,"configuration_channel":true,"output":"Interface IP-Address"}',
-        '{"found":true,"configuration_channel":true,"output":"Interface IP-Address"}',
+        '{"found":true,"configuration_channel":true,"output":"show ip interface brief\\nInterface IP-Address\\nRouter>"}',
+        '{"found":true,"configuration_channel":true,"output":"show ip interface brief\\nInterface IP-Address\\nRouter>"}',
     ))
     result = ControlledIosExecutor(lambda js, _timeout: sent.append(js) or next(responses)).execute("R1", OperationalQueryId.SHOW_IP_INTERFACE_BRIEF)
     assert result.executed

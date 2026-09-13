@@ -1046,16 +1046,16 @@ def test_bridge_runtime_layer3_probe_requires_configure_readback_and_cleanup():
         '{"interfaces":["GigabitEthernet0/0"]}',
         '{"found":true,"booting":false,"terminal":true,"prompt":"Router>","output":""}',
         '{"ok":true,"before":""}',
-        '{"found":true,"configuration_channel":true,"output":"Interface IP-Address"}',
-        '{"found":true,"configuration_channel":true,"output":"Interface IP-Address"}',
+        '{"found":true,"configuration_channel":true,"output":"show ip interface brief\\nInterface IP-Address\\nRouter>"}',
+        '{"found":true,"configuration_channel":true,"output":"show ip interface brief\\nInterface IP-Address\\nRouter>"}',
         '{"found":true,"booting":false,"terminal":true,"prompt":"Router>","output":""}',
         '{"ok":true,"before":""}',
-        '{"found":true,"configuration_channel":true,"output":"GigabitEthernet0/0 198.18.36.1 YES manual up up"}',
-        '{"found":true,"configuration_channel":true,"output":"GigabitEthernet0/0 198.18.36.1 YES manual up up"}',
+        '{"found":true,"configuration_channel":true,"output":"show ip interface brief\\nGigabitEthernet0/0 198.18.36.1 YES manual up up\\nRouter>"}',
+        '{"found":true,"configuration_channel":true,"output":"show ip interface brief\\nGigabitEthernet0/0 198.18.36.1 YES manual up up\\nRouter>"}',
         '{"found":true,"booting":false,"terminal":true,"prompt":"Router>","output":""}',
         '{"ok":true,"before":""}',
-        '{"found":true,"configuration_channel":true,"output":"GigabitEthernet0/0 unassigned YES unset administratively down down"}',
-        '{"found":true,"configuration_channel":true,"output":"GigabitEthernet0/0 unassigned YES unset administratively down down"}',
+        '{"found":true,"configuration_channel":true,"output":"show ip interface brief\\nGigabitEthernet0/0 unassigned YES unset administratively down down\\nRouter>"}',
+        '{"found":true,"configuration_channel":true,"output":"show ip interface brief\\nGigabitEthernet0/0 unassigned YES unset administratively down down\\nRouter>"}',
     ))
 
     def send_and_wait(js: str, timeout: float):

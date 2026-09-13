@@ -2349,9 +2349,21 @@ class ControlledIosExecutor:
             if observed is None or observed.startswith("ERROR:"):
                 return {"found": False, "failure_reason": observed or "IOS output timed out."}
             try:
-                return json.loads(observed)
+                current = json.loads(observed)
             except json.JSONDecodeError:
                 return {"found": False, "failure_reason": "IOS output was malformed."}
+            output = str(current.get("output") or "")
+            # A fresh echo is only the start of a logical read.  PT renders a
+            # command incrementally, so ``output != baseline`` can be true
+            # before either a pager boundary or the closing EXEC prompt exists.
+            # Calling that prefix complete turns an unfinished table into an
+            # authoritative empty one.  Wait on terminal state, not byte change.
+            current["configuration_channel"] = bool(
+                current.get("found")
+                and output != baseline
+                and (has_active_pager(output) or terminal_is_idle(output))
+            )
+            return current
 
         def attribute() -> dict:
             """Lee la salida Y atribuye la sesion en la MISMA enumeracion."""
