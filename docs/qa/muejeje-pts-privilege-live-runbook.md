@@ -1,9 +1,10 @@
 # Muejeje — the minimum-privilege LIVE run
 
 The declaration for the next official manual run. It changes exactly one thing
-against the artifact already qualified, and it says in advance what each outcome
-would establish — so the verdict is decided before the run rather than argued
-after it (`MJ-011`).
+against the artifact already qualified — it adds the second evidenced privilege,
+`CHANGE_NETWORK_INFO`, to the `GET_NETWORK_INFO` the last run carried — and it
+says in advance what each outcome would establish, so the verdict is decided
+before the run rather than argued after it (`MJ-011`).
 
 **The procedure is not restated here.** It is
 [the packaging recipe](muejeje-pts-packaging-recipe.md), followed from step 1.
@@ -12,16 +13,16 @@ its results are read under.
 
 ## What changes, and what does not
 
-| | Qualified artifact | This run |
+| | Qualified artifact (`718db50`) | This run |
 | --- | --- | --- |
-| source | `d37ba37786107ed8128d17d589d889ee1fe9b16f` | the candidate checked out, read back from `report.source` |
-| recipe id | `7d5e710723151a67e2df84dcb11d43b31ad7a89cba8ae2410cdf987689d216bb` | read back from `report.build_recipe_id` |
-| artifact | `6951c066ec158d57855dfd739619482cd05f40e007f5c28fb5fcc66e58a12146`, 48185 bytes | measured after saving |
-| privileges | `[]` | **`GET_NETWORK_INFO`, and nothing else** |
-| workspace | not declared, and not recorded | **the two-device fixture below, required before qualification** |
-| observed relay inputs | typed into the procedure | **read out of the reading that published them** |
-| qualification accounting | every operation entered once | **every operation `EXECUTED` or `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`** |
-| raw evidence | not captured — the record keeps the operator-reported observations | **one append-only transcript per execution, named by artifact SHA-256 and run id** |
+| source | `718db5054261d95a2dd8b86247dc6b38ae426c7b` | the candidate checked out, read back from `report.source` |
+| recipe id | `1d836e478ff3caf5d7a3cc2fa3823005943d6a07c637820f1a23d6ff274a37a7` | read back from `report.build_recipe_id` |
+| artifact | `11073b67603fe795657f4c38aee1039063a6e87c299e618bc63ffafdd17857a8`, 48698 bytes | measured after saving |
+| privileges | `["GET_NETWORK_INFO"]` | **`GET_NETWORK_INFO` and `CHANGE_NETWORK_INFO`, and nothing else** |
+| workspace | the two-device fixture below | **the same two-device fixture, required before qualification** |
+| observed relay inputs | read out of the reading that published them | **read out of the reading that published them** |
+| qualification accounting | every operation `EXECUTED` or `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE` | **every operation `EXECUTED` or `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`** |
+| raw evidence | one append-only transcript per execution | **one append-only transcript per execution, named by artifact SHA-256 and run id** |
 | everything else | — | unchanged except where governed source and recipe evolution requires |
 
 The right-hand column is **read from the audit, never typed from here**: a
@@ -34,20 +35,23 @@ inputs, the accounting and the transcript are what make the run capable of
 establishing anything, and none of them changes what is packaged. Everything
 else differs only where the governed source and the recipe force it.
 
-**The declared artifact inputs differ from the qualified artifact's in more than
-the manifest field**, and saying otherwise would be wrong: the interface page
-states the privilege the module now requests, and four engine sources —
-`060_platform_adapter.js`, `160_platform_discovery.js`,
-`170_platform_modules.js` and `200_runtime_identity.js` — carry corrected
-comments that used to deny the privilege the manifest declares. The privilege
-model also moved into its own auditor module, a declared tooling input and
-therefore part of the recipe id. The audit's entry point changed too — it now
-compiles the auditor it runs from source, into bytecode of its own, on every
-invocation — and it is a declared tooling input as well, so that change moves
-the recipe id and touches no artifact input. **No executable V6 behaviour
-changed**: every changed engine line is a comment, and the dispatcher, the
-operations, the adapters and every bound are unchanged. No capability,
+**The declared inputs differ from the `718db50` artifact's in three governed
+places, and saying otherwise would be wrong.** The manifest declares the second
+privilege; the interface page states that the module now requests two; and the
+privilege model — a declared tooling input, and therefore part of the recipe id
+— records the two member-call descriptors that evidence the new token. **No
+executable V6 behaviour changed**: the dispatcher, the operations, the adapters
+and every bound are unchanged, and the added privilege authorises calls Packet
+Tracer would permit rather than adding any the artifact makes. No capability,
 transport, link operation, mutation or M4 work is in this artifact.
+
+**`CHANGE_NETWORK_INFO` is not a mutation claim.** The target requires index 2
+for two *read* members — `DeviceFactory.getAvailableDeviceCount()` and
+`Device.getName()` — and index 2 serializes as that token. It broadens what
+Packet Tracer would let the Script Module process call; the positive V6
+allowlist stays the authority on what Muejeje exposes, and a gate holds that
+this privilege adds no mutating operation and no new admitted `Interface.member`
+([the privilege map](muejeje-pts-privilege-map.md), `MJ-032`).
 
 **No `.pts` exists for this candidate yet**, so nothing here says what its bytes
 are. The saved artifact gets its own SHA-256, measured outside it after saving.
@@ -58,9 +62,9 @@ build, never about what came out of it.
 
 The recipe's four preconditions, and two more that belong to this run:
 
-5. **The manifest declares exactly `["GET_NETWORK_INFO"]`.** A gate holds this,
-   so a green suite is the check; it is named here because it is the one field
-   the run exists to change.
+5. **The manifest declares exactly `["CHANGE_NETWORK_INFO", "GET_NETWORK_INFO"]`.**
+   A gate holds this, so a green suite is the check; it is named here because the
+   second token is the one field the run exists to change.
 6. **A disposable workspace holding two devices is open**, prepared by hand
    before the module is started. What it must contain, and the whole of it:
 
@@ -297,12 +301,13 @@ not a status.
 
 ## The first observation, before any statement is entered
 
-**Confirm on the module itself that only `GET_NETWORK_INFO` is selected**, and
-record what the General tab shows. Every other privilege must be unselected.
+**Confirm on the module itself that exactly `GET_NETWORK_INFO` and
+`CHANGE_NETWORK_INFO` are selected**, and record what the General tab shows.
+Every other privilege must be unselected.
 
-If more than one privilege is selected, **stop and do not package**. A module
-carrying a wider set is a different recipe, and nothing it answered would be
-evidence about this one.
+If any third privilege is selected, or either of these two is not, **stop and do
+not package**. A module carrying a different set is a different recipe, and
+nothing it answered would be evidence about this one.
 
 ## Then the complete read-only qualification
 
@@ -415,13 +420,15 @@ interpretation begins.
 
 | Observation | What it establishes |
 | --- | --- |
-| both roots answer | `GET_NETWORK_INFO` is **target-verified as sufficient** for both current root surfaces. `GET_NETWORK_INFO_LIVE_VERIFIED = PASS` |
+| both roots answer | consistent with `718db50`: `GET_NETWORK_INFO_LIVE_VERIFIED` stays `PASS`. The `718db50` run already established the roots, so this run's interest is what happens beneath them |
+| `getAvailableDeviceCount` / `getName` now answer | the two members the index-2 evidence names progressed with `CHANGE_NETWORK_INFO` selected. `CHANGE_NETWORK_INFO_LIVE_VERIFIED = PASS` for the members it reached, and for those members only |
 | a descendant answers | a fact about that `Interface.member`, on the fixture it was asked over, characterized individually |
 | a descendant then fails | a fact about that `Interface.member`, characterized individually. It does **not** invalidate the root result |
 | a root answers over an empty workspace | the root result, and **nothing** about any member below it — the run did not reach them |
 | a dependent operation's relay input was not published | `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`: incomplete target evidence for that operation — neither its failure nor a platform finding |
 | a descendant re-reports a different device | `WORKSPACE_ATTRIBUTION_UNSTABLE`: the cross-reading chain is **not** qualified, and each call's own answer still stands in the reading that made it |
-| a root is still denied | a **contradiction** between the recorded binary evidence and the artifact's behaviour |
+| a member evidenced at index 2 is still denied while both tokens are carried | a **contradiction** between the member Ghidra evidence and the artifact's behaviour: record the exact member and diagnostic, add no privilege |
+| a root is denied | a **contradiction** with the `718db50` root result and the recorded binary evidence |
 
 **Root privilege qualification and descendant API qualification are separate
 verdicts.** If `IPC.network()` answers and a reading below it comes back
@@ -474,22 +481,24 @@ read at.
 
 ### Two subjects, and a verdict about one is not a verdict about the other
 
-`OFFICIAL_PACKAGING_PROVED` and `V6_KERNEL_VERIFIED` are `PASS` **about the
-artifact at `d37ba37`**, which was packaged, loaded and driven. This candidate
-is a different recipe id identifying different bytes, and nothing about it has
-been packaged or run. Carrying the first artifact's verdict onto the second is
-the mistake this split exists to prevent — it would let a run that never
-happened look like one that did.
+`PACKAGING`, `V6_KERNEL` and `GET_NETWORK_INFO_ROOT_ACCESS` are `PASS` **about
+the artifact at `718db50`**, which was packaged, loaded and driven. This
+candidate is a different recipe id identifying different bytes — it adds
+`CHANGE_NETWORK_INFO` — and nothing about it has been packaged or run. Carrying
+the qualified artifact's verdict onto the candidate is the mistake this split
+exists to prevent — it would let a run that never happened look like one that
+did.
 
 ```text
-LAST_QUALIFIED_ARTIFACT (d37ba37)
-  OFFICIAL_PACKAGING_PROVED = PASS
-  V6_KERNEL_VERIFIED        = PASS
+LAST_QUALIFIED_ARTIFACT (718db50)
+  PACKAGING                    = PASS
+  V6_KERNEL                    = PASS
+  GET_NETWORK_INFO_ROOT_ACCESS = PASS
 
-CURRENT_CANDIDATE
-  PACKAGED              = PENDING
-  V6_LIVE_VERIFIED      = PENDING
-  GET_NETWORK_INFO_LIVE = PENDING
+CURRENT_NEW_CANDIDATE
+  PACKAGED                 = PENDING
+  V6_LIVE                  = PENDING
+  CHANGE_NETWORK_INFO_LIVE = PENDING
 ```
 
 `M1_CORE_READY = YES` is the milestone state the **previous** governed artifact
@@ -504,10 +513,15 @@ M1_CORE_READY = YES
 
 GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS
 BINARY_MAP_REPRODUCIBILITY                = PENDING
+GET_NETWORK_INFO_LIVE_VERIFIED            = PASS
 
-CURRENT_CANDIDATE_PACKAGED                = PENDING
-CURRENT_CANDIDATE_V6_LIVE_VERIFIED        = PENDING
-GET_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+CHANGE_NETWORK_INFO_MEMBER_EVIDENCE_RECORDED = PASS
+CHANGE_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+
+CURRENT_NEW_CANDIDATE_PACKAGED             = PENDING
+CURRENT_NEW_CANDIDATE_V6_LIVE_VERIFIED     = PENDING
+
+SUFFICIENT_FOR_FULL_M2_M3_CHAIN = NOT_PROVEN
 
 M0B_TARGET_API_BASELINED = NOT_COMPLETE
 M2_CORE_READY            = NO

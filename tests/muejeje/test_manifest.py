@@ -178,7 +178,9 @@ INVALID_OPTIONS = [
     ("privileges", ["GET_NETWORK_INFO", "GET_NETWORK_INFO"], "must not repeat"),
     ("privileges", ["GET_EVERYTHING"], "no evidence"),
     # A token the binary really carries, that no evidenced call requires.
-    ("privileges", ["GET_NETWORK_INFO", "CHANGE_NETWORK_INFO"],
+    # `CHANGE_NETWORK_INFO` is now evidenced (two read members need index 2), so
+    # the unevidenced example is another real token this module never calls.
+    ("privileges", ["GET_NETWORK_INFO", "SIMULATION_MODE"],
      "no call this module makes is evidenced to require it"),
     # The API namespace, which never substitutes for the serialized one.
     ("privileges", ["PrivGetNetwork"], "not IpcAPI symbols"),
@@ -244,7 +246,8 @@ def test_an_empty_privilege_set_is_a_decision_not_an_omission(tmp_path: Path):
     """`privileges: []` is resolved: a module may ask for nothing (MJ-025).
 
     This repository no longer declares it — the minimum evidenced set is
-    `["GET_NETWORK_INFO"]` — but an empty list stays a *resolved* value rather
+    `["CHANGE_NETWORK_INFO", "GET_NETWORK_INFO"]` — but an empty list stays a
+    *resolved* value rather
     than an unset one, because "asks for nothing" and "nobody has decided" are
     different facts and the audit must keep reporting them differently.
     """

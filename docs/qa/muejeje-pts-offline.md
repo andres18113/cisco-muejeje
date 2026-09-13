@@ -358,38 +358,43 @@ engine files carried names no recipe declared — kept as evidence about Packet
 Tracer, promoting nothing.
 
 **Every row below names the artifact it is about.** A verdict belongs to the
-bytes that produced it: `d37ba37` was packaged, loaded and driven, and the
-current candidate is a different recipe id identifying different bytes that
-have been neither packaged nor run. Reading the first artifact's `PASS` as the
-second's would let a run that never happened look like one that did, so the two
-are separated here and stay separated.
+bytes that produced it. Two governed artifacts have run — `d37ba37` (`[]`) and
+`718db50` (`GET_NETWORK_INFO`) — and the latest qualified one is `718db50`. The
+new candidate adds `CHANGE_NETWORK_INFO`: it is a different recipe id
+identifying different bytes that have been neither packaged nor run. Reading a
+qualified artifact's `PASS` as the candidate's would let a run that never
+happened look like one that did, so they are separated here and stay separated.
 
 ```text
-LAST_QUALIFIED_ARTIFACT (d37ba37)
-  OFFICIAL_PACKAGING_PROVED = PASS
-  V6_KERNEL_VERIFIED        = PASS
+LAST_QUALIFIED_ARTIFACT (718db50)
+  PACKAGING                    = PASS
+  V6_KERNEL                    = PASS
+  GET_NETWORK_INFO_ROOT_ACCESS = PASS
 
-CURRENT_CANDIDATE
-  PACKAGED              = PENDING
-  V6_LIVE_VERIFIED      = PENDING
-  GET_NETWORK_INFO_LIVE = PENDING
+CURRENT_NEW_CANDIDATE
+  PACKAGED                 = PENDING
+  V6_LIVE                  = PENDING
+  CHANGE_NETWORK_INFO_LIVE = PENDING
 ```
 
-`M1_CORE_READY = YES` is the milestone state the **previous** governed artifact
+`M1_CORE_READY = YES` is the milestone state the governed artifacts
 established, and it stays there. No candidate-specific state moves until the
 candidate produces its own evidence, out of its own transcript.
 
 | Gate | State | Why |
 | --- | --- | --- |
-| `OFFICIAL_PACKAGING_PROVED` | `PASS` **for `d37ba37`** | the recipe produced a saved `dist/muejeje.pts` that Packet Tracer loaded and started, and the artifact was measured externally |
-| `V6_KERNEL_VERIFIED` | `PASS` **for `d37ba37`** | that saved artifact's own engine answered: `mcpDispatchV6` present, identify and capabilities, all five refusal classes, and identify again across a stop and a start |
-| `TARGET_API_BASELINED` | `PENDING_TARGET` | no platform member has answered. Both root calls were denied for insufficient privilege, which is a fact about privilege and not a reading of the API |
-| `CAPABILITY_RESOLUTION_VERIFIED` | `PENDING_TARGET` | every platform and workspace capability was denied at its root call, and none has answered |
+| `OFFICIAL_PACKAGING_PROVED` | `PASS` **for `d37ba37` and `718db50`** | each recipe produced a saved `dist/muejeje.pts` that Packet Tracer loaded and started, and each artifact was measured externally |
+| `V6_KERNEL_VERIFIED` | `PASS` **for `d37ba37` and `718db50`** | each saved artifact's own engine answered: `mcpDispatchV6` present, identify and capabilities, all five refusal classes, and identify again across a stop and a start |
+| `GET_NETWORK_INFO_ROOT_ACCESS` | `PASS` **for `718db50`** | carrying `GET_NETWORK_INFO`, that artifact reached `IPC.hardwareFactory()` and `IPC.network()` — both roots progressed where the `[]` artifact was denied |
+| `TARGET_API_BASELINED` | `PENDING_TARGET` | no platform member has answered. The `718db50` run reached the roots and was then denied the first member of each chain (`getAvailableDeviceCount`, `getName`), which is a fact about privilege and not a reading of the API |
+| `CAPABILITY_RESOLUTION_VERIFIED` | `PENDING_TARGET` | every platform and workspace capability was denied at its first member call, and none has answered |
 | `GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED` | `PASS` | both root calls require privilege index 1 in the pinned binary, and index 1 serializes as `GET_NETWORK_INFO`. Recorded, against a pinned SHA-256 ([the privilege map](muejeje-pts-privilege-map.md)) |
-| `BINARY_MAP_REPRODUCIBILITY` | `PENDING` | that reading was supplied from outside this repository and nothing here re-derives it: no function, address or symbol came with it, so no reader of this checkout can reproduce a row |
-| `GET_NETWORK_INFO_LIVE_VERIFIED` | `PENDING` | no artifact declaring that privilege has been run. The binary evidence says what the calls require; only a run says what the target then does |
-| `CURRENT_CANDIDATE_PACKAGED` | `PENDING` | the candidate's recipe reaches `PACKAGING_MANUAL_AVAILABLE`, and no `.pts` has been saved from it |
-| `CURRENT_CANDIDATE_V6_LIVE_VERIFIED` | `PENDING` | the kernel verdict belongs to the artifact that ran. This candidate has not run, so it inherits nothing from `d37ba37` |
+| `BINARY_MAP_REPRODUCIBILITY` | `PENDING` | the root map was supplied from outside this repository and the member requirements are a Ghidra reading with exact addresses; nothing here re-derives either by running it, so no reader of this checkout can reproduce a row from the repository alone |
+| `GET_NETWORK_INFO_LIVE_VERIFIED` | `PASS` | the `718db50` run carried the token and reached both roots on `9.0.1.0858` |
+| `CHANGE_NETWORK_INFO_MEMBER_EVIDENCE_RECORDED` | `PASS` | two read members require privilege index 2 (`CHANGE_NETWORK_INFO`), read from the pinned binary by Ghidra with verbatim addresses ([the privilege map](muejeje-pts-privilege-map.md)) |
+| `CHANGE_NETWORK_INFO_LIVE_VERIFIED` | `PENDING` | no artifact declaring that token has been run; whether it makes those members progress is what the next run measures |
+| `CURRENT_NEW_CANDIDATE_PACKAGED` | `PENDING` | the candidate's recipe reaches `PACKAGING_MANUAL_AVAILABLE`, and no `.pts` has been saved from it |
+| `CURRENT_NEW_CANDIDATE_V6_LIVE_VERIFIED` | `PENDING` | the kernel verdict belongs to the artifact that ran. This candidate has not run, so it inherits nothing from `718db50` |
 
 ### The official LIVE run at `d37ba37` — the governed artifact
 
@@ -465,10 +470,66 @@ what attributed the cause, for those two calls, in that run (`MJ-022`,
 
 **Its manifest configuration is superseded.** `privileges: []` was the right
 declaration while no identifier was evidenced for either call. Target-binary
-evidence has since established that both require privilege index 1 and that
-index 1 serializes as `GET_NETWORK_INFO`, so the governed manifest now declares
-that one token and nothing else. That is a different recipe id, and it needs
-its own run — this record is what it is measured against.
+evidence then established that both roots require privilege index 1,
+`GET_NETWORK_INFO`, and the `718db50` run below carried and verified it. That
+manifest, in turn, is now superseded by the two-token one, for the reason the
+`718db50` run recorded: the members beneath the roots need index 2.
+
+### The official LIVE run at `718db50` — the `GET_NETWORK_INFO` artifact
+
+Performed by hand on Packet Tracer `9.0.1.0858`, following
+[the packaging recipe](muejeje-pts-packaging-recipe.md) from step 1, outside the
+session that wrote this record. The privilege selection was
+`["GET_NETWORK_INFO"]` and was not changed at any point.
+
+| Record | Value |
+| --- | --- |
+| candidate | `718db5054261d95a2dd8b86247dc6b38ae426c7b`, tree `92c1e72897efb746c25414d46c16d7fe4349eca3` |
+| `build_recipe_id` | `1d836e478ff3caf5d7a3cc2fa3823005943d6a07c637820f1a23d6ff274a37a7` |
+| artifact | `dist/muejeje.pts`, SHA-256 `11073b67603fe795657f4c38aee1039063a6e87c299e618bc63ffafdd17857a8`, 48698 bytes, measured outside the artifact (`MJ-017`) |
+| Packet Tracer | `9.0.1.0858`, `PacketTracer.exe` SHA-256 `843579cc806a41d57a4ca524d6805b97ee1f91e0ddd02ac09be8461db04b94a1` |
+| privileges | `["GET_NETWORK_INFO"]` — selected, read back, and not changed |
+| entry point | the module's Debug Dialog |
+| run id | `20260913T001112Z` |
+
+**What it established.** The saved artifact loaded and started; its kernel
+answered — `typeof mcpDispatchV6` `function`, `runtime.identify` and
+`runtime.capabilities` `ok: true`, all five refusal classes, and `identify`
+again across a stop and a start — so `CURRENT_CANDIDATE_PACKAGED` and
+`CURRENT_CANDIDATE_V6_LIVE_VERIFIED` became `PASS` for this artifact. Carrying
+`GET_NETWORK_INFO`, **both root calls progressed** where the `[]` artifact had
+been denied, which is `GET_NETWORK_INFO_LIVE_VERIFIED = PASS`. The precise
+member-level observations the operator reported, kept apart because a root
+answering is not a member answering:
+
+```text
+IPC.hardwareFactory                    OBSERVED_REACHABLE
+HardwareFactory.devices                OBSERVED_REACHABLE
+DeviceFactory.getAvailableDeviceCount  OBSERVED_PRIVILEGE_DENIED
+
+IPC.network                            OBSERVED_REACHABLE
+Network.getDeviceCount                 OBSERVED_REACHABLE
+Network.getDeviceAt                    OBSERVED_REACHABLE
+Device.getName                         OBSERVED_PRIVILEGE_DENIED
+```
+
+**What it did not establish.** No platform or workspace member answered, so no
+capability resolved and `TARGET_API_BASELINED` stays `PENDING_TARGET`. The two
+denied members — `getAvailableDeviceCount` and `getName` — are what the Ghidra
+index-2 reading explains: they require `CHANGE_NETWORK_INFO`, which this run did
+not carry. Because those first members were denied,
+`platform.device_descriptors` published no `factory_index` and
+`network.device_inventory` published no device name, so the dependent V6
+operations were `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE` in this run and are
+**not** marked executed. The run's accounting is exactly what the transcript
+recorded, and this summary does not inflate it.
+
+**Its manifest configuration is superseded.** Its `["GET_NETWORK_INFO"]` was
+right while only the roots were evidenced. The two member denials, and the
+Ghidra reading that both require index 2, are why the governed manifest now
+declares `["CHANGE_NETWORK_INFO", "GET_NETWORK_INFO"]`. That is a different
+recipe id, and it needs its own run — this record is what it is measured
+against.
 
 ### The exploratory run at `ed3a0b0` — evidence, not an artifact
 
@@ -877,14 +938,21 @@ M3_CORE_READY                    = NO
 ZERO_CHANGE_CUTOVER              = NOT_ACHIEVED
 ENGINE_ORDER                     = CARRIED_BY_FILE_NAMES
 EMPTY_PRIVILEGES_ROOT_IPC        = TARGET_OBSERVED_DENIED
+GET_NETWORK_INFO_ROOT_IPC        = TARGET_OBSERVED_REACHABLE
+CHANGE_NETWORK_INFO_MEMBERS      = TARGET_OBSERVED_DENIED
 GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS
 BINARY_MAP_REPRODUCIBILITY                = PENDING
-GET_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+GET_NETWORK_INFO_LIVE_VERIFIED            = PASS
 
-CURRENT_CANDIDATE_PACKAGED                = PENDING
-CURRENT_CANDIDATE_V6_LIVE_VERIFIED        = PENDING
+CHANGE_NETWORK_INFO_MEMBER_EVIDENCE_RECORDED = PASS
+CHANGE_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+
+CURRENT_NEW_CANDIDATE_PACKAGED             = PENDING
+CURRENT_NEW_CANDIDATE_V6_LIVE_VERIFIED     = PENDING
+SUFFICIENT_FOR_FULL_M2_M3_CHAIN            = NOT_PROVEN
 
 OFFICIAL_RUN_D37BA37_RAW_TRANSCRIPT       = NOT_CAPTURED
+OFFICIAL_RUN_718DB50_RAW_TRANSCRIPT       = NOT_CAPTURED
 NEXT_LIVE_RUN_RAW_TRANSCRIPT              = REQUIRED_PER_EXECUTION
 NEXT_LIVE_RUN_TRANSCRIPT_IDENTITY         = ARTIFACT_SHA256_AND_RUN_ID
 NEXT_LIVE_RUN_TRANSCRIPT_HEADER           = PRE_RUN_FACTS_ONLY
@@ -899,32 +967,41 @@ lists engine files by name, the names spell the declared order, and the audit
 refuses any other.
 
 `EMPTY_PRIVILEGES_ROOT_IPC = TARGET_OBSERVED_DENIED` records the diagnostics
-for `IPC.hardwareFactory()` and `IPC.network()` in both runs, and nothing
-wider.
+for `IPC.hardwareFactory()` and `IPC.network()` in the `d37ba37` `[]` run.
+`GET_NETWORK_INFO_ROOT_IPC = TARGET_OBSERVED_REACHABLE` records that the
+`718db50` run, carrying that token, reached both — and
+`CHANGE_NETWORK_INFO_MEMBERS = TARGET_OBSERVED_DENIED` that Packet Tracer then
+denied the two members beneath them, `getAvailableDeviceCount` and `getName`.
 
 `GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS` is a reading of the pinned
 `PacketTracer.exe` rather than of a run: both root calls require privilege
 index 1, and index 1 serializes as `GET_NETWORK_INFO`. The full map, the call
 descriptors and what none of it establishes are in
 [the privilege map](muejeje-pts-privilege-map.md), which keeps the binary
-mapping, the call requirement and the no-privilege denial as three separate
-facts.
+mapping, the call requirements and the run-by-run behaviour as separate facts.
+`CHANGE_NETWORK_INFO_MEMBER_EVIDENCE_RECORDED = PASS` is the parallel reading
+for the two members, this time a Ghidra static disassembly with exact addresses
+recorded verbatim there.
 
-`BINARY_MAP_REPRODUCIBILITY = PENDING` is the strength of that reading, kept
-apart from its existence. It was supplied from outside this repository; nothing
-here opens the binary and recovers a row, and no function, address or symbol
-came with it. Recorded evidence and reproducible evidence are different states,
-and this record does not let the first be read as the second. The governed
-manifest still declares the token that reading names, because the next run
-selects exactly it and therefore tests the reading instead of inheriting it.
+`BINARY_MAP_REPRODUCIBILITY = PENDING` is the strength of those readings, kept
+apart from their existence. The root map was supplied from outside this
+repository and the member requirements are a Ghidra reading; nothing here opens
+the binary and recovers a row by running it. Recorded evidence and reproducible
+evidence are different states, and this record does not let the first be read as
+the second. The governed manifest declares the tokens those readings name,
+because the next run selects exactly them and therefore tests them instead of
+inheriting them.
 
-`GET_NETWORK_INFO_LIVE_VERIFIED = PENDING` is the half a binary cannot answer:
-no artifact declaring that privilege has been run, so nothing yet says the
-target lets either call through.
+`GET_NETWORK_INFO_LIVE_VERIFIED = PASS` because the `718db50` run reached both
+roots with the token selected. `CHANGE_NETWORK_INFO_LIVE_VERIFIED = PENDING` is
+the half a binary cannot answer: no artifact declaring that token has been run,
+so nothing yet says the target lets the two members through.
 
-`OFFICIAL_RUN_D37BA37_RAW_TRANSCRIPT = NOT_CAPTURED` is why that run is read
-narrowly. The six `NEXT_LIVE_RUN_*` states are the conditions the next run
-carries so that it can establish what this one could not.
+`OFFICIAL_RUN_D37BA37_RAW_TRANSCRIPT = NOT_CAPTURED` and
+`OFFICIAL_RUN_718DB50_RAW_TRANSCRIPT = NOT_CAPTURED` are why both runs are read
+narrowly: each preserved the operator-reported observations, and no raw
+envelopes reached this record. The six `NEXT_LIVE_RUN_*` states are the
+conditions the next run carries so that it can establish what these could not.
 
 - **One unnormalized, append-only transcript per execution**, named by the
   artifact SHA-256 and by the run's own `run_id`: the artifact hash because
@@ -947,10 +1024,12 @@ carries so that it can establish what this one could not.
 A position is where the platform handed a subject over in one reading, and this
 record makes no claim about where anything sits.
 
-`CURRENT_CANDIDATE_PACKAGED` and `CURRENT_CANDIDATE_V6_LIVE_VERIFIED` are
+`CURRENT_NEW_CANDIDATE_PACKAGED` and `CURRENT_NEW_CANDIDATE_V6_LIVE_VERIFIED` are
 `PENDING` for the same reason every candidate-specific state is: they are
-questions about bytes nobody has built or run yet, and the previous artifact
-cannot answer them.
+questions about bytes nobody has built or run yet, and the `718db50` artifact
+cannot answer them. `SUFFICIENT_FOR_FULL_M2_M3_CHAIN = NOT_PROVEN` says the two
+tokens are the evidenced minimum, not that they are known to carry a descriptor
+or workspace chain to the end — only a run can show that.
 
 `IMPLEMENTED` and `COMPLETE` are statements about this repository — the
 operations exist, are admitted, are bounded and are tested offline — and

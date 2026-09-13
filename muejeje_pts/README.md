@@ -198,33 +198,46 @@ exist at all — and the gates forbid the mirror rather than the vocabulary: no
 Cisco enum identifier in any packaged source, and no numeric literal in an
 adapter but its own declared bounds.
 
-**The module requests exactly one privilege** (`privileges:
-["GET_NETWORK_INFO"]`). A recorded reading of the pinned `PacketTracer.exe`
-says privilege index 1 is required for both `IPC.hardwareFactory()` and
-`IPC.network()` — the two calls the whole read-only surface roots on — and that
-index 1 serializes as `GET_NETWORK_INFO`. Nothing else is requested: least
-privilege is a hard rule, and a name nobody can cite for a call this module
-makes is refused at audit time rather than shipped to find out (`MJ-032`).
+**The module requests exactly two privileges** (`privileges:
+["CHANGE_NETWORK_INFO", "GET_NETWORK_INFO"]`). Index 1, `GET_NETWORK_INFO`, is
+required for both `IPC.hardwareFactory()` and `IPC.network()` — the two calls the
+whole read-only surface roots on. Index 2, `CHANGE_NETWORK_INFO`, is required for
+two **read** members, `DeviceFactory.getAvailableDeviceCount()` and
+`Device.getName()`, read from the pinned `PacketTracer.exe` by Ghidra. The token
+reads like a write privilege and is here for the opposite reason: the target
+demands it for two reads. It broadens what Packet Tracer would let the process
+*call*, not what this module exposes — every operation still reads. Nothing else
+is requested: a name nobody can cite for a call this module makes is refused at
+audit time (`MJ-032`).
 
-That reading was **supplied from outside this repository and nothing here
-re-derives it**, so it is recorded evidence and not reproducible evidence, and
-it is not a statement about what the target does. Three states, kept apart:
+The root map was **supplied from outside this repository** and the member
+requirements are a **Ghidra static disassembly**; nothing here re-derives
+either, so they are recorded evidence and not reproducible evidence.
+`GET_NETWORK_INFO` was reached live by the `718db50` run; `CHANGE_NETWORK_INFO`
+has not been carried by a run yet:
 
 ```text
 GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS
 BINARY_MAP_REPRODUCIBILITY                = PENDING
-GET_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+GET_NETWORK_INFO_LIVE_VERIFIED            = PASS
 ```
 
-**What a real Packet Tracer did is recorded, and not generalised.** The
-governed artifact at `d37ba37`, carrying `privileges: []`, ran on `9.0.1.0858`.
-Its kernel answered — identify, capabilities, every refusal class, and a stop
-and a start — and every `platform.*` and `network.*` reading came back
-`PLATFORM_CALL_FAILED`, with Packet Tracer printing that the module lacked the
-privilege for the root call, `hardwareFactory` or `network`. The reading names
-no cause, and still does not; the printed diagnostic did. Which privilege those
-calls need is now evidenced from the binary; whether declaring it makes them
-answer is not, so these capabilities' target state is pending, not proven.
+```text
+CHANGE_NETWORK_INFO_MEMBER_EVIDENCE_RECORDED = PASS
+CHANGE_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+```
+
+**What a real Packet Tracer did is recorded, and not generalised.** Two governed
+artifacts have run on `9.0.1.0858`. The `d37ba37` artifact, carrying
+`privileges: []`, had its kernel answer — identify, capabilities, every refusal
+class, and a stop and a start — while every `platform.*` and `network.*` reading
+came back `PLATFORM_CALL_FAILED`, Packet Tracer printing that the module lacked
+the privilege for the root call. The `718db50` artifact, carrying
+`GET_NETWORK_INFO`, reached both roots and was then denied the two members
+`getAvailableDeviceCount` and `getName` — the denial the index-2 Ghidra evidence
+explains. So the roots are target-verified; whether `CHANGE_NETWORK_INFO` makes
+those members answer is not, and those capabilities' target state stays pending,
+not proven.
 
 ## Relationship to `EXTENSION/`
 

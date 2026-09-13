@@ -37,10 +37,15 @@ EXPECTED_ENTRY_STATE = """M1_CORE_READY = YES
 
 GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS
 BINARY_MAP_REPRODUCIBILITY                = PENDING
+GET_NETWORK_INFO_LIVE_VERIFIED            = PASS
 
-CURRENT_CANDIDATE_PACKAGED                = PENDING
-CURRENT_CANDIDATE_V6_LIVE_VERIFIED        = PENDING
-GET_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+CHANGE_NETWORK_INFO_MEMBER_EVIDENCE_RECORDED = PASS
+CHANGE_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+
+CURRENT_NEW_CANDIDATE_PACKAGED             = PENDING
+CURRENT_NEW_CANDIDATE_V6_LIVE_VERIFIED     = PENDING
+
+SUFFICIENT_FOR_FULL_M2_M3_CHAIN = NOT_PROVEN
 
 M0B_TARGET_API_BASELINED = NOT_COMPLETE
 M2_CORE_READY            = NO
@@ -49,14 +54,15 @@ ZERO_CHANGE_CUTOVER      = NOT_ACHIEVED"""
 
 # The two artifacts the run has to keep apart: the one whose verdicts exist,
 # and the one being built. Written as the block the runbook must carry.
-ARTIFACT_SPLIT = """LAST_QUALIFIED_ARTIFACT (d37ba37)
-  OFFICIAL_PACKAGING_PROVED = PASS
-  V6_KERNEL_VERIFIED        = PASS
+ARTIFACT_SPLIT = """LAST_QUALIFIED_ARTIFACT (718db50)
+  PACKAGING                    = PASS
+  V6_KERNEL                    = PASS
+  GET_NETWORK_INFO_ROOT_ACCESS = PASS
 
-CURRENT_CANDIDATE
-  PACKAGED              = PENDING
-  V6_LIVE_VERIFIED      = PENDING
-  GET_NETWORK_INFO_LIVE = PENDING"""
+CURRENT_NEW_CANDIDATE
+  PACKAGED                 = PENDING
+  V6_LIVE                  = PENDING
+  CHANGE_NETWORK_INFO_LIVE = PENDING"""
 
 # The disposable fixture the run is taken over. Two devices, because one that
 # answers is what makes the members below the root actually run; no cable and
@@ -126,11 +132,15 @@ def test_the_runbook_declares_the_privilege_set_the_manifest_does():
     """
     body = runbook_body()
 
-    assert repo_manifest()["build_options"]["privileges"] == ["GET_NETWORK_INFO"]
-    assert "**`GET_NETWORK_INFO`, and nothing else**" in body
+    assert repo_manifest()["build_options"]["privileges"] == [
+        "CHANGE_NETWORK_INFO", "GET_NETWORK_INFO",
+    ]
     assert (
-        "Confirm on the module itself that only `GET_NETWORK_INFO` is selected"
-        in runbook_prose()
+        "**`GET_NETWORK_INFO` and `CHANGE_NETWORK_INFO`, and nothing else**" in body
+    )
+    assert (
+        "Confirm on the module itself that exactly `GET_NETWORK_INFO` and "
+        "`CHANGE_NETWORK_INFO` are selected" in runbook_prose()
     )
 
 
@@ -285,4 +295,4 @@ def test_the_entry_state_carries_no_candidate_verdict():
 
     assert "OFFICIAL_PACKAGING_PROVED" not in entry
     assert "V6_KERNEL_VERIFIED        = PASS" not in entry
-    assert "CURRENT_CANDIDATE_PACKAGED                = PENDING" in entry
+    assert "CURRENT_NEW_CANDIDATE_PACKAGED             = PENDING" in entry

@@ -55,7 +55,7 @@ here: the manifest is the source, this table is the reading of it.
 | --- | --- |
 | Module ID | `io.github.andres18113.muejeje.runtime` |
 | Startup | `On Startup` |
-| Privileges | `GET_NETWORK_INFO`, and nothing else |
+| Privileges | `GET_NETWORK_INFO` and `CHANGE_NETWORK_INFO`, and nothing else |
 | Signing | none (`TODO-SIGNING` is open; an unsigned module is what this recipe produces) |
 | Custom Interfaces | `muejeje_pts/interface/index.html` |
 | Script Engine files | every file below, all from `muejeje_pts/script-engine/`, and listed by Packet Tracer **in this order** |
@@ -117,27 +117,32 @@ the GUI.
 2. **Extensions → Scripting → New PT Script Module**. The editor opens with six
    parts: Info, General, Script Engine, Custom Interfaces, Data Store, Debug.
 3. **General**: set the Module ID, set Startup to `On Startup`, and select
-   **`GET_NETWORK_INFO`, and no other privilege**. *"The security privileges
-   indicate which IPC calls this Script Module can make. Calls to unselected
-   privileges will be denied"*.
+   **`GET_NETWORK_INFO` and `CHANGE_NETWORK_INFO`, and no other privilege**.
+   *"The security privileges indicate which IPC calls this Script Module can
+   make. Calls to unselected privileges will be denied"*.
 
    **Then read the selection back and record it**, before importing anything.
-   Every other privilege must be unselected. If the module shows more than
-   `GET_NETWORK_INFO` selected, stop: a module carrying a wider set is a
-   different recipe, and nothing it answered would be evidence about this one.
+   Every other privilege must be unselected. If the module shows any third
+   privilege selected, or either of these two missing, stop: a module carrying a
+   different set is a different recipe, and nothing it answered would be evidence
+   about this one.
 
    **This is a deliberate, and consequential, choice.** The `runtime.*`
    operations make no IPC call, so nothing selected here changes what they do.
-   The `platform.*` and `network.*` ones do, through exactly two root calls —
-   `IPC.hardwareFactory()` and `IPC.network()` — and the pinned
-   `PacketTracer.exe` is where the requirement was read: both require privilege
-   index 1, and index 1 serializes as `GET_NETWORK_INFO`. That evidence, the
-   whole privilege map and what it does *not* establish are recorded in
+   The `platform.*` and `network.*` ones do. The two root calls —
+   `IPC.hardwareFactory()` and `IPC.network()` — require privilege index 1,
+   which serializes as `GET_NETWORK_INFO`; the `718db50` run confirmed both
+   roots answer with it. Two read members beneath them —
+   `DeviceFactory.getAvailableDeviceCount()` and `Device.getName()` — require
+   index 2, which serializes as `CHANGE_NETWORK_INFO`, read from the pinned
+   `PacketTracer.exe` by Ghidra. That evidence, the whole privilege map and what
+   it does *not* establish — in particular that `CHANGE_NETWORK_INFO` is a call
+   requirement and not a mutation claim — are recorded in
    [the privilege map](muejeje-pts-privilege-map.md).
 
    **Least privilege is the rule, not the starting point.** Nothing else is
    selected, because no other call this module makes is evidenced to require
-   anything else — and a privilege is a build option, so a wider set is a
+   anything else — and a privilege is a build option, so a different set is a
    different recipe id identifying a different artifact.
    **Never change the privileges during a run.**
 4. **Script Engine**: import every engine file above, under the name it has in

@@ -597,7 +597,7 @@ validated rather than merely present:
 | `startup` | `on_startup` | the module must be able to answer `runtime.identify` without a human opening anything first. It is safe to start unconditionally precisely because it initiates nothing: no transport, no polling, no platform call |
 | `custom_interface_order` | `[muejeje_pts/interface/index.html]` | one static page, the only interface file that ships |
 | `engine_script_order` | core → protocol → admission → platform reading → boundary and adapters → operations (alphabetical) → dispatch → lifecycle, `010_core.js` to `220_lifecycle.js` | Packet Tracer evaluates in listed order, so the order *is* the dependency direction (MJ-019); it lists engine files by name, so every name carries its place as a unique three-digit prefix |
-| `privileges` | `["GET_NETWORK_INFO"]` | the minimum evidenced set. The pinned `PacketTracer.exe` requires privilege index 1 for `IPC.hardwareFactory()` and `IPC.network()` — the two root calls of the whole read-only surface — and index 1 serializes as `GET_NETWORK_INFO`. Nothing else is declared: a token no call this module makes is evidenced to require is refused at audit time, whatever its name suggests (`MJ-032`). An artifact carrying `[]` was observed on `9.0.1.0858` to be denied both calls; whether this set lifts that is `GET_NETWORK_INFO_LIVE_VERIFIED`, still `PENDING` |
+| `privileges` | `["CHANGE_NETWORK_INFO", "GET_NETWORK_INFO"]` | the minimum evidenced set. Index 1 (`GET_NETWORK_INFO`) is required by the two root calls `IPC.hardwareFactory()` and `IPC.network()`, and the `718db50` run reached both roots with it. Index 2 (`CHANGE_NETWORK_INFO`) is required by two **read** members, `DeviceFactory.getAvailableDeviceCount()` and `Device.getName()`, read from the pinned `PacketTracer.exe` by Ghidra — a call requirement, not a mutation claim. Every other token is refused: no call this module makes is evidenced to need it, whatever its name suggests (`MJ-032`). Whether `CHANGE_NETWORK_INFO` makes those members progress is `CHANGE_NETWORK_INFO_LIVE_VERIFIED`, still `PENDING` |
 
 An option is **unresolved** when it is `null` — nobody has decided, which is not
 a defect — and **invalid** when it carries a value the platform could not
@@ -1129,9 +1129,11 @@ sentence says what an unselected privilege means for a call that needs it; it
 says nothing about whether a name this repository can evidence will be honoured.
 So a declared set is justified by the evidence behind each name in it, and never
 by a forecast of what the target will answer. While no name was evidenced, the
-justified set was the empty one, and the manifest declared it through both
-target runs; a call descriptor has since been recorded for both roots, and the
-justified set is now the single token that descriptor composes to.
+justified set was the empty one; a call descriptor was then recorded for both
+roots (index 1, `GET_NETWORK_INFO`), and the `718db50` run confirmed both roots
+answer with it; two read members were then read at index 2
+(`CHANGE_NETWORK_INFO`), so the justified set is now the two tokens those
+descriptors compose to.
 
 **Three namespaces, and they are not aliases.** An *internal privilege index*
 is an integer the binary compares a call against. A *serialized token* —
@@ -1148,37 +1150,49 @@ never stores.
 **The admissible set is derived from call evidence, not from a catalogue.** The
 pinned `PacketTracer.exe` carries twelve indexed tokens; that a token *exists*
 does not make it askable. What makes one askable is a recorded call descriptor:
-`IPC.hardwareFactory()` and `IPC.network()` both require index 1, and index 1
-serializes as `GET_NETWORK_INFO`, so the minimum set is that one token and the
-manifest declares exactly it. `CHANGE_NETWORK_INFO` and `IPC` are real tokens
-and are refused, because no call this module makes is evidenced to need them —
-nothing is inferred from a privilege's *name*. Widening the set means recording
-which call requires which index, not editing the manifest.
+`IPC.hardwareFactory()` and `IPC.network()` both require index 1, which
+serializes as `GET_NETWORK_INFO`; `DeviceFactory.getAvailableDeviceCount()` and
+`Device.getName()` both require index 2, which serializes as
+`CHANGE_NETWORK_INFO`. So the minimum set is those two tokens and the manifest
+declares exactly them, in the canonical order `["CHANGE_NETWORK_INFO",
+"GET_NETWORK_INFO"]`. `IPC` and every other indexed token are real and are
+refused, because no call this module makes is evidenced to need them — nothing
+is inferred from a privilege's *name*, `CHANGE_NETWORK_INFO` least of all: it is
+here because two **read** members require index 2, not because the name reads
+like a mutation. Widening the set means recording which call requires which
+index, not editing the manifest.
 
-**Three facts, kept apart.** The binary mapping (index 1 is
-`GET_NETWORK_INFO`), the call requirement (both roots want index 1) and the
-target's behaviour under `privileges: []` (both roots denied, official LIVE run
-at `d37ba37`) are three claims, each able to be true while another is wrong.
-Collapsed into one they would assert something no single observation supports.
-In particular, that the binary requires `GET_NETWORK_INFO` is **not** evidence
-that selecting it makes either call answer. Nor is it a measurement this
-repository performed: the readings were supplied from outside it, nothing here
-re-derives them, and no address or symbol came with them. Three states, because
-each can hold while another does not:
+**The facts stay apart.** The binary mapping (index 1 is `GET_NETWORK_INFO`,
+index 2 is `CHANGE_NETWORK_INFO`), the call requirements (roots want index 1,
+the two members want index 2) and the target's behaviour run by run (the
+`d37ba37` `[]` run denied both roots; the `718db50` `GET_NETWORK_INFO` run
+reached both roots and was denied the two members) are separate claims, each
+able to be true while another is wrong. Collapsed into one they would assert
+something no single observation supports. The root map and requirements were
+supplied from outside this repository; the two member requirements are a Ghidra
+static disassembly with exact addresses, recorded verbatim in the privilege
+map — but nothing here re-derives either, so reproducibility stays `PENDING`.
+Several states, because each can hold while another does not:
 
 ```text
 GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS
 BINARY_MAP_REPRODUCIBILITY                = PENDING
-GET_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+GET_NETWORK_INFO_LIVE_VERIFIED            = PASS
 ```
 
-Declaring the token on `RECORDED` evidence alone is deliberate and is not a
-promotion of it: the next official LIVE run selects exactly that token, so the
-run tests the reading rather than inheriting it. A root still denied while
-carrying it is a contradiction to investigate, never a reason to add
+```text
+CHANGE_NETWORK_INFO_MEMBER_EVIDENCE_RECORDED = PASS
+CHANGE_NETWORK_INFO_LIVE_VERIFIED            = PENDING
+```
+
+`GET_NETWORK_INFO` is now `LIVE_VERIFIED` because the `718db50` run reached both
+roots; `CHANGE_NETWORK_INFO` is declared on `RECORDED` member evidence, and the
+next official LIVE run selects exactly those two tokens so the run tests the
+member requirement rather than inheriting it. A call denied where the evidence
+says it should progress is a contradiction to investigate, never a reason to add
 privileges. All of it is recorded, with the binary's SHA-256, in
-`docs/qa/muejeje-pts-privilege-map.md`; reproducibility detail that was not
-supplied is marked `PENDING` there rather than invented.
+`docs/qa/muejeje-pts-privilege-map.md`; reproducibility that was not supplied is
+marked `PENDING` there rather than invented.
 **Rationale.** This is `AGENTS.md` rule 6 — never guess a PT API signature —
 applied to the one field whose wrong value is invisible until the target runs.
 The shape rules run before the evidence rule, so a typo is still reported as a
@@ -1358,35 +1372,39 @@ M3_CORE_READY = NO
 ZERO_CHANGE_CUTOVER = NOT_ACHIEVED
 ```
 
-**A milestone state and a candidate state are different subjects.** The
-milestone states above were established by the governed artifact at `d37ba37`,
-which was packaged, loaded and driven. The current candidate is a different
-recipe id identifying different bytes, and it has been neither packaged nor
-run — so it holds none of that artifact's verdicts, and they are written
-separately rather than inherited:
+**A milestone state and a candidate state are different subjects.** The V6
+kernel was first proved by the governed artifact at `d37ba37`; the latest
+qualified artifact is `718db50`, which was packaged, loaded and driven carrying
+`GET_NETWORK_INFO` and reached both root IPC calls. The new candidate adds
+`CHANGE_NETWORK_INFO`: it is a different recipe id identifying different bytes,
+and it has been neither packaged nor run — so it holds none of that artifact's
+verdicts, and they are written separately rather than inherited:
 
 ```text
-LAST_QUALIFIED_ARTIFACT (d37ba37)
-  OFFICIAL_PACKAGING_PROVED = PASS
-  V6_KERNEL_VERIFIED        = PASS
+LAST_QUALIFIED_ARTIFACT (718db50)
+  PACKAGING                    = PASS
+  V6_KERNEL                    = PASS
+  GET_NETWORK_INFO_ROOT_ACCESS = PASS
 
-CURRENT_CANDIDATE
-  PACKAGED              = PENDING
-  V6_LIVE_VERIFIED      = PENDING
-  GET_NETWORK_INFO_LIVE = PENDING
+CURRENT_NEW_CANDIDATE
+  PACKAGED                 = PENDING
+  V6_LIVE                  = PENDING
+  CHANGE_NETWORK_INFO_LIVE = PENDING
 ```
 
-`M1_CORE_READY = YES` stays exactly where the previous artifact's evidence put
+`M1_CORE_READY = YES` stays exactly where the qualified artifacts' evidence put
 it. A candidate-specific state moves only from that candidate's own run, read
 out of that run's own transcript (MJ-011, MJ-015).
 
 - **M0B** is not complete: it still includes credential and transport API
   qualification. No transport exists, and MJ-026's terms are `BASELINED` rather
-  than exercised — there is nothing yet to qualify a credential against. Before
-  any of it comes IPC privilege: a governed artifact carrying none was denied
-  both root IPC calls on the target. Which privilege they require is now
-  evidenced from the pinned binary (MJ-032), and no API reached through them is
-  baselined until a run shows them answering.
+  than exercised — there is nothing yet to qualify a credential against. IPC
+  privilege has moved: the `718db50` run reached both root IPC calls with
+  `GET_NETWORK_INFO`, and Packet Tracer then denied the two read members beneath
+  them, which Ghidra reads as requiring index 2 (`CHANGE_NETWORK_INFO`, MJ-032).
+  So the roots answer, but no API reached through a member is baselined — the
+  first member calls were denied — until a run carrying both tokens shows them
+  answering.
 - **M0C** is not complete: it still includes batch and auth-boundary semantics.
   MJ-027 is the contract the first batch operation must satisfy, and no batch
   operation exists; the auth boundary is in the same position under MJ-026.
@@ -1510,7 +1528,7 @@ Not requirements. Each needs a decision before it can become one.
 | **TODO-V6-SHAPE** | **RESOLVED for the kernel.** The envelope is `{v, operation_rid, op, args}` in and `{v, operation_rid, op, ok, result, error}` out, both as JSON strings, through the single entry point `mcpDispatchV6`. Operations are whitelisted by name, each admitted argument carries the rule its value must satisfy (MJ-029), and the failure taxonomy is MJ-022. Adding an operation extends the table, not the envelope; which operations the table holds is MJ-008, and it is not restated here, because a whitelist written down twice is one that will disagree with itself. |
 | **TODO-MODULE-ID** | **RESOLVED** by `MJ-025`: `io.github.andres18113.muejeje.runtime`. Hierarchical and reverse-DNS shaped, rooted in a namespace the publisher controls. Stability across rebuilds is a property of the manifest, which is committed and hashed into recipe identity. Packet Tracer's own acceptance of the representation still needs target evidence (`MJ-015`). |
 | **TODO-STARTUP** | **RESOLVED** by `MJ-025`: `on_startup`. The module must answer `runtime.identify` without a human opening anything, and starting it unconditionally is safe precisely because it initiates nothing — no transport, no polling, no platform call. Revisit if and when a channel that *does* initiate is added. |
-| **TODO-PRIVILEGES** | **RESOLVED** by `MJ-025` and `MJ-032`: `["GET_NETWORK_INFO"]`. The `.pki` privilege catalogue is still not installed, and this resolution does not need it — the requirement was read out of the pinned `PacketTracer.exe` instead: both root calls require privilege index 1, which serializes as `GET_NETWORK_INFO`. The set is the minimum that evidence supports, and it grows only by recording another call descriptor (`MJ-032`). What a target does *with* it is not yet observed: an artifact carrying `[]` was denied both calls on `9.0.1.0858`, and a capability stays `PENDING_TARGET` until a platform reading answers (`MJ-031`). |
+| **TODO-PRIVILEGES** | **RESOLVED** by `MJ-025` and `MJ-032`: `["CHANGE_NETWORK_INFO", "GET_NETWORK_INFO"]`. The `.pki` privilege catalogue is still not installed, and this resolution does not need it — the requirements were read out of the pinned `PacketTracer.exe` instead: both root calls require index 1 (`GET_NETWORK_INFO`), and two read members, `DeviceFactory.getAvailableDeviceCount()` and `Device.getName()`, require index 2 (`CHANGE_NETWORK_INFO`, read by Ghidra). The set is the minimum that evidence supports and grows only by recording another call descriptor (`MJ-032`). Root access is now target-verified — the `718db50` run reached both roots — while the members were denied there; `CHANGE_NETWORK_INFO_LIVE_VERIFIED` and each capability stay `PENDING_TARGET` until a run carrying both tokens shows a member answering (`MJ-031`). |
 | **TODO-RECIPE-SCOPE** | **RESOLVED.** Manifest `schema_version: 2` splits inputs into `artifact_inputs` (bytes packaged into the `.pts`, required to live under the owned root), `tooling_inputs` (the auditor — ships nothing, still part of recipe identity) and `reference_inputs` (empty). A path may not appear in two categories. |
 
 ## Related documents

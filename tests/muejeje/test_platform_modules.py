@@ -18,9 +18,11 @@ for this to work (MJ-002, MJ-014). What answered is reported back.
 shapes this repository's own factory surveys recorded against `9.0.1.0858`, and
 that is still a claim about our code: nothing here establishes that Packet
 Tracer answers these calls from a Script Module at all — one carrying
-`privileges: []` was denied their root, and one carrying `GET_NETWORK_INFO` has
-not been run — so the capability's live state is `PENDING_TARGET` (MJ-015,
-MJ-031).
+`privileges: []` was denied their root, and one carrying `GET_NETWORK_INFO`
+reached the root but was denied the first member, `getAvailableDeviceCount`
+(the index-2 evidence is why the manifest now also declares
+`CHANGE_NETWORK_INFO`) — so the capability's live state is `PENDING_TARGET`
+(MJ-015, MJ-031).
 """
 
 from __future__ import annotations

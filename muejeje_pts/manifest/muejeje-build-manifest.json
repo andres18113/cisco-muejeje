@@ -82,6 +82,7 @@
     "module_id": "io.github.andres18113.muejeje.runtime",
     "startup": "on_startup",
     "privileges": [
+      "CHANGE_NETWORK_INFO",
       "GET_NETWORK_INFO"
     ]
   },

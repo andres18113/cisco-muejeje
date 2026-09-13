@@ -6,8 +6,8 @@ the whole point of this module (MJ-032):
 
 | Namespace | Example | What it is |
 | --- | --- | --- |
-| internal privilege index | `1` | the integer the target binary compares a call against. Never declared anywhere; it is how the other two are related |
-| **serialized privilege token** | `GET_NETWORK_INFO` | what Packet Tracer stores for a Script Module, and therefore **the only namespace the manifest declares** |
+| internal privilege index | `2` | the integer the target binary compares a call against. Never declared anywhere; it is how the other two are related |
+| **serialized privilege token** | `CHANGE_NETWORK_INFO` | what Packet Tracer stores for a Script Module, and therefore **the only namespace the manifest declares** |
 | IpcAPI symbol | `PrivGetNetwork` | a documentation identifier that appears in Cisco's generated reference. Not a token, and not accepted here |
 
 The two outer namespaces are *not* aliases of one another. `PrivGetNetwork` and
@@ -18,24 +18,33 @@ because the other exists would admit a name on a resemblance, which is exactly
 the failure `MJ-032` exists to refuse — so the symbols are recorded here as
 what they are, and refused with their own reason.
 
+**Nothing is inferred from a token's name.** `CHANGE_NETWORK_INFO` reads like
+the privilege a mutation would want. It is required here for the opposite
+reason: the target binary demands it for two **read** members —
+`DeviceFactory.getAvailableDeviceCount()` and `Device.getName()` — and index 2
+serializes as `CHANGE_NETWORK_INFO`. The token broadens what Packet Tracer
+would let the Script Module process *call*; it says nothing about what Muejeje
+exposes. The Runtime V6 surface stays read-only, and the positive V6 allowlist
+remains the authority on what this artifact does (`MJ-031`, `MJ-032`).
+
 Declaring the wrong token is invisible until the target runs: Cisco is explicit
 that *"the security privileges indicate which IPC calls this Script Module can
 make. Calls to unselected privileges will be denied"*. The audit is the last
 point at which a name can still be refused.
 
-**The binary evidence below was supplied from outside this repository**, as a
-reading of the pinned `PacketTracer.exe`. Nothing here re-derives it: no test,
-tool or procedure in this checkout reads that binary and recovers the map or
-the call descriptors, and no function, address or symbol was supplied with
-them. So *recorded* and *reproducible* are two different states, and they are
-tracked as two constants rather than as one word. Recording an externally
-supplied reading as if this repository had measured it is the same failure as
-inventing an offset, one step later.
+**The binary evidence below was read outside this repository**, against the
+pinned `PacketTracer.exe`. Nothing here re-derives it: no test, tool or
+procedure in this checkout opens that binary and recovers the map or a call's
+index. So *recorded* and *reproducible* are two different states, tracked as two
+constants rather than one word — even now that the member evidence carries exact
+Ghidra addresses. Recording an externally read reading as if this repository had
+performed it is the same failure as inventing an offset, one step later.
 
-It is still what the production decision is made on, and that is deliberate:
-the next official LIVE run selects exactly the token this evidence names and
-therefore tests it independently. A run that is denied at either root
-contradicts the evidence and is recorded as a contradiction (MJ-032).
+It is still what the production decision is made on, and that is deliberate: the
+`718db50` official LIVE run selected exactly the `GET_NETWORK_INFO` this evidence
+names and reached both root calls, and the next official LIVE run selects the
+two tokens and tests the member requirement independently. A run denied where
+the evidence says it should progress is recorded as a contradiction (MJ-032).
 """
 
 from __future__ import annotations
@@ -46,39 +55,46 @@ from typing import Any, Iterable
 # as in the manifest's `builder` so the map cannot outlive the binary it
 # describes: a gate holds the two equal, and a different build needs the map
 # re-derived rather than assumed to still hold (`AGENTS.md` rule 6).
-#
-# Who read it is part of the record. `EXTERNALLY_SUPPLIED` says this repository
-# received the reading rather than performing it, which is why the strength of
-# the evidence is three states below and not one.
 BINARY_EVIDENCE_VERSION = "9.0.1.0858"
 BINARY_EVIDENCE_SHA256 = (
     "843579cc806a41d57a4ca524d6805b97ee1f91e0ddd02ac09be8461db04b94a1"
 )
+# Who read the binary is part of the evidence. The index map and the two root
+# call requirements were a summary supplied to this repository; the two member
+# call requirements are a Ghidra static disassembly with exact addresses,
+# recorded verbatim in the QA record. Both are external to this checkout —
+# nothing here opens the binary — which is why reproducibility stays PENDING
+# even though the member addresses are now written down.
 BINARY_EVIDENCE_PROVENANCE = "EXTERNALLY_SUPPLIED"
+MEMBER_CALL_EVIDENCE_PROVENANCE = "GHIDRA_STATIC_DISASSEMBLY"
 
-# How strong the privilege evidence is, in the three senses that can differ.
-# They are separate constants because each can hold while another does not, and
-# a single word for all three would let the weakest be read as the strongest.
+# How strong the privilege evidence is, in the senses that can differ. They are
+# separate constants because each can hold while another does not, and a single
+# word for all of them would let the weakest be read as the strongest.
 #
 #   RECORDED         the map and the call descriptors are written down here and
 #                    in the QA record, against a pinned binary. PASS.
-#   REPRODUCIBILITY  whether anything in this repository can re-derive them from
-#                    that binary. Nothing can, and no function, address or
-#                    symbol was supplied, so this is PENDING and stays PENDING
-#                    until one is recorded.
-#   LIVE_VERIFIED    whether selecting the token makes either root call answer
-#                    on the target. Only a run can say, and none has been made
-#                    with it selected. PENDING.
+#   REPRODUCIBILITY  whether anything in *this repository* can re-derive a row
+#                    from that binary. Nothing can — the member addresses are
+#                    recorded for a human to check in Ghidra, not re-derived by
+#                    any tool here — so this stays PENDING.
+#   *_LIVE_VERIFIED  whether selecting the token makes the calls it is evidenced
+#                    for progress on the target. Only a run can say.
+#                    `GET_NETWORK_INFO` reached both roots in the `718db50` run,
+#                    so it is PASS. `CHANGE_NETWORK_INFO` has been carried by no
+#                    run yet, so it is PENDING.
 BINARY_EVIDENCE_RECORDED = "PASS"
+MEMBER_STATIC_EVIDENCE_RECORDED = "PASS"
 BINARY_MAP_REPRODUCIBILITY = "PENDING"
-GET_NETWORK_INFO_LIVE_VERIFIED = "PENDING"
+GET_NETWORK_INFO_LIVE_VERIFIED = "PASS"
+CHANGE_NETWORK_INFO_LIVE_VERIFIED = "PENDING"
 
-# The serialized privilege tokens, by internal index, as observed in that
-# binary. Recorded as the evidence stated it, index 0 included: the binary's
-# own name for *no privilege* is `none`, and whether that is a storable token
-# or the absence of one was not established. Nothing needs it to be decided —
-# the requestable set below is derived from call evidence, never from this
-# tuple, so no entry here is admitted merely by being listed.
+# The serialized privilege tokens, by internal index, as read from that binary.
+# Recorded as the evidence stated it, index 0 included: the binary's own name
+# for *no privilege* is `none`, and whether that is a storable token or the
+# absence of one was not established. Nothing needs it decided — the requestable
+# set below is derived from call evidence, never from this tuple, so no entry
+# here is admitted merely by being listed.
 #
 # A name in this tuple is **a token that exists**, not a token this module may
 # ask for. The two are different claims and stay different.
@@ -98,31 +114,39 @@ SERIALIZED_BY_INDEX = (
 )
 
 # Which privilege index a call requires, one entry per call this repository has
-# target-binary evidence for. These two are the root calls the whole read-only
-# surface goes through: every `platform.*` reading begins at
-# `IPC.hardwareFactory()` and every `network.*` reading at `IPC.network()`.
+# target-binary evidence for. Root-call and member-call evidence are kept in
+# two named groups so they never collapse into one another: a root answering is
+# a different fact from a member beneath it answering, and the `718db50` run
+# observed exactly that split — both roots reachable, two members denied.
 #
-# This is a *separate* fact from the map above, and from what the target did
-# with `privileges: []`. The map says what index 1 is called; this says which
-# calls want index 1; the official LIVE run says both calls were denied when
-# nothing was selected. None of the three implies either of the others, and
-# collapsing them into "GET_NETWORK_INFO is what these calls need" would state
-# a conclusion no single observation supports.
-#
-# Nothing is inferred from a token's *name*. `CHANGE_NETWORK_INFO` reads like
-# the privilege a write would want and no evidence here says so, so no call is
-# listed against it.
+# The roots are where the whole read-only surface begins: every `platform.*`
+# reading at `IPC.hardwareFactory()`, every `network.*` reading at
+# `IPC.network()`. Their index-1 requirement was an externally supplied summary.
 ROOT_CALL_PRIVILEGE_INDEX = {
     "IPC.hardwareFactory()": 1,
     "IPC.network()": 1,
 }
+# Two read members the `718db50` run reached and Packet Tracer denied for
+# privilege. Ghidra then read their registration sites in the pinned binary,
+# each passing privilege index 2 (`MOV R8D,0x2`) to the registrar
+# `FUN_14012b850`; the exact strings, addresses and blocks are recorded verbatim
+# in `docs/qa/muejeje-pts-privilege-map.md`. `setName` shares that index and is
+# corroborating only — no other member's requirement is inferred from it.
+MEMBER_CALL_PRIVILEGE_INDEX = {
+    "DeviceFactory.getAvailableDeviceCount()": 2,
+    "Device.getName()": 2,
+}
+# The one authoritative evidenced call -> index relation. The minimum privilege
+# set is derived from this, never typed, so the manifest and the call evidence
+# cannot drift apart in the one direction that matters — a privilege declared
+# with nothing behind it. Root and member evidence stay separable above.
+CALL_PRIVILEGE_INDEX = {**ROOT_CALL_PRIVILEGE_INDEX, **MEMBER_CALL_PRIVILEGE_INDEX}
 
 # The minimum set: exactly the tokens the recorded calls require, derived and
-# never typed. Hand-writing it would let the manifest and the evidence drift
-# apart in the one direction that matters — a privilege declared with nothing
-# behind it.
+# never typed. Deterministically ordered by `sorted`, which is the manifest's
+# canonical order for this field.
 REQUIRED_PRIVILEGES = tuple(sorted({
-    SERIALIZED_BY_INDEX[index] for index in ROOT_CALL_PRIVILEGE_INDEX.values()
+    SERIALIZED_BY_INDEX[index] for index in CALL_PRIVILEGE_INDEX.values()
 }))
 
 # Identifiers Cisco's installed IpcAPI reference leaks through its event

@@ -266,8 +266,11 @@ def test_the_recipe_declares_the_minimum_privilege_and_has_it_read_back():
     collapsed = _collapsed_recipe()
     declared = repo_manifest()["build_options"]["privileges"]
 
-    assert declared == ["GET_NETWORK_INFO"]
-    assert "| Privileges | `GET_NETWORK_INFO`, and nothing else |" in collapsed
+    assert declared == ["CHANGE_NETWORK_INFO", "GET_NETWORK_INFO"]
+    assert (
+        "| Privileges | `GET_NETWORK_INFO` and `CHANGE_NETWORK_INFO`, and "
+        "nothing else |" in collapsed
+    )
     assert "Then read the selection back and record it" in collapsed
     assert "Every other privilege must be unselected." in collapsed
 

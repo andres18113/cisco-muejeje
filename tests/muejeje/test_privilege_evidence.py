@@ -12,11 +12,10 @@ it names in a refusal. Two copies of them could disagree.
 
 **Not all of it was measured here, and that is the point of the last section.**
 The IpcAPI symbols are re-derived from Cisco's installed bytes by this module.
-The binary map and the call descriptors are not: they were supplied from
-outside this repository, nothing here re-derives them, and no address or symbol
-came with them. So they are *recorded* evidence and not *reproducible*
-evidence, and the gates below hold the code and the QA record to saying so —
-three states, never one word (MJ-032).
+The binary map and the call descriptors are not — the root map was supplied
+from outside this repository and the member requirements are a Ghidra reading —
+so they are *recorded* evidence and not *reproducible* evidence, and the gates
+below hold the code and the QA record to saying so (MJ-032).
 """
 
 from __future__ import annotations
@@ -54,9 +53,11 @@ API_SYMBOL_EVIDENCE = {
 }
 
 # The map and the call descriptors as the QA record writes them, so the record
-# and the code cannot drift.
+# and the code cannot drift. A call row is any `Interface.member()` — a root or
+# a member — so the record has to carry the whole evidenced relation, not just
+# the roots.
 RECORDED_INDEX = re.compile(r"^\| (\d+) \| `([A-Za-z_]+)` \|$", re.MULTILINE)
-RECORDED_CALL = re.compile(r"^\| `(IPC\.\w+\(\))` \| (\d+) \|$", re.MULTILINE)
+RECORDED_CALL = re.compile(r"^\| `([A-Za-z]+\.\w+\(\))` \| (\d+) \|$", re.MULTILINE)
 
 
 def privileges():
@@ -106,7 +107,7 @@ def test_the_qa_record_and_the_code_carry_the_same_evidence():
     recorded_calls = {call: int(index) for call, index in RECORDED_CALL.findall(body)}
 
     assert recorded_map == dict(enumerate(module.SERIALIZED_BY_INDEX))
-    assert recorded_calls == module.ROOT_CALL_PRIVILEGE_INDEX
+    assert recorded_calls == module.CALL_PRIVILEGE_INDEX
 
 
 def test_reproducibility_is_marked_pending_rather_than_invented():
@@ -126,40 +127,42 @@ def test_reproducibility_is_marked_pending_rather_than_invented():
 
 EVIDENCE_STATES = """GET_NETWORK_INFO_BINARY_EVIDENCE_RECORDED = PASS
 BINARY_MAP_REPRODUCIBILITY                = PENDING
-GET_NETWORK_INFO_LIVE_VERIFIED            = PENDING"""
+GET_NETWORK_INFO_LIVE_VERIFIED            = PASS"""
 
 
 def test_recorded_reproducible_and_live_verified_are_three_states():
-    """Externally supplied evidence may be recorded and still be unreproducible.
+    """Recorded, reproducible and live-verified are distinct states.
 
-    One word for all three is how a reading this repository received gets read
-    as one it performed. The binary map is written down against a pinned
-    SHA-256 — `RECORDED` — and nothing here can re-derive a row of it, so
-    `REPRODUCIBILITY` is `PENDING`; whether the target honours the token is a
-    third question again, and only a run asks it.
+    A reading can be written down against a pinned SHA-256 (`RECORDED`) while no
+    tool here re-derives a row (`REPRODUCIBILITY = PENDING`); whether the target
+    honours a token is a third question a run answers. `GET_NETWORK_INFO` was
+    reached by the `718db50` run (`PASS`); `CHANGE_NETWORK_INFO` has not been run
+    (`PENDING`).
     """
     module = privileges()
 
     assert module.BINARY_EVIDENCE_RECORDED == "PASS"
+    assert module.MEMBER_STATIC_EVIDENCE_RECORDED == "PASS"
     assert module.BINARY_MAP_REPRODUCIBILITY == "PENDING"
-    assert module.GET_NETWORK_INFO_LIVE_VERIFIED == "PENDING"
+    assert module.GET_NETWORK_INFO_LIVE_VERIFIED == "PASS"
+    assert module.CHANGE_NETWORK_INFO_LIVE_VERIFIED == "PENDING"
     assert len({
-        module.BINARY_EVIDENCE_RECORDED,
+        module.MEMBER_STATIC_EVIDENCE_RECORDED,
         module.BINARY_MAP_REPRODUCIBILITY,
     }) == 2, "a recorded reading and a reproducible one are different states"
 
 
 def test_the_provenance_of_the_binary_evidence_is_recorded_as_external():
-    """Who read the binary is part of the evidence, not a detail.
+    """Who read the binary is part of the evidence: map supplied, members Ghidra.
 
-    `EXTERNALLY_SUPPLIED` is what makes `BINARY_MAP_REPRODUCIBILITY = PENDING`
-    a statement rather than an accident: this repository received the reading,
-    so nobody here can be asked to reproduce it.
+    Both are external to this checkout, which is what makes
+    `BINARY_MAP_REPRODUCIBILITY = PENDING` a statement rather than an accident.
     """
     assert privileges().BINARY_EVIDENCE_PROVENANCE == "EXTERNALLY_SUPPLIED"
+    assert privileges().MEMBER_CALL_EVIDENCE_PROVENANCE == "GHIDRA_STATIC_DISASSEMBLY"
 
     prose = record_prose()
-    assert "supplied from outside this repository" in prose
+    assert "read outside this repository" in prose
     assert "nothing in it performs that reading" in prose
 
 
@@ -182,11 +185,9 @@ def test_every_authoritative_record_carries_the_three_states(logical: str):
 
 
 def test_the_record_keeps_the_three_facts_apart():
-    """The map, the descriptors and the no-privilege run are three claims.
+    """The map, the descriptors and the run behaviour are separate claims.
 
-    Collapsing them into "GET_NETWORK_INFO is what these calls need" would
-    state a conclusion no single observation supports, and would hide that the
-    live half is still unverified.
+    Collapsing them would state a conclusion no single observation supports.
     """
     body = record_body()
 
@@ -196,17 +197,16 @@ def test_the_record_keeps_the_three_facts_apart():
 
 
 def test_the_record_says_the_manifest_may_act_on_recorded_evidence():
-    """Acting on it and over-stating it are different things.
+    """Acting on a reading and over-stating it are different things.
 
-    The production decision is made on a reading nobody here can reproduce, and
-    that is defensible for exactly one reason: the next official LIVE run
-    selects the token this reading names and therefore tests it. The record has
-    to say so, or the declaration reads as evidence being promoted.
+    The decision rests on evidence nobody here can reproduce, defensible because
+    the next LIVE run selects the tokens it names and tests them; the record
+    must say so, or the declaration reads as evidence being promoted.
     """
     prose = record_prose()
 
-    assert "the next official LIVE run selects exactly that token" in prose
-    assert "tests the evidence independently rather than inheriting it" in prose
+    assert "the next official LIVE run selects exactly those two tokens" in prose
+    assert "tests the member requirement independently rather than inheriting it" in prose
 
 
 

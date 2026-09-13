@@ -137,25 +137,28 @@ allowlist is the proof rather than a list of forbidden verbs, which admits
 every name nobody thought of; and a defect inside an adapter is reported as
 `ENGINE_EXCEPTION`, never as a platform reading.
 
-**The module requests exactly one privilege, `GET_NETWORK_INFO`.** It is the
-minimum evidenced set and not a starting point: a recorded reading of the
-pinned `PacketTracer.exe` says `IPC.hardwareFactory()` and `IPC.network()` —
-the two calls the whole read-only surface roots on — both require privilege
-index 1, and that index serializes as that token. Nothing else is declared,
-because no other call this module makes is evidenced to need anything
-(`MJ-032`). That reading was supplied from outside this repository and nothing
-here re-derives it, so it is `RECORDED` and not reproducible, and it is not a
-statement about what the target then does.
+**The module requests exactly two privileges, `GET_NETWORK_INFO` and
+`CHANGE_NETWORK_INFO`.** They are the minimum evidenced set and not a starting
+point. `IPC.hardwareFactory()` and `IPC.network()` — the two calls the whole
+read-only surface roots on — require privilege index 1, `GET_NETWORK_INFO`; two
+**read** members beneath them, `DeviceFactory.getAvailableDeviceCount()` and
+`Device.getName()`, require index 2, `CHANGE_NETWORK_INFO`. Nothing else is
+declared, because no other call this module makes is evidenced to need anything
+(`MJ-032`). The token reads like the privilege a write would want and is here
+for the opposite reason — the target demands it for two reads — and it broadens
+what Packet Tracer would let the process *call*, never what Muejeje exposes,
+which stays read-only.
 
-Both target runs so far carried `privileges: []`, and both had
-`IPC.hardwareFactory()` and `IPC.network()` denied, with Packet Tracer's own
-diagnostic naming the missing privilege. Whether the declared token lifts that
-is unmeasured until a governed artifact carrying it is run. The operation still
-reports only the reading that comes back — `PLATFORM_CALL_FAILED` names no
-cause — and the diagnostic recorded beside it is what attributes one. The
-artifact contains no HTTP listener, no file mailbox and no polling loop, and the
-Custom Interface is a static page that calls nothing and therefore reports no
-module state.
+The `d37ba37` run carried `privileges: []` and was denied both roots. The
+`718db50` run carried `GET_NETWORK_INFO` and reached both roots, then Packet
+Tracer denied the two members beneath them — which is the denial the index-2
+Ghidra evidence explains. Whether `CHANGE_NETWORK_INFO` makes those members
+progress is unmeasured until a governed artifact carrying both tokens is run.
+The operation still reports only the reading that comes back —
+`PLATFORM_CALL_FAILED` names no cause — and the diagnostic recorded beside it is
+what attributes one. The artifact contains no HTTP listener, no file mailbox and
+no polling loop, and the Custom Interface is a static page that calls nothing
+and therefore reports no module state.
 
 **What is not built.** The transport, every mutating operation, and every
 reading beyond the hardware factory, the workspace inventory, one device's

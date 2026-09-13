@@ -53,15 +53,20 @@ def schema():
 # 1. The evidenced token is accepted.
 # ---------------------------------------------------------------------------
 
-def test_the_evidenced_serialized_token_is_accepted():
-    """`GET_NETWORK_INFO` is admissible because a call is evidenced to need it.
+def test_the_evidenced_serialized_tokens_are_accepted():
+    """Both tokens are admissible because an evidenced call needs each.
 
     The gate is not a ban on privileges; it is a ban on unevidenced ones. A
     rule that refused every non-empty list would be indistinguishable from
     "privileges are not supported", and the first operation that needs one
-    would delete it instead of satisfying it.
+    would delete it instead of satisfying it. `GET_NETWORK_INFO` is required by
+    the two root calls; `CHANGE_NETWORK_INFO` by two read members.
     """
     assert schema()._privileges_error(["GET_NETWORK_INFO"]) is None
+    assert schema()._privileges_error(["CHANGE_NETWORK_INFO"]) is None
+    assert schema()._privileges_error(
+        ["CHANGE_NETWORK_INFO", "GET_NETWORK_INFO"]
+    ) is None
 
 
 def test_an_empty_privilege_list_still_needs_no_evidence():
@@ -126,13 +131,14 @@ def test_the_two_namespaces_are_disjoint_and_neither_maps_to_the_other():
 # ---------------------------------------------------------------------------
 
 def test_the_manifest_declares_exactly_the_proven_minimum_set():
-    assert repo_manifest()["build_options"]["privileges"] == ["GET_NETWORK_INFO"]
-    assert list(privileges().REQUIRED_PRIVILEGES) == ["GET_NETWORK_INFO"]
+    proven = ["CHANGE_NETWORK_INFO", "GET_NETWORK_INFO"]
+    assert repo_manifest()["build_options"]["privileges"] == proven
+    assert list(privileges().REQUIRED_PRIVILEGES) == proven
 
 
 def test_the_declared_set_is_resolved_end_to_end(tmp_path: Path):
     """It passes the audit as a resolved option, not merely as a valid string."""
-    assert resolved_options()["privileges"] == ["GET_NETWORK_INFO"]
+    assert resolved_options()["privileges"] == ["CHANGE_NETWORK_INFO", "GET_NETWORK_INFO"]
 
     root, manifest_path = make_repo(tmp_path)
     manifest = manifest_document()
@@ -149,14 +155,16 @@ def test_the_declared_set_is_resolved_end_to_end(tmp_path: Path):
 # 5. Another privilege needs evidence, not an edit.
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("token", ["CHANGE_NETWORK_INFO", "IPC", "APPLICATION"])
+@pytest.mark.parametrize("token", ["SIMULATION_MODE", "IPC", "APPLICATION"])
 def test_a_real_token_no_evidenced_call_requires_is_still_refused(token: str):
     """Least privilege, enforced against the binary's own vocabulary.
 
     These are tokens the target binary really carries, and `IPC` in particular
     reads like the privilege any IPC call would want. Admitting one on that
     reading is the guess this gate refuses: nothing is inferred from a
-    privilege's *name*.
+    privilege's *name*. `CHANGE_NETWORK_INFO` is now admissible for the opposite
+    reason — two read members are evidenced to require it, not because its name
+    reads like a mutation — so it is no longer among the refused tokens here.
     """
     reason = schema()._privileges_error(["GET_NETWORK_INFO", token])
 
@@ -171,18 +179,30 @@ def test_the_admissible_set_is_derived_from_call_evidence_not_written_down():
     The set is composed from the recorded calls and the recorded index map, so
     a privilege can only become admissible by someone recording *which call
     requires which index* — which is a claim about the target that the QA
-    record and this suite both hold.
+    record and this suite both hold. Root-call and member-call evidence compose
+    into one relation but stay separable, so a root answering is never read as a
+    member answering.
     """
     module = privileges()
     derived = sorted({
         module.SERIALIZED_BY_INDEX[index]
-        for index in module.ROOT_CALL_PRIVILEGE_INDEX.values()
+        for index in module.CALL_PRIVILEGE_INDEX.values()
     })
 
     assert list(module.REQUIRED_PRIVILEGES) == derived
+    assert list(module.REQUIRED_PRIVILEGES) == ["CHANGE_NETWORK_INFO", "GET_NETWORK_INFO"]
     assert sorted(module.ROOT_CALL_PRIVILEGE_INDEX) == [
         "IPC.hardwareFactory()", "IPC.network()",
     ]
+    assert sorted(module.MEMBER_CALL_PRIVILEGE_INDEX) == [
+        "Device.getName()", "DeviceFactory.getAvailableDeviceCount()",
+    ]
+    assert set(module.MEMBER_CALL_PRIVILEGE_INDEX.values()) == {2}
+    assert module.SERIALIZED_BY_INDEX[2] == "CHANGE_NETWORK_INFO"
+    # The two groups compose into the authoritative relation and nothing else.
+    assert module.CALL_PRIVILEGE_INDEX == {
+        **module.ROOT_CALL_PRIVILEGE_INDEX, **module.MEMBER_CALL_PRIVILEGE_INDEX,
+    }
 
 
 # ---------------------------------------------------------------------------
