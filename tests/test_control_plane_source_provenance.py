@@ -43,6 +43,7 @@ from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosCommandResult,
     IosSessionState,
     OperationalQueryId,
+    classify_execution_identity,
     execution_attribution_js,
 )
 
@@ -124,8 +125,8 @@ def test_session_transcript_continuity_attributes_the_executing_session():
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
-def test_exact_baseline_continuity_wins_over_an_old_suffix_collision():
-    """A prior identical ping in another terminal is not the current owner."""
+def test_resolved_device_object_wins_when_terminal_transcripts_are_identical():
+    """The observed resolved device, not a shared transcript, owns the ping."""
 
     baseline = (
         "PC>ping 172.18.10.15\n"
@@ -133,12 +134,11 @@ def test_exact_baseline_continuity_wins_over_an_old_suffix_collision():
     )
     command = "ping 172.17.10.8"
     current = baseline + command + "\nPackets: Sent = 4, Received = 4\nPC>"
-    old_collision = "older transcript\n" + current
     payload = json.dumps({
         "requested": "LARGE-PC",
         "outputs": {
             "LARGE-PC": current,
-            "OTHER-PC": old_collision,
+            "OTHER-PC": current,
         },
     })
     attribution = execution_attribution_js(
@@ -173,8 +173,14 @@ process.stdout.write(reported);
     observed = json.loads(completed.stdout)
 
     assert observed["owner_name"] == "LARGE-PC"
-    assert observed["owner_evidence"] == "session_transcript_continuity"
+    assert observed["owner_evidence"] == "resolved_device_object"
     assert observed["owner_candidates"] == 1
+    identity = classify_execution_identity("LARGE-PC", observed)
+    assert identity == {
+        "observed_device_name": "LARGE-PC",
+        "device_identity_provenance": "confirmed_unique",
+        "device_identity_evidence": "resolved_device_object",
+    }
 
 
 def test_the_attribution_enumerates_the_network_instead_of_trusting_the_request():

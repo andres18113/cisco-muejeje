@@ -145,16 +145,19 @@ class DeviceIdentityProvenance(str, Enum):
 
 
 class DeviceIdentityEvidence(str, Enum):
-    """Por que via se atribuyo la sesion. Ninguna de las dos usa el nombre pedido.
+    """Por que via se atribuyo la sesion. Ninguna usa el nombre pedido.
 
     `TERMINAL_OBJECT_IDENTITY` compara el objeto terminal al que se despacho
     contra el que devuelve la enumeracion de la red. `SESSION_TRANSCRIPT_CONTINUITY`
     ata la sesion por su transcripcion: la linea que ejecuto es la unica cuya
     salida continua exactamente la linea base capturada al despachar.
+    `RESOLVED_DEVICE_OBJECT` lee el nombre del objeto que entrego esa terminal
+    y exige que la enumeracion contenga exactamente un device con ese nombre.
     """
 
     NONE = "none"
     TERMINAL_OBJECT_IDENTITY = "terminal_object_identity"
+    RESOLVED_DEVICE_OBJECT = "resolved_device_object"
     SESSION_TRANSCRIPT_CONTINUITY = "session_transcript_continuity"
 
 
@@ -2081,9 +2084,10 @@ def execution_attribution_js(
         "while(anchor.length&&anchor.charCodeAt(anchor.length-1)<=32)"
         "{anchor=anchor.substring(0,anchor.length-1);}",
         "if(anchor.length>512){anchor=anchor.substring(anchor.length-512);}",
+        "var resolvedName='';try{resolvedName=String(d.getName());}catch(rne){}",
         "var n=(typeof net.getDeviceCount==='function')?net.getDeviceCount():0;",
-        "var byObject=[],byExactTranscript=[],byTranscript=[],",
-        "outObject='',outExactTranscript='',outTranscript='';",
+        "var byObject=[],byResolved=[],byExactTranscript=[],byTranscript=[],",
+        "outObject='',outResolved='',outExactTranscript='',outTranscript='';",
         "for(var i=0;i<n;i++){var dev=null;",
         "try{dev=net.getDeviceAt(i);}catch(de){dev=null;}",
         "if(!dev)continue;var cl=__term(dev);",
@@ -2091,6 +2095,8 @@ def execution_attribution_js(
         "var nm='';try{nm=String(dev.getName());}catch(ne){continue;}",
         "var co='';try{co=String(cl.getOutput());}catch(oe){continue;}",
         "if(cl===t){byObject.push(nm);outObject=co;}",
+        "if(resolvedName!==''&&nm===resolvedName){",
+        "byResolved.push(nm);outResolved=String(t.getOutput());}",
         # Un prefijo completo prueba la continuidad mas fuerte. Debe ganar a
         # una coincidencia historica del mismo sufijo+comando en otro terminal.
         "if(base!==''&&co.indexOf(base)===0&&",
@@ -2107,6 +2113,9 @@ def execution_attribution_js(
         "if(byObject.length===1){owner=byObject[0];",
         "evidence='terminal_object_identity';candidates=1;out=outObject;}",
         "else if(byObject.length>1){candidates=byObject.length;}",
+        "else if(byResolved.length===1){owner=byResolved[0];",
+        "evidence='resolved_device_object';candidates=1;out=outResolved;}",
+        "else if(byResolved.length>1){candidates=byResolved.length;}",
         "else if(byExactTranscript.length===1){owner=byExactTranscript[0];",
         "evidence='session_transcript_continuity';candidates=1;",
         "out=outExactTranscript;}",
