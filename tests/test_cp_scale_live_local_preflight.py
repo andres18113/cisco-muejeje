@@ -14,15 +14,18 @@ import pytest
 from src.packet_tracer_mcp.application.cp_scale_live import (
     CPScaleCheckState,
     CPScaleImportIsolationObservation,
+    CPScaleLiveAuthorizationRequest,
     CPScaleLiveRequest,
     CPScaleLocalPreflight,
     CPScalePreflightOutcome,
     CPScaleProcessObservation,
     CPScaleProcessRecord,
     CPScaleRepositoryObservation,
-    CPScaleRouter3LiveAuthorizationRequest,
     CPScaleRuntimeEvidence,
     process_record_mapping,
+)
+from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+    CPScaleCanonicalTarget,
 )
 from src.packet_tracer_mcp.infrastructure.execution.cp_scale_live_preflight import (
     GitCPScaleRepositoryReader,
@@ -122,15 +125,21 @@ def _request(**changes):
         "target_stage": "full-qualification",
     }
     values.update(changes)
+    # Every canonical target needs its own explicit authorization; a test that
+    # studies its absence says so with ``live_authorization=None``.
+    values.setdefault(
+        "live_authorization",
+        _authorization(target=values["target_stage"]),
+    )
     return CPScaleLiveRequest(**values)
 
 
 def _authorization(
     *,
-    target: str = "router3-branch",
+    target: str = "full-qualification",
     authorized_sha: str = HEAD,
-) -> CPScaleRouter3LiveAuthorizationRequest:
-    return CPScaleRouter3LiveAuthorizationRequest(
+) -> CPScaleLiveAuthorizationRequest:
+    return CPScaleLiveAuthorizationRequest(
         target=target,
         authorized_sha=authorized_sha,
     )
@@ -185,17 +194,22 @@ def test_request_rejection_marks_every_check_not_run_and_reads_no_boundary():
     assert result.process.state is CPScaleCheckState.NOT_RUN
 
 
-def test_router3_live_is_rejected_while_offline_preparation_is_the_authority():
+TARGETS = ("router0-branch", "router3-branch", "full-qualification")
+
+
+@pytest.mark.parametrize("target", TARGETS)
+def test_every_live_target_without_authorization_is_rejected_before_pt(target):
     events = []
     result = _inspect(
         _service(events=events),
-        _request(target_stage="router3-branch"),
+        _request(target_stage=target, live_authorization=None),
     )
 
     assert events == ["runtime"]
     assert result.outcome is CPScalePreflightOutcome.REJECTED
     assert result.issues == (
-        "Router3 LIVE authorization is required and must be supplied explicitly.",
+        f"LIVE target {target!r} requires an explicit target- and "
+        "SHA-scoped authorization.",
     )
     assert result.import_isolation.state is CPScaleCheckState.NOT_RUN
     assert result.repository.state is CPScaleCheckState.NOT_RUN
@@ -205,57 +219,42 @@ def test_router3_live_is_rejected_while_offline_preparation_is_the_authority():
 @pytest.mark.parametrize(
     ("request_changes", "expected_issue"),
     [
-        pytest.param(
-            {
-                "target_stage": "router3-branch",
-                "router3_live_authorization": _authorization(
-                    target="router0-branch",
+        # Each target once as the authorized one and once as the requested one.
+        *(
+            pytest.param(
+                {
+                    "target_stage": requested,
+                    "live_authorization": _authorization(target=authorized),
+                },
+                (
+                    f"LIVE authorization for {authorized!r} does not "
+                    f"authorize requested target {requested!r}."
                 ),
-            },
-            (
-                "Router3 LIVE authorization target must be "
-                "'router3-branch'; observed 'router0-branch'."
-            ),
-            id="wrong-authorized-target",
+                id=f"{authorized}-for-{requested}",
+            )
+            for authorized, requested in zip(TARGETS, TARGETS[1:] + TARGETS[:1])
         ),
         pytest.param(
-            {
-                "target_stage": "router3-branch",
-                "router3_live_authorization": _authorization(
-                    authorized_sha="c" * 40,
-                ),
-            },
+            {"live_authorization": _authorization(authorized_sha="c" * 40)},
             (
-                f"Router3 LIVE authorized SHA {'c' * 40!r} does not match "
+                f"LIVE authorized SHA {'c' * 40!r} does not match "
                 f"request expected HEAD {HEAD!r}."
             ),
             id="authorized-sha-does-not-match-request",
         ),
         pytest.param(
-            {
-                "target_stage": "full-qualification",
-                "router3_live_authorization": _authorization(),
-            },
-            (
-                "Router3 LIVE authorization does not authorize requested "
-                "target 'full-qualification'."
-            ),
-            id="authorization-does-not-authorize-full",
+            {"live_authorization": _authorization(authorized_sha=HEAD.upper())},
+            "LIVE authorized SHA must be exactly 40 lowercase hexadecimal characters.",
+            id="authorized-sha-not-canonical",
         ),
         pytest.param(
-            {
-                "target_stage": "router0-branch",
-                "router3_live_authorization": _authorization(),
-            },
-            (
-                "Router3 LIVE authorization does not authorize requested "
-                "target 'router0-branch'."
-            ),
-            id="authorization-does-not-authorize-router0",
+            {"live_authorization": _authorization(target="remaining")},
+            "LIVE authorization target is invalid; observed 'remaining'.",
+            id="stage-is-not-a-live-target",
         ),
     ],
 )
-def test_router3_authorization_is_target_and_sha_scoped_before_pt(
+def test_authorization_is_target_and_sha_scoped_before_pt(
     request_changes,
     expected_issue,
 ):
@@ -272,36 +271,33 @@ def test_router3_authorization_is_target_and_sha_scoped_before_pt(
     assert result.process.state is CPScaleCheckState.NOT_RUN
 
 
-def test_router3_retention_is_rejected_before_pt_with_valid_authorization():
+@pytest.mark.parametrize(
+    ("target", "target_name"),
+    [("router3-branch", "Router3"), ("full-qualification", "Full")],
+)
+def test_retention_is_rejected_before_pt_with_valid_authorization(target, target_name):
     events = []
     result = _inspect(
         _service(events=events),
-        _request(
-            target_stage="router3-branch",
-            retain_on_full_verification=True,
-            router3_live_authorization=_authorization(),
-        ),
+        _request(target_stage=target, retain_on_full_verification=True),
     )
 
     assert events == ["runtime"]
     assert result.outcome is CPScalePreflightOutcome.REJECTED
     assert result.issues == (
-        "Router3 target cannot be combined with full-scale retention.",
+        f"{target_name} target cannot be combined with full-scale retention.",
     )
     assert result.process.state is CPScaleCheckState.NOT_RUN
 
 
-def test_router3_authorization_preserves_existing_repository_head_gate():
+def test_authorization_preserves_existing_repository_head_gate():
     authorized_sha = "c" * 40
     events = []
     result = _inspect(
         _service(events=events),
         _request(
-            target_stage="router3-branch",
             expected_head=authorized_sha,
-            router3_live_authorization=_authorization(
-                authorized_sha=authorized_sha,
-            ),
+            live_authorization=_authorization(authorized_sha=authorized_sha),
         ),
     )
 
@@ -311,27 +307,22 @@ def test_router3_authorization_preserves_existing_repository_head_gate():
         f"Expected HEAD {authorized_sha!r}; observed {HEAD!r}.",
     )
     assert result.process.state is CPScaleCheckState.NOT_RUN
-    assert result.router3_live_authorization is not None
-    assert result.router3_live_authorization.repository_head == HEAD
-    assert result.router3_live_authorization.upstream_head == HEAD
-    assert result.router3_live_authorization.source_tree == TREE
+    assert result.live_authorization is not None
+    assert result.live_authorization.repository_head == HEAD
+    assert result.live_authorization.upstream_head == HEAD
+    assert result.live_authorization.source_tree == TREE
 
 
-def test_router3_authorization_binds_exact_repository_provenance():
+@pytest.mark.parametrize("target", TARGETS)
+def test_authorization_binds_exact_repository_provenance(target):
     events = []
-    result = _inspect(
-        _service(events=events),
-        _request(
-            target_stage="router3-branch",
-            router3_live_authorization=_authorization(),
-        ),
-    )
+    result = _inspect(_service(events=events), _request(target_stage=target))
 
     assert events == ["runtime", "imports", "repository", "processes"]
     assert result.outcome is CPScalePreflightOutcome.ADMITTED
-    authorization = result.router3_live_authorization
+    authorization = result.live_authorization
     assert authorization is not None
-    assert authorization.authorized_target.value == "router3-branch"
+    assert authorization.authorized_target.value == target
     assert authorization.authorized_sha == HEAD
     assert authorization.expected_head == HEAD
     assert authorization.repository_head == HEAD
@@ -361,27 +352,23 @@ def test_router3_authorization_binds_exact_repository_provenance():
             ),
             id="self-consistent-foreign-head",
         ),
+        pytest.param(
+            {"authorized_target": CPScaleCanonicalTarget.ROUTER3_BRANCH},
+            id="another-target",
+        ),
     ],
 )
-def test_router3_authorization_cannot_contradict_observed_provenance(changes):
-    admitted = _inspect(
-        _service(),
-        _request(
-            target_stage="router3-branch",
-            router3_live_authorization=_authorization(),
-        ),
-    )
+def test_authorization_cannot_contradict_observed_provenance(changes):
+    admitted = _inspect(_service(), _request())
     assert admitted.outcome is CPScalePreflightOutcome.ADMITTED
     assert all(
-        re.fullmatch(r"[0-9a-f]{40}", value) for value in changes.values()
+        re.fullmatch(r"[0-9a-f]{40}", value)
+        for key, value in changes.items() if key != "authorized_target"
     )
 
     candidate = replace(
         admitted,
-        router3_live_authorization=replace(
-            admitted.router3_live_authorization,
-            **changes,
-        ),
+        live_authorization=replace(admitted.live_authorization, **changes),
     )
 
     assert candidate.issues == ()
@@ -389,7 +376,7 @@ def test_router3_authorization_cannot_contradict_observed_provenance(changes):
     assert candidate.outcome is CPScalePreflightOutcome.REJECTED
 
 
-def test_router3_authorization_provenance_is_persisted_without_secrets():
+def test_authorization_provenance_is_persisted_without_secrets():
     from src.packet_tracer_mcp.application.cp_scale_live.run_contracts import (
         CPScaleRunReport,
     )
@@ -397,13 +384,7 @@ def test_router3_authorization_provenance_is_persisted_without_secrets():
         run_evidence,
     )
 
-    preflight = _inspect(
-        _service(),
-        _request(
-            target_stage="router3-branch",
-            router3_live_authorization=_authorization(),
-        ),
-    )
+    preflight = _inspect(_service(), _request())
     payload = run_evidence(CPScaleRunReport(
         preflight=preflight,
         run_identity="run-id",
@@ -411,8 +392,8 @@ def test_router3_authorization_provenance_is_persisted_without_secrets():
         packet_tracer_version="9.0.1.0858",
     ))
 
-    assert payload["router3_live_authorization"] == {
-        "authorized_target": "router3-branch",
+    assert payload["live_authorization"] == {
+        "authorized_target": "full-qualification",
         "authorized_sha": HEAD,
         "expected_head": HEAD,
         "repository_head": HEAD,

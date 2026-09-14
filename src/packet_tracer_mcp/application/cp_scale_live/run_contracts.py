@@ -32,7 +32,6 @@ class CPScaleStageProgress:
     result: CPScaleLiveStageResult | None = None
     dhcp_baseline: CPScaleObservationRecord | None = None
     failed: bool = False
-    remaining: bool = False
     failure_details: CPScaleStageFailure | None = None
 
 
@@ -115,6 +114,7 @@ class CPScaleRunOutcome(str, Enum):
 class CPScaleTerminalEvent(str, Enum):
     ROUTER0_CLEANED = "ROUTER0_BRANCH_VERIFIED_AND_CLEANED"
     ROUTER3_CLEANED = "ROUTER3_BRANCH_VERIFIED_AND_CLEANED"
+    FULL_QUALIFICATION_CLEANED = "CP_SCALE_FULL_QUALIFICATION_VERIFIED_AND_CLEANED"
     CANONICAL_CLEANED = "CANONICAL_VERIFIED_AND_CLEANED"
     RETAINED = "PRESENTATION_RETAINED"
 
@@ -123,7 +123,6 @@ class CPScaleTerminalEvent(str, Enum):
 class CPScaleLiveProgress:
     target: CPScaleCanonicalTarget
     completed_stages: tuple[CPScaleLiveStageResult, ...]
-    full_qualification: CPScaleLiveStageResult | None
     active_stage: CPScaleCanonicalStage | None
     first_failed_boundary: str | None
     checkpoint_stage: str | None
@@ -149,10 +148,13 @@ class CPScaleLiveFinalResult:
     def from_report(cls, outcome: CPScaleRunOutcome, report: CPScaleRunReport) -> CPScaleLiveFinalResult:
         stages = tuple(item.result for item in report.stages if item.result is not None)
         return cls(report.preflight.identity, outcome, report.preflight.target.target,
-            CPScaleLiveProgress(report.preflight.target.target, stages, report.full_qualification,
+            CPScaleLiveProgress(report.preflight.target.target, stages,
                 report.active_stage.projection.stage if report.active_stage else None,
                 next((item.first_failed_boundary for item in stages if item.first_failed_boundary), None),
-                report.checkpoint or None, any(item.remaining for item in report.stages)),
+                report.checkpoint or None, any(
+                    item.projection.stage is CPScaleCanonicalStage.REMAINING and not item.failed
+                    for item in report.stages
+                )),
             report.final_disposition,
             report.closure or None, report.presentation_retained, report.cleanup, report.cleanup_realtime, report.archives,
             report.failure or report.hard_stop or None, report.secondary_failures + report.finalization_errors)
@@ -180,7 +182,6 @@ class CPScaleRunReport:
     branch_transition: CPScaleCanonicalStageTransition | None = None
     resume_gates: tuple[CPScaleResumeGate, ...] = ()
     network_boundaries: tuple[tuple[str, CPScaleObservationRecord], ...] = ()
-    full_qualification: CPScaleLiveStageResult | None = None
     live_devices: int | None = None
     live_links: int | None = None
     no_mutation_replay: CPScaleRunReplayAudit | None = None
@@ -205,7 +206,7 @@ class CPScaleRunReport:
 
     @property
     def completed_stage_limit(self) -> int:
-        return len(self.preflight.target.build_stages) + int(self.preflight.target.run_remaining_reconciliation)
+        return len(self.preflight.target.execution_stages)
 
     @property
     def archive_phase_limit(self) -> int:

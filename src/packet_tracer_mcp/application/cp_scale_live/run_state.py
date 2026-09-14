@@ -6,7 +6,7 @@ from datetime import datetime
 
 from .build_policy import CPScalePhysicalContinuity
 from .checkpoint import CPScaleCheckpointPrepared, CPScaleCheckpointRepository
-from .contracts import CPScaleLiveStageResult, CPScaleObservationRecord, CPScalePreflightResult
+from .contracts import CPScaleObservationRecord, CPScalePreflightResult
 from .run_contracts import (
     CPScaleBridgeStatus, CPScaleCapabilityQualification, CPScaleStageProgress,
     CPScaleResumeGate, CPScaleRunReplayAudit, CPScaleCleanupResult, CPScaleCleanupRealtime,
@@ -35,7 +35,6 @@ class CPScaleProgressState:
     resume_gates: tuple[CPScaleResumeGate, ...] = ()
     network_boundaries: tuple[tuple[str, CPScaleObservationRecord], ...] = ()
     branch_transition: CPScaleCanonicalStageTransition | None = None
-    full_qualification: CPScaleLiveStageResult | None = None
     live_devices: int | None = None
     live_links: int | None = None
     checkpoint: CPScaleCheckpointPrepared | None = None
@@ -79,7 +78,7 @@ def publication_snapshot(preflight: CPScalePreflightResult, run_identity: str, s
         baseline=qualification.baseline, capability_prequalification=qualification.capabilities,
         active_stage=progress.active_stage, branch_transition=progress.branch_transition,
         resume_gates=progress.resume_gates, network_boundaries=progress.network_boundaries,
-        full_qualification=progress.full_qualification, live_devices=progress.live_devices,
+        live_devices=progress.live_devices,
         live_links=progress.live_links, no_mutation_replay=terminal.replay,
         final_disposition=terminal.disposition, closure_scope=terminal.closure_scope,
         closure=terminal.closure, completed_at=terminal.completed_at,

@@ -10,6 +10,21 @@ post-execution reconciliation are later commits, not the executed SHA. No
 Router0 or Router3 re-execution, remaining-stage run, full qualification, or
 other LIVE scope is authorized by this record.
 
+Full qualification is prepared offline only; no FULL LIVE evidence exists.
+Every canonical target, `full-qualification` included, is refused before
+Packet Tracer contact unless an explicit authorization names that target and
+the exact SHA that is also the expected, repository, upstream and session
+source HEAD, over one source tree. FULL builds the seven stages from an empty
+workspace and then runs REMAINING, the single final authority, as the terminal
+stage of the same sequence: its transition from Router3 must be a zero
+physical delta with an exact, disjoint mutation partition that equals the
+executed scope, and it proves every site pair derived from the E4 traffic
+flows in both directions, from each edge router and from one representative
+PC per site. `CP_SCALE_FULL_QUALIFICATION_VERIFIED_AND_CLEANED` may be
+published only after the full review and a verified, attested cleanup;
+retention is refused. Wireless association stays unqualified and intersite
+calling stays off, and neither is a full-qualification criterion.
+
 Router3 architecture ownership is intentionally narrow. E1/E4 owns the two
 Small Branch traffic-flow authorities; E4/E5/E9 own topology, selected wired
 DATA workloads and plan provenance; application owns target, cumulative stage,

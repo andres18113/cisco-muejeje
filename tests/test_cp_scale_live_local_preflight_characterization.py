@@ -28,6 +28,7 @@ import packet_tracer_mcp
 import packet_tracer_mcp.adapters.cli.cp_scale_live as live
 from packet_tracer_mcp.application.cp_scale_live import (
     CPScaleImportIsolationObservation,
+    CPScaleLiveAuthorizationRequest,
     CPScaleProcessObservation,
     CPScaleProcessRecord,
     CPScaleRepositoryObservation,
@@ -129,15 +130,17 @@ def build_coordinator(request, **kwargs):
 live.build_coordinator = build_coordinator
 
 try:
+    target = (
+        "router0-branch"
+        if SCENARIO == "request-rejected"
+        else "full-qualification"
+    )
     code = live.run(
         "9.0.1.0858",
         expected_head=HEAD,
         retain_on_full_verification=(SCENARIO == "request-rejected"),
-        target_stage=(
-            "router0-branch"
-            if SCENARIO == "request-rejected"
-            else "full-qualification"
-        ),
+        target_stage=target,
+        live_authorization=CPScaleLiveAuthorizationRequest(target, HEAD),
     )
     escaped = ""
 except Exception as exc:

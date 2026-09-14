@@ -1,6 +1,6 @@
 {
   "schema": "cp-scale-current-state-v4",
-  "updated_at": "2026-09-14T19:45:21.2747184Z",
+  "updated_at": "2026-09-14T21:38:57Z",
   "operational_state": {
     "authority": "HASH_PINNED_ROUTER0_AND_ROUTER3_SUCCESS_INDEXES",
     "router0": {
@@ -90,7 +90,62 @@
         }
       }
     },
-    "next_active_step": "ROUTER3_CLOSED_AWAIT_EXPLICIT_NEW_SCOPE",
+    "full_qualification": {
+      "executed": false,
+      "verification": "NOT_VERIFIED",
+      "live_evidence_acquired": false,
+      "live_execution_authorized": false,
+      "authorization_required": "EXPLICIT_TARGET_AND_SHA_SCOPED",
+      "offline_preparation_role": "PRE_EXECUTION_PROJECTION_NON_GOVERNING",
+      "offline_preparation": {
+        "target": "full-qualification",
+        "execution_stages": [
+          "routing-core",
+          "router4-switch10",
+          "floor1",
+          "floor2",
+          "floor3",
+          "router0-branch",
+          "router3-branch",
+          "remaining"
+        ],
+        "terminal_stage": "remaining",
+        "run_remaining_reconciliation": true,
+        "run_full_qualification": true,
+        "allow_retention": false,
+        "require_cleanup": true,
+        "precleanup_closure": "CP_SCALE_FULL_QUALIFICATION_VERIFIED_PRECLEANUP",
+        "cleaned_closure": "CP_SCALE_FULL_QUALIFICATION_VERIFIED_AND_CLEANED",
+        "transition": {
+          "previous_stage": "router3-branch",
+          "current_stage": "remaining",
+          "physical_delta_empty": true,
+          "configuration_mutations": 0,
+          "configuration_retained": 445,
+          "control_plane_mutations": 0,
+          "control_plane_retained": 217,
+          "voice_mutations": 0,
+          "voice_retained": 153,
+          "claim": "MUTATION_SCOPE_DISJOINT",
+          "runtime_replay_claim": "NOT_ACQUIRED"
+        },
+        "forwarding": {
+          "declared_flow_ids": [
+            "flow/large-to-multilayer",
+            "flow/multilayer-to-small",
+            "flow/small-to-large"
+          ],
+          "site_pairs": 3,
+          "router_to_workload_checks": 6,
+          "representative_pc_checks": 6
+        },
+        "product_scope": {
+          "wireless_association": "unqualified",
+          "intersite_calling": false
+        }
+      }
+    },
+    "next_active_step": "READY_FOR_EXPLICIT_FULL_QUALIFICATION_LIVE_AUTHORIZATION",
     "live_execution_authorized": false
   },
   "historical_pre_router0": {

@@ -3,9 +3,10 @@
 The process deliberately stays alive across every checkpoint because physical
 cleanup ownership is runtime-instance-local.  It begins only from a completely
 observed empty workspace, advances through the exact cumulative product stages,
-and archives the final evidence before verified cleanup. Explicitly authorized
-presentation retention remains available after the full 314-device/219-link
-plans are independently VERIFIED. Any failure or operator abort cleans every
+and archives the final evidence before verified cleanup. Every target, full
+qualification included, runs only under an explicit target- and SHA-scoped
+authorization and closes only after verified cleanup; retention is refused
+before Packet Tracer is contacted. Any failure or operator abort cleans every
 device this session attempted and requires two fresh empty-baseline observations.
 
 No raw IOS, JavaScript, or bridge command is accepted from the operator.
@@ -19,9 +20,9 @@ import sys
 from pathlib import Path
 
 from packet_tracer_mcp.application.cp_scale_live import (
+    CPScaleLiveAuthorizationRequest,
     CPScaleLiveRequest,
     CPScaleLocalPreflight,
-    CPScaleRouter3LiveAuthorizationRequest,
 )
 from packet_tracer_mcp.application.cp_scale_live.backend import CPScaleBackendQualification
 from packet_tracer_mcp.application.cp_scale_live.build_policy import CPScaleBuildPolicy
@@ -257,9 +258,7 @@ def run(
     target_stage: CPScaleCanonicalTarget | str = (
         CPScaleCanonicalTarget.FULL_QUALIFICATION
     ),
-    router3_live_authorization: (
-        CPScaleRouter3LiveAuthorizationRequest | None
-    ) = None,
+    live_authorization: CPScaleLiveAuthorizationRequest | None = None,
 ) -> int:
     governed_root = governed_root_from_env()
     if governed_root is None:
@@ -275,7 +274,7 @@ def run(
         expected_head,
         retain_on_full_verification,
         target_stage,
-        router3_live_authorization,
+        live_authorization,
     )
     result = build_coordinator(request, governed_root=governed_root).run(request)
     return {CPScaleRunOutcome.COMPLETED: 0, CPScaleRunOutcome.FAILED: 1, CPScaleRunOutcome.REJECTED: 2}[result.outcome]
@@ -295,23 +294,23 @@ def main() -> int:
         choices=[item.value for item in CPScaleCanonicalTarget],
         default=CPScaleCanonicalTarget.FULL_QUALIFICATION.value,
         help=(
-            "Select full qualification or a bounded branch target. Router3 "
-            "requires an explicit target- and SHA-scoped authorization."
+            "Select full qualification or a bounded branch target. Every "
+            "target requires an explicit target- and SHA-scoped authorization."
         ),
     )
     parser.add_argument(
         "--authorized-live-target",
         choices=[item.value for item in CPScaleCanonicalTarget],
-        help="Target named by an explicit Router3 LIVE authorization.",
+        help="Target named by the explicit LIVE authorization.",
     )
     parser.add_argument(
         "--authorized-live-sha",
-        help="Exact commit SHA explicitly authorized for Router3 LIVE.",
+        help="Exact commit SHA explicitly authorized for that LIVE target.",
     )
     parser.add_argument(
         "--retain-on-full-verification",
         action="store_true",
-        help="Permit final retention, but only after the final 'retain' command.",
+        help="Request retention; every canonical target refuses it before Packet Tracer contact.",
     )
     args = parser.parse_args()
     if not args.execute:
@@ -324,7 +323,7 @@ def main() -> int:
         args.authorized_live_target is not None
         or args.authorized_live_sha is not None
     ):
-        authorization = CPScaleRouter3LiveAuthorizationRequest(
+        authorization = CPScaleLiveAuthorizationRequest(
             target=(
                 CPScaleCanonicalTarget(args.authorized_live_target)
                 if args.authorized_live_target is not None else ""
@@ -336,7 +335,7 @@ def main() -> int:
         expected_head=args.expected_head,
         retain_on_full_verification=args.retain_on_full_verification,
         target_stage=args.target_stage,
-        router3_live_authorization=authorization,
+        live_authorization=authorization,
     )
 
 

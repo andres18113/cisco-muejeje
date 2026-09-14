@@ -147,7 +147,7 @@ print(json.dumps({
 def test_runner_router0_terminal_sequence_is_successful_and_stops_at_target():
     verdict = _probe(RUN_DOUBLES + r'''
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 coordinator = offline_coordinator(request)
 coordinator.presentation.terminal = lambda event, report: record("terminal")
 result = coordinator.run(request)
@@ -164,16 +164,13 @@ print(json.dumps({"outcome": result.outcome.value, "closure": result.closure,
 
 def test_runner_future_router3_contract_stops_at_router3_and_cleans_up():
     verdict = _probe(RUN_DOUBLES + r'''
-from packet_tracer_mcp.application.cp_scale_live.contracts import (
-    CPScaleLiveRequest,
-    CPScaleRouter3LiveAuthorizationRequest,
-)
+from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
 request = CPScaleLiveRequest(
     "9.0.1.0858",
     HEAD,
     False,
     "router3-branch",
-    CPScaleRouter3LiveAuthorizationRequest("router3-branch", HEAD),
+    authorized("router3-branch"),
 )
 coordinator = offline_coordinator(request)
 coordinator.presentation.terminal = lambda event, report: record(
@@ -186,7 +183,6 @@ print(json.dumps({
     "scope": result.target.value,
     "stages": [item.stage.value for item in result.progress.completed_stages],
     "remaining": result.progress.remaining_reconciled,
-    "full": result.progress.full_qualification is not None,
     "transition": [
         [item["previous"], item["current"]]
         for item in calls if item["event"] == "transition"
@@ -218,7 +214,6 @@ print(json.dumps({
             "router3-branch",
         ],
         "remaining": False,
-        "full": False,
         "transition": [["router0-branch", "router3-branch"]],
         "events": [
             "archive",
@@ -238,7 +233,7 @@ from dataclasses import replace
 import packet_tracer_mcp.application.cp_scale_live.coordinator as coordinator_module
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
 
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 coordinator = offline_coordinator(request)
 evidence = []
 seams._write_evidence = evidence.append
@@ -288,7 +283,7 @@ print(json.dumps({
 def test_runner_never_publishes_router0_success_before_every_terminal_gate(failure, expected_events):
     verdict = _probe(RUN_DOUBLES + "\nfailure = " + repr(failure) + r'''
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 coordinator = offline_coordinator(request)
 terminal_events = []
 original_archive = coordinator.persistence.archive
@@ -329,22 +324,20 @@ print(json.dumps({"events": terminal_events, "error": result.primary_failure, "c
     assert verdict["closure"] != "ROUTER0_BRANCH_VERIFIED_AND_CLEANED"
 
 
-def test_api_rejects_invalid_or_retained_router0_target_before_pt_contact():
+def test_api_rejects_unauthorized_or_retained_targets_before_pt_contact():
     verdict = _probe(r'''
 import inspect
 import json
 from types import SimpleNamespace
 import packet_tracer_mcp.adapters.cli.cp_scale_live as live
-from types import SimpleNamespace
-seams = SimpleNamespace()
+from packet_tracer_mcp.application.cp_scale_live import CPScaleLiveAuthorizationRequest
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
-    CPScaleCanonicalTarget,
     canonical_cp_scale_target_contract,
 )
 
 contacted = False
-def contact():
+def contact(*args):
     global contacted
     contacted = True
     raise AssertionError("Packet Tracer contact was attempted")
@@ -352,17 +345,18 @@ def contact():
 live.PacketTracerImportIsolationReader = lambda: SimpleNamespace(read=contact)
 live.GitCPScaleRepositoryReader = lambda: SimpleNamespace(read=contact)
 live.PowerShellPacketTracerProcessReader = lambda: SimpleNamespace(read=contact)
-seams._write_evidence = lambda evidence: None
+hard_stops = []
 original_factory = live.build_coordinator
 def isolated_factory(request, **kwargs):
     coordinator = original_factory(request, **kwargs)
-    coordinator.persistence.write_progress = lambda report: None
+    coordinator.persistence.write_progress = lambda report: hard_stops.append(report.hard_stop)
     return coordinator
 live.build_coordinator = isolated_factory
+HEAD = "a" * 40
 try:
     live.run(
         "9.0.1.0858",
-        expected_head="a" * 40,
+        expected_head=HEAD,
         retain_on_full_verification=False,
         target_stage="unknown",
     )
@@ -370,17 +364,28 @@ try:
 except ValueError as exc:
     invalid = str(exc)
 
-retained = live.run(
-    "9.0.1.0858",
-    expected_head="a" * 40,
-    retain_on_full_verification=True,
-    target_stage="router0-branch",
-)
+codes = [
+    live.run(
+        "9.0.1.0858", expected_head=HEAD, retain_on_full_verification=True,
+        target_stage="router0-branch",
+        live_authorization=CPScaleLiveAuthorizationRequest("router0-branch", HEAD),
+    ),
+    live.run("9.0.1.0858", expected_head=HEAD, retain_on_full_verification=False),
+    live.run(
+        "9.0.1.0858", expected_head=HEAD, retain_on_full_verification=False,
+        live_authorization=CPScaleLiveAuthorizationRequest("router3-branch", HEAD),
+    ),
+    live.run(
+        "9.0.1.0858", expected_head=HEAD, retain_on_full_verification=True,
+        live_authorization=CPScaleLiveAuthorizationRequest("full-qualification", HEAD),
+    ),
+]
 default_target = inspect.signature(live.run).parameters["target_stage"].default
 full_contract = canonical_cp_scale_target_contract(default_target)
 print(json.dumps({
     "invalid": invalid,
-    "retained": retained,
+    "codes": codes,
+    "hard_stops": hard_stops,
     "contacted": contacted,
     "default_target": default_target.value,
     "default_stages": [item.value for item in full_contract.build_stages],
@@ -388,18 +393,29 @@ print(json.dumps({
         item.value for item in CPScaleCanonicalStage
         if item is not CPScaleCanonicalStage.REMAINING
     ],
-    "remaining": full_contract.run_remaining_reconciliation,
-    "full": full_contract.run_full_qualification,
+    "contract": [
+        full_contract.run_remaining_reconciliation,
+        full_contract.run_full_qualification,
+        full_contract.allow_retention,
+        full_contract.require_cleanup,
+    ],
 }))
 ''')
 
     assert verdict["invalid"]
-    assert verdict["retained"] == 2
+    assert verdict["codes"] == [2, 2, 2, 2]
+    assert verdict["hard_stops"] == [
+        "Router0 target cannot be combined with full-scale retention.",
+        "LIVE target 'full-qualification' requires an explicit target- and "
+        "SHA-scoped authorization.",
+        "LIVE authorization for 'router3-branch' does not authorize requested "
+        "target 'full-qualification'.",
+        "Full target cannot be combined with full-scale retention.",
+    ]
     assert verdict["contacted"] is False
     assert verdict["default_target"] == "full-qualification"
     assert verdict["default_stages"] == verdict["legacy_stages"]
-    assert verdict["remaining"] is True
-    assert verdict["full"] is True
+    assert verdict["contract"] == [True, True, False, True]
 
 
 @pytest.mark.parametrize(
@@ -426,7 +442,7 @@ def test_a_replayed_retained_action_blocks_the_router0_closure(audit, expected_r
     verdict = _probe(RUN_DOUBLES + "\naudit = " + repr(audit) + r'''
 from dataclasses import replace
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 coordinator = offline_coordinator(request)
 def stage(projection, **kwargs):
     result = execute_stage(projection, **kwargs)
@@ -469,12 +485,13 @@ seams = SimpleNamespace()
 from packet_tracer_mcp.application.cp_scale_live import (
     CPScaleCheckState,
     CPScaleImportIsolationEvidence,
+    CPScaleLiveAuthorizationEvidence,
+    CPScaleLiveAuthorizationRequest,
     CPScaleLiveSessionIdentity,
     CPScalePreflightResult,
     CPScaleProcessEvidence,
     CPScaleProcessRecord,
     CPScaleRepositoryEvidence,
-    CPScaleRouter3LiveAuthorizationEvidence,
     CPScaleRuntimeEvidence,
 )
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
@@ -486,6 +503,11 @@ from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
 from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     EXPECTED_BRANCH,
     EXPECTED_UPSTREAM,
+    CPScaleCanonicalVoiceEvidence,
+)
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    ActionExecutionStatus,
+    ConfigurationApplicationStatus,
 )
 from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentStatus,
@@ -502,6 +524,11 @@ calls = []
 
 def record(event, **fields):
     calls.append({"event": event, **fields})
+
+
+def authorized(target):
+    """The explicit target- and SHA-scoped authorization every LIVE target needs."""
+    return CPScaleLiveAuthorizationRequest(target, HEAD)
 
 
 class Transport:
@@ -561,40 +588,59 @@ class Deployer:
 
 def projection_for(composition, stage, **kwargs):
     record("project", stage=stage.value)
-    return SimpleNamespace(
+    remaining = stage is CPScaleCanonicalStage.REMAINING
+    # REMAINING re-verifies Router3's complete topology: one physical identity.
+    physical = "e4/" + (
+        CPScaleCanonicalStage.ROUTER3_BRANCH.value if remaining else stage.value
+    )
+    configuration_hash = "e5/" + stage.value
+    if stage in (
+        CPScaleCanonicalStage.ROUTER0_BRANCH,
+        CPScaleCanonicalStage.ROUTER3_BRANCH,
+    ):
+        site_checks = (ForwardingCheck("forward-1", physical, configuration_hash),)
+    elif remaining:
+        site_checks = tuple(
+            ForwardingCheck(identifier, physical, configuration_hash)
+            for identifier in ("forward-1", "forward-2")
+        )
+    else:
+        site_checks = ()
+    projection = SimpleNamespace(
         stage=stage,
         topology=SimpleNamespace(
             devices=[SimpleNamespace(id=stage.value + "/device")],
             links=[SimpleNamespace(id=stage.value + "/link")],
             modules=[],
-            physical_identity_hash="e4/" + stage.value,
+            physical_identity_hash=physical,
         ),
         configuration=SimpleNamespace(
-            actions=[], semantic_hash="e5/" + stage.value, verification_expectations=[],
+            actions=[], semantic_hash=configuration_hash, verification_expectations=[],
         ),
         control_plane=SimpleNamespace(
             actions=[], semantic_hash="e9/" + stage.value, verification_expectations=[],
         ),
-        voice=SimpleNamespace(actions=[], phone_assignments=[]),
-        forwarding_checks={},
-        branch_forwarding_checks=(
-            (ForwardingCheck(id="forward-1"),)
-            if stage in (
-                CPScaleCanonicalStage.ROUTER0_BRANCH,
-                CPScaleCanonicalStage.ROUTER3_BRANCH,
-            ) else ()
+        voice=SimpleNamespace(
+            actions=[], phone_assignments=["phone/remaining"] if remaining else [],
         ),
+        forwarding_checks={},
+        branch_forwarding_checks=site_checks,
     )
+    if remaining:
+        projection.branch_user_forwarding_checks = (
+            ForwardingCheck("user-1", physical, configuration_hash),
+        )
+    return projection
 
 
 def execute_stage(projection, **kwargs):
     stage = projection.stage
+    site_checks = tuple(kwargs.get("site_forwarding_checks", ()))
+    user_checks = tuple(kwargs.get("user_forwarding_checks", ()))
     record(
         "execute_stage",
         stage=stage.value,
-        site_forwarding_checks=[
-            item.id for item in kwargs.get("site_forwarding_checks", ())
-        ],
+        site_forwarding_checks=[item.id for item in site_checks],
     )
     evidence = {
         "stage": stage.value,
@@ -604,8 +650,7 @@ def execute_stage(projection, **kwargs):
         "voice": {"result": {"action_results": []}},
         "plan": {
             "branch_forwarding_checks": [
-                {"id": item.id}
-                for item in kwargs.get("site_forwarding_checks", ())
+                {"id": item.id} for item in site_checks
             ],
         },
         "mutation_replay_audit": {
@@ -623,14 +668,29 @@ def execute_stage(projection, **kwargs):
     from packet_tracer_mcp.application.cp_scale_live.contracts import (
         CPScaleLiveStageResult, CPScaleStageContinuity, CPScaleStageReport,
         CPScaleMutationScope, CPScaleForwardingResult, CPScaleSiteForwardingObservation,
+        CPScaleUserForwardingObservation,
     )
     from packet_tracer_mcp.domain.models.typed_ping import TypedPingResult
-    control = SimpleNamespace(action_results=(), model_dump=lambda mode: {"action_results": []})
+    control = SimpleNamespace(action_results=(), status=ConfigurationApplicationStatus.VERIFIED,
+        model_dump=lambda mode: {"action_results": []})
     forwarding = (
         CPScaleForwardingResult(True, (), tuple(
             CPScaleSiteForwardingObservation(check, (TypedPingResult(True, True),), True)
-            for check in kwargs.get("site_forwarding_checks", ())
-        ), True) if kwargs.get("site_forwarding_checks") else None
+            for check in site_checks
+        ), True, user=tuple(
+            CPScaleUserForwardingObservation(
+                check, (TypedPingResult(True, True),), ActionExecutionStatus.VERIFIED, True,
+            )
+            for check in user_checks
+        ), user_verified=True if user_checks else None) if site_checks else None
+    )
+    canonical_voice = (
+        CPScaleCanonicalVoiceEvidence(
+            stage=stage.value,
+            expected_phone_count=len(projection.voice.phone_assignments),
+            complete=True,
+        )
+        if projection.voice.phone_assignments else None
     )
     return CPScaleLiveStageResult(
         stage=stage, outcome="verified", projection=projection, deployment=Deployment(),
@@ -640,8 +700,8 @@ def execute_stage(projection, **kwargs):
         replay_audit=SimpleNamespace(verified=True, claim="NO_MUTATION_REPLAY", surfaces=(), compact_summary=lambda: evidence["mutation_replay_audit"]),
         orientation=None, required_observations=(), diagnostics=(), first_failed_boundary=None,
         failure="", continuity=CPScaleStageContinuity(), report=CPScaleStageReport(
-            CPScaleMutationScope((), (), (), (), (), ()), None, None, (), None, None, "",
-            forwarding, Workspace(), Workspace(), True, tuple(kwargs.get("site_forwarding_checks", ())),
+            CPScaleMutationScope((), (), (), (), (), ()), None, None, (), None, canonical_voice, "",
+            forwarding, Workspace(), Workspace(), True, site_checks, user_checks,
         ),
     )
 
@@ -651,11 +711,14 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class ForwardingCheck:
     id: str
+    source_topology_hash: str = ""
+    source_configuration_hash: str = ""
 
 
 class StageExecutor:
     def execute(self, request):
-        return execute_stage(request.projection, site_forwarding_checks=request.site_forwarding_checks)
+        return execute_stage(request.projection, site_forwarding_checks=request.site_forwarding_checks,
+            user_forwarding_checks=request.user_forwarding_checks)
 
 
 def transition_contract(previous, current):
@@ -664,10 +727,14 @@ def transition_contract(previous, current):
         previous=previous.stage.value,
         current=current.stage.value,
     )
+    remaining = current.stage is CPScaleCanonicalStage.REMAINING
     return CPScaleCanonicalStageTransition(
         previous_stage=previous.stage,
         current_stage=current.stage,
-        new_device_ids=("router0-branch/device",),
+        previous_physical_topology_hash=previous.topology.physical_identity_hash,
+        current_physical_topology_hash=current.topology.physical_identity_hash,
+        # REMAINING adds nothing physical; a branch stage adds its own devices.
+        new_device_ids=() if remaining else ("router0-branch/device",),
         anchor_device_ids=(),
         new_link_ids=(),
         configuration_mutation_ids=(),
@@ -707,10 +774,6 @@ def reconcile(topology, physical, **kwargs):
     return Deployment()
 
 
-def refuse_full_qualification(composition):
-    raise AssertionError("Full qualification must not be projected.")
-
-
 class LocalPreflight:
     def inspect(self, request, *, run_identity, started_at):
         target = canonical_cp_scale_target_contract(request.target_stage)
@@ -739,17 +802,17 @@ class LocalPreflight:
                 executable_path=r"C:\\PacketTracer.exe",
             ),),
         )
-        authorization = None
-        if target.target is CPScaleCanonicalTarget.ROUTER3_BRANCH:
-            declaration = request.router3_live_authorization
-            authorization = CPScaleRouter3LiveAuthorizationEvidence(
-                authorized_target=CPScaleCanonicalTarget(declaration.target),
-                authorized_sha=declaration.authorized_sha,
-                expected_head=request.expected_head,
-                repository_head=repository.head,
-                upstream_head=repository.upstream_head,
-                source_tree=repository.source_tree,
-            )
+        # Only a declared authorization yields evidence; an undeclared one
+        # leaves the preflight incoherent, exactly like the real admission.
+        declaration = request.live_authorization
+        authorization = None if declaration is None else CPScaleLiveAuthorizationEvidence(
+            authorized_target=CPScaleCanonicalTarget(declaration.target),
+            authorized_sha=declaration.authorized_sha,
+            expected_head=request.expected_head,
+            repository_head=repository.head,
+            upstream_head=repository.upstream_head,
+            source_tree=repository.source_tree,
+        )
         return CPScalePreflightResult(
             target=target,
             runtime=runtime,
@@ -773,7 +836,7 @@ class LocalPreflight:
                 loaded_namespace="packet_tracer_mcp",
             ),
             issues=(),
-            router3_live_authorization=authorization,
+            live_authorization=authorization,
         )
 
 
@@ -829,7 +892,6 @@ seams.archive_cp_scale_canonical_evidence = archive_evidence
 seams.SimulationTraceRuntime = lambda *args, **kwargs: object()
 seams._voice_window_state = lambda runtime: {"mode": "realtime"}
 seams._realtime_boundary_error = lambda state, edge: ""
-seams._full_qualification_projection = refuse_full_qualification
 seams._execute_stage = None
 ''' + OFFLINE_COMPOSITION
 
@@ -841,6 +903,7 @@ code = live.run(
     expected_head=HEAD,
     retain_on_full_verification=False,
     target_stage="router0-branch",
+    live_authorization=authorized("router0-branch"),
 )
 print(json.dumps({"code": code, "calls": calls}))
 ''')
@@ -899,24 +962,19 @@ print(json.dumps({"code": code, "calls": calls}))
     )
 
 
-def test_default_run_still_walks_past_router0_into_router3():
+def test_default_run_walks_past_both_branches_into_remaining():
     verdict = _probe(RUN_DOUBLES + r'''
 code = live.run(
     "9.0.1.0858",
     expected_head=HEAD,
     retain_on_full_verification=False,
+    live_authorization=authorized("full-qualification"),
 )
 print(json.dumps({"code": code, "calls": calls}))
 ''')
 
     calls = verdict["calls"]
-    build = [
-        item["stage"] for item in calls if item["event"] == "execute_stage"
-    ]
-    # The default target does not stop at Router0: it checkpoints it like any
-    # other stage, builds Router3, and reaches the remaining reconciliation
-    # this double refuses.
-    assert build == [
+    build_stages = [
         "routing-core",
         "router4-switch10",
         "floor1",
@@ -925,20 +983,29 @@ print(json.dumps({"code": code, "calls": calls}))
         "router0-branch",
         "router3-branch",
     ]
-    assert "router0-branch" in [
+    # The default target stops at neither branch: it checkpoints both like any
+    # other build stage, proves the Router3 -> REMAINING transition, and
+    # reaches the zero-delta reconciliation this double refuses.
+    assert [
+        item["stage"] for item in calls if item["event"] == "execute_stage"
+    ] == build_stages
+    assert [
         item["stage"] for item in calls if item["event"] == "checkpoint"
-    ]
+    ] == build_stages
     assert "remaining" in {
         item["stage"] for item in calls if item["event"] == "project"
     }
+    assert [
+        (item["previous"], item["current"])
+        for item in calls if item["event"] == "transition"
+    ] == [("router3-branch", "remaining")]
     assert "cp-scale-canonical/remaining/reconciliation" in [
         item["deployment_id"] for item in calls if item["event"] == "reconcile"
     ]
     assert verdict["code"] == 1
 
-    # Neither the Router0 boundary contract nor its branch forwarding belongs
-    # to the default route.
-    assert not any(item["event"] == "transition" for item in calls)
+    # No build stage carries branch forwarding on the default route: REMAINING
+    # alone proves the derived pairs, and this double stops before it runs.
     assert not any(
         item["event"] == "execute_stage" and item["site_forwarding_checks"]
         for item in calls

@@ -110,7 +110,7 @@ def test_execute_session_cancellation_survives_close_and_is_published(
         + r'''
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
 
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 original = KeyboardInterrupt("ORIGINAL_EXECUTE_SESSION_CANCELLATION")
 
 if cancel_boundary == "stage":
@@ -202,7 +202,7 @@ def test_execute_session_cancellation_classifies_post_close_baseexception():
     verdict = _probe(RUN_DOUBLES + r'''
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
 
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 original = KeyboardInterrupt("ORIGINAL_EXECUTE_SESSION_CANCELLATION")
 seams._execute_stage = lambda *args, **kwargs: (_ for _ in ()).throw(original)
 
@@ -259,7 +259,7 @@ def test_execute_session_cancellation_classifies_final_write_baseexception():
     verdict = _probe(RUN_DOUBLES + r'''
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
 
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 original = KeyboardInterrupt("ORIGINAL_EXECUTE_SESSION_CANCELLATION")
 seams._execute_stage = lambda *args, **kwargs: (_ for _ in ()).throw(original)
 
@@ -319,7 +319,7 @@ def test_execute_session_cancellation_bounds_publication_and_report_failures():
     verdict = _probe(RUN_DOUBLES + r'''
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
 
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 original = KeyboardInterrupt("ORIGINAL_EXECUTE_SESSION_CANCELLATION")
 seams._execute_stage = lambda *args, **kwargs: (_ for _ in ()).throw(original)
 
@@ -388,7 +388,7 @@ def test_execute_session_cancellation_declares_failed_post_close_publication_lim
         + r'''
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
 
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 original = KeyboardInterrupt("ORIGINAL_EXECUTE_SESSION_CANCELLATION")
 
 if cancel_boundary == "stage":
@@ -458,7 +458,7 @@ print(json.dumps({
 def test_router0_acquired_cleanup_is_never_repeated_after_cancellation(boundary):
     verdict = _probe(RUN_DOUBLES + "\nboundary = " + repr(boundary) + r'''
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 coordinator = offline_coordinator(request)
 captured = []
 original_restore = coordinator.completion.cleanup.restore
@@ -518,22 +518,15 @@ print(json.dumps({"raised": raised, "cleanup_count": len(captured),
 
 
 @pytest.mark.parametrize("broken", ["", "write", "close", "presentation"])
-@pytest.mark.parametrize("target", ["router0-branch", "full-cleanup", "full-retain"])
+@pytest.mark.parametrize("target", ["router0-branch", "full-qualification"])
 def test_success_is_published_only_after_final_write_and_close(broken, target):
     verdict = _probe(RUN_DOUBLES + "\nbroken = " + repr(broken) + "\ntarget = " + repr(target) + r'''
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, target == "full-retain",
-    "router0-branch" if target == "router0-branch" else "full-qualification")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, target, authorized(target))
 coordinator = offline_coordinator(request)
-if target != "router0-branch":
+if target == "full-qualification":
     seams._write_checkpoint_summary = lambda stage, evidence, **kwargs: record("summary", stage=stage)
     coordinator.build.reconcile = lambda topology, physical, **kwargs: Deployment()
-    coordinator.build.full_projection = lambda composition: projection_for(composition, CPScaleCanonicalStage.REMAINING)
-    coordinator.backend.compose = lambda **kwargs: SimpleNamespace(valid=True, topology=SimpleNamespace(devices=[], links=[]),
-        configuration=object(), control_plane=object(), capabilities={}, voice=None)
-if target == "full-retain":
-    original_decide = seams._checkpoint
-    seams._checkpoint = lambda stage, *args, **kwargs: "retain" if stage == "full-qualification" else original_decide(stage, *args, **kwargs)
 after_summary = []
 original_checkpoint = coordinator.persistence.checkpoint
 def checkpoint(*args, **kwargs):
@@ -564,12 +557,9 @@ last_stage = max(index for index, name in enumerate(names) if name == "execute_s
 print(json.dumps({"outcome": result.outcome.value, "events": names[last_stage + 1:],
     "primary": result.primary_failure, "secondary": result.secondary_failures}))
 ''')
-    expected = ["write", "archive"]
-    if target != "full-retain":
-        expected += ["cleanup", "archive"]
-    if target == "full-cleanup":
-        expected.insert(0, "checkpoint")
-    expected += ["write", "summary", "write", "transport.stop"]
+    # FULL closes exactly like a bounded branch: no terminal checkpoint, and
+    # always through cleanup before the final write and close.
+    expected = ["write", "archive", "cleanup", "archive", "write", "summary", "write", "transport.stop"]
     if not broken:
         expected += ["terminal"]
     elif broken == "presentation":
@@ -597,7 +587,7 @@ from dataclasses import replace
 from packet_tracer_mcp.application.cp_scale_live.contracts import (
     CPScaleLiveRequest, CPScaleStageSecondaryFailure, CPScaleDiagnosticRecord,
 )
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 coordinator = offline_coordinator(request)
 def failed_stage(projection, **kwargs):
     acquired = execute_stage(projection, **kwargs)
@@ -654,14 +644,13 @@ print(json.dumps({"outcome": result.outcome.value, "primary": result.primary_fai
     }
 
 
-def test_full_qualification_failure_keeps_legacy_stage_slot_and_typed_cause():
+def test_remaining_failure_keeps_its_stage_slot_and_typed_cause():
     verdict = _probe(RUN_DOUBLES + r'''
 from dataclasses import replace
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False)
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "full-qualification", authorized("full-qualification"))
 coordinator = offline_coordinator(request)
 coordinator.build.reconcile = lambda topology, physical, **kwargs: Deployment()
-coordinator.build.full_projection = lambda composition: projection_for(composition, CPScaleCanonicalStage.REMAINING)
 def stage(projection, **kwargs):
     result = execute_stage(projection, **kwargs)
     if projection.stage is CPScaleCanonicalStage.REMAINING:
@@ -675,39 +664,10 @@ print(json.dumps({"outcome": result.outcome.value, "primary": result.primary_fai
     "boundary": result.progress.first_failed_boundary,
     "last_stage": evidence[-1]["stages"][-1]["stage"],
     "last_outcome": evidence[-1]["stages"][-1].get("stage_outcome"),
-    "full_published": "full_qualification" in evidence[-1],
+    "remaining": result.progress.remaining_reconciled,
+    "closure": result.closure,
     "typed_failure": result.progress.completed_stages[-1].failure}))
 ''')
     assert verdict == {"outcome": "failed", "primary": "CanonicalLiveFailure: FULL_FAILED",
         "boundary": "control_plane", "last_stage": "remaining", "last_outcome": "failed",
-        "full_published": False, "typed_failure": "FULL_FAILED"}
-
-
-def test_late_full_cleanup_observation_failure_prevents_terminal_success():
-    verdict = _probe(RUN_DOUBLES + r'''
-from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False)
-coordinator = offline_coordinator(request)
-coordinator.build.reconcile = lambda topology, physical, **kwargs: Deployment()
-coordinator.build.full_projection = lambda composition: projection_for(composition, CPScaleCanonicalStage.REMAINING)
-coordinator.backend.compose = lambda **kwargs: SimpleNamespace(valid=True, topology=SimpleNamespace(devices=[], links=[]),
-    configuration=object(), control_plane=object(), capabilities={}, voice=None)
-seams._write_checkpoint_summary = lambda stage, evidence, **kwargs: record("summary", stage=stage)
-original_observations = coordinator.observations_factory
-reads = []
-def observations(session):
-    result = original_observations(session)
-    def realtime():
-        reads.append(True)
-        return CPScaleCleanupRealtime(len(reads) == 1, "late realtime error" if len(reads) > 1 else "")
-    result.cleanup_realtime = realtime
-    return result
-coordinator.observations_factory = observations
-coordinator.presentation = SimpleNamespace(core_rematerialized=lambda: None,
-    terminal=lambda *args: record("terminal"), finalization_incomplete=lambda report: record("report"))
-result = coordinator.run(request)
-print(json.dumps({"outcome": result.outcome.value, "secondary": result.secondary_failures,
-    "calls": [item["event"] for item in calls if item["event"] in ("transport.stop", "terminal", "report")]}))
-''')
-    assert verdict == {"outcome": "failed", "secondary": ["cleanup_realtime: late realtime error"],
-        "calls": ["transport.stop", "report"]}
+        "remaining": False, "closure": None, "typed_failure": "FULL_FAILED"}

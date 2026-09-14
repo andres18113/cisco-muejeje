@@ -111,7 +111,8 @@ def offline_coordinator(request, **kwargs):
         def execute(request):
             stage_requests.append(request)
             if seams._execute_stage is not None:
-                return seams._execute_stage(request.projection, site_forwarding_checks=request.site_forwarding_checks)
+                return seams._execute_stage(request.projection, site_forwarding_checks=request.site_forwarding_checks,
+                    user_forwarding_checks=request.user_forwarding_checks)
             return inner.execute(request)
         return SimpleNamespace(execute=execute)
 
@@ -120,7 +121,6 @@ def offline_coordinator(request, **kwargs):
         deployer_factory=seams.EnterprisePhysicalTopologyDeployer,
         reconcile=seams.reconcile_canonical_stage_deployment,
         ownership_error=seams.canonical_delta_deployment_error, resume_error=seams.canonical_stage_resume_error)
-    build.full_projection = seams._full_qualification_projection
     coordinator = CPScaleLiveCoordinator(preflight=seams._build_local_preflight(), session_factory=session_factory,
         stage_factory=stage_factory, observations_factory=Observations, build=build,
         backend=CPScaleBackendQualification(compose=seams.compose_cp_scale_canonical,

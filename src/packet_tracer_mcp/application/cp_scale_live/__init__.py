@@ -10,6 +10,8 @@ from .admission import (
 from .contracts import (
     CPScaleCheckState,
     CPScaleImportIsolationEvidence,
+    CPScaleLiveAuthorizationEvidence,
+    CPScaleLiveAuthorizationRequest,
     CPScaleLiveRequest,
     CPScaleLiveSessionIdentity,
     CPScalePreflightOutcome,
@@ -17,8 +19,6 @@ from .contracts import (
     CPScaleProcessEvidence,
     CPScaleProcessRecord,
     CPScaleRepositoryEvidence,
-    CPScaleRouter3LiveAuthorizationEvidence,
-    CPScaleRouter3LiveAuthorizationRequest,
     CPScaleRuntimeEvidence,
 )
 
@@ -26,6 +26,8 @@ __all__ = [
     "CPScaleCheckState",
     "CPScaleImportIsolationEvidence",
     "CPScaleImportIsolationObservation",
+    "CPScaleLiveAuthorizationEvidence",
+    "CPScaleLiveAuthorizationRequest",
     "CPScaleLiveRequest",
     "CPScaleLiveSessionIdentity",
     "CPScaleLocalPreflight",
@@ -36,8 +38,6 @@ __all__ = [
     "CPScaleProcessRecord",
     "CPScaleRepositoryEvidence",
     "CPScaleRepositoryObservation",
-    "CPScaleRouter3LiveAuthorizationEvidence",
-    "CPScaleRouter3LiveAuthorizationRequest",
     "CPScaleRuntimeEvidence",
     "process_record_mapping",
 ]

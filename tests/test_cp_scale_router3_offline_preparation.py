@@ -221,7 +221,7 @@ def test_router3_terminal_policy_stops_before_remaining_and_requires_cleanup():
     assert {
         stage
         for stage, decision in decisions.items()
-        if decision.bounded_terminal_transition
+        if decision.terminal_transition
     } == {CPScaleCanonicalStage.ROUTER3_BRANCH}
     assert decisions[CPScaleCanonicalStage.ROUTER3_BRANCH].checkpoint_required is False
 
@@ -233,7 +233,7 @@ def test_router3_terminal_policy_stops_before_remaining_and_requires_cleanup():
         CPScaleCanonicalStage.ROUTER3_BRANCH,
     )
     assert full_router3.site_forwarding is False
-    assert full_router3.bounded_terminal_transition is False
+    assert full_router3.terminal_transition is False
     assert full_router3.checkpoint_required is True
 
     plan = CPScaleCompletion(cleanup=object()).plan(
@@ -278,7 +278,7 @@ def test_current_state_preserves_pre_execution_projection_without_live_authority
     assert "authorized_sha" not in state["offline_preparation"]
     assert document["operational_state"]["live_execution_authorized"] is False
     assert document["operational_state"]["next_active_step"] == (
-        "ROUTER3_CLOSED_AWAIT_EXPLICIT_NEW_SCOPE"
+        "READY_FOR_EXPLICIT_FULL_QUALIFICATION_LIVE_AUTHORIZATION"
     )
 
     assert offline["target"] == "router3-branch"

@@ -611,7 +611,7 @@ voice = VoiceApplicationResult(voice_plan_id="voice", voice_semantic_hash="hash"
     source_topology_hash="topology", source_configuration_hash="configuration",
     status=ActionExecutionStatus.FAILED if voice_case == "failed" else ActionExecutionStatus.VERIFIED,
     action_results=[first, second, first])
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 coordinator = offline_coordinator(request)
 def stage(projection, **kwargs):
     acquired = execute_stage(projection, **kwargs)

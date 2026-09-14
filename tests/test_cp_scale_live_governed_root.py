@@ -142,6 +142,8 @@ def test_real_entry_rejects_checkout_a_with_interpreter_and_package_b_before_wro
             "--execute",
             "--packet-tracer-version", "9.0.1.0858",
             "--expected-head", head,
+            "--authorized-live-target", "full-qualification",
+            "--authorized-live-sha", head,
         ],
         cwd=neutral,
         env=environment,

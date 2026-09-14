@@ -15,6 +15,7 @@ from .cp_scale_stage_evidence import realtime_state_evidence, stage_result_evide
 def transition_evidence(transition):
     return {**asdict(transition), "previous_stage": transition.previous_stage.value,
             "current_stage": transition.current_stage.value,
+            "physical_delta_empty": transition.physical_delta_empty,
             "mutation_scope_disjoint": transition.mutation_scope_disjoint, "claim": transition.claim}
 
 
@@ -64,10 +65,6 @@ def stage_progress_evidence(progress: CPScaleStageProgress) -> dict[str, object]
         failure = progress.failure_details
         return {"stage": failure.stage, "first_failed_boundary": failure.first_failed_boundary,
                 "stage_outcome": "failed"}
-    if progress.remaining:
-        return {"stage": projection.stage.value, "physical_delta": {"devices": 0, "modules": 0, "links": 0},
-                "physical": progress.deployment.model_dump(mode="json"), "verified": True,
-                "verification_scope": "ZERO_DELTA_RECONCILED"}
     if progress.result is not None:
         value = stage_result_evidence(progress.result)
     else:
@@ -102,6 +99,7 @@ def run_evidence(report: CPScaleRunReport) -> dict[str, object]:
             "terminal_stage": target.terminal_stage.value,
             "run_remaining_reconciliation": target.run_remaining_reconciliation,
             "run_full_qualification": target.run_full_qualification, "allow_retention": target.allow_retention,
+            "require_cleanup": target.require_cleanup,
             "precleanup_closure": target.precleanup_closure, "cleaned_closure": target.cleaned_closure},
         "stages": [stage_progress_evidence(stage) for stage in report.stages],
         "presentation_retained": report.presentation_retained,
@@ -113,9 +111,9 @@ def run_evidence(report: CPScaleRunReport) -> dict[str, object]:
                                "head": preflight.repository.head, "error": preflight.repository.error}
         if preflight.repository.upstream_head_error:
             value["initial_upstream_error"] = preflight.repository.upstream_head_error
-    if preflight.router3_live_authorization is not None:
-        authorization = preflight.router3_live_authorization
-        value["router3_live_authorization"] = {
+    if preflight.live_authorization is not None:
+        authorization = preflight.live_authorization
+        value["live_authorization"] = {
             "authorized_target": authorization.authorized_target.value,
             "authorized_sha": authorization.authorized_sha,
             "expected_head": authorization.expected_head,
@@ -179,8 +177,6 @@ def run_evidence(report: CPScaleRunReport) -> dict[str, object]:
         value[f"{branch_name}_transition_contract"] = transition_evidence(
             report.branch_transition
         )
-    if report.full_qualification is not None:
-        value["full_qualification"] = {**stage_result_evidence(report.full_qualification), "stage": "full-qualification"}
     if report.resume_gates:
         value["resume_gates"] = [{"before_stage": gate.before_stage, "bridge": bridge_evidence(gate.bridge),
             "observations": [item.compact_summary() for item in gate.observations], "errors": list(gate.errors)} for gate in report.resume_gates]

@@ -56,8 +56,6 @@ class CPScaleLivePersistence:
         destination = destination if destination is not None else self.checkpoint_path
         stages = evidence.get("stages", [])
         latest = stages[-1] if isinstance(stages, list) and stages else {}
-        if stage == "full-qualification":
-            latest = evidence.get("full_qualification", latest)
         if not isinstance(latest, dict):
             latest = {}
         plan = latest.get("plan", {})

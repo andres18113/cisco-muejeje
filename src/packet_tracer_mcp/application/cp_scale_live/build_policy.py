@@ -10,6 +10,7 @@ from .session import CPScaleSessionPort
 from ..use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage, project_cp_scale_canonical_stage, project_cp_scale_canonical_delta,
     canonical_stage_transition_contract, CPScaleCanonicalStageProjection,
+    CPScaleCanonicalStageTransition, CPScaleCanonicalTargetContract,
 )
 from ..use_cases.compose_enterprise_reference import EnterpriseReferenceComposition
 from ..use_cases.deploy_enterprise_topology import EnterprisePhysicalTopologyDeployer
@@ -55,31 +56,41 @@ class CPScaleBuildPolicy:
     def statistics_projection(self, composition: EnterpriseReferenceComposition) -> CPScaleCanonicalStageProjection:
         return self.project(composition, CPScaleCanonicalStage.FLOOR1)
 
-    def full_projection(self, composition: EnterpriseReferenceComposition) -> CPScaleCanonicalStageProjection:
-        projection = self.project(composition, CPScaleCanonicalStage.REMAINING)
-        return projection.__class__(stage=projection.stage, topology=composition.topology,
-            configuration=composition.configuration, control_plane=composition.control_plane,
-            forwarding_checks=projection.forwarding_checks, voice=composition.voice)
-
     def resume(self, *, session: CPScaleSessionPort, continuity: CPScaleStageContinuity,
-               topology: TopologyPlan, stage: str, full: bool = False) -> CPScaleResumeResult:
+               topology: TopologyPlan, stage: str) -> CPScaleResumeResult:
         if not session.connected:
-            suffix = "full qualification." if full else f"{stage!r}."
-            return CPScaleResumeResult(None, "Packet Tracer bridge was not freshly connected before " + suffix)
+            return CPScaleResumeResult(None, f"Packet Tracer bridge was not freshly connected before {stage!r}.")
         observations = (session.physical.observe_workspace(), session.physical.observe_workspace())
         errors = tuple(self.resume_error(continuity.last_workspace, item, topology) for item in observations)
         gate = CPScaleResumeGate(stage, session.status(), observations, errors)
-        suffix = "full qualification: " if full else f"{stage!r}: "
-        error = "Retained workspace drifted before " + suffix + next(item for item in errors if item) if any(errors) else ""
+        error = f"Retained workspace drifted before {stage!r}: " + next(item for item in errors if item) if any(errors) else ""
         return CPScaleResumeResult(gate, error)
 
-    def remaining_projection(self, composition: EnterpriseReferenceComposition,
-                             continuity: CPScaleStageContinuity) -> CPScaleCanonicalStageProjection:
-        projection = self.projection(composition, CPScaleCanonicalStage.REMAINING)
-        delta = self.delta(continuity.previous_projection.topology, projection.topology)
-        if delta.devices or delta.modules or delta.links:
-            raise CanonicalLiveFailure("The governed remaining-topology reconciliation was not zero-delta.")
-        return projection
+    def terminal_transition_error(self, target: CPScaleCanonicalTargetContract,
+                                  previous: CPScaleCanonicalStageProjection,
+                                  transition: CPScaleCanonicalStageTransition) -> str:
+        """Refuse a terminal boundary the target contract does not authorize.
+
+        Every terminal stage needs a disjoint mutation scope from the exact
+        preceding stage. REMAINING re-verifies the complete topology and may
+        never extend it, so its transition must also prove a zero physical delta.
+        """
+        stages = target.execution_stages
+        expected = f"{stages[-2].value!r} -> {stages[-1].value!r}" if len(stages) > 1 else "a previous stage"
+        if (len(stages) < 2 or stages[-1] is not target.terminal_stage
+                or previous.stage is not stages[-2]
+                or transition.previous_stage is not stages[-2]
+                or transition.current_stage is not target.terminal_stage
+                or not transition.mutation_scope_disjoint):
+            return (f"Target {target.target.value!r} refused its terminal transition contract: "
+                    f"expected {expected}; observed {transition.previous_stage.value!r} -> "
+                    f"{transition.current_stage.value!r}; {transition.claim}")
+        if transition.current_stage is CPScaleCanonicalStage.REMAINING and not transition.physical_delta_empty:
+            return ("The governed remaining-topology reconciliation was not zero-delta: "
+                    f"{len(transition.new_device_ids)} new device(s), {len(transition.new_link_ids)} new link(s), "
+                    f"physical topology {transition.previous_physical_topology_hash!r} -> "
+                    f"{transition.current_physical_topology_hash!r}.")
+        return ""
 
 
 class CPScalePhysicalStages:

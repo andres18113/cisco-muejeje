@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from tests.subprocess_harness import (
     run_isolated_command,
     run_isolated_python,
@@ -29,7 +31,8 @@ def test_cli_refuses_without_execute_in_a_subprocess():
     }
 
 
-def test_cli_passes_explicit_typed_router3_authorization():
+@pytest.mark.parametrize("target", ["router3-branch", "full-qualification"])
+def test_cli_passes_explicit_typed_target_authorization(target):
     source = r'''
 import json
 import sys
@@ -45,25 +48,25 @@ sys.argv = [
     "--execute",
     "--packet-tracer-version", "9.0.1.0858",
     "--expected-head", "a" * 40,
-    "--target-stage", "router3-branch",
-    "--authorized-live-target", "router3-branch",
+    "--target-stage", __TARGET__,
+    "--authorized-live-target", __TARGET__,
     "--authorized-live-sha", "a" * 40,
 ]
 exit_code = live.main()
-authorization = captured["router3_live_authorization"]
+authorization = captured["live_authorization"]
 print(json.dumps({
     "exit_code": exit_code,
     "target_stage": captured["target_stage"],
     "authorized_target": authorization.target.value,
     "authorized_sha": authorization.authorized_sha,
 }))
-'''
+'''.replace("__TARGET__", repr(target))
     completed = run_isolated_python(source, cwd=ROOT, governed_root=ROOT)
     assert completed.returncode == 0, subprocess_failure(completed)
     assert json.loads(completed.stdout) == {
         "exit_code": 0,
-        "target_stage": "router3-branch",
-        "authorized_target": "router3-branch",
+        "target_stage": target,
+        "authorized_target": target,
         "authorized_sha": "a" * 40,
     }
 
@@ -108,7 +111,7 @@ class RefusingTransport(Transport):
         raise RuntimeError("OFFLINE_START_FAILURE")
 live.build_local_preflight = lambda governed_root: LocalPreflight()
 live.PacketTracerHttpTransport = RefusingTransport
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False)
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "full-qualification", authorized("full-qualification"))
 coordinator = PRODUCT_SYMBOLS["build_coordinator"](request, governed_root=root)
 result = coordinator.run(request)
 payload = json.loads((root / "data/cp-scale/live-canonical-progress.json").read_text(encoding="utf-8"))

@@ -119,7 +119,7 @@ def test_session_reuses_resources_and_marks_close_before_a_failing_stop():
 def test_real_coordinator_keeps_typed_continuity_identity_and_terminal_order():
     verdict = _probe(RUN_DOUBLES + r'''
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 coordinator = offline_coordinator(request)
 assert type(coordinator) is CPScaleLiveCoordinator
 result = coordinator.run(request)
@@ -207,32 +207,37 @@ def test_backend_qualification_exposes_original_snapshot_before_serialization():
     assert backend.unresolved(composition, (("switch", ("poe",)),)) == ()
 
 
-def test_same_coordinator_mechanism_accepts_a_second_synthetic_target_sequence():
+def test_same_coordinator_mechanism_threads_a_synthetic_sequence_that_full_closure_refuses():
     verdict = _probe(RUN_DOUBLES + r'''
 from dataclasses import replace
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False)
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "full-qualification", authorized("full-qualification"))
 coordinator = offline_coordinator(request)
 original_preflight = coordinator.preflight
 def inspect(request, **kwargs):
     result = original_preflight.inspect(request, **kwargs)
-    return replace(result, target=replace(result.target, build_stages=(CPScaleCanonicalStage.FLOOR3, CPScaleCanonicalStage.ROUTING_CORE)))
+    return replace(result, target=replace(result.target, build_stages=(CPScaleCanonicalStage.FLOOR3, CPScaleCanonicalStage.ROUTER3_BRANCH)))
 coordinator.preflight = SimpleNamespace(inspect=inspect)
 coordinator.build.reconcile = lambda topology, physical, **kwargs: Deployment()
-coordinator.build.full_projection = lambda composition: projection_for(composition, CPScaleCanonicalStage.REMAINING)
-coordinator.backend.compose = lambda **kwargs: SimpleNamespace(valid=True, topology=SimpleNamespace(devices=[], links=[]),
-    configuration=object(), control_plane=object(), capabilities={}, voice=None)
 seams._write_checkpoint_summary = lambda stage, evidence, **kwargs: record("summary", stage=stage)
 result = coordinator.run(request)
-assert stage_requests[1].continuity.previous_projection is result.progress.completed_stages[0].projection
-assert result.progress.full_qualification.projection is stage_requests[-1].projection
+completed = result.progress.completed_stages
+assert all(stage_requests[index].continuity.previous_projection is completed[index - 1].projection for index in (1, 2))
+assert completed[-1].projection is stage_requests[-1].projection
 print(json.dumps({"outcome": result.outcome.value,
-    "stages": [item.stage.value for item in result.progress.completed_stages],
-    "remaining": result.progress.remaining_reconciled,
-    "archives": len(result.archives), "closed": [item for item in calls if item["event"] == "transport.stop"]}))
+    "stages": [item.stage.value for item in completed],
+    "remaining": result.progress.remaining_reconciled, "primary": result.primary_failure,
+    "archives": [item.model_dump()["phase"] for item in result.archives],
+    "closed": [item for item in calls if item["event"] == "transport.stop"]}))
 ''')
-    assert verdict == {"outcome": "completed", "stages": ["floor3", "routing-core"],
-                       "remaining": True, "archives": 2, "closed": [{"event": "transport.stop"}]}
+    # The typed sequence threads continuity through REMAINING exactly as it
+    # does through every build stage, and FULL closure still refuses a
+    # sequence that is not its own exact contract.
+    assert verdict == {"outcome": "failed", "stages": ["floor3", "router3-branch", "remaining"],
+        "remaining": True,
+        "primary": ("CanonicalLiveFailure: Full qualification closure refused: "
+                    "the run target is not the exact FULL qualification contract."),
+        "archives": ["failure-precleanup", "cleanup"], "closed": [{"event": "transport.stop"}]}
 
 
 @pytest.mark.parametrize("publication_failure", ["", "write", "cancel"])

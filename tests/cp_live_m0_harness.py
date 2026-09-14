@@ -249,9 +249,6 @@ seams.compose_cp_scale_canonical = lambda **kwargs: SimpleNamespace(
 seams.reconcile_canonical_stage_deployment = lambda topology, physical, **kwargs: (
     record("reconcile", deployment_id=kwargs.get("deployment_id")) or Deployment()
 )
-seams._full_qualification_projection = lambda composition: projection_for(
-    composition, CPScaleCanonicalStage.REMAINING,
-)
 seams._write_checkpoint_summary = lambda stage, evidence, **kwargs: record(
     "summary", stage=stage,
 )
@@ -270,6 +267,7 @@ code = live.run(
     expected_head=HEAD,
     retain_on_full_verification=False,
     target_stage="router0-branch",
+    live_authorization=authorized("router0-branch"),
 )
 print(json.dumps(m0_verdict(code)))
 '''
@@ -285,6 +283,7 @@ code = live.run(
     "9.0.1.0858",
     expected_head=HEAD,
     retain_on_full_verification=False,
+    live_authorization=authorized("full-qualification"),
 )
 print(json.dumps(m0_verdict(code)))
 '''
@@ -306,6 +305,7 @@ code = live.run(
     "9.0.1.0858",
     expected_head=HEAD,
     retain_on_full_verification=True,
+    live_authorization=authorized("full-qualification"),
 )
 print(json.dumps(m0_verdict(code)))
 '''
@@ -329,6 +329,7 @@ code = live.run(
     expected_head=HEAD,
     retain_on_full_verification=False,
     target_stage="router0-branch",
+    live_authorization=authorized("router0-branch"),
 )
 print(json.dumps(m0_verdict(code)))
 '''
@@ -363,6 +364,7 @@ code = live.run(
     expected_head=HEAD,
     retain_on_full_verification=False,
     target_stage="router0-branch",
+    live_authorization=authorized("router0-branch"),
 )
 print(json.dumps(m0_verdict(code)))
 '''
@@ -389,6 +391,7 @@ code = live.run(
     expected_head=HEAD,
     retain_on_full_verification=False,
     target_stage="router0-branch",
+    live_authorization=authorized("router0-branch"),
 )
 print(json.dumps(m0_verdict(code)))
 '''
@@ -412,6 +415,7 @@ code = live.run(
     expected_head=HEAD,
     retain_on_full_verification=False,
     target_stage="router0-branch",
+    live_authorization=authorized("router0-branch"),
 )
 print(json.dumps(m0_verdict(code)))
 '''
@@ -433,6 +437,7 @@ code = live.run(
     expected_head=HEAD,
     retain_on_full_verification=False,
     target_stage="router0-branch",
+    live_authorization=authorized("router0-branch"),
 )
 print(json.dumps(m0_verdict(code)))
 '''
@@ -451,6 +456,7 @@ code = live.run(
     expected_head=HEAD,
     retain_on_full_verification=False,
     target_stage="router0-branch",
+    live_authorization=authorized("router0-branch"),
 )
 print(json.dumps(m0_verdict(code)))
 '''

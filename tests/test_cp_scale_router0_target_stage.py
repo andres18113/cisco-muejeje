@@ -98,27 +98,6 @@ def test_router0_target_stops_at_its_own_successful_cleanup_contract():
     assert contract.cleaned_closure == "ROUTER0_BRANCH_VERIFIED_AND_CLEANED"
 
 
-def test_default_target_preserves_the_full_qualification_route():
-    contract = canonical_cp_scale_target_contract(
-        CPScaleCanonicalTarget.FULL_QUALIFICATION,
-    )
-
-    assert contract.build_stages == tuple(
-        stage for stage in CPScaleCanonicalStage
-        if stage is not CPScaleCanonicalStage.REMAINING
-    )
-    assert contract.terminal_stage is CPScaleCanonicalStage.ROUTER3_BRANCH
-    assert contract.run_remaining_reconciliation is True
-    assert contract.run_full_qualification is True
-    assert contract.allow_retention is True
-    assert contract.precleanup_closure == (
-        "CP_SCALE_GOVERNED_VOICE_VERIFIED_PRECLEANUP"
-    )
-    assert contract.cleaned_closure == (
-        "CP_SCALE_GOVERNED_VOICE_VERIFIED_AND_CLEANED"
-    )
-
-
 def test_floor3_to_router0_is_incremental_with_a_disjoint_scope(composition):
     floor3 = project_cp_scale_canonical_stage(
         composition, CPScaleCanonicalStage.FLOOR3,

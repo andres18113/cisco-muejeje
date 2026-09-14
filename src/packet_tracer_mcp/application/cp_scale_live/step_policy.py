@@ -18,21 +18,22 @@ class CPScaleStepDecision:
     floor1_statistics: bool
     acquire_dhcp_baseline: bool
     capture_serial_core: bool
-    bounded_terminal_transition: bool
+    terminal_transition: bool
     site_forwarding: bool
     checkpoint_required: bool
 
 
 def canonical_step_decision(target: CPScaleCanonicalTargetContract, stage: CPScaleCanonicalStage) -> CPScaleStepDecision:
-    bounded_terminal = target.require_cleanup and not target.run_full_qualification
-    terminal_stage = bounded_terminal and stage is target.terminal_stage
+    # A cleanup-closed target proves its terminal stage and closes without a
+    # checkpoint: a bounded branch at its branch stage, FULL at REMAINING.
+    terminal_stage = target.require_cleanup and stage is target.terminal_stage
     return CPScaleStepDecision(
         floor1_statistics=stage is CPScaleCanonicalStage.FLOOR1,
         acquire_dhcp_baseline=(
             stage is CPScaleCanonicalStage.ROUTER4_SWITCH10
         ),
         capture_serial_core=stage is CPScaleCanonicalStage.ROUTING_CORE,
-        bounded_terminal_transition=terminal_stage,
+        terminal_transition=terminal_stage,
         site_forwarding=terminal_stage,
         checkpoint_required=not terminal_stage,
     )

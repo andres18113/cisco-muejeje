@@ -365,8 +365,12 @@ class CPScalePreflightOutcome(str, Enum):
 
 
 @dataclass(frozen=True)
-class CPScaleRouter3LiveAuthorizationRequest:
-    """One explicit operator authorization, scoped only to Router3 and a SHA."""
+class CPScaleLiveAuthorizationRequest:
+    """One explicit operator authorization, scoped to one target and one SHA.
+
+    Every canonical LIVE target requires its own; it never authorizes another
+    target or another commit.
+    """
 
     target: CPScaleCanonicalTarget | str
     authorized_sha: str
@@ -380,9 +384,7 @@ class CPScaleLiveRequest:
     target_stage: CPScaleCanonicalTarget | str = (
         CPScaleCanonicalTarget.FULL_QUALIFICATION
     )
-    router3_live_authorization: (
-        CPScaleRouter3LiveAuthorizationRequest | None
-    ) = None
+    live_authorization: CPScaleLiveAuthorizationRequest | None = None
 
 
 @dataclass(frozen=True)
@@ -461,8 +463,8 @@ class CPScaleRepositoryEvidence:
 
 
 @dataclass(frozen=True)
-class CPScaleRouter3LiveAuthorizationEvidence:
-    """Repository-bound provenance for one admitted Router3 authorization."""
+class CPScaleLiveAuthorizationEvidence:
+    """Repository-bound provenance for one admitted target authorization."""
 
     authorized_target: CPScaleCanonicalTarget
     authorized_sha: str
@@ -480,7 +482,7 @@ class CPScaleRouter3LiveAuthorizationEvidence:
             self.upstream_head,
         )
         return bool(
-            self.authorized_target is CPScaleCanonicalTarget.ROUTER3_BRANCH
+            isinstance(self.authorized_target, CPScaleCanonicalTarget)
             and all(_is_full_sha(item) for item in shas)
             and len(set(shas)) == 1
             and _is_full_sha(self.source_tree)
@@ -583,9 +585,7 @@ class CPScalePreflightResult:
     process: CPScaleProcessEvidence
     identity: CPScaleLiveSessionIdentity | None
     issues: tuple[str, ...]
-    router3_live_authorization: (
-        CPScaleRouter3LiveAuthorizationEvidence | None
-    ) = None
+    live_authorization: CPScaleLiveAuthorizationEvidence | None = None
 
     @property
     def evidence_coherent(self) -> bool:
@@ -601,20 +601,18 @@ class CPScalePreflightResult:
             and isinstance(self.target, CPScaleCanonicalTargetContract)
         ):
             return False
-        authorization = self.router3_live_authorization
+        authorization = self.live_authorization
+        # Every canonical target runs only under an authorization for itself,
+        # bound to the exact repository and session provenance observed here.
         authorization_coherent = (
-            isinstance(
-                authorization,
-                CPScaleRouter3LiveAuthorizationEvidence,
-            )
+            isinstance(authorization, CPScaleLiveAuthorizationEvidence)
             and authorization.passed_coherently
+            and authorization.authorized_target is self.target.target
             and _authorization_matches_observed_provenance(
                 authorization,
                 self.repository,
                 identity,
             )
-            if self.target.target is CPScaleCanonicalTarget.ROUTER3_BRANCH
-            else authorization is None
         )
         return bool(
             self.runtime.coherent
@@ -671,13 +669,18 @@ def _is_full_sha(value: object) -> bool:
 
 
 def _authorization_matches_observed_provenance(
-    authorization: CPScaleRouter3LiveAuthorizationEvidence,
+    authorization: CPScaleLiveAuthorizationEvidence,
     repository: CPScaleRepositoryEvidence,
     identity: CPScaleLiveSessionIdentity,
 ) -> bool:
-    """The observed repository and identity certify authorization, not itself."""
+    """The observed repository and identity certify authorization, not itself.
+
+    authorized SHA == expected HEAD == repository HEAD == upstream HEAD ==
+    session source HEAD, with one source tree across all three records.
+    """
     return bool(
         authorization.authorized_sha == repository.head
+        and authorization.authorized_sha == repository.upstream_head
         and authorization.expected_head == repository.head
         and authorization.repository_head == repository.head
         and authorization.upstream_head == repository.upstream_head

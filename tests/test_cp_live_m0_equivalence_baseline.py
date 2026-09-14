@@ -147,7 +147,10 @@ def test_every_superseded_reference_is_retained_and_still_verifiable(baseline):
 
 @pytest.mark.parametrize(
     "scenario",
-    tuple(item for item in SCENARIOS if item != "cleanup-failure"),
+    tuple(
+        item for item in SCENARIOS
+        if item not in {"cleanup-failure", "full-cleanup", "full-retain"}
+    ),
 )
 def test_run_coordination_matches_the_frozen_ordered_trace(
     baseline,
@@ -194,6 +197,82 @@ def test_cleanup_retry_correction_is_an_explicit_delta_from_the_frozen_oracle(
     assert sum(
         event.get("event") == "cleanup" for event in verdict["trace"]["events"]
     ) == 1
+    _assert_candidate_provenance(
+        verdict, substituted=LEVEL_A_SUBSTITUTED_SYMBOLS,
+    )
+
+
+@pytest.mark.parametrize("scenario", ["full-cleanup", "full-retain"])
+def test_full_qualification_contract_is_an_explicit_delta_from_the_frozen_oracle(
+    baseline,
+    scenario,
+    tmp_path,
+):
+    """The governed FULL contract supersedes the frozen FULL route, by name.
+
+    The seven build stages keep their exact frozen trace. After Router3,
+    REMAINING is the terminal stage of the same sequence: its zero-delta
+    transition is persisted before its reconciliation, it proves the derived
+    site pairs, no checkpoint precedes closure, the replay audit covers every
+    stage and the run ends in verified cleanup. Level A replaces the local
+    preflight that refuses a retention request before Packet Tracer, so the
+    retention scenario proves the coordinator itself never retains.
+    """
+
+    historical = baseline["coordination"]["full-cleanup"]
+    router3_checkpoint = historical["events"].index(
+        {"event": "checkpoint", "stage": "router3-branch"},
+    )
+    precleanup = "CP_SCALE_FULL_QUALIFICATION_VERIFIED_PRECLEANUP"
+    cleaned = "CP_SCALE_FULL_QUALIFICATION_VERIFIED_AND_CLEANED"
+
+    def write(active_stage, closure=""):
+        return {
+            "active_stage": active_stage,
+            "closure": closure,
+            "event": "evidence.write",
+            "failure": False,
+        }
+
+    expected = copy.deepcopy(historical)
+    expected["events"] = historical["events"][:router3_checkpoint + 1] + [
+        {"event": "project", "stage": "remaining"},
+        {"event": "transition", "previous": "router3-branch", "current": "remaining"},
+        write("remaining"),
+        {
+            "deployment_id": "cp-scale-canonical/remaining/reconciliation",
+            "event": "reconcile",
+        },
+        write("remaining"),
+        {
+            "event": "execute_stage",
+            "site_forwarding_checks": ["forward-1", "forward-2"],
+            "stage": "remaining",
+        },
+        write("", precleanup),
+        {"event": "archive", "phase": "precleanup"},
+        {"event": "cleanup"},
+        {"event": "archive", "phase": "cleanup"},
+        write("", cleaned),
+        {"event": "summary", "stage": "full-qualification"},
+        write("", cleaned),
+        {"event": "transport.stop"},
+    ]
+    expected["final"]["closure"] = cleaned
+    expected["final"]["no_mutation_replay"] = {
+        "audited_stages": [item["stage"] for item in historical["final"]["stages"]],
+        "claim": "NO_MUTATION_REPLAY",
+        "replayed_retained_ids": [],
+        "stages_without_verified_audit": [],
+        "verified": True,
+    }
+
+    verdict = run_product_probe(
+        coordination_source(scenario),
+        tmp_path / scenario,
+    )
+
+    assert trace_differences(expected, verdict["trace"]) == []
     _assert_candidate_provenance(
         verdict, substituted=LEVEL_A_SUBSTITUTED_SYMBOLS,
     )

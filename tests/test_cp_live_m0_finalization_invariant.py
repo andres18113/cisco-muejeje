@@ -130,6 +130,7 @@ try:
             expected_head=HEAD,
             retain_on_full_verification=False,
             target_stage="router0-branch",
+            live_authorization=authorized("router0-branch"),
         )
 except BaseException as exc:  # a cancellation must stay observable, not vanish
     raised = type(exc).__name__ + ": " + str(exc)

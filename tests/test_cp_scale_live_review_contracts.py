@@ -10,7 +10,7 @@ from tests.test_cp_scale_router0_live_runner import RUN_DOUBLES, _probe
 def test_final_result_retains_the_original_cleanup_realtime_observation(verified):
     verdict = _probe(RUN_DOUBLES + "\nverified = " + repr(verified) + r'''
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 coordinator = offline_coordinator(request)
 acquired = []
 original = coordinator.observations_factory
@@ -39,7 +39,7 @@ def test_rejected_preflight_write_failure_keeps_code_two_without_a_session(missi
         + "\nbroken_report = " + repr(broken_report) + r'''
 from dataclasses import replace
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest, CPScalePreflightOutcome
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 coordinator = offline_coordinator(request)
 original = coordinator.preflight
 def inspect(request, **kwargs):
@@ -59,7 +59,8 @@ coordinator.presentation.finalization_incomplete = report
 result = coordinator.run(request)
 live.build_coordinator = lambda request, **kwargs: coordinator
 calls.clear()
-code = live.run("9.0.1.0858", expected_head=HEAD, retain_on_full_verification=False, target_stage="router0-branch")
+code = live.run("9.0.1.0858", expected_head=HEAD, retain_on_full_verification=False, target_stage="router0-branch",
+    live_authorization=authorized("router0-branch"))
 print(json.dumps({"outcome": result.outcome.value, "code": code, "secondary": result.secondary_failures,
     "calls": [item["event"] for item in calls], "sessions": len(sessions)}))
 ''')
@@ -77,7 +78,7 @@ def test_owned_secondaries_report_once_after_close_even_during_cancellation(canc
         + "\nbroken_report = " + repr(broken_report) + r'''
 from dataclasses import replace
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest, CPScaleStageSecondaryFailure
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 coordinator = offline_coordinator(request)
 def stage(projection, **kwargs):
     value = execute_stage(projection, **kwargs)
@@ -119,7 +120,7 @@ def test_publication_snapshots_cannot_mutate_the_run_or_change_after_acquisition
     verdict = _probe(RUN_DOUBLES + r'''
 from dataclasses import FrozenInstanceError
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 coordinator = offline_coordinator(request)
 snapshots = []
 mutations_blocked = []
@@ -152,7 +153,7 @@ def observe_sequence(stages, initial, step):
     sequences.append(result)
     return result
 coordinator_module.execute_stage_sequence = observe_sequence
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 result = offline_coordinator(request).run(request)
 sequence = sequences[0]
 assert all(step.value is stage for step, stage in zip(sequence.steps, result.progress.completed_stages))
@@ -185,7 +186,7 @@ from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveReq
 from packet_tracer_mcp.application.cp_scale_live.checkpoint import CPScaleCheckpoint, CPScaleCheckpointRepository
 from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import CPScaleRepositoryState
 from packet_tracer_mcp.infrastructure.persistence.cp_scale_live import CPScaleLivePersistence
-request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch")
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "router0-branch", authorized("router0-branch"))
 coordinator = offline_coordinator(request)
 from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import EXPECTED_BRANCH, EXPECTED_UPSTREAM
 repository = CPScaleRepositoryState(branch=EXPECTED_BRANCH, upstream=EXPECTED_UPSTREAM, head=HEAD)

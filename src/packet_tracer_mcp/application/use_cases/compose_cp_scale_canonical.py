@@ -177,6 +177,17 @@ class CPScaleCanonicalTargetContract:
     precleanup_closure: str
     cleaned_closure: str
 
+    @property
+    def execution_stages(self) -> tuple[CPScaleCanonicalStage, ...]:
+        """Every stage one run executes, in order.
+
+        The remaining reconciliation is not a separate pipeline: REMAINING runs
+        as the terminal stage of the same sequence, after the build stages.
+        """
+        if self.run_remaining_reconciliation:
+            return (*self.build_stages, CPScaleCanonicalStage.REMAINING)
+        return self.build_stages
+
 
 @dataclass(frozen=True)
 class CPScaleCanonicalStageTransition:
@@ -184,6 +195,10 @@ class CPScaleCanonicalStageTransition:
 
     previous_stage: CPScaleCanonicalStage
     current_stage: CPScaleCanonicalStage
+    #: E4 physical identities of both projections. Equal hashes cover every
+    #: device, module and link attribute, so they prove a zero physical delta.
+    previous_physical_topology_hash: str
+    current_physical_topology_hash: str
     new_device_ids: tuple[str, ...]
     anchor_device_ids: tuple[str, ...]
     new_link_ids: tuple[str, ...]
@@ -212,6 +227,24 @@ class CPScaleCanonicalStageTransition:
             self.replayed_configuration_ids
             or self.replayed_control_plane_ids
             or self.replayed_voice_ids
+        )
+
+    @property
+    def physical_delta_empty(self) -> bool:
+        """The current stage adds no device, anchor, link or module.
+
+        REMAINING must satisfy this: it re-verifies the complete topology and
+        may never extend it.
+        """
+        return bool(
+            self.previous_physical_topology_hash
+            and self.previous_physical_topology_hash
+            == self.current_physical_topology_hash
+            and not (
+                self.new_device_ids
+                or self.anchor_device_ids
+                or self.new_link_ids
+            )
         )
 
     @property
@@ -321,12 +354,25 @@ _CORE_FORWARDING_CHECKS = {
     "Router0": "10.0.0.6",
     "Router3": "10.0.0.1",
 }
+#: The site pairs a stage proves. A joining branch proves the flows that
+#: involve it; REMAINING, the single final authority, names no joining site and
+#: proves every applicable flow of the complete topology.
+_SITE_FORWARDING_SCOPE: dict[CPScaleCanonicalStage, str | None] = {
+    CPScaleCanonicalStage.ROUTER0_BRANCH: MULTILAYER,
+    CPScaleCanonicalStage.ROUTER3_BRANCH: SMALL,
+    CPScaleCanonicalStage.REMAINING: None,
+}
 
 
 def canonical_cp_scale_target_contract(
     target: CPScaleCanonicalTarget | str,
 ) -> CPScaleCanonicalTargetContract:
-    """Resolve the bounded run contract while keeping the legacy default exact."""
+    """Resolve the exact stages and closure one governed LIVE target may claim.
+
+    Bounded branches stop at their own stage. Full qualification runs every
+    build stage and then REMAINING, its single final authority; like the
+    branches, it never retains and closes only after verified cleanup.
+    """
 
     target = CPScaleCanonicalTarget(target)
     full_build_stages = tuple(
@@ -354,13 +400,13 @@ def canonical_cp_scale_target_contract(
     return CPScaleCanonicalTargetContract(
         target=target,
         build_stages=full_build_stages,
-        terminal_stage=CPScaleCanonicalStage.ROUTER3_BRANCH,
+        terminal_stage=CPScaleCanonicalStage.REMAINING,
         run_remaining_reconciliation=True,
         run_full_qualification=True,
-        allow_retention=True,
-        require_cleanup=False,
-        precleanup_closure="CP_SCALE_GOVERNED_VOICE_VERIFIED_PRECLEANUP",
-        cleaned_closure="CP_SCALE_GOVERNED_VOICE_VERIFIED_AND_CLEANED",
+        allow_retention=False,
+        require_cleanup=True,
+        precleanup_closure="CP_SCALE_FULL_QUALIFICATION_VERIFIED_PRECLEANUP",
+        cleaned_closure="CP_SCALE_FULL_QUALIFICATION_VERIFIED_AND_CLEANED",
     )
 
 
@@ -603,15 +649,11 @@ def project_cp_scale_canonical_stage(
         forwarding_checks=dict(_CORE_FORWARDING_CHECKS),
         voice=_compile_stage_voice(composition, topology, configuration, stage),
     )
-    joining_site_id = {
-        CPScaleCanonicalStage.ROUTER0_BRANCH: MULTILAYER,
-        CPScaleCanonicalStage.ROUTER3_BRANCH: SMALL,
-    }.get(stage)
-    if joining_site_id is not None:
+    if stage in _SITE_FORWARDING_SCOPE:
         branch_checks = derive_cp_scale_branch_forwarding_checks(
             composition,
             projection,
-            joining_site_id=joining_site_id,
+            joining_site_id=_SITE_FORWARDING_SCOPE[stage],
         )
         projection = replace(
             projection,
@@ -913,6 +955,8 @@ def canonical_stage_transition_contract(
     return CPScaleCanonicalStageTransition(
         previous_stage=previous.stage,
         current_stage=current.stage,
+        previous_physical_topology_hash=previous.topology.physical_identity_hash,
+        current_physical_topology_hash=current.topology.physical_identity_hash,
         new_device_ids=tuple(sorted(new_device_ids)),
         anchor_device_ids=tuple(sorted(anchor_device_ids)),
         new_link_ids=tuple(sorted(item.id for item in delta.links)),
@@ -1148,9 +1192,15 @@ def derive_cp_scale_branch_forwarding_checks(
     composition: EnterpriseReferenceComposition,
     projection: CPScaleCanonicalStageProjection,
     *,
-    joining_site_id: str,
+    joining_site_id: str | None,
 ) -> tuple[CPScaleSiteForwardingCheck, ...]:
-    """Derive the new branch's pairs from projected E9-backed E4 flows.
+    """Derive the stage's site pairs from projected E9-backed E4 flows.
+
+    A joining branch proves the flows that involve it; REMAINING passes no
+    joining site and proves every applicable flow. A flow applies when both of
+    its sites are active in the projected stage, and an applicable flow
+    without projected E9 forwarding authority fails closed instead of being
+    skipped.
 
     The stage-to-site association is product policy. Flow identity, direction,
     representative workload, addressing action, and reverse-path authority all
@@ -1162,6 +1212,7 @@ def derive_cp_scale_branch_forwarding_checks(
             f"Canonical stage {projection.stage.value!r} requires its E4 plan "
             "to derive branch forwarding."
         )
+    active_sites = _active_lan_sites(projection.stage)
     projected_flow_ids = {
         item.source_traffic_flow_id
         for item in projection.control_plane.verification_expectations
@@ -1171,18 +1222,33 @@ def derive_cp_scale_branch_forwarding_checks(
         (
             item
             for item in composition.enterprise.traffic_flows
-            if item.id in projected_flow_ids
-            and joining_site_id in (
-                item.source_site_id,
-                item.destination_site_id,
+            if item.source_site_id in active_sites
+            and item.destination_site_id in active_sites
+            and (
+                joining_site_id is None
+                or joining_site_id in (
+                    item.source_site_id,
+                    item.destination_site_id,
+                )
             )
         ),
         key=lambda item: item.id,
     )
+    unbacked = [item.id for item in flows if item.id not in projected_flow_ids]
+    if unbacked:
+        raise ValueError(
+            f"Canonical stage {projection.stage.value!r} has applicable E4 "
+            "traffic flows without projected E9 forwarding authority: "
+            + ", ".join(unbacked)
+        )
     if not flows:
         raise ValueError(
             f"Canonical stage {projection.stage.value!r} has no projected "
-            f"E4/E9 forwarding flow for joining site {joining_site_id!r}."
+            "E4/E9 forwarding flow"
+            + (
+                f" for joining site {joining_site_id!r}."
+                if joining_site_id is not None else "."
+            )
         )
 
     checks: list[CPScaleSiteForwardingCheck] = []
