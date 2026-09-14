@@ -88,28 +88,27 @@ CURRENT_NEW_CANDIDATE
   RAW_TRANSCRIPT               = REQUIRED_COMPLETE"""
 
 # The disposable fixture the run is taken over: two devices, so the members below
-# the root actually run; no cable and no configuration, since nothing below a link
-# or an address is admitted; not saved, since the run touches nobody's work
-# (MJ-002). It deliberately says nowhere where either device sits: a
-# `workspace_index` is where one reading handed a device over, not identity or
-# placement order, so a fixture assigning one would promise an ordering.
+# the root actually run; one cable between them, so the link readings reach a link
+# and both its ends; no configuration, since nothing below an address is
+# admitted; not saved, since the run touches nobody's work (MJ-002). It says
+# nowhere where either device or the cable sits: a `workspace_index` or a
+# `workspace_link_index` is where one reading handed an object over, not identity
+# or placement order, so a fixture assigning one would promise an ordering.
 WORKSPACE_FIXTURE = """2960-24TT named Switch0
 PC-PT named PC0
-no cable
+one copper straight-through cable from PC0 FastEthernet0 to Switch0 FastEthernet0/1
 no configuration
 not saved"""
 
 # The members an answering `network.*` root has to reach over that fixture. An
 # empty workspace reaches none: `available_count: 0` calls nothing further.
 EXERCISED_MEMBERS = (
-    "Network.getDeviceCount",
-    "Network.getDeviceAt",
-    "Device.getName",
-    "Device.getModel",
-    "Device.getType",
-    "Device.getPortCount",
-    "Device.getPortAt",
-    "Port.getName",
+    "Network.getDeviceCount", "Network.getDeviceAt", "Device.getName",
+    "Device.getModel", "Device.getType", "Device.getObjectUuid",
+    "Device.getPortCount", "Device.getPortAt", "Port.getName",
+    "Port.getObjectUuid", "Port.getOwnerDevice", "Network.getLinkCount",
+    "Network.getLinkAt", "Link.getConnectionType", "Link.getObjectUuid",
+    "Link.getPort1", "Link.getPort2",
 )
 
 

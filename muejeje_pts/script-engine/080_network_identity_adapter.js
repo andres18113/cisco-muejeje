@@ -32,15 +32,20 @@
  * evidence, not a field this reading may grow. Correlating by index, by name or
  * by assumption would publish a relationship nobody observed (MJ-002, MJ-015).
  *
+ * THE OBJECT UUID IS READ, AND IS NOT PROMOTED. `Device.getObjectUuid()` is on
+ * no installed page; it is read because it answered on 9.0.1.0858 and matched
+ * the UUID a link's end reports for its owner, which is what makes a device and
+ * a link correlatable without a name or a position. It is the platform's answer
+ * in this session: that it survives a restart, a save or a re-creation has not
+ * been observed, so nothing here calls it stable.
+ *
  * WHAT IS NOT READ HERE. `Device` also documents `getSerialNumber()`,
- * `getPower()` and `getUpTime()`. A serial number is the closest thing to an
- * identity key on this interface, and it is deliberately not in this slice: a
- * reading is all-or-nothing by design — a partial one would look like an answer
- * about the platform rather than about our inability to read it — so including
- * the getter with the least standing here would make name and model unreadable
- * on any device that does not answer it. It becomes a field when a target run
- * says what it does, and not before. `getPower` and `getUpTime` are state, not
- * identity, and belong to neither this reading nor this milestone.
+ * `getPower()` and `getUpTime()`. A reading is all-or-nothing by design — a
+ * partial one would look like an answer about the platform rather than about
+ * our inability to read it — so a getter no target run has characterised would
+ * make name and model unreadable on any device that does not answer it. The
+ * serial number becomes a field when a target run says what it does;
+ * `getPower` and `getUpTime` are state, not identity.
  *
  * NOTHING HERE MUTATES ANYTHING. `Device` offers members that move, power and
  * rename a device; none of them is on the boundary's read-only allowlist, so
@@ -64,7 +69,8 @@ function muejejeAdapterIdentityReading(resolution, reason, workspaceIndex) {
         device_present: false,
         name: null,
         model: null,
-        device_type: null
+        device_type: null,
+        object_uuid: null
     };
 }
 
@@ -146,6 +152,10 @@ function muejejeAdapterIdentityFacts(reading, device) {
     );
     reading.device_type = muejejeReadingExactInteger(
         muejejeAdapterCall(device, "Device.getType")
+    );
+    reading.object_uuid = muejejeReadingText(
+        muejejeAdapterCall(device, "Device.getObjectUuid"),
+        MUEJEJE_PLATFORM_LIMITS.MAX_OBJECT_UUID_CHARS
     );
     return reading;
 }

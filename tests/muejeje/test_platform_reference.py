@@ -15,6 +15,13 @@ vouch for another's member — the error the qualified boundary exists to remove
 and one the evidence table had already made once, citing `IPC.hardwareFactory()`
 to the `HardwareFactory` page.
 
+**Two bases, and each entry stands on one.** An entry above the boundary's
+TARGET_EVIDENCED marker is DOCUMENTED and re-read against its own page. One below
+it rests on a target observation instead, so it is held to the opposite: its own
+interface's page does not document it — if it did, it would be DOCUMENTED — and
+the evidence table carries a row naming that observation. The marker and the set
+`test_platform_allowlist` declares are held equal, so neither moves alone.
+
 The pages are read, never copied, and each is hash-pinned here, so a differently
 generated reference fails loudly rather than being re-read as the same one. The
 re-derivation skips when the target build is not installed; the table gate
@@ -30,6 +37,7 @@ import re
 import pytest
 
 from tests.muejeje.support import INSTALLED_HELP, REPO_ROOT, SCRIPT_ENGINE
+from tests.muejeje.test_platform_allowlist import TARGET_EVIDENCED_CALLS
 
 REFERENCE = INSTALLED_HELP / "IpcAPI"
 # The page each interface is documented on, and the bytes it was read in.
@@ -66,17 +74,33 @@ INTERFACE_PAGES = {
         "class_port.html",
         "62107e5a8ea9f4a2019df76974563fe9e7cabe40b786da600a916ecd8f87d1c1",
     ),
+    "Link": (
+        "class_link.html",
+        "0dab984158772796a41b5f4a4e8b03ea6e222159b231e731108d7e6c474374b9",
+    ),
 }
 # What a member answers when it answers a value rather than a platform object,
 # as the reference spells the type.
-VALUE_TYPES = {"int", "bool", "string", "QString", "DeviceType", "ModuleType"}
+VALUE_TYPES = {
+    "int", "bool", "string", "QString", "DeviceType", "ModuleType", "CONNECT_TYPES",
+}
 EVIDENCE_TABLE = "docs/qa/muejeje-pts-offline.md"
+# The comment that separates the boundary's two bases: every entry below it is
+# TARGET_EVIDENCED, and none above it is.
+TARGET_MARKER = "/* TARGET_EVIDENCED"
+# A row of the target-evidence table: the member as a call, then its basis.
+TARGET_ROW = re.compile(
+    r"^\|\s*`([A-Za-z]+)\.([A-Za-z][A-Za-z0-9]*)\([^`]*\)`\s*\|\s*\*\*TARGET_EVIDENCED\*\*\s*\|",
+    re.MULTILINE,
+)
 
+# A member name may carry digits — `Link.getPort1` — and a reader that could not
+# see one would skip the entry while every count it compares stayed consistent.
 ENTRY = re.compile(
-    r'"([A-Za-z]+)\.([A-Za-z]+)":\s*\{arity:\s*(\d+),'
+    r'"([A-Za-z]+)\.([A-Za-z][A-Za-z0-9]*)":\s*\{arity:\s*(\d+),'
     r'\s*hands_over:\s*(?:null|"([A-Za-z]+)")\}'
 )
-ENTRY_KEY = re.compile(r'"[A-Za-z]+\.[A-Za-z]+":')
+ENTRY_KEY = re.compile(r'"[A-Za-z]+\.[A-Za-z][A-Za-z0-9]*":')
 # One member row of a Doxygen class page: the return type, then the signature.
 MEMBER_ROW = re.compile(
     r'<td class="memItemLeft"[^>]*>(.*?)</td><td class="memItemRight"[^>]*>(.*?)</td>',
@@ -85,7 +109,7 @@ MEMBER_ROW = re.compile(
 TAG = re.compile(r"<[^>]+>")
 # A row of the evidence table: the member as a call, then the page it cites.
 EVIDENCE_ROW = re.compile(
-    r"^\|\s*`([A-Za-z]+)\.([A-Za-z]+)\([^`]*\)`\s*\|\s*`(class_[a-z_]+\.html)`\s*\|",
+    r"^\|\s*`([A-Za-z]+)\.([A-Za-z][A-Za-z0-9]*)\([^`]*\)`\s*\|\s*`(class_[a-z_]+\.html)`\s*\|",
     re.MULTILINE,
 )
 
@@ -106,6 +130,17 @@ def admitted_entries() -> dict[str, tuple[int, str | None]]:
         f"{interface}.{member}": (int(arity), hands_over or None)
         for interface, member, arity, hands_over in ENTRY.findall(_allowlist_block())
     }
+
+
+def target_evidenced_entries() -> set[str]:
+    """The entries the boundary declares below its TARGET_EVIDENCED marker."""
+    below = _allowlist_block().split(TARGET_MARKER, 1)[1]
+    return {f"{interface}.{member}" for interface, member, _, _ in ENTRY.findall(below)}
+
+
+def target_rows(text: str) -> list[str]:
+    """`Interface.member` for every row of the target-evidence table."""
+    return [f"{interface}.{member}" for interface, member in TARGET_ROW.findall(text)]
 
 
 def documented_members(page: str) -> dict[str, set[tuple[str, int]]]:
@@ -163,8 +198,29 @@ def test_each_cited_page_is_the_page_this_repository_read(interface: str):
     assert hashlib.sha256((REFERENCE / page).read_bytes()).hexdigest() == digest, page
 
 
+def test_the_boundary_marks_exactly_the_target_evidenced_entries():
+    """The marker in the source and the declared set are one claim, stated twice."""
+    assert _allowlist_block().count(TARGET_MARKER) == 1
+    assert target_evidenced_entries() == TARGET_EVIDENCED_CALLS
+
+
 @requires_installed_reference
-@pytest.mark.parametrize("member", sorted(admitted_entries()))
+@pytest.mark.parametrize("member", sorted(TARGET_EVIDENCED_CALLS))
+def test_a_target_evidenced_member_is_not_documented_on_its_own_interface(member: str):
+    """Otherwise the entry would be DOCUMENTED, and its basis would be wrong.
+
+    Another interface documenting the name — `Cable.getPort1()` — changes
+    nothing: no interface inherits another's members here.
+    """
+    interface, name = member.split(".")
+
+    assert name not in documented_members(_page(interface)), (
+        f"{INTERFACE_PAGES[interface][0]} documents {name}; {member} is DOCUMENTED"
+    )
+
+
+@requires_installed_reference
+@pytest.mark.parametrize("member", sorted(set(admitted_entries()) - TARGET_EVIDENCED_CALLS))
 def test_every_admitted_member_is_documented_on_its_own_interface(member: str):
     """That page, that arity, that answer — never a neighbour's."""
     interface, name = member.split(".")
@@ -195,12 +251,20 @@ def test_one_interfaces_page_never_vouches_for_anothers_member():
 
 
 def test_the_evidence_table_has_one_row_per_entry_citing_its_own_page():
-    """A member cannot be admitted without a row saying what stands behind it."""
-    rows = evidence_rows((REPO_ROOT / EVIDENCE_TABLE).read_text(encoding="utf-8"))
+    """A member cannot be admitted without a row saying what stands behind it.
+
+    A DOCUMENTED entry cites its own page; a TARGET_EVIDENCED one has a row in
+    the target table instead, and no page row to borrow a citation from.
+    """
+    text = (REPO_ROOT / EVIDENCE_TABLE).read_text(encoding="utf-8")
+    rows = evidence_rows(text)
     members = [member for member, _ in rows]
+    targets = target_rows(text)
 
     assert len(members) == len(set(members)), "a member has two rows"
-    assert set(members) == set(admitted_entries())
+    assert len(targets) == len(set(targets)), "a target member has two rows"
+    assert set(members) == set(admitted_entries()) - TARGET_EVIDENCED_CALLS
+    assert set(targets) == TARGET_EVIDENCED_CALLS
     for member, page in rows:
         assert page == INTERFACE_PAGES[member.split(".")[0]][0], member
 
@@ -218,3 +282,5 @@ def test_the_table_reader_finds_rows_and_notices_a_borrowed_citation():
         ("IPC.hardwareFactory", "class_hardware_factory.html"),
     ]
     assert rows[1][1] != INTERFACE_PAGES["IPC"][0]
+    target = "| `Link.getPort1()` | **TARGET_EVIDENCED** | a recorded run |\n"
+    assert target_rows(target) == ["Link.getPort1"] and evidence_rows(target) == []

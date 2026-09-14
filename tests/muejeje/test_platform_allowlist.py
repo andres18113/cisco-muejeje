@@ -37,11 +37,7 @@ import pytest
 
 from tests.muejeje.engine_harness import dispatch_v6, node_available
 from tests.muejeje.measure import js_code_only
-from tests.muejeje.platform_stub import (
-    ACCESS_POINT_ROOT,
-    PORT_DEVICES,
-    platform_stub,
-)
+from tests.muejeje.platform_stub import ACCESS_POINT_ROOT, linked_stub
 from tests.muejeje.support import REPO_ROOT, SCRIPT_ENGINE
 from tests.muejeje.test_platform_declarations import (
     IPC_ADAPTER_FILES,
@@ -50,10 +46,11 @@ from tests.muejeje.test_platform_declarations import (
 
 BOUNDARY = "060_platform_adapter.js"
 
-# Every interface member the boundary may admit, as Cisco's installed IpcAPI
-# reference for 9.0.1.0858 documents it. An undocumented call is a guess, and
-# Packet Tracer answers a guess with a bare `Invalid arguments for IPC call
-# "X"` that says nothing about why (`AGENTS.md` rule 6).
+# Every interface member the boundary may admit as DOCUMENTED: on its own
+# interface's page of Cisco's installed IpcAPI reference for 9.0.1.0858. An
+# uncited call is a guess, and Packet Tracer answers a guess with a bare
+# `Invalid arguments for IPC call "X"` that says nothing about why
+# (`AGENTS.md` rule 6).
 DOCUMENTED_CALLS = {
     "IPC.hardwareFactory", "IPC.network",
     "HardwareFactory.devices",
@@ -67,9 +64,21 @@ DOCUMENTED_CALLS = {
     "ModuleDescriptor.getSlotTypeAt", "ModuleDescriptor.getModuleCount",
     "ModuleDescriptor.getModuleAt",
     "Network.getDeviceCount", "Network.getDeviceAt",
+    "Network.getLinkCount", "Network.getLinkAt", "Link.getConnectionType",
     "Device.getName", "Device.getModel", "Device.getType",
     "Device.getPortCount", "Device.getPortAt", "Port.getName",
+    "Port.getOwnerDevice",
 }
+# Every member admitted as TARGET_EVIDENCED: on no page of its own interface,
+# and observed on 9.0.1.0858 answering on the object the boundary hands out as
+# that interface. The record each one rests on is a row of the evidence table,
+# and `test_platform_reference` holds it off its own interface's page — a member
+# Cisco documented there would be DOCUMENTED instead.
+TARGET_EVIDENCED_CALLS = {
+    "Link.getObjectUuid", "Link.getPort1", "Link.getPort2",
+    "Device.getObjectUuid", "Port.getObjectUuid",
+}
+CITED_CALLS = DOCUMENTED_CALLS | TARGET_EVIDENCED_CALLS
 # Which operation exercises which part of that list. No single call reaches all
 # of it, so the log is compared per operation and as a union: an entry nobody
 # calls would otherwise sit on the allowlist unnoticed.
@@ -77,23 +86,27 @@ CALL_DRIVERS = (
     "platform.device_descriptors", "platform.module_descriptors",
     "platform.module_type_support", "network.device_inventory",
     "network.device_identity", "network.device_ports",
+    "network.link_inventory", "network.link_endpoints",
 )
 # An operation that requires an argument answers nothing without it.
 REQUIRED_ARGS = {
     "network.device_identity": {"workspace_index": 0},
     "network.device_ports": {"workspace_index": 0},
+    "network.link_endpoints": {"workspace_link_index": 0},
     "platform.module_descriptors": {"factory_index": 0},
     "platform.module_type_support": {"factory_index": 0, "module_type": 6},
 }
 
-# An entry of the read-only allowlist, as the boundary declares it.
-ALLOWLIST_ENTRY = re.compile(r'"([A-Za-z]+\.[A-Za-z]+)":\s*\{')
+# An entry of the read-only allowlist, as the boundary declares it. A member name
+# may carry digits (`Link.getPort1`), and an entry this could not see would be an
+# entry no gate here compared.
+ALLOWLIST_ENTRY = re.compile(r'"([A-Za-z]+\.[A-Za-z][A-Za-z0-9]*)":\s*\{')
 # Every documented mutator on these interfaces begins with one of these verbs:
 # `addSupportedModuleType`, `setModelSupportedFlag`, `removeModuleAt`, `create`.
 MUTATING_NAME = re.compile(r"^(?:set|add|remove|create|delete|clear)[A-Z]")
 # A call into the boundary, and the member it spells out.
 CALL_SITE = re.compile(r"\bmuejejeAdapterCall(?:With)?\s*\(")
-QUALIFIED_MEMBER = re.compile(r'"([A-Z][A-Za-z]*\.[a-z][A-Za-z]*)"')
+QUALIFIED_MEMBER = re.compile(r'"([A-Z][A-Za-z]*\.[a-z][A-Za-z0-9]*)"')
 
 # Three models, the first of them carrying a chassis, so one stub drives every
 # factory operation and the whole factory half of the allowlist is reachable.
@@ -117,8 +130,8 @@ def _request(op: str = CALL_DRIVERS[0]) -> str:
 
 
 def _stub() -> str:
-    """The factory above, and a workspace whose devices answer identity and ports."""
-    return platform_stub(THREE_MODELS, devices=PORT_DEVICES)
+    """The factory above, and a linked workspace every workspace reading answers."""
+    return linked_stub(THREE_MODELS)
 
 
 def admitted_calls() -> set[str]:
@@ -130,8 +143,10 @@ def admitted_calls() -> set[str]:
 
 def test_the_allowlist_is_exactly_what_this_repository_can_cite():
     """Equality, because either half alone is a different rule: a subset check
-    admits an uncited call, a superset check lets a cited one disappear."""
-    assert admitted_calls() == DOCUMENTED_CALLS
+    admits an uncited call, a superset check lets a cited one disappear. The
+    two bases are disjoint: an entry stands on one of them, never both."""
+    assert admitted_calls() == CITED_CALLS
+    assert DOCUMENTED_CALLS.isdisjoint(TARGET_EVIDENCED_CALLS)
 
 
 def test_no_admitted_call_is_shaped_like_a_mutation():
@@ -168,9 +183,12 @@ def test_every_call_site_spells_the_interface_member_it_means():
 def test_the_call_site_reader_tells_a_spelled_member_from_a_computed_one():
     """Guards the gate above from passing because it matched nothing."""
     spelled = 'var n = muejejeAdapterCall(platform, "IPC.network");'
+    numbered = 'var p = muejejeAdapterCall(link, "Link.getPort2");'
     computed = "var n = muejejeAdapterCall(platform, member);"
 
     assert QUALIFIED_MEMBER.findall(spelled) == ["IPC.network"]
+    assert QUALIFIED_MEMBER.findall(numbered) == ["Link.getPort2"]
+    assert ALLOWLIST_ENTRY.findall('"Link.getPort1": {arity: 0') == ["Link.getPort1"]
     assert len(CALL_SITE.findall(computed)) == 1
     assert QUALIFIED_MEMBER.findall(computed) == []
 
@@ -185,9 +203,9 @@ def test_an_operation_asks_for_nothing_this_repository_cannot_cite(op: str):
     )
 
     assert called["result"]["resolution"] == "OBSERVED"
-    assert set(called["calls"]) <= DOCUMENTED_CALLS, (
-        f"{op} called something with no reference behind it: "
-        f"{sorted(set(called['calls']) - DOCUMENTED_CALLS)}"
+    assert set(called["calls"]) <= CITED_CALLS, (
+        f"{op} called something with no citation behind it: "
+        f"{sorted(set(called['calls']) - CITED_CALLS)}"
     )
 
 
@@ -202,7 +220,7 @@ def test_every_admitted_call_is_one_an_operation_actually_makes():
             report="{done: mcpDispatchV6(REQUEST) !== null, calls: CALLS}",
         )["calls"])
 
-    assert reached == DOCUMENTED_CALLS
+    assert reached == CITED_CALLS
 
 
 @requires_node
@@ -237,4 +255,4 @@ def test_the_call_log_would_notice_an_undocumented_call():
         report="CALLS",
     )
 
-    assert set(called) - DOCUMENTED_CALLS == {"Device.getUndocumentedThing"}
+    assert set(called) - CITED_CALLS == {"Device.getUndocumentedThing"}

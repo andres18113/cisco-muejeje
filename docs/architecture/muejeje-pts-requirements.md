@@ -903,7 +903,8 @@ kernel state, shapes no envelope and dispatches nothing (MJ-019).
    on `DeviceDescriptor`. A guess earns a bare `Invalid arguments for IPC call
    "X"` that says nothing about why (`AGENTS.md` rule 6).
 2. **No mutation, proved positively.** The allowlist is the proof: it holds
-   only documented getters, and an adapter names no platform member at a call
+   only getters, each documented or target-evidenced on its own interface, and
+   an adapter names no platform member at a call
    site, so a call outside the list cannot be written — it is refused by the
    boundary before a receiver is touched. So is an admitted member asked of an
    object that is a different interface, and a call with the wrong number of
@@ -930,12 +931,13 @@ kernel state, shapes no envelope and dispatches nothing (MJ-019).
 
    Reading an inventory is not assuming a topology, which is what MJ-002
    forbids: no expected count, no naming scheme, no role, no ordering that
-   outlives a reading. What is still unread is unread on purpose — a link, an
-   address, a port's state and a configuration are each a further subject with
-   its own evidence and its own bounds, and none has an operation that needs
-   it yet. A port's *name* is read, by `network.device_ports`, and nothing else
-   about it: no link is followed from it, no address or up/down state is read,
-   and the name is never parsed into a slot or a kind.
+   outlives a reading. What is still unread is unread on purpose — an address,
+   a port's state and a configuration are each a further subject with its own
+   evidence and its own bounds, and none has an operation that needs it yet. A
+   port's *name* and object UUID are read, by `network.device_ports`, and
+   nothing else about it: no link is followed from it, no address or up/down
+   state is read, and the name is never parsed into a slot or a kind. Links are
+   read from the workspace's own link enumeration instead, as below.
 
    **Where the line actually falls, on a device instance.** This artifact does
    read a workspace device *instance*: `Device.getName()`, `getModel()`,
@@ -978,6 +980,24 @@ kernel state, shapes no envelope and dispatches nothing (MJ-019).
    Ports are read one bounded window at a time from `port_offset`, each
    `port_index` is a position in that reading, and a window that stops short
    of `port_count` says so.
+
+   **A link reading reads what was handed over, and decides nothing about its
+   kind.** `network.link_inventory` enumerates the workspace's links in their
+   own address domain — `workspace_link_offset`, and the `workspace_link_index`
+   each is published at — with the connection type the platform answers,
+   published as its number and never translated, and its object UUID.
+   `network.link_endpoints` selects one link by that index and reads its UUID
+   and both ends off one hand-over: for `port1` and `port2`, the port's name,
+   its object UUID and its owner's object UUID. Cisco documents a link's ends
+   only on `Cable` and `Antenna`, and nothing installed says which one a
+   handed-over `Link` is, so the endpoint and UUID getters are admitted on
+   `Link`, `Port` and `Device` as target-evidenced members and no derived
+   interface's member is admitted: a link without endpoint getters is
+   `PLATFORM_MEMBER_ABSENT`, never a link without ends. Ends are correlated with
+   the device and port readings by those UUIDs alone — never by a name, a
+   position or JavaScript reference equality — and a UUID is the platform's
+   answer in a session, not an identity this runtime vouches for beyond it. A
+   link that exists is not a link that converged, and no state is read.
 
 **An unreadable platform is an observation, not a failure.** No V6 error is
 reported for it: the request was admissible, and the answer is that no reading
@@ -1077,10 +1097,11 @@ and keeps the readings it can report distinct.
 interface's installed page — member, arity and what it hands over — with each
 page hash-pinned, and holds the evidence table in the offline audit to one row
 per entry citing that page.
-`tests/muejeje/test_workspace_links_blocked.py` holds the allowlist to admitting
-no member that reads a link, and re-derives from the installed pages why none
-is admitted: every documented route to a link hands over the base `Link`, no
-member hands over a `Cable`, and no page documents `getClassName()`.
+`tests/muejeje/test_workspace_link_members.py` holds the link members to `Link`
+and off every derived interface, and re-derives from the installed pages why
+the endpoint members cannot be documented ones: every documented route to a link
+hands over the base `Link`, no member hands over a `Cable`, no page documents
+`getClassName()`, and no packaged source names a connection type.
 `tests/muejeje/test_platform_readings.py` drives every device reading, every
 field validator behind them, and that a defect inside an adapter reaches the
 caller as `ENGINE_EXCEPTION` rather than as a platform reading;
@@ -1206,9 +1227,11 @@ manifest grows.
 
 **Full Packet Tracer privileges is not all Muejeje capabilities.** The selection
 bounds which IPC calls the Script Module *process* may make. What Muejeje
-*exposes* is the positive V6 allowlist — eight operations, every one read-only —
-and the full-trust change moved none of it: the same operations, the same 27
-admitted `Interface.member` entries, the same failure taxonomy, the same bounds.
+*exposes* is the positive V6 allowlist — ten operations, every one read-only —
+and the full-trust change moved none of it: it kept the same operations, the same
+27 admitted `Interface.member` entries, the same failure taxonomy, the same
+bounds. The read-only link slice that later added `network.link_inventory`,
+`network.link_endpoints` and nine members changed no privilege.
 The policy authorises no arbitrary JavaScript, no `eval`, no implicitly mutating
 operation, no new V6 operation, no new admitted member, no silent fallback and no
 route around the adapter boundary (`MJ-031`).
@@ -1516,18 +1539,18 @@ out of that run's own transcript (MJ-011, MJ-015).
   walk now reads it as an answer. What blocks `CORE_READY` is that neither run is
   established as a canonical qualification, and that the corrected walk has not
   answered on the target.
-- **M3** is not `CORE_READY`: its read-only topology scope is incomplete. The
-  workspace inventory, one device's identity and one device's ports are
-  implemented; the workspace's links are not. Every documented route to a link
-  — `Network.getLinkAt(int)`, or `getLink()` on a port — hands over the base
-  `Link`, which documents only its connection type; endpoints are documented
-  only on the derived `Cable` and `Antenna`, which no documented member hands
-  over from a `Link`; and nothing installed says which one a handed-over `Link`
-  is. The `CONNECT_TYPES` list names no interface, and matching a value against
-  a table of ours would be a mirror (MJ-014). Reading links waits on target
-  evidence of what a Script Module is handed. `network.device_inventory` answered
+- **M3** is not `CORE_READY`. The workspace inventory, one device's identity
+  and ports, the workspace's links and one link's two ends are implemented. The
+  link readings call endpoint and UUID members that Cisco's installed pages do
+  not document on `Link`, `Device` or `Port` — endpoints are documented only on
+  the derived `Cable` and `Antenna`, and nothing installed says which one a
+  handed-over `Link` is — so they are admitted as TARGET_EVIDENCED, on `Link`
+  itself and never on a derived interface, on an operator-supplied LIVE record of
+  `9.0.1.0858`; no Muejeje artifact carrying them has answered on the target
+  yet. The connection type stays the platform's number (MJ-014), and wireless or
+  `Antenna` links are not claimed. `network.device_inventory` answered
   `OBSERVED` on the `6233d86` run, naming the devices on the workspace, and all
-  three workspace readings answered on the `504a6e6` run; every workspace
+  three device readings answered on the `504a6e6` run; every workspace
   capability stays `PENDING_TARGET` until a canonical qualification reaches it
   (MJ-015, MJ-031).
 - **The zero-change cutover** is `NOT_ACHIEVED` (MJ-034): one artifact is

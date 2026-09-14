@@ -46,9 +46,9 @@ ERROR_CODES = {
 # operation is a new name (MJ-008).
 READ_ONLY_OPERATIONS = {
     "network.device_identity", "network.device_inventory",
-    "network.device_ports", "platform.device_descriptors",
-    "platform.module_descriptors", "platform.module_type_support",
-    "runtime.capabilities", "runtime.identify",
+    "network.device_ports", "network.link_endpoints", "network.link_inventory",
+    "platform.device_descriptors", "platform.module_descriptors",
+    "platform.module_type_support", "runtime.capabilities", "runtime.identify",
 }
 
 REQUIREMENTS = "docs/architecture/muejeje-pts-requirements.md"

@@ -52,15 +52,15 @@ def _stub(devices: str = PORT_DEVICES) -> str:
 
 @requires_node
 @pytest.mark.parametrize("device", [
-    "name: 7, model: 'm', ports: []",
-    "name: 'x'.repeat(257), model: 'm', ports: []",
-    "name: 'a', model: null, ports: []",
-    "name: 'a', model: 'm', ports: [{name: 'p'}, null]",
-    "name: 'a', model: 'm', ports: [{name: 7}]",
-    "name: 'a', model: 'm', ports: [{name: 'x'.repeat(257)}]",
-    "name: 'a', model: 'm', ports: [], port_count: -1",
-    "name: 'a', model: 'm', ports: [], port_count: 1.5",
-    f"name: 'a', model: 'm', ports: [], port_count: {BEYOND}",
+    "name: 7, model: 'm', object_uuid: 'u', ports: []",
+    "name: 'x'.repeat(257), model: 'm', object_uuid: 'u', ports: []",
+    "name: 'a', model: null, object_uuid: 'u', ports: []",
+    "name: 'a', model: 'm', object_uuid: 'u', ports: [{name: 'p', object_uuid: 'q'}, null]",
+    "name: 'a', model: 'm', object_uuid: 'u', ports: [{name: 7, object_uuid: 'q'}]",
+    "name: 'a', model: 'm', object_uuid: 'u', ports: [{name: 'x'.repeat(257)}]",
+    "name: 'a', model: 'm', object_uuid: 'u', ports: [], port_count: -1",
+    "name: 'a', model: 'm', object_uuid: 'u', ports: [], port_count: 1.5",
+    f"name: 'a', model: 'm', object_uuid: 'u', ports: [], port_count: {BEYOND}",
 ])
 def test_one_unattributable_fact_makes_the_whole_reading_unusable(device: str):
     """Identity and ports are one answer, so neither half outlives the other.

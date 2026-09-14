@@ -4,8 +4,8 @@ A **stub**, and it stays one. It establishes what an adapter does with an answer
 of a given shape and nothing whatever about Packet Tracer, whose engine and
 hardware factory are a different implementation (MJ-015). The call log is what
 stops it from quietly becoming evidence about the platform: a caller compares
-the recorded calls against Cisco's documented members, so an undocumented call
-fails here rather than on a target (`AGENTS.md` rule 6).
+the recorded calls against the members this repository can cite, so an
+uncited call fails here rather than on a target (`AGENTS.md` rule 6).
 
 **Every object logs the interface it plays, not only the member.** A call is an
 interface member (MJ-031): `getModel` on a workspace device and `getModel` on a
@@ -17,11 +17,13 @@ Every fixture lives here rather than in the modules that use it, so two test
 modules cannot drift into describing two different chassis or two different
 workspaces — and so a shape read from a recording stays one shape. Split out of
 `engine_harness` at its line budget: running the kernel and building a platform
-for it to talk to are two responsibilities (MJ-018, MJ-020).
+for it to talk to are two responsibilities; the workspace half of the platform
+was split again into `workspace_stub` at this module's own (MJ-018, MJ-020).
 """
 
 from __future__ import annotations
 
+from tests.muejeje.workspace_stub import workspace_js
 
 # One chassis shape this repository actually recorded against 9.0.1.0858 — a
 # generic access point: a root reporting `model: ""` with slot types [6, 18],
@@ -121,74 +123,6 @@ def _device_descriptor_js() -> list[str]:
     ]
 
 
-def _workspace_device_js() -> list[str]:
-    """A workspace device, offering a getter only for a field its spec carries.
-
-    So a fixture never answers a question nobody put to it: an inventory device
-    is a name; an identity device also has a model and a DeviceType; a port
-    device carries `ports`, where `port_count` overrides `getPortCount()`, a
-    `null` entry is a port the platform will not hand over, and `dense_ports`
-    cycles the list so a device can have as many ports as a test needs.
-    """
-    return [
-        "function workspacePort(spec) {",
-        "  return {getName: function () { log('Port.getName'); return spec.name; }};",
-        "}",
-        "function workspaceDevice(spec) {",
-        "  var device = {getName: function () {",
-        "    log('Device.getName'); return spec.name;",
-        "  }};",
-        "  if ('model' in spec) {",
-        "    device.getModel = function () {",
-        "      log('Device.getModel'); return spec.model;",
-        "    };",
-        "  }",
-        "  if ('device_type' in spec) {",
-        "    device.getType = function () {",
-        "      log('Device.getType'); return spec.device_type;",
-        "    };",
-        "  }",
-        "  if ('ports' in spec) {",
-        "    device.getPortCount = function () {",
-        "      log('Device.getPortCount');",
-        "      return 'port_count' in spec ? spec.port_count : spec.ports.length;",
-        "    };",
-        "    device.getPortAt = function (index) {",
-        "      log('Device.getPortAt');",
-        "      var port = spec.dense_ports",
-        "        ? spec.ports[index % spec.ports.length] : spec.ports[index];",
-        "      return port ? workspacePort(port) : null;",
-        "    };",
-        "  }",
-        "  return device;",
-        "}",
-    ]
-
-
-def _network_js(dense: bool, reported: str) -> list[str]:
-    """`Network` and the devices it enumerates, as this repository drives them.
-
-    A workspace, not a catalogue: the names are neutral on purpose, because a
-    stub carrying one topology's device names would be a consumer's identifiers
-    living in the test area (MJ-004). `dense` cycles the list so the workspace
-    answers at every index, exactly as the factory does.
-    """
-    pick = "DEVICES[index % DEVICES.length]" if dense else "DEVICES[index]"
-    return [
-        *_workspace_device_js(),
-        "var NETWORK = {",
-        "  getDeviceCount: function () {",
-        f"    log('Network.getDeviceCount'); return {reported};",
-        "  },",
-        "  getDeviceAt: function (index) {",
-        "    log('Network.getDeviceAt');",
-        f"    var spec = {pick};",
-        "    return spec ? workspaceDevice(spec) : null;",
-        "  }",
-        "};",
-    ]
-
-
 def _factory_js(reported: str, refuses: str, dense: bool) -> list[str]:
     """The factory enumeration, and the platform object that answers for it."""
     pick = "MODELS[index % MODELS.length]" if dense else "MODELS[index]"
@@ -215,22 +149,38 @@ def _factory_js(reported: str, refuses: str, dense: bool) -> list[str]:
     ]
 
 
-# A workspace whose devices answer the three identity getters as well as the
-# name, and the models a relay-closure gate needs: types at both ends of the
-# published domain, and a chassis whose own type and slot types are there too.
-# They live here for the same reason `CHASSIS_MODELS` does — two test modules
-# must not drift into describing two different fixtures — and they are still
-# stub input, which is a claim about our code and never about the platform.
+# A workspace whose devices answer the identity getters as well as the name, and
+# the models a relay-closure gate needs: types at both ends of the published
+# domain, and a chassis whose own type and slot types are there too. They live
+# here for the same reason `CHASSIS_MODELS` does, and they are still stub input,
+# which is a claim about our code and never about the platform.
 IDENTITY_DEVICES = (
-    "[{name: 'a', model: 'PT-Router', device_type: 1},"
-    " {name: 'b', model: '', device_type: 7}]"
+    "[{name: 'a', model: 'PT-Router', device_type: 1, object_uuid: 'uuid-a'},"
+    " {name: 'b', model: '', device_type: 7, object_uuid: 'uuid-b'}]"
 )
 # The same workspace with ports: named ones and an unnamed one on the first
 # device, and none on the second, so an empty port list is a reading too.
 PORT_DEVICES = (
-    "[{name: 'a', model: 'PT-Router', device_type: 1,"
-    " ports: [{name: 'port-0'}, {name: 'port-1'}, {name: ''}]},"
-    " {name: 'b', model: '', device_type: 7, ports: []}]"
+    "[{name: 'a', model: 'PT-Router', device_type: 1, object_uuid: 'uuid-a',"
+    " ports: [{name: 'port-0', object_uuid: 'uuid-a-0'},"
+    " {name: 'port-1', object_uuid: 'uuid-a-1'}, {name: '', object_uuid: ''}]},"
+    " {name: 'b', model: '', device_type: 7, object_uuid: 'uuid-b', ports: []}]"
+)
+# A workspace of two devices joined by two links. Every UUID is distinct, so a
+# correlation that matched the wrong object could not pass by coincidence, and
+# the connection types are arbitrary: the platform's own numbers, which nothing
+# may read a medium into (MJ-014). `ends` are `[device, port]` positions.
+LINKED_DEVICES = (
+    "[{name: 'a', model: 'model-a', device_type: 1, object_uuid: 'device-uuid-a',"
+    " ports: [{name: 'a-0', object_uuid: 'port-uuid-a0'},"
+    " {name: 'a-1', object_uuid: 'port-uuid-a1'}]},"
+    " {name: 'b', model: 'model-b', device_type: 2, object_uuid: 'device-uuid-b',"
+    " ports: [{name: 'b-0', object_uuid: 'port-uuid-b0'},"
+    " {name: 'b-1', object_uuid: 'port-uuid-b1'}]}]"
+)
+LINKS = (
+    "[{connection_type: 5, object_uuid: 'link-uuid-0', ends: [[0, 0], [1, 1]]},"
+    " {connection_type: 6, object_uuid: 'link-uuid-1', ends: [[1, 0], [0, 1]]}]"
 )
 # The last whole number JSON carries exactly. Written out rather than read
 # from the kernel, so a fixture cannot move with the bound it exists to test;
@@ -248,14 +198,13 @@ EXTREME_MODELS = (
 
 
 def identity_stub(**kwargs) -> str:
-    """The workspace stub, whose devices answer the identity getters too.
-
-    A device offers only the getters its spec has fields for, so these answer
-    a model and a DeviceType because `IDENTITY_DEVICES` carries both — and an
-    inventory fixture, which carries only names, still cannot look as though
-    it had been asked for them.
-    """
+    """The workspace stub, whose devices answer the identity getters too."""
     return platform_stub(CHASSIS_MODELS, devices=IDENTITY_DEVICES, **kwargs)
+
+
+def linked_stub(models: str = CHASSIS_MODELS, **kwargs) -> str:
+    """A factory and the linked workspace, so every reading has something to read."""
+    return platform_stub(models, devices=LINKED_DEVICES, links=LINKS, **kwargs)
 
 
 def platform_stub(
@@ -263,11 +212,16 @@ def platform_stub(
     *,
     count: str | None = None,
     fail: bool = False,
-    devices: str = "[{name: 'n1'}, {name: 'n2'}, {name: 'n3'}]",
+    devices: str = (
+        "[{name: 'n1', object_uuid: 'u1'}, {name: 'n2', object_uuid: 'u2'},"
+        " {name: 'n3', object_uuid: 'u3'}]"
+    ),
     device_count: str | None = None,
+    links: str = "[]",
+    link_count: str | None = None,
     dense: bool = False,
 ) -> str:
-    """A platform stub built from the documented getters, plus a call log.
+    """A platform stub built from the cited getters, plus a call log.
 
     `models` is a JavaScript array literal of
     `{model, type, supported, module_types}` objects, each optionally carrying
@@ -277,23 +231,25 @@ def platform_stub(
     or a position past the list, makes that call throw, so a hole never reads as
     a null. `module_count`, `slot_count` and `count` override `getModuleCount()`,
     `getSlotCount()` and `getAvailableDeviceCount()`; `fail` makes the first
-    factory call throw. `devices` is the workspace `Network` enumerates, as
-    `{name, model?, device_type?, ports?}` objects — a device offers a getter
-    only for a field it carries, a `null` entry is a device the platform will
-    not hand over, and `device_count` overrides `getDeviceCount()`.
+    factory call throw.
 
-    `dense` makes both enumerations answer at *every* index by cycling their
-    lists, so a reading can be driven at the far end of an address domain.
+    `devices` and `links` are the workspace `Network` enumerates, as
+    `workspace_stub` builds it: a `null` entry is one the platform will not hand
+    over, and `device_count` and `link_count` override the two counts. `dense`
+    makes every enumeration answer at *every* index by cycling its list.
     """
     return "\n".join([
         f"var MODELS = {models};",
         f"var DEVICES = {devices};",
+        f"var LINKS = {links};",
         "var CALLS = [];",
         "function log(name) { CALLS.push(name); }",
         *_module_descriptor_js(),
         *_device_descriptor_js(),
-        *_network_js(
-            dense, "DEVICES.length" if device_count is None else device_count,
+        *workspace_js(
+            dense=dense,
+            devices="DEVICES.length" if device_count is None else device_count,
+            links="LINKS.length" if link_count is None else link_count,
         ),
         *_factory_js("MODELS.length" if count is None else count,
                      "true" if fail else "false", dense),

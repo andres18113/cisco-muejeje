@@ -40,11 +40,11 @@ RESULT_FIELDS = {
 }
 ADMITTED = [
     "network.device_identity", "network.device_inventory",
-    "network.device_ports", "platform.device_descriptors",
-    "platform.module_descriptors", "platform.module_type_support",
-    "runtime.capabilities", "runtime.identify",
+    "network.device_ports", "network.link_endpoints", "network.link_inventory",
+    "platform.device_descriptors", "platform.module_descriptors",
+    "platform.module_type_support", "runtime.capabilities", "runtime.identify",
 ]
-FEATURES = 9
+FEATURES = 11
 
 requires_node = pytest.mark.skipif(
     not node_available(), reason="Node is unavailable; structural gates still run",

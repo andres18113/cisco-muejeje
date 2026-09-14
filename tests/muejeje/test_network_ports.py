@@ -41,7 +41,8 @@ RESULT_FIELDS = {
     "resolution", "unavailable_reason",
     "unavailable_member", "unavailable_argument",
     "workspace_index", "available_count",
-    "device_present", "name", "model", "port_offset", "limit", "port_count",
+    "device_present", "name", "model", "object_uuid", "port_offset", "limit",
+    "port_count",
     "ports", "window_truncated",
 }
 EXACT_MAX = declared_platform_bound("EXACT_INTEGER_MAX")
@@ -133,11 +134,11 @@ def test_a_device_answers_with_its_identity_and_its_ports_from_one_reading():
     assert (result["device_present"], result["name"], result["model"]) == (
         True, "a", "PT-Router",
     )
-    assert result["port_count"] == 3
+    assert (result["object_uuid"], result["port_count"]) == ("uuid-a", 3)
     assert result["ports"] == [
-        {"port_index": 0, "name": "port-0"},
-        {"port_index": 1, "name": "port-1"},
-        {"port_index": 2, "name": ""},
+        {"port_index": 0, "name": "port-0", "object_uuid": "uuid-a-0"},
+        {"port_index": 1, "name": "port-1", "object_uuid": "uuid-a-1"},
+        {"port_index": 2, "name": "", "object_uuid": ""},
     ]
     assert (result["port_offset"], result["limit"]) == (0, WINDOW)
     assert result["window_truncated"] is False
@@ -194,7 +195,8 @@ def test_the_port_window_is_reported_back_and_a_tail_is_marked(
 def test_a_device_with_more_ports_than_any_window_is_paged_rather_than_capped():
     """A thousand ports is a count to page through, one bounded window at a time."""
     many = _one_device(
-        "name: 'wide', model: 'm', ports: [{name: 'p'}], port_count: 1000,"
+        "name: 'wide', model: 'm', object_uuid: 'w',"
+        " ports: [{name: 'p', object_uuid: 'q'}], port_count: 1000,"
         " dense_ports: true"
     )
     first = _observed(many)
@@ -209,7 +211,7 @@ def test_a_device_with_more_ports_than_any_window_is_paged_rather_than_capped():
 def test_a_published_port_index_is_admitted_back_at_the_end_of_its_domain():
     """Relay closure for the port window: the last port that can exist, then past it."""
     widest = _one_device(
-        "name: 'wide', model: 'm', ports: [{name: 'p'}],"
+        "name: 'wide', model: 'm', object_uuid: 'w', ports: [{name: 'p', object_uuid: 'q'}],"
         f" port_count: {EXACT_MAX}, dense_ports: true"
     )
     last = _observed(widest, port_offset=EXACT_MAX - 1)

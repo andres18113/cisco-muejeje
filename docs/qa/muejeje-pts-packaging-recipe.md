@@ -68,20 +68,24 @@ here: the manifest is the source, this table is the reading of it.
 6. `060_platform_adapter.js`
 7. `070_network_adapter.js`
 8. `080_network_identity_adapter.js`
-9. `090_network_ports_adapter.js`
-10. `100_platform_device_adapter.js`
-11. `110_platform_module_adapter.js`
-12. `120_platform_support_adapter.js`
-13. `130_network_identity.js`
-14. `140_network_inventory.js`
-15. `150_network_ports.js`
-16. `160_platform_discovery.js`
-17. `170_platform_modules.js`
-18. `180_platform_support.js`
-19. `190_runtime_capabilities.js`
-20. `200_runtime_identity.js`
-21. `210_dispatcher_v6.js`
-22. `220_lifecycle.js`
+9. `083_network_link_endpoints_adapter.js`
+10. `086_network_link_inventory_adapter.js`
+11. `090_network_ports_adapter.js`
+12. `100_platform_device_adapter.js`
+13. `110_platform_module_adapter.js`
+14. `120_platform_support_adapter.js`
+15. `130_network_identity.js`
+16. `140_network_inventory.js`
+17. `143_network_link_endpoints.js`
+18. `146_network_link_inventory.js`
+19. `150_network_ports.js`
+20. `160_platform_discovery.js`
+21. `170_platform_modules.js`
+22. `180_platform_support.js`
+23. `190_runtime_capabilities.js`
+24. `200_runtime_identity.js`
+25. `210_dispatcher_v6.js`
+26. `220_lifecycle.js`
 
 This list is a reading of `build_options.engine_script_order`, and a gate holds
 it equal to that declaration. An earlier revision named nine of these files
@@ -150,7 +154,7 @@ the GUI.
    the selection is the whole vocabulary rather than a minimum. Packet Tracer's
    privileges decide which IPC calls the module's process may **make**; they
    decide nothing about what Muejeje **exposes**, which is the V6 whitelist —
-   eight operations, every one read-only. **Full Packet Tracer privileges is not
+   ten operations, every one read-only. **Full Packet Tracer privileges is not
    all Muejeje capabilities.** The policy, the call evidence it is *not* derived
    from, and what it explicitly does not authorise are in
    [the privilege map](muejeje-pts-privilege-map.md).
@@ -226,8 +230,8 @@ on a disposable workspace the operator prepares beforehand, and never on a
 topology that holds anyone's real work. **A run declares which workspace it was
 taken over, and that workspace decides what the run can establish**: on an empty
 one an answering `network.*` root reaches no member below it, so nothing beneath
-it is observed. The next declared run requires a specific two-device fixture for
-exactly that reason —
+it is observed. The next declared run requires a specific fixture — two devices
+and the cable between them — for exactly that reason —
 [the full-trust LIVE runbook](muejeje-pts-privilege-live-runbook.md). Every admitted operation is
 read-only. The `runtime.*` ones make no platform call at all; the `platform.*`
 ones make documented getter calls on the hardware *factory*, which describes
@@ -308,9 +312,10 @@ mcpDispatchV6('{"v":6,"operation_rid":"qual-identify-restart","op":"runtime.iden
 
 **Then every other admitted operation.**
 
-**Three of these carry an observed relay input, and every relay input below is
-a placeholder.** Two are addresses in named domains — a `factory_index` in the
-factory enumeration and a `workspace_index` in one workspace reading — and one,
+**Four of these carry an observed relay input, and every relay input below is
+a placeholder.** Three are addresses in named domains — a `factory_index` in the
+factory enumeration, a `workspace_index` among the workspace's devices and a
+`workspace_link_index` among its links — and one,
 `module_type`, is an opaque value the platform produced, relayed and never
 interpreted. They are written below only so each statement is a complete,
 admissible request: a gate drives every one of them through the kernel, and it
@@ -318,7 +323,8 @@ cannot drive a blank. **A placeholder is never entered.** A dependent statement
 is entered only with the value the preceding reading actually published in this
 run — a `factory_index` and a `module_type` from `platform.device_descriptors`
 or `platform.module_descriptors`, a `workspace_index` that
-`network.device_inventory` reported for the device the run means to read — and
+`network.device_inventory` reported for the device the run means to read, a
+`workspace_link_index` that `network.link_inventory` reported — and
 one whose input was not published is not entered at all: it is accounted for as
 `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`. Which descriptor to choose, what to do
 when a reading publishes nothing, and what a mismatch does and does not
@@ -352,20 +358,35 @@ mcpDispatchV6('{"v":6,"operation_rid":"qual-identity","op":"network.device_ident
 mcpDispatchV6('{"v":6,"operation_rid":"qual-ports","op":"network.device_ports","args":{"workspace_index":0,"limit":8}}')
 ```
 
-The last three read the **workspace**, so what they report depends on what the
+```javascript
+mcpDispatchV6('{"v":6,"operation_rid":"qual-links","op":"network.link_inventory","args":{"workspace_link_offset":0,"limit":8}}')
+```
+
+```javascript
+mcpDispatchV6('{"v":6,"operation_rid":"qual-link-endpoints","op":"network.link_endpoints","args":{"workspace_link_index":0}}')
+```
+
+The last five read the **workspace**, so what they report depends on what the
 running instance holds — an empty workspace answering `available_count: 0`, a
-position answering `device_present: false`, or a device answering
-`port_count: 0`, is a reading, not a failure.
+position answering `device_present: false` or `link_present: false`, or a device
+answering `port_count: 0`, is a reading, not a failure.
 Record the workspace's state alongside them, because the same call on a
 different session is a different observation (`MJ-002`).
 
-**The last two must re-report the device they were meant to reach.** They read
+**`network.device_identity` and `network.device_ports` must re-report the device
+they were meant to reach.** They read
 `name` and `model` off the same hand-over they read everything else from, so
 an identity that does not match the one the inventory published at that
 position says the workspace moved between observations. Record
 `WORKSPACE_ATTRIBUTION_UNSTABLE`: the cross-reading chain through that address
 is not qualified, and each call's own answer still stands as an observation in
 the reading that made it.
+
+**`network.link_endpoints` must re-report the link it was meant to reach**: its
+`object_uuid` equal to the one `network.link_inventory` published at that
+`workspace_link_index`. Each end is attributed only through the object UUIDs it
+carries, against the device and port readings of the same run — never through a
+name or a position — as the runbook's link chain sets out.
 
 ### What Packet Tracer prints beside an answer
 

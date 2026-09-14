@@ -29,9 +29,9 @@ import pytest
 
 from tests.muejeje.engine_harness import dispatch_v6, node_available
 from tests.muejeje.measure import js_code_only
-from tests.muejeje.platform_stub import CHASSIS_MODELS, PORT_DEVICES, platform_stub
+from tests.muejeje.platform_stub import CHASSIS_MODELS, linked_stub, platform_stub
 from tests.muejeje.support import SCRIPT_ENGINE
-from tests.muejeje.test_platform_allowlist import DOCUMENTED_CALLS
+from tests.muejeje.test_platform_allowlist import CITED_CALLS
 from tests.muejeje.test_platform_stage import (
     PLATFORM_OPERATIONS,
     STAGE_FIELDS,
@@ -131,7 +131,7 @@ def test_every_platform_reading_publishes_the_stage_pair(op: str):
     set, and an unexplained `UNAVAILABLE` on any of these would otherwise need
     its own cycle to locate.
     """
-    observed = reading(platform_stub(CHASSIS_MODELS, devices=PORT_DEVICES), op)
+    observed = reading(linked_stub(), op)
     absent = reading("", op)
 
     for field in STAGE_FIELDS:
@@ -145,7 +145,7 @@ def test_every_platform_reading_publishes_the_stage_pair(op: str):
 def test_a_published_member_is_always_one_the_boundary_admits(op: str):
     """A stage is an admitted `Interface.member` or nothing.
 
-    A platform object offering neither root is what makes all six stop at a
+    A platform object offering neither root is what makes every one stop at a
     member: `fail` refuses only the factory, and the workspace readings would
     answer straight through it.
     """
@@ -153,7 +153,7 @@ def test_a_published_member_is_always_one_the_boundary_admits(op: str):
 
     assert refused["resolution"] == "UNAVAILABLE"
     assert refused["unavailable_reason"] == "PLATFORM_MEMBER_ABSENT"
-    assert refused["unavailable_member"] in DOCUMENTED_CALLS, refused
+    assert refused["unavailable_member"] in CITED_CALLS, refused
 
 
 def test_the_stage_is_recorded_by_the_boundary_and_nowhere_else():

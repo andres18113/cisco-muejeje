@@ -41,7 +41,7 @@ RESULT_FIELDS = {
     "limit",
     "devices", "window_truncated",
 }
-DEVICE_FIELDS = {"workspace_index", "name"}
+DEVICE_FIELDS = {"workspace_index", "name", "object_uuid"}
 
 requires_node = pytest.mark.skipif(
     not node_available(), reason="Node is unavailable; structural gates still run",
@@ -130,9 +130,10 @@ def test_the_workspace_is_reported_device_by_device():
 @requires_node
 @pytest.mark.parametrize(("devices", "names"), [
     ("[]", []),
-    ("[{name: 'only-one'}]", ["only-one"]),
-    ("[{name: ''}, {name: 'x'}]", ["", "x"]),
-    ("[{name: 'a-b-c'}, {name: 'A'}, {name: '1'}, {name: 'z9'}]",
+    ("[{name: 'only-one', object_uuid: 'u'}]", ["only-one"]),
+    ("[{name: '', object_uuid: 'u'}, {name: 'x', object_uuid: 'v'}]", ["", "x"]),
+    ("[{name: 'a-b-c', object_uuid: '1'}, {name: 'A', object_uuid: '2'},"
+     " {name: '1', object_uuid: '3'}, {name: 'z9', object_uuid: '4'}]",
      ["a-b-c", "A", "1", "z9"]),
 ])
 def test_whatever_is_on_the_workspace_is_what_comes_back(
@@ -214,7 +215,7 @@ def test_both_arguments_are_optional_and_default_to_the_first_window():
 @requires_node
 def test_a_device_inside_the_count_that_is_not_handed_over_is_unusable():
     """A hole is not an absence; reporting fewer devices would invent an answer."""
-    result = _observed("[{name: 'n1'}, null, {name: 'n3'}]")
+    result = _observed("[{name: 'n1', object_uuid: 'u1'}, null, {name: 'n3', object_uuid: 'u3'}]")
 
     assert result["resolution"] == "UNAVAILABLE"
     assert result["unavailable_reason"] == "PLATFORM_ANSWER_UNUSABLE"
@@ -224,7 +225,7 @@ def test_a_device_inside_the_count_that_is_not_handed_over_is_unusable():
 @requires_node
 @pytest.mark.parametrize("name", ["7", "null", "'x'.repeat(257)"])
 def test_a_name_that_is_not_a_bounded_string_cannot_be_attributed(name: str):
-    result = _observed(f"[{{name: {name}}}]")
+    result = _observed(f"[{{name: {name}, object_uuid: 'u'}}]")
 
     assert result["resolution"] == "UNAVAILABLE"
     assert result["unavailable_reason"] == "PLATFORM_ANSWER_UNUSABLE"
@@ -233,7 +234,7 @@ def test_a_name_that_is_not_a_bounded_string_cannot_be_attributed(name: str):
 @requires_node
 def test_a_name_at_its_bound_is_still_a_readable_answer():
     """The other side of the bound, so it is a bound and not a wall."""
-    result = _observed("[{name: 'x'.repeat(256)}]")
+    result = _observed("[{name: 'x'.repeat(256), object_uuid: 'u'}]")
 
     assert result["resolution"] == "OBSERVED"
     assert len(result["devices"][0]["name"]) == 256

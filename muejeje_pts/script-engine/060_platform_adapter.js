@@ -14,72 +14,64 @@
  * `DeviceDescriptor`. Each is its own signature with its own evidence, so each
  * is admitted — or not — on its own. A call site names the member it means as
  * `Interface.member`; every platform object this boundary hands out carries
- * the interface Cisco documents the member that produced it as handing over;
- * and nothing is called until the two agree. A name never inherits another
- * interface's admission (MJ-031).
+ * the interface its producing member's entry names; and nothing is called until
+ * the two agree. A name never inherits another interface's admission, and no
+ * interface inherits another's members (MJ-031).
  *
  * EVERY PLATFORM CALL GOES THROUGH THIS FILE, so "what does this artifact do
  * to Packet Tracer" is answered by the list below rather than by reading every
- * call site. Each admitted member is a documented getter, so no call
- * instantiates a device, powers one, or touches a workspace (MJ-014, MJ-031).
+ * call site. Each admitted member is a getter, so no call instantiates a
+ * device, powers one, or touches a workspace (MJ-014, MJ-031).
  *
  * WHOSE FAILURE WAS IT. Only two things become an unavailable reading: a call
  * made at this boundary, and an answer a reading's validators refused. Anything
  * else that throws in a platform adapter is a defect in this artifact, and it
  * reaches the dispatcher as `ENGINE_EXCEPTION` — reporting it as
  * `PLATFORM_CALL_FAILED` would manufacture an observation about Packet Tracer
- * that Packet Tracer never produced, and a consumer recording target evidence
- * could not tell the two apart (MJ-022). *Where* a reading failed is recorded
- * in `muejejeReadingStage`, since only this file knows.
+ * that Packet Tracer never produced (MJ-022). *Where* a reading failed is
+ * recorded in `muejejeReadingStage`, since only this file knows.
  *
  * WHAT IS READ THROUGH IT lives beside it, one adapter per subject, naming no
- * platform object of its own: a boundary and the things read across it are
- * different responsibilities, and this is the file that has to stay short
- * enough to check in full (MJ-018, MJ-020).
- *
- * IT REACHES NO VERDICT. Whether an answer qualifies anything is decided in
- * Python, from outside the artifact (MJ-011). The module runs as a trusted
- * local Script Module with Packet Tracer's full privilege set, so the
- * selection bounds none of this: the list below does, and it is the list it
- * was before the selection grew (MJ-032). What a target does with a call is
- * unknown until a target does it, so whatever happens is reported as a reading
- * with its reason, and neither an answer nor a refusal is predicted here.
+ * platform object of its own (MJ-018, MJ-020). IT REACHES NO VERDICT: Python
+ * decides what an answer qualifies (MJ-011). The module runs with Packet
+ * Tracer's full privilege set, so the selection bounds none of this — the list
+ * below does (MJ-032) — and what a target does with a call is reported as a
+ * reading with its reason, never predicted here.
  */
 
 /* The platform members this artifact may call, and the whole of what it may
- * call: one entry per interface member, spelled as Cisco's installed IpcAPI
- * reference for 9.0.1.0858 documents it (`help/default/IpcAPI/class_*.html`),
- * and none guessed (`AGENTS.md` rule 6). A gate re-reads every entry against
- * that reference — the member on *its own interface's* page, taking that many
- * arguments, handing over that interface — so one interface's page can never
- * vouch for another's member.
+ * call: one entry per interface member, none guessed (`AGENTS.md` rule 6).
  *
- * `arity` is how many arguments the documented signature takes, so a call
- * that forgot one is refused rather than silently becoming a different call.
- * `hands_over` names the interface of the platform object the member returns,
- * or is null when it returns a value. It is how the boundary knows what the
- * next receiver is, since the object itself cannot be asked.
+ * TWO BASES, AND EACH ENTRY STANDS ON ONE. Every entry above the marker is
+ * DOCUMENTED: on its own interface's page of Cisco's installed IpcAPI reference
+ * for 9.0.1.0858 (`help/default/IpcAPI/class_*.html`), taking that many
+ * arguments and handing over that interface. Every entry below it is
+ * TARGET_EVIDENCED: absent from its own interface's page, and observed on that
+ * build answering on the object this boundary hands out as that interface. A
+ * gate holds each entry to its basis, so a page never vouches for another
+ * interface's member — `Cable` documenting `getPort1()` is not why
+ * `Link.getPort1` is admitted, and nothing here decides a link is a cable.
  *
- * Every entry is a documented getter. `Network` also offers members that
- * create a device or a link, `Device` members that move, power and rename one,
- * and `Port` members that set its bandwidth, duplex, clock rate and addresses;
- * none of them is here. An allowlist rather than a list of forbidden
- * verbs: a name nobody thought to forbid is admitted by a blacklist and refused
- * by this. The factory is enumerated by the unqualified pair, count and index,
- * because it needs no DeviceType argument — asking by type would mean carrying
- * a numeric Cisco enum table as the authority for which types exist (MJ-014).
+ * `arity` is how many arguments the signature takes, so a call that forgot one
+ * is refused rather than becoming a different call. `hands_over` names the
+ * interface of the object the member returns, or is null for a value: it is how
+ * the boundary knows the next receiver, since the object cannot be asked.
  *
- * Documented and deliberately absent, each a further subject with its own
- * bounds and evidence: `Device.getDescriptor()`, the only documented way to
- * relate a workspace device to a factory descriptor, named here so that the
- * relation having an API is on record and nothing manufactures one without it;
- * `Device.getRootModule()`, which hands over installed hardware rather than a
- * description of it; `Device.getSerialNumber()`, `getPower()` and
- * `getUpTime()`; and on `Port`, `getLink()` and `getOwnerDevice()`, which
- * follow a link to whatever is at its other end, `getType()`, `isPortUp()`
- * and its address getters (MJ-002, MJ-014, MJ-015). Which entries have
- * answered on the target build, and through which channel, is the evidence
- * table in `docs/qa/muejeje-pts-offline.md` — not a claim this list makes. */
+ * Every entry is a getter; the members that create, move, power, rename or
+ * configure are not here. An allowlist, not a list of forbidden verbs: a name
+ * nobody thought to forbid is refused by this. The factory is enumerated by
+ * count and index, with no DeviceType argument, so no numeric Cisco enum table
+ * decides which types exist (MJ-014).
+ *
+ * Deliberately absent, each a further subject with its own evidence:
+ * `Device.getDescriptor()`, the documented relation from a workspace device to
+ * a factory descriptor, named so nothing manufactures one without it;
+ * `Device.getRootModule()`, installed hardware rather than its description;
+ * `getSerialNumber()`, `getPower()` and `getUpTime()`; `Port.getLink()`, a
+ * second route to a link; `Port.getRemotePortName()` and `Cable.getOtherPort()`,
+ * which address an end by name; and a port's type, state and addresses
+ * (MJ-002, MJ-015). Which entries answered through which channel is the
+ * evidence table in `docs/qa/muejeje-pts-offline.md`, not a claim this makes. */
 var MUEJEJE_PLATFORM_READ_ONLY_CALLS = {
     "IPC.hardwareFactory": {arity: 0, hands_over: "HardwareFactory"},
     "IPC.network": {arity: 0, hands_over: "Network"},
@@ -102,12 +94,22 @@ var MUEJEJE_PLATFORM_READ_ONLY_CALLS = {
     "ModuleDescriptor.getModuleAt": {arity: 1, hands_over: "ModuleDescriptor"},
     "Network.getDeviceCount": {arity: 0, hands_over: null},
     "Network.getDeviceAt": {arity: 1, hands_over: "Device"},
+    "Network.getLinkCount": {arity: 0, hands_over: null},
+    "Network.getLinkAt": {arity: 1, hands_over: "Link"},
+    "Link.getConnectionType": {arity: 0, hands_over: null},
     "Device.getName": {arity: 0, hands_over: null},
     "Device.getModel": {arity: 0, hands_over: null},
     "Device.getType": {arity: 0, hands_over: null},
     "Device.getPortCount": {arity: 0, hands_over: null},
     "Device.getPortAt": {arity: 1, hands_over: "Port"},
-    "Port.getName": {arity: 0, hands_over: null}
+    "Port.getName": {arity: 0, hands_over: null},
+    "Port.getOwnerDevice": {arity: 0, hands_over: "Device"},
+    /* TARGET_EVIDENCED: every entry below this marker, and none above it. */
+    "Link.getObjectUuid": {arity: 0, hands_over: null},
+    "Link.getPort1": {arity: 0, hands_over: "Port"},
+    "Link.getPort2": {arity: 0, hands_over: "Port"},
+    "Device.getObjectUuid": {arity: 0, hands_over: null},
+    "Port.getObjectUuid": {arity: 0, hands_over: null}
 };
 
 /* The mark this boundary puts on every platform object it hands out.
@@ -138,8 +140,7 @@ function muejejeAdapterHandle(platformInterface, platformObject) {
  * like something Packet Tracer did. A member that is not there is reported as
  * absent rather than as a failed call, because nothing was called: "this
  * object does not offer that member" and "the call did not return" are
- * different observations with different next steps, and collapsing them would
- * invent a refusal nobody performed. */
+ * different observations with different next steps. */
 function muejejeAdapterCall(receiver, member) {
     var name = muejejeAdapterAdmitted(receiver, member, 0, null);
     var answer;
@@ -157,11 +158,10 @@ function muejejeAdapterCall(receiver, member) {
  * argument is refused rather than silently becoming the no-argument call.
  *
  * The argument is named `argument` and not `index` because it is not always
- * one: `getAvailableDeviceAt(int)` and `getSlotTypeAt(int)` are addressed by
- * position, while `isModuleTypeSupported(ModuleType)` is handed a *value* the
- * platform itself produced. Calling that value an index would say the type
- * space is an enumeration this artifact walks, which is the numeric-mirror
- * reading MJ-014 exists to prevent. */
+ * one: `getAvailableDeviceAt(int)` is addressed by position, while
+ * `isModuleTypeSupported(ModuleType)` is handed a *value* the platform itself
+ * produced. Calling that value an index would say the type space is an
+ * enumeration this artifact walks, which is the reading MJ-014 prevents. */
 function muejejeAdapterCallWith(receiver, member, argument) {
     var name = muejejeAdapterAdmitted(receiver, member, 1, argument);
     var answer;
@@ -216,8 +216,8 @@ function muejejeAdapterAdmitted(receiver, member, arity, argument) {
  *
  * A value is returned as it came, for a reading's own validators to hold to
  * their rules. An object is handed over marked with the interface its entry
- * documents, the only place a receiver's interface is ever decided. `null` is
- * the platform handing over nothing and comes back as null, for the adapter to
+ * names, the only place a receiver's interface is ever decided. `null` is the
+ * platform handing over nothing and comes back as null, for the adapter to
  * read as what the platform said — an absent root module, a null module
  * position, a missing device inside a count — since only it knows which it
  * asked for. `undefined` is not `null`: like any other value in an object's

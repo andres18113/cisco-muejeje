@@ -9,9 +9,12 @@ quietly become a decision about what Muejeje *exposes*.
     full Packet Tracer privileges != all Muejeje capabilities
 
 Two things are pinned here against a baseline **frozen at the full-trust
-change**: the V6 whitelist is eight read-only operations, and the platform
-allowlist is the same 27 `Interface.member` entries it was before the privilege
-set grew.
+change**: the V6 whitelist was eight read-only operations, and the platform
+allowlist the same 27 `Interface.member` entries it was before the privilege
+set grew. **Growth since is written out beside the baseline, named for the
+change that brought it** — the read-only link slice added two operations and
+nine members, none of them a privilege change — so the baseline stays the set
+somebody froze, and nothing grows by growing something else.
 
 **Both baselines are written out here, as literals.** The member baseline used to
 be `frozenset(DOCUMENTED_CALLS)` — the same collection the allowlist gate reads
@@ -29,16 +32,16 @@ import re
 from tests.muejeje.support import SCRIPT_ENGINE, repo_manifest
 from tests.muejeje.test_capability_claims import admitted_operations
 from tests.muejeje.test_platform_allowlist import (
-    DOCUMENTED_CALLS,
+    CITED_CALLS,
     MUTATING_NAME,
     admitted_calls,
 )
 from tests.muejeje.test_privileges import FULL_TRUSTED_SET
 
-# The V6 whitelist as it stands at the full-trust change: eight operations,
+# The V6 whitelist as it stood at the full-trust change: eight operations,
 # every one read-only. Frozen so a privilege set cannot smuggle an operation in
 # beside it without failing here.
-EXPECTED_OPERATIONS = frozenset({
+FULL_TRUST_OPERATIONS = frozenset({
     "network.device_identity",
     "network.device_inventory",
     "network.device_ports",
@@ -48,11 +51,14 @@ EXPECTED_OPERATIONS = frozenset({
     "runtime.capabilities",
     "runtime.identify",
 })
+# What the read-only link slice added, under the same full-trust selection.
+LINK_SLICE_OPERATIONS = frozenset({"network.link_endpoints", "network.link_inventory"})
+EXPECTED_OPERATIONS = FULL_TRUST_OPERATIONS | LINK_SLICE_OPERATIONS
 
-# The read-only member allowlist as it stands at the same change, written out
+# The read-only member allowlist as it stood at the same change, written out
 # rather than read from the collection the allowlist gate also reads. Nothing
 # derives it, so nothing can grow it by growing something else.
-EXPECTED_MEMBERS = frozenset({
+FULL_TRUST_MEMBERS = frozenset({
     "IPC.hardwareFactory",
     "IPC.network",
     "HardwareFactory.devices",
@@ -81,6 +87,20 @@ EXPECTED_MEMBERS = frozenset({
     "Device.getPortAt",
     "Port.getName",
 })
+# The members the read-only link slice added: four documented, five evidenced on
+# the target. Written out for the same reason the baseline is.
+LINK_SLICE_MEMBERS = frozenset({
+    "Network.getLinkCount",
+    "Network.getLinkAt",
+    "Link.getConnectionType",
+    "Port.getOwnerDevice",
+    "Link.getObjectUuid",
+    "Link.getPort1",
+    "Link.getPort2",
+    "Device.getObjectUuid",
+    "Port.getObjectUuid",
+})
+EXPECTED_MEMBERS = FULL_TRUST_MEMBERS | LINK_SLICE_MEMBERS
 
 READ_ONLY_FLAG = re.compile(r"read_only:\s*(true|false)")
 
@@ -98,18 +118,21 @@ def test_the_privilege_change_is_the_full_trusted_set():
 def test_the_frozen_member_baseline_is_not_the_citation_list_itself():
     """The strengthening this module needed, asserted rather than assumed.
 
-    Equality with `DOCUMENTED_CALLS` is the reconciliation — the baseline must
-    not drift away from the citations either — and identity with it would be the
+    Equality with `CITED_CALLS` is the reconciliation — the baseline must not
+    drift away from the citations either — and identity with it would be the
     hole: two collections that can only ever agree cannot catch a member added
     to both.
     """
-    assert EXPECTED_MEMBERS == frozenset(DOCUMENTED_CALLS)
-    assert EXPECTED_MEMBERS is not DOCUMENTED_CALLS
-    assert len(EXPECTED_MEMBERS) == 27
+    assert EXPECTED_MEMBERS == frozenset(CITED_CALLS)
+    assert EXPECTED_MEMBERS is not CITED_CALLS
+    assert len(FULL_TRUST_MEMBERS) == 27 and len(EXPECTED_MEMBERS) == 36
+    assert FULL_TRUST_MEMBERS.isdisjoint(LINK_SLICE_MEMBERS)
+    assert FULL_TRUST_OPERATIONS.isdisjoint(LINK_SLICE_OPERATIONS)
 
 
 def test_the_privilege_change_adds_no_runtime_v6_operation():
-    """The whitelist is the same eight operations, whatever the privilege set.
+    """The whitelist is the frozen baseline and its named additions, whatever
+    the privilege set.
 
     The full set broadens what Packet Tracer permits the process to call. It
     adds no operation a consumer may send, and the frozen set is what proves the

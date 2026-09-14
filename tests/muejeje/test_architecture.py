@@ -56,13 +56,16 @@ FUNCTION_EXCEPTIONS: dict[str, str] = {
 # Modules in the test area that carry fixtures, measurement or a harness
 # rather than claims. Everything else there must be a test module.
 #
-# `measure.py` was split out of `support.py`, and `platform_stub.py` out of
-# `engine_harness.py`, each when its predecessor crossed its own line budget.
-# Building a fixture, measuring a file, running the kernel and building a
-# platform for it to talk to are four responsibilities, and the budget is what
-# forced each split instead of letting it be argued about (MJ-018, MJ-020).
+# `measure.py` and `result_shapes.py` were split out of `support.py`,
+# `platform_stub.py` out of `engine_harness.py`, and `workspace_stub.py` out of
+# `platform_stub.py`, each when its predecessor crossed its own line budget.
+# Building a fixture, measuring a file, freezing a contract, running the kernel
+# and building each half of a platform for it to talk to are separate
+# responsibilities, and the budget is what forced each split instead of letting
+# it be argued about (MJ-018, MJ-020).
 SUPPORT_MODULES = {
-    "support.py", "measure.py", "engine_harness.py", "platform_stub.py",
+    "support.py", "measure.py", "result_shapes.py", "engine_harness.py",
+    "platform_stub.py", "workspace_stub.py",
 }
 
 # The monolith M0F broke up. Its absence is part of the gate: moving the same

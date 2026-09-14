@@ -37,6 +37,7 @@ from tests.muejeje.test_live_runbook import runbook_body, runbook_prose
 RELAY_INPUTS = {
     "factory_index": "a **factory address**",
     "workspace_index": "a **workspace address**",
+    "workspace_link_index": "a **workspace link address**",
     "module_type": "an **opaque platform-produced value**",
 }
 
@@ -112,10 +113,11 @@ def test_a_module_type_is_never_called_an_address():
     assert "Every address comes from a reading" not in prose
 
 
-def test_the_two_addresses_keep_their_named_domains():
+def test_the_three_addresses_keep_their_named_domains():
     assert (
-        "The two addresses keep their named domains (`MJ-029`): a factory "
-        "address is never sent where a workspace address is expected"
+        "The three addresses keep their named domains (`MJ-029`): a factory "
+        "address is never sent where a workspace address is expected, a "
+        "device's workspace address never where a workspace link address is"
         in runbook_prose()
     )
 

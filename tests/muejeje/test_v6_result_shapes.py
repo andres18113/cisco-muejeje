@@ -21,8 +21,8 @@ Split out of `test_v6_compatibility` when that module crossed its own line
 budget. The envelope a consumer parses and the answers it reads are two
 claims, and the budget is what forced the split rather than letting it be
 argued about (MJ-018, MJ-020). The frozen shapes themselves are declared data
-and live with the rest of it in `support`, because they grow with every new
-operation while these gates do not.
+and live in `result_shapes`, because they grow with every new operation while
+these gates do not.
 
 None of this is a claim about Packet Tracer. It is a claim about the contract
 we publish, checked against the kernel that implements it under Node (MJ-015).
@@ -35,8 +35,8 @@ import json
 import pytest
 
 from tests.muejeje.engine_harness import dispatch_v6, node_available
-from tests.muejeje.platform_stub import CHASSIS_MODELS, PORT_DEVICES, platform_stub
-from tests.muejeje.support import REQUIRED_NESTED_FIELDS, REQUIRED_RESULT_FIELDS
+from tests.muejeje.platform_stub import linked_stub
+from tests.muejeje.result_shapes import REQUIRED_NESTED_FIELDS, REQUIRED_RESULT_FIELDS
 
 # Which operations have to be asked against a platform for their published
 # shape to be visible at all. One answers an empty list when there is no
@@ -44,7 +44,8 @@ from tests.muejeje.support import REQUIRED_NESTED_FIELDS, REQUIRED_RESULT_FIELDS
 # consumer actually parses is the one driven here.
 NEEDS_PLATFORM = frozenset({
     "network.device_identity", "network.device_ports",
-    "network.device_inventory", "platform.device_descriptors",
+    "network.device_inventory", "network.link_endpoints",
+    "network.link_inventory", "platform.device_descriptors",
     "platform.module_descriptors", "platform.module_type_support",
 })
 # An operation whose arguments are not all optional needs them supplied before
@@ -52,6 +53,7 @@ NEEDS_PLATFORM = frozenset({
 REQUIRED_ARGS = {
     "network.device_identity": {"workspace_index": 0},
     "network.device_ports": {"workspace_index": 0},
+    "network.link_endpoints": {"workspace_link_index": 0},
     "platform.module_descriptors": {"factory_index": 0},
     "platform.module_type_support": {"factory_index": 0, "module_type": 6},
 }
@@ -77,10 +79,7 @@ def _request(op: str) -> str:
 
 
 def _answer(op: str) -> dict:
-    stub = (
-        platform_stub(CHASSIS_MODELS, devices=PORT_DEVICES)
-        if op in NEEDS_PLATFORM else ""
-    )
+    stub = linked_stub() if op in NEEDS_PLATFORM else ""
     return dispatch_v6(_request(op), prelude=stub)
 
 

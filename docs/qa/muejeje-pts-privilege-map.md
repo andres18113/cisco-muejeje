@@ -314,7 +314,10 @@ boundary, and the full-trust change moved none of it: the same eight V6
 operations, every one `read_only`, the same 27 admitted `Interface.member`
 entries, the same failure taxonomy, the same bounds. `test_privilege_scope` holds
 both against a baseline frozen at this change, written out there as literals
-rather than read from the collections it is checking (`MJ-031`, `MJ-032`).
+rather than read from the collections it is checking (`MJ-031`, `MJ-032`). The
+read-only link slice later added two operations and nine members under the same
+selection, and they are written out there beside the baseline rather than into
+it, named for the change that brought them.
 
 What the policy explicitly does **not** authorise: arbitrary JavaScript,
 `eval`/`new Function`, an implicitly mutating operation, a new V6 operation, a new

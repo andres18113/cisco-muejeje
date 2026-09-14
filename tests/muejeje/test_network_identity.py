@@ -46,11 +46,12 @@ RESULT_FIELDS = {
     "resolution", "unavailable_reason",
     "unavailable_member", "unavailable_argument",
     "workspace_index", "available_count",
-    "device_present", "name", "model", "device_type",
+    "device_present", "name", "model", "device_type", "object_uuid",
 }
 # Every identity fact, so a test can assert the whole set is absent at once
-# rather than naming three fields and forgetting the fourth one added later.
-IDENTITY_FIELDS = ("name", "model", "device_type")
+# rather than naming three fields and forgetting the fourth one added later —
+# which is what `object_uuid` was.
+IDENTITY_FIELDS = ("name", "model", "device_type", "object_uuid")
 
 requires_node = pytest.mark.skipif(
     not node_available(), reason="Node is unavailable; structural gates still run",
@@ -127,7 +128,7 @@ def test_the_result_shape_is_the_same_whether_the_platform_answered():
     assert absent["unavailable_reason"] == "PLATFORM_ABSENT"
     assert absent["available_count"] is None
     assert absent["device_present"] is False
-    assert [absent[field] for field in IDENTITY_FIELDS] == [None] * 3
+    assert [absent[field] for field in IDENTITY_FIELDS] == [None] * len(IDENTITY_FIELDS)
 
 
 @requires_node
@@ -142,6 +143,7 @@ def test_one_device_answers_with_the_identity_read_in_that_same_reading():
     assert result["name"] == "b"
     assert result["model"] == ""
     assert result["device_type"] == 7
+    assert result["object_uuid"] == "uuid-b"
 
 
 @requires_node
@@ -184,7 +186,7 @@ def test_an_index_past_the_end_is_an_answer_not_an_unreadable_platform():
     assert result["available_count"] == 2
     assert result["workspace_index"] == 9
     assert result["device_present"] is False
-    assert [result[field] for field in IDENTITY_FIELDS] == [None] * 3
+    assert [result[field] for field in IDENTITY_FIELDS] == [None] * len(IDENTITY_FIELDS)
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +242,9 @@ def test_every_identity_field_is_checked_before_it_is_reported(
     all-or-nothing reading is only honest while every getter in it is one the
     platform reliably answers.
     """
-    spec = {"name": "'a'", "model": "'PT-Router'", "device_type": "1"}
+    spec = {
+        "name": "'a'", "model": "'PT-Router'", "device_type": "1", "object_uuid": "'u'",
+    }
     spec[field] = value
     inner = ", ".join(f"{name}: {literal}" for name, literal in spec.items())
     prelude = identity_stub().replace(f"var DEVICES = {IDENTITY_DEVICES};",
@@ -250,7 +254,7 @@ def test_every_identity_field_is_checked_before_it_is_reported(
 
     assert result["resolution"] == "UNAVAILABLE"
     assert result["unavailable_reason"] == "PLATFORM_ANSWER_UNUSABLE"
-    assert [result[name] for name in IDENTITY_FIELDS] == [None] * 3
+    assert [result[name] for name in IDENTITY_FIELDS] == [None] * len(IDENTITY_FIELDS)
 
 
 @requires_node

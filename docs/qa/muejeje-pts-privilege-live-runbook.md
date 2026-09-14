@@ -37,7 +37,7 @@ its results are read under.
 | recipe id | `1d836e478ff3caf5d7a3cc2fa3823005943d6a07c637820f1a23d6ff274a37a7` | read back from `report.build_recipe_id` |
 | artifact | `11073b67603fe795657f4c38aee1039063a6e87c299e618bc63ffafdd17857a8`, 48698 bytes | measured after saving |
 | privileges | `["GET_NETWORK_INFO"]` | **every privilege the module offers, all eleven, and no box left clear** |
-| workspace | the two-device fixture below | **the same two-device fixture, required before qualification** |
+| workspace | the two-device fixture below | **the two-device fixture, now with one cable between them, required before qualification** |
 | observed relay inputs | read out of the reading that published them | **read out of the reading that published them** |
 | qualification accounting | every operation `EXECUTED` or `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE` | **every operation `EXECUTED` or `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`** |
 | raw evidence | **none: `OFFICIAL_RUN_718DB50_RAW_TRANSCRIPT = NOT_CAPTURED`.** What stands for that run is the operator's reported observations | **one append-only transcript per execution, named by artifact SHA-256 and run id** |
@@ -91,15 +91,18 @@ them. The boundary hands a `null` over as one for every member and refuses
 `undefined` or a primitive in an object's place; the walk is bounded by the
 positions it asks as well as by the nodes it keeps — at most `511` calls, the
 same worst case the node ceiling allowed when it reserved them beside the root —
-and says `module_positions_truncated` when the first runs out. No operation, no admitted
-member and no failure code changed. No capability, transport, link operation,
-mutation or M4 work is in this artifact.
+and says `module_positions_truncated` when the first runs out. Neither changed an
+operation, an admitted member or a failure code. **The read-only link slice after
+them did**: two operations, `network.link_inventory` and `network.link_endpoints`,
+nine admitted members, and an `object_uuid` beside what the device readings
+already published — see *The link chain*. No transport, mutation or M4 work is in
+this artifact.
 
 **Full Packet Tracer privileges is not all Muejeje capabilities.** The selection
 decides which IPC calls the Script Module *process* may make. What Muejeje
-*exposes* is the V6 whitelist — the same eight operations, every one read-only —
-and a gate holds both that whitelist and the 27-entry `Interface.member`
-allowlist against a baseline frozen at this change
+*exposes* is the V6 whitelist — ten operations, every one read-only — and a gate
+holds both that whitelist and the 36-entry `Interface.member` allowlist against
+the baseline frozen at the full-trust change and the additions named since
 ([the privilege map](muejeje-pts-privilege-map.md), `MJ-031`, `MJ-032`).
 
 **No `.pts` exists for this candidate yet**, so nothing here says what its bytes
@@ -121,13 +124,13 @@ The recipe's four preconditions, and two more that belong to this run:
    ```text
    2960-24TT named Switch0
    PC-PT named PC0
-   no cable
+   one copper straight-through cable from PC0 FastEthernet0 to Switch0 FastEthernet0/1
    no configuration
    not saved
    ```
 
    **No position is part of the fixture, and none is predicted here.** Where
-   either device sits is not something a person places, declares or remembers:
+   either device or the cable sits is not something a person places, declares or remembers:
    it is what one reading reports, in that reading (`MJ-002`). A runbook that
    said "Switch0 is at index 0" would be asserting a workspace ordering the
    runtime explicitly refuses to promise, and the first run whose workspace
@@ -146,8 +149,9 @@ it is reached: `available_count: 0` is a valid reading that calls nothing
 further, so a run over an empty workspace could report a working root while
 every member beneath it stayed as unobserved as it was before.
 
-Two devices are what make the descendant members actually run. With the fixture
-above in place, a root that answers exercises, where each applies:
+Two devices and the cable between them are what make the descendant members
+actually run. With the fixture above in place, a root that answers exercises,
+where each applies:
 
 ```text
 Network.getDeviceCount    the inventory has a count to report
@@ -155,9 +159,18 @@ Network.getDeviceAt       a device is handed over at each position the count cov
 Device.getName            Switch0 and PC0 are named
 Device.getModel           2960-24TT and PC-PT are reported
 Device.getType            the workspace device type is read
+Device.getObjectUuid      each device reports the UUID a link's end names its owner by
 Device.getPortCount       a switch with ports, and a PC, are counted
 Device.getPortAt          a port is handed over
 Port.getName              that port is named
+Port.getObjectUuid        each port reports the UUID a link's end names it by
+Network.getLinkCount      the link inventory has a count to report
+Network.getLinkAt         the cable is handed over at the position the count covers
+Link.getConnectionType    the cable's connection type is read, as a number
+Link.getObjectUuid        the cable's UUID is read
+Link.getPort1             one end of the cable is handed over
+Link.getPort2             the other end is handed over
+Port.getOwnerDevice       each end names the device that owns it
 ```
 
 **A member is qualified by its own answer, never by its root's.** If
@@ -174,19 +187,21 @@ its own answer.
 
 ## Every relay input comes from a reading, never from this page
 
-Three qualification statements carry an **observed relay input**: a value one
-reading published, sent back by a later statement. The three are not one kind
+Four qualification statements carry an **observed relay input**: a value one
+reading published, sent back by a later statement. The four are not one kind
 of thing, and the difference is kept:
 
 | Relay input | What it is | Published by |
 | --- | --- | --- |
 | `factory_index` | a **factory address** — a position in the factory enumeration | `platform.device_descriptors` |
 | `workspace_index` | a **workspace address** — the position one workspace reading handed a device over at | `network.device_inventory` |
+| `workspace_link_index` | a **workspace link address** — the position one link reading handed a link over at | `network.link_inventory` |
 | `module_type` | an **opaque platform-produced value** — relayed as the platform emitted it, and never interpreted | `platform.device_descriptors` (`supported_module_types`) or `platform.module_descriptors` (a chassis node's `module_type`) |
 
-The two addresses keep their named domains (`MJ-029`): a factory address is
-never sent where a workspace address is expected, and the kernel refuses one
-sent the wrong way. **A `module_type` is not an address at all** — it names no
+The three addresses keep their named domains (`MJ-029`): a factory address is
+never sent where a workspace address is expected, a device's workspace address
+never where a workspace link address is, and the kernel refuses one sent the
+wrong way. **A `module_type` is not an address at all** — it names no
 position, and nothing in this run reads a meaning into it (`MJ-014`).
 
 **None of these values is typed from this document.** Each is read out of the
@@ -227,6 +242,39 @@ is not entered at all, and is accounted for as
 A position is never carried across runs, and never written into this document
 as a fact. It is the position the platform handed a device over at, in the one
 reading that says so.
+
+### The link chain
+
+1. **`network.link_inventory` runs first** of the two link readings, after the
+   workspace chain. Its envelope is appended to the transcript body as it came
+   back, and it is the provenance anchor for every workspace link address used
+   later in the run.
+2. The fixture holds one cable, so a count other than one is recorded as a
+   fixture finding rather than read around. Take **the `workspace_link_index`
+   the inventory's entry reports**.
+3. **If the inventory published none** — it did not answer `OBSERVED`, or its
+   window holds no link — `network.link_endpoints` is
+   `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`, with the reason. No further window
+   is requested.
+4. Otherwise enter `network.link_endpoints` with **that observed workspace link
+   address**. Its `object_uuid` must equal the `object_uuid` the inventory
+   entry reported.
+5. **Each end is attributed by UUID alone.** Its `owner_device_object_uuid` must
+   equal the `object_uuid` `network.device_inventory` reported for exactly one
+   device, and its `object_uuid` must equal the `object_uuid` of exactly one
+   port in a `network.device_ports` reading of that device — the `Switch0`
+   reading the workspace chain took, and one more `network.device_ports`
+   statement for `PC0`, entered with the `workspace_index` the inventory
+   reported for it. One end must be a port of `PC0` and the other a port of
+   `Switch0`; which is `port1` is not predicted, and a port's name is recorded
+   beside it and never used to find it.
+6. `connection_type` is recorded as the number that came back, and read as
+   nothing: no medium and no kind of cable.
+
+A link that answers `PLATFORM_MEMBER_ABSENT` or `PLATFORM_CALL_FAILED` at an
+endpoint member is recorded as exactly that, with the member it names. It is
+not a link without ends, and nothing is concluded from this fixture about a
+link of any other kind.
 
 ### What an unstable attribution invalidates, and what it does not
 
@@ -307,8 +355,8 @@ NOT_EXERCISED_PREREQUISITE_UNAVAILABLE   a relay input it needs was not publishe
 ```
 
 An operation that carries no relay input — every `runtime.*` operation,
-`platform.device_descriptors` and `network.device_inventory` — is always
-entered, and is always `EXECUTED`. A dependent operation is `EXECUTED` only when
+`platform.device_descriptors`, `network.device_inventory` and
+`network.link_inventory` — is always entered, and is always `EXECUTED`. A dependent operation is `EXECUTED` only when
 every relay input it carries was observed in this run; otherwise it is
 `NOT_EXERCISED_PREREQUISITE_UNAVAILABLE`, recorded with the input that was
 missing and the observation that did not publish it.
@@ -343,6 +391,13 @@ When `network.device_inventory` publishes no `workspace_index` for `Switch0`:
 network.device_inventory        EXECUTED
 network.device_identity         NOT_EXERCISED_PREREQUISITE_UNAVAILABLE
 network.device_ports            NOT_EXERCISED_PREREQUISITE_UNAVAILABLE
+```
+
+When `network.link_inventory` publishes no `workspace_link_index`:
+
+```text
+network.link_inventory          EXECUTED
+network.link_endpoints          NOT_EXERCISED_PREREQUISITE_UNAVAILABLE
 ```
 
 The accounting is complete when every operation `runtime.capabilities` reported

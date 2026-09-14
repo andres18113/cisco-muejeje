@@ -43,6 +43,10 @@ WORKED_EXAMPLES = (
         "network.device_identity         NOT_EXERCISED_PREREQUISITE_UNAVAILABLE",
         "network.device_ports            NOT_EXERCISED_PREREQUISITE_UNAVAILABLE",
     ),
+    (
+        "network.link_inventory          EXECUTED",
+        "network.link_endpoints          NOT_EXERCISED_PREREQUISITE_UNAVAILABLE",
+    ),
 )
 
 
@@ -112,7 +116,9 @@ def test_the_accounting_is_complete_only_with_one_line_per_operation():
 # Which operations can go unexercised, derived from what the recipe writes.
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("example", WORKED_EXAMPLES, ids=["no-factory", "no-type", "no-switch"])
+@pytest.mark.parametrize(
+    "example", WORKED_EXAMPLES, ids=["no-factory", "no-type", "no-switch", "no-link"],
+)
 def test_each_worked_example_is_carried_as_its_own_block(example: tuple[str, ...]):
     assert carries_block(example, runbook_body()), example
 

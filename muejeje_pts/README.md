@@ -35,12 +35,16 @@ and the build audit refuses a declared order the names do not sort in:
 | `060_platform_adapter.js` | the **only** file that names `ipc`; the read-only call boundary |
 | `070_network_adapter.js` | the workspace device inventory, through that boundary |
 | `080_network_identity_adapter.js` | one workspace device's identity, in one reading |
+| `083_network_link_endpoints_adapter.js` | one workspace link's two ends, with the UUIDs that attribute them, in one reading |
+| `086_network_link_inventory_adapter.js` | the workspace link inventory, through that boundary |
 | `090_network_ports_adapter.js` | one workspace device's ports beside its identity, in one reading |
 | `100_platform_device_adapter.js` | the device-descriptor reading, through that boundary |
 | `110_platform_module_adapter.js` | the bounded chassis-module reading, through that boundary |
 | `120_platform_support_adapter.js` | the module-type support reading, through that boundary |
 | `130_network_identity.js` | the `network.device_identity` operation |
 | `140_network_inventory.js` | the `network.device_inventory` operation |
+| `143_network_link_endpoints.js` | the `network.link_endpoints` operation |
+| `146_network_link_inventory.js` | the `network.link_inventory` operation |
 | `150_network_ports.js` | the `network.device_ports` operation |
 | `160_platform_discovery.js` | the `platform.device_descriptors` operation |
 | `170_platform_modules.js` | the `platform.module_descriptors` operation |
@@ -87,7 +91,7 @@ copy is five that a new operation puts out of step, so every other document
 names whichever operations it has a reason to name and a gate holds this one
 complete (`MJ-008`).
 
-Eight operations are admitted, all read-only:
+Ten operations are admitted, all read-only:
 
 | Operation | Answers |
 | --- | --- |
@@ -96,9 +100,11 @@ Eight operations are admitted, all read-only:
 | `platform.device_descriptors` | *what does this Packet Tracer offer* — each available device model with the `factory_index` it was read at, the DeviceType and the module types the platform reports for it, or a reason the reading was unavailable |
 | `platform.module_descriptors` | *what is one model described as carrying* — the chassis of the model at a `factory_index`, node by node, each with where it sits in the chassis, its type, its slot types, its hot-swap flag and the positions inside its module count that answered `null`, or a reason the reading was unavailable |
 | `platform.module_type_support` | *does this model accept this module type* — for the model at a `factory_index`, the descriptor's own answer for one type value, with the model and DeviceType read back beside it, or a reason the reading was unavailable |
-| `network.device_inventory` | *what does this Packet Tracer currently hold* — a bounded window over the devices on the workspace, each with the `workspace_index` it was read at and the name the platform gave it, or a reason the reading was unavailable |
-| `network.device_identity` | *what is the device at this position* — the name, model and DeviceType the platform reports for the device at a `workspace_index`, all read in that same observation, or a reason the reading was unavailable |
-| `network.device_ports` | *what ports does the device at this position have* — the name and model of the device at a `workspace_index` and a bounded window of its ports, each with the `port_index` it was read at and the name the platform gave it, all from that one device in one observation, or a reason the reading was unavailable |
+| `network.device_inventory` | *what does this Packet Tracer currently hold* — a bounded window over the devices on the workspace, each with the `workspace_index` it was read at, the name the platform gave it and the object UUID it reports, or a reason the reading was unavailable |
+| `network.device_identity` | *what is the device at this position* — the name, model, DeviceType and object UUID the platform reports for the device at a `workspace_index`, all read in that same observation, or a reason the reading was unavailable |
+| `network.device_ports` | *what ports does the device at this position have* — the name, model and object UUID of the device at a `workspace_index` and a bounded window of its ports, each with the `port_index` it was read at, the name the platform gave it and its object UUID, all from that one device in one observation, or a reason the reading was unavailable |
+| `network.link_inventory` | *which links does this workspace hold* — a bounded window over the links on the workspace, each with the `workspace_link_index` it was read at, the connection type the platform reports as its own opaque number, and its object UUID, or a reason the reading was unavailable |
+| `network.link_endpoints` | *which two ports does the link at this position join* — for the link at a `workspace_link_index`, its object UUID and, as `port1` and `port2`, each end's port name, port object UUID and owner device object UUID, all off that one link in one observation, or a reason the reading was unavailable |
 
 The two runtime operations read the same whitelist, from the dispatcher that
 owns it, so they can never describe different contracts. The platform ones
@@ -109,7 +115,8 @@ DeviceType, a module-type table or a catalogue of model names to be useful,
 which is what keeps them free of a Cisco enum mirror (`MJ-014`).
 
 **What one operation publishes, the next one admits.** A factory index, a
-workspace index and a `ModuleType` are values a consumer relays among them, so
+workspace index, a workspace link index and a `ModuleType` are values a consumer
+relays among them, so
 each has one declared domain and no consuming rule narrows it: this runtime
 never hands out a value it will then refuse (`MJ-029`). That domain is
 fidelity, not a ceiling — any whole number JSON carries exactly — so every
@@ -117,13 +124,14 @@ index below `available_count` can be sent back, and a topology of any size is
 read one bounded window at a time. Each index is reported where it was read,
 never left to be derived from an offset.
 
-**Two address domains, and neither answers for the other.** A position in the
-factory and a position on the workspace are numbers of the same shape in two
-different enumerations, so every argument and field that carries one says
-which: `factory_index` and `factory_offset`, `workspace_index` and
-`workspace_offset`. A value relayed by the name it was published under reaches
-the domain it came from; sent to the other, it is refused as `INVALID_ARGS`
-rather than read as a different subject. An operation about one model or one
+**Three address domains, and none answers for another.** A position in the
+factory, a position among the workspace's devices and a position among its links
+are numbers of the same shape in three different enumerations, so every argument
+and field that carries one says which: `factory_index` and `factory_offset`,
+`workspace_index` and `workspace_offset`, `workspace_link_index` and
+`workspace_link_offset`. A value relayed by the name it was published under
+reaches the domain it came from; sent to another, it is refused as
+`INVALID_ARGS` rather than read as a different subject. An operation about one model or one
 device also requires the index that selects it — nothing is ever read "by
 default" at position 0 (`MJ-029`).
 
@@ -150,11 +158,25 @@ in the same call, after one hand-over — so the ports are attributable without 
 consumer combining an identity read at one moment with ports read at another,
 which on a changing workspace would describe a device that never existed. Ports
 come one bounded window at a time from `port_offset`; each carries the
-`port_index` it was read at and the name the platform gave it, and nothing more:
-no link, no address, no state, and no parsing of the name (`MJ-002`, `MJ-029`,
-`MJ-031`).
+`port_index` it was read at, the name the platform gave it and the object UUID it
+reports, and nothing more: no link followed, no address, no state, and no
+parsing of the name (`MJ-002`, `MJ-029`, `MJ-031`).
 
-None of the eight reports anything it has not observed, and none certifies its
+`network.link_inventory` and `network.link_endpoints` read the workspace's
+links, and **decide nothing about what kind of link they were handed**. Cisco's
+installed pages document a link's ends only on `Cable` and `Antenna`, while the
+link enumeration hands over a `Link`; the endpoint and UUID getters are admitted
+on `Link`, `Port` and `Device` as target-evidenced members, and no `Cable` or
+`Antenna` member is admitted. So a link that does not offer an end is
+`PLATFORM_MEMBER_ABSENT` at `Link.getPort1`, never a link without ends, and the
+connection type is published as the platform's number and translated by nothing
+(`MJ-014`). An end is related to a port and a device by the object UUIDs the
+platform reports on both sides — never by a name, a position, or JavaScript
+reference equality — and a UUID is the platform's answer in a session: what it
+means across a restart, a save or a re-creation is not claimed. A link that
+exists is not a link that converged, and no state is read (`MJ-002`, `MJ-031`).
+
+None of the ten reports anything it has not observed, and none certifies its
 own verification: the engine cannot audit the engine, so Python decides what an
 answer establishes (`MJ-011`).
 
@@ -169,13 +191,17 @@ the members on a declared read-only allowlist, asked of a platform object it
 handed out itself as that interface. The adapters
 beside it read one subject each — the device factory, the chassis of one model,
 whether one model accepts one module type, the devices on the workspace, the
-identity of one of them, and one device's ports beside that identity — and name no platform object of their own.
+identity of one of them, one device's ports beside that identity, the links on
+the workspace, and one link's two ends — and name no platform object of their own.
 
 **The read-only proof is that list, not a list of forbidden verbs.** A
 blacklist admits every name nobody thought to forbid, and once the member name
-is data it cannot see the call at all. So the allowlist holds documented
-getters only, a gate holds it equal to what this repository can cite and
-re-reads each entry off its own interface's installed page, another fails if
+is data it cannot see the call at all. So the allowlist holds getters only, each
+on one of two bases — DOCUMENTED on its own interface's installed page, or
+TARGET_EVIDENCED on the object the boundary hands out as that interface and on
+no page of its own — and a gate holds it equal to what this repository can cite,
+re-reads each documented entry off its own page and holds each target-evidenced
+one off it, another fails if
 any adapter names a platform member at a call site or leaves one unspelled, and
 a third compares the calls that actually ran, interface by interface, against
 the same set. The mutating-verb pattern stays as a second line of defence over
@@ -216,9 +242,10 @@ than the policy it claims (`MJ-032`).
 
 **Full Packet Tracer privileges is not all Muejeje capabilities.** Packet
 Tracer's privileges decide which IPC calls this module's *process* may make. What
-Muejeje *exposes* is the V6 whitelist — eight operations, every one read-only,
-over a 27-entry `Interface.member` allowlist — and the full-trust change moved
-neither (`MJ-031`).
+Muejeje *exposes* is the V6 whitelist — ten operations, every one read-only,
+over a 36-entry `Interface.member` allowlist. The full-trust change moved
+neither, and the read-only link slice that grew both changed no privilege
+(`MJ-031`).
 
 Which privilege each *call* requires is a separate fact, and it still holds.
 Index 1, `GET_NETWORK_INFO`, is required for both `IPC.hardwareFactory()` and

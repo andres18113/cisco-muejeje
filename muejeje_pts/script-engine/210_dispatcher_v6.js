@@ -35,6 +35,16 @@ function muejejeV6OperationTable() {
                 args: MUEJEJE_NETWORK_PORTS_ARGS,
                 handler: muejejeNetworkDevicePorts
             },
+            "network.link_endpoints": {
+                read_only: true,
+                args: MUEJEJE_NETWORK_LINK_ENDPOINTS_ARGS,
+                handler: muejejeNetworkLinkEndpoints
+            },
+            "network.link_inventory": {
+                read_only: true,
+                args: MUEJEJE_NETWORK_LINK_INVENTORY_ARGS,
+                handler: muejejeNetworkLinkInventory
+            },
             "platform.device_descriptors": {
                 read_only: true,
                 /* The operation declares what its own arguments mean; this

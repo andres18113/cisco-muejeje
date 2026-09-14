@@ -29,6 +29,8 @@ var MUEJEJE_CORE = {
     SUPPORTED_FEATURES: [
         "network.device_reading",
         "network.identity_reading",
+        "network.link_endpoint_reading",
+        "network.link_reading",
         "network.port_reading",
         "platform.descriptor_discovery",
         "platform.module_discovery",

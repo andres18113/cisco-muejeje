@@ -37,7 +37,11 @@
  * A PORT INDEX IS A POSITION, NOT A NAME AND NOT AN IDENTITY. `port_index` is
  * the argument the port was handed over at, in this reading, and nothing more.
  * The name is what the platform called the port; nothing here parses it into a
- * slot, a module or a kind (MJ-002, MJ-014).
+ * slot, a module or a kind (MJ-002, MJ-014). The object UUIDs the platform
+ * reports for the device and for each port are read beside them, because they
+ * are what a link's ends report too: a consumer relates an end to a port by
+ * that answer, never by a name or a position, and nothing here claims the UUID
+ * outlives the session it was read in.
  *
  * NOTHING HERE FOLLOWS A LINK, READS AN ADDRESS OR A STATE, OR MUTATES. `Port`
  * offers members that return its link and the device at the other end, its
@@ -66,6 +70,7 @@ function muejejeAdapterPortsReading(resolution, reason, workspaceIndex, window) 
         device_present: false,
         name: null,
         model: null,
+        object_uuid: null,
         port_offset: window.offset,
         limit: window.limit,
         port_count: null,
@@ -151,6 +156,10 @@ function muejejeAdapterPortsOfDevice(reading, device, window) {
         muejejeAdapterCall(device, "Device.getModel"),
         MUEJEJE_PLATFORM_LIMITS.MAX_MODEL_CHARS
     );
+    reading.object_uuid = muejejeReadingText(
+        muejejeAdapterCall(device, "Device.getObjectUuid"),
+        MUEJEJE_PLATFORM_LIMITS.MAX_OBJECT_UUID_CHARS
+    );
     reading.port_count = muejejeReadingCount(
         muejejeAdapterCall(device, "Device.getPortCount")
     );
@@ -175,6 +184,10 @@ function muejejeAdapterPort(device, position) {
         name: muejejeReadingText(
             muejejeAdapterCall(port, "Port.getName"),
             MUEJEJE_PLATFORM_LIMITS.MAX_NAME_CHARS
+        ),
+        object_uuid: muejejeReadingText(
+            muejejeAdapterCall(port, "Port.getObjectUuid"),
+            MUEJEJE_PLATFORM_LIMITS.MAX_OBJECT_UUID_CHARS
         )
     };
 }

@@ -47,6 +47,8 @@ PLATFORM_OPERATIONS = {
     "network.device_inventory": {},
     "network.device_identity": {"workspace_index": 0},
     "network.device_ports": {"workspace_index": 0},
+    "network.link_inventory": {},
+    "network.link_endpoints": {"workspace_link_index": 0},
 }
 STAGE_FIELDS = ("unavailable_member", "unavailable_argument")
 

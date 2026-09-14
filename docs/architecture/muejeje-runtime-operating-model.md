@@ -146,9 +146,10 @@ minimum. **It is a deployment decision, and no token is declared as required.**
 **Full Packet Tracer privileges is not all Muejeje capabilities**, and the two
 must never be read as one. Packet Tracer's privileges decide which IPC calls the
 Script Module *process* may make; Muejeje's V6 whitelist decides which operations
-it *exposes* — eight, every one read-only, over a 27-entry `Interface.member`
-allowlist. The full-trust change moved neither, and a gate holds both against a
-baseline frozen at it (`MJ-031`, `MJ-032`).
+it *exposes* — ten, every one read-only, over a 36-entry `Interface.member`
+allowlist. The full-trust change moved neither, and a gate holds both against the
+baseline frozen at it and the additions the read-only link slice named since
+(`MJ-031`, `MJ-032`).
 
 Which privilege each *call* requires is a separate fact that still holds:
 `IPC.hardwareFactory()` and `IPC.network()` — the two calls the whole read-only
@@ -171,14 +172,16 @@ that calls nothing and therefore reports no module state.
 
 **What is not built.** The transport, every mutating operation, and every
 reading beyond the hardware factory, the workspace inventory, one device's
-identity and that device's port names.
+identity, that device's ports, the workspace's links and one link's two ends.
 
 **On a workspace device this artifact reads identity and structural metadata**
-— the name, the model, the DeviceType, the port count and each port's name,
-asked of the device instance the platform handed over. It reads and writes no
-**mutable operational or configuration state**: no address, no link, no port
-up/down state, no running or startup configuration, no power, uptime or serial
-number. Those members are documented and none is admitted. The target shape,
+— the name, the model, the DeviceType, the object UUID, the port count and each
+port's name and object UUID, asked of the device instance the platform handed
+over. It reads and writes no **mutable operational or configuration state**: no
+address, no port up/down or link state, no running or startup configuration, no
+power, uptime or serial number. Those members are documented and none is
+admitted. A link is read as what exists — its connection type as the platform's
+number, its UUID and its two ends — and never as whether it converged. The target shape,
 with each stage marked:
 
 ```text

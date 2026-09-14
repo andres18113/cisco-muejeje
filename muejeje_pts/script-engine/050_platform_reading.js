@@ -25,10 +25,9 @@
  *                      consumer pages through it one window at a time.
  *
  * Nothing in this repository has measured a Packet Tracer limit, so no number
- * here is presented as one (MJ-015, MJ-029). An earlier revision capped every
- * index at 4096 and refused any count above 65536. Neither bounded work — the
- * window already did — and together they made a large enough workspace
- * unreadable rather than paged.
+ * here is presented as one (MJ-015, MJ-029). An earlier cap of 4096 on every
+ * index and 65536 on every count bounded no work — the window already did — and
+ * made a large enough workspace unreadable rather than paged.
  *
  * A VALIDATOR REFUSING AN ANSWER IS A READING; a validator throwing for any
  * other reason is not. The distinction is `muejejeReadingReason` below, and it
@@ -38,12 +37,12 @@
 
 var MUEJEJE_PLATFORM_LIMITS = {
     /* WORK PER REQUEST: how many entries one reading of each enumeration
-     * carries. More entries past a window are reported, and a consumer asks
-     * for the next window; none of these says how many models a factory
-     * offers or how many devices a workspace holds. */
+     * carries. Entries past a window are reported and asked for in the next
+     * one; none of these says how many models, devices, ports or links exist. */
     MAX_FACTORY_WINDOW: 32,
     MAX_WORKSPACE_WINDOW: 64,
     MAX_PORT_WINDOW: 64,
+    MAX_LINK_WINDOW: 64,
     MAX_MODULE_TYPES: 64,
     MAX_SLOTS: 64,
     /* A chassis descriptor is a tree, and a tree has no bound this repository
@@ -68,11 +67,12 @@ var MUEJEJE_PLATFORM_LIMITS = {
      * MAX_MODULE_NODES. A descriptor needing more is evidence about that
      * descriptor, never the survey's total over all 172 at once. */
     MAX_MODULE_POSITIONS: 511,
-    /* How long a model or a name — a device's or a port's — in one reading
-     * may be. No ceiling on either has been measured; this bounds the size of
-     * an answer, and the caller says which bound applies. */
+    /* How long a model, a name (a device's or a port's) or an object UUID may be
+     * in one reading. None has a measured ceiling and no page documents a UUID's
+     * form: each bounds an answer's size, parses nothing, and the caller picks. */
     MAX_MODEL_CHARS: 256,
     MAX_NAME_CHARS: 256,
+    MAX_OBJECT_UUID_CHARS: 256,
     /* NUMERIC FIDELITY: one domain for every number this artifact publishes
      * or admits back — an index, a count, a DeviceType, a ModuleType.
      *

@@ -25,8 +25,7 @@ never a value merely outside some older, narrower bound. Where the platform
 decides where an enumeration ends, the stub reports the largest count this
 runtime can carry, so the last index published is the last that can exist.
 
-Nothing here is a claim about Packet Tracer. It is a claim about the contract
-this artifact publishes, driven against a stub under Node (MJ-015).
+Nothing here is a claim about Packet Tracer, only about our contract (MJ-015).
 """
 
 from __future__ import annotations
@@ -54,9 +53,9 @@ LAST_INDEX = EXACT_MAX - 1
 # Every bound the platform readings declare, by what it limits. A ceiling on an
 # address or a count is the third kind, and the one this module keeps out.
 WORK_BOUNDS = {
-    "MAX_FACTORY_WINDOW", "MAX_WORKSPACE_WINDOW", "MAX_MODULE_TYPES",
-    "MAX_SLOTS", "MAX_MODULE_NODES", "MAX_MODULE_POSITIONS", "MAX_MODULE_DEPTH",
-    "MAX_MODEL_CHARS", "MAX_NAME_CHARS", "MAX_PORT_WINDOW",
+    "MAX_FACTORY_WINDOW", "MAX_WORKSPACE_WINDOW", "MAX_PORT_WINDOW", "MAX_LINK_WINDOW",
+    "MAX_MODULE_TYPES", "MAX_SLOTS", "MAX_MODULE_NODES", "MAX_MODULE_POSITIONS",
+    "MAX_MODULE_DEPTH", "MAX_MODEL_CHARS", "MAX_NAME_CHARS", "MAX_OBJECT_UUID_CHARS",
 }
 FIDELITY_BOUNDS = {"EXACT_INTEGER_MIN", "EXACT_INTEGER_MAX"}
 DECLARED_BOUND = re.compile(r"^\s*([A-Z][A-Z_]*):", re.MULTILINE)
@@ -256,6 +255,7 @@ def test_a_window_may_start_at_the_end_of_the_domain_and_not_past_it(op: str):
     ("180_platform_support.js", ("EXACT_INTEGER_MIN", "EXACT_INTEGER_MAX")),
     ("140_network_inventory.js", ("EXACT_INTEGER_MAX",)),
     ("130_network_identity.js", ("EXACT_INTEGER_MAX",)),
+    ("143_network_link_endpoints.js", ("EXACT_INTEGER_MAX",)), ("146_network_link_inventory.js", ("EXACT_INTEGER_MAX",)),
 ])
 def test_every_consumer_names_the_one_fidelity_declaration(
     operation: str, bounds: tuple[str, ...],
@@ -269,7 +269,7 @@ def test_every_consumer_names_the_one_fidelity_declaration(
 
 @pytest.mark.parametrize("producer", [
     "100_platform_device_adapter.js", "110_platform_module_adapter.js",
-    "120_platform_support_adapter.js", "080_network_identity_adapter.js",
+    "120_platform_support_adapter.js", "080_network_identity_adapter.js", "086_network_link_inventory_adapter.js",
 ])
 def test_every_producer_reads_a_platform_value_through_the_domain_validator(
     producer: str,

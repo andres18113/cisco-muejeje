@@ -103,14 +103,17 @@ function muejejeAdapterInventoryRead(platform, window) {
     };
 }
 
-/* One device: the `workspace_index` it was read at, and the name the platform
- * gave for it.
+/* One device: the `workspace_index` it was read at, the name the platform gave
+ * for it, and the object UUID the platform reports for it.
  *
  * The index is not an identity — a workspace can change between readings, and
  * nothing here claims otherwise — so it is reported as what it is: where this
- * device was in this reading. A device inside the count that the platform will
- * not hand over is an answer that cannot be attributed, exactly as a missing
- * descriptor inside the device count is. */
+ * device was in this reading. The object UUID is what lets a consumer relate
+ * this device to a link's end without a name or a position; it is reported as
+ * the platform's answer, and what it means beyond this session is not claimed.
+ * A device inside the count that the platform will not hand over is an answer
+ * that cannot be attributed, exactly as a missing descriptor inside the device
+ * count is. */
 function muejejeAdapterInventoryEntry(network, index) {
     var device = muejejeAdapterCallWith(network, "Network.getDeviceAt", index);
     if (!device) {
@@ -121,6 +124,10 @@ function muejejeAdapterInventoryEntry(network, index) {
         name: muejejeReadingText(
             muejejeAdapterCall(device, "Device.getName"),
             MUEJEJE_PLATFORM_LIMITS.MAX_NAME_CHARS
+        ),
+        object_uuid: muejejeReadingText(
+            muejejeAdapterCall(device, "Device.getObjectUuid"),
+            MUEJEJE_PLATFORM_LIMITS.MAX_OBJECT_UUID_CHARS
         )
     };
 }

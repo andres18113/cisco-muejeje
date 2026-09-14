@@ -127,9 +127,10 @@ recorded in the v2 preflight inventory (eight pages, including three that the
 original audit missed). The IpcAPI class pages every admitted platform member
 is documented on are pinned separately, by hash, in
 `tests/muejeje/test_platform_reference.py`, which re-reads each one on a
-machine that has the target build. The three pages the unread links rest on —
-`Link`, `Cable` and `Antenna` — are pinned the same way in
-`tests/muejeje/test_workspace_links_blocked.py`.
+machine that has the target build. The `Link` page is pinned there with the
+members that cite it; the `Cable` and `Antenna` pages the link readings are
+measured against are pinned the same way in
+`tests/muejeje/test_workspace_link_members.py`.
 
 ## What the tool does, and does not do
 
@@ -1065,7 +1066,7 @@ platform was, which is why no other milestone moved with it.
 | `M0B` | a canonical qualification first, then credential and transport API qualification. The privilege question is answered as far as evidence answers it — `[]` denied both roots at `d37ba37`, `GET_NETWORK_INFO` reached them at `718db50`, `CHANGE_NETWORK_INFO` reached the two members beneath them at `6233d86` — but no run that satisfied the procedure has reached them, so no API is baselined. No transport exists, so `MJ-026`'s terms are baselined rather than exercised |
 | `M0C` | batch and auth-boundary semantics. `MJ-027` is the contract the first batch operation must satisfy and no batch operation exists; the auth boundary is in the same position |
 | `M2_CORE_READY` | target evidence. Two of three platform readings answered on the `6233d86` and `504a6e6` runs, neither established as a canonical qualification; `platform.module_descriptors` stopped at a `null` inside a module count at `504a6e6`, and whether the corrected walk answers is what the next run reports |
-| `M3_CORE_READY` | complete intended scope and target evidence. The workspace inventory, one device's identity and one device's ports are implemented; the workspace's links are not (see below). `network.device_inventory` answered on the `6233d86` run, and all three workspace readings on the `504a6e6` run; every workspace capability stays `PENDING_TARGET` until a canonical qualification reaches it |
+| `M3_CORE_READY` | complete intended scope and target evidence. The workspace inventory, one device's identity and ports, the workspace's links and one link's two ends are implemented; the link members stand on an operator-supplied target record, and no Muejeje artifact carrying them has run (see below). Wireless and `Antenna` links are not claimed. `network.device_inventory` answered on the `6233d86` run, and all three device readings on the `504a6e6` run; every workspace capability stays `PENDING_TARGET` until a canonical qualification reaches it |
 | `ZERO_CHANGE_CUTOVER` | a release-qualified artifact, and a compatibility facade outside the V6 core (`MJ-034`). One artifact is now packaged and kernel-qualified, no version is release-qualified, no facade exists, and no consumer has been cut over |
 
 **A green offline run still moves none of them, and neither does binary
@@ -1090,47 +1091,63 @@ qualification with a stable fixture and a complete raw transcript, and whether
 `ModuleDescriptor.getModuleAt` there — answers under the corrected walk
 ([the full-trust LIVE runbook](muejeje-pts-privilege-live-runbook.md)).
 
-**Where M3 stands.** `network.device_ports` is implemented and tested. The
-contract question the previous revision of this record left open — re-report the
-device identity beside the ports, or make a consumer correlate two readings — is
-decided for snapshot consistency: the port reading selects the device once,
-reads its name, its model and its ports off that one hand-over, and reports them
-together, so no consumer joins an identity from one moment with ports from
-another (`MJ-031`). Its three members are documented and called by legacy code;
-none has a Muejeje reading.
+**Where M3 stands.** `network.device_ports` is implemented and tested, decided
+for snapshot consistency: the port reading selects the device once, reads its
+name, its model and its ports off that one hand-over, and reports them together,
+so no consumer joins an identity from one moment with ports from another
+(`MJ-031`).
 
-**Where M3 stops, and the reason is in Cisco's reference.** The workspace's
-links are the next read-only topology subject, and every documented route to
-one hands over the base interface. `Network.getLinkAt(int)` answers a `Link`,
-and so does `getLink()` on `Port` and on every other interface that documents
-it; across every installed class page, no other member hands over a `Link`. The
-`Link` page documents one member, `getConnectionType()`. A link's endpoints are
-documented only on the two interfaces derived from it: `Cable.getPort1()` and
-`Cable.getPort2()` for a cable, `Antenna.getPort()` for a wireless link. No
-installed member hands over a `Cable`, and the only one that hands over an
-`Antenna`, `Antenna.getReceiverAt(int)`, is asked of an `Antenna` already held.
+**The workspace's links are read now, and the reason they were not is still in
+Cisco's reference.** Every documented route to a link hands over the base
+interface: `Network.getLinkAt(int)` answers a `Link`, and so does `getLink()` on
+`Port`. The `Link` page documents one member, `getConnectionType()`. A link's
+endpoints are documented only on `Cable` and `Antenna`, no installed member hands
+over a `Cable`, `getClassName()` is on no installed page, and the `CONNECT_TYPES`
+list names no interface for any value. Nothing installed decides which kind of
+link was handed over, and nothing in this artifact decides it either.
 
-Reading an endpoint therefore means deciding which derived interface a
-handed-over `Link` is, and nothing installed documents a way to decide it.
-`getClassName()`, which the legacy runtime probes, appears on no installed
-IpcAPI page. The `Link` page lists the `CONNECT_TYPES` values but not which
-interface carries each, so a table from connection type to interface would be a
-Cisco enum mirror (`MJ-014`) and an inference nobody documented. Probing members
-with `typeof`, as legacy code does, would be guessing an interface. The boundary
-refuses that by construction as well: a handle carries the interface its member
-documents, so even an admitted `Cable` member would be refused on a `Link`.
+What changed is target evidence, not the reference. On `9.0.1.0858` the object a
+link enumeration hands over answered `getPort1()`, `getPort2()` and
+`getObjectUuid()`, and devices and ports answered `getObjectUuid()` — the record
+is the table below. So `network.link_inventory` and `network.link_endpoints` call
+those members **on `Link` as TARGET_EVIDENCED**, and no `Cable` or `Antenna`
+member is admitted: the boundary still marks what `getLinkAt` hands over as a
+`Link`, and a link that does not offer an endpoint getter is
+`PLATFORM_MEMBER_ABSENT` at `Link.getPort1` — never a link without ends. The
+connection type is published as the platform's number and read as nothing
+(`MJ-014`). Ends are correlated with `network.device_ports` and the device
+readings by the object UUIDs the platform reports on both sides, never by a name,
+a position or JavaScript reference equality, and the device readings gained
+those UUIDs additively (`MJ-030`).
 
-The port side does not get round it. `Port.getRemotePortName()` is documented
-only as the name of the remote port: a name with no device attached, which could
-be attributed only by matching names across devices — the join `MJ-031` forbids
-— and nothing documents what an unlinked or wireless port answers.
+`Port.getRemotePortName()` and `Cable.getOtherPort()` stay unadmitted: each
+addresses an end by name, the join `MJ-031` forbids.
+`tests/muejeje/test_workspace_link_members.py` re-derives each fact above from
+the installed pages, with `Cable` and `Antenna` hash-pinned beside the `Link` page
+the members cite, holds the link members to `Link` and off every derived
+interface, and refuses a connection-type name in any engine source.
 
-So the slice is blocked on target evidence: from an artifact running inside
-`9.0.1.0858`, which interface a Script Module is actually handed for a workspace
-link. It is not blocked on work this repository could do offline.
-`tests/muejeje/test_workspace_links_blocked.py` re-derives each fact above from
-the installed pages, with the three link pages hash-pinned, and holds the
-allowlist to admitting no member that reads a link.
+#### The target record the link members rest on
+
+| Interface member | Basis | Record |
+| --- | --- | --- |
+| `Link.getObjectUuid()` | **TARGET_EVIDENCED** | operator LIVE observation on `9.0.1.0858`, 2026-09-13: one UUID from two non-identical JavaScript wrappers of one cable and from both of its ends, stable across repeated readings, link convergence and a module stop and start; earlier measured over `Port.getLink()` through a legacy channel (`b6b7930`) |
+| `Link.getPort1()` | **TARGET_EVIDENCED** | the same observation: a wired cable answered a port whose UUID equalled that port's UUID read through its device's port enumeration |
+| `Link.getPort2()` | **TARGET_EVIDENCED** | the same observation, for the other end |
+| `Device.getObjectUuid()` | **TARGET_EVIDENCED** | the same observation: the UUID of a port's owner equalled the UUID read for that device, and survived a module stop and start |
+| `Port.getObjectUuid()` | **TARGET_EVIDENCED** | the same observation: equal from a cable end and from the device's port enumeration, and survived a module stop and start |
+
+**That record was supplied by the operator, not captured by this repository.** No
+raw transcript of it is committed and it was not taken through a Muejeje
+artifact, so it is recorded evidence and not reproducible evidence — the standing
+the privilege root map has. It is the basis for admitting the members, not a
+reading of either operation: both stay `PENDING_TARGET` until a run of the
+candidate carrying them answers. The same observation saw `getConnectionType()`
+answer `8100` and `8101` for the cables tested; those are recorded as numbers,
+with no meaning attached to either. **Not observed, and claimed nowhere:** a UUID
+surviving a Packet Tracer restart, a save and reopen, or a delete and
+re-creation; uniqueness beyond the observed session; and any wireless or
+`Antenna` link.
 
 ### A green V6 run is not IpcAPI qualification
 
@@ -1180,12 +1197,16 @@ Which members Muejeje itself has reached is the run records above.
 | `IPC.network()` | `class_i_p_c.html` | legacy code only — no per-member record cited |
 | `Network.getDeviceCount()` | `class_network.html` | legacy code only — no per-member record cited |
 | `Network.getDeviceAt(int)` | `class_network.html` | legacy code only — no per-member record cited |
+| `Network.getLinkCount()` | `class_network.html` | legacy code only — no per-member record cited |
+| `Network.getLinkAt(int)` | `class_network.html` | legacy code only — no per-member record cited |
+| `Link.getConnectionType()` | `class_link.html` | **no** — documented only |
 | `Device.getName()` | `class_device.html` | legacy code only — no per-member record cited |
 | `Device.getModel()` | `class_device.html` | legacy code only — no per-member record cited |
 | `Device.getType()` | `class_device.html` | **no** — documented only |
 | `Device.getPortCount()` | `class_device.html` | legacy code only — no per-member record cited |
 | `Device.getPortAt(int)` | `class_device.html` | legacy code only — no per-member record cited |
 | `Port.getName()` | `class_port.html` | legacy code only — no per-member record cited |
+| `Port.getOwnerDevice()` | `class_port.html` | legacy code only — no per-member record cited |
 
 **"yes" means a recorded run.** Every "yes" row is a member the read-only
 factory survey calls — `observe_factory_structure` in
@@ -1363,7 +1384,9 @@ M2_OFFLINE                     = COMPLETE
 M3_DEVICE_INVENTORY            = IMPLEMENTED
 M3_DEVICE_IDENTITY             = IMPLEMENTED
 M3_DEVICE_PORTS                = IMPLEMENTED
-M3_WORKSPACE_LINKS             = BLOCKED
+M3_LINK_INVENTORY              = IMPLEMENTED
+M3_LINK_ENDPOINTS              = IMPLEMENTED
+M3_WIRELESS_LINKS              = NOT_CLAIMED
 M3_READ_ONLY_TOPOLOGY          = STARTED
 CAPABILITY_RESOLUTION_VERIFIED   = PENDING_TARGET
 OFFICIAL_PACKAGING_PROVED        = PASS

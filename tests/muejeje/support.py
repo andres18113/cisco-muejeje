@@ -5,10 +5,10 @@ declares about itself, and the synthetic repository the build audit runs
 against. It holds no assertions, so a behaviour claim always lives in the test
 module whose responsibility it is (MJ-020).
 
-The frozen V6 result shapes are here for the same reason `FEATURE_EVIDENCE`
-is: they are what this repository declares about its own contract, they grow
-with every operation, and two copies of them could disagree. What they *mean*
-is asserted in `test_v6_result_shapes` (MJ-030).
+`FEATURE_EVIDENCE` is here because it is what this repository declares about
+its own kernel and two copies of it could disagree. The frozen V6 result shapes
+were here for the same reason, and moved to `result_shapes` when they pushed
+this module past its line budget (MJ-030).
 
 Measuring the real tree is `measure`, which was split out of here when this
 module crossed its own line budget. Building a fixture and measuring a file are
@@ -68,6 +68,12 @@ FEATURE_EVIDENCE = {
     "network.identity_reading": (
         "080_network_identity_adapter.js", "muejejeAdapterDeviceIdentity",
     ),
+    "network.link_endpoint_reading": (
+        "083_network_link_endpoints_adapter.js", "muejejeAdapterLinkEndpoints",
+    ),
+    "network.link_reading": (
+        "086_network_link_inventory_adapter.js", "muejejeAdapterLinkInventory",
+    ),
     "network.port_reading": (
         "090_network_ports_adapter.js", "muejejeAdapterDevicePorts",
     ),
@@ -83,121 +89,6 @@ FEATURE_EVIDENCE = {
     "protocol.v6": ("030_validation_v6.js", "muejejeV6ParseRequest"),
     "runtime.operation_catalog": ("210_dispatcher_v6.js", "muejejeV6OperationCatalog"),
     "runtime.session_id": ("010_core.js", "muejejeCoreNewSessionId"),
-}
-
-
-# Per operation, the result fields a consumer may already be reading. An
-# operation may answer with more; it may never answer with fewer.
-# `descriptors[].factory_index` is frozen for the reason it was added: it is a
-# reading's *reusable input*, and relay closure turns on it being reported
-# rather than derived (`test_relay_closure`).
-# `unavailable_member` and `unavailable_argument` are frozen for the reason they
-# were added: an unavailable reading that cannot say which `Interface.member` it
-# stopped at leaves a target run unable to locate what it observed
-# (`test_platform_stage`).
-REQUIRED_RESULT_FIELDS = {
-    "network.device_identity": {
-        "resolution", "unavailable_reason",
-        "unavailable_member", "unavailable_argument",
-        "workspace_index", "available_count", "device_present",
-        "name", "model", "device_type",
-    },
-    "network.device_inventory": {
-        "resolution", "unavailable_reason",
-        "unavailable_member", "unavailable_argument",
-        "available_count", "workspace_offset",
-        "limit", "devices", "window_truncated",
-    },
-    "network.device_ports": {
-        "resolution", "unavailable_reason",
-        "unavailable_member", "unavailable_argument",
-        "workspace_index", "available_count", "device_present",
-        "name", "model", "port_offset", "limit", "port_count",
-        "ports", "window_truncated",
-    },
-    "platform.device_descriptors": {
-        "resolution", "unavailable_reason",
-        "unavailable_member", "unavailable_argument",
-        "available_count", "factory_offset",
-        "limit", "descriptors", "window_truncated",
-    },
-    "platform.module_descriptors": {
-        "resolution", "unavailable_reason",
-        "unavailable_member", "unavailable_argument",
-        "factory_index", "available_count",
-        "descriptor_present", "model", "device_type", "root_present", "nodes",
-        "nodes_truncated", "depth_truncated", "module_positions_truncated",
-    },
-    "platform.module_type_support": {
-        "resolution", "unavailable_reason",
-        "unavailable_member", "unavailable_argument",
-        "factory_index", "module_type",
-        "available_count", "descriptor_present", "model", "device_type",
-        "module_type_supported",
-    },
-    "runtime.identify": {
-        "extension_name", "extension_version", "protocol_versions",
-        "operations", "supported_features", "runtime_session_id",
-        "provenance", "lifecycle",
-    },
-    "runtime.capabilities": {
-        "runtime_session_id", "protocol_versions", "operations",
-        "supported_features",
-    },
-}
-
-# The nested objects inside those results, by the path that reaches them, with
-# the type each published field carries. `descriptors[]` means "every object in
-# that list"; a tuple of types means the field may be any of them, which is how
-# a nullable one is written down.
-#
-# Fields and types, not just names, because "keeps its name while meaning
-# something else" is the half of MJ-030 a name-only reader cannot see. Paths
-# are a *floor*: a result may publish a nested object nobody froze — that is
-# additive, and a consumer not reading it cannot see it — but it may never stop
-# publishing one that is frozen here.
-REQUIRED_NESTED_FIELDS = {
-    # No nested object of its own: one device, read flat. Frozen as empty on
-    # purpose — a nested object added later is additive.
-    "network.device_identity": {},
-    "network.device_inventory": {
-        "devices[]": {"workspace_index": int, "name": str},
-    },
-    "network.device_ports": {
-        "ports[]": {"port_index": int, "name": str},
-    },
-    "platform.device_descriptors": {
-        "descriptors[]": {
-            "factory_index": int, "model": str, "device_type": int,
-            "model_supported": bool, "supported_module_types": list,
-            "module_types_truncated": bool,
-        },
-    },
-    "platform.module_descriptors": {
-        "nodes[]": {
-            "index": int, "parent_index": (int, type(None)), "depth": int,
-            "module_index": (int, type(None)), "model": str,
-            "module_type": int, "hot_swappable": bool, "slot_types": list,
-            "slot_types_truncated": bool, "module_count": int,
-            "null_module_positions": list, "children_truncated": bool,
-        },
-    },
-    # No nested object of its own: one flag, and the identity that attributes
-    # it. Frozen as empty on purpose — a nested object added later is additive.
-    "platform.module_type_support": {},
-    "runtime.identify": {
-        "provenance": {
-            "state": str, "source_sha": type(None),
-            "build_recipe_id": type(None),
-        },
-        "lifecycle": {
-            "started": bool, "started_at": (int, type(None)),
-            "stopped_at": (int, type(None)), "start_count": int,
-        },
-    },
-    "runtime.capabilities": {
-        "operations[]": {"op": str, "read_only": bool},
-    },
 }
 
 
