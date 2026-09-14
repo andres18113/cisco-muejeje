@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 
 import pytest
 
@@ -139,6 +141,98 @@ def test_typed_ping_retains_ambiguous_identity_candidates_for_diagnosis():
         "session_transcript_continuity"
     )
     assert result.device_identity_candidate_names == ("PC-A", "PC-B")
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
+def test_typed_ping_attributes_only_the_terminal_changed_by_this_dispatch():
+    before = "PC>"
+    command = "ping 10.0.50.10"
+    current = before + command + "\nPackets: Sent = 4, Received = 4\nPC>"
+    fingerprints = [
+        {"name": "PC-B", "length": 3, "head": "PC>", "tail": "PC>"},
+        {
+            "name": "PC-A",
+            "length": len(current),
+            "head": current,
+            "tail": current,
+        },
+    ]
+
+    def run_start(script: str) -> str:
+        payload = json.dumps({"PC-B": before, "PC-A": current})
+        harness = f"""
+const outputs = {payload};
+const makeTerminal = name => ({{
+  getOutput: () => outputs[name],
+  enterCommand: () => undefined,
+}});
+const makeDevice = name => ({{
+  getName: () => name,
+  getCommandPrompt: () => makeTerminal(name),
+  getCommandLine: () => makeTerminal(name),
+}});
+const devices = Object.keys(outputs).map(makeDevice);
+global.ipc = {{network: () => ({{
+  getDevice: () => makeDevice('PC-B'),
+  getDeviceCount: () => devices.length,
+  getDeviceAt: index => devices[index],
+}})}};
+let reported = '';
+global.reportResult = value => {{reported = String(value);}};
+{script}
+process.stdout.write(reported);
+"""
+        return subprocess.run(
+            [shutil.which("node"), "-e", harness],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+
+    def run_attribution(script: str) -> str:
+        payload = json.dumps({"PC-B": current, "PC-A": current})
+        harness = f"""
+const outputs = {payload};
+const makeDevice = name => ({{
+  getName: () => name,
+  getCommandPrompt: () => ({{getOutput: () => outputs[name]}}),
+  getCommandLine: () => ({{getOutput: () => outputs[name]}}),
+}});
+const devices = Object.keys(outputs).map(makeDevice);
+global.ipc = {{network: () => ({{
+  getDevice: () => makeDevice('PC-B'),
+  getDeviceCount: () => devices.length,
+  getDeviceAt: index => devices[index],
+}})}};
+let reported = '';
+global.reportResult = value => {{reported = String(value);}};
+{script}
+process.stdout.write(reported);
+"""
+        return subprocess.run(
+            [shutil.which("node"), "-e", harness],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+
+    def send_and_wait(script, _timeout):
+        if "enterCommand" in script:
+            started = json.loads(run_start(script))
+            assert started["device_fingerprints"] == fingerprints
+            return json.dumps(started)
+        if "owner_candidate_names" in script:
+            return run_attribution(script)
+        return json.dumps({"found": True, "output": current})
+
+    result = TypedPingExecutor(send_and_wait, timeout_seconds=0).ping(
+        "PC-B", "10.0.50.10",
+    )
+
+    assert result.reachable is True
+    assert result.observed_device_name == "PC-B"
+    assert result.device_identity_provenance == "confirmed_unique"
+    assert result.device_identity_evidence == "dispatch_transcript_delta"
 
 
 def test_typed_ping_recognizes_fresh_ios_success_rate_output():

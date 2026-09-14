@@ -100,18 +100,22 @@ def _attribution(**updates) -> dict:
 
 
 def _run_attribution_javascript(
-    *, requested: str, resolved: str, stable_device_object: bool = True,
+    *, requested: str, resolved: str, outputs: dict[str, str] | None = None,
+    device_fingerprints: list[dict[str, object]] | None = None,
 ) -> dict:
     baseline = "PC>"
     command = "ping 172.17.10.8"
     current = baseline + command + "\nPackets: Sent = 4, Received = 4\nPC>"
     payload = json.dumps({
         "resolved": resolved,
-        "stableDeviceObject": stable_device_object,
-        "outputs": {"LARGE-PC": current, "OTHER-PC": current},
+        "outputs": outputs or {"LARGE-PC": current, "OTHER-PC": current},
     })
     attribution = execution_attribution_js(
-        json.dumps(requested), baseline, command, prefer_command_prompt=True,
+        json.dumps(requested),
+        baseline,
+        command,
+        prefer_command_prompt=True,
+        device_fingerprints=device_fingerprints,
     )
     harness = f"""
 const payload = {payload};
@@ -121,11 +125,8 @@ const makeDevice = (name) => ({{
   getCommandLine: () => ({{getOutput: () => payload.outputs[name]}}),
 }});
 const devices = Object.keys(payload.outputs).map(makeDevice);
-const byName = Object.fromEntries(devices.map(device => [device.getName(), device]));
 global.ipc = {{network: () => ({{
-  getDevice: () => payload.stableDeviceObject
-    ? byName[payload.resolved]
-    : makeDevice(payload.resolved),
+  getDevice: () => makeDevice(payload.resolved),
   getDeviceCount: () => devices.length,
   getDeviceAt: index => devices[index],
 }})}};
@@ -169,28 +170,57 @@ def test_session_transcript_continuity_attributes_the_executing_session():
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
-def test_device_object_identity_disambiguates_identical_terminal_transcripts():
+def test_dispatch_delta_disambiguates_identical_terminal_transcripts():
+    current = (
+        "PC>ping 172.17.10.8\n"
+        "Packets: Sent = 4, Received = 4\nPC>"
+    )
     observed = _run_attribution_javascript(
-        requested="LARGE-PC", resolved="LARGE-PC",
+        requested="LARGE-PC",
+        resolved="LARGE-PC",
+        outputs={"LARGE-PC": current, "OTHER-PC": current},
+        device_fingerprints=[
+            {"name": "LARGE-PC", "length": 3, "head": "PC>", "tail": "PC>"},
+            {
+                "name": "OTHER-PC",
+                "length": len(current),
+                "head": current,
+                "tail": current,
+            },
+        ],
     )
 
     assert observed["owner_name"] == "LARGE-PC"
-    assert observed["owner_evidence"] == "device_object_identity"
+    assert observed["owner_evidence"] == "dispatch_transcript_delta"
     assert observed["owner_candidates"] == 1
     assert classify_execution_identity("LARGE-PC", observed) == {
         "observed_device_name": "LARGE-PC",
         "device_identity_provenance": "confirmed_unique",
-        "device_identity_evidence": "device_object_identity",
+        "device_identity_evidence": "dispatch_transcript_delta",
     }
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
-def test_device_object_identity_exposes_a_misresolved_requested_name():
+def test_requested_name_cannot_hide_the_other_terminal_that_changed():
+    fingerprints = [
+        {"name": name, "length": 3, "head": "PC>", "tail": "PC>"}
+        for name in ("LARGE-PC", "OTHER-PC")
+    ]
     observed = _run_attribution_javascript(
-        requested="LARGE-PC", resolved="OTHER-PC",
+        requested="LARGE-PC",
+        resolved="LARGE-PC",
+        outputs={
+            "LARGE-PC": "PC>",
+            "OTHER-PC": (
+                "PC>ping 172.17.10.8\n"
+                "Packets: Sent = 4, Received = 4\nPC>"
+            ),
+        },
+        device_fingerprints=fingerprints,
     )
 
     assert observed["owner_name"] == "OTHER-PC"
+    assert observed["owner_evidence"] == "dispatch_transcript_delta"
     assert classify_execution_identity("LARGE-PC", observed)[
         "device_identity_provenance"
     ] == "mismatched"
@@ -201,7 +231,6 @@ def test_ambiguous_transcript_candidates_are_retained_for_diagnosis():
     observed = _run_attribution_javascript(
         requested="LARGE-PC",
         resolved="LARGE-PC",
-        stable_device_object=False,
     )
 
     assert observed["owner_name"] == ""

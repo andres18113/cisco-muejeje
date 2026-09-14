@@ -147,15 +147,16 @@ class DeviceIdentityProvenance(str, Enum):
 class DeviceIdentityEvidence(str, Enum):
     """Por que via se atribuyo la sesion. Ninguna usa el nombre pedido.
 
-    `DEVICE_OBJECT_IDENTITY` compara el device resuelto al despachar con los
-    devices enumerados. `TERMINAL_OBJECT_IDENTITY` hace la misma comparacion
-    sobre su terminal. `SESSION_TRANSCRIPT_CONTINUITY` ata la sesion por su
-    transcripcion: la linea que ejecuto es la unica cuya salida continua
-    exactamente la linea base capturada al despachar.
+    `TERMINAL_OBJECT_IDENTITY` compara el objeto terminal al que se despacho
+    contra el que devuelve la enumeracion de la red. `DISPATCH_TRANSCRIPT_DELTA`
+    compara cada terminal contra su propia huella previa al despacho.
+    `SESSION_TRANSCRIPT_CONTINUITY` ata la sesion por su transcripcion cuando
+    no hay huellas por-device: la linea que ejecuto es la unica cuya salida
+    continua exactamente la linea base capturada al despachar.
     """
 
     NONE = "none"
-    DEVICE_OBJECT_IDENTITY = "device_object_identity"
+    DISPATCH_TRANSCRIPT_DELTA = "dispatch_transcript_delta"
     TERMINAL_OBJECT_IDENTITY = "terminal_object_identity"
     SESSION_TRANSCRIPT_CONTINUITY = "session_transcript_continuity"
 
@@ -2040,21 +2041,47 @@ def execution_attribution_js(
     command: str,
     *,
     prefer_command_prompt: bool = False,
+    device_fingerprints: list[dict[str, object]] | None = None,
 ) -> str:
     """Script que LEE la salida y ATRIBUYE la sesion en la misma enumeracion.
 
     No pregunta "como se llama el device que pedi". Recorre la red y se queda
-    con el unico device que puede haber producido esta sesion, ya sea porque su
-    objeto terminal es el mismo al que se despacho, ya sea porque su
-    transcripcion retiene el contexto de despacho con el comando detras. La
-    salida devuelta sale de ESE device, no de una segunda busqueda por nombre:
-    asi la evidencia y su procedencia no pueden venir de dos devices distintos.
+    con el unico device que puede haber producido esta sesion: su objeto
+    terminal coincide, su transcript cambio desde su propia huella atomica de
+    pre-despacho, o su transcript retiene el contexto de despacho con el
+    comando detras. La salida devuelta sale de ESE device, no de una segunda
+    busqueda por nombre: asi evidencia y procedencia no pueden venir de dos
+    devices distintos.
 
     `prefer_command_prompt` existe porque un endpoint responde por
     `getCommandPrompt` y un IOS por `getCommandLine`. El objetivo y los
     candidatos se resuelven SIEMPRE con el mismo orden de accesores: comparar
     terminales obtenidas por caminos distintos no compararia lo mismo.
     """
+    fingerprints = []
+    for item in device_fingerprints or []:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        length = item.get("length")
+        head = item.get("head")
+        tail = item.get("tail")
+        if (
+            not isinstance(name, str)
+            or not name
+            or isinstance(length, bool)
+            or not isinstance(length, int)
+            or length < 0
+            or not isinstance(head, str)
+            or not isinstance(tail, str)
+        ):
+            continue
+        fingerprints.append({
+            "name": name,
+            "length": length,
+            "head": head[:128],
+            "tail": tail[-512:],
+        })
     resolve = (
         "var __term=function(dev){var r=null;"
         + (
@@ -2083,17 +2110,29 @@ def execution_attribution_js(
         "while(anchor.length&&anchor.charCodeAt(anchor.length-1)<=32)"
         "{anchor=anchor.substring(0,anchor.length-1);}",
         "if(anchor.length>512){anchor=anchor.substring(anchor.length-512);}",
+        "var fps=", json.dumps(fingerprints), ";",
         "var n=(typeof net.getDeviceCount==='function')?net.getDeviceCount():0;",
-        "var byDevice=[],byObject=[],byTranscript=[],",
-        "outDevice='',outObject='',outTranscript='';",
+        "var byObject=[],byDispatch=[],byTranscript=[],",
+        "outObject='',outDispatch='',outTranscript='';",
         "for(var i=0;i<n;i++){var dev=null;",
         "try{dev=net.getDeviceAt(i);}catch(de){dev=null;}",
         "if(!dev)continue;var cl=__term(dev);",
         "if(!cl||typeof cl.getOutput!=='function')continue;",
         "var nm='';try{nm=String(dev.getName());}catch(ne){continue;}",
         "var co='';try{co=String(cl.getOutput());}catch(oe){continue;}",
-        "if(dev===d){byDevice.push(nm);outDevice=co;}",
         "if(cl===t){byObject.push(nm);outObject=co;}",
+        "for(var j=0;j<fps.length;j++){var fp=fps[j];if(fp.name!==nm)continue;",
+        "var sameLength=co.length===fp.length;",
+        "var sameHead=co.substring(0,fp.head.length)===fp.head;",
+        "var sameTail=co.substring(Math.max(0,co.length-fp.tail.length))===fp.tail;",
+        "if(sameLength&&sameHead&&sameTail)continue;var delta=-1;",
+        "if(fp.tail!==''&&co.length>=fp.length&&fp.length>=fp.tail.length&&",
+        "co.substring(fp.length-fp.tail.length,fp.length)===fp.tail){",
+        "delta=fp.length;}else if(fp.tail!==''){var search=0,hit=-1;",
+        "while((hit=co.indexOf(fp.tail,search))>=0){var after=hit+fp.tail.length;",
+        "if(co.substring(after).indexOf(cmd)>=0){delta=after;}",
+        "search=hit+1;}}if(delta>=0&&co.substring(delta).indexOf(cmd)>=0){",
+        "byDispatch.push(nm);outDispatch=co;}break;}",
         # Contexto retenido MAS el comando despachado detras de el. El gemelo
         # ocioso no basta con compartir banner: tendria que haber recibido este
         # mismo comando justo despues de este mismo contexto, y los despachos
@@ -2103,16 +2142,16 @@ def execution_attribution_js(
         "byTranscript.push(nm);outTranscript=co;}}}",
         "var owner='',evidence='none',candidates=0,out='',",
         "candidateEvidence='none',candidateNames=[];",
-        "if(byDevice.length===1){owner=byDevice[0];",
-        "evidence='device_object_identity';candidates=1;out=outDevice;",
-        "candidateEvidence=evidence;candidateNames=byDevice;}",
-        "else if(byDevice.length>1){candidates=byDevice.length;",
-        "candidateEvidence='device_object_identity';candidateNames=byDevice;}",
-        "else if(byObject.length===1){owner=byObject[0];",
+        "if(byObject.length===1){owner=byObject[0];",
         "evidence='terminal_object_identity';candidates=1;out=outObject;",
         "candidateEvidence=evidence;candidateNames=byObject;}",
         "else if(byObject.length>1){candidates=byObject.length;",
         "candidateEvidence='terminal_object_identity';candidateNames=byObject;}",
+        "else if(byDispatch.length===1){owner=byDispatch[0];",
+        "evidence='dispatch_transcript_delta';candidates=1;out=outDispatch;",
+        "candidateEvidence=evidence;candidateNames=byDispatch;}",
+        "else if(byDispatch.length>1){candidates=byDispatch.length;",
+        "candidateEvidence='dispatch_transcript_delta';candidateNames=byDispatch;}",
         "else if(byTranscript.length===1){owner=byTranscript[0];",
         "evidence='session_transcript_continuity';candidates=1;",
         "out=outTranscript;candidateEvidence=evidence;",
