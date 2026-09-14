@@ -32,3 +32,6 @@ class TypedPingResult:
     # producido la salida sin elegir a ninguno ni cambiar la clasificacion.
     device_identity_candidate_evidence: str = "none"
     device_identity_candidate_names: tuple[str, ...] = ()
+    # Por que la atribucion no pudo intentarse. Sin esto, un despacho que no
+    # entrego su huella de terminales se leeria igual que "ningun candidato".
+    device_identity_refusal: str = "none"

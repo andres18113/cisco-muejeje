@@ -359,13 +359,13 @@ def test_real_plan_getters_bindings_and_typed_ping_assemble_into_cp_live_results
                 + self.current_destination
                 + "\nPackets: Sent = 4, Received = 4, Lost = 0 (0% loss)\nC:\\>"
             )
-            if "byObject" in script:
+            if "owner_name:owner" in script:
                 return json.dumps({
                     "found": True,
                     "configuration_channel": True,
                     "output": output,
                     "owner_name": self.current_source,
-                    "owner_evidence": "terminal_object_identity",
+                    "owner_evidence": "dispatch_transcript_delta",
                     "owner_candidates": 1,
                     "device_count": 2,
                 })

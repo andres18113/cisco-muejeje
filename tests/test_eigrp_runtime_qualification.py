@@ -36,6 +36,7 @@ def test_ping_evidence_serializes_only_current_typed_result_fields():
         "device_identity_evidence": "session_transcript_continuity",
         "device_identity_candidate_evidence": "none",
         "device_identity_candidate_names": [],
+        "device_identity_refusal": "none",
     }
 
 

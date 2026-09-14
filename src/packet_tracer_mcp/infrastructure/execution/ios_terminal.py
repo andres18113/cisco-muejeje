@@ -147,18 +147,47 @@ class DeviceIdentityProvenance(str, Enum):
 class DeviceIdentityEvidence(str, Enum):
     """Por que via se atribuyo la sesion. Ninguna usa el nombre pedido.
 
-    `TERMINAL_OBJECT_IDENTITY` compara el objeto terminal al que se despacho
-    contra el que devuelve la enumeracion de la red. `DISPATCH_TRANSCRIPT_DELTA`
-    compara cada terminal contra su propia huella previa al despacho.
-    `SESSION_TRANSCRIPT_CONTINUITY` ata la sesion por su transcripcion cuando
-    no hay huellas por-device: la linea que ejecuto es la unica cuya salida
-    continua exactamente la linea base capturada al despachar.
+    Cada ejecutor declara la UNICA autoridad que acepta, y ninguno cae en otra
+    cuando la suya no esta disponible.
+
+    `DISPATCH_TRANSCRIPT_DELTA` es la del ping tipado. El despacho toma una
+    huella de cada terminal enumerada justo antes de `enterCommand`, y la
+    sesion pertenece al unico device cuya salida posterior a su propia huella
+    contiene el comando. Un gemelo con la misma historia no cambio durante el
+    despacho, asi que no compite.
+
+    `TERMINAL_OBJECT_IDENTITY` y `SESSION_TRANSCRIPT_CONTINUITY` siguen siendo la
+    de las consultas IOS registradas. La continuidad no distingue dos
+    transcripciones con el mismo contexto seguido del mismo comando: Router3 la
+    falso en vivo para el ping (runs b1cdfee y 759807), y por eso el ping ya no
+    la acepta.
     """
 
     NONE = "none"
     DISPATCH_TRANSCRIPT_DELTA = "dispatch_transcript_delta"
     TERMINAL_OBJECT_IDENTITY = "terminal_object_identity"
     SESSION_TRANSCRIPT_CONTINUITY = "session_transcript_continuity"
+
+
+REGISTERED_QUERY_ATTRIBUTION_EVIDENCE = frozenset({
+    DeviceIdentityEvidence.TERMINAL_OBJECT_IDENTITY,
+    DeviceIdentityEvidence.SESSION_TRANSCRIPT_CONTINUITY,
+})
+DISPATCH_DELTA_ATTRIBUTION_EVIDENCE = frozenset({
+    DeviceIdentityEvidence.DISPATCH_TRANSCRIPT_DELTA,
+})
+
+
+class DeviceIdentityRefusal(str, Enum):
+    """Por que la atribucion no pudo ni intentarse.
+
+    Es distinto de no encontrar dueno: sin la huella del despacho no hay con que
+    separar la salida nueva de la historia, y un `not_observed` sin causa
+    ocultaria que el defecto esta en el despacho y no en la red.
+    """
+
+    NONE = "none"
+    DISPATCH_SNAPSHOT_UNAVAILABLE = "dispatch_snapshot_unavailable"
 
 
 class IosSessionState(str, Enum):
@@ -2035,55 +2064,21 @@ class _PagerCapture:
         )
 
 
-def execution_attribution_js(
-    device_literal: str,
-    baseline: str,
-    command: str,
-    *,
-    prefer_command_prompt: bool = False,
-    device_fingerprints: list[dict[str, object]] | None = None,
-) -> str:
-    """Script que LEE la salida y ATRIBUYE la sesion en la misma enumeracion.
+_DISPATCH_SNAPSHOT_TAIL = 256
+# Tope de forma, no de red: el run canonico enumera 290 devices.
+_DISPATCH_SNAPSHOT_MAX_DEVICES = 4096
 
-    No pregunta "como se llama el device que pedi". Recorre la red y se queda
-    con el unico device que puede haber producido esta sesion: su objeto
-    terminal coincide, su transcript cambio desde su propia huella atomica de
-    pre-despacho, o su transcript retiene el contexto de despacho con el
-    comando detras. La salida devuelta sale de ESE device, no de una segunda
-    busqueda por nombre: asi evidencia y procedencia no pueden venir de dos
-    devices distintos.
+
+def _terminal_resolver_js(variable: str, prefer_command_prompt: bool) -> str:
+    """Resolutor de terminal comun a la huella de despacho y a la atribucion.
 
     `prefer_command_prompt` existe porque un endpoint responde por
-    `getCommandPrompt` y un IOS por `getCommandLine`. El objetivo y los
+    `getCommandPrompt` y un IOS por `getCommandLine`. Huella, objetivo y
     candidatos se resuelven SIEMPRE con el mismo orden de accesores: comparar
     terminales obtenidas por caminos distintos no compararia lo mismo.
     """
-    fingerprints = []
-    for item in device_fingerprints or []:
-        if not isinstance(item, dict):
-            continue
-        name = item.get("name")
-        length = item.get("length")
-        head = item.get("head")
-        tail = item.get("tail")
-        if (
-            not isinstance(name, str)
-            or not name
-            or isinstance(length, bool)
-            or not isinstance(length, int)
-            or length < 0
-            or not isinstance(head, str)
-            or not isinstance(tail, str)
-        ):
-            continue
-        fingerprints.append({
-            "name": name,
-            "length": length,
-            "head": head[:128],
-            "tail": tail[-512:],
-        })
-    resolve = (
-        "var __term=function(dev){var r=null;"
+    return (
+        "var " + variable + "=function(dev){var r=null;"
         + (
             "try{if(dev&&typeof dev.getCommandPrompt==='function'){"
             "r=dev.getCommandPrompt();if(r)return r;}}catch(pe){}"
@@ -2092,8 +2087,32 @@ def execution_attribution_js(
         + "try{if(dev&&typeof dev.getCommandLine==='function'){"
         "r=dev.getCommandLine();if(r)return r;}}catch(le){}return null;};"
     )
+
+
+def execution_attribution_js(
+    device_literal: str,
+    baseline: str,
+    command: str,
+    *,
+    prefer_command_prompt: bool = False,
+) -> str:
+    """Script que LEE la salida y ATRIBUYE una consulta IOS registrada.
+
+    No pregunta "como se llama el device que pedi". Recorre la red y se queda
+    con el unico device que puede haber producido esta sesion, ya sea porque su
+    objeto terminal es el mismo al que se despacho, ya sea porque su
+    transcripcion retiene el contexto de despacho con el comando detras. La
+    salida devuelta sale de ESE device, no de una segunda busqueda por nombre:
+    asi la evidencia y su procedencia no pueden venir de dos devices distintos.
+
+    Es la autoridad `REGISTERED_QUERY_ATTRIBUTION_EVIDENCE`. El ping tipado no la
+    usa: dos PCs con el mismo contexto seguido del mismo ping son
+    indistinguibles por esta via, que es lo que Router3 midio en vivo. Ver
+    `dispatch_delta_attribution_js`.
+    """
     return "".join((
-        "try{var net=ipc.network();", resolve,
+        "try{var net=ipc.network();",
+        _terminal_resolver_js("__term", prefer_command_prompt),
         "var d=net.getDevice(", device_literal, ");var t=__term(d);",
         "if(!t||typeof t.getOutput!=='function'){",
         "reportResult(JSON.stringify({found:false,",
@@ -2110,10 +2129,8 @@ def execution_attribution_js(
         "while(anchor.length&&anchor.charCodeAt(anchor.length-1)<=32)"
         "{anchor=anchor.substring(0,anchor.length-1);}",
         "if(anchor.length>512){anchor=anchor.substring(anchor.length-512);}",
-        "var fps=", json.dumps(fingerprints), ";",
         "var n=(typeof net.getDeviceCount==='function')?net.getDeviceCount():0;",
-        "var byObject=[],byDispatch=[],byTranscript=[],",
-        "outObject='',outDispatch='',outTranscript='';",
+        "var byObject=[],byTranscript=[],outObject='',outTranscript='';",
         "for(var i=0;i<n;i++){var dev=null;",
         "try{dev=net.getDeviceAt(i);}catch(de){dev=null;}",
         "if(!dev)continue;var cl=__term(dev);",
@@ -2121,18 +2138,6 @@ def execution_attribution_js(
         "var nm='';try{nm=String(dev.getName());}catch(ne){continue;}",
         "var co='';try{co=String(cl.getOutput());}catch(oe){continue;}",
         "if(cl===t){byObject.push(nm);outObject=co;}",
-        "for(var j=0;j<fps.length;j++){var fp=fps[j];if(fp.name!==nm)continue;",
-        "var sameLength=co.length===fp.length;",
-        "var sameHead=co.substring(0,fp.head.length)===fp.head;",
-        "var sameTail=co.substring(Math.max(0,co.length-fp.tail.length))===fp.tail;",
-        "if(sameLength&&sameHead&&sameTail)continue;var delta=-1;",
-        "if(fp.tail!==''&&co.length>=fp.length&&fp.length>=fp.tail.length&&",
-        "co.substring(fp.length-fp.tail.length,fp.length)===fp.tail){",
-        "delta=fp.length;}else if(fp.tail!==''){var search=0,hit=-1;",
-        "while((hit=co.indexOf(fp.tail,search))>=0){var after=hit+fp.tail.length;",
-        "if(co.substring(after).indexOf(cmd)>=0){delta=after;}",
-        "search=hit+1;}}if(delta>=0&&co.substring(delta).indexOf(cmd)>=0){",
-        "byDispatch.push(nm);outDispatch=co;}break;}",
         # Contexto retenido MAS el comando despachado detras de el. El gemelo
         # ocioso no basta con compartir banner: tendria que haber recibido este
         # mismo comando justo despues de este mismo contexto, y los despachos
@@ -2147,11 +2152,6 @@ def execution_attribution_js(
         "candidateEvidence=evidence;candidateNames=byObject;}",
         "else if(byObject.length>1){candidates=byObject.length;",
         "candidateEvidence='terminal_object_identity';candidateNames=byObject;}",
-        "else if(byDispatch.length===1){owner=byDispatch[0];",
-        "evidence='dispatch_transcript_delta';candidates=1;out=outDispatch;",
-        "candidateEvidence=evidence;candidateNames=byDispatch;}",
-        "else if(byDispatch.length>1){candidates=byDispatch.length;",
-        "candidateEvidence='dispatch_transcript_delta';candidateNames=byDispatch;}",
         "else if(byTranscript.length===1){owner=byTranscript[0];",
         "evidence='session_transcript_continuity';candidates=1;",
         "out=outTranscript;candidateEvidence=evidence;",
@@ -2169,13 +2169,186 @@ def execution_attribution_js(
     ))
 
 
+def dispatch_snapshot_js(command: str, *, prefer_command_prompt: bool) -> str:
+    """Huella de cada terminal enumerada, para el script que llama `enterCommand`.
+
+    Tiene que ir en ese MISMO script y justo antes de `enterCommand`: asi ninguna
+    salida del comando puede preceder a la huella. Deja el resultado en `__snap`,
+    o `null` si la enumeracion fallo.
+
+    Solo las terminales que YA contienen el comando llevan su cola. En las
+    demas, cualquier aparicion posterior del comando es nueva por construccion
+    -- un buffer que rueda solo pierde texto por la cabeza --, asi que basta su
+    nombre, y el tamano no crece con transcripciones ajenas.
+    """
+    return "".join((
+        "var __snap=null;try{var __snapNet=ipc.network();",
+        _terminal_resolver_js("__snapTerm", prefer_command_prompt),
+        "var __snapCmd=", json.dumps(command), ";",
+        "var __snapCount=(typeof __snapNet.getDeviceCount==='function')",
+        "?__snapNet.getDeviceCount():0;var __snapDevices=[];",
+        "for(var __snapI=0;__snapI<__snapCount;__snapI++){var __snapDev=null;",
+        "try{__snapDev=__snapNet.getDeviceAt(__snapI);}catch(__snapDe){__snapDev=null;}",
+        "var __snapName=null;try{if(__snapDev){__snapName=String(__snapDev.getName());}}",
+        "catch(__snapNe){__snapName=null;}",
+        "var __snapLine=__snapDev?__snapTerm(__snapDev):null;var __snapOut=null;",
+        "if(__snapLine&&typeof __snapLine.getOutput==='function'){",
+        "try{__snapOut=String(__snapLine.getOutput());}catch(__snapOe){__snapOut=null;}}",
+        "if(__snapOut===null){__snapDevices.push([__snapName,-1]);}",
+        "else if(__snapOut.indexOf(__snapCmd)<0){__snapDevices.push([__snapName,0]);}",
+        "else{var __snapEnd=__snapOut.length;",
+        "while(__snapEnd>0&&__snapOut.charCodeAt(__snapEnd-1)<=32){__snapEnd--;}",
+        "__snapDevices.push([__snapName,1,__snapEnd,__snapOut.substring(",
+        "Math.max(0,__snapEnd-", str(_DISPATCH_SNAPSHOT_TAIL), "),__snapEnd)]);}}",
+        "__snap={device_count:__snapCount,devices:__snapDevices};",
+        "}catch(__snapE){__snap=null;}",
+    ))
+
+
+def _dispatch_snapshot(value: object) -> dict[str, object] | None:
+    """Acepta la huella solo con la forma exacta que emite `dispatch_snapshot_js`.
+
+    Una huella parcial no es una huella: un device omitido que ejecuto dejaria
+    de competir, asi que una sola entrada fuera de forma invalida el todo.
+    """
+    if not isinstance(value, dict):
+        return None
+    count = value.get("device_count")
+    devices = value.get("devices")
+    if (
+        type(count) is not int
+        or not 0 <= count <= _DISPATCH_SNAPSHOT_MAX_DEVICES
+        or not isinstance(devices, list)
+        or len(devices) != count
+    ):
+        return None
+    accepted: list[list[object]] = []
+    for item in devices:
+        if (
+            not isinstance(item, list)
+            or not item
+            or (item[0] is not None and not isinstance(item[0], str))
+        ):
+            return None
+        if len(item) == 2 and type(item[1]) is int and item[1] in (-1, 0):
+            accepted.append([item[0], item[1]])
+        elif (
+            len(item) == 4
+            and type(item[1]) is int
+            and item[1] == 1
+            and type(item[2]) is int
+            and isinstance(item[3], str)
+            and 0 < len(item[3]) <= min(item[2], _DISPATCH_SNAPSHOT_TAIL)
+        ):
+            accepted.append([item[0], 1, item[2], item[3]])
+        else:
+            return None
+    return {"device_count": count, "devices": accepted}
+
+
+def dispatch_delta_attribution_js(
+    device_literal: str,
+    baseline: str,
+    command: str,
+    *,
+    dispatch_snapshot: object,
+    prefer_command_prompt: bool = False,
+) -> str:
+    """Script que LEE la salida y ATRIBUYE un ping por lo que cambio al despacharlo.
+
+    La sesion pertenece al unico device enumerado cuya salida POSTERIOR a su
+    propia huella (`dispatch_snapshot_js`) contiene el comando. Ni el nombre
+    pedido ni el objeto que devolvio `getDevice` deciden nada: su nombre y su
+    identidad salen de la misma busqueda que se esta auditando.
+
+    Falla cerrado y nunca hacia otra autoridad:
+    - sin huella valida no se atribuye, y el rechazo queda informado;
+    - un device que contiene el comando y cuyo cambio no se puede ubicar
+      respecto de su huella (nombre repetido, device nuevo, cola perdida,
+      terminal que dejo de leerse) es un candidato no anclado y bloquea;
+    - dos o mas candidatos quedan ambiguos.
+
+    Si la cola ya no esta en su posicion porque el buffer rodo, basta que ALGUNA
+    aparicion suya vaya seguida del comando. Para quien ejecuto siempre es
+    cierto; para un device que no ejecuto, a lo sumo agrega un candidato falso,
+    que vuelve ambigua la lectura y nunca elige dueno.
+    """
+    snapshot = _dispatch_snapshot(dispatch_snapshot)
+    return "".join((
+        "try{var net=ipc.network();",
+        _terminal_resolver_js("__term", prefer_command_prompt),
+        "var d=net.getDevice(", device_literal, ");var t=__term(d);",
+        "if(!t||typeof t.getOutput!=='function'){",
+        "reportResult(JSON.stringify({found:false,",
+        "failure_reason:'IOS terminal unavailable'}));}else{",
+        "var base=", json.dumps(baseline), ";",
+        "var cmd=", json.dumps(command), ";",
+        "var snap=", json.dumps(snapshot), ";",
+        "var n=(typeof net.getDeviceCount==='function')?net.getDeviceCount():0;",
+        "var executed=[],executedOut=[],unanchored=[],refusal='none';",
+        "if(snap===null){refusal='dispatch_snapshot_unavailable';}else{",
+        # Alineado por nombre, no por indice: un device agregado durante la
+        # consulta corre los indices sin cambiar quien ejecuto.
+        "var prior={},priorCount={},seen={},current=[];",
+        "for(var p=0;p<snap.devices.length;p++){var sp=snap.devices[p];",
+        "if(sp[0]===null)continue;",
+        "priorCount['#'+sp[0]]=(priorCount['#'+sp[0]]||0)+1;prior['#'+sp[0]]=sp;}",
+        "for(var i=0;i<n;i++){var dev=null;",
+        "try{dev=net.getDeviceAt(i);}catch(de){dev=null;}",
+        "if(!dev)continue;var cl=__term(dev);",
+        "if(!cl||typeof cl.getOutput!=='function')continue;",
+        "var nm=null;try{nm=String(dev.getName());}catch(ne){nm=null;}",
+        "var co=null;try{co=String(cl.getOutput());}catch(oe){co=null;}",
+        "if(nm!==null){seen['#'+nm]=(seen['#'+nm]||0)+1;}",
+        "current.push([nm,co]);}",
+        "for(var c=0;c<current.length;c++){",
+        "var cn=current[c][0],cc=current[c][1],label=cn===null?'':cn;",
+        "var key=cn===null?null:'#'+cn;",
+        "var entry=(key!==null&&seen[key]===1&&priorCount[key]===1)?prior[key]:null;",
+        "if(cc===null){if(!entry||entry[1]!==-1){unanchored.push(label);}continue;}",
+        "if(!entry||entry[1]===-1){",
+        "if(cc.indexOf(cmd)>=0){unanchored.push(label);}continue;}",
+        "if(entry[1]===0){",
+        "if(cc.indexOf(cmd)>=0){executed.push(cn);executedOut.push(cc);}continue;}",
+        "var end=entry[2],tail=entry[3],hit=false;",
+        "if(cc.length>=end&&cc.substring(end-tail.length,end)===tail){",
+        "hit=cc.substring(end).indexOf(cmd)>=0;}",
+        "else{var at=cc.indexOf(tail);",
+        "if(at<0){if(cc.indexOf(cmd)>=0){unanchored.push(label);}continue;}",
+        "while(at>=0&&!hit){hit=cc.substring(at+tail.length).indexOf(cmd)>=0;",
+        "at=cc.indexOf(tail,at+1);}}",
+        "if(hit){executed.push(cn);executedOut.push(cc);}}}",
+        "var owner='',evidence='none',candidates=0,out='',",
+        "candidateEvidence='none',candidateNames=[];",
+        "if(refusal==='none'){candidateNames=executed.concat(unanchored);",
+        "candidates=candidateNames.length;",
+        "if(candidates>0){candidateEvidence='dispatch_transcript_delta';}",
+        "if(executed.length===1&&unanchored.length===0){owner=executed[0];",
+        "evidence='dispatch_transcript_delta';out=executedOut[0];}}",
+        "if(owner===''){out=String(t.getOutput());}",
+        "reportResult(JSON.stringify({found:true,",
+        "configuration_channel:out!==base,output:out,owner_name:owner,",
+        "owner_evidence:evidence,owner_candidates:candidates,",
+        "owner_candidate_evidence:candidateEvidence,",
+        "owner_candidate_names:candidateNames,owner_refusal:refusal,",
+        "device_count:n}));}}catch(e){reportResult('ERROR:'+e);}",
+    ))
+
+
 def classify_execution_identity(
-    device_name: str, attribution: dict,
+    device_name: str,
+    attribution: dict,
+    *,
+    accepted_evidence: frozenset[DeviceIdentityEvidence],
 ) -> dict[str, str]:
-    """Clasifica la atribucion. Nunca deriva identidad del nombre pedido."""
+    """Clasifica la atribucion. Nunca deriva identidad del nombre pedido.
+
+    `accepted_evidence` es la autoridad del ejecutor que la pide: una via que
+    certifica a otro ejecutor no certifica a este.
+    """
     owner = str(attribution.get("owner_name") or "")
     candidates = attribution.get("owner_candidates")
-    evidence = _identity_evidence(attribution.get("owner_evidence"))
+    evidence = _identity_evidence(attribution.get("owner_evidence"), accepted_evidence)
     # Un nombre sin via de atribucion reconocida no es atribucion. Aceptarlo
     # seria confiar en un dato cuya procedencia no se sabe, que es justamente
     # lo que este campo no puede hacer.
@@ -2200,13 +2373,40 @@ def classify_execution_identity(
     }
 
 
-def _identity_evidence(value: object) -> DeviceIdentityEvidence:
-    """Una via de atribucion desconocida no se acepta como si fuera prueba."""
+def execution_identity_diagnostics(
+    attribution: dict,
+    *,
+    accepted_evidence: frozenset[DeviceIdentityEvidence],
+) -> dict[str, object]:
+    """Candidatos y rechazo de una atribucion. Es diagnostico: no certifica."""
+    raw_names = attribution.get("owner_candidate_names")
+    names = tuple(
+        item for item in raw_names if isinstance(item, str) and item
+    ) if isinstance(raw_names, list) else ()
+    try:
+        refusal = DeviceIdentityRefusal(
+            str(attribution.get("owner_refusal") or DeviceIdentityRefusal.NONE.value)
+        )
+    except ValueError:
+        refusal = DeviceIdentityRefusal.NONE
+    return {
+        "device_identity_candidate_evidence": _identity_evidence(
+            attribution.get("owner_candidate_evidence"), accepted_evidence,
+        ).value,
+        "device_identity_candidate_names": names,
+        "device_identity_refusal": refusal.value,
+    }
+
+
+def _identity_evidence(
+    value: object, accepted: frozenset[DeviceIdentityEvidence],
+) -> DeviceIdentityEvidence:
+    """Una via desconocida, o ajena a este ejecutor, no se acepta como prueba."""
     try:
         evidence = DeviceIdentityEvidence(str(value))
     except ValueError:
         return DeviceIdentityEvidence.NONE
-    return evidence
+    return evidence if evidence in accepted else DeviceIdentityEvidence.NONE
 
 
 class ControlledIosExecutor:
@@ -2437,7 +2637,10 @@ class ControlledIosExecutor:
         elapsed = int((monotonic() - started) * 1000)
         attribution = attribute()
         output = str(attribution.get("output") or "")
-        identity = classify_execution_identity(device_name, attribution)
+        identity = classify_execution_identity(
+            device_name, attribution,
+            accepted_evidence=REGISTERED_QUERY_ATTRIBUTION_EVIDENCE,
+        )
         if (
             identity["device_identity_provenance"]
             == DeviceIdentityProvenance.MISMATCHED.value

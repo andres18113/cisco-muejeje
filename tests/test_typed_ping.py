@@ -127,7 +127,7 @@ def test_typed_ping_retains_ambiguous_identity_candidates_for_diagnosis():
                 "owner_name": "",
                 "owner_evidence": "none",
                 "owner_candidates": 2,
-                "owner_candidate_evidence": "session_transcript_continuity",
+                "owner_candidate_evidence": "dispatch_transcript_delta",
                 "owner_candidate_names": ["PC-A", "PC-B"],
             })
         return json.dumps({"found": True, "output": output})
@@ -138,101 +138,272 @@ def test_typed_ping_retains_ambiguous_identity_candidates_for_diagnosis():
 
     assert result.device_identity_provenance == "ambiguous"
     assert result.device_identity_candidate_evidence == (
-        "session_transcript_continuity"
+        "dispatch_transcript_delta"
     )
     assert result.device_identity_candidate_names == ("PC-A", "PC-B")
 
 
-@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
-def test_typed_ping_attributes_only_the_terminal_changed_by_this_dispatch():
-    before = "PC>"
-    command = "ping 10.0.50.10"
-    current = before + command + "\nPackets: Sent = 4, Received = 4\nPC>"
-    fingerprints = [
-        {"name": "PC-B", "length": 3, "head": "PC>", "tail": "PC>"},
-        {
-            "name": "PC-A",
-            "length": len(current),
-            "head": current,
-            "tail": current,
-        },
-    ]
-
-    def run_start(script: str) -> str:
-        payload = json.dumps({"PC-B": before, "PC-A": current})
-        harness = f"""
-const outputs = {payload};
-const makeTerminal = name => ({{
-  getOutput: () => outputs[name],
-  enterCommand: () => undefined,
-}});
-const makeDevice = name => ({{
-  getName: () => name,
-  getCommandPrompt: () => makeTerminal(name),
-  getCommandLine: () => makeTerminal(name),
-}});
-const devices = Object.keys(outputs).map(makeDevice);
-global.ipc = {{network: () => ({{
-  getDevice: () => makeDevice('PC-B'),
-  getDeviceCount: () => devices.length,
-  getDeviceAt: index => devices[index],
-}})}};
-let reported = '';
-global.reportResult = value => {{reported = String(value);}};
-{script}
-process.stdout.write(reported);
-"""
-        return subprocess.run(
-            [shutil.which("node"), "-e", harness],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
-
-    def run_attribution(script: str) -> str:
-        payload = json.dumps({"PC-B": current, "PC-A": current})
-        harness = f"""
-const outputs = {payload};
-const makeDevice = name => ({{
-  getName: () => name,
-  getCommandPrompt: () => ({{getOutput: () => outputs[name]}}),
-  getCommandLine: () => ({{getOutput: () => outputs[name]}}),
-}});
-const devices = Object.keys(outputs).map(makeDevice);
-global.ipc = {{network: () => ({{
-  getDevice: () => makeDevice('PC-B'),
-  getDeviceCount: () => devices.length,
-  getDeviceAt: index => devices[index],
-}})}};
-let reported = '';
-global.reportResult = value => {{reported = String(value);}};
-{script}
-process.stdout.write(reported);
-"""
-        return subprocess.run(
-            [shutil.which("node"), "-e", harness],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
+@pytest.mark.parametrize(
+    "evidence",
+    [
+        # La continuidad de transcripcion ya fue falsada en vivo por Router3, y
+        # la identidad de objeto sale de la misma busqueda por nombre.
+        "session_transcript_continuity",
+        "terminal_object_identity",
+        "because_it_was_requested",
+    ],
+)
+def test_typed_ping_identity_accepts_only_the_dispatch_delta_authority(evidence):
+    before = "C:\\>"
+    output = (
+        before
+        + "ping 10.0.50.10\n"
+        + "Packets: Sent = 4, Received = 4, Lost = 0\nC:\\>"
+    )
 
     def send_and_wait(script, _timeout):
         if "enterCommand" in script:
-            started = json.loads(run_start(script))
-            assert started["device_fingerprints"] == fingerprints
-            return json.dumps(started)
+            return json.dumps({"started": True, "before": before})
         if "owner_candidate_names" in script:
-            return run_attribution(script)
-        return json.dumps({"found": True, "output": current})
+            return json.dumps({
+                "found": True,
+                "output": output,
+                "owner_name": "PC-B",
+                "owner_evidence": evidence,
+                "owner_candidates": 1,
+            })
+        return json.dumps({"found": True, "output": output})
 
     result = TypedPingExecutor(send_and_wait, timeout_seconds=0).ping(
         "PC-B", "10.0.50.10",
     )
 
-    assert result.reachable is True
-    assert result.observed_device_name == "PC-B"
-    assert result.device_identity_provenance == "confirmed_unique"
-    assert result.device_identity_evidence == "dispatch_transcript_delta"
+    assert result.observed_device_name == ""
+    assert result.device_identity_provenance == "not_observed"
+
+
+# La red simulada ejecuta en node los scripts PRODUCTIVOS del ping, sin
+# reescribirlos. Las terminales son objetos nuevos en cada llamada, como muestra
+# la evidencia LIVE archivada (`cl===t` nunca coincidio); en el run c6075f0
+# tampoco coincidio `dev===d`, pero se exige cada invariante con ambas
+# semanticas de objeto device. Las transcripciones son sinteticas.
+_SIMULATED_NETWORK_JS = r"""
+const __hExecute = (index, command) => {
+  const device = __hState.devices[index];
+  device.output += command + (device.kind === 'pc'
+    ? '\nPackets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n'
+    : '\nSuccess rate is 100 percent (5/5)\n') + device.prompt;
+};
+const __hTerminal = (index) => ({
+  getOutput: () => __hState.devices[index].output,
+  getPrompt: () => __hState.devices[index].prompt,
+  enterCommand: (command) => {
+    const routed = __hState.route[String(index)];
+    __hExecute(routed === undefined ? index : routed, command);
+    for (const extra of __hState.mirror) { __hExecute(extra, command); }
+    if (__hState.prepend_on_command) {
+      __hState.devices.unshift(__hState.prepend_on_command);
+      __hState.prepend_on_command = null;
+    }
+  },
+});
+const __hDevices = new Map();
+const __hDeviceAt = (index) => {
+  if (index < 0 || index >= __hState.devices.length) { return null; }
+  if (__hState.stable && __hDevices.has(index)) { return __hDevices.get(index); }
+  const device = {getName: () => __hState.devices[index].name};
+  if (__hState.devices[index].kind === 'pc') {
+    device.getCommandPrompt = () => __hTerminal(index);
+  } else {
+    device.getCommandLine = () => __hTerminal(index);
+  }
+  if (__hState.stable) { __hDevices.set(index, device); }
+  return device;
+};
+global.ipc = {network: () => ({
+  getDevice: (name) => {
+    const wanted = Object.prototype.hasOwnProperty.call(__hState.lookup, name)
+      ? __hState.lookup[name] : name;
+    const index = __hState.devices.findIndex((device) => device.name === wanted);
+    return index < 0 ? null : __hDeviceAt(index);
+  },
+  getDeviceCount: () => __hState.devices.length,
+  getDeviceAt: (index) => __hDeviceAt(index),
+})};
+let __hReported = null;
+global.reportResult = (value) => { __hReported = String(value); };
+new Function(__hScript)();
+process.stdout.write(JSON.stringify({reported: __hReported, state: __hState}));
+"""
+
+
+class _SimulatedPacketTracer:
+    """Transporte `send_and_wait` respaldado por la red simulada."""
+
+    def __init__(
+        self, devices, *, stable_device_objects: bool, lookup=None, route=None,
+        mirror=(), prepend_on_command=None, drop_snapshot: bool = False,
+    ) -> None:
+        self._state = {
+            "devices": [dict(device) for device in devices],
+            "stable": stable_device_objects,
+            # Nombre pedido -> nombre del device que devuelve `getDevice`.
+            "lookup": dict(lookup or {}),
+            # Indice cuya terminal recibe el comando -> indice que lo ejecuta.
+            "route": {str(index): target for index, target in (route or {}).items()},
+            # Indices que ademas reciben el mismo comando en la misma ventana.
+            "mirror": list(mirror),
+            "prepend_on_command": prepend_on_command,
+        }
+        self._drop_snapshot = drop_snapshot
+        self.scripts: list[str] = []
+
+    def send_and_wait(self, script: str, _timeout: float) -> str | None:
+        self.scripts.append(script)
+        program = (
+            "const __hState = " + json.dumps(self._state) + ";\n"
+            "const __hScript = " + json.dumps(script) + ";\n"
+            + _SIMULATED_NETWORK_JS
+        )
+        completed = subprocess.run(
+            [shutil.which("node"), "-"],
+            input=program,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        observed = json.loads(completed.stdout)
+        self._state = observed["state"]
+        reported = observed["reported"]
+        if self._drop_snapshot and reported and reported.startswith("{"):
+            value = json.loads(reported)
+            if isinstance(value, dict) and "snapshot" in value:
+                del value["snapshot"]
+                reported = json.dumps(value)
+        return reported
+
+
+_PC_BANNER = "Synthetic PC banner\nC:\\>"
+_PING_REPLY = "\nPackets: Sent = 4, Received = 4, Lost = 0 (0% loss),\nC:\\>"
+_PING = "ping 172.17.10.8"
+
+
+def _pc(name: str, *history: str) -> dict:
+    return {
+        "name": name, "kind": "pc", "prompt": "C:\\>",
+        "output": _PC_BANNER + "".join(item + _PING_REPLY for item in history),
+    }
+
+
+def _simulated_ping(simulated: _SimulatedPacketTracer):
+    return TypedPingExecutor(
+        simulated.send_and_wait, timeout_seconds=0, sleeper=lambda _seconds: None,
+    ).ping("LARGE-PC", "172.17.10.8")
+
+
+_NEEDS_NODE = pytest.mark.skipif(
+    shutil.which("node") is None, reason="Node is unavailable",
+)
+
+# (red simulada, (procedencia, nombre observado, candidatos, rechazo))
+_DISPATCH_ATTRIBUTION = {
+    # Forma LIVE de Router3 (runs b1cdfee y 759807): otro PC ya habia ejecutado
+    # el MISMO ping sobre el mismo banner, y las transcripciones quedan iguales.
+    "same-ping-already-in-another-transcript": (
+        {"devices": [_pc("MULTI-PC", _PING), _pc("SMALL-PC", "ping 172.18.10.13"),
+                     _pc("LARGE-PC")]},
+        ("confirmed_unique", "LARGE-PC", {"LARGE-PC"}, "none"),
+    ),
+    "ping-lands-on-another-terminal": (
+        {"devices": [_pc("MULTI-PC"), _pc("LARGE-PC")], "route": {1: 0}},
+        ("mismatched", "MULTI-PC", {"MULTI-PC"}, "none"),
+    ),
+    "lookup-resolves-another-pc": (
+        {"devices": [_pc("MULTI-PC", _PING), _pc("LARGE-PC", _PING)],
+         "lookup": {"LARGE-PC": "MULTI-PC"}},
+        ("mismatched", "MULTI-PC", {"MULTI-PC"}, "none"),
+    ),
+    "same-ping-reaches-two-terminals": (
+        {"devices": [_pc("MULTI-PC"), _pc("LARGE-PC")], "mirror": [0]},
+        ("ambiguous", "", {"MULTI-PC", "LARGE-PC"}, "none"),
+    ),
+    "owner-name-not-unique": (
+        {"devices": [_pc("LARGE-PC"), _pc("LARGE-PC", _PING)]},
+        ("ambiguous", "", {"LARGE-PC"}, "none"),
+    ),
+    "device-added-ahead-during-query": (
+        {"devices": [_pc("MULTI-PC", _PING), _pc("LARGE-PC")],
+         "prepend_on_command": _pc("LATE-PC")},
+        ("confirmed_unique", "LARGE-PC", {"LARGE-PC"}, "none"),
+    ),
+    # Sin huella no hay autoridad: ni con colision ni sin ella se vuelve a la
+    # continuidad de transcripcion que Router3 ya falso.
+    "snapshot-unavailable-with-collision": (
+        {"devices": [_pc("MULTI-PC", _PING), _pc("LARGE-PC")], "drop_snapshot": True},
+        ("not_observed", "", set(), "dispatch_snapshot_unavailable"),
+    ),
+    "snapshot-unavailable-without-collision": (
+        {"devices": [_pc("MULTI-PC"), _pc("LARGE-PC")], "drop_snapshot": True},
+        ("not_observed", "", set(), "dispatch_snapshot_unavailable"),
+    ),
+}
+
+
+@_NEEDS_NODE
+@pytest.mark.parametrize(
+    "stable_device_objects", [True, False],
+    ids=["stable-device-objects", "fresh-device-objects"],
+)
+@pytest.mark.parametrize(
+    ("network", "expected"), list(_DISPATCH_ATTRIBUTION.values()),
+    ids=list(_DISPATCH_ATTRIBUTION),
+)
+def test_typed_ping_identity_is_the_terminal_that_changed_during_dispatch(
+    network, expected, stable_device_objects,
+):
+    """Ni el nombre pedido ni el objeto que devolvio su busqueda son prueba."""
+    result = _simulated_ping(_SimulatedPacketTracer(
+        stable_device_objects=stable_device_objects, **network,
+    ))
+
+    provenance, observed, candidates, refusal = expected
+    assert result.device_identity_provenance == provenance
+    assert result.observed_device_name == observed
+    assert set(result.device_identity_candidate_names) == candidates
+    assert result.device_identity_refusal == refusal
+    if provenance == "confirmed_unique":
+        assert result.fresh_output_observed and result.reachable
+        assert result.device_identity_evidence == "dispatch_transcript_delta"
+    if provenance == "mismatched":
+        assert not result.fresh_output_observed
+
+
+@_NEEDS_NODE
+def test_dispatch_evidence_does_not_grow_with_unrelated_transcripts():
+    """290 devices en vivo: la huella no puede cargar cada transcripcion ajena."""
+
+    def attribution_script_length(idle_devices: int) -> int:
+        idle = [
+            {"name": f"IDLE-{index:03d}", "kind": "ios", "prompt": "Router>",
+             "output": "Synthetic router log line\n" * 80 + "Router>"}
+            for index in range(idle_devices)
+        ]
+        simulated = _SimulatedPacketTracer(
+            [*idle, _pc("MULTI-PC", _PING), _pc("LARGE-PC")],
+            stable_device_objects=False,
+        )
+        result = _simulated_ping(simulated)
+        assert result.device_identity_provenance == "confirmed_unique"
+        return max(
+            len(script) for script in simulated.scripts
+            if "owner_candidate_names" in script
+        )
+
+    growth = attribution_script_length(40) - attribution_script_length(0)
+
+    # Un device que no contiene el comando solo aporta su nombre al script.
+    assert growth / 40 < 64
 
 
 def test_typed_ping_recognizes_fresh_ios_success_rate_output():

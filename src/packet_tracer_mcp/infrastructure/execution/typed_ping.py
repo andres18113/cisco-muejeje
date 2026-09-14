@@ -19,10 +19,12 @@ from .command_dispatch import (
     terminal_is_idle,
 )
 from .ios_terminal import (
-    DeviceIdentityEvidence,
+    DISPATCH_DELTA_ATTRIBUTION_EVIDENCE,
     DeviceIdentityProvenance,
     classify_execution_identity,
-    execution_attribution_js,
+    dispatch_delta_attribution_js,
+    dispatch_snapshot_js,
+    execution_identity_diagnostics,
     extract_terminal_command_window,
 )
 
@@ -145,28 +147,18 @@ class TypedPingExecutor:
 
         source = json.dumps(source_device)
         command = "ping " + target
+        # La huella de terminales se toma en ESTE script, justo antes de
+        # `enterCommand`, y enumera la red entera como la atribucion. Por eso el
+        # tope es el del despacho IOS: si vence con el script todavia corriendo,
+        # el ping queda despachado sin que Python lo sepa.
         started = self._json_result("".join((
-            "try{var net=ipc.network();var d=net.getDevice(", source, ");",
+            "try{var d=ipc.network().getDevice(", source, ");",
             "var t=null;var kind='';",
             "if(d&&typeof d.getCommandPrompt==='function'){",
             "t=d.getCommandPrompt();if(t){kind='command_prompt';}}",
             "if(!t&&d&&typeof d.getCommandLine==='function'){",
             "t=d.getCommandLine();if(t){kind='ios_command_line';}}",
             "var before=t&&typeof t.getOutput==='function'?String(t.getOutput()):'';",
-            "var fingerprints=[];var n=(typeof net.getDeviceCount==='function')",
-            "?net.getDeviceCount():0;for(var i=0;i<n;i++){var dev=null;",
-            "try{dev=net.getDeviceAt(i);}catch(de){dev=null;}if(!dev)continue;",
-            "var candidate=null;try{if(typeof dev.getCommandPrompt==='function')",
-            "{candidate=dev.getCommandPrompt();}}catch(pe){candidate=null;}",
-            "try{if(!candidate&&typeof dev.getCommandLine==='function')",
-            "{candidate=dev.getCommandLine();}}catch(le){candidate=null;}",
-            "if(!candidate||typeof candidate.getOutput!=='function')continue;",
-            "var candidateName='',candidateOutput='';try{",
-            "candidateName=String(dev.getName());",
-            "candidateOutput=String(candidate.getOutput());}catch(fe){continue;}",
-            "fingerprints.push({name:candidateName,length:candidateOutput.length,",
-            "head:candidateOutput.substring(0,128),tail:candidateOutput.substring(",
-            "Math.max(0,candidateOutput.length-512))});}",
             PAGER_GUARD_JS,
             IDLE_GUARD_JS,
             # Mismo script que el despacho: si el pager sigue activo, el `p` de
@@ -176,12 +168,12 @@ class TypedPingExecutor:
             "if(__pager){blocked='pager_active';}",
             "else if(!__idle){blocked='command_in_flight';}",
             "else if(t&&typeof t.enterCommand==='function'){",
+            dispatch_snapshot_js(command, prefer_command_prompt=True),
             "t.enterCommand(", json.dumps(command), ");started=true;}",
             "reportResult(JSON.stringify({started:started,blocked:blocked,before:before,",
-            "device_fingerprints:fingerprints,",
-            "terminal_kind:kind}));}",
+            "snapshot:__snap,terminal_kind:kind}));}",
             "catch(e){reportResult('ERROR:'+e);}",
-        )), 5.0)
+        )), 10.0)
         if started.get("blocked"):
             return TypedPingResult(
                 False, False,
@@ -225,32 +217,24 @@ class TypedPingExecutor:
         # el device al que se le atribuye salen de la misma pasada. Una medida
         # de reenvio sin fuente atribuida no es una medida de este device.
         attribution = self._json_result(
-            execution_attribution_js(
+            dispatch_delta_attribution_js(
                 source,
                 before,
                 command,
+                dispatch_snapshot=started.get("snapshot"),
                 prefer_command_prompt=True,
-                device_fingerprints=started.get("device_fingerprints"),
             ),
             5.0,
         )
-        identity = classify_execution_identity(source_device, attribution)
-        candidate_evidence = str(
-            attribution.get("owner_candidate_evidence") or "none"
+        identity = classify_execution_identity(
+            source_device, attribution,
+            accepted_evidence=DISPATCH_DELTA_ATTRIBUTION_EVIDENCE,
         )
-        if candidate_evidence not in {
-            item.value for item in DeviceIdentityEvidence
-        }:
-            candidate_evidence = DeviceIdentityEvidence.NONE.value
-        raw_candidate_names = attribution.get("owner_candidate_names")
-        candidate_names = tuple(
-            item for item in raw_candidate_names
-            if isinstance(item, str) and item
-        ) if isinstance(raw_candidate_names, list) else ()
         identity_evidence = {
             **identity,
-            "device_identity_candidate_evidence": candidate_evidence,
-            "device_identity_candidate_names": candidate_names,
+            **execution_identity_diagnostics(
+                attribution, accepted_evidence=DISPATCH_DELTA_ATTRIBUTION_EVIDENCE,
+            ),
         }
         if (
             identity["device_identity_provenance"]

@@ -37,6 +37,7 @@ class _TypedPingEvidence(Protocol):
     device_identity_evidence: str
     device_identity_candidate_evidence: str
     device_identity_candidate_names: tuple[str, ...]
+    device_identity_refusal: str
 
 
 def serialize_typed_ping_evidence(
@@ -60,6 +61,7 @@ def serialize_typed_ping_evidence(
         "device_identity_candidate_names": list(
             result.device_identity_candidate_names
         ),
+        "device_identity_refusal": result.device_identity_refusal,
     }
 
 

@@ -43,7 +43,6 @@ from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosCommandResult,
     IosSessionState,
     OperationalQueryId,
-    classify_execution_identity,
     execution_attribution_js,
 )
 
@@ -99,23 +98,16 @@ def _attribution(**updates) -> dict:
     return values
 
 
-def _run_attribution_javascript(
-    *, requested: str, resolved: str, outputs: dict[str, str] | None = None,
-    device_fingerprints: list[dict[str, object]] | None = None,
-) -> dict:
+def _run_attribution_javascript(*, requested: str, resolved: str) -> dict:
     baseline = "PC>"
     command = "ping 172.17.10.8"
     current = baseline + command + "\nPackets: Sent = 4, Received = 4\nPC>"
     payload = json.dumps({
         "resolved": resolved,
-        "outputs": outputs or {"LARGE-PC": current, "OTHER-PC": current},
+        "outputs": {"LARGE-PC": current, "OTHER-PC": current},
     })
     attribution = execution_attribution_js(
-        json.dumps(requested),
-        baseline,
-        command,
-        prefer_command_prompt=True,
-        device_fingerprints=device_fingerprints,
+        json.dumps(requested), baseline, command, prefer_command_prompt=True,
     )
     harness = f"""
 const payload = {payload};
@@ -167,63 +159,6 @@ def test_session_transcript_continuity_attributes_the_executing_session():
     assert result.device_identity_provenance == (
         DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
     )
-
-
-@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
-def test_dispatch_delta_disambiguates_identical_terminal_transcripts():
-    current = (
-        "PC>ping 172.17.10.8\n"
-        "Packets: Sent = 4, Received = 4\nPC>"
-    )
-    observed = _run_attribution_javascript(
-        requested="LARGE-PC",
-        resolved="LARGE-PC",
-        outputs={"LARGE-PC": current, "OTHER-PC": current},
-        device_fingerprints=[
-            {"name": "LARGE-PC", "length": 3, "head": "PC>", "tail": "PC>"},
-            {
-                "name": "OTHER-PC",
-                "length": len(current),
-                "head": current,
-                "tail": current,
-            },
-        ],
-    )
-
-    assert observed["owner_name"] == "LARGE-PC"
-    assert observed["owner_evidence"] == "dispatch_transcript_delta"
-    assert observed["owner_candidates"] == 1
-    assert classify_execution_identity("LARGE-PC", observed) == {
-        "observed_device_name": "LARGE-PC",
-        "device_identity_provenance": "confirmed_unique",
-        "device_identity_evidence": "dispatch_transcript_delta",
-    }
-
-
-@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
-def test_requested_name_cannot_hide_the_other_terminal_that_changed():
-    fingerprints = [
-        {"name": name, "length": 3, "head": "PC>", "tail": "PC>"}
-        for name in ("LARGE-PC", "OTHER-PC")
-    ]
-    observed = _run_attribution_javascript(
-        requested="LARGE-PC",
-        resolved="LARGE-PC",
-        outputs={
-            "LARGE-PC": "PC>",
-            "OTHER-PC": (
-                "PC>ping 172.17.10.8\n"
-                "Packets: Sent = 4, Received = 4\nPC>"
-            ),
-        },
-        device_fingerprints=fingerprints,
-    )
-
-    assert observed["owner_name"] == "OTHER-PC"
-    assert observed["owner_evidence"] == "dispatch_transcript_delta"
-    assert classify_execution_identity("LARGE-PC", observed)[
-        "device_identity_provenance"
-    ] == "mismatched"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
