@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = ROOT / "docs" / "reference" / "cp-scale" / "router3_successful_run.json"
+STATE = ROOT / "docs" / "reference" / "cp-scale" / "current_state.json"
 RUN_ID = "canonical-cp-scale-voice-20260914T184407060316Z-d2245d45d442"
 HEAD = "d2245d45d442d32f5dfb107b1a715089f1cb8551"
 PRECLEANUP_SHA = "bb863238acaf8d0662e2a67482183c14b9aa852447135730a723efa09fd46427"
@@ -213,3 +214,18 @@ def test_router3_success_index_pins_complete_product_evidence() -> None:
         assert observation["link_count"] == 0
     assert cleanup["cleanup_realtime"]["verified"] is True
     assert cleanup["cleanup_realtime"]["state"]["simulation_mode"] is False
+
+
+def test_current_state_points_to_the_router3_success_index() -> None:
+    state = json.loads(STATE.read_text(encoding="utf-8"))
+    pointer = state["operational_state"]["router3"]["evidence"]
+    raw = INDEX.read_bytes()
+
+    assert pointer == {
+        "path": "docs/reference/cp-scale/router3_successful_run.json",
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "run_identity": RUN_ID,
+        "executed_sha": HEAD,
+        "classification": "VERIFIED",
+        "successful_closure": True,
+    }

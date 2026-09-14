@@ -1,16 +1,14 @@
 # CP-SCALE state and evidence index
 
 Use [current_state.json](current_state.json) for the compact authoritative
-operational state. Router0 is closed by the hash-pinned success index executed
-at `8980ada7ab993cbe5b5b915cefde24deb04b3e3f`; the closure is valid only with
-its cleanup attestation, and no Router0 re-execution is authorized. Router3 has
-an independent governed offline target and its preparation is closed as
-`ROUTER3_OFFLINE_PREPARED`. It has not been executed, has no acquired LIVE
-evidence, and is not `VERIFIED`. Its preflight now accepts only an explicit
-`router3-branch` authorization whose operator SHA equals the requested HEAD and
-the observed repository/upstream HEAD; the observed source tree is retained in
-the authorization evidence. Absence or mismatch is rejected before Packet
-Tracer contact. `current_state.json` records no authorization instance.
+operational state. Router0 and Router3 are closed by separate hash-pinned
+success indexes. Router3 executed `router3-branch` at
+`d2245d45d442d32f5dfb107b1a715089f1cb8551` and reached
+`ROUTER3_BRANCH_VERIFIED_AND_CLEANED`; that closure is valid only with its
+precleanup evidence and cleanup attestation. The evidence promotion and this
+post-execution reconciliation are later commits, not the executed SHA. No
+Router0 or Router3 re-execution, remaining-stage run, full qualification, or
+other LIVE scope is authorized by this record.
 
 Router3 architecture ownership is intentionally narrow. E1/E4 owns the two
 Small Branch traffic-flow authorities; E4/E5/E9 own topology, selected wired
@@ -27,6 +25,12 @@ Router0 run or controls the current next step.
 
 Supporting records:
 
+- [Router3 successful run](router3_successful_run.json) pins the first governed
+  `ROUTER3_BRANCH_VERIFIED_AND_CLEANED` closure, all eight uniquely attributed
+  `dispatch_transcript_delta` forwarding probes, the exercised Floor3 STP
+  simulation-time extension, its complete precleanup evidence and cleanup
+  attestation. It is the Router3 success authority; prior FAILED bundles remain
+  FAILED and are not reinterpreted by this success.
 - [Router0 successful run](router0_successful_run.json) pins the first governed
   `ROUTER0_BRANCH_VERIFIED_AND_CLEANED` closure, its complete pre-cleanup
   evidence and cleanup attestation. It is the Router0 success authority.

@@ -249,7 +249,9 @@ def test_router3_terminal_policy_stops_before_remaining_and_requires_cleanup():
     assert plan.bounded_target is True
 
 
-def test_current_state_records_preparation_without_live_authority(preparation):
+def test_current_state_preserves_pre_execution_projection_without_live_authority(
+    preparation,
+):
     composition, router0, router3, transition = preparation
     document = json.loads(STATE.read_text(encoding="utf-8"))
     state = document["operational_state"]["router3"]
@@ -263,17 +265,20 @@ def test_current_state_records_preparation_without_live_authority(preparation):
         if SMALL in (item.source_site_id, item.destination_site_id)
     )
 
-    assert state["status"] == "ROUTER3_OFFLINE_PREPARED"
-    assert state["executed"] is False
-    assert state["verification"] == "NOT_VERIFIED"
-    assert state["live_evidence"] == "UNKNOWN"
-    assert state["live_evidence_acquired"] is False
+    assert state["status"] == "VERIFIED_AND_CLEANED"
+    assert state["executed"] is True
+    assert state["verification"] == "VERIFIED"
+    assert state["live_evidence"] == "HASH_PINNED"
+    assert state["live_evidence_acquired"] is True
     assert state["live_execution_authorized"] is False
+    assert state["offline_preparation_role"] == (
+        "PRE_EXECUTION_PROJECTION_NON_GOVERNING"
+    )
     assert "router3_live_authorization" not in state
     assert "authorized_sha" not in state["offline_preparation"]
     assert document["operational_state"]["live_execution_authorized"] is False
     assert document["operational_state"]["next_active_step"] == (
-        "READY_FOR_EXPLICIT_ROUTER3_LIVE_AUTHORIZATION"
+        "ROUTER3_CLOSED_AWAIT_EXPLICIT_NEW_SCOPE"
     )
 
     assert offline["target"] == "router3-branch"

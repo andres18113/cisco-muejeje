@@ -99,7 +99,7 @@ def test_current_state_separates_operational_authority_from_history():
     raw = STATE_PATH.read_bytes()
     document = json.loads(raw)
 
-    assert document["schema"] == "cp-scale-current-state-v3"
+    assert document["schema"] == "cp-scale-current-state-v4"
     assert len(raw) < 24_576
     assert datetime.fromisoformat(document["updated_at"].replace("Z", "+00:00"))
     assert set(document) == {
@@ -120,8 +120,7 @@ def test_current_state_separates_operational_authority_from_history():
     index = json.loads(authority_raw)
 
     assert operational["authority"] == (
-        "HASH_PINNED_ROUTER0_SUCCESS_INDEX_AND_TYPED_"
-        "ROUTER3_OFFLINE_PROJECTION"
+        "HASH_PINNED_ROUTER0_AND_ROUTER3_SUCCESS_INDEXES"
     )
     assert authority_path == (
         ROOT / "docs/reference/cp-scale/router0_successful_run.json"
@@ -144,16 +143,34 @@ def test_current_state_separates_operational_authority_from_history():
     assert index["cleanup"]["realtime_restored"] is True
 
     router3 = operational["router3"]
-    assert router3["executed"] is False
-    assert router3["status"] == "ROUTER3_OFFLINE_PREPARED"
-    assert router3["verification"] == "NOT_VERIFIED"
-    assert router3["verification"] != "VERIFIED"
-    assert router3["live_evidence"] == "UNKNOWN"
-    assert router3["live_evidence_acquired"] is False
+    router3_authority = router3["evidence"]
+    router3_raw = (ROOT / router3_authority["path"]).read_bytes()
+    router3_index = json.loads(router3_raw)
+    assert hashlib.sha256(router3_raw).hexdigest() == router3_authority["sha256"]
+    assert router3_authority["run_identity"] == router3_index["run_identity"]
+    assert router3_authority["executed_sha"] == router3_index["executed_sha"]
+    assert router3_authority["classification"] == "VERIFIED"
+    assert router3_authority["successful_closure"] is True
+    assert router3["executed"] is True
+    assert router3["status"] == "VERIFIED_AND_CLEANED"
+    assert router3["verification"] == "VERIFIED"
+    assert router3["closure"] == "ROUTER3_BRANCH_VERIFIED_AND_CLEANED"
+    assert router3["closure"] == router3_index["closure"]
+    assert router3["closure_requires_cleanup"] is True
+    assert router3["reexecution_authorized"] is False
+    assert router3["live_evidence"] == "HASH_PINNED"
+    assert router3["live_evidence_acquired"] is True
     assert router3["live_execution_authorized"] is False
+    reconciliation = router3["reconciliation"]
+    assert reconciliation == {
+        "executed_sha": "d2245d45d442d32f5dfb107b1a715089f1cb8551",
+        "evidence_promotion_sha": "f9f419ad76ea06cf6272b5e99726d241ec29efd9",
+        "reconciliation_sha_role": "GIT_COMMIT_CONTAINING_THIS_DOCUMENT",
+        "executed_sha_is_reconciliation_sha": False,
+    }
     assert operational["live_execution_authorized"] is False
     assert operational["next_active_step"] == (
-        "READY_FOR_EXPLICIT_ROUTER3_LIVE_AUTHORIZATION"
+        "ROUTER3_CLOSED_AWAIT_EXPLICIT_NEW_SCOPE"
     )
 
     history = document["historical_pre_router0"]
