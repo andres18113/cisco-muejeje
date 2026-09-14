@@ -232,6 +232,12 @@ def test_closed_history_cannot_return_as_an_inline_current_state_payload():
     }.intersection(reference)
 
 
+def test_historical_artifact_hash_is_stable_across_platform_checkouts():
+    attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8").splitlines()
+
+    assert "docs/reference/cp-scale/history/*.json text eol=lf diff" in attributes
+
+
 @pytest.mark.parametrize(
     ("defect", "error", "message"),
     (
