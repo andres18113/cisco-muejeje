@@ -10,6 +10,7 @@ from typing import Protocol
 from ...domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationFailureCode,
+    ConvergenceOutcome,
     ConvergenceReport,
     FieldVerificationStatus,
     RuntimeActionMutation,
@@ -68,6 +69,12 @@ from .ios_terminal import (
     qualified_pager_retry_eligible,
 )
 from .runtime_inventory import normalize_runtime_inventory
+from .simulation_time_convergence import (
+    BoundedPvstLearningExtension,
+    classify_extension_stop_reason,
+    pvst_learning_progress_target_ms,
+)
+from .simulation_trace_runtime import SimulationTraceRuntime
 from .stable_convergence import StableConvergenceWaiter
 from .typed_ping import SAFE_PING_TIMEOUT_S, TypedPingExecutor, TypedPingResult
 
@@ -84,6 +91,44 @@ class _IosExecutor(Protocol):
         *,
         interface: str = "",
     ) -> IosCommandResult: ...
+
+
+def _stp_learning_extension_target(instances, ports) -> float | None:
+    """Authorize one protocol window only for a complete LRN-only boundary."""
+
+    if not instances or not ports:
+        return None
+    states = {port.state.casefold() for port in ports}
+    if "lrn" not in states or not states <= {"fwd", "blk", "lrn"}:
+        return None
+    if not all(
+        (
+            port.role.casefold() in {"root", "desg"}
+            and port.state.casefold() in {"fwd", "lrn"}
+        )
+        or (
+            port.role.casefold() in {"altn", "back"}
+            and port.state.casefold() == "blk"
+        )
+        for port in ports
+    ):
+        return None
+    if not all(
+        sum(
+            port.role.casefold() == "root"
+            and port.state.casefold() in {"fwd", "lrn"}
+            for port in instance.interfaces
+        ) == (0 if instance.root_is_local else 1)
+        for instance in instances
+    ):
+        return None
+    targets = {
+        pvst_learning_progress_target_ms(instance.forward_delay_seconds)
+        for instance in instances
+    }
+    if None in targets or len(targets) != 1:
+        return None
+    return next(iter(targets))
 
 
 class FailureScenarioExecutor:
@@ -666,6 +711,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         ping_executor: _PingExecutor | None = None,
         endpoint_address_observer=None,
         ios_executor: ControlledIosExecutor | None = None,
+        simulation_time_observer=None,
         # Medido: un ping totalmente perdido tarda 25.0 s desde un PC. Con
         # 12 s, un destino que de verdad es inalcanzable no llegaba a
         # clasificarse como tal y quedaba sin evidencia atribuible.
@@ -674,8 +720,10 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         convergence_interval_seconds: float = 0.25,
         stable_samples: int = 2,
         max_probe_attempts: int = 6,
-        # Floor2 CP-SCALE measured one valid PVST transition at 34,125 ms.
-        # Keep one bounded read-only envelope above that observation.
+        # Floor2 CP-SCALE measured one valid PVST transition at 34,125 ms, so
+        # this remains the base read-only envelope. Floor3 run
+        # 20260914T102517620388Z ended it in an exact LRN-only state; only that
+        # boundary may earn the separate protocol-sized simulation-time window.
         stp_convergence_timeout_seconds: float = 45.0,
         stp_convergence_interval_seconds: float = 2.0,
         stp_convergence_attempts: int = 24,
@@ -788,6 +836,11 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         self._stp_interval = stp_convergence_interval_seconds
         self._stp_attempts = stp_convergence_attempts
         self._stp_stable_samples = stp_behavior_stable_samples
+        self._pvst_learning_extension = BoundedPvstLearningExtension(
+            simulation_time_observer
+            or SimulationTraceRuntime(send_and_wait).read_simulation_state,
+            interval_seconds=stp_convergence_interval_seconds,
+        )
         self._clock = clock
         self._sleep = sleeper
         self._device_names_by_id: dict[str, str] = {}
@@ -1275,7 +1328,13 @@ class PacketTracerEnterpriseControlPlaneRuntime:
         transitions: list[dict[str, object]] = []
         last_stable_signature: tuple | None = None
         stable_samples = 0
-        while True:
+        fields = self._unobservable_fields(expectation)
+
+        def observe_once():
+            nonlocal last_stable_signature, stable_samples, attempts, fields
+            if attempts:
+                # Re-observe only; never re-render or redispatch the typed action.
+                query_cache.pop(key, None)
             attempts += 1
             show = self._fresh_show(
                 action.device_name,
@@ -1284,13 +1343,9 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 query_cache,
             )
             if isinstance(show, RuntimeControlPlaneVerification):
-                return show.model_copy(update={
-                    "convergence": ConvergenceReport(
-                        attempts=attempts,
-                        final_status=show.status,
-                        last_observable_state="unobservable",
-                    ),
-                })
+                last_stable_signature = None
+                stable_samples = 0
+                return show, "unobservable", False, False, None, False
             instances = parse_show_spanning_tree(show.output)
             if not instances:
                 result = self._unobservable(
@@ -1305,6 +1360,7 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 ports_evidence: list[str] = []
                 last_stable_signature = None
                 stable_samples = 0
+                extension_target = None
             else:
                 by_vlan = {item.vlan_id: item for item in instances}
                 selected = [
@@ -1429,6 +1485,17 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                             if not all_vlans_present
                             else "stable_role_contradiction"
                         )
+                extension_target = (
+                    _stp_learning_extension_target(selected, ports)
+                    if (
+                        all_vlans_present
+                        and fields.get(
+                            "source_device_name",
+                            FieldVerificationStatus.VERIFIED,
+                        ) is FieldVerificationStatus.VERIFIED
+                    )
+                    else None
+                )
             transition = {"state": state, "ports": ports_evidence}
             if not transitions or transitions[-1] != transition:
                 transitions.append(transition)
@@ -1436,10 +1503,118 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                 result.status is ActionExecutionStatus.VERIFIED
                 and stable_samples >= self._stp_stable_samples
             )
+            extension_continuation = bool(
+                confirmed
+                or extension_target is not None
+                or (
+                    result.status is ActionExecutionStatus.VERIFIED
+                    and stable
+                    and role_state_consistent
+                    and stable_samples < self._stp_stable_samples
+                )
+            )
+            return (
+                result,
+                state,
+                confirmed,
+                transitional,
+                extension_target,
+                extension_continuation,
+            )
+
+        def finish(result, state, *, extension_evidence=None):
+            details = {
+                "stable_samples_required": self._stp_stable_samples,
+                "stable_samples_observed": stable_samples,
+                "transitions": transitions,
+            }
+            if extension_evidence is not None:
+                details.update(extension_evidence)
+            return result.model_copy(update={
+                "convergence": ConvergenceReport(
+                    attempts=attempts,
+                    elapsed_ms=int(
+                        max(0.0, self._clock() - started) * 1000
+                    ),
+                    final_status=result.status,
+                    last_observable_state=state,
+                    details=details,
+                ),
+            })
+
+        while True:
+            (
+                result,
+                state,
+                confirmed,
+                transitional,
+                extension_target,
+                extension_continuation,
+            ) = observe_once()
+            if state == "unobservable" and not transitions:
+                return result.model_copy(update={
+                    "convergence": ConvergenceReport(
+                        attempts=attempts,
+                        final_status=result.status,
+                        last_observable_state=state,
+                    ),
+                })
             exhausted = bool(
                 attempts >= self._stp_attempts
                 or self._clock() + self._stp_interval >= deadline
             )
+            if exhausted and extension_target is not None:
+                def inspect_extension() -> dict[str, object]:
+                    nonlocal result, state, confirmed, extension_continuation
+                    (
+                        result,
+                        state,
+                        confirmed,
+                        _transitional,
+                        _extension_target,
+                        extension_continuation,
+                    ) = observe_once()
+                    return {
+                        "configuration_channel": confirmed,
+                        "continuation_authorized": extension_continuation,
+                        "failure_reason": result.message,
+                    }
+
+                extension = self._pvst_learning_extension.grant(
+                    inspect_extension,
+                    required_simulation_progress_ms=extension_target,
+                )
+                extension_evidence = self._pvst_learning_extension.evidence(
+                    extension,
+                    requested_progress_ms=extension_target,
+                )
+                if (
+                    not extension.converged
+                    and classify_extension_stop_reason(extension.stop_reason)
+                    is ConvergenceOutcome.OBSERVER_INCOMPLETE
+                ):
+                    result = RuntimeControlPlaneVerification(
+                        expectation_id=expectation.id,
+                        stage=ControlPlaneExecutionStage.BEHAVIOR,
+                        status=ActionExecutionStatus.UNOBSERVABLE,
+                        evidence_method=(
+                            "fresh_show_spanning_tree_stable_roles"
+                        ),
+                        fresh_evidence=False,
+                        fields={
+                            name: FieldVerificationStatus.UNOBSERVABLE
+                            for name in fields
+                        },
+                        message=(
+                            "The qualified PVST learning extension did not "
+                            "retain an authoritative simulation clock."
+                        ),
+                    )
+                return finish(
+                    result,
+                    state,
+                    extension_evidence=extension_evidence,
+                )
             if (
                 confirmed
                 or not transitional
@@ -1467,23 +1642,8 @@ class PacketTracerEnterpriseControlPlaneRuntime:
                             "repeat enough times inside the bounded window."
                         ),
                     )
-                return result.model_copy(update={
-                    "convergence": ConvergenceReport(
-                        attempts=attempts,
-                        elapsed_ms=int(
-                            max(0.0, self._clock() - started) * 1000
-                        ),
-                        final_status=result.status,
-                        last_observable_state=state,
-                        details={
-                            "stable_samples_required": self._stp_stable_samples,
-                            "stable_samples_observed": stable_samples,
-                            "transitions": transitions,
-                        },
-                    ),
-                })
+                return finish(result, state)
             self._sleep(self._stp_interval)
-            query_cache.pop(key, None)
 
     def _observe_etherchannel(self, expectation, action, query_cache):
         if not isinstance(action, ConfigureEtherChannel):

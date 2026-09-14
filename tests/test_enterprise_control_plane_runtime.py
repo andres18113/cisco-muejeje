@@ -28,6 +28,9 @@ from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosSessionState,
     OperationalQueryId,
 )
+from src.packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
+    SimulationStateObservation,
+)
 from src.packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingResult
 from test_enterprise_control_plane import _compile
 from test_ios_terminal import (
@@ -100,6 +103,68 @@ def _stp_output(*, root_vlans: set[int]) -> str:
         block = fixture.split("show spanning-tree\n", 1)[1].rsplit("Switch>", 1)[0]
         blocks.append(block.replace("VLAN0001", f"VLAN{vlan_id:04d}"))
     return "show spanning-tree\n" + "".join(blocks) + "Switch>"
+
+
+def _stp_learning_case(
+    outputs: Iterable[str],
+    observe_simulation_state,
+    *,
+    attempts: int,
+    require_source_identity: bool = False,
+    observed_source_name: str = "",
+):
+    """Run the real STP behavior observer with only PT reads substituted."""
+
+    plan = _compile().plan
+    action = next(
+        item for item in plan.actions
+        if item.device_id == "sw1" and item.action_type.value == "configure_stp"
+    )
+    expectation = next(
+        item for item in plan.verification_expectations
+        if item.kind is ControlPlaneVerificationKind.END_TO_END_REACHABILITY
+        and item.action_id == action.id
+    )
+    if require_source_identity:
+        expectation = expectation.model_copy(update={
+            "expected": {
+                **expectation.expected,
+                "source_device_name": "HQ-SW1",
+            },
+        })
+    ios = SequenceControlPlaneIos(tuple(
+        IosCommandResult(
+            device_name="HQ-SW1",
+            query_id=OperationalQueryId.SHOW_SPANNING_TREE,
+            executed=True,
+            output=output,
+            session_state=IosSessionState.EXEC_PROMPT_READY,
+            fresh_output_observed=True,
+            output_complete=True,
+            window_strategy="prefix_delta",
+            observed_device_name=observed_source_name,
+            device_identity_provenance=(
+                "confirmed_unique" if observed_source_name else "not_observed"
+            ),
+        )
+        for output in outputs
+    ))
+    dispatched: list[str] = []
+    runtime = PacketTracerEnterpriseControlPlaneRuntime(
+        lambda: [],
+        lambda script: dispatched.append(script) or True,
+        lambda _script, _timeout: None,
+        ping_executor=SequencePing([]),
+        ios_executor=ios,
+        simulation_time_observer=observe_simulation_state,
+        stp_convergence_timeout_seconds=1.0,
+        stp_convergence_interval_seconds=0.0,
+        stp_convergence_attempts=attempts,
+    )
+    runtime.apply_actions([action])
+    mutation_count = len(dispatched)
+
+    return runtime.verify([expectation])[0], dispatched, mutation_count, ios
 
 
 def _ping(reachable: bool, *, fresh: bool = True) -> TypedPingResult:
@@ -521,6 +586,112 @@ def test_stp_behavior_reobserves_learning_without_redispatch():
     ]
     assert len(dispatched) == mutation_count
     assert len(ios.calls) == 3
+
+
+def test_stp_behavior_extends_once_when_the_base_window_ends_in_learning():
+    """Floor3 ended in qualified LRN; only a read-only sim-time window follows."""
+    stable = _stp_output(root_vlans={10})
+    listening = stable.replace("Desg FWD", "Desg LIS")
+    learning = stable.replace("Desg FWD", "Desg LRN")
+    simulation_times = iter((1_000, 1_000, 2_000))
+
+    def observe_simulation_state() -> SimulationStateObservation:
+        return SimulationStateObservation(
+            observed=True,
+            simulation_mode=False,
+            sim_time=next(simulation_times),
+        )
+
+    observed, dispatched, mutation_count, ios = _stp_learning_case(
+        (stable, listening, learning, stable, stable),
+        observe_simulation_state,
+        attempts=3,
+        require_source_identity=True,
+        observed_source_name="HQ-SW1",
+    )
+
+    assert observed.status is ActionExecutionStatus.VERIFIED
+    assert observed.convergence is not None
+    assert observed.convergence.attempts == 5
+    assert observed.convergence.details["learning_extension_authorized"] is True
+    assert observed.convergence.details["learning_extension_outcome"] == "converged"
+    assert observed.convergence.details["learning_extension_clock"] == (
+        "packet_tracer_simulation_time"
+    )
+    assert len(dispatched) == mutation_count
+    assert len(ios.calls) == 5
+
+
+def test_stp_learning_extension_requires_an_attributed_terminal_boundary():
+    learning = _stp_output(root_vlans={10}).replace("Desg FWD", "Desg LRN")
+    simulation_reads: list[str] = []
+
+    def observe_simulation_state() -> SimulationStateObservation:
+        simulation_reads.append("read")
+        return SimulationStateObservation(observed=False)
+
+    observed, _dispatched, _mutation_count, _ios = _stp_learning_case(
+        (learning,),
+        observe_simulation_state,
+        attempts=1,
+        require_source_identity=True,
+    )
+
+    assert observed.status is not ActionExecutionStatus.VERIFIED
+    assert observed.convergence is not None
+    assert "learning_extension_authorized" not in observed.convergence.details
+    assert simulation_reads == []
+
+
+@pytest.mark.parametrize("terminal_state", ["LIS", "unqualified-LRN"])
+def test_stp_learning_extension_refuses_an_unqualified_terminal_boundary(
+    terminal_state,
+):
+    state = "LRN" if terminal_state == "unqualified-LRN" else terminal_state
+    output = _stp_output(root_vlans={10}).replace("Desg FWD", f"Desg {state}")
+    if terminal_state == "unqualified-LRN":
+        output = output.replace("Forward Delay 15 sec", "Forward Delay 7 sec")
+    simulation_reads: list[str] = []
+
+    def observe_simulation_state() -> SimulationStateObservation:
+        simulation_reads.append("read")
+        return SimulationStateObservation(
+            observed=True,
+            simulation_mode=False,
+            sim_time=1_000,
+        )
+
+    observed, _dispatched, _mutation_count, _ios = _stp_learning_case(
+        (output,),
+        observe_simulation_state,
+        attempts=1,
+    )
+
+    assert observed.status is ActionExecutionStatus.FAILED
+    assert observed.convergence is not None
+    assert "learning_extension_authorized" not in observed.convergence.details
+    assert simulation_reads == []
+
+
+def test_stp_learning_extension_fails_closed_without_a_simulation_clock():
+    learning = _stp_output(root_vlans={10}).replace("Desg FWD", "Desg LRN")
+    observed, _dispatched, _mutation_count, _ios = _stp_learning_case(
+        (learning,),
+        lambda: SimulationStateObservation(observed=False),
+        attempts=1,
+    )
+
+    assert observed.status is ActionExecutionStatus.UNOBSERVABLE
+    assert observed.fresh_evidence is False
+    assert observed.convergence is not None
+    assert observed.convergence.attempts == 1
+    assert observed.convergence.details["learning_extension_authorized"] is False
+    assert observed.convergence.details["learning_extension_outcome"] == (
+        "observer_incomplete"
+    )
+    assert observed.convergence.details["learning_extension_stop_reason"] == (
+        "simulation_clock_unobservable"
+    )
 
 
 def test_stp_behavior_changed_stable_signature_restarts_confirmation():
