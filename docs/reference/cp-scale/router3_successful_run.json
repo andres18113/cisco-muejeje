@@ -1,0 +1,52 @@
+{
+  "schema": "cp-scale-router3-successful-run-v1",
+  "classification": "VERIFIED",
+  "successful_closure": true,
+  "run_identity": "canonical-cp-scale-voice-20260914T184407060316Z-d2245d45d442",
+  "executed_sha": "d2245d45d442d32f5dfb107b1a715089f1cb8551",
+  "requested_target": "router3-branch",
+  "closure": "ROUTER3_BRANCH_VERIFIED_AND_CLEANED",
+  "artifacts": [
+    {
+      "phase": "precleanup",
+      "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260914T184407060316Z-d2245d45d442-precleanup.json",
+      "sha256": "bb863238acaf8d0662e2a67482183c14b9aa852447135730a723efa09fd46427"
+    },
+    {
+      "phase": "cleanup",
+      "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260914T184407060316Z-d2245d45d442-cleanup.json",
+      "sha256": "91120f40ce7cf18c10410f8cf141ba2d160345fa834f6b90d58b888a5b29ee1f"
+    }
+  ],
+  "verified": {
+    "stages": [
+      "routing-core",
+      "router4-switch10",
+      "floor1",
+      "floor2",
+      "floor3",
+      "router0-branch",
+      "router3-branch"
+    ],
+    "cumulative_devices": 314,
+    "cumulative_links": 219,
+    "configuration": "ACCEPTED_UNDER_GOVERNED_CEILINGS",
+    "control_plane": "VERIFIED",
+    "voice": "CANONICAL_COMPLETE_69_OF_69",
+    "router_to_workload": "VERIFIED_4_OF_4",
+    "pc_to_pc": "VERIFIED_4_OF_4",
+    "typed_ping_authority": "DISPATCH_TRANSCRIPT_DELTA_CONFIRMED_UNIQUE_8_OF_8",
+    "floor3_stp_learning_extension": "VERIFIED_AFTER_ONE_QUALIFIED_SIMULATION_TIME_EXTENSION",
+    "mutation_replay": "NO_MUTATION_REPLAY",
+    "workspace_readback": "VERIFIED_TWICE"
+  },
+  "cleanup": {
+    "deleted_devices": 314,
+    "first_semantic_devices": 0,
+    "first_links": 0,
+    "second_semantic_devices": 0,
+    "second_links": 0,
+    "realtime_restored": true
+  },
+  "evidence_authority": "ROUTER3_SUCCESS"
+}
