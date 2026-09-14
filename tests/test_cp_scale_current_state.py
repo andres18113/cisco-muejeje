@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
+import pytest
+
+from tests.cp_scale_historical_state import load_historical_pre_router0
 from tests.handoff_state import parse_handoff_state
 
 
@@ -16,11 +20,11 @@ HANDOFF_PATH = ROOT / "handoff.md"
 
 
 def _historical_live_state(document: dict) -> dict:
-    return document["historical_pre_router0"]["live_state"]
+    return load_historical_pre_router0(document)["live_state"]
 
 
 def _historical_gate(document: dict) -> dict:
-    return document["historical_pre_router0"]["offline_operational_gate"]
+    return load_historical_pre_router0(document)["offline_operational_gate"]
 
 
 def test_router0_poe_observer_failure_does_not_promote_or_consume_router0():
@@ -99,8 +103,8 @@ def test_current_state_separates_operational_authority_from_history():
     raw = STATE_PATH.read_bytes()
     document = json.loads(raw)
 
-    assert document["schema"] == "cp-scale-current-state-v4"
-    assert len(raw) < 28_672
+    assert document["schema"] == "cp-scale-current-state-v5"
+    assert len(raw) < 16_384
     assert datetime.fromisoformat(document["updated_at"].replace("Z", "+00:00"))
     assert set(document) == {
         "schema",
@@ -173,10 +177,25 @@ def test_current_state_separates_operational_authority_from_history():
         "READY_FOR_EXPLICIT_FULL_QUALIFICATION_LIVE_AUTHORIZATION"
     )
 
-    history = document["historical_pre_router0"]
-    assert history["classification"] == "HISTORICAL_PRE_ROUTER0_NON_GOVERNING"
-    assert history["governs_current_operation"] is False
-    assert history["authorization_effect"] == "NONE"
+    history_reference = document["historical_pre_router0"]
+    assert set(history_reference) == {
+        "classification",
+        "governs_current_operation",
+        "authorization_effect",
+        "artifact",
+    }
+    assert history_reference["classification"] == (
+        "HISTORICAL_PRE_ROUTER0_NON_GOVERNING"
+    )
+    assert history_reference["governs_current_operation"] is False
+    assert history_reference["authorization_effect"] == "NONE"
+    assert history_reference["artifact"] == {
+        "path": "docs/reference/cp-scale/history/pre_router0.json",
+        "sha256": "ce10cbf93737daa5c1a2320b980d00e6d0013802980a7450dc48766f62d176ff",
+        "schema": "cp-scale-historical-pre-router0-v1",
+    }
+
+    history = load_historical_pre_router0(document)
     historical_gate = history["offline_operational_gate"]
     assert historical_gate["router0_authorized"] is True
     assert historical_gate["router0_precondition"]["attempts_authorized"] == 1
@@ -191,6 +210,60 @@ def test_current_state_separates_operational_authority_from_history():
     assert historical_handoff
     for key, expected in historical_handoff.items():
         assert handoff[key] == expected
+
+
+def test_closed_history_cannot_return_as_an_inline_current_state_payload():
+    document = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    reference = document["historical_pre_router0"]
+
+    assert set(reference) == {
+        "classification",
+        "governs_current_operation",
+        "authorization_effect",
+        "artifact",
+    }
+    assert not {
+        "live_state",
+        "offline_operational_gate",
+        "handoff_compatibility",
+        "runs",
+        "evidence",
+        "snapshots",
+    }.intersection(reference)
+
+
+@pytest.mark.parametrize(
+    ("defect", "error", "message"),
+    (
+        ("outside_repository", ValueError, "within repository"),
+        ("missing", FileNotFoundError, "does not exist"),
+        ("sha256", ValueError, "SHA-256"),
+        ("schema", ValueError, "schema reference"),
+        ("classification", ValueError, "non-governing"),
+    ),
+)
+def test_historical_loader_fails_closed_on_invalid_references(
+    defect,
+    error,
+    message,
+):
+    document = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    defective = deepcopy(document)
+    reference = defective["historical_pre_router0"]
+
+    if defect == "outside_repository":
+        reference["artifact"]["path"] = "../outside.json"
+    elif defect == "missing":
+        reference["artifact"]["path"] = "docs/reference/cp-scale/history/missing.json"
+    elif defect == "sha256":
+        reference["artifact"]["sha256"] = "0" * 64
+    elif defect == "schema":
+        reference["artifact"]["schema"] = "wrong-schema"
+    else:
+        reference["classification"] = "GOVERNING"
+
+    with pytest.raises(error, match=message):
+        load_historical_pre_router0(defective)
 
 
 def test_router0_precondition_retains_product_refusal_without_consuming_live():

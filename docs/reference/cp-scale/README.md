@@ -1,7 +1,10 @@
 # CP-SCALE state and evidence index
 
-Use [current_state.json](current_state.json) for the compact authoritative
-operational state. Router0 and Router3 are closed by separate hash-pinned
+Use [current_state.json](current_state.json) only for compact operational
+authority; it is not a ledger. Closed history lives in immutable, hash-pinned
+artifacts such as [history/pre_router0.json](history/pre_router0.json), which
+the current snapshot references without importing its payload. Router0 and
+Router3 are closed by separate hash-pinned
 success indexes. Router3 executed `router3-branch` at
 `d2245d45d442d32f5dfb107b1a715089f1cb8551` and reached
 `ROUTER3_BRANCH_VERIFIED_AND_CLEANED`; that closure is valid only with its
@@ -33,10 +36,12 @@ the typed transition under its branch name, and the CLI only presents the
 contract and its rejection. No new transport, MCP surface, raw command path or
 mutable global state was introduced.
 
-The `historical_pre_router0` section retains the former LIVE state, PoE gates,
-authorizations, next steps, and legacy `handoff.md` projection for audit. It is
-explicitly non-governing: none of those historical fields authorizes another
-Router0 run or controls the current next step.
+The compact `historical_pre_router0` reference points to the former LIVE state,
+PoE gates, authorizations, next steps, and legacy `handoff.md` projection in
+`history/pre_router0.json`. That artifact is explicitly non-governing: none of
+its historical fields authorizes another Router0 run or controls the current
+next step. Future closed runs, extensive evidence and old snapshots belong in
+separate content-addressed artifacts, never inline in `current_state.json`.
 
 Supporting records:
 
@@ -111,10 +116,11 @@ Supporting records:
   judgment ledger through its explicit `scope.exhaustive_through` cutoff. It is
   intentionally not an exhaustive attempt counter after that boundary: adding
   a 19-field retrospective judgment would invent provenance.
-- `current_state.json#historical_pre_router0/live_state/run_accounting` retains
-  the attempt accounting after that cutoff. It indexes later failed runs and
-  the successful Router0 record through hash-pinned archives without turning
-  the historical pre-Router0 gates into current authority.
+- `history/pre_router0.json#payload/live_state/run_accounting`, hash-pinned by
+  `current_state.json#historical_pre_router0/artifact`, retains the attempt
+  accounting after that cutoff. It indexes later failed runs and the successful
+  Router0 record through hash-pinned archives without turning the historical
+  pre-Router0 gates into current authority.
 - [voice_root_cause_implementation_retrospective.md](voice_root_cause_implementation_retrospective.md)
   preserves the causal Voice methodology and closed correction.
 - [`handoff.md`](../../../handoff.md) remains historical context and a legacy

@@ -6,6 +6,8 @@ import hashlib
 import json
 from pathlib import Path
 
+from tests.cp_scale_historical_state import load_historical_pre_router0
+
 
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = (
@@ -115,7 +117,8 @@ def test_router0_bundle_index_pins_original_bytes_and_failure_identity():
 
 def test_current_state_points_to_the_complete_failed_bundle_index():
     state = json.loads(STATE.read_text(encoding="utf-8"))
-    pointer = state["historical_pre_router0"]["live_state"]["run_accounting"][
+    history = load_historical_pre_router0(state)
+    pointer = history["live_state"]["run_accounting"][
         "post_ledger_failed_run_bundles"
     ]
     raw = INDEX.read_bytes()

@@ -249,21 +249,10 @@ def test_router3_terminal_policy_stops_before_remaining_and_requires_cleanup():
     assert plan.bounded_target is True
 
 
-def test_current_state_preserves_pre_execution_projection_without_live_authority(
-    preparation,
-):
-    composition, router0, router3, transition = preparation
+def test_current_state_keeps_closed_router3_as_hash_pinned_authority_only():
     document = json.loads(STATE.read_text(encoding="utf-8"))
+    operational = document["operational_state"]
     state = document["operational_state"]["router3"]
-    offline = state["offline_preparation"]
-    contract = canonical_cp_scale_target_contract(
-        CPScaleCanonicalTarget.ROUTER3_BRANCH,
-    )
-    flows = sorted(
-        item.id
-        for item in composition.enterprise.traffic_flows
-        if SMALL in (item.source_site_id, item.destination_site_id)
-    )
 
     assert state["status"] == "VERIFIED_AND_CLEANED"
     assert state["executed"] is True
@@ -271,47 +260,19 @@ def test_current_state_preserves_pre_execution_projection_without_live_authority
     assert state["live_evidence"] == "HASH_PINNED"
     assert state["live_evidence_acquired"] is True
     assert state["live_execution_authorized"] is False
-    assert state["offline_preparation_role"] == (
-        "PRE_EXECUTION_PROJECTION_NON_GOVERNING"
+    assert state["evidence"]["path"] == (
+        "docs/reference/cp-scale/router3_successful_run.json"
     )
+    assert state["evidence"]["sha256"] == (
+        "fde5255d174fd819ba598f6b1fe7b865c16d18ebf3de09052561fc9b5415af0f"
+    )
+    assert "offline_preparation_role" not in state
+    assert "offline_preparation" not in state
     assert "router3_live_authorization" not in state
-    assert "authorized_sha" not in state["offline_preparation"]
-    assert document["operational_state"]["live_execution_authorized"] is False
-    assert document["operational_state"]["next_active_step"] == (
+    assert operational["live_execution_authorized"] is False
+    assert operational["next_active_step"] == (
         "READY_FOR_EXPLICIT_FULL_QUALIFICATION_LIVE_AUTHORIZATION"
     )
-
-    assert offline["target"] == "router3-branch"
-    assert offline["terminal_stage"] == router3.stage.value
-    assert offline["build_stages"] == [
-        item.value for item in contract.build_stages
-    ]
-    assert offline["run_remaining_reconciliation"] is False
-    assert offline["run_full_qualification"] is False
-    assert offline["allow_retention"] is False
-    assert offline["require_cleanup"] is True
-    assert offline["precleanup_closure"] == contract.precleanup_closure
-    assert offline["cleaned_closure"] == contract.cleaned_closure
-    assert offline["transition"] == {
-        "previous_stage": router0.stage.value,
-        "current_stage": router3.stage.value,
-        "new_devices": len(transition.new_device_ids),
-        "new_links": len(transition.new_link_ids),
-        "new_phones": 7,
-        "configuration_mutations": len(transition.configuration_mutation_ids),
-        "configuration_retained": len(transition.configuration_retained_ids),
-        "control_plane_mutations": len(transition.control_plane_mutation_ids),
-        "control_plane_retained": len(transition.control_plane_retained_ids),
-        "voice_mutations": len(transition.voice_mutation_ids),
-        "voice_retained": len(transition.voice_retained_ids),
-        "claim": "MUTATION_SCOPE_DISJOINT",
-        "runtime_replay_claim": "NOT_ACQUIRED",
-    }
-    assert offline["forwarding"] == {
-        "declared_flow_ids": flows,
-        "router_to_workload_checks": len(router3.branch_forwarding_checks),
-        "representative_pc_checks": len(router3.branch_user_forwarding_checks),
-        "authority_kinds": sorted({
-            item.authority.value for item in router3.branch_forwarding_checks
-        }),
-    }
+    assert operational["full_qualification"]["offline_preparation"]["target"] == (
+        "full-qualification"
+    )
