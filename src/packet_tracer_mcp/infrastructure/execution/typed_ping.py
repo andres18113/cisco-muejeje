@@ -216,6 +216,23 @@ class TypedPingExecutor:
             5.0,
         )
         identity = classify_execution_identity(source_device, attribution)
+        candidate_evidence = str(
+            attribution.get("owner_candidate_evidence") or "none"
+        )
+        if candidate_evidence not in {
+            item.value for item in DeviceIdentityEvidence
+        }:
+            candidate_evidence = DeviceIdentityEvidence.NONE.value
+        raw_candidate_names = attribution.get("owner_candidate_names")
+        candidate_names = tuple(
+            item for item in raw_candidate_names
+            if isinstance(item, str) and item
+        ) if isinstance(raw_candidate_names, list) else ()
+        identity_evidence = {
+            **identity,
+            "device_identity_candidate_evidence": candidate_evidence,
+            "device_identity_candidate_names": candidate_names,
+        }
         if (
             identity["device_identity_provenance"]
             == DeviceIdentityProvenance.MISMATCHED.value
@@ -229,7 +246,7 @@ class TypedPingExecutor:
                     "device_provenance_mismatch:"
                     + identity["observed_device_name"]
                 ),
-                **identity,
+                **identity_evidence,
             )
         attributed = str(attribution.get("output") or "")
         if attributed:
@@ -243,7 +260,7 @@ class TypedPingExecutor:
                 False,
                 window_strategy=window.strategy,
                 failure_reason="no_fresh_ping_result",
-                **identity,
+                **identity_evidence,
             )
         if not window.query_echo_found:
             # Un eco corrompido y un eco ausente son cosas distintas: el primero
@@ -259,7 +276,7 @@ class TypedPingExecutor:
                     if classification is DispatchClassification.ECHO_UNOBSERVABLE
                     else f"command_dispatch_mismatch:{classification.value}:{echoed}"
                 ),
-                **identity,
+                **identity_evidence,
             )
         counts = _PACKET_COUNTS.search(window.output)
         if counts is not None:
@@ -271,7 +288,7 @@ class TypedPingExecutor:
                     window_strategy=window.strategy,
                     statistics=counts.group(0),
                     dispatched_destination=target,
-                    **identity,
+                    **identity_evidence,
                 )
         ios = _IOS_SUCCESS_RATE.search(window.output)
         if ios is not None:
@@ -283,14 +300,14 @@ class TypedPingExecutor:
                     window_strategy=window.strategy,
                     statistics=ios.group(0),
                     dispatched_destination=target,
-                    **identity,
+                    **identity_evidence,
                 )
         return TypedPingResult(
             False,
             False,
             window_strategy=window.strategy,
             failure_reason="no_fresh_ping_result",
-            **identity,
+            **identity_evidence,
         )
 
     def _json_result(self, script: str, timeout: float) -> dict:

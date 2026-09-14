@@ -145,15 +145,17 @@ class DeviceIdentityProvenance(str, Enum):
 
 
 class DeviceIdentityEvidence(str, Enum):
-    """Por que via se atribuyo la sesion. Ninguna de las dos usa el nombre pedido.
+    """Por que via se atribuyo la sesion. Ninguna usa el nombre pedido.
 
-    `TERMINAL_OBJECT_IDENTITY` compara el objeto terminal al que se despacho
-    contra el que devuelve la enumeracion de la red. `SESSION_TRANSCRIPT_CONTINUITY`
-    ata la sesion por su transcripcion: la linea que ejecuto es la unica cuya
-    salida continua exactamente la linea base capturada al despachar.
+    `DEVICE_OBJECT_IDENTITY` compara el device resuelto al despachar con los
+    devices enumerados. `TERMINAL_OBJECT_IDENTITY` hace la misma comparacion
+    sobre su terminal. `SESSION_TRANSCRIPT_CONTINUITY` ata la sesion por su
+    transcripcion: la linea que ejecuto es la unica cuya salida continua
+    exactamente la linea base capturada al despachar.
     """
 
     NONE = "none"
+    DEVICE_OBJECT_IDENTITY = "device_object_identity"
     TERMINAL_OBJECT_IDENTITY = "terminal_object_identity"
     SESSION_TRANSCRIPT_CONTINUITY = "session_transcript_continuity"
 
@@ -2082,13 +2084,15 @@ def execution_attribution_js(
         "{anchor=anchor.substring(0,anchor.length-1);}",
         "if(anchor.length>512){anchor=anchor.substring(anchor.length-512);}",
         "var n=(typeof net.getDeviceCount==='function')?net.getDeviceCount():0;",
-        "var byObject=[],byTranscript=[],outObject='',outTranscript='';",
+        "var byDevice=[],byObject=[],byTranscript=[],",
+        "outDevice='',outObject='',outTranscript='';",
         "for(var i=0;i<n;i++){var dev=null;",
         "try{dev=net.getDeviceAt(i);}catch(de){dev=null;}",
         "if(!dev)continue;var cl=__term(dev);",
         "if(!cl||typeof cl.getOutput!=='function')continue;",
         "var nm='';try{nm=String(dev.getName());}catch(ne){continue;}",
         "var co='';try{co=String(cl.getOutput());}catch(oe){continue;}",
+        "if(dev===d){byDevice.push(nm);outDevice=co;}",
         "if(cl===t){byObject.push(nm);outObject=co;}",
         # Contexto retenido MAS el comando despachado detras de el. El gemelo
         # ocioso no basta con compartir banner: tendria que haber recibido este
@@ -2097,17 +2101,31 @@ def execution_attribution_js(
         "if(anchor!==''){var at=co.indexOf(anchor);",
         "if(at>=0&&co.substring(at+anchor.length).indexOf(cmd)>=0){",
         "byTranscript.push(nm);outTranscript=co;}}}",
-        "var owner='',evidence='none',candidates=0,out='';",
-        "if(byObject.length===1){owner=byObject[0];",
-        "evidence='terminal_object_identity';candidates=1;out=outObject;}",
-        "else if(byObject.length>1){candidates=byObject.length;}",
+        "var owner='',evidence='none',candidates=0,out='',",
+        "candidateEvidence='none',candidateNames=[];",
+        "if(byDevice.length===1){owner=byDevice[0];",
+        "evidence='device_object_identity';candidates=1;out=outDevice;",
+        "candidateEvidence=evidence;candidateNames=byDevice;}",
+        "else if(byDevice.length>1){candidates=byDevice.length;",
+        "candidateEvidence='device_object_identity';candidateNames=byDevice;}",
+        "else if(byObject.length===1){owner=byObject[0];",
+        "evidence='terminal_object_identity';candidates=1;out=outObject;",
+        "candidateEvidence=evidence;candidateNames=byObject;}",
+        "else if(byObject.length>1){candidates=byObject.length;",
+        "candidateEvidence='terminal_object_identity';candidateNames=byObject;}",
         "else if(byTranscript.length===1){owner=byTranscript[0];",
         "evidence='session_transcript_continuity';candidates=1;",
-        "out=outTranscript;}else{candidates=byTranscript.length;}",
+        "out=outTranscript;candidateEvidence=evidence;",
+        "candidateNames=byTranscript;}",
+        "else if(byTranscript.length>1){candidates=byTranscript.length;",
+        "candidateEvidence='session_transcript_continuity';",
+        "candidateNames=byTranscript;}",
         "if(owner===''){out=String(t.getOutput());}",
         "reportResult(JSON.stringify({found:true,",
         "configuration_channel:out!==base,output:out,owner_name:owner,",
         "owner_evidence:evidence,owner_candidates:candidates,",
+        "owner_candidate_evidence:candidateEvidence,",
+        "owner_candidate_names:candidateNames,",
         "device_count:n}));}}catch(e){reportResult('ERROR:'+e);}",
     ))
 

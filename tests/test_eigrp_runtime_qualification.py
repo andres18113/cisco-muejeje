@@ -34,6 +34,8 @@ def test_ping_evidence_serializes_only_current_typed_result_fields():
         "observed_device_name": "MCP-PROBE-EIGRP-CP3-PCA",
         "device_identity_provenance": "confirmed_unique",
         "device_identity_evidence": "session_transcript_continuity",
+        "device_identity_candidate_evidence": "none",
+        "device_identity_candidate_names": [],
     }
 
 

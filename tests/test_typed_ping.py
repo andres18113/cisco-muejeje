@@ -107,6 +107,40 @@ def test_typed_ping_requires_the_current_command_echo_for_attribution():
     assert result.failure_reason == "current_ping_echo_not_observed"
 
 
+def test_typed_ping_retains_ambiguous_identity_candidates_for_diagnosis():
+    before = "PC>"
+    output = (
+        before
+        + "ping 10.0.50.10\n"
+        + "Packets: Sent = 4, Received = 4, Lost = 0\nPC>"
+    )
+
+    def send_and_wait(script, _timeout):
+        if "enterCommand" in script:
+            return json.dumps({"started": True, "before": before})
+        if "owner_candidate_names" in script:
+            return json.dumps({
+                "found": True,
+                "output": output,
+                "owner_name": "",
+                "owner_evidence": "none",
+                "owner_candidates": 2,
+                "owner_candidate_evidence": "session_transcript_continuity",
+                "owner_candidate_names": ["PC-A", "PC-B"],
+            })
+        return json.dumps({"found": True, "output": output})
+
+    result = TypedPingExecutor(send_and_wait, timeout_seconds=0).ping(
+        "PC-B", "10.0.50.10",
+    )
+
+    assert result.device_identity_provenance == "ambiguous"
+    assert result.device_identity_candidate_evidence == (
+        "session_transcript_continuity"
+    )
+    assert result.device_identity_candidate_names == ("PC-A", "PC-B")
+
+
 def test_typed_ping_recognizes_fresh_ios_success_rate_output():
     scripts: list[str] = []
     before = "Router#"

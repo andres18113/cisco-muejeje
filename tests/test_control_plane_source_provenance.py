@@ -9,6 +9,8 @@ del nombre que se pidió. Es OFFLINE: no toca Packet Tracer.
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 
 import pytest
 
@@ -41,6 +43,8 @@ from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosCommandResult,
     IosSessionState,
     OperationalQueryId,
+    classify_execution_identity,
+    execution_attribution_js,
 )
 
 
@@ -95,6 +99,50 @@ def _attribution(**updates) -> dict:
     return values
 
 
+def _run_attribution_javascript(
+    *, requested: str, resolved: str, stable_device_object: bool = True,
+) -> dict:
+    baseline = "PC>"
+    command = "ping 172.17.10.8"
+    current = baseline + command + "\nPackets: Sent = 4, Received = 4\nPC>"
+    payload = json.dumps({
+        "resolved": resolved,
+        "stableDeviceObject": stable_device_object,
+        "outputs": {"LARGE-PC": current, "OTHER-PC": current},
+    })
+    attribution = execution_attribution_js(
+        json.dumps(requested), baseline, command, prefer_command_prompt=True,
+    )
+    harness = f"""
+const payload = {payload};
+const makeDevice = (name) => ({{
+  getName: () => name,
+  getCommandPrompt: () => ({{getOutput: () => payload.outputs[name]}}),
+  getCommandLine: () => ({{getOutput: () => payload.outputs[name]}}),
+}});
+const devices = Object.keys(payload.outputs).map(makeDevice);
+const byName = Object.fromEntries(devices.map(device => [device.getName(), device]));
+global.ipc = {{network: () => ({{
+  getDevice: () => payload.stableDeviceObject
+    ? byName[payload.resolved]
+    : makeDevice(payload.resolved),
+  getDeviceCount: () => devices.length,
+  getDeviceAt: index => devices[index],
+}})}};
+let reported = '';
+global.reportResult = value => {{reported = String(value);}};
+{attribution}
+process.stdout.write(reported);
+"""
+    completed = subprocess.run(
+        [shutil.which("node"), "-e", harness],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(completed.stdout)
+
+
 def test_terminal_object_identity_attributes_the_executing_session():
     result, _ = _execute(_attribution())
 
@@ -118,6 +166,49 @@ def test_session_transcript_continuity_attributes_the_executing_session():
     assert result.device_identity_provenance == (
         DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
     )
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
+def test_device_object_identity_disambiguates_identical_terminal_transcripts():
+    observed = _run_attribution_javascript(
+        requested="LARGE-PC", resolved="LARGE-PC",
+    )
+
+    assert observed["owner_name"] == "LARGE-PC"
+    assert observed["owner_evidence"] == "device_object_identity"
+    assert observed["owner_candidates"] == 1
+    assert classify_execution_identity("LARGE-PC", observed) == {
+        "observed_device_name": "LARGE-PC",
+        "device_identity_provenance": "confirmed_unique",
+        "device_identity_evidence": "device_object_identity",
+    }
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
+def test_device_object_identity_exposes_a_misresolved_requested_name():
+    observed = _run_attribution_javascript(
+        requested="LARGE-PC", resolved="OTHER-PC",
+    )
+
+    assert observed["owner_name"] == "OTHER-PC"
+    assert classify_execution_identity("LARGE-PC", observed)[
+        "device_identity_provenance"
+    ] == "mismatched"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
+def test_ambiguous_transcript_candidates_are_retained_for_diagnosis():
+    observed = _run_attribution_javascript(
+        requested="LARGE-PC",
+        resolved="LARGE-PC",
+        stable_device_object=False,
+    )
+
+    assert observed["owner_name"] == ""
+    assert observed["owner_candidate_evidence"] == (
+        "session_transcript_continuity"
+    )
+    assert observed["owner_candidate_names"] == ["LARGE-PC", "OTHER-PC"]
 
 
 def test_the_attribution_enumerates_the_network_instead_of_trusting_the_request():

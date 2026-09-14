@@ -28,3 +28,7 @@ class TypedPingResult:
     observed_device_name: str = ""
     device_identity_provenance: str = "not_observed"
     device_identity_evidence: str = "none"
+    # Diagnostico fail-closed: una colision conserva quienes pudieron haber
+    # producido la salida sin elegir a ninguno ni cambiar la clasificacion.
+    device_identity_candidate_evidence: str = "none"
+    device_identity_candidate_names: tuple[str, ...] = ()
