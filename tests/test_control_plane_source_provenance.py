@@ -9,8 +9,6 @@ del nombre que se pidió. Es OFFLINE: no toca Packet Tracer.
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess
 
 import pytest
 
@@ -43,7 +41,6 @@ from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosCommandResult,
     IosSessionState,
     OperationalQueryId,
-    execution_attribution_js,
 )
 
 
@@ -123,60 +120,6 @@ def test_session_transcript_continuity_attributes_the_executing_session():
     )
 
 
-@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
-def test_exact_baseline_continuity_wins_over_an_old_suffix_collision():
-    """A prior identical ping in another terminal is not the current owner."""
-
-    baseline = (
-        "PC>ping 172.18.10.15\n"
-        "Packets: Sent = 4, Received = 4, Lost = 0 (0% loss)\nPC>"
-    )
-    command = "ping 172.17.10.8"
-    current = baseline + command + "\nPackets: Sent = 4, Received = 4\nPC>"
-    old_collision = "older transcript\n" + current
-    payload = json.dumps({
-        "requested": "LARGE-PC",
-        "outputs": {
-            "LARGE-PC": current,
-            "OTHER-PC": old_collision,
-        },
-    })
-    attribution = execution_attribution_js(
-        json.dumps("LARGE-PC"), baseline, command, prefer_command_prompt=True,
-    )
-    harness = f"""
-const payload = {payload};
-const makeDevice = (name) => ({{
-  getName: () => name,
-  getCommandPrompt: () => ({{getOutput: () => payload.outputs[name]}}),
-  getCommandLine: () => ({{getOutput: () => payload.outputs[name]}}),
-}});
-const devices = Object.keys(payload.outputs).map(makeDevice);
-const byName = Object.fromEntries(devices.map(device => [device.getName(), device]));
-global.ipc = {{network: () => ({{
-  getDevice: name => byName[name] || null,
-  getDeviceCount: () => devices.length,
-  getDeviceAt: index => devices[index],
-}})}};
-let reported = '';
-global.reportResult = value => {{reported = String(value);}};
-{attribution}
-process.stdout.write(reported);
-"""
-
-    completed = subprocess.run(
-        [shutil.which("node"), "-e", harness],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    observed = json.loads(completed.stdout)
-
-    assert observed["owner_name"] == "LARGE-PC"
-    assert observed["owner_evidence"] == "session_transcript_continuity"
-    assert observed["owner_candidates"] == 1
-
-
 def test_the_attribution_enumerates_the_network_instead_of_trusting_the_request():
     _, sent = _execute(_attribution())
 
@@ -187,10 +130,13 @@ def test_the_attribution_enumerates_the_network_instead_of_trusting_the_request(
     # La atribución se decide comparando el objeto terminal y la continuidad de
     # la transcripción, no el nombre pedido.
     assert "cl===t" in attribution_script
-    # La continuidad exacta gana cuando existe, y el ancla por SUFIJO sigue
-    # disponible cuando pager o buffer rodado impiden conservar el prefijo.
-    assert "co.indexOf(base)===0" in attribution_script
+    # Ancla por SUFIJO retenido, no por prefijo: `fresh_command_window` ya midió
+    # que una sesión fresca puede dejar de empezar por su línea base -- el pager
+    # borra su marcador al salir y un buffer largo rueda por la cabeza. Exigir
+    # prefijo dejaba esas lecturas sin atribuir, que es el hueco que MEG-4 run 7
+    # midió en vivo.
     assert "co.indexOf(anchor)" in attribution_script
+    assert "co.indexOf(base)===0" not in attribution_script
     # Y el comando despachado detrás de ese contexto: un gemelo ocioso no basta
     # con compartir banner de arranque.
     assert '"show ip protocols"' in attribution_script

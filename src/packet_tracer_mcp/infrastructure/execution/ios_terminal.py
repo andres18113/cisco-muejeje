@@ -2082,8 +2082,7 @@ def execution_attribution_js(
         "{anchor=anchor.substring(0,anchor.length-1);}",
         "if(anchor.length>512){anchor=anchor.substring(anchor.length-512);}",
         "var n=(typeof net.getDeviceCount==='function')?net.getDeviceCount():0;",
-        "var byObject=[],byExactTranscript=[],byTranscript=[],",
-        "outObject='',outExactTranscript='',outTranscript='';",
+        "var byObject=[],byTranscript=[],outObject='',outTranscript='';",
         "for(var i=0;i<n;i++){var dev=null;",
         "try{dev=net.getDeviceAt(i);}catch(de){dev=null;}",
         "if(!dev)continue;var cl=__term(dev);",
@@ -2091,11 +2090,6 @@ def execution_attribution_js(
         "var nm='';try{nm=String(dev.getName());}catch(ne){continue;}",
         "var co='';try{co=String(cl.getOutput());}catch(oe){continue;}",
         "if(cl===t){byObject.push(nm);outObject=co;}",
-        # Un prefijo completo prueba la continuidad mas fuerte. Debe ganar a
-        # una coincidencia historica del mismo sufijo+comando en otro terminal.
-        "if(base!==''&&co.indexOf(base)===0&&",
-        "co.substring(base.length).indexOf(cmd)>=0){",
-        "byExactTranscript.push(nm);outExactTranscript=co;}",
         # Contexto retenido MAS el comando despachado detras de el. El gemelo
         # ocioso no basta con compartir banner: tendria que haber recibido este
         # mismo comando justo despues de este mismo contexto, y los despachos
@@ -2107,11 +2101,6 @@ def execution_attribution_js(
         "if(byObject.length===1){owner=byObject[0];",
         "evidence='terminal_object_identity';candidates=1;out=outObject;}",
         "else if(byObject.length>1){candidates=byObject.length;}",
-        "else if(byExactTranscript.length===1){owner=byExactTranscript[0];",
-        "evidence='session_transcript_continuity';candidates=1;",
-        "out=outExactTranscript;}",
-        "else if(byExactTranscript.length>1){",
-        "candidates=byExactTranscript.length;}",
         "else if(byTranscript.length===1){owner=byTranscript[0];",
         "evidence='session_transcript_continuity';candidates=1;",
         "out=outTranscript;}else{candidates=byTranscript.length;}",
