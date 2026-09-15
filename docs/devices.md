@@ -1,13 +1,15 @@
 # Supported Devices
 
-The catalog has **74 device models** across many categories, each with its exact
-port names. Call `pt_list_devices` for the live list (with ~100 aliases), or fetch
-the `pt://catalog/devices` resource.
+The catalog lists device models with their exact port names. Call
+`pt_list_devices` for the live list and its aliases, or read the
+`pt://catalog/devices` resource.
 
-!!! tip "Use aliases"
-    You can pass friendly aliases instead of exact model names — e.g. `router` →
-    `2911`, `switch` → `2960-24TT`, `pc` → `PC-PT`, `firewall` → `5506-X`,
-    `ap` → `AccessPoint-PT`. See `pt_list_devices` for the full alias map.
+Aliases are accepted wherever a model name is expected: `router` → `2911`,
+`switch` → `2960-24TT`, `pc` → `PC-PT`, `firewall` → `5506-X`, `ap` →
+`AccessPoint-PT`. `pt_list_devices` returns the full alias map.
+
+Confirm a model's ports with `pt_get_device_details` before linking. The server
+is instructed never to invent port names.
 
 ## Routers
 
@@ -34,7 +36,7 @@ the `pt://catalog/devices` resource.
 `WirelessEndDevice-PT`, `Embedded-Server-PT`, `7960` (IP Phone), `MCU-PT`, `SBC-PT`,
 `Thing` (IoT).
 
-- PCs / laptops / servers expose `FastEthernet0`.
+- PCs, laptops and servers expose `FastEthernet0`.
 
 ## Wireless
 
@@ -51,7 +53,3 @@ the `pt://catalog/devices` resource.
 `Hub-PT`, `Bridge-PT`, `Repeater-PT`, `CoAxialSplitter-PT`, `Copper/Fiber Patch
 Panel`, `Copper/Fiber Wall Mount`, `Sniffer`, `Meraki-MX65W`, `Meraki-Server`,
 `NetworkController`, `Power Distribution Device`.
-
-!!! note "Exact ports matter"
-    Always confirm a model's ports with `pt_get_device_details` before linking — the
-    server is instructed never to invent port names.

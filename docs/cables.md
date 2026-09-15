@@ -1,8 +1,7 @@
 # Cable Types
 
-**15 cable types** are supported. Pass one as the last argument of `pt_add_link`
-(or in a plan link's `cable`), or omit it to let the server infer it from the
-device categories.
+Pass a cable type as the last argument of `pt_add_link`, or as a plan link's
+`cable`. Omit it to let the server infer the type from the device categories.
 
 | Cable | When to use |
 |-------|-------------|
@@ -14,7 +13,7 @@ device categories.
 | `roll` | Rollover (console) cable. |
 | `phone` | Analog phone lines. |
 | `coaxial` | Coax (cable modem / splitter). |
-| `auto` | Let PT auto-select. |
+| `auto` | Let Packet Tracer auto-select. |
 | `usb` | USB connections. |
 | `cable` | Generic copper. |
 | `wireless` | Wireless association. |
@@ -22,11 +21,11 @@ device categories.
 | `cellular` | 3G/4G cellular. |
 | `custom_io` | Custom I/O (IoT). |
 
-!!! tip "Aliases & inference"
-    `pt_add_link` accepts `crossover` (→ `cross`) and `rollover` (→ `roll`). If you
-    omit the cable type, it infers from device categories — verified on PT 9.0.0
-    (e.g. router↔router → `cross`, switch↔server → `straight`).
+## Aliases and inference
 
-!!! warning "Don't use `crossover` as a raw value"
-    For direct `addLink` calls the valid value is `cross`, not `crossover`. The
-    `pt_add_link` tool accepts the alias and normalizes it for you.
+`pt_add_link` accepts `crossover` (normalised to `cross`) and `rollover`
+(normalised to `roll`). When the cable type is omitted, it is inferred from the
+device categories.
+
+For a direct `addLink` call in the Script Engine the valid value is `cross`, not
+`crossover`. Only `pt_add_link` normalises the alias.

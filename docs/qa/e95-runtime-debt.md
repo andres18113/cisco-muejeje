@@ -1,5 +1,9 @@
 # E9.5 runtime debt register
 
+**Historical.** This register was the work queue for controlled Packet
+Tracer validation during E9.5. It does not govern the current state. Open technical debt is tracked in
+[`technical-debt.md`](../architecture/technical-debt.md).
+
 This register is the work queue for controlled Packet Tracer validation during
 E9.5. It intentionally does not convert source code, parsers, fixtures, prior
 documentation, or configuration acceptance into fresh runtime evidence.

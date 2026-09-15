@@ -1,5 +1,9 @@
 # Stage 3A4 — Serial product Slice 2A qualification
 
+**Historical.** This is the Slice 2A qualification record, dated
+2026-08-13. It does not govern the current state. The operational authority for the CP-LIVE state is
+`docs/reference/cp-scale/current_state.json`.
+
 - Date: 2026-08-13
 - Implementation commit: `e846175b6e2154621e89d24d0809fae0e396d24b`
 - Packet Tracer active-file version: `9.0.1.0858`

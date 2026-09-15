@@ -1,5 +1,9 @@
 # University Topology Acceptance — contract
 
+**Historical.** This is the acceptance record of capabilities implemented
+before CP-SCALE closed. It does not govern the current state. The operational authority for the CP-LIVE state is
+`docs/reference/cp-scale/current_state.json`.
+
 Acceptance of capabilities already implemented, above all the typed RIPv2
 runtime. Not a development phase: nothing here designs routing.
 

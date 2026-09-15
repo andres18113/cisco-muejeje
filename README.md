@@ -64,13 +64,10 @@ Details: [docs/architecture.md](docs/architecture.md) and the records under
 
 ## Current capabilities
 
-The registered MCP surface below was measured at this commit by registering the
-server in-process:
-
-| Public surface (`PT_MCP_PUBLIC_SURFACE`) | MCP tools | MCP resources |
-| --- | --- | --- |
-| `enterprise` (default) | 63 | 5 |
-| `developer-capability-investigation` | 64 (adds `pt_send_raw`) | 5 |
+The default `enterprise` public surface registers the typed tools. Setting
+`PT_MCP_PUBLIC_SURFACE=developer-capability-investigation` additionally registers
+`pt_send_raw`. [docs/tools.md](docs/tools.md) groups the tools by purpose, and the
+`pt://capabilities` resource reports the active surface at runtime.
 
 What is verified, and how:
 

@@ -1,5 +1,10 @@
 # Stage 3A4 — MEG-4 bounded live qualification
 
+**Historical.** This is the run record of the MEG-4 bounded live
+qualification and its reference acceptance. It does not govern the current
+state. The operational authority for the CP-LIVE state is
+`docs/reference/cp-scale/current_state.json`.
+
 Thirteen bounded runs plus the reference acceptance, all on
 `feature/runtime-ripv2`, worktree `.claude/worktrees/runtime-ripv2`. **The
 reference acceptance at the end of this document is the current state, and it

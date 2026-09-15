@@ -1,30 +1,29 @@
 # Expansion Modules
 
-The catalog includes **151 expansion modules** (WICs, HWICs, NIMs, NMs, SFPs,
-wireless/cellular adapters, …). Use `pt_list_modules` to discover exact names —
-optionally filtered by `router_model` or `category` — then `pt_add_module` (one) or
-`pt_install_modules_batch` (many).
+The catalog includes expansion modules: WICs, HWICs, NIMs, NMs, SFPs, and
+wireless and cellular adapters. Use `pt_list_modules` to discover exact names,
+optionally filtered by `router_model` or `category`, then `pt_add_module` for one
+module or `pt_install_modules_batch` for several.
 
-## Critical rules
+## The `slot` argument is a string, not an integer
 
-!!! danger "`slot` is a STRING, not an integer"
-    PT compares the slot with `===` against its internal map. Passing `0` (int) does
-    **not** match `"0/0"` and `addModule()` silently returns `false`. Always use a
-    string literal.
+Packet Tracer compares the slot with `===` against its internal map. Passing `0`
+as an integer does not match `"0/0"`, and `addModule()` returns `false` without
+reporting an error. Always pass a string literal.
 
 | Slot type | Format | Example |
 |-----------|--------|---------|
 | HWIC on 1941 / 2901 / 2911 | `"0/0"`, `"0/1"`, `"0/2"`, `"0/3"` | `pt_add_module("R1", "0/0", "HWIC-2T")` |
-| NIM on ISR4321 / ISR4331 | `"0/1"`, `"0/2"` (chassis/subslot — **not** `"0"`/`"1"`) | `pt_add_module("R1", "0/1", "NIM-2T")` |
+| NIM on ISR4321 / ISR4331 | `"0/1"`, `"0/2"` (chassis/subslot — not `"0"`/`"1"`) | `pt_add_module("R1", "0/1", "NIM-2T")` |
 | NM on 2811 / 2620XM / Router-PT | `"1"` | `pt_add_module("R1", "1", "NM-4A/S")` |
 | Cloud / hosts | `"0"`, `"1"`, … `"7"` | `pt_add_module("Cloud", "0", "PT-CLOUD-NM-1S")` |
 
 ## Compatibility
 
-- **2911 / 2901 / 1941 (ISR G2)** → **HWIC/WIC only** (no NM). For 4 serial ports,
-  install 2× `HWIC-2T` in slots `"0/0"` and `"0/1"`.
-- **ISR4321 / ISR4331** → **NIM only** (`NIM-2T` for serial, `NIM-ES2-4` for GigE).
-- **Router-PT** → `PT-ROUTER-NM-*` in slots `"0".."6"`.
+- **2911 / 2901 / 1941 (ISR G2)** — HWIC/WIC only, no NM. For four serial ports,
+  install two `HWIC-2T` in slots `"0/0"` and `"0/1"`.
+- **ISR4321 / ISR4331** — NIM only: `NIM-2T` for serial, `NIM-ES2-4` for GigE.
+- **Router-PT** — `PT-ROUTER-NM-*` in slots `"0"` to `"6"`.
 
 ## Port naming
 
@@ -35,10 +34,10 @@ Ports are named `<type><chassis>/<subslot>/<port>`:
 
 ## Installing several at once
 
-!!! tip "Prefer `pt_install_modules_batch`"
-    It powers off → adds all modules → powers on in **one** `runCode`. Multiple
-    individual `pt_add_module` calls each power-cycle the device, which is slower and
-    can make a single call report a (false) timeout while the reboot finishes.
+Prefer `pt_install_modules_batch`. It powers the device off, adds every module,
+and powers it on again in a single `runCode` call. Separate `pt_add_module` calls
+power-cycle the device once each, which is slower and can make one call report a
+timeout while the reboot is still finishing.
 
 ```text
 pt_install_modules_batch([

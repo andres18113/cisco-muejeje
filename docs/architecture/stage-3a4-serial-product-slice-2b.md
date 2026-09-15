@@ -1,5 +1,9 @@
 # Stage 3A4 — Serial product Slice 2B/3, and the burst reconciliation
 
+**Historical.** This is the Slice 2B/3 qualification record, dated
+2026-08-17. It does not govern the current state. The operational authority for the CP-LIVE state is
+`docs/reference/cp-scale/current_state.json`.
+
 Recorded 2026-08-17 on `feature/runtime-ripv2`.
 
 ## What this document is, stated first

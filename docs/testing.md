@@ -1,35 +1,54 @@
 # Testing
 
-The project ships a **187-test** suite covering the domain and application logic.
+The suite runs offline. It needs no Packet Tracer and no network, and it covers
+the domain, application and infrastructure layers, the MCP surface, and the
+integrity of the CP-SCALE state and evidence documents.
+
+## Running the suite
+
+Run pytest from the repository root with the checkout-local interpreter. That
+interpreter is what makes the production namespace resolve inside the checkout:
 
 ```bash
-pip install -e . pytest
-python -m pytest -q
-# 64 passed
+.venv/Scripts/python.exe -m pytest -q   # Windows
+.venv/bin/python -m pytest -q           # Linux / macOS
 ```
 
-## What's covered
+`AGENTS.md` records why the interpreter matters and which import namespace the
+production and test sides use.
 
-- **IP planning** — LAN/link subnet assignment, masks.
-- **Plan validation** — typed error codes, warnings.
-- **Auto-fixer** — cable correction, port reassignment, model upgrades.
-- **Plan explanation** & **estimation**.
-- **Generators** — PTBuilder script and IOS CLI config generation.
-- **ACL** — standard/extended/named CLI generation.
-- **Full build** — end-to-end pipeline integration.
-- **Runtime regressions** — guards against known issues.
+## Continuous integration
 
-## Live (manual) testing
+`.github/workflows/tests.yml` runs the same suite on every push, on
+`windows-latest` and `ubuntu-latest`, with Python 3.11 and 3.13. The checkout is
+full depth on purpose: the CP-LIVE M0 oracle verifies the provenance of its
+expected values against the commit object it characterised, and a shallow
+checkout does not contain that commit.
 
-The bridge/PT-facing tools (`pt_live_deploy`, `pt_add_*`, `pt_delete_*`,
-`pt_apply_acl`, …) require a running Packet Tracer with the
-[live bridge](live-deploy.md) connected; they're validated manually against PT.
-A full QA pass of the first 46 tools was performed on **PT 9.0.0**. The four
-inspection tools added later — `pt_audit_security`, `pt_inspect_ports`,
-`pt_read_vlans` and `pt_device_power` — were each verified individually against
-**PT 9.0.0.0810** when they landed, against a live 2911 and 2960-24TT.
+## What is covered
 
-!!! note "Unit tests don't start the MCP server"
-    They exercise domain/application code directly. To verify the server actually
-    boots (and that dependencies are compatible), run
-    `python -m packet_tracer_mcp --stdio` — it should start without errors.
+- Topology planning, IPv4 and VLSM addressing, and DHCP pool generation.
+- Plan validation with typed error codes, and the auto-fixer.
+- Generators: Script Engine JavaScript and IOS CLI, including adversarial
+  injection regressions.
+- The Enterprise pipeline: designer, IPAM and capacity, hardware planning,
+  compiler and layout, configuration, services, voice, security and control
+  plane.
+- Typed runtime contracts, transport containment, and evidence composition.
+- Bridge security, driven against a real `PTCommandBridge` on an ephemeral port
+  rather than a mocked HTTP layer: token checks, `Host` validation and body
+  limits.
+- The hashes and closure state of the CP-SCALE documents under
+  `reference/cp-scale/`.
+
+## What the suite cannot establish
+
+- Anything that depends on Packet Tracer itself. Behaviour inside Packet Tracer
+  is established only by governed runs, recorded under `reference/cp-scale/` and
+  in the qualification records under `architecture/`.
+- Webview behaviour: CORS, the `this-sm:` origin, and what the Script Engine can
+  reach from inside Packet Tracer.
+
+The unit tests do not start the MCP server. To check that the server boots with
+the installed dependencies, run `python -m packet_tracer_mcp --stdio`. It should
+start without errors.

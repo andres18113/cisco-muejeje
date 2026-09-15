@@ -1,9 +1,12 @@
 # Switching, IPv6 & Wireless
 
-Beyond basic routing, the MCP can build and configure VLANs, dual-stack IPv6, wireless
-clients, and apply layer-2 / device hardening — all verified live against Packet Tracer.
+Beyond basic routing, the server can plan and configure VLANs, dual-stack IPv6,
+wireless clients, and layer-2 and device hardening. Each section below states
+what the generator emits. What has been qualified against a real Packet Tracer,
+and on which build, is recorded separately in the qualification records under
+`architecture/` and in `reference/cp-scale/current_state.json`.
 
-## VLANs & inter-VLAN routing (router-on-a-stick)
+## VLANs and inter-VLAN routing (router-on-a-stick)
 
 Build a one-armed router that routes between VLANs using `.1q` subinterfaces:
 
@@ -11,24 +14,25 @@ Build a one-armed router that routes between VLANs using `.1q` subinterfaces:
 "Build a router-on-a-stick with 3 VLANs and 6 PCs, DHCP."
 ```
 
-The LLM calls:
+The model calls:
 
 ```python
 pt_full_build(template="router_on_a_stick", vlans=3, pcs_per_lan=6, dhcp=True)
 ```
 
-What you get:
+The resulting plan contains:
 
-- **N VLANs** spread across the PCs (ids `10, 20, 30, …`), each its own `/24` + DHCP pool.
-- The switch uplink becomes a **trunk**; PC ports become **access** ports in their VLAN.
-- The router gets one **subinterface per VLAN** (`GigabitEthernet0/0.10`, `…0.20`, …) with
-  `encapsulation dot1Q <id>` and the VLAN gateway IP — so inter-VLAN routing just works.
+- N VLANs spread across the PCs (ids `10, 20, 30, …`), each with its own `/24`
+  and DHCP pool.
+- A trunk on the switch uplink, and access ports for the PCs in their VLAN.
+- One router subinterface per VLAN (`GigabitEthernet0/0.10`, `…0.20`, …) with
+  `encapsulation dot1Q <id>` and the VLAN gateway address.
 
-!!! note "2960 vs 3560 trunks"
-    On a `2960-24TT` (dot1q-only) the generator omits `switchport trunk encapsulation`;
-    on a `3560-24PS` (multi-encap) it emits `switchport trunk encapsulation dot1q`.
+On a `2960-24TT`, which is dot1q-only, the generator omits
+`switchport trunk encapsulation`. On a `3560-24PS`, which supports several
+encapsulations, it emits `switchport trunk encapsulation dot1q`.
 
-To add VLANs to an **already-deployed** topology, use [`pt_apply_vlan`](tools.md):
+To add VLANs to an already deployed topology, use [`pt_apply_vlan`](tools.md):
 
 ```python
 pt_apply_vlan(
@@ -50,13 +54,14 @@ Add IPv6 alongside IPv4 with one flag:
 pt_full_build(routers=2, dual_stack=True)
 ```
 
-- **Routers** get `ipv6 unicast-routing` + `ipv6 address <prefix>::1/64` per interface (via CLI).
-- **Hosts** use **SLAAC** — they auto-configure from the router's Router Advertisements
-  (`configurePcIpv6` enables IPv6 + address auto-config).
+- Routers get `ipv6 unicast-routing` and `ipv6 address <prefix>::1/64` per
+  interface, through the CLI.
+- Hosts use SLAAC. They auto-configure from the router's Router Advertisements;
+  `configurePcIpv6` enables IPv6 and address auto-configuration.
 
-!!! warning "Static host IPv6 is not available"
-    Packet Tracer's Script Engine rejects `addIpv6Address` on host ports, so end devices use
-    SLAAC rather than a hardcoded address. Routers carry the explicit `ipv6 address`.
+Static host IPv6 is not available: Packet Tracer's Script Engine rejects
+`addIpv6Address` on host ports, so end devices use SLAAC rather than a hardcoded
+address. Routers carry the explicit `ipv6 address`.
 
 ## Wireless laptops
 
@@ -66,18 +71,25 @@ Connect Laptop-PTs over WiFi instead of a cable:
 pt_full_build(laptops_per_lan=2, wireless_laptops=True)
 ```
 
-- Each laptop's wired NIC is swapped for a **wireless card** (`PT-LAPTOP-NM-1W` → `Wireless0`).
-- An **Access Point** is added and wired to the switch; laptops **auto-associate** on the
-  default SSID (PT's logical view has global RF range, so one AP serves all wireless clients).
-- Wireless hosts pull a DHCP lease over the air, landing on the same LAN as the wired PCs.
+- Each laptop's wired NIC is replaced with a wireless card
+  (`PT-LAPTOP-NM-1W` → `Wireless0`).
+- An access point is added and cabled to the switch.
+- The plan places the wireless hosts on the same LAN as the wired PCs, with the
+  default SSID and no explicit security parameters.
 
-!!! note "AP SSID / WPA2 is GUI-only"
-    Packet Tracer does not expose Access-Point SSID / security through its Script Engine, so
-    custom SSID/WPA2 must be set in the AP's GUI. The default-SSID association works out of the box.
+Wireless association is **not qualified**. The governed backend policy in
+`reference/cp-scale/current_state.json` records `wireless_association` as
+`unqualified`, which means no governed run has established that association, or
+the DHCP lease that depends on it, occurs in a given Packet Tracer build. Treat
+the wireless path as planned configuration, not as verified behaviour.
 
-## Layer-2 security & device hardening
+Access-point SSID and WPA2 settings cannot be configured from here: Packet Tracer
+does not expose them through its Script Engine, so a custom SSID or security
+profile has to be set in the access point's own GUI.
 
-All of these are config-driven and accept `dry_run=True` to preview the CLI:
+## Layer-2 security and device hardening
+
+These are configuration-driven and accept `dry_run=True` to preview the CLI:
 
 | Tool | Example |
 |------|---------|
@@ -88,12 +100,14 @@ All of these are config-driven and accept `dry_run=True` to preview the CLI:
 
 ## Verifying a deployment
 
-After a deploy, reconcile what the plan intended against what PT actually has:
+After a deploy, reconcile what the plan intended against what Packet Tracer
+actually holds:
 
 ```python
 pt_diff(plan_json=...)   # missing/extra devices, IP mismatches
 pt_health_check()        # down links, cabled-without-IP, duplicate IPs
 ```
 
-`pt_live_deploy` also **auto-reconciles** — if PT silently drops a device (a known quirk with
-Laptop-PT), it re-adds the missing devices/links and re-verifies in the same call.
+`pt_live_deploy` also reconciles on its own: when Packet Tracer drops a device
+during a deploy, a behaviour observed with Laptop-PT, it re-adds the missing
+devices and links and verifies again within the same call.

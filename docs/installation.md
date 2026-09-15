@@ -7,13 +7,13 @@
 | Python | 3.11+ | |
 | `mcp[cli]` | ≥ 1.13, < 2 | Installed automatically |
 | `pydantic` | ≥ 2.11, < 3 | Installed automatically |
-| Cisco Packet Tracer | 8.2+ (tested on 9.0) | Only for **live deploy** |
+| Cisco Packet Tracer | 8.2 or later | Only for live deploy. The governed evidence in this repository was recorded on `9.0.1.0858` |
 | MCP Control Center extension | V5 or later | Packet Tracer extension (`.pts`), only for live deploy. Source in `EXTENSION/`; this repository publishes no compiled build — see [Live Deploy Setup](live-deploy.md) |
 
-!!! warning "pydantic ≥ 2.11 is required"
-    Modern `mcp` builds tool output schemas from return annotations and needs
-    `pydantic ≥ 2.11`. An older pydantic makes the server crash on startup. The
-    pinned dependencies handle this for you; just don't force an older pydantic.
+`pydantic` 2.11 or later is required. Current `mcp` releases build tool output
+schemas from return annotations and need it; an older pydantic makes the server
+fail on startup. The pinned dependencies handle this, so do not force an older
+pydantic.
 
 ## Install the server
 
@@ -24,97 +24,94 @@ pip install -e .
 ```
 
 After `pip install -e .`, the `packet_tracer_mcp` module is importable from any
-directory, so `python -m packet_tracer_mcp --stdio` works from anywhere — no need
-to `cd` into the repo or keep a server running.
+directory, so `python -m packet_tracer_mcp --stdio` works from anywhere. There is
+no need to change into the repository or keep a server running.
 
 ## Connect your MCP client
 
-=== "Claude Code"
+### Claude Code
 
-    **Linux · macOS · Git Bash · Windows `cmd.exe`:**
+Linux, macOS, Git Bash and Windows `cmd.exe`:
 
-    ```bash
-    claude mcp add --scope user --transport stdio packet-tracer -- python -m packet_tracer_mcp --stdio
-    ```
+```bash
+claude mcp add --scope user --transport stdio packet-tracer -- python -m packet_tracer_mcp --stdio
+```
 
-    **Windows PowerShell** — quote the `--` separator:
+Windows PowerShell, with the `--` separator quoted:
 
-    ```powershell
-    claude mcp add --scope user --transport stdio packet-tracer "--" python -m packet_tracer_mcp --stdio
-    ```
+```powershell
+claude mcp add --scope user --transport stdio packet-tracer "--" python -m packet_tracer_mcp --stdio
+```
 
-    !!! warning "PowerShell eats a bare `--`"
-        In Windows PowerShell the bare `--` separator is consumed before it reaches the
-        `claude` CLI, so Claude treats the following `-m` as one of its own options and
-        aborts with `error: unknown option '-m'`. Quoting it (`"--"`) passes it through
-        literally. Alternatively use the `cmd.exe`/Git Bash form above, or wrap the whole
-        command in `cmd /c "…"`.
+In Windows PowerShell a bare `--` separator is consumed before it reaches the
+`claude` CLI, so the following `-m` is treated as one of its own options and the
+command aborts with `error: unknown option '-m'`. Quoting it as `"--"` passes it
+through. The `cmd.exe` or Git Bash form above also works, as does wrapping the
+whole command in `cmd /c "…"`.
 
-    Verify (any shell):
+Verify, in any shell:
 
-    ```bash
-    claude mcp list
-    # packet-tracer: python -m packet_tracer_mcp --stdio - [OK] Connected
-    ```
+```bash
+claude mcp list
+# packet-tracer: python -m packet_tracer_mcp --stdio - [OK] Connected
+```
 
-    Remove later with `claude mcp remove packet-tracer --scope user`.
+Remove it later with `claude mcp remove packet-tracer --scope user`.
 
-=== "VS Code / Copilot"
+### VS Code and Copilot
 
-    Add to your MCP config (`.vscode/mcp.json` or user settings):
+Add this to the MCP configuration (`.vscode/mcp.json` or user settings):
 
-    ```json
-    {
-      "servers": {
-        "packet-tracer": {
-          "type": "stdio",
-          "command": "python",
-          "args": ["-m", "packet_tracer_mcp", "--stdio"]
-        }
-      }
+```json
+{
+  "servers": {
+    "packet-tracer": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "packet_tracer_mcp", "--stdio"]
     }
-    ```
+  }
+}
+```
 
-=== "Generic (JSON)"
+### Any other stdio client
 
-    Any MCP client that supports stdio servers:
-
-    ```json
-    {
-      "mcpServers": {
-        "packet-tracer": {
-          "command": "python",
-          "args": ["-m", "packet_tracer_mcp", "--stdio"]
-        }
-      }
+```json
+{
+  "mcpServers": {
+    "packet-tracer": {
+      "command": "python",
+      "args": ["-m", "packet_tracer_mcp", "--stdio"]
     }
-    ```
+  }
+}
+```
 
 ## Live deploy extension (optional)
 
-To apply topologies to a **running** Packet Tracer, also install the
-**MCP Control Center** extension:
+To apply topologies to a running Packet Tracer, also install the MCP Control
+Center extension:
 
 1. Get a compiled `.pts`, V5 or later. Cisco-Muejeje does not publish one; build
    it from `EXTENSION/` (see `EXTENSION/script-engine/README.md`). The upstream
    project published `V5.2.pts` with its
-   **[releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases)**.
-2. In Packet Tracer: **Extensions → Scripting → Configure PT Script Modules → Add…**,
-   select the `.pts`, and confirm.
-3. Open **Extensions → MCP BUILDER** — it auto-connects to the bridge.
+   [releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases).
+2. In Packet Tracer: **Extensions → Scripting → Configure PT Script Modules →
+   Add…**, select the `.pts`, and confirm.
+3. Open **Extensions → MCP BUILDER**. It connects to the bridge.
 
-Full walkthrough → **[Live Deploy Setup](live-deploy.md)**.
+Full walkthrough: [Live Deploy Setup](live-deploy.md).
 
 ## Transport modes
 
-- **stdio** (recommended for desktop clients): the client spawns the server as a
-  child process. The internal HTTP bridge to Packet Tracer (`:54321`) still starts
-  automatically inside that process — live deploy works the same.
-- **streamable-http** (`http://127.0.0.1:39000/mcp`): start the server yourself with
-  `python -m packet_tracer_mcp` and let multiple clients share one instance.
+- **stdio**, recommended for desktop clients: the client spawns the server as a
+  child process. The internal HTTP bridge to Packet Tracer (`:54321`) still
+  starts inside that process, so live deploy works the same way.
+- **streamable-http** (`http://127.0.0.1:39000/mcp`): start the server with
+  `python -m packet_tracer_mcp` and let several clients share one instance.
 
-!!! note "On Windows, `python` must be on PATH"
-    If your client can't spawn the server, use the full interpreter path in the
-    `command` field (e.g. `C:\\Users\\you\\AppData\\Local\\Programs\\Python\\Python312\\python.exe`).
+On Windows, `python` must be on `PATH`. If the client cannot spawn the server,
+put the full interpreter path in the `command` field, for example
+`C:\\Users\\you\\AppData\\Local\\Programs\\Python\\Python312\\python.exe`.
 
-Next: run the **[Quick Start](quickstart.md)** example.
+Next: run the [Quick Start](quickstart.md) example.

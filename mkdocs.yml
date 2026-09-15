@@ -40,25 +40,16 @@ theme:
   icon:
     repo: fontawesome/brands/github
 
+# The maintained documentation is standard Markdown: no admonitions, collapsible
+# blocks or content tabs. Only fenced code, tables and the table of contents need
+# an extension. tests/test_docs_style.py keeps the Material-only syntax out.
 markdown_extensions:
-  - admonition
-  - attr_list
-  - md_in_html
   - tables
-  - footnotes
   - toc:
       permalink: true
-  - pymdownx.details
   - pymdownx.superfences
-  - pymdownx.inlinehilite
-  - pymdownx.snippets
   - pymdownx.highlight:
       anchor_linenums: true
-  - pymdownx.tabbed:
-      alternate_style: true
-  - pymdownx.emoji:
-      emoji_index: !!python/name:material.extensions.emoji.twemoji
-      emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 plugins:
   - search

@@ -11,6 +11,31 @@ EnterpriseIntent -> EnterpriseDesigner -> IPAM / Capacity
                  -> typed runtime evidence -> cleanup evidence
 ```
 
+## Current state
+
+The operational authority is
+[`reference/cp-scale/current_state.json`](../reference/cp-scale/current_state.json).
+This page describes the qualification and keeps its historical record; it does
+not govern the state.
+
+CP-SCALE is closed. The `full-qualification` target reached
+`CP_SCALE_FULL_QUALIFICATION_VERIFIED_AND_CLEANED`, executed at
+`6a80b24626d40fb59bad5f0dc2e47d18a51f4a49`, with the success index
+`reference/cp-scale/full_qualification_successful_run.json` pinning its
+precleanup evidence, cleanup attestation and final checkpoint. The Router0 and
+Router3 branches closed earlier as `ROUTER0_BRANCH_VERIFIED_AND_CLEANED` and
+`ROUTER3_BRANCH_VERIFIED_AND_CLEANED`. An earlier full-qualification run failed
+at `floor3` when the Packet Tracer process crashed; it stays FAILED and the later
+success does not reinterpret it.
+
+The backend qualification policy for Packet Tracer `9.0.1.0858` qualifies voice
+configuration, phone registration and extension binding. Call behaviour and
+wireless association are unqualified, and intersite calling is off; none of them
+is a full-qualification criterion. No re-execution is authorised:
+`live_execution_authorized` is `false`, and every canonical target is refused
+before Packet Tracer contact unless an explicit authorisation names the target
+and the exact source SHA.
+
 ## Historical reference inputs
 
 The following documents were admitted as immutable workload snapshots at the
@@ -41,7 +66,11 @@ physical ownership, coordinates, link validity, configuration coverage, and
 semantic hashes. It cannot establish Packet Tracer model identity, wireless
 association, live convergence, phone registration, calls, or cleanup behavior.
 
-## Offline qualification checkpoint
+## Historical: offline qualification checkpoint, 2026-08-20
+
+This section records the offline checkpoint as it stood on 2026-08-20, before the
+live closure described under "Current state". Its counts are the evidence of that
+run and are not a current measure.
 
 The governed offline run on 2026-08-20 compiled the canonical point D through
 the normal designers, planners, compilers, and typed control-plane and voice
@@ -65,7 +94,7 @@ recorded here.
 
 Ten complete offline qualifications produced one stable tuple across all six
 hash dimensions. Timing was measured per stage and was not used as a pass/fail
-threshold. The full governed repository suite passed with `2507` tests and the
+threshold. The full governed repository suite passed at that commit, with the
 same four pre-existing warnings; `compileall` also passed.
 
 A generic `Thing` is therefore evidence of a physical substitution, not proof
@@ -91,15 +120,18 @@ fresh observations, bounded convergence, cleanup, and two independent
 post-cleanup inventories. A skipped dimension is recorded as zero/not-run; it
 is never promoted to supported.
 
+## Historical: read-only live preflight, 2026-08-20
+
 The read-only live preflight on 2026-08-20 could not establish a current
 Packet Tracer fingerprint because `GET /ping` on the local bridge timed out.
-No mutation was attempted. Point A is therefore recorded as `blocked`; points
-B, C, and D and every dependent dimension are explicitly `not_run/0`. The
-mechanically verified live workload envelope for this run is `0`, while the
-canonical target remains 279. This is an availability result, not evidence
-against the offline plans or an inferred Packet Tracer scale ceiling.
+No mutation was attempted. Point A was therefore recorded as `blocked`; points
+B, C, and D and every dependent dimension were explicitly `not_run/0`. The
+mechanically verified live workload envelope for that run was `0`, while the
+canonical target remained 279. This was an availability result, not evidence
+against the offline plans or an inferred Packet Tracer scale ceiling. It has
+since been superseded by the closure recorded under "Current state".
 
-## Closure
+## Closure criteria
 
 CP-SCALE closes only as `FULL_TARGET_VERIFIED` or as a mechanically established
 lower reliable envelope that leaves the 279-endpoint target intact. Timing is

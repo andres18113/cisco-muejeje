@@ -1,5 +1,9 @@
 # E9.5 Stage 3A4 — readiness and dependency map
 
+**Historical.** This is the dependency audit produced at Debt Checkpoint 2
+on 2026-08-12. It does not govern the current state. Open technical debt is tracked in
+[`technical-debt.md`](technical-debt.md).
+
 Produced at **Debt Checkpoint 2**, 2026-08-12, on `feature/runtime-ripv2`.
 
 This is not the Stage 3A4 implementation and not its acceptance record. It is
