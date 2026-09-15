@@ -122,3 +122,45 @@ print(json.dumps({"outcome": result.outcome.value, "calls": calls, "schema": pay
     assert verdict == {"outcome": "failed", "calls": [{"event": "offline.start"}, {"event": "transport.stop"}],
         "schema": "cp-scale-canonical-voice-live-v1", "failure": "RuntimeError: OFFLINE_START_FAILURE",
         "capabilities_exist": False, "coordinator": "packet_tracer_mcp.application.cp_scale_live.coordinator", "stages": []}
+
+
+def test_real_runtime_wiring_binds_phone_control_from_the_admitted_preflight(tmp_path):
+    from tests.test_cp_scale_router0_live_runner import RUN_DOUBLES, _probe
+    # The real CLI composition builds the real voice runtime. The catalog is
+    # replaced after composition, so any second policy resolution would fail.
+    verdict = _probe(RUN_DOUBLES + r'''
+from dataclasses import replace
+from datetime import datetime, timezone
+from pathlib import Path
+from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
+from packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
+    packet_tracer_cp_scale_qualification_policy,
+)
+root = Path(__ROOT__)
+request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "full-qualification", authorized("full-qualification"))
+strict = LocalPreflight().inspect(request, run_identity="wiring", started_at=datetime.now(timezone.utc))
+unqualified = replace(strict, qualification_policy=packet_tracer_cp_scale_qualification_policy("9.0.1.0858"),
+    call_observability=CPScaleCallObservabilityEvidence(state=CPScaleCheckState.NOT_RUN))
+coordinator = PRODUCT_SYMBOLS["build_coordinator"](request, governed_root=root)
+def second_resolution(*args):
+    raise AssertionError("the qualification policy was resolved a second time")
+live.packet_tracer_cp_scale_qualification_policy = second_resolution
+def bind(admitted):
+    session = coordinator.session_factory(admitted)
+    try:
+        voice = session._runtime_factory(Transport(), Physical()).voice
+    except Exception as exc:
+        return f"{type(exc).__name__}: {exc}"
+    return type(voice._phone_control).__name__
+print(json.dumps({"outcomes": [strict.outcome.value, unqualified.outcome.value],
+    "unqualified": bind(unqualified), "strict": bind(strict)}))
+'''.replace("__ROOT__", repr(str(tmp_path))))
+    assert verdict == {
+        "outcomes": ["admitted", "admitted"],
+        "unqualified": "UnavailablePhoneControl",
+        "strict": (
+            "CanonicalLiveFailure: The strict call gate applies but preflight "
+            "selected no qualified PhoneControl; UnavailablePhoneControl is "
+            "never substituted for call evidence."
+        ),
+    }

@@ -208,7 +208,7 @@ def test_second_capability_workspace_failure_persists_first_observation_and_prim
     persistence = CPScaleLivePersistence(tmp_path)
     coordinator = CPScaleLiveCoordinator(
         preflight=_service(),
-        session_factory=Session,
+        session_factory=lambda admitted: Session(),
         backend=CPScaleBackendQualification(
             compose=lambda **kwargs: composition,
             discovery_factory=lambda *args: object(),

@@ -8,10 +8,12 @@ from .cleanup import CPScaleCleanup
 from .checkpoint import CPScaleCheckpointDecision
 from .contracts import (
     CPScaleBackendQualificationPolicy,
+    CPScaleLiveSessionIdentity,
     CPScalePreflightOutcome,
     CPScalePreflightResult,
     CPScaleQualificationStatus,
     call_observations_required,
+    qualification_policy_describes,
 )
 from .run_contracts import CPScaleStageProgress, CPScaleRunReplayAudit, CPScaleTerminalEvent, CPScaleCleanupResult, CPScaleCleanupRealtime
 from ..use_cases.apply_voice import call_observation_matches_expected_result
@@ -222,15 +224,20 @@ def _unqualified_call_behavior_error(
     No observation is required, and a skipped or unobservable call is not a
     failure. Nothing is promoted either: an observation claiming VERIFIED,
     FAILED, or any other behavior through this backend refuses closure instead
-    of being accepted or reclassified.
+    of being accepted or reclassified. The canonical aggregates must say the
+    same: every planned call counted, none VERIFIED or FAILED, all of them
+    unobservable, and ``missing:`` naming exactly the planned calls that truly
+    have no observation.
     """
     expectations = tuple(voice_plan.call_expectations)
     prefix = "the REMAINING call behavior is UNQUALIFIED on this backend, but"
     observations = tuple(voice_result.calls) if voice_result is not None else ()
+    expected_ids = [item.id for item in expectations]
     observed_ids = [item.call_expectation_id for item in observations]
     if (
-        len(set(observed_ids)) != len(observed_ids)
-        or not set(observed_ids) <= {item.id for item in expectations}
+        len(set(expected_ids)) != len(expected_ids)
+        or len(set(observed_ids)) != len(observed_ids)
+        or not set(observed_ids) <= set(expected_ids)
     ):
         return prefix + " its call observations are not distinct planned calls."
     claimed = sorted(
@@ -240,28 +247,37 @@ def _unqualified_call_behavior_error(
     )
     if claimed:
         return prefix + " observations claim call behavior: " + ", ".join(claimed) + "."
+    expected_count = len(expectations)
+    missing = sorted(
+        f"missing:{identifier}" for identifier in set(expected_ids) - set(observed_ids)
+    )
     if (
-        canonical_voice.expected_call_count != len(expectations)
+        canonical_voice.expected_call_count != expected_count
         or canonical_voice.call_verified_count != 0
         or canonical_voice.call_failed_count != 0
-        or any(
-            not error.startswith("missing:")
-            for error in canonical_voice.call_identity_errors
-        )
+        or canonical_voice.call_unobservable_count != expected_count
+        or sorted(canonical_voice.call_identity_errors) != missing
     ):
-        return prefix + " canonical Voice call aggregates claim call behavior."
+        return prefix + " canonical Voice call aggregates are not exactly UNQUALIFIED."
     return ""
 
 
 def _qualification_policy_error(
     policy: CPScaleBackendQualificationPolicy | None,
-    packet_tracer_version: str,
+    identity: CPScaleLiveSessionIdentity,
 ) -> str:
-    """A declared policy must describe this build and keep governed Voice required."""
+    """A declared policy must describe this run's backend build and keep governed Voice required."""
     if policy is None:
         return ""
-    if policy.backend_version != packet_tracer_version:
-        return "the backend qualification policy does not describe this run's Packet Tracer build."
+    if not qualification_policy_describes(
+        policy,
+        backend=identity.backend,
+        backend_version=identity.packet_tracer_version,
+    ):
+        return (
+            "the backend qualification policy does not describe this run's "
+            "observed backend and Packet Tracer build."
+        )
     unqualified = [
         name for name, status in (
             ("voice_configuration", policy.voice_configuration),
@@ -327,7 +343,7 @@ def _full_qualification_error(preflight: CPScalePreflightResult, stages: tuple[C
             or authorization.authorized_sha != identity.source_head):
         return "the run lacks an admitted FULL authorization bound to its own source provenance."
     policy = preflight.qualification_policy
-    policy_error = _qualification_policy_error(policy, identity.packet_tracer_version)
+    policy_error = _qualification_policy_error(policy, identity)
     if policy_error:
         return policy_error
     executed = tuple(item.projection.stage for item in stages)

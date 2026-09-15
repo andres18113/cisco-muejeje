@@ -10,7 +10,7 @@ from .build_policy import CPScaleBuildPolicy, CPScalePhysicalStages
 from .cleanup import attempted_device_ids
 from .completion import CPScaleCompletion
 from .checkpoint import CPScaleCheckpointDecision
-from .contracts import CPScaleLiveRequest, CPScalePreflightOutcome, CPScaleStageExecutionInput, CPScaleStageContinuity, CPScaleLiveStageResult, CPScaleObservationRecord
+from .contracts import CPScaleLiveRequest, CPScalePreflightOutcome, CPScalePreflightResult, CPScaleStageExecutionInput, CPScaleStageContinuity, CPScaleLiveStageResult, CPScaleObservationRecord
 from .errors import CanonicalLiveFailure
 from .lifecycle import finalize_session, report_terminal_errors
 from .run_contracts import (
@@ -33,7 +33,7 @@ from ...domain.models.plans import TopologyPlan
 
 class CPScaleLiveCoordinator:
     def __init__(self, *, preflight: CPScalePreflightPort,
-                 session_factory: Callable[[], CPScaleSessionPort], backend: CPScaleBackendQualification,
+                 session_factory: Callable[[CPScalePreflightResult], CPScaleSessionPort], backend: CPScaleBackendQualification,
                  stage_factory: Callable[[CPScaleSessionPort, CPScaleRuntimeResources], CPScaleStageExecutorPort],
                  observations_factory: Callable[[CPScaleSessionPort], CPScaleRunObservationPort],
                  build: CPScaleBuildPolicy, checkpoint: CPScaleCheckpointPort,
@@ -132,7 +132,9 @@ class CPScaleLiveCoordinator:
                 terminal = replace(terminal, finalization_errors=errors)
             return CPScaleLiveFinalResult.from_report(CPScaleRunOutcome.REJECTED, snapshot())
 
-        session = self.session_factory()
+        # The session binds its runtimes to this admitted preflight: the same
+        # policy authority that FULL completion reviews, never a second read.
+        session = self.session_factory(preflight)
         observations = None
         physical_stages = None
 
@@ -354,7 +356,10 @@ class CPScaleLiveCoordinator:
             observations = self.observations_factory(session)
             composition = qualify_backend()
             statistics_target = observations.dhcp_target(self.build.statistics_projection(composition))
-            fingerprint = EnvironmentFingerprint(backend="packet_tracer", backend_version=request.packet_tracer_version,
+            # The run's environment names the backend build preflight observed
+            # and bound its admitted policy to; nothing restates it here.
+            fingerprint = EnvironmentFingerprint(backend=preflight.identity.backend,
+                backend_version=preflight.identity.packet_tracer_version,
                 bridge_transport=session.channel, runtime_mode="live")
             physical_stages = CPScalePhysicalStages(self.build, session, fingerprint)
             executor = self.stage_factory(session, session.acquire_runtimes())

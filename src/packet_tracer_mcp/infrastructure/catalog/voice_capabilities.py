@@ -83,9 +83,11 @@ def voice_capability_profile(
             VoiceCapabilityDimension.VOICE_DHCP_OPTIONS: (
                 cme if cme is VoiceCapabilityStatus.UNSUPPORTED else dhcp
             ),
-            # No call driver exists in this codebase: the only shipped phone
-            # control returns UNOBSERVABLE and never dials. Claiming otherwise
-            # would let a call expectation look skipped rather than unbuilt.
+            # No governed, qualified call driver exists for Packet Tracer
+            # 9.0.1.0858: without verified call-observability evidence the
+            # phone control returns UNOBSERVABLE and never dials. Claiming
+            # otherwise would let a call expectation look skipped rather than
+            # unbuilt.
             VoiceCapabilityDimension.CALL_INITIATION: call_observability,
             VoiceCapabilityDimension.CALL_STATE_READBACK: call_observability,
             # The renderer refuses to emit intersite voice: it is not verified

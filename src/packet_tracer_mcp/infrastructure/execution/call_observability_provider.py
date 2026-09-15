@@ -9,6 +9,9 @@ from pathlib import Path
 from ...application.cp_scale_live.contracts import (
     CPScaleCallObservabilityEvidence,
     CPScaleCheckState,
+    CPScalePreflightOutcome,
+    CPScalePreflightResult,
+    call_observations_required,
 )
 from ...application.cp_scale_live.errors import CanonicalLiveFailure
 from ...application.ports.phone_control import PhoneControlPort
@@ -50,21 +53,29 @@ class PacketTracerNativeUiPhoneControlProvider:
         self.phone_control = UnavailablePhoneControl()
         self.capability_snapshot_hash = ""
 
-    def phone_control_for(
-        self,
-        *,
-        call_observations_required: bool,
-    ) -> PhoneControlPort:
-        """Bind a voice runtime without substituting one PhoneControl for another.
+    def phone_control_for(self, admitted: CPScalePreflightResult) -> PhoneControlPort:
+        """Bind a voice runtime from the admitted preflight's own policy.
 
-        When the strict call gate applies, only the adapter that ``read``
-        selected from qualified evidence and a fresh readiness handshake is
-        returned; ``UnavailablePhoneControl`` is never substituted for it.
-        Otherwise the explicit unavailable control is returned, so calls stay
-        UNOBSERVABLE and are never promoted.
+        The admitted target and qualification policy decide whether the strict
+        call gate applies; no policy is resolved a second time. When the gate
+        applies, only the adapter that ``read`` selected from qualified
+        evidence and a fresh readiness handshake is returned;
+        ``UnavailablePhoneControl`` is never substituted for it. Otherwise the
+        explicit unavailable control is returned, so calls stay UNOBSERVABLE
+        and are never promoted.
         """
 
-        if not call_observations_required:
+        if (
+            not isinstance(admitted, CPScalePreflightResult)
+            or admitted.outcome is not CPScalePreflightOutcome.ADMITTED
+        ):
+            raise CanonicalLiveFailure(
+                "PhoneControl binds only from an admitted CP-SCALE preflight."
+            )
+        if not call_observations_required(
+            admitted.target,
+            admitted.qualification_policy,
+        ):
             return UnavailablePhoneControl()
         if (
             not self.capability_snapshot_hash

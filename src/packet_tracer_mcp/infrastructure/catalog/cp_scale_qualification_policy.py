@@ -9,7 +9,9 @@ call expectations; FULL records the dimension instead of requiring it.
 Wireless association and intersite calling stay outside the product.
 
 Every dimension is declared explicitly. A build without a declaration has no
-policy, and FULL admission refuses it instead of inheriting one.
+policy, and FULL admission refuses it instead of inheriting one. The
+declaration names its exact backend and build; preflight admits it only when
+both equal the backend build the session observes.
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from ...application.cp_scale_live.contracts import (
     CPScaleBackendQualificationPolicy,
     CPScaleQualificationStatus as Status,
 )
+from ...domain.enterprise.models.discovery import CapabilityBackend
 
 
 _DECLARED_BUILDS = frozenset({"9.0.1.0858"})
@@ -34,7 +37,7 @@ def packet_tracer_cp_scale_qualification_policy(
             f"{packet_tracer_version!r}."
         )
     return CPScaleBackendQualificationPolicy(
-        backend="packet_tracer",
+        backend=CapabilityBackend.PACKET_TRACER.value,
         backend_version=packet_tracer_version,
         voice_configuration=Status.QUALIFIED,
         phone_registration=Status.QUALIFIED,

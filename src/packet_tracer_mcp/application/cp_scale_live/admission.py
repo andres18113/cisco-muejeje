@@ -28,6 +28,7 @@ from .contracts import (
     CPScaleRepositoryEvidence,
     CPScaleRuntimeEvidence,
     call_observations_required,
+    qualification_policy_describes,
 )
 
 
@@ -119,11 +120,15 @@ class CPScaleLocalPreflight:
         process_error_policy: ProcessErrorPolicy,
         expected_branch: str,
         expected_upstream: str,
+        backend: str,
         target_resolver: TargetResolver = canonical_cp_scale_target_contract,
         qualification_policy_resolver: (
             Callable[[str], CPScaleBackendQualificationPolicy] | None
         ) = None,
     ) -> None:
+        # The backend whose processes these readers observe; the session
+        # identity, its EnvironmentFingerprint and any policy bind to it.
+        self._backend = backend
         self._governed_root = governed_root
         self._runtime_reader = runtime_reader
         self._import_reader = import_reader
@@ -224,7 +229,8 @@ class CPScaleLocalPreflight:
 
         # Only a target that plans calls consults the backend policy, and only
         # an explicit declaration of UNQUALIFIED call behavior lifts the strict
-        # call gate; without a resolver the gate stays.
+        # call gate; without a resolver the gate stays. A policy naming another
+        # backend or build is rejected before any provider or process read.
         policy = None
         if (
             target.requires_call_observability
@@ -268,6 +274,7 @@ class CPScaleLocalPreflight:
         identity = CPScaleLiveSessionIdentity(
             run_identity=run_identity,
             started_at=started_at,
+            backend=self._backend,
             packet_tracer_version=request.packet_tracer_version,
             source_head=repository.head,
             source_tree=repository.source_tree,
@@ -303,13 +310,14 @@ class CPScaleLocalPreflight:
                 "Backend qualification policy could not be resolved: "
                 f"{type(exc).__name__}: {exc}"
             )
-        if (
-            not isinstance(policy, CPScaleBackendQualificationPolicy)
-            or policy.backend_version != packet_tracer_version
+        if not qualification_policy_describes(
+            policy,
+            backend=self._backend,
+            backend_version=packet_tracer_version,
         ):
             return None, (
-                "Backend qualification policy does not describe this Packet "
-                "Tracer build."
+                "Backend qualification policy does not describe this backend "
+                "and Packet Tracer build."
             )
         return policy, ""
 

@@ -255,7 +255,7 @@ def _controlled_coordinator(
     )
     coordinator = CPScaleLiveCoordinator(
         preflight=Preflight(),
-        session_factory=lambda: session,
+        session_factory=lambda admitted: session,
         backend=CPScaleBackendQualification(
             compose=lambda **kwargs: composition,
             discovery_factory=lambda *args: object(),

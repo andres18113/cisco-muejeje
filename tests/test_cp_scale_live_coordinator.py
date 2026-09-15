@@ -116,6 +116,58 @@ def test_session_reuses_resources_and_marks_close_before_a_failing_stop():
     assert calls == ["start", "runtimes", "stop"]
 
 
+def test_session_is_bound_to_the_single_admitted_preflight():
+    from src.packet_tracer_mcp.application.cp_scale_live.coordinator import (
+        CPScaleLiveCoordinator,
+    )
+    from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
+        CPScaleQualificationStatus,
+    )
+    from src.packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
+        packet_tracer_cp_scale_qualification_policy,
+    )
+    from tests.test_cp_scale_live_local_preflight import _request, _service
+
+    resolutions = []
+
+    def resolver(version):
+        resolutions.append(version)
+        return packet_tracer_cp_scale_qualification_policy(version)
+
+    service = _service(policy_resolver=resolver)
+    inspected = []
+    bound = []
+
+    class Preflight:
+        def inspect(self, *args, **kwargs):
+            inspected.append(service.inspect(*args, **kwargs))
+            return inspected[-1]
+
+    class SessionBound(Exception):
+        pass
+
+    def session_factory(admitted):
+        bound.append(admitted)
+        raise SessionBound
+
+    coordinator = CPScaleLiveCoordinator(
+        preflight=Preflight(), session_factory=session_factory, backend=None,
+        stage_factory=None, observations_factory=None, build=None,
+        checkpoint=None, persistence=None, completion=None, presentation=None,
+    )
+    with pytest.raises(SessionBound):
+        coordinator.run(_request())
+
+    # One resolution, one admitted object: the session receives exactly the
+    # preflight FULL completion later reviews, with its policy inside.
+    assert resolutions == ["9.0.1.0858"]
+    assert len(inspected) == len(bound) == 1
+    assert bound[0] is inspected[0]
+    assert bound[0].qualification_policy.call_behavior is (
+        CPScaleQualificationStatus.UNQUALIFIED
+    )
+
+
 def test_real_coordinator_keeps_typed_continuity_identity_and_terminal_order():
     verdict = _probe(RUN_DOUBLES + r'''
 from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveRequest
@@ -320,7 +372,7 @@ def test_integrated_real_executor_persistence_cleanup_and_session_preserve_failu
     observations = SimpleNamespace(dhcp_target=lambda projection: None, activate=lambda projection: None,
                                    cleanup_realtime=lambda: CPScaleCleanupRealtime(True, state=CPScaleRealtimeState(observed=True, simulation_mode=False,
                                        present=("observed", "simulation_mode"))))
-    coordinator = CPScaleLiveCoordinator(preflight=_service(), session_factory=lambda: session,
+    coordinator = CPScaleLiveCoordinator(preflight=_service(), session_factory=lambda admitted: session,
         stage_factory=lambda *args: fixture.executor, observations_factory=lambda session: observations,
         backend=CPScaleBackendQualification(compose=lambda **kwargs: composition,
             discovery_factory=lambda *args: object(), requirements=lambda composition: {}),

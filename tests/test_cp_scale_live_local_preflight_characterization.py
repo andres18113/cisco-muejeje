@@ -135,7 +135,7 @@ class BackendReached(RuntimeError):
     pass
 
 
-def transport():
+def transport(*args):
     events.append("backend")
     raise BackendReached("local preflight passed")
 

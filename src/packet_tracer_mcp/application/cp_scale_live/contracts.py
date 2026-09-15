@@ -435,6 +435,25 @@ class CPScaleBackendQualificationPolicy:
         }
 
 
+def qualification_policy_describes(
+    policy: object,
+    *,
+    backend: str,
+    backend_version: str,
+) -> bool:
+    """A declared policy governs a run only for the exact backend and build it observed."""
+
+    return bool(
+        isinstance(policy, CPScaleBackendQualificationPolicy)
+        and isinstance(backend, str)
+        and backend
+        and isinstance(backend_version, str)
+        and backend_version
+        and policy.backend == backend
+        and policy.backend_version == backend_version
+    )
+
+
 def call_observations_required(
     target: CPScaleCanonicalTargetContract,
     policy: CPScaleBackendQualificationPolicy | None,
@@ -635,10 +654,16 @@ class CPScaleProcessEvidence:
 
 @dataclass(frozen=True)
 class CPScaleLiveSessionIdentity:
-    """Only provenance available before any backend contact."""
+    """Only provenance available before any backend contact.
+
+    ``backend`` and ``packet_tracer_version`` name the backend build this
+    session's process readers observe; the run's EnvironmentFingerprint and any
+    admitted qualification policy derive from exactly this pair.
+    """
 
     run_identity: str
     started_at: datetime
+    backend: str
     packet_tracer_version: str
     source_head: str
     source_tree: str
@@ -655,6 +680,8 @@ class CPScaleLiveSessionIdentity:
             and self.run_identity
             and isinstance(self.started_at, datetime)
             and self.started_at.tzinfo is not None
+            and isinstance(self.backend, str)
+            and self.backend
             and isinstance(self.packet_tracer_version, str)
             and self.packet_tracer_version
             and isinstance(self.source_head, str)
@@ -707,7 +734,7 @@ class CPScalePreflightResult:
         authorization = self.live_authorization
         policy = self.qualification_policy
         # An absent policy keeps the strict call gate; a declared one must
-        # describe exactly the build this session observed.
+        # describe exactly the backend and build this session observed.
         call_observability_coherent = (
             (
                 self.call_observability.passed_coherently
@@ -716,9 +743,10 @@ class CPScalePreflightResult:
             )
             and (
                 policy is None
-                or (
-                    isinstance(policy, CPScaleBackendQualificationPolicy)
-                    and policy.backend_version == identity.packet_tracer_version
+                or qualification_policy_describes(
+                    policy,
+                    backend=identity.backend,
+                    backend_version=identity.packet_tracer_version,
                 )
             )
         )

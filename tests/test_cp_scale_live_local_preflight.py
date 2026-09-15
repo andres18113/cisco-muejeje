@@ -83,6 +83,7 @@ def _service(
     call_observability=None,
     events=None,
     policy_resolver=None,
+    backend="packet_tracer",
 ):
     calls = events if events is not None else []
     return CPScaleLocalPreflight(
@@ -144,6 +145,7 @@ def _service(
         process_error_policy=packet_tracer_process_error,
         expected_branch="feature/runtime-ripv2",
         expected_upstream="cisco/feature/runtime-ripv2",
+        backend=backend,
         qualification_policy_resolver=policy_resolver,
     )
 
@@ -610,6 +612,14 @@ def test_packet_tracer_policy_admits_full_without_reading_the_call_provider():
         CPScaleQualificationStatus.UNQUALIFIED
     )
     assert result.evidence_coherent is True
+    # The observed backend build is exactly the pair the policy declares.
+    assert (
+        result.identity.backend,
+        result.identity.packet_tracer_version,
+    ) == (
+        result.qualification_policy.backend,
+        result.qualification_policy.backend_version,
+    ) == ("packet_tracer", "9.0.1.0858")
 
 
 def test_backend_qualifying_call_behavior_keeps_the_strict_provider_gate():
@@ -637,24 +647,76 @@ def test_backend_qualifying_call_behavior_keeps_the_strict_provider_gate():
     assert result.process.state is CPScaleCheckState.NOT_RUN
 
 
-@pytest.mark.parametrize("defect", ("undeclared-build", "foreign-build"))
+@pytest.mark.parametrize(
+    "defect",
+    (
+        "undeclared-build",
+        "foreign-build",
+        "foreign-backend",
+        "foreign-observed-backend",
+    ),
+)
 def test_unresolvable_or_foreign_policy_rejects_before_provider_or_processes(defect):
     def resolver(version):
         if defect == "undeclared-build":
             return packet_tracer_cp_scale_qualification_policy("9.0.2.0000")
-        return replace(
-            packet_tracer_cp_scale_qualification_policy(version),
-            backend_version="9.0.2.0000",
-        )
+        policy = packet_tracer_cp_scale_qualification_policy(version)
+        if defect == "foreign-build":
+            return replace(policy, backend_version="9.0.2.0000")
+        if defect == "foreign-backend":
+            return replace(policy, backend="foreign_backend")
+        return policy
 
     events = []
-    result = _inspect(_service(events=events, policy_resolver=resolver))
+    result = _inspect(_service(
+        events=events,
+        policy_resolver=resolver,
+        backend=(
+            "foreign_backend"
+            if defect == "foreign-observed-backend" else "packet_tracer"
+        ),
+    ))
 
     assert events == ["runtime", "imports", "repository"]
     assert result.outcome is CPScalePreflightOutcome.REJECTED
     assert "qualification policy" in result.issues[0]
     assert result.qualification_policy is None
+    assert result.identity is None
     assert result.process.state is CPScaleCheckState.NOT_RUN
+
+
+@pytest.mark.parametrize(
+    "change",
+    (
+        {"policy": {"backend": "foreign_backend"}},
+        {"policy": {"backend_version": "9.0.2.0000"}},
+        {"identity": {"backend": "foreign_backend"}},
+        {"identity": {"backend": ""}},
+    ),
+    ids=(
+        "foreign-policy-backend",
+        "foreign-policy-build",
+        "foreign-observed-backend",
+        "unobserved-backend",
+    ),
+)
+def test_admitted_policy_stays_bound_to_the_observed_backend_build(change):
+    admitted = _inspect(_service(
+        policy_resolver=packet_tracer_cp_scale_qualification_policy,
+    ))
+    assert admitted.outcome is CPScalePreflightOutcome.ADMITTED
+
+    candidate = replace(
+        admitted,
+        qualification_policy=replace(
+            admitted.qualification_policy, **change.get("policy", {}),
+        ),
+        identity=replace(admitted.identity, **change.get("identity", {})),
+    )
+
+    assert candidate.issues == ()
+    assert candidate.evidence_coherent is False
+    assert candidate.outcome is CPScalePreflightOutcome.REJECTED
 
 
 @pytest.mark.parametrize("target", ("router0-branch", "router3-branch"))

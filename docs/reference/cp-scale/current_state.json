@@ -1,6 +1,6 @@
 {
-  "schema": "cp-scale-current-state-v5",
-  "updated_at": "2026-09-15T12:50:00Z",
+  "schema": "cp-scale-current-state-v6",
+  "updated_at": "2026-09-15T16:37:36Z",
   "operational_state": {
     "authority": "HASH_PINNED_ROUTER0_AND_ROUTER3_SUCCESS_INDEXES",
     "router0": {

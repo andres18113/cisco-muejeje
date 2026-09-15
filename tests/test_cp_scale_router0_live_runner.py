@@ -831,6 +831,7 @@ class LocalPreflight:
             identity=CPScaleLiveSessionIdentity(
                 run_identity=run_identity,
                 started_at=started_at,
+                backend="packet_tracer",
                 packet_tracer_version=request.packet_tracer_version,
                 source_head=HEAD,
                 source_tree=repository.source_tree,

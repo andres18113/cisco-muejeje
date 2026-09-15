@@ -107,7 +107,7 @@ def test_current_state_separates_operational_authority_from_history():
     raw = STATE_PATH.read_bytes()
     document = json.loads(raw)
 
-    assert document["schema"] == "cp-scale-current-state-v5"
+    assert document["schema"] == "cp-scale-current-state-v6"
     assert len(raw) < 16_384
     assert datetime.fromisoformat(document["updated_at"].replace("Z", "+00:00"))
     assert set(document) == {
@@ -317,6 +317,39 @@ def test_current_state_separates_operational_authority_from_history():
     assert historical_handoff
     for key, expected in historical_handoff.items():
         assert handoff[key] == expected
+
+
+def test_current_state_v6_versions_the_policy_conditioned_call_shape():
+    raw = STATE_PATH.read_bytes()
+    document = json.loads(raw)
+    operational = document["operational_state"]
+    call = operational["full_qualification"]["call_observability"]
+
+    assert document["schema"] == "cp-scale-current-state-v6"
+    assert len(raw) < 16_384
+    # v6 names the incompatible call_observability shape: a gate conditioned on
+    # the backend policy replaces v5's provider-bound block, none of which stays.
+    assert {"call_behavior", "strict_gate", "call_expectations_in_plan"} <= set(call)
+    assert not {
+        "provider_id", "execution_method", "qualification_scope",
+        "qualification", "evidence",
+    } & set(call)
+    # The operational facts are the ones v5 already carried.
+    assert {
+        "router0": operational["router0"]["closure"],
+        "router3": operational["router3"]["closure"],
+        "full_executed": operational["full_qualification"]["executed"],
+        "next_active_step": operational["next_active_step"],
+        "live_execution_authorized": operational["live_execution_authorized"],
+    } == {
+        "router0": "ROUTER0_BRANCH_VERIFIED_AND_CLEANED",
+        "router3": "ROUTER3_BRANCH_VERIFIED_AND_CLEANED",
+        "full_executed": False,
+        "next_active_step": (
+            "READY_FOR_EXPLICIT_FULL_QUALIFICATION_LIVE_AUTHORIZATION"
+        ),
+        "live_execution_authorized": False,
+    }
 
 
 def test_closed_history_cannot_return_as_an_inline_current_state_payload():

@@ -24,7 +24,7 @@ from packet_tracer_mcp.application.cp_scale_live import (
     CPScaleLiveAuthorizationRequest,
     CPScaleLiveRequest,
     CPScaleLocalPreflight,
-    call_observations_required,
+    CPScalePreflightResult,
 )
 from packet_tracer_mcp.application.cp_scale_live.backend import CPScaleBackendQualification
 from packet_tracer_mcp.application.cp_scale_live.build_policy import CPScaleBuildPolicy
@@ -59,6 +59,7 @@ from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     EXPECTED_BRANCH,
     EXPECTED_UPSTREAM,
 )
+from packet_tracer_mcp.domain.enterprise.models.discovery import CapabilityBackend
 from packet_tracer_mcp.infrastructure.catalog.control_plane_capabilities import (
     packet_tracer_control_plane_capabilities,
 )
@@ -129,6 +130,8 @@ def build_local_preflight(
         process_error_policy=packet_tracer_process_error,
         expected_branch=EXPECTED_BRANCH,
         expected_upstream=EXPECTED_UPSTREAM,
+        # These readers observe Packet Tracer processes and builds only.
+        backend=CapabilityBackend.PACKET_TRACER.value,
         target_resolver=canonical_cp_scale_target_contract,
         qualification_policy_resolver=packet_tracer_cp_scale_qualification_policy,
     )
@@ -236,28 +239,26 @@ def build_coordinator(request: CPScaleLiveRequest, *, governed_root: Path) -> CP
         exchange_dir=os.environ.get("PT_MCP_PHONE_CONTROL_EXCHANGE_DIR"),
     )
 
-    def runtimes(transport, physical) -> CPScaleRuntimeResources:
+    def runtimes(transport, physical, admitted: CPScalePreflightResult) -> CPScaleRuntimeResources:
         observation = PacketTracerCPScaleRunObservations(transport, active)
         configuration = PacketTracerEnterpriseConfigurationRuntime(lambda: _inventory(physical),
             transport.send, transport.send_and_wait, l3_timeout_seconds=20.0,
             trunk_transition_observer=observation.trunk_transition)
         control = PacketTracerEnterpriseControlPlaneRuntime(lambda: _inventory(physical), transport.send, transport.send_and_wait)
-        target = canonical_cp_scale_target_contract(request.target_stage)
-        policy = (packet_tracer_cp_scale_qualification_policy(request.packet_tracer_version)
-                  if target.requires_call_observability else None)
+        # PhoneControl follows the admitted preflight's policy; the catalog is
+        # resolved once, by preflight, and never again here.
         voice = PacketTracerEnterpriseVoiceRuntime(lambda: _inventory(physical), transport.send, transport.send_and_wait,
             registration_timeout_seconds=180.0, convergence_interval_seconds=5.0,
-            phone_control=phone_control_provider.phone_control_for(
-                call_observations_required=call_observations_required(target, policy)))
+            phone_control=phone_control_provider.phone_control_for(admitted))
         return CPScaleRuntimeResources(configuration, control, voice)
 
-    def session_factory() -> PacketTracerCPScaleSession:
+    def session_factory(admitted: CPScalePreflightResult) -> PacketTracerCPScaleSession:
         return PacketTracerCPScaleSession(transport_factory=PacketTracerHttpTransport,
             physical_factory=lambda transport: PacketTracerPhysicalTopologyRuntime(transport.send_and_wait,
                 mutation_timeout_seconds=30.0, observation_timeout_seconds=12.0,
                 factory_module_preparer=PacketTracerFactoryModulePreparer(
                     transport.send_and_wait, request.packet_tracer_version,
-                )), runtime_factory=runtimes)
+                )), runtime_factory=lambda transport, physical: runtimes(transport, physical, admitted))
 
     def stage_factory(session, resources):
         return build_stage_executor(physical=session.physical, configuration_runtime=resources.configuration,

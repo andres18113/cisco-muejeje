@@ -9,12 +9,10 @@ import pytest
 
 from src.packet_tracer_mcp.application.cp_scale_live import (
     CPScaleCheckState,
-    call_observations_required,
+    CPScalePreflightOutcome,
+    CPScaleQualificationStatus,
 )
 from src.packet_tracer_mcp.application.cp_scale_live.errors import CanonicalLiveFailure
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
-    canonical_cp_scale_target_contract,
-)
 from src.packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
     packet_tracer_cp_scale_qualification_policy,
 )
@@ -56,6 +54,7 @@ from src.packet_tracer_mcp.infrastructure.execution.phone_control import (
 from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
 )
+from tests.test_cp_scale_live_local_preflight import _inspect, _request, _service
 
 
 BUILD = "9.0.1.0858"
@@ -313,11 +312,20 @@ def test_voice_capability_consumes_the_same_validated_evidence():
     assert profile.call_observability_phone_models == ["7960"]
 
 
+def _admitted(target="full-qualification", policy_resolver=None):
+    admitted = _inspect(
+        _service(policy_resolver=policy_resolver),
+        _request(target_stage=target),
+    )
+    assert admitted.outcome is CPScalePreflightOutcome.ADMITTED
+    return admitted
+
+
 def test_strict_call_gate_binds_only_the_adapter_its_readiness_qualified(tmp_path):
     provider, _snapshot_value = _provider(tmp_path)
     assert provider.read(BUILD).state is CPScaleCheckState.PASSED
 
-    bound = provider.phone_control_for(call_observations_required=True)
+    bound = provider.phone_control_for(_admitted())
 
     assert bound is provider.phone_control
     assert isinstance(bound, PacketTracerNativeUiPhoneControlAdapter)
@@ -340,7 +348,7 @@ def test_strict_call_gate_never_falls_back_to_unavailable_phone_control(
         assert provider.read(BUILD).state is CPScaleCheckState.FAILED
 
     with pytest.raises(CanonicalLiveFailure, match="qualified PhoneControl"):
-        provider.phone_control_for(call_observations_required=True)
+        provider.phone_control_for(_admitted())
     assert isinstance(provider.phone_control, UnavailablePhoneControl)
 
 
@@ -351,25 +359,46 @@ def test_packet_tracer_policy_binds_the_explicit_unobservable_control(tmp_path, 
     provider, _snapshot_value = _provider(tmp_path)
     assert provider.read(BUILD).state is CPScaleCheckState.PASSED
 
-    bound = provider.phone_control_for(call_observations_required=call_observations_required(
-        canonical_cp_scale_target_contract(target),
-        packet_tracer_cp_scale_qualification_policy(BUILD),
-    ))
+    bound = provider.phone_control_for(
+        _admitted(target, packet_tracer_cp_scale_qualification_policy),
+    )
 
     assert isinstance(bound, UnavailablePhoneControl)
     assert bound.execution_method is PhoneExecutionMethod.UNOBSERVABLE
 
 
-def test_cp_scale_live_binds_phone_control_through_the_backend_policy():
+def test_phone_control_reads_only_the_admitted_preflight_policy(tmp_path):
+    provider, _snapshot_value = _provider(tmp_path)
+    admitted = _admitted(policy_resolver=packet_tracer_cp_scale_qualification_policy)
+    assert isinstance(provider.phone_control_for(admitted), UnavailablePhoneControl)
+
+    # The same build's catalog still says UNQUALIFIED, but the binding never
+    # consults it: a policy that is not the admitted one binds nothing.
+    rebound = replace(admitted, qualification_policy=replace(
+        admitted.qualification_policy,
+        call_behavior=CPScaleQualificationStatus.QUALIFIED,
+    ))
+    for candidate in (rebound, replace(admitted, issues=("late issue",)), None):
+        with pytest.raises(CanonicalLiveFailure, match="admitted CP-SCALE preflight"):
+            provider.phone_control_for(candidate)
+
+
+def test_cp_scale_live_binds_phone_control_to_the_admitted_preflight():
     source = (
         Path(__file__).resolve().parents[1]
         / "src" / "packet_tracer_mcp" / "adapters" / "cli" / "cp_scale_live.py"
     ).read_text(encoding="utf-8")
 
+    # Preflight is the policy's only resolution; runtimes bind what it admitted.
     assert (
         "qualification_policy_resolver=packet_tracer_cp_scale_qualification_policy"
         in source
     )
-    assert "phone_control=phone_control_provider.phone_control_for(" in source
-    assert "call_observations_required=call_observations_required(" in source
+    assert "packet_tracer_cp_scale_qualification_policy(" not in source
+    assert "backend=CapabilityBackend.PACKET_TRACER.value" in source
+    assert (
+        "runtime_factory=lambda transport, physical: "
+        "runtimes(transport, physical, admitted)"
+    ) in source
+    assert "phone_control=phone_control_provider.phone_control_for(admitted)" in source
     assert "phone_control=phone_control_provider.phone_control)" not in source

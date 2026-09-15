@@ -16,6 +16,7 @@ import pytest
 
 from src.packet_tracer_mcp.application.cp_scale_live.completion import (
     CPScaleCompletion,
+    _unqualified_call_behavior_error,
 )
 from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
     CPScaleMutationScope,
@@ -770,8 +771,30 @@ def test_packet_tracer_policy_closes_full_without_call_observations(status):
     assert [item.status for item in final.voice.calls] == [status] * len(
         final.projection.voice.call_expectations
     )
-    assert final.report.canonical_voice.call_verified_count == 0
-    assert final.report.canonical_voice.call_failed_count == 0
+    canonical = final.report.canonical_voice
+    expected = len(final.projection.voice.call_expectations)
+    assert canonical.call_verified_count == canonical.call_failed_count == 0
+    assert canonical.expected_call_count == canonical.call_unobservable_count == expected
+    assert canonical.call_identity_errors == []
+
+
+def test_unqualified_aggregates_name_missing_only_for_absent_observations():
+    stages = _full_run()
+    final = _unqualified_calls(stages)
+    absent = final.voice.calls.pop(0).call_expectation_id
+    canonical = final.report.canonical_voice
+
+    # A planned call with no observation at all is unobservable, not failed.
+    assert _unqualified_call_behavior_error(
+        final.projection.voice, final.voice,
+        canonical.model_copy(update={"call_identity_errors": [f"missing:{absent}"]}),
+    ) == ""
+    # Its absence may be neither hidden nor claimed for an observed call.
+    for errors in ([], [f"missing:{final.voice.calls[0].call_expectation_id}"]):
+        assert "not exactly UNQUALIFIED" in _unqualified_call_behavior_error(
+            final.projection.voice, final.voice,
+            canonical.model_copy(update={"call_identity_errors": errors}),
+        )
 
 
 def test_strict_call_acceptance_records_qualified_call_behavior():
@@ -808,26 +831,44 @@ def test_unqualified_call_behavior_never_accepts_or_reclassifies_claims(status):
 
 
 @pytest.mark.parametrize(
-    "update",
+    "defect",
     (
-        {"call_verified_count": 1},
-        {"call_failed_count": 1},
-        {"expected_call_count": 3},
-        {"call_identity_errors": ["unexpected:call/foreign"]},
+        "verified-count",
+        "failed-count",
+        "expected-count",
+        "unobservable-count",
+        "foreign-identity",
+        "missing-but-observed",
+        "hidden-absence",
     ),
 )
-def test_unqualified_call_behavior_refuses_aggregates_that_claim_calls(update):
+def test_unqualified_call_behavior_refuses_incoherent_aggregates(defect):
     stages = _full_run()
     final = _unqualified_calls(stages)
+    expected = len(final.projection.voice.call_expectations)
+    updates = {
+        "verified-count": {"call_verified_count": 1},
+        "failed-count": {"call_failed_count": 1},
+        "expected-count": {"expected_call_count": expected + 1},
+        "unobservable-count": {"call_unobservable_count": expected - 1},
+        "foreign-identity": {"call_identity_errors": ["unexpected:call/foreign"]},
+        "missing-but-observed": {"call_identity_errors": [
+            f"missing:{final.voice.calls[0].call_expectation_id}",
+        ]},
+        "hidden-absence": {},
+    }
+    if defect == "hidden-absence":
+        del final.voice.calls[0]
     final.report.canonical_voice = final.report.canonical_voice.model_copy(
-        update=update,
+        update=updates[defect],
     )
 
     review = CPScaleCompletion(cleanup=None).review_full_qualification(
         _policy_preflight(), tuple(stages),
     )
 
-    assert "canonical Voice call aggregates claim call behavior" in review.error
+    assert "canonical Voice call aggregates are not exactly UNQUALIFIED" in review.error
+    assert review.call_behavior is None
 
 
 def test_backend_qualifying_call_behavior_keeps_the_strict_call_gate():
@@ -851,8 +892,10 @@ def test_backend_qualifying_call_behavior_keeps_the_strict_call_gate():
         ("phone_registration", "governed Voice evidence unqualified: phone_registration"),
         ("extension_binding", "governed Voice evidence unqualified: extension_binding"),
         ("intersite", "intersite calling"),
-        # A foreign-build policy already makes the preflight incoherent.
+        # A foreign-build or foreign-backend policy already makes the
+        # preflight incoherent.
         ("foreign-build", "admitted FULL authorization"),
+        ("foreign-backend", "admitted FULL authorization"),
     ),
 )
 def test_unqualified_calls_never_relax_governed_voice_evidence(defect, reason):
@@ -867,6 +910,8 @@ def test_unqualified_calls_never_relax_governed_voice_evidence(defect, reason):
         policy = replace(PT_POLICY, intersite_calling=True)
     elif defect == "foreign-build":
         policy = replace(PT_POLICY, backend_version="9.0.2.0000")
+    elif defect == "foreign-backend":
+        policy = replace(PT_POLICY, backend="foreign_backend")
     else:
         policy = replace(PT_POLICY, **{defect: CPScaleQualificationStatus.UNQUALIFIED})
     preflight = replace(_policy_preflight(), qualification_policy=policy)

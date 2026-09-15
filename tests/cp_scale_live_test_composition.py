@@ -97,7 +97,7 @@ def offline_coordinator(request, **kwargs):
     persistence = Evidence()
     presentation = live.CPScaleConsolePresentation(test_persistence.evidence_path)
 
-    def session_factory():
+    def session_factory(admitted):
         session = PacketTracerCPScaleSession(transport_factory=seams.PacketTracerHttpTransport,
             physical_factory=lambda transport: seams.PacketTracerPhysicalTopologyRuntime(),
             runtime_factory=lambda transport, physical: CPScaleRuntimeResources(
