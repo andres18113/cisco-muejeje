@@ -29,15 +29,16 @@ LLM ──▶ MCP Server (:39000) ──────►┤   (window OPEN)      
 
 ## Install the extension (one-time)
 
-Live deploy uses the project's **own** Packet Tracer extension — the
-**MCP Control Center** (a `.pts` script module shipped in this repo's Releases).
-You do **not** need any third-party extension.
+Live deploy uses the **MCP Control Center** Packet Tracer extension, a `.pts`
+script module whose source is in `EXTENSION/`. No other extension is needed.
 
-1. Download the latest extension from
-   **[Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)**
-   (the `.pts` file — currently **`V5.pts`**).
+1. Get a compiled `.pts`, V5 or later. Cisco-Muejeje does not publish one. Build
+   it from `EXTENSION/`, which needs the PTBuilder reference files described in
+   `EXTENSION/script-engine/README.md`. The upstream project published
+   `V5.2.pts` with its
+   **[releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases)**.
 2. In Packet Tracer: **Extensions → Scripting → Configure PT Script Modules**
-3. Click **Add…**, select the downloaded `.pts`, and confirm.
+3. Click **Add…**, select the `.pts`, and confirm.
 
 That's it — the module is now registered.
 
@@ -78,8 +79,8 @@ pt_export_topology        # full snapshot (positions, per-interface IPs, links)
 
 ??? question "I don't see `Extensions → MCP BUILDER`"
     The extension isn't registered yet. Repeat the install step
-    (**Extensions → Scripting → Configure PT Script Modules → Add…**) and pick the
-    `.pts` from [Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest).
+    (**Extensions → Scripting → Configure PT Script Modules → Add…**) and pick a
+    compiled `.pts`, V5 or later; see [Install the extension](#install-the-extension-one-time).
 
 ??? question "A red error popup appeared (`An error occurred on line N`)"
     A command threw inside the Script Engine. The Control Center's polling loop lives
@@ -90,5 +91,6 @@ pt_export_topology        # full snapshot (positions, per-interface IPs, links)
 ??? question "Packet Tracer becomes very slow when the window is in the background"
     A QtWebEngine compositing limitation: when the webview is behind PT but not
     minimized, Chromium keeps rendering and competes for the GPU. **Minimize** the
-    MCP Control Center window to stop its render pipeline. See
-    [#5](https://github.com/Mats2208/MCP-Packet-Tracer/issues/5).
+    MCP Control Center window to stop its render pipeline. The upstream project
+    tracked this as
+    [Mats2208/MCP-Packet-Tracer#5](https://github.com/Mats2208/MCP-Packet-Tracer/issues/5).

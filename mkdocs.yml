@@ -1,11 +1,12 @@
 site_name: Cisco-Muejeje
 site_description: MCP server for Cisco Packet Tracer that plans, validates, generates and applies network topologies and records governed evidence of the results.
-site_url: https://mats2208.github.io/MCP-Packet-Tracer/
-site_author: Mats2208
-repo_url: https://github.com/Mats2208/MCP-Packet-Tracer
-repo_name: Mats2208/MCP-Packet-Tracer
+# GitHub Pages target of .github/workflows/docs.yml for this repository.
+site_url: https://andres18113.github.io/cisco-muejeje/
+site_author: Cisco-Muejeje contributors
+repo_url: https://github.com/andres18113/cisco-muejeje
+repo_name: andres18113/cisco-muejeje
 edit_uri: edit/main/docs/
-copyright: Copyright &copy; 2026 Mateo (Mats2208) — MIT License
+copyright: Cisco-Muejeje — MIT License. Includes work Copyright &copy; 2026 Mateo (Mats2208), from Mats2208/MCP-Packet-Tracer.
 
 theme:
   name: material
@@ -65,7 +66,7 @@ plugins:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/Mats2208/MCP-Packet-Tracer
+      link: https://github.com/andres18113/cisco-muejeje
 
 nav:
   - Home: index.md

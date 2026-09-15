@@ -1,9 +1,9 @@
 # EXTENSION — MCP Control Center (Packet Tracer `.pts`)
 
-The Packet Tracer extension that pairs with the MCP server. Distributed as a
-compiled `.pts` script module via
-[Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest) — this
-folder is its source.
+The Packet Tracer extension that pairs with the MCP server. Packet Tracer loads it
+as a compiled `.pts` script module, and this folder is its source. Cisco-Muejeje
+does not publish a compiled build. The upstream project published `V5.2.pts` with
+its [releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases).
 
 ```
 EXTENSION/

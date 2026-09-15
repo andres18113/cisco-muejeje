@@ -73,12 +73,13 @@ token: a browser page can't write a user-ACL'd local file.
 
 **Auth** — the HTTP bridge requires a per-machine token (`bridge_token.py`,
 auto-generated under `%LOCALAPPDATA%`). The extension reads it from disk through
-the Script Engine — no pairing, no pasting. See [SECURITY.md](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/SECURITY.md).
+the Script Engine — no pairing, no pasting. See [SECURITY.md](https://github.com/andres18113/cisco-muejeje/blob/main/SECURITY.md).
 
-!!! info "Inspired by PTBuilder"
-    The Script-Engine helper layer that runs inside Packet Tracer was inspired by
-    [PTBuilder](https://github.com/kimmknight/PTBuilder); the extension itself (the
-    MCP Control Center) is this project's own — see [Credits & Attribution](credits.md).
+!!! info "PTBuilder as historical reference"
+    The Script-Engine helper layer that runs inside Packet Tracer was based on
+    [PTBuilder](https://github.com/kimmknight/PTBuilder) as a reference. The
+    extension (the MCP Control Center) is a separate build whose source is in
+    `EXTENSION/` — see [Credits & Attribution](credits.md).
 
 !!! warning "Trust model"
     `/queue` is the authenticated internal bridge endpoint. The default

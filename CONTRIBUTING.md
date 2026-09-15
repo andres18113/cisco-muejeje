@@ -1,15 +1,17 @@
 # Contributing
 
-Thanks for looking. This is a personal project, so the process is light — but a
-few things are worth knowing before you open a PR.
+The process is light, but a few things are worth knowing before you open a PR.
+[AGENTS.md](AGENTS.md) lists the rules that are not negotiable in this
+repository.
 
 ## Getting set up
 
 ```bash
-git clone https://github.com/Mats2208/MCP-Packet-Tracer.git
-cd MCP-Packet-Tracer
-pip install -e ".[test]"
-python -m pytest
+git clone https://github.com/andres18113/cisco-muejeje.git
+cd cisco-muejeje
+python -m venv .venv
+.venv/Scripts/python.exe -m pip install -e ".[test]"   # Linux/macOS: .venv/bin/python
+.venv/Scripts/python.exe -m pytest -q
 ```
 
 The suite runs **offline** — nothing requires Cisco Packet Tracer. Use cases take
@@ -17,8 +19,9 @@ The suite runs **offline** — nothing requires Cisco Packet Tracer. Use cases t
 lambdas instead of talking to PT. Keep it that way: a test that needs PT open is
 a test that never runs in CI.
 
-Run pytest from the repo root; a couple of tests read source files by relative
-path.
+Run pytest from the repo root with the checkout-local `.venv` interpreter. A
+couple of tests read source files by relative path, and another interpreter can
+silently import a different checkout's code (see AGENTS.md).
 
 ## Architecture in one minute
 
@@ -26,7 +29,7 @@ path.
 domain/         models (pydantic), rules (validation), services (planning)
 application/    use cases — orchestrate rules + generators, no I/O of their own
 infrastructure/ generators (JS + IOS CLI), execution (bridge, executors), catalog
-adapters/mcp/   the ~50 MCP tools; a thin layer over the use cases
+adapters/mcp/   the MCP tools; a thin layer over the use cases
 ```
 
 Two conventions that matter:

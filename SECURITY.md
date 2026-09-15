@@ -2,24 +2,30 @@
 
 ## Reporting a vulnerability
 
-Please **do not open a public issue.** Report it privately through
-[GitHub Security Advisories](https://github.com/Mats2208/MCP-Packet-Tracer/security/advisories/new),
-and I'll get back to you.
+Please **do not open a public issue** with vulnerability details. Report it
+privately to the maintainers of
+[andres18113/cisco-muejeje](https://github.com/andres18113/cisco-muejeje) through
+GitHub's private vulnerability reporting: open the repository's **Security** tab
+and choose **Report a vulnerability**. If that option is not available, open an
+issue that only asks for a private contact channel and leaves out the technical
+details.
 
-I'll acknowledge within a few days and work with you on a fix before anything is
-published. If you want a CVE, say so in the report — coordinated disclosure with
-the fix already shipped is the goal, not a race.
+The goal is coordinated disclosure, with a fix available before details are
+published. If you want a CVE, say so in the report.
 
 ## Threat model — read this before you file anything
 
-MCP-Packet-Tracer is a **single-user desktop tool**. It runs on your machine, it
+Cisco-Muejeje is a **single-user desktop tool**. It runs on your machine, it
 drives a copy of Cisco Packet Tracer that you opened, and it has no server, no
 accounts and no data belonging to anyone else. Several things that look alarming
 are the actual design:
 
-- **`pt_send_raw` executes arbitrary JavaScript inside Packet Tracer.** That is
-  the tool's stated purpose — an escape hatch for anything the typed tools don't
-  cover. PT's `runCode` is `new Function(scriptText)`, so this is full code
+- **`pt_send_raw` executes arbitrary JavaScript inside Packet Tracer.** It is
+  registered only when the server starts with
+  `PT_MCP_PUBLIC_SURFACE=developer-capability-investigation`; the default
+  `enterprise` surface does not expose it. When it is registered, arbitrary
+  execution is its stated purpose: an escape hatch for anything the typed tools
+  don't cover. PT's `runCode` is `new Function(scriptText)`, so this is full code
   execution in PT's script engine, by design.
 - **Every tool that builds a topology ultimately generates JavaScript** that PT
   executes. The MCP server is a code generator pointed at a script engine; that
@@ -85,11 +91,10 @@ You can override the token with `PT_MCP_BRIDGE_TOKEN` for tests and CI.
 
 ## Supported versions
 
-Only the latest release is supported. Versions before **v0.6.0** have an
-unauthenticated bridge: any web page you visited while Packet Tracer was open
-could execute code inside it. **Upgrade.**
+Cisco-Muejeje has not tagged any releases. Security fixes are made on the
+current development line, and there are no maintained release branches. The
+package version `0.8.0` is inherited from upstream.
 
-| Version | Supported |
-| ------- | --------- |
-| 0.6.x   | Yes |
-| < 0.6.0 | No — unauthenticated bridge |
+Code older than upstream **v0.6.0** has an unauthenticated bridge: any web page
+you visited while Packet Tracer was open could execute code inside it. Do not run
+it.

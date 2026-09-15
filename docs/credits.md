@@ -1,40 +1,53 @@
 # Credits & Attribution
 
-## This project ships its own extension
+## Upstream project
 
-Live deploy uses the **MCP Control Center** — this project's **own** Packet Tracer
-extension, distributed as a `.pts` script module in
-[Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest). It's an
-original build: a webview dashboard (Editor, Terminal, Status, Quick Build) with the
-bridge polling loop built in. **You install this extension, not any third-party one.**
+Cisco-Muejeje started as a fork of
+**[Mats2208/MCP-Packet-Tracer](https://github.com/Mats2208/MCP-Packet-Tracer)**
+("Packet Tracer MCP Server"), by **Mateo ([@Mats2208](https://github.com/Mats2208))**,
+distributed under the MIT License. The fork diverged at upstream commit
+`b075961` (2026-07-31). Several parts come from that project:
 
-## Inspired by PTBuilder
+- the MCP server;
+- the classic planning, validation and generation pipeline;
+- the HTTP bridge and the file bridge;
+- the MCP Control Center extension;
+- the classic tools.
 
-The idea of driving Packet Tracer's **Script Engine from JavaScript** was pioneered
-by **[PTBuilder](https://github.com/kimmknight/PTBuilder)**, by
-**Kim Knight ([@kimmknight](https://github.com/kimmknight))**. PTBuilder was used as
-the **starting point / reference** for this project's Script-Engine helper layer
-(the `addDevice`/`addLink`/`configureIosDevice`-style functions). Credit and thanks
-to Kim for that groundwork.
+Work after the divergence point is Cisco-Muejeje's own; see
+[NOTICE.md](https://github.com/andres18113/cisco-muejeje/blob/main/NOTICE.md) and
+the Git history.
 
-!!! info "Two separate, independent projects"
+## PTBuilder
+
+**[PTBuilder](https://github.com/kimmknight/PTBuilder)**, by
+**Kim Knight ([@kimmknight](https://github.com/kimmknight))**, drives Packet
+Tracer's Script Engine from JavaScript. It was the historical starting point and
+reference for the Script-Engine helper layer, which is the
+`addDevice` / `addLink` / `configureIosDevice`-style functions that the extension
+installs and the script generator emits.
+
+!!! info "Separate projects"
     - **PTBuilder** is its own project by Kim Knight. It is **not** affiliated with,
-      endorsed by, or required by Packet Tracer MCP.
-    - **Packet Tracer MCP** ships its **own** extension (the MCP Control Center) and
-      adds the MCP server, planner, validators, generators, catalog and the
-      incremental / NAT / ACL tooling. The two extensions are different builds.
-    - If you just want to drive Packet Tracer from JavaScript (no AI/MCP), check out
+      endorsed by, or required by Cisco-Muejeje.
+    - The PTBuilder repository carries no license, so its files are not
+      redistributed here. Building the extension needs local reference copies; see
+      `EXTENSION/script-engine/README.md` in the repository.
+    - To drive Packet Tracer from JavaScript without MCP, use
       **[PTBuilder](https://github.com/kimmknight/PTBuilder)** directly.
 
 ## Built with
 
-- **[Model Context Protocol](https://modelcontextprotocol.io)** — the protocol and
-  Python SDK (`mcp[cli]`) that exposes the tools to LLMs.
-- **[Pydantic](https://docs.pydantic.dev)** — typed models and validation.
-- **[Cisco Packet Tracer](https://www.netacad.com/)** — the network simulator this
-  project automates.
+- **[Model Context Protocol](https://modelcontextprotocol.io)**: the protocol and
+  Python SDK (`mcp[cli]`) that expose the tools to MCP clients.
+- **[Pydantic](https://docs.pydantic.dev)**: typed models.
+- **[Cisco Packet Tracer](https://www.netacad.com/)**: the network simulator this
+  project automates. It is not included, and Cisco-Muejeje is not affiliated with
+  Cisco.
 
 ## License
 
-Packet Tracer MCP is released under the **MIT License**.
-Copyright © 2026 Mateo ([@Mats2208](https://github.com/Mats2208)).
+The repository is distributed under the MIT License in
+[`LICENSE`](https://github.com/andres18113/cisco-muejeje/blob/main/LICENSE). That
+file keeps the upstream copyright notice unchanged:
+"Copyright (c) 2026 Mateo - Packet Tracer MCP Server".

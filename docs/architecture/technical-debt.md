@@ -1,7 +1,7 @@
 # Technical Debt Ledger
 
 This document tracks confirmed technical debt and contained backend
-limitations that remain relevant to the MCP-Packet-Tracer architecture.
+limitations that remain relevant to the Cisco-Muejeje architecture.
 
 It is not a generic TODO list.
 

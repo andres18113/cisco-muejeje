@@ -1,8 +1,7 @@
 # script-engine — Packet Tracer script-engine side of the extension
 
 This folder is the **script-engine half** of the *MCP Control Center* Packet
-Tracer extension (the `.pts` distributed via
-[Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)). The
+Tracer extension, which Packet Tracer loads as a compiled `.pts` module. The
 other half is the webview UI in [`../webview/`](../webview/).
 
 ## What's tracked here, and why only `main.js`
@@ -12,9 +11,8 @@ other half is the webview UI in [`../webview/`](../webview/).
 | `main.js` | **This project.** Bridge bootstrap, token read (`getMcpToken`), the file-bridge loop, and `installMcpHelpers()`. | **Yes** |
 | `userfunctions.js`, `devices.js`, `links.js`, `modules.js`, `runcode.js`, `windows.js` | Reference copies of **[PTBuilder](https://github.com/kimmknight/PTBuilder)**'s script engine, by Kim Knight. | No — see below |
 
-PTBuilder is credited as the starting point in the
-[main README](../../README.md#credits--acknowledgements) and
-[docs/credits](https://mats2208.github.io/MCP-Packet-Tracer/credits/). Its
+PTBuilder is credited as the historical reference in
+[`NOTICE.md`](../../NOTICE.md) and [`docs/credits.md`](../../docs/credits.md). Its
 repository carries **no license**, so those files are not redistributed from this
 repository. They are `.gitignore`d on purpose (`EXTENSION/script-engine/*.js`
 except `main.js`).
@@ -24,7 +22,9 @@ except `main.js`).
 To compile the extension you need the PTBuilder reference files alongside
 `main.js`. Get them from [PTBuilder](https://github.com/kimmknight/PTBuilder),
 place them in this folder, and package with the webview UI from `../webview/`.
-The published `.pts` in Releases is the ready-to-install build.
+Cisco-Muejeje does not publish a compiled `.pts`. The upstream project published
+`V5.2.pts` with its
+[releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases).
 
 ## How it runs
 
