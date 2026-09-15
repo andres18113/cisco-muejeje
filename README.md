@@ -81,7 +81,6 @@ What is verified, and how:
   - bridge authentication;
   - the Enterprise planning and compilation pipeline;
   - typed runtime contracts;
-  - Skills governance;
   - the hashes of the CP-SCALE state and evidence documents.
 - **Against Packet Tracer `9.0.1.0858`, by governed runs with recorded
   evidence:**
@@ -159,17 +158,6 @@ upstream project published a compiled module, `V5.2.pts`, with its
 [releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases). The server
 rejects extension builds older than V5, because they do not send the bridge
 token.
-
-### Governed Skills
-
-[`skills/manifest.json`](skills/manifest.json) is the canonical Skills inventory.
-Export a client projection into a directory that does not exist yet:
-
-```bash
-python -m tools.skills_governance export --destination .skill-staging-claude --audience operation --client claude
-```
-
-[docs/skill.md](docs/skill.md) describes how to replace an existing installation.
 
 ## CP-LIVE status
 
@@ -262,9 +250,7 @@ those hashes.
 | `src/packet_tracer_mcp/adapters/mcp/` | MCP tool and resource registries, public-surface selection |
 | `src/packet_tracer_mcp/shared/` | Shared helpers such as escaping and path containment |
 | `EXTENSION/` | Packet Tracer extension source: `script-engine/main.js` and `webview/` |
-| `skills/` | Governed Skills and their manifest |
-| `skill/` | Deprecated single-file Skill, kept for compatibility |
-| `tools/` | Governed LIVE qualification runners and the Skills governance CLI |
+| `tools/` | Governed LIVE qualification runners |
 | `tests/` | Offline test suite |
 | `docs/` | MkDocs sources, architecture and qualification records, QA notes, design plans |
 | `docs/reference/cp-scale/` | CP-SCALE state and immutable LIVE evidence |

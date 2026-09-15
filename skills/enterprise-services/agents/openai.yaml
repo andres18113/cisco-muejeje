@@ -1,4 +1,0 @@
-interface:
-  display_name: "Enterprise Services"
-  short_description: "DNS, web, NTP, and TFTP service workflows"
-  default_prompt: "Use $enterprise-services to plan and verify the requested service behavior."

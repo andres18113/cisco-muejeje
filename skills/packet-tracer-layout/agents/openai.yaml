@@ -1,4 +1,0 @@
-interface:
-  display_name: 'Packet Tracer Layout'
-  short_description: 'Arrange topologies without changing network semantics'
-  default_prompt: 'Use $packet-tracer-layout to arrange this existing topology without changing its network semantics.'

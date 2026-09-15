@@ -1,4 +1,0 @@
-interface:
-  display_name: 'Packet Tracer Runtime'
-  short_description: 'Run controlled live Packet Tracer operations'
-  default_prompt: 'Use $packet-tracer-runtime to execute and verify this approved live Packet Tracer operation.'

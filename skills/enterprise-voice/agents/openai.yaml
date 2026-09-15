@@ -1,4 +1,0 @@
-interface:
-  display_name: "Enterprise Voice"
-  short_description: "IP telephony registration and call workflows"
-  default_prompt: "Use $enterprise-voice to assess phone registration and call behavior."

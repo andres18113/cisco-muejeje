@@ -56,15 +56,13 @@ history is the detailed record.
 - Deployment manifests and execution contracts. E9.5 stabilization was closed at
   CP3-HARD ([e95-stabilization](docs/architecture/e95-stabilization.md)).
 
-### MCP surface and Skills
+### MCP surface
 
 - A governed public MCP surface. The default `enterprise` surface does not
   register `pt_send_raw`; `PT_MCP_PUBLIC_SURFACE=developer-capability-investigation`
   adds it.
 - New tools: `pt_probe_capabilities`, `pt_capability_report` and
   `pt_compose_enterprise_reference`.
-- Governed Skills: a canonical `skills/manifest.json`, with validation and export
-  through `tools/skills_governance.py`. `skill/SKILL.md` is deprecated.
 
 ## Upstream heritage: Mats2208/MCP-Packet-Tracer
 

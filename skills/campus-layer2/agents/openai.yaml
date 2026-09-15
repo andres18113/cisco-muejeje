@@ -1,4 +1,0 @@
-interface:
-  display_name: "Campus Layer 2"
-  short_description: "STP and EtherChannel resilience, not VLAN setup"
-  default_prompt: "Use $campus-layer2 to assess STP or EtherChannel resilience."

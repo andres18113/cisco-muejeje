@@ -105,29 +105,6 @@ To apply topologies to a **running** Packet Tracer, also install the
 
 Full walkthrough → **[Live Deploy Setup](live-deploy.md)**.
 
-## Governed Skills (recommended)
-
-[`skills/manifest.json`](../skills/manifest.json) is the canonical inventory. Export a client
-projection from the cloned repo instead of installing the deprecated `skill/SKILL.md` companion.
-The exporter selects by lifecycle, audience, and distribution mode; normal operation excludes
-PLANNED Skills such as `network-autofix`.
-
-=== "Linux / macOS / Git Bash"
-
-    ```bash
-    python -m tools.skills_governance export --destination .skill-staging-claude --audience operation --client claude
-    ```
-
-=== "Windows PowerShell"
-
-    ```powershell
-    python -m tools.skills_governance export --destination .skill-staging-claude --audience operation --client claude
-    ```
-
-The destination must not already exist; delete it after copying or use a fresh staging path for the
-next export. Do not merge it over older Skill directories; bounded replacement steps that preserve
-unrelated user Skills, plus Codex/OpenAI and portable examples → **[Governed Skills](skill.md)**.
-
 ## Transport modes
 
 - **stdio** (recommended for desktop clients): the client spawns the server as a

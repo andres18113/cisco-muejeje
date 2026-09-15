@@ -1,4 +1,0 @@
-interface:
-  display_name: "First-Hop Redundancy"
-  short_description: "Virtual-gateway failover, not dynamic routing"
-  default_prompt: "Use $first-hop-redundancy to assess virtual-gateway failover and recovery."

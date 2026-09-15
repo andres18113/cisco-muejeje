@@ -1,4 +1,0 @@
-interface:
-  display_name: 'Enterprise IPAM and Capacity'
-  short_description: 'Plan IPv4 ownership and physical capacity demand'
-  default_prompt: 'Use $enterprise-ipam-capacity to plan or reconcile addressing and quantify pre-hardware capacity demand.'

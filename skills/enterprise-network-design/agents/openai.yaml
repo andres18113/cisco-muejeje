@@ -1,4 +1,0 @@
-interface:
-  display_name: 'Enterprise Network Design'
-  short_description: 'Define logical topology before addressing or hardware'
-  default_prompt: 'Use $enterprise-network-design to turn these requirements into a logical enterprise plan.'

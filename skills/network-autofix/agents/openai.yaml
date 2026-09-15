@@ -1,6 +1,0 @@
-interface:
-  display_name: "Network Autofix"
-  short_description: "Describe the future governed live-remediation boundary"
-  default_prompt: "Use $network-autofix only when explicitly examining the planned governed live-remediation responsibility, never for current repair execution."
-policy:
-  allow_implicit_invocation: false

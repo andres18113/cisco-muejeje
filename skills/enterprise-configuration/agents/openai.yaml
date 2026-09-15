@@ -1,4 +1,0 @@
-interface:
-  display_name: 'Enterprise Configuration'
-  short_description: 'Apply typed foundational network configuration'
-  default_prompt: 'Use $enterprise-configuration to compile and apply this approved foundational network configuration.'

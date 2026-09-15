@@ -1,4 +1,0 @@
-interface:
-  display_name: "IPv4 IGP Routing"
-  short_description: "RIPv2, OSPFv2, and EIGRP route behavior"
-  default_prompt: "Use $routing-igp to assess RIPv2, OSPFv2, or EIGRP routing behavior."

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Network Acceptance"
-  short_description: "Issue evidence-bounded readiness and acceptance verdicts"
-  default_prompt: "Use $network-acceptance to evaluate readiness evidence and issue a bounded acceptance verdict without diagnosing or repairing."
