@@ -252,10 +252,9 @@ those hashes.
 | `EXTENSION/` | Packet Tracer extension source: `script-engine/main.js` and `webview/` |
 | `tools/` | Governed LIVE qualification runners |
 | `tests/` | Offline test suite |
-| `docs/` | MkDocs sources, architecture and qualification records, QA notes, design plans |
+| `docs/` | MkDocs sources, architecture and qualification records, QA notes |
 | `docs/reference/cp-scale/` | CP-SCALE state and immutable LIVE evidence |
 | `handoff.md` | Legacy CP-SCALE state projection, read by tests |
-| `handoff_github_corrections.md` | Non-authoritative continuity note |
 | `AGENTS.md` | Rules for coding agents working in this repository |
 
 ## Security

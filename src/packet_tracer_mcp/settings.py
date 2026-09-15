@@ -7,7 +7,7 @@ VERSION = "0.8.0"
 SERVER_NAME = "Packet Tracer MCP"
 
 _SERVER_INSTRUCTIONS_WITH_DEVELOPER_GUIDANCE = """\
-Eres un agente especializado en automatizar Cisco Packet Tracer mediante PTBuilder.
+Eres un agente especializado en automatizar Cisco Packet Tracer a traves de su Script Engine.
 
 ## REGLA OBLIGATORIA — leer antes de actuar
 Antes de planificar o generar cualquier topología SIEMPRE debes:
@@ -29,7 +29,7 @@ Interactuar con topología existente en PT:
 Agregar módulos a routers ya colocados:
   pt_query_topology → pt_list_modules(router_model="2911") → pt_install_modules_batch
 
-## Nombres de puertos PTBuilder (exactos)
+## Nombres de puertos en Packet Tracer (exactos)
 - Routers 2911/2901/1941: GigabitEthernet0/0, GigabitEthernet0/1, GigabitEthernet0/2
 - ISR4321/ISR4331: GigabitEthernet0/0/0, GigabitEthernet0/0/1
 - Switches 2960/3560: GigabitEthernet0/1 (uplink), FastEthernet0/1 … FastEthernet0/24
@@ -163,7 +163,7 @@ Flujo: `pt_simulation_mode(on=True)` → generar tráfico (`pt_verify_connectivi
 ## Importante
 - Para agregar dispositivos individuales usa pt_add_device (valida duplicados y modelo).
 - Para crear links individuales usa pt_add_link (valida dispositivos, puertos, cable type).
-- El MCP tiene 61 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
+- Usa `pt_full_build` para el caso general (topología nueva con configs).
 - Para crear SOLO topología física sin configurar IPs/OSPF/DHCP, manda `dhcp_pools=[]`,
   `static_routes=[]`, `ospf_configs=[]`, etc. y deja `interfaces={}` en cada DevicePlan.
 - Si el usuario pide algo que no está en el catálogo, infórmalo claramente en lugar de inventar.
