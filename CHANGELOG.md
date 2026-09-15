@@ -1,13 +1,87 @@
 # Changelog
 
-## 0.8.0
+No Cisco-Muejeje release has been tagged. The package version in
+`pyproject.toml` (`0.8.0`) is inherited from upstream and has not been changed.
+This file keeps two histories apart: Cisco-Muejeje development since the fork
+diverged from upstream, and the upstream release notes written before that.
+
+## Cisco-Muejeje development (unreleased)
+
+This covers the work since the divergence from upstream at `b075961`
+(2026-07-31), starting with `aadbb94` (2026-08-02). It is a summary; the Git
+history is the detailed record.
+
+### CP-LIVE and runtime
+
+- Governed CP-SCALE canonical LIVE targets for the three-site, 279-endpoint
+  reference design
+  ([cp-scale-qualification](docs/architecture/cp-scale-qualification.md)). Every
+  canonical target is refused before Packet Tracer contact unless an explicit
+  authorization names the target and the exact source SHA.
+- `ROUTER0_BRANCH_VERIFIED_AND_CLEANED`, executed at `8980ada`, and
+  `ROUTER3_BRANCH_VERIFIED_AND_CLEANED`, executed at `d2245d4`.
+- `CP_SCALE_FULL_QUALIFICATION_VERIFIED_AND_CLEANED`, from run
+  `canonical-cp-scale-voice-20260915T193037865890Z-6a80b24626d4`:
+  - executed at `6a80b24626d40fb59bad5f0dc2e47d18a51f4a49`;
+  - evidence promoted in `4206ee3`;
+  - reconciled in `3b292ca`.
+
+  The earlier full-qualification run, executed at `ff11765`, FAILED at `floor3`
+  when the Packet Tracer process crashed, and it stays FAILED.
+- A backend qualification policy for Packet Tracer `9.0.1.0858`. It qualifies
+  voice configuration, phone registration and extension binding. Call behaviour
+  and wireless association are unqualified, and intersite calling is off. The
+  call-observability qualification attempt was BLOCKED (diagnostic only).
+- Governed PoE observation episodes (POE-2 and POE-3A), with their immutable
+  evidence under `docs/reference/cp-scale/`.
+- Runtime qualifications on Packet Tracer `9.0.1.0858`:
+  - RIPv2 replay safety and typed RIPv2 route exchange
+    ([ripv2-runtime-qualification](docs/architecture/ripv2-runtime-qualification.md));
+  - EIGRP on `1941`
+    ([eigrp-runtime-qualification](docs/architecture/eigrp-runtime-qualification.md)).
+- Runtime safety contracts:
+  - import isolation proved in the process that mutates;
+  - a typed registry of product mutation families;
+  - a same-payload replay guard for module insertion;
+  - the FileBridge containment that discharges branch B of `TD-TRANSPORT-001`.
+
+### Enterprise pipeline
+
+- Enterprise planning (E2), Packet Tracer capability discovery (E3.5), and
+  hardware planning that consumes measured capability evidence.
+- The Enterprise compiler (E4): endpoint expansion, physical port and link
+  allocation, layout and serial WAN links.
+- Typed configuration (E5), network services, voice, security policy and
+  control-plane plans, applied and verified through the Packet Tracer runtime.
+- Deployment manifests and execution contracts. E9.5 stabilization was closed at
+  CP3-HARD ([e95-stabilization](docs/architecture/e95-stabilization.md)).
+
+### MCP surface and Skills
+
+- A governed public MCP surface. The default `enterprise` surface does not
+  register `pt_send_raw`; `PT_MCP_PUBLIC_SURFACE=developer-capability-investigation`
+  adds it.
+- New tools: `pt_probe_capabilities`, `pt_capability_report` and
+  `pt_compose_enterprise_reference`.
+- Governed Skills: a canonical `skills/manifest.json`, with validation and export
+  through `tools/skills_governance.py`. `skill/SKILL.md` is deprecated.
+
+## Upstream heritage: Mats2208/MCP-Packet-Tracer
+
+The entries below are release notes written by the upstream project,
+[Mats2208/MCP-Packet-Tracer](https://github.com/Mats2208/MCP-Packet-Tracer),
+before Cisco-Muejeje diverged. They are kept verbatim as provenance and are not
+Cisco-Muejeje releases. The tool counts, test counts and Packet Tracer version
+they cite describe upstream at that time.
+
+### 0.8.0
 
 El servidor podía construir una red y leerla, pero no mostrarla. Esta versión
 cierra eso: el agente ahora entrega un diagrama, no una descripción.
 
 **58 → 61 tools · 319 → 349 tests.** Verificado contra Packet Tracer 9.0.0.0810.
 
-### Added
+#### Added
 
 - **`pt_screenshot`** — captura el canvas lógico a un archivo y devuelve su ruta.
   No devuelve la imagen: son decenas de miles de bytes y llenarían el contexto
@@ -22,7 +96,7 @@ Juntas permiten **topologías auto-documentadas**: construir con `pt_full_build`
 etiquetar cada subred y enlace, y capturar — un diagrama listo para una clase a
 partir de un solo prompt.
 
-### Limitación conocida
+#### Limitación conocida
 
 **No hay tool de dibujo.** Packet Tracer dibuja líneas y círculos en el canvas,
 pero no de forma útil desde una extensión: el argumento donde iría el tamaño
@@ -32,7 +106,7 @@ pedido. Antes que exponer parámetros que no hacen lo que dicen, la anotación
 queda limitada a notas de texto. El tamaño de fuente tampoco es configurable,
 por la misma razón.
 
-## 0.7.0
+### 0.7.0
 
 Until now the server could build a network but not look at one. It planned,
 validated and deployed, and if the result misbehaved the model was blind — it
@@ -41,7 +115,7 @@ devices back, and explaining what they decided and why.
 
 **46 → 58 tools · 188 → 319 tests.** Verified against Packet Tracer 9.0.0.0810.
 
-### Fixed
+#### Fixed
 
 - **`pt_full_build(deploy=True)` now deploys.** It always went to the clipboard,
   so with the bridge connected it reported `Validación: PASS` and left the canvas
@@ -50,7 +124,7 @@ devices back, and explaining what they decided and why.
   for the devices PT drops) and falls back to the clipboard only when no channel
   exists.
 
-### Added — reading the live topology
+#### Added — reading the live topology
 
 - **`pt_audit_security`** — grades the effective configuration of every IOS
   device: missing `enable secret`, credentials stored reversibly, `service
@@ -68,7 +142,7 @@ devices back, and explaining what they decided and why.
 - **`pt_device_power`** — power a device off and on with read-back, to simulate
   an outage or force a reboot.
 
-### Added — simulation
+#### Added — simulation
 
 - **`pt_read_packet_trace`** — the simulation event list: per frame the path,
   the outcome, and **PT's own per-OSI-layer explanation of each decision**. A
@@ -77,7 +151,7 @@ devices back, and explaining what they decided and why.
 - **`pt_simulation_mode`** / **`pt_simulation_step`** — switch between Realtime
   and Simulation, and move the event list forward, back or to the start.
 
-### Added — telemetry, QoS and backup
+#### Added — telemetry, QoS and backup
 
 - **`pt_apply_netflow`** — create, reconfigure or remove a NetFlow exporter
   (collector address, UDP port, version, source interface, monitors) and read the
@@ -93,7 +167,7 @@ devices back, and explaining what they decided and why.
   if you need links on exact interfaces) and access to the real network, plus the
   canvas labels that decide whether a screenshot is readable.
 
-### Improved
+#### Improved
 
 - **`pt_apply_interface_tuning`** gains `ospf_dead_interval` and OSPF
   authentication in both message-digest and plaintext form. The key is emitted
@@ -108,7 +182,7 @@ Both were extended rather than given their own tools: `pt_apply_interface_tuning
 already set the other OSPF knobs and `pt_set_port` already applied low-level port
 attributes, so separate tools would have been mostly duplicate.
 
-### Known limitations
+#### Known limitations
 
 - **No `pt_send_pdu`.** Packet Tracer does not let an extension originate a
   packet the way the GUI's *Add Simple PDU* button does. Generate traffic with a
@@ -118,7 +192,7 @@ attributes, so separate tools would have been mostly duplicate.
 - **`zone_member` needs its zone to exist.** Setting it succeeds, but the
   interface line only appears once a matching `zone security` is configured.
 
-## 0.6.0
+### 0.6.0
 
 - The live-deploy bridge authenticates with a per-machine token. Earlier versions
   had an unauthenticated bridge: any web page open while Packet Tracer was

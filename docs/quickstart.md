@@ -1,6 +1,7 @@
 # Quick Start
 
-Once your [MCP client is connected](installation.md), just talk to your AI.
+Once the [MCP client is connected](installation.md), the model in that client
+calls the server's tools for each request.
 
 ## Example prompt
 
@@ -61,7 +62,7 @@ pt_save_project(filename)                    # persist the running .pkt
 ## Three ways to get a topology into Packet Tracer
 
 1. **Live deploy** (`pt_live_deploy`) — streams commands straight into a running
-   PT via the bridge. See [Live Deploy Setup](live-deploy.md). *(Best experience.)*
+   PT via the bridge. See [Live Deploy Setup](live-deploy.md).
 2. **Clipboard** (`pt_full_build` / `pt_deploy`) — copies a PTBuilder script to your
    clipboard; paste it into PT's Builder Code Editor and click Run.
 3. **Export to disk** (`pt_export`) — writes the PTBuilder script, per-device IOS

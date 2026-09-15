@@ -1,6 +1,6 @@
 # Architecture
 
-Packet Tracer MCP follows a **clean / hexagonal** layout under
+Cisco-Muejeje follows a **clean / hexagonal** layout under
 `src/packet_tracer_mcp/`, keeping domain logic independent of the MCP and PT details.
 
 ```text

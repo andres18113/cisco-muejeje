@@ -1,7 +1,7 @@
 # Live Deploy Setup
 
-Live deploy streams commands directly into a **running** Packet Tracer instance,
-so devices, cables and configs appear in real time as your AI builds them.
+Live deploy sends commands to a **running** Packet Tracer instance, which
+creates the devices, cables and configuration as each command executes.
 
 There are **two channels**, and the server picks one per command automatically:
 

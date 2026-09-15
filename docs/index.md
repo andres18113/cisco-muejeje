@@ -1,90 +1,63 @@
-# Packet Tracer MCP
+# Cisco-Muejeje
 
-**Tell your AI _"build a network with 3 routers, OSPF and DHCP"_ — and it plans,
-validates, generates and deploys the topology directly into Cisco Packet Tracer,
-in real time.**
+Cisco-Muejeje is a [Model Context Protocol](https://modelcontextprotocol.io)
+(MCP) server for Cisco Packet Tracer. It builds typed network plans and validates
+them. It generates Packet Tracer Script Engine JavaScript and IOS configuration,
+applies both to a running Packet Tracer through a local bridge, and reads the
+result back.
 
-Packet Tracer MCP is a [Model Context Protocol](https://modelcontextprotocol.io)
-server that gives any LLM (Claude, GitHub Copilot, Codex, …) full programmatic
-control over Cisco Packet Tracer — from a single natural-language prompt to a
-fully cabled, configured and running topology.
+The project started as a fork of
+[Mats2208/MCP-Packet-Tracer](https://github.com/Mats2208/MCP-Packet-Tracer); see
+[Credits & Attribution](credits.md).
 
-<div class="grid cards" markdown>
+- **[Installation](installation.md)**: install the server and register it with an MCP client.
+- **[Live Deploy Setup](live-deploy.md)**: connect a running Packet Tracer through the bridge.
+- **[MCP Tools](tools.md)**: tool reference.
+- **[Architecture](architecture.md)**: layers, planning paths and the bridge.
 
-- :material-rocket-launch: **[Get started](installation.md)** — install the server and connect your MCP client in one command.
-- :material-lightning-bolt: **[Live deploy](live-deploy.md)** — stream commands straight into a running Packet Tracer.
-- :material-tools: **[Tool reference](tools.md)** — all 61 MCP tools, grouped and documented.
-- :material-sitemap: **[Architecture](architecture.md)** — how the planner, generators and HTTP bridge fit together.
+## Capabilities
 
-</div>
+| Area | Scope |
+|---|---|
+| **Planning** | `TopologyPlan` from structured parameters; the Enterprise path compiles `EnterpriseIntent` through hardware planning into a concrete plan |
+| **IP addressing** | /24 LANs and /30 links for classic plans; VLSM/IPAM with capacity planning on the Enterprise path |
+| **DHCP** | One pool per LAN, gateway excluded |
+| **Routing** | Static, OSPF, EIGRP, RIP |
+| **Switching** | VLANs, trunks, inter-VLAN routing, STP, port-security |
+| **IPv6** | Dual-stack addressing; routers via CLI, hosts via SLAAC |
+| **Wireless** | Laptops with wireless NICs and access points |
+| **Validation** | Typed error codes and an auto-fixer |
+| **ACL, NAT, hardening** | Generated and applied to live devices through the bridge |
+| **Verification** | Plan-versus-live diff, health check, live configuration audit, port inspection, packet trace reading |
+| **Deploy** | HTTP bridge while the extension window is open, file bridge while it is closed |
+| **Export** | Plans, scripts and CLI configuration on disk |
 
-## What it does
+Which of these are qualified against a real Packet Tracer, and on which build, is
+recorded in the architecture and qualification pages. The project README
+summarizes the CP-LIVE state.
 
-| | Feature | Details |
-|---|---------|---------|
-| **Planning** | Natural language → topology | A single prompt becomes a complete `TopologyPlan` |
-| **IP addressing** | Automatic /24 LANs + /30 WAN links | Sequential assignment, gateway at `.1` |
-| **DHCP** | Auto pool generation | One pool per LAN, gateway excluded |
-| **Routing** | Static · OSPF · EIGRP · RIP | Full IOS command generation |
-| **Switching** | VLANs, trunks, inter-VLAN routing, STP, port-security | `.1q` subinterfaces + per-VLAN DHCP |
-| **IPv6** | Dual-stack addressing | Routers via CLI, hosts via SLAAC |
-| **Wireless** | WiFi laptops + auto-associated Access Points | NIC swap → `Wireless0` |
-| **Validation** | Typed error codes + auto-fixer | Wrong cables, missing ports, model upgrades |
-| **ACL** | Standard, extended & named | Apply, bind and remove on live routers |
-| **NAT / PAT** | Static, dynamic, overload | Translate addresses on live routers via the bridge |
-| **Hardening** | SSH, local users, enable-secret, banner | Device hardening on live routers/switches |
-| **Verification** | Plan-vs-live diff + health check | Drift, down links, duplicate IPs |
-| **Security audit** | Grades the **live** config, not the plan | Missing `enable secret`, reversible (type 7) credentials, `config-register 0x2142` |
-| **Live inspection** | Reads the device: ports, VLANs, power | Line/protocol status, duplex, NAT mode, applied ACLs |
-| **Packet tracing** | Step the simulation and read **why** a packet did what it did | PT's own per-OSI-layer decision log |
-| **Telemetry & backup** | NetFlow exporters, real startup-config, workspace behaviour | Collector address + version; serial and config-register; auto-cabling |
-| **Deploy** | Real-time HTTP bridge to PT (auto-reconciles) | No copy-paste — commands stream directly |
-| **Export** | Plans, JS scripts, CLI configs | Reusable project files on disk |
-| **Catalog** | 74 devices · 151 modules · 15 cables | With aliases and validation |
-
-<div class="grid" markdown>
-
-<div markdown>
-**43** MCP Tools
-{ .stat }
-</div>
-<div markdown>
-**5** MCP Resources
-</div>
-<div markdown>
-**74** Device models
-</div>
-<div markdown>
-**151** Modules
-</div>
-
-</div>
-
-## The pipeline
+## Pipeline
 
 ```text
-Natural language prompt
-        │
-   LLM (Claude / Copilot / Codex)
+MCP client
         │  MCP tools
-   Packet Tracer MCP Server   (:39000)
-        │  HTTP bridge (:54321, window open)  ·  file-bridge (window closed)
-   MCP Control Center ext.
+   Cisco-Muejeje MCP server   (:39000 or stdio)
+        │  HTTP bridge (:54321, window open)  ·  file bridge (window closed)
+   MCP Control Center extension
         │  Script Engine
    Cisco Packet Tracer
    ── devices created
    ── cables connected
-   ── IOS configs applied
+   ── IOS configuration applied
 ```
 
-!!! tip "New here?"
-    Start with **[Installation](installation.md)**, run the **[Quick Start](quickstart.md)**
-    example, then enable **[Live Deploy](live-deploy.md)** to see topologies appear in
-    Packet Tracer as your AI builds them.
+!!! tip "Where to start"
+    Read **[Installation](installation.md)**, run the **[Quick Start](quickstart.md)**
+    example, then set up **[Live Deploy](live-deploy.md)** to apply plans to a running
+    Packet Tracer.
 
-!!! info "Live deploy uses our own extension"
-    Live deploy uses this project's **own** Packet Tracer extension — the
-    **MCP Control Center** ([Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)).
-    Its Script-Engine layer was originally inspired by
-    [PTBuilder](https://github.com/kimmknight/PTBuilder); the two are separate
-    projects — see **[Credits & Attribution](credits.md)**.
+!!! info "The extension and PTBuilder"
+    Live deploy uses the **MCP Control Center** extension, whose source is in
+    `EXTENSION/` in the repository. Its Script Engine helper layer was originally
+    based on [PTBuilder](https://github.com/kimmknight/PTBuilder). The two are
+    separate projects; see **[Credits & Attribution](credits.md)**.

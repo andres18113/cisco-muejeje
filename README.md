@@ -1,254 +1,306 @@
-<div align="center">
+# Cisco-Muejeje
 
-<img src="demo/banner.png" alt="Packet Tracer MCP — AI-powered Cisco Packet Tracer automation: generate, validate and deploy network topologies from natural-language prompts" width="100%"/>
+Cisco-Muejeje is a [Model Context Protocol](https://modelcontextprotocol.io) (MCP)
+server for Cisco Packet Tracer. It builds typed network plans and validates them.
+It generates Packet Tracer Script Engine JavaScript and IOS configuration, applies
+both to a running Packet Tracer through a local bridge, and reads the result back.
+Claims about what Packet Tracer actually did rest on governed, hash-pinned
+evidence kept in this repository.
 
-**Tell your AI _"create a network with 3 routers, OSPF and DHCP"_ — it plans, validates, generates, and deploys the topology directly into Cisco Packet Tracer in real time.**
+Repository: <https://github.com/andres18113/cisco-muejeje>
 
-[![Version](https://img.shields.io/badge/version-0.8.0-blue?style=flat-square)](https://github.com/Mats2208/MCP-Packet-Tracer/releases)
-[![Python](https://img.shields.io/badge/python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
-[![Pydantic v2](https://img.shields.io/badge/pydantic-v2-E92063?style=flat-square&logo=pydantic&logoColor=white)](https://docs.pydantic.dev)
-[![MCP](https://img.shields.io/badge/protocol-MCP-00B4D8?style=flat-square)](https://modelcontextprotocol.io)
-[![Website](https://img.shields.io/badge/website-mcpnetwork.top-0A66C2?style=flat-square&logo=googlechrome&logoColor=white)](https://www.mcpnetwork.top)
-[![Docs](https://img.shields.io/badge/docs-mats2208.github.io-4051B5?style=flat-square&logo=materialformkdocs&logoColor=white)](https://mats2208.github.io/MCP-Packet-Tracer/)
-[![License](https://img.shields.io/github/license/Mats2208/MCP-Packet-Tracer?style=flat-square&color=green)](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/LICENSE)
+The project started as a fork of
+[Mats2208/MCP-Packet-Tracer](https://github.com/Mats2208/MCP-Packet-Tracer). See
+[NOTICE.md](NOTICE.md) for provenance and attribution.
 
-[![MCP Registry](https://lobehub.com/badge/mcp/mats2208-mcp-packet-tracer)](https://lobehub.com/mcp/mats2208-mcp-packet-tracer)
+## Problem it addresses
 
-<br/>
+Packet Tracer has no external automation API. It offers two programmable surfaces:
+its Script Engine, which runs JavaScript inside the application, and the IOS
+console of each device. Automating it raises three technical problems:
 
-<table>
-<tr>
-<td align="center"><strong>61 MCP Tools</strong></td>
-<td align="center"><strong>5 MCP Resources</strong></td>
-<td align="center"><strong>74 Device Models</strong></td>
-<td align="center"><strong>151 Modules</strong></td>
-<td align="center"><strong>15 Cable Types</strong></td>
-</tr>
-</table>
+1. **A consistent intended network.** Devices, modules, ports, cables,
+   addressing, VLANs and routing must agree with each other. They must also
+   match what the Packet Tracer build supports, before anything is created.
+2. **Safe delivery.** Packet Tracer runs generated JavaScript through
+   `new Function()`, so an unescaped field becomes code execution. A loopback
+   HTTP bridge can be reached by any web page unless it is authenticated.
+3. **Evidence rather than assumption.** A command that returns does not show
+   that a device reached the intended state. Packet Tracer answers a wrong call
+   with a bare `Invalid arguments for IPC call`. Results have to be read back and
+   classified, and LIVE runs have to be authorized and cleaned up.
 
-** Website:** https://www.mcpnetwork.top &nbsp;•&nbsp; ** Documentation:** https://mats2208.github.io/MCP-Packet-Tracer/
+## Architecture
 
-</div>
-
----
-
-## Showcase
-
-<p align="center">
-  <img src="demo/topology-screenshot.png" alt="3-router OSPF topology deployed to Packet Tracer" width="720"/>
-</p>
-<p align="center"><sub>3-router linear topology with OSPF, DHCP, and 6 PCs — planned and deployed via MCP tools</sub></p>
-
-<table>
-<tr>
-<td width="50%">
-<p align="center"><img src="demo/mcp-client.png" alt="MCP tools executing in VS Code" width="100%"/></p>
-<p align="center"><sub>Full build + live deploy pipeline in VS Code</sub></p>
-</td>
-<td width="50%">
-<p align="center"><img src="demo/cli-config.png" alt="Generated IOS CLI configs" width="100%"/></p>
-<p align="center"><sub>Auto-generated IOS CLI configs with OSPF & DHCP</sub></p>
-</td>
-</tr>
-</table>
-
-<p align="center">
-  <img src="demo/live-deploy.gif" alt="Live deploy demo — from prompt to Packet Tracer in real time" width="720"/>
-</p>
-<p align="center"><sub>Live deploy — from a natural-language prompt to a running topology in Packet Tracer</sub></p>
-
----
-
-## What it does
-
-A **Model Context Protocol (MCP) server** that gives any LLM (Claude, GitHub Copilot, Codex, …) full programmatic control over Cisco Packet Tracer.
-
-| | Feature | Details |
-|---|---------|---------|
-| **Planning** | Natural language → topology | A single prompt becomes a complete `TopologyPlan` |
-| **IP / DHCP** | Auto /24 LANs + /30 links, DHCP pools | Sequential, gateway at `.1` |
-| **Routing** | Static · OSPF · EIGRP · RIP | Full IOS generation |
-| **Switching** | VLANs, trunks, **inter-VLAN routing** (router-on-a-stick), STP, port-security | `.1q` subinterfaces + per-VLAN DHCP |
-| **Security** | Device hardening (SSH, local users, enable-secret, banner), ACL/NAT | On live devices via the bridge |
-| **IPv6** | Dual-stack addressing | Routers via CLI, hosts via SLAAC |
-| **Wireless** | WiFi laptops + auto-associated Access Points | NIC swap → `Wireless0`, default-SSID assoc |
-| **Validation** | Typed errors + auto-fixer | Wrong cables, missing ports, model upgrades |
-| **Verification** | Plan-vs-live diff, health check, **real ping** (`pt_verify_connectivity`) | Drift, down links, duplicate IPs — and actual reachability |
-| **Security audit** | `pt_audit_security` grades the **live** config: missing `enable secret`, reversible (type 7) credentials, `service password-encryption` off, `config-register 0x2142` | Reads the device, not the plan. Credentials never leave it — only the algorithm label |
-| **Live inspection** | `pt_inspect_ports`, `pt_read_vlans`, `pt_device_power` | Per-port protocol/duplex/NAT/ACL state, real VLAN database, power-cycle with read-back |
-| **Packet tracing** | `pt_simulation_mode`, `pt_simulation_step`, `pt_read_packet_trace` | Step the simulation and read **why** each packet did what it did — PT's own per-OSI-layer decision log, not just pass/fail |
-| **Telemetry** | `pt_apply_netflow` configures a NetFlow exporter directly and reads it back; `pt_read_qos` verifies class-maps and policy-maps | Collector address, UDP port, version, source interface |
-| **Backup** | `pt_backup_config`, `pt_project_metadata`, `pt_workspace_options` | Real startup-config + serial + config-register; project info; auto-cabling and real-network-access toggles |
-| **Deploy** | Real-time bridge to PT (auto-reconciles) | No copy-paste — commands stream directly |
-| **Two channels** | HTTP when the extension window is open, **file-bridge when it's closed** | PT keeps executing with the window minimized/closed |
-| **Projects** | Save / open the real `.pkt` (`pt_save_project` / `pt_open_project`) | Persist the running topology, not just the plan JSON |
-| **Export** | Plans, JS scripts, CLI configs | Reusable project files on disk |
-
- Full tool reference, device catalog, networking guides and architecture live in the **[documentation site](https://mats2208.github.io/MCP-Packet-Tracer/)**.
-
-## Installation
-
-**1. Install the server**
-
-```bash
-git clone https://github.com/Mats2208/MCP-Packet-Tracer
-cd MCP-Packet-Tracer
-pip install -e .
+```text
+MCP client
+   │  stdio, or streamable-http on 127.0.0.1:39000
+adapters/mcp        tool and resource registries, public-surface selection
+   │
+application         use cases, Enterprise pipeline, CP-SCALE / CP-LIVE contracts
+   │
+domain              Pydantic models, validation rules, planning services (no I/O)
+   │
+infrastructure      catalog, generators (Script Engine JS, IOS CLI), execution
+   │                runtimes, HTTP bridge, file bridge, persistence
+   │  HTTP bridge on 127.0.0.1:54321 (token)  ·  file mailbox under %LOCALAPPDATA%
+MCP Control Center extension (.pts) → Packet Tracer Script Engine → devices
 ```
 
-**2. Connect your MCP client** (Claude Code shown)
+- **Classic path**, inherited from upstream: `TopologyPlan` → validation and
+  auto-fix → generated JavaScript and IOS CLI. The output is then deployed live,
+  copied to the clipboard or exported.
+- **Enterprise path**: `EnterpriseIntent` → `EnterprisePlan` → `HardwarePlan`.
+  The Enterprise compiler (E4) turns that into a concrete `TopologyPlan`. Typed
+  configuration, services, voice, security and control-plane plans are then
+  applied through the Packet Tracer runtime and verified by read-back.
+- **Two channels to Packet Tracer.** The HTTP bridge is used while the extension
+  window is open. Every endpoint except `/ping` requires a per-machine token. The
+  file bridge is used while the window is closed: the Script Engine polls a
+  mailbox in a user-owned directory.
 
-_Linux · macOS · Git Bash · Windows `cmd.exe`:_
+Details: [docs/architecture.md](docs/architecture.md) and the records under
+[docs/architecture/](docs/architecture/).
+
+## Current capabilities
+
+The registered MCP surface below was measured at this commit by registering the
+server in-process:
+
+| Public surface (`PT_MCP_PUBLIC_SURFACE`) | MCP tools | MCP resources |
+| --- | --- | --- |
+| `enterprise` (default) | 63 | 5 |
+| `developer-capability-investigation` | 64 (adds `pt_send_raw`) | 5 |
+
+What is verified, and how:
+
+- **Offline, by the test suite.** This needs no Packet Tracer. CI runs it on
+  Windows and Ubuntu with Python 3.11 and 3.13. It covers:
+  - topology planning, IP addressing, validation and auto-fix;
+  - JavaScript and IOS generation, including injection regressions;
+  - bridge authentication;
+  - the Enterprise planning and compilation pipeline;
+  - typed runtime contracts;
+  - Skills governance;
+  - the hashes of the CP-SCALE state and evidence documents.
+- **Against Packet Tracer `9.0.1.0858`, by governed runs with recorded
+  evidence:**
+  - Packet Tracer capability discovery, whose reviewed results are projected into
+    `infrastructure/catalog/measured_capabilities.py`;
+  - RIPv2 replay safety and typed RIPv2 route exchange on `2911`
+    ([ripv2-runtime-qualification.md](docs/architecture/ripv2-runtime-qualification.md));
+  - EIGRP on `1941`
+    ([eigrp-runtime-qualification.md](docs/architecture/eigrp-runtime-qualification.md));
+  - the CP-SCALE qualification described under [CP-LIVE status](#cp-live-status).
+- **Inherited from upstream.** The classic topology, inspection, simulation,
+  canvas and project tools were verified by the upstream project against Packet
+  Tracer `9.0.0.0810` (see [CHANGELOG.md](CHANGELOG.md)). Cisco-Muejeje's governed
+  qualifications cover only the scopes listed above.
+
+Tool reference: [docs/tools.md](docs/tools.md).
+
+## Installation and running
+
+Requirements:
+
+- Python 3.11 or later.
+- For live operation, Windows with Cisco Packet Tracer installed. The governed
+  evidence in this repository was recorded on Packet Tracer `9.0.1.0858`.
+
+Planning, validation, generation and the test suite do not need Packet Tracer.
+
+```bash
+git clone https://github.com/andres18113/cisco-muejeje.git
+cd cisco-muejeje
+python -m venv .venv
+.venv/Scripts/python.exe -m pip install -e ".[test]"   # Windows
+.venv/bin/python -m pip install -e ".[test]"           # Linux / macOS
+```
+
+Run the test suite from the repository root with the checkout-local interpreter.
+[AGENTS.md](AGENTS.md) explains why the interpreter matters.
+
+```bash
+.venv/Scripts/python.exe -m pytest -q   # Windows
+.venv/bin/python -m pytest -q           # Linux / macOS
+```
+
+Start the server with the interpreter of the environment it is installed in:
+
+```bash
+python -m packet_tracer_mcp --stdio   # stdio, for desktop MCP clients
+python -m packet_tracer_mcp           # streamable-http on 127.0.0.1:39000
+```
+
+The `pt-mcp` console script is equivalent. To register the server with an MCP
+client, for example Claude Code:
 
 ```bash
 claude mcp add --scope user --transport stdio packet-tracer -- python -m packet_tracer_mcp --stdio
 ```
 
-_Windows PowerShell_ — quote the `--` separator, or PowerShell swallows it and Claude aborts with `error: unknown option '-m'`:
+In Windows PowerShell, quote the separator as `"--"`; otherwise PowerShell
+consumes it. Other clients are covered in
+[docs/installation.md](docs/installation.md).
 
-```powershell
-claude mcp add --scope user --transport stdio packet-tracer "--" python -m packet_tracer_mcp --stdio
-```
+### Packet Tracer extension
 
-Verify with `claude mcp list` (look for `packet-tracer … [OK] Connected`).
+Live operation needs the MCP Control Center extension loaded in Packet Tracer:
 
-**3. Install the live-deploy extension** — _only if you want real-time deploy into a running Packet Tracer_
+1. Add the `.pts` module with **Extensions → Scripting → Configure PT Script
+   Modules → Add…**.
+2. Open **Extensions → MCP BUILDER**.
 
-Download **`V5.pts`** from [**Releases**](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest), then in Packet Tracer go to **Extensions → Scripting → Configure PT Script Modules → Add…** and select it. Full walkthrough in [Live deploy](#live-deploy) below.
+The extension source is in [`EXTENSION/`](EXTENSION/). Cisco-Muejeje does not
+publish a compiled `.pts`. Building one needs PTBuilder reference files that this
+repository does not redistribute; see
+[EXTENSION/script-engine/README.md](EXTENSION/script-engine/README.md). The
+upstream project published a compiled module, `V5.2.pts`, with its
+[releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases). The server
+rejects extension builds older than V5, because they do not send the bridge
+token.
 
-> **v0.6.0+ requires V5.** The bridge now authenticates with a per-machine token that the V5 extension reads automatically; builds before V5 can't authenticate.
+### Governed Skills
 
-**4. Export the governed Claude Skills** — _recommended; installs only eligible operational Skills_
-
-The canonical inventory lives in [`skills/manifest.json`](skills/manifest.json). Export a Claude
-projection to an explicit staging directory; the command selects ACTIVE operation Skills and leaves
-PLANNED Skills such as `network-autofix` out of normal distribution.
-
-_Linux · macOS · Git Bash:_
+[`skills/manifest.json`](skills/manifest.json) is the canonical Skills inventory.
+Export a client projection into a directory that does not exist yet:
 
 ```bash
 python -m tools.skills_governance export --destination .skill-staging-claude --audience operation --client claude
 ```
 
-_Windows PowerShell:_
+[docs/skill.md](docs/skill.md) describes how to replace an existing installation.
 
-```powershell
-python -m tools.skills_governance export --destination .skill-staging-claude --audience operation --client claude
-```
+## CP-LIVE status
 
-The destination must not already exist; remove it after copying or choose a fresh staging path for
-the next export. Do not overlay the result onto an older installation: use the bounded replacement
-steps in the Skill docs so removed references and suppressed Skills cannot remain visible. Then
-reload/restart the client and confirm its Skill catalog. Details →
-**[Skill docs](https://mats2208.github.io/MCP-Packet-Tracer/skill/)**.
+CP-LIVE is the governed path that executes the Enterprise product chain against a
+real Packet Tracer. It targets the CP-SCALE reference design, which has three
+sites and 279 workload endpoints; see
+[cp-scale-qualification.md](docs/architecture/cp-scale-qualification.md).
+[`docs/reference/cp-scale/current_state.json`](docs/reference/cp-scale/current_state.json)
+is the authority for its state, and
+[`docs/reference/cp-scale/README.md`](docs/reference/cp-scale/README.md) indexes
+the evidence. The evidence files are immutable and hash-pinned, and tests check
+those hashes.
 
-> Requires **Python 3.11+** (deps `mcp[cli]>=1.13`, `pydantic>=2.11` install automatically).
-> Full setup for every client → **[Installation docs](https://mats2208.github.io/MCP-Packet-Tracer/installation/)**.
+| Target | Closure | Executed at |
+| --- | --- | --- |
+| `router0-branch` | `ROUTER0_BRANCH_VERIFIED_AND_CLEANED` | `8980ada7ab993cbe5b5b915cefde24deb04b3e3f` |
+| `router3-branch` | `ROUTER3_BRANCH_VERIFIED_AND_CLEANED` | `d2245d45d442d32f5dfb107b1a715089f1cb8551` |
+| `full-qualification` | `CP_SCALE_FULL_QUALIFICATION_VERIFIED_AND_CLEANED` | `6a80b24626d40fb59bad5f0dc2e47d18a51f4a49` |
 
-## Quick start
+- **Full qualification.** Run
+  `canonical-cp-scale-voice-20260915T193037865890Z-6a80b24626d4` built the seven
+  stages from an empty workspace. It then ran `remaining` as the terminal stage,
+  with a zero physical delta. It proved forwarding for the three declared site
+  pairs in both directions, and its closure was published only after a verified,
+  attested cleanup. Its success index is
+  [`full_qualification_successful_run.json`](docs/reference/cp-scale/full_qualification_successful_run.json),
+  SHA-256 `1ff5eb92331ad4f13e3780b31d7fba0b991942e2176989b6669940662f1a5011`.
+- **Earlier failed run.** A full-qualification run executed at
+  `ff117655a97301aa05cad6c7696f89dd87ec71fc` FAILED at `floor3` when the Packet
+  Tracer process crashed. It remains FAILED, and the later success does not
+  reinterpret it.
+- **Qualified scope.** The backend policy for Packet Tracer `9.0.1.0858`
+  qualifies voice configuration, phone registration and extension binding. Call
+  behaviour and wireless association are unqualified, intersite calling is off,
+  and none of them is a full-qualification criterion. The latest
+  call-observability attempt was BLOCKED; it is diagnostic only.
+- **Current state.** `next_active_step` is
+  `CP_LIVE_CLOSED_BY_VERIFIED_FULL_QUALIFICATION` and `live_execution_authorized`
+  is `false`. No re-execution is authorized. Every canonical target is refused
+  before contacting Packet Tracer unless an explicit authorization names both the
+  target and the exact source SHA.
 
-Just talk to your AI:
+## Relationship with Packet Tracer
 
-> *"Build a network with 2 routers, 2 switches, 4 PCs, DHCP and static routing."*
+- Packet Tracer is not included and must be installed separately. Cisco-Muejeje
+  is not affiliated with Cisco.
+- The server reaches Packet Tracer only through the extension. Commands run in
+  the Script Engine, and IOS configuration reaches devices through it.
+- Packet Tracer API behaviour is version-specific. A wrong call fails without
+  saying why, so [AGENTS.md](AGENTS.md) requires any API call not already used in
+  the repository to be confirmed against Cisco's reference first. The governed
+  qualification records name the Packet Tracer build they measured.
+- Offline tests cannot verify the webview behaviour: CORS, the `this-sm:` origin,
+  and what the Script Engine can reach.
 
-The LLM calls `pt_full_build`, which plans → validates → generates → deploys.
-See the **[Quick Start guide](https://mats2208.github.io/MCP-Packet-Tracer/quickstart/)**.
+## Limitations
 
-## Live deploy
+- No compiled `.pts` is published by this repository, and building one requires
+  PTBuilder files that are not redistributed.
+- The file bridge does not guarantee exactly-once or at-most-once execution
+  (`TD-TRANSPORT-001` in
+  [technical-debt.md](docs/architecture/technical-debt.md)).
+- Offline tests do not establish Packet Tracer behaviour. Statements about
+  Packet Tracer are limited to the scopes of the governed evidence.
+- Call behaviour and wireless association are unqualified, and intersite calling
+  is off.
+- Live operation is Windows-oriented: Packet Tracer, `%LOCALAPPDATA%` for the
+  token and mailbox, and `clip.exe` for the clipboard.
+- On the developer surface, `pt_send_raw` executes arbitrary JavaScript inside
+  Packet Tracer.
+- The inherited technical names are unchanged, because they are compatibility
+  contracts; renaming them is a separate migration:
+  - the Python package `packet_tracer_mcp`;
+  - the distribution `packet-tracer-mcp`;
+  - the console script `pt-mcp`;
+  - the MCP server name `Packet Tracer MCP`;
+  - the state directory `%LOCALAPPDATA%\packet-tracer-mcp`.
+- The package version, `0.8.0`, is inherited from upstream. No Cisco-Muejeje
+  release has been tagged.
+- Some pages under `docs/` still describe upstream-era behaviour and counts,
+  such as the classic tool guides and `docs/testing.md`.
 
-Stream topologies into a **running** Packet Tracer in real time. Install this repo's
-own **MCP Control Center** extension once — the `.pts` from
-[**Releases**](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest) — via
-**Extensions → Scripting → Configure PT Script Modules → Add…**, then open
-**Extensions → MCP BUILDER**. It auto-connects to the bridge — no snippet to paste.
+## Repository layout
 
-<p align="center"><img src="demo/install-demo.gif" alt="Installing the MCP Control Center extension in Packet Tracer" width="760"/></p>
-<p align="center"><sub>Installing the MCP Control Center extension (V5) in Packet Tracer</sub></p>
-
- Full steps → **[Live Deploy Setup](https://mats2208.github.io/MCP-Packet-Tracer/live-deploy/)**.
-
-## Credits & Acknowledgements
-
-Live deploy runs through **our own Packet Tracer extension** — the **MCP Control
-Center** (the `.pts` in [Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)).
-Its Script-Engine helper layer was **inspired by**
-**[PTBuilder](https://github.com/kimmknight/PTBuilder)** by
-**Kim Knight ([@kimmknight](https://github.com/kimmknight))**, who pioneered driving
-Packet Tracer's Script Engine from JavaScript — thanks for the groundwork.
-
-> PTBuilder and Packet Tracer MCP are **separate, independent projects**. You install
-> *our* extension, not PTBuilder. Full
-> **[Credits & Attribution](https://mats2208.github.io/MCP-Packet-Tracer/credits/)**.
+| Path | Contents |
+| --- | --- |
+| `src/packet_tracer_mcp/domain/` | Pydantic models, validation rules, planning services |
+| `src/packet_tracer_mcp/application/` | Use cases, Enterprise pipeline, CP-SCALE / CP-LIVE contracts |
+| `src/packet_tracer_mcp/infrastructure/` | Catalog, generators, execution runtimes, HTTP and file bridges, persistence |
+| `src/packet_tracer_mcp/adapters/mcp/` | MCP tool and resource registries, public-surface selection |
+| `src/packet_tracer_mcp/shared/` | Shared helpers such as escaping and path containment |
+| `EXTENSION/` | Packet Tracer extension source: `script-engine/main.js` and `webview/` |
+| `skills/` | Governed Skills and their manifest |
+| `skill/` | Deprecated single-file Skill, kept for compatibility |
+| `tools/` | Governed LIVE qualification runners and the Skills governance CLI |
+| `tests/` | Offline test suite |
+| `docs/` | MkDocs sources, architecture and qualification records, QA notes, design plans |
+| `docs/reference/cp-scale/` | CP-SCALE state and immutable LIVE evidence |
+| `handoff.md` | Legacy CP-SCALE state projection, read by tests |
+| `handoff_github_corrections.md` | Non-authoritative continuity note |
+| `AGENTS.md` | Rules for coding agents working in this repository |
 
 ## Security
 
-Driving Packet Tracer from outside means running a local HTTP bridge whose whole
-job is to hand JavaScript to PT's Script Engine — code that executes with PT's
-own privileges, including disk access. That makes the bridge a genuine attack
-surface, not an implementation detail, and it is hardened accordingly.
+The HTTP bridge:
 
-**The attack this design exists to stop.** Binding to `127.0.0.1` is *not* a
-security control. A `POST` with `Content-Type: text/plain` is a CORS *simple
-request*: any web page open in your browser can send it to a loopback port
-without a preflight and without needing to read the response. An unauthenticated
-bridge therefore lets any website you visit — while Packet Tracer happens to be
-open — queue arbitrary code inside it. Injection never needed to read anything
-back, so same-origin policy alone never closed this.
+- binds to `127.0.0.1`;
+- requires a per-machine token on every endpoint except `/ping`;
+- validates `Host` against loopback;
+- caps request body size.
 
-What actually closes it is a secret the attacking page cannot guess:
-
-| Control | Implementation |
-|---|---|
-| **Token on every endpoint** | Every route except `/ping` requires a shared token (`?t=` or `X-PT-Token`). Compared with `hmac.compare_digest` — constant time, no early-exit oracle. |
-| **`/ping` leaks nothing** | Deliberately unauthenticated so the server can tell *who owns the port* before trusting it — but it returns only a SHA-256 **fingerprint** of the token, never the token. |
-| **Foreign-bridge detection** | Before sending any payload, the server checks that `/ping` identity matches its own token fingerprint. If a stranger holds the port, it refuses to hand code to it instead of blindly trusting a `200`. |
-| **DNS-rebinding defense** | The `Host` header is validated against `127.0.0.1` / `localhost` / `[::1]` + the real port. A rebound request arrives as `Host: evil.com:<port>` and is rejected. |
-| **Loopback bind** | `ThreadingHTTPServer(("127.0.0.1", port))` — never `0.0.0.0`, so the bridge is not reachable from the LAN. |
-| **Token at rest** | `secrets.token_urlsafe(32)`, created with `O_EXCL` (race-safe when two servers start at once) at mode `0o600`, under `%LOCALAPPDATA%` on Windows — deliberately *not* roaming `%APPDATA%`, so a loopback secret never syncs to a file server. |
-| **Body size cap** | Oversized bodies are rejected with `413` and are **not** read into memory. |
-| **Silent failures** | Error responses carry no CORS headers, so a hostile page cannot even distinguish *why* it failed. |
-| **Tamper visibility** | Unauthorized attempts are counted and surfaced by `pt_bridge_status`, so a stale or rogue client is diagnosable instead of silent. |
-
-Regression coverage lives in [`tests/test_bridge_security.py`](tests/test_bridge_security.py)
-and [`tests/test_injection_regressions.py`](tests/test_injection_regressions.py);
-the full suite runs offline with `python -m pytest` — no Packet Tracer required.
-
-> **v0.6.0+ requires the V5 extension.** Versions before v0.6.0 shipped an
-> unauthenticated bridge and are vulnerable to exactly the attack above.
-> **Upgrade — there is no safe configuration of the old bridge.**
-
-**Deliberate, documented compatibility boundary:** the default `enterprise`
-public surface does not register `pt_send_raw`. Operators doing controlled IPC
-API investigation may explicitly start the server with
-`PT_MCP_PUBLIC_SURFACE=developer-capability-investigation`; that preserves the
-legacy tool name and signature, but it remains arbitrary JavaScript rather than
-a typed enterprise operation. The authenticated bridge is still required.
-
-Found a vulnerability? Report it privately via
-[GitHub Security Advisories](https://github.com/Mats2208/MCP-Packet-Tracer/security/advisories/new),
-not a public issue. [SECURITY.md](SECURITY.md) documents the full threat model.
-
-## What's new
-
-**v0.8.0** — the agent can now **show** the network, not just describe it: canvas screenshots plus notes and drawings, for topologies that document themselves. v0.7.0 made the server read a live topology, not just build one:
-security auditing, per-port inspection, packet tracing with Packet Tracer's own
-per-layer decision log, NetFlow, and config backup. It also fixes
-`pt_full_build(deploy=True)`, which used to report success while leaving the
-canvas empty. Full list in the **[Changelog](CHANGELOG.md)**.
+The file bridge uses a mailbox in a user-owned directory under `%LOCALAPPDATA%`.
+[SECURITY.md](SECURITY.md) documents the threat model and how to report a
+vulnerability.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Tests run offline with
-`python -m pytest`; no Packet Tracer needed.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## License
+## License and attribution
 
-Released under the **[MIT License](LICENSE)** — © 2026 Mateo ([@Mats2208](https://github.com/Mats2208)).
+MIT. [LICENSE](LICENSE) keeps the upstream copyright notice unchanged.
 
-<div align="center">
+- **Upstream project:** [Mats2208/MCP-Packet-Tracer](https://github.com/Mats2208/MCP-Packet-Tracer),
+  by Mateo ([@Mats2208](https://github.com/Mats2208)), distributed under MIT.
+  Cisco-Muejeje diverged from it at commit `b075961`.
+- **PTBuilder:** [kimmknight/PTBuilder](https://github.com/kimmknight/PTBuilder),
+  by Kim Knight ([@kimmknight](https://github.com/kimmknight)), was the historical
+  reference for the Script Engine helper surface. Its files are not
+  redistributed.
+- **Dependencies:** the [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
+  and [Pydantic](https://docs.pydantic.dev).
 
-**Built with [MCP](https://modelcontextprotocol.io) · Powered by [Pydantic](https://docs.pydantic.dev) · Deploys to [Cisco Packet Tracer](https://www.netacad.com/) · Script-engine logic inspired by [PTBuilder](https://github.com/kimmknight/PTBuilder)**
-
-If this project is useful to you, star it ⭐ and share it with the community.
-
-</div>
+Details: [NOTICE.md](NOTICE.md) and [docs/credits.md](docs/credits.md).

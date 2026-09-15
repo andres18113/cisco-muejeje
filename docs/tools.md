@@ -1,7 +1,13 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **61 tools**, grouped below by purpose. Tools that touch
-a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
+The default `enterprise` public surface of Cisco-Muejeje registers **63 tools**.
+`PT_MCP_PUBLIC_SURFACE=developer-capability-investigation` adds `pt_send_raw`,
+for 64. The tables below group 60 of them by purpose. The capability discovery
+tools, `pt_probe_capabilities` and `pt_capability_report`, are documented in
+[Packet Tracer Capability Discovery](architecture/packet-tracer-capability-discovery.md).
+`pt_compose_enterprise_reference` is not documented on this page yet. Tools that
+touch a running Packet Tracer require the [live bridge](live-deploy.md) to be
+connected.
 
 !!! tip "Discover first"
     Call `pt_list_devices` (and `pt_list_modules` before installing expansion cards)
