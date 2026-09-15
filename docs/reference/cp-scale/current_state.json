@@ -1,6 +1,6 @@
 {
   "schema": "cp-scale-current-state-v6",
-  "updated_at": "2026-09-15T16:37:36Z",
+  "updated_at": "2026-09-15T18:58:08Z",
   "operational_state": {
     "authority": "HASH_PINNED_ROUTER0_AND_ROUTER3_SUCCESS_INDEXES",
     "router0": {
@@ -44,11 +44,31 @@
       }
     },
     "full_qualification": {
-      "executed": false,
+      "executed": true,
       "verification": "NOT_VERIFIED",
-      "live_evidence_acquired": false,
+      "live_evidence": "HASH_PINNED",
+      "live_evidence_acquired": true,
       "live_execution_authorized": false,
+      "reexecution_authorized": false,
       "authorization_required": "EXPLICIT_TARGET_AND_SHA_SCOPED",
+      "latest_run": {
+        "classification": "FAILED",
+        "successful_closure": false,
+        "run_identity": "canonical-cp-scale-voice-20260915T181618415152Z-ff117655a973",
+        "executed_sha": "ff117655a97301aa05cad6c7696f89dd87ec71fc",
+        "failed_stage": "floor3",
+        "cause_classification": "BACKEND_PROCESS_CRASH",
+        "evidence": {
+          "path": "docs/reference/cp-scale/full_qualification_failed_runs.json",
+          "sha256": "25d2a05d7d391e16eedcf09b417366715c01138d894dd65c124326cfff6cc300"
+        }
+      },
+      "reconciliation": {
+        "executed_sha": "ff117655a97301aa05cad6c7696f89dd87ec71fc",
+        "evidence_promotion_sha": "32a094234235cada64ddb2a34840e556418fe7b8",
+        "reconciliation_sha_role": "GIT_COMMIT_CONTAINING_THIS_DOCUMENT",
+        "executed_sha_is_reconciliation_sha": false
+      },
       "offline_preparation_role": "PRE_EXECUTION_PROJECTION_NON_GOVERNING",
       "offline_preparation": {
         "target": "full-qualification",

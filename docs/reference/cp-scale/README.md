@@ -13,8 +13,18 @@ post-execution reconciliation are later commits, not the executed SHA. No
 Router0 or Router3 re-execution, remaining-stage run, full qualification, or
 other LIVE scope is authorized by this record.
 
-Full qualification is prepared offline only; no FULL LIVE evidence exists.
-Every canonical target, `full-qualification` included, is refused before
+Full qualification executed once, at
+`ff117655a97301aa05cad6c7696f89dd87ec71fc` (run
+`canonical-cp-scale-voice-20260915T181618415152Z-ff117655a973`), and FAILED at
+floor3 after the floor2 checkpoint; REMAINING never ran and no FULL closure
+exists. The [failed FULL run index](full_qualification_failed_runs.json) pins
+both archives and keeps the runner's failure text verbatim. Under its own
+host-observation authority it also records that the session's Packet Tracer
+process crashed (`0xc0000005` in `Qt6Gui.dll`) before floor3's serial
+read-back, and that cleanup's two empty observations were answered by a
+replacement process, so all 232 owned removals were no-ops. Implementation
+causation of the crash is UNKNOWN. The evidence promotion and this
+reconciliation are later commits, not the executed SHA. Every canonical target, `full-qualification` included, is refused before
 Packet Tracer contact unless an explicit authorization names that target and
 the exact SHA that is also the expected, repository, upstream and session
 source HEAD, over one source tree. FULL builds the seven stages from an empty
@@ -45,6 +55,12 @@ separate content-addressed artifacts, never inline in `current_state.json`.
 
 Supporting records:
 
+- [Failed FULL run index](full_qualification_failed_runs.json) pins the first
+  governed `full-qualification` execution, which FAILED at floor3, with both
+  immutable archives, its verbatim failure text and its cleanup facts. Host
+  observations of the Packet Tracer crash and of the replacement process are
+  kept beside them under their own authority. It is not success authority and
+  closes no stage.
 - [Router3 successful run](router3_successful_run.json) pins the first governed
   `ROUTER3_BRANCH_VERIFIED_AND_CLEANED` closure, all eight uniquely attributed
   `dispatch_transcript_delta` forwarding probes, the exercised Floor3 STP

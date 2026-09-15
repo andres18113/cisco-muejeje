@@ -182,6 +182,26 @@ def test_current_state_separates_operational_authority_from_history():
     )
     full = operational["full_qualification"]
     assert full["live_execution_authorized"] is False
+    assert full["executed"] is True
+    assert full["verification"] == "NOT_VERIFIED"
+    full_run = full["latest_run"]
+    full_raw = (ROOT / full_run["evidence"]["path"]).read_bytes()
+    (full_index_run,) = json.loads(full_raw)["runs"]
+    assert hashlib.sha256(full_raw).hexdigest() == full_run["evidence"]["sha256"]
+    assert full_run["run_identity"] == full_index_run["run_identity"]
+    assert full_run["executed_sha"] == full_index_run["executed_sha"]
+    assert full_run["failed_stage"] == full_index_run["failed_stage"]
+    assert full_run["classification"] == full_index_run["classification"] == "FAILED"
+    assert full_run["successful_closure"] is full_index_run["successful_closure"] is False
+    assert full_run["cause_classification"] == (
+        full_index_run["causal_analysis"]["cause_classification"]
+    )
+    assert full["reconciliation"] == {
+        "executed_sha": "ff117655a97301aa05cad6c7696f89dd87ec71fc",
+        "evidence_promotion_sha": "32a094234235cada64ddb2a34840e556418fe7b8",
+        "reconciliation_sha_role": "GIT_COMMIT_CONTAINING_THIS_DOCUMENT",
+        "executed_sha_is_reconciliation_sha": False,
+    }
     policy = packet_tracer_cp_scale_qualification_policy("9.0.1.0858")
     assert full["qualification_policy"] == {
         "authority": "PACKET_TRACER_DECLARED_BACKEND_POLICY",
@@ -334,7 +354,7 @@ def test_current_state_v6_versions_the_policy_conditioned_call_shape():
         "provider_id", "execution_method", "qualification_scope",
         "qualification", "evidence",
     } & set(call)
-    # The operational facts are the ones v5 already carried.
+    # The call shape stays v6's; the operational facts beside it are current.
     assert {
         "router0": operational["router0"]["closure"],
         "router3": operational["router3"]["closure"],
@@ -344,7 +364,7 @@ def test_current_state_v6_versions_the_policy_conditioned_call_shape():
     } == {
         "router0": "ROUTER0_BRANCH_VERIFIED_AND_CLEANED",
         "router3": "ROUTER3_BRANCH_VERIFIED_AND_CLEANED",
-        "full_executed": False,
+        "full_executed": True,
         "next_active_step": (
             "READY_FOR_EXPLICIT_FULL_QUALIFICATION_LIVE_AUTHORIZATION"
         ),
@@ -402,6 +422,7 @@ def test_every_pinned_artifact_hash_survives_each_platform_checkout(autocrlf, eo
     assert {path for path, _ in pins} == {
         "docs/reference/cp-scale/router0_successful_run.json",
         "docs/reference/cp-scale/router3_successful_run.json",
+        "docs/reference/cp-scale/full_qualification_failed_runs.json",
         "docs/reference/cp-scale/call-observability-failures/"
         "call-observability-qualification-20260915T0201Z-334d5358cde8.json",
         "docs/reference/cp-scale/call-observability-failures/"

@@ -1060,9 +1060,9 @@ def test_current_state_pins_the_derived_full_preparation_without_live_authority(
             "live_execution_authorized", "authorization_required",
         )
     } == {
-        "executed": False,
+        "executed": True,
         "verification": "NOT_VERIFIED",
-        "live_evidence_acquired": False,
+        "live_evidence_acquired": True,
         "live_execution_authorized": False,
         "authorization_required": "EXPLICIT_TARGET_AND_SHA_SCOPED",
     }
