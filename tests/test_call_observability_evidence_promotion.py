@@ -65,7 +65,13 @@ def _call(
     }
 
 
-def _raw(tmp_path, *, status="VERIFIED", driver_hash=None):
+def _raw(
+    tmp_path,
+    *,
+    status="VERIFIED",
+    driver_hash=None,
+    backend_managed=False,
+):
     driver = (
         tmp_path / "src" / "packet_tracer_mcp" / "infrastructure"
         / "execution" / "native_ui_phone_driver.py"
@@ -84,12 +90,18 @@ def _raw(tmp_path, *, status="VERIFIED", driver_hash=None):
         "not-connected.json",
         ["idle", "dialing", "failed", "idle"],
     )
+    backend_devices = ([{
+        "name": "Power Distribution Device0",
+        "model": "Power Distribution Device",
+        "ports": [],
+        "backend_managed": True,
+    }] if backend_managed else [])
     environment = {
         "found": True,
         "saved_filename": "",
         "pt_version": BUILD,
         "simulation_mode": False,
-        "devices": 0,
+        "devices": len(backend_devices),
         "links": 0,
     }
     process = {
@@ -117,7 +129,7 @@ def _raw(tmp_path, *, status="VERIFIED", driver_hash=None):
         "semantic_device_count": 0,
         "backend_managed_device_count": 0,
         "link_count": 0,
-        "devices": [],
+        "devices": backend_devices,
         "links": [],
         "message": "",
     }
@@ -244,6 +256,17 @@ def test_promotion_writes_hash_pinned_compact_evidence_and_standard_snapshot(tmp
         readiness_probe=lambda *_args: True,
     )
     assert provider.read(BUILD).passed_coherently is True
+
+
+def test_promotion_accepts_unchanged_backend_managed_power_device(tmp_path):
+    raw_path, _driver, _exchange = _raw(tmp_path, backend_managed=True)
+
+    receipt = promote_verified_call_observability(
+        raw_path,
+        governed_root=tmp_path,
+    )
+
+    assert receipt.evidence_path.is_file()
 
 
 @pytest.mark.parametrize(

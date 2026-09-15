@@ -188,6 +188,7 @@ class CallObservabilityQualification:
                     ),
                     foundational_statuses={},
                     capabilities=self._voice_capabilities(),
+                    complete_voice_signal=self._complete_voice_signal,
                 )
         except Exception as exc:
             errors.append(f"qualification_failed: {type(exc).__name__}: {exc}")
@@ -407,7 +408,7 @@ class CallObservabilityQualification:
                 phase=ConfigurationPhase.L2_INTERFACES,
                 interface="FastEthernet0/1",
                 data_vlan_id=VOICE_VLAN_ID,
-                voice_vlan_id=VOICE_VLAN_ID,
+                voice_vlan_id=None,
                 endpoint_ids=["callqual/phone/1"],
                 **common_switch,
             ),
@@ -416,7 +417,7 @@ class CallObservabilityQualification:
                 phase=ConfigurationPhase.L2_INTERFACES,
                 interface="FastEthernet0/2",
                 data_vlan_id=VOICE_VLAN_ID,
-                voice_vlan_id=VOICE_VLAN_ID,
+                voice_vlan_id=None,
                 endpoint_ids=["callqual/phone/2"],
                 **common_switch,
             ),
@@ -446,6 +447,39 @@ class CallObservabilityQualification:
                 **common_router,
             ),
         ]
+
+    def _complete_voice_signal(self) -> dict[str, ActionExecutionStatus]:
+        common = {
+            "phase": ConfigurationPhase.L2_INTERFACES,
+            "device_id": "callqual/switch",
+            "device_name": self._name("SW"),
+            "site_id": QUALIFICATION_SCOPE,
+            "data_vlan_id": VOICE_VLAN_ID,
+            "voice_vlan_id": VOICE_VLAN_ID,
+        }
+        actions = [
+            ConfigureAccessPort(
+                id="callqual/config/access/voice/1",
+                interface="FastEthernet0/1",
+                endpoint_ids=["callqual/phone/1"],
+                **common,
+            ),
+            ConfigureAccessPort(
+                id="callqual/config/access/voice/2",
+                interface="FastEthernet0/2",
+                endpoint_ids=["callqual/phone/2"],
+                **common,
+            ),
+        ]
+        mutations = self._configuration.apply_actions(actions)
+        if (
+            len(mutations) != len(actions)
+            or any(item.applied is not True for item in mutations)
+        ):
+            raise RuntimeError(
+                "The post-bootstrap Voice signal batch was not fully accepted."
+            )
+        return {}
 
     def _voice_plan(self, devices: tuple[DevicePlan, ...]) -> VoicePlan:
         router, _switch, first, second = devices

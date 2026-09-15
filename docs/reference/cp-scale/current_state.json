@@ -1,6 +1,6 @@
 {
   "schema": "cp-scale-current-state-v5",
-  "updated_at": "2026-09-15T01:21:51Z",
+  "updated_at": "2026-09-15T02:31:00Z",
   "operational_state": {
     "authority": "HASH_PINNED_ROUTER0_AND_ROUTER3_SUCCESS_INDEXES",
     "router0": {
@@ -116,7 +116,19 @@
         "qualification": "NOT_VERIFIED",
         "provider_qualified": false,
         "full_preflight": "BLOCKED_BEFORE_PACKET_TRACER_MUTATION",
-        "evidence": null
+        "evidence": null,
+        "latest_attempt": {
+          "classification": "BLOCKED",
+          "authority": "DIAGNOSTIC_ONLY",
+          "run_identity": "call-observability-qualification-20260915T0201Z-334d5358cde8",
+          "executed_sha": "334d5358cde877741d151c299986d3374e6175eb",
+          "artifact": {
+            "path": "docs/reference/cp-scale/call-observability-failures/call-observability-qualification-20260915T0201Z-334d5358cde8.json",
+            "sha256": "29e12e50dcefa70f9b70a282b523b571139664da489947c1b47597d59263b552"
+          },
+          "cleanup_verified": true,
+          "realtime_restored": true
+        }
       }
     },
     "next_active_step": "READY_FOR_EXPLICIT_CALL_OBSERVABILITY_QUALIFICATION",

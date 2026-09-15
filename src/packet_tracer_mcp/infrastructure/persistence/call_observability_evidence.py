@@ -172,13 +172,13 @@ def promote_verified_call_observability(
     repository = preflight["repository"]
     environment = preflight["packet_tracer_environment"]
     primary_pid = postflight["primary_pid_before"]
-    inventory = encode_inventory_observation(
-        semantic_inventory_fingerprint([]),
-        [],
-    )
+    baseline_inventory = _inventory_identity(qualification["baseline"])
+    final_inventory = _inventory_identity(qualification["cleanup_second"])
     safety = EphemeralUntitledWorkspaceSafetyEvidence(
-        initial_device_count=environment["devices"],
-        final_device_count=postflight["packet_tracer_environment"]["devices"],
+        initial_device_count=qualification["baseline"]["semantic_device_count"],
+        final_device_count=qualification["cleanup_second"][
+            "semantic_device_count"
+        ],
         initial_link_count=environment["links"],
         final_link_count=postflight["packet_tracer_environment"]["links"],
         initial_saved_filename=environment["saved_filename"],
@@ -191,8 +191,8 @@ def promote_verified_call_observability(
         invoked_file_operations=(),
         completed_file_operations=(),
         indeterminate_file_operations=(),
-        initial_inventory_fingerprint=inventory,
-        final_inventory_fingerprint=inventory,
+        initial_inventory_fingerprint=baseline_inventory,
+        final_inventory_fingerprint=final_inventory,
         fixture_removed=True,
         initial_realtime=qualification["initial_realtime"],
         final_realtime=qualification["final_realtime"],
@@ -266,8 +266,8 @@ def promote_verified_call_observability(
             backend_version=packet_tracer_version,
             device_model=CALL_OBSERVABILITY_CALL_CONTROL_MODELS[0],
             environment_fingerprint=fingerprint,
-            initial_inventory_hash=inventory,
-            final_inventory_hash=inventory,
+            initial_inventory_hash=baseline_inventory,
+            final_inventory_hash=final_inventory,
             inventory_restored=True,
             isolation_level=ProbeIsolationLevel.FRESH_SESSION_REQUIRED,
             mutations=[
@@ -287,8 +287,8 @@ def promote_verified_call_observability(
         backend=CapabilityBackend.PACKET_TRACER,
         environment_fingerprint=fingerprint,
         probe_fingerprints={CALL_OBSERVABILITY_CAPABILITY: fingerprint},
-        initial_inventory_hash=inventory,
-        final_inventory_hash=inventory,
+        initial_inventory_hash=baseline_inventory,
+        final_inventory_hash=final_inventory,
         inventory_restored=True,
         session=ProbeSessionResult(
             session=ProbeSession(
@@ -413,6 +413,14 @@ def _validate_raw(raw: dict[str, object], root: Path) -> None:
             or observation.get("link_count") != 0
         ):
             raise ValueError("Call qualification lacks two exact empty cleanup observations.")
+    baseline_identity = _inventory_identity(qualification["baseline"])
+    if any(
+        _inventory_identity(qualification[name]) != baseline_identity
+        for name in ("cleanup_first", "cleanup_second")
+    ):
+        raise ValueError(
+            "Call qualification backend-managed inventory changed during cleanup."
+        )
     calls = qualification.get("calls")
     if not isinstance(calls, list) or len(calls) != 2:
         raise ValueError("Call qualification does not contain the exact E7 pair.")
@@ -481,10 +489,18 @@ def _validate_raw(raw: dict[str, object], root: Path) -> None:
         "saved_filename": "",
         "pt_version": raw["packet_tracer_version"],
         "simulation_mode": False,
-        "devices": 0,
         "links": 0,
     }
-    if before_environment != expected_environment or after_environment != expected_environment:
+    before_expected = {key: before_environment.get(key) for key in expected_environment}
+    after_expected = {key: after_environment.get(key) for key in expected_environment}
+    baseline_devices = qualification["baseline"]["devices"]
+    final_devices = qualification["cleanup_second"]["devices"]
+    if (
+        before_expected != expected_environment
+        or after_expected != expected_environment
+        or before_environment.get("devices") != len(baseline_devices)
+        or after_environment.get("devices") != len(final_devices)
+    ):
         raise ValueError("Call qualification environment was not restored exactly.")
     if (
         preflight.get("mailbox_entries_before") != []
@@ -513,6 +529,26 @@ def _write_atomic(target: Path, content: bytes) -> None:
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
+
+
+def _inventory_identity(observation: dict[str, object]) -> str:
+    devices = observation.get("devices")
+    links = observation.get("links")
+    if not isinstance(devices, list) or not isinstance(links, list):
+        raise ValueError("Workspace inventory evidence is malformed.")
+    semantic = [
+        item for item in devices
+        if isinstance(item, dict) and item.get("backend_managed") is not True
+    ]
+    backend_managed = [
+        json.dumps(item, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        for item in devices
+        if isinstance(item, dict) and item.get("backend_managed") is True
+    ]
+    return encode_inventory_observation(
+        semantic_inventory_fingerprint([*semantic, *links]),
+        backend_managed,
+    )
 
 
 def _exact_text(value: object) -> bool:

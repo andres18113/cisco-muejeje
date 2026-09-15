@@ -79,10 +79,12 @@ class Physical:
 
 
 class Configuration:
-    def __init__(self):
+    def __init__(self, timeline=None):
         self.actions = []
+        self.timeline = timeline if timeline is not None else []
 
     def apply_actions(self, actions):
+        self.timeline.append(("configuration", tuple(item.id for item in actions)))
         self.actions.extend(actions)
         return [
             RuntimeActionMutation(
@@ -109,10 +111,11 @@ class Mode:
 
 
 class VoiceRuntime:
-    def __init__(self, *, unobservable=False):
+    def __init__(self, *, unobservable=False, timeline=None):
         self.unobservable = unobservable
         self.bound = None
         self.actions = []
+        self.timeline = timeline if timeline is not None else []
 
     def inventory(self):
         return [
@@ -128,10 +131,12 @@ class VoiceRuntime:
         ]
 
     def apply_actions(self, actions):
+        self.timeline.append(("voice", tuple(item.id for item in actions)))
         self.actions.extend(actions)
         return [RuntimeActionMutation(action_id=item.id, applied=True) for item in actions]
 
     def observe_registration(self, expectation):
+        self.timeline.append(("registration", expectation.id))
         return RuntimePhoneRegistration(
             expectation_id=expectation.id,
             phone_id=expectation.phone_id,
@@ -146,6 +151,7 @@ class VoiceRuntime:
         self.bound = plan
 
     def verify_call(self, expectation, attempt_id, started_ns):
+        self.timeline.append(("call", expectation.id))
         if self.unobservable:
             return RuntimeCallObservation(
                 call_expectation_id=expectation.id,
@@ -194,10 +200,11 @@ class VoiceRuntime:
 
 
 def _qualification(*, unobservable=False, baseline=None, final_second=None):
+    timeline = []
     physical = Physical(baseline=baseline, final_second=final_second)
-    configuration = Configuration()
+    configuration = Configuration(timeline)
     mode = Mode()
-    voice_runtime = VoiceRuntime(unobservable=unobservable)
+    voice_runtime = VoiceRuntime(unobservable=unobservable, timeline=timeline)
     qualifier = CallObservabilityQualification(
         physical=physical,
         configuration=configuration,
@@ -241,6 +248,25 @@ def test_minimum_qualification_uses_cp_scale_models_and_existing_voice_applicato
         for item in result.voice_result.calls
     )
     assert configuration.actions
+    initial_access = [
+        item for item in configuration.actions
+        if item.id in {"callqual/config/access/1", "callqual/config/access/2"}
+    ]
+    signal_access = [
+        item for item in configuration.actions
+        if item.id in {
+            "callqual/config/access/voice/1",
+            "callqual/config/access/voice/2",
+        }
+    ]
+    assert [item.voice_vlan_id for item in initial_access] == [None, None]
+    assert [item.voice_vlan_id for item in signal_access] == [930, 930]
+    events = [event for event, _detail in configuration.timeline]
+    assert events[0] == "configuration"
+    assert events[1:5] == ["voice"] * 4
+    assert events[5:] == [
+        "configuration", "registration", "registration", "call", "call",
+    ]
 
 
 def test_unobservable_call_channel_stays_unobservable_and_still_cleans_twice():

@@ -1,0 +1,50 @@
+{
+  "schema": "call-observability-failure-index-v1",
+  "classification": "BLOCKED",
+  "authority": "DIAGNOSTIC_ONLY",
+  "scope": "call-observability-qualification",
+  "run_identity": "call-observability-qualification-20260915T0201Z-334d5358cde8",
+  "executed_sha": "334d5358cde877741d151c299986d3374e6175eb",
+  "packet_tracer_version": "9.0.1.0858",
+  "ci": {
+    "run_id": "34919350561",
+    "successful_check_runs": [
+      "104223748116",
+      "104223748214",
+      "104223748275",
+      "104223748337"
+    ]
+  },
+  "result": {
+    "established": "DEPENDENCY_BLOCKED",
+    "not_connected": "DEPENDENCY_BLOCKED",
+    "call_attempt_ids_acquired": 0,
+    "call_evidence_acquired": false,
+    "provider_qualified": false
+  },
+  "causes": [
+    "Native-UI readiness was not established by a concrete controller, so the run cannot authorize any provider.",
+    "The minimum fixture signalled the Voice VLAN before CME and Option150 bootstrap; both registrations blocked downstream call attempts.",
+    "The raw outer postflight counted Packet Tracer's backend-managed Power Distribution Device as a semantic device."
+  ],
+  "cleanup": {
+    "owned_devices_removed": 4,
+    "first_semantic_devices": 0,
+    "first_links": 0,
+    "second_semantic_devices": 0,
+    "second_links": 0,
+    "realtime_restored": true,
+    "mailbox_entries_after": []
+  },
+  "forbidden_scope": {
+    "full_qualification_executed": false,
+    "router0_executed": false,
+    "router3_executed": false
+  },
+  "raw_evidence": {
+    "path": "data/cp-scale/call-observability-qualification/call-observability-qualification-20260915T0201Z-334d5358cde8.json",
+    "sha256": "99684a0d197282fb92a69b824b1783ef8d9541b1498893f272ca67e88f8e71b4",
+    "tracked": false,
+    "local_preservation": true
+  }
+}

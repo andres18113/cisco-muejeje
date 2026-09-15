@@ -190,6 +190,43 @@ def test_current_state_separates_operational_authority_from_history():
         "provider_qualified": False,
         "full_preflight": "BLOCKED_BEFORE_PACKET_TRACER_MUTATION",
         "evidence": None,
+        "latest_attempt": {
+            "classification": "BLOCKED",
+            "authority": "DIAGNOSTIC_ONLY",
+            "run_identity": (
+                "call-observability-qualification-20260915T0201Z-334d5358cde8"
+            ),
+            "executed_sha": "334d5358cde877741d151c299986d3374e6175eb",
+            "artifact": {
+                "path": (
+                    "docs/reference/cp-scale/call-observability-failures/"
+                    "call-observability-qualification-20260915T0201Z-"
+                    "334d5358cde8.json"
+                ),
+                "sha256": (
+                    "29e12e50dcefa70f9b70a282b523b571139664da489947c1b47597d59263b552"
+                ),
+            },
+            "cleanup_verified": True,
+            "realtime_restored": True,
+        },
+    }
+    attempt = call["latest_attempt"]
+    attempt_path = ROOT / attempt["artifact"]["path"]
+    attempt_raw = attempt_path.read_bytes()
+    assert hashlib.sha256(attempt_raw).hexdigest() == attempt["artifact"]["sha256"]
+    attempt_evidence = json.loads(attempt_raw)
+    assert attempt_evidence["classification"] == "BLOCKED"
+    assert attempt_evidence["authority"] == "DIAGNOSTIC_ONLY"
+    assert attempt_evidence["result"]["provider_qualified"] is False
+    assert attempt_evidence["cleanup"] == {
+        "owned_devices_removed": 4,
+        "first_semantic_devices": 0,
+        "first_links": 0,
+        "second_semantic_devices": 0,
+        "second_links": 0,
+        "realtime_restored": True,
+        "mailbox_entries_after": [],
     }
 
     history_reference = document["historical_pre_router0"]

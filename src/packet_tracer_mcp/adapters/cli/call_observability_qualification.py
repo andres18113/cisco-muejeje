@@ -95,10 +95,12 @@ def _environment_error(value: dict[str, object], version: str) -> str:
         "saved_filename": "",
         "pt_version": version,
         "simulation_mode": False,
-        "devices": 0,
         "links": 0,
     }
-    return "" if value == expected else (
+    observed = {key: value.get(key) for key in expected}
+    devices = value.get("devices")
+    coherent_devices = type(devices) is int and devices >= 0
+    return "" if observed == expected and coherent_devices else (
         "Packet Tracer environment is not the exact empty unsaved Realtime "
         f"qualification baseline: {value!r}."
     )
@@ -176,6 +178,25 @@ def _call_payload(item) -> dict[str, object]:
         "evidence_sha256": item.evidence_sha256,
         "failure_code": item.failure_code.value,
         "message": item.message,
+    }
+
+
+def _registration_payload(item) -> dict[str, object]:
+    return {
+        "expectation_id": item.expectation_id,
+        "phone_id": item.phone_id,
+        "extension": item.extension,
+        "status": item.status.value,
+        "direct_readback": item.direct_readback.value,
+        "fresh_evidence": item.fresh_evidence,
+        "evidence_method": item.evidence_method,
+        "addressing_status": item.addressing_status.value,
+        "failure_code": item.failure_code.value,
+        "message": item.message,
+        "addressing_message": item.addressing_message,
+        "call_control_ipv4": item.call_control_ipv4,
+        "endpoint_ipv4": item.endpoint_ipv4,
+        "endpoint_interface": item.endpoint_interface,
     }
 
 
@@ -383,6 +404,10 @@ def run(
         postflight_errors.append("Packet Tracer primary process identity changed during LIVE.")
     voice_result = result.voice_result if result is not None else None
     calls = [_call_payload(item) for item in (voice_result.calls if voice_result else ())]
+    registrations = [
+        _registration_payload(item)
+        for item in (voice_result.registrations if voice_result else ())
+    ]
     final_status = (
         result.status.value
         if result is not None and not postflight_errors
@@ -409,6 +434,7 @@ def run(
             "voice_plan_id": result.voice_plan.id if result is not None else "",
             "voice_plan_hash": result.voice_plan.semantic_hash if result is not None else "",
             "calls": calls,
+            "registrations": registrations,
             "created_devices": list(result.created_devices) if result else [],
             "created_links": list(result.created_links) if result else [],
             "removed_devices": list(result.removed_devices) if result else [],
