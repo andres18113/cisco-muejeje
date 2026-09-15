@@ -44,9 +44,6 @@ output/
 .vscode/settings.json
 *.log
 
-# Large demo media (README embeds the GIF; keep heavy video out of git)
-demo/*.mp4
-
 # MkDocs build output
 site/
 _site/
