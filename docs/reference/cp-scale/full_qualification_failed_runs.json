@@ -1,0 +1,81 @@
+{
+  "schema": "cp-scale-full-qualification-failed-runs-v1",
+  "classification": "FAILED",
+  "publication_is_success_authority": false,
+  "full_qualification_successful_closure": false,
+  "measurement_policy": "Original archives are immutable; this index copies execution identity, the terminal failure text, hashes and cleanup facts. Host observations made outside the governed runner are recorded beside those facts under their own authority, never inside the archives.",
+  "runs": [
+    {
+      "run_identity": "canonical-cp-scale-voice-20260915T181618415152Z-ff117655a973",
+      "executed_sha": "ff117655a97301aa05cad6c7696f89dd87ec71fc",
+      "target": "full-qualification",
+      "packet_tracer_version": "9.0.1.0858",
+      "failed_stage": "floor3",
+      "remaining_executed": false,
+      "last_checkpoint": {
+        "stage": "floor2",
+        "live_devices": 132,
+        "live_links": 96
+      },
+      "classification": "FAILED",
+      "failure": "CanonicalLiveFailure: Serial interfaces lost up/up convergence at 'floor3'.",
+      "artifacts": [
+        {
+          "phase": "failure-precleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260915T181618415152Z-ff117655a973-failure-precleanup.json",
+          "sha256": "58c19985448bf9747bf851f00d5430939b507347e281b013a31a0b6c80264a75"
+        },
+        {
+          "phase": "cleanup",
+          "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260915T181618415152Z-ff117655a973-cleanup.json",
+          "sha256": "a2574f7e4b91dd5cab9c8d92a3124f0550b77585ef7ec76b662b01961c81df58"
+        }
+      ],
+      "cleanup": {
+        "verified": true,
+        "owned_devices_removed": 0,
+        "owned_devices_already_absent": 232,
+        "first_semantic_devices": 0,
+        "first_links": 0,
+        "second_semantic_devices": 0,
+        "second_links": 0,
+        "realtime_verified": true
+      },
+      "successful_closure": false,
+      "evidence_authority": "FAILED_RUN_ONLY",
+      "host_observations": {
+        "authority": "HOST_OBSERVATION_OUTSIDE_GOVERNED_ARCHIVE",
+        "backend_process_crash": {
+          "source": "Windows Application event log",
+          "event_record_id": 20485,
+          "event_id": 1000,
+          "provider": "Application Error",
+          "event_system_time": "2026-09-15T18:35:53.9247163Z",
+          "observed_at": "2026-09-15T18:35:53.924716+00:00",
+          "application": "PacketTracer.exe",
+          "application_version": "9.0.1.858",
+          "faulting_module": "Qt6Gui.dll",
+          "faulting_module_version": "6.8.7.0",
+          "exception_code": "0xc0000005",
+          "faulting_offset": "0x00000000001a35b7",
+          "process_id": 24112,
+          "report_id": "5e61b740-7eec-4579-a2df-a9532f38d614"
+        },
+        "replacement_process": {
+          "process_id": 18192,
+          "started_at": "2026-09-15T18:36:41+00:00",
+          "start_cause": "UNKNOWN",
+          "polled_the_session_bridge": true
+        }
+      },
+      "causal_analysis": {
+        "cause_classification": "BACKEND_PROCESS_CRASH",
+        "implementation_causation": "UNKNOWN",
+        "recorded_failure_role": "OBSERVED_AFTER_BACKEND_CRASH",
+        "cleanup_runtime_instance": "REPLACEMENT_PROCESS",
+        "session_owned_devices_absent_because": "SESSION_PROCESS_TERMINATED",
+        "runner_recorded_process_replacement": false
+      }
+    }
+  ]
+}
