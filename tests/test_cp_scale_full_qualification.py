@@ -36,8 +36,22 @@ from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical impo
     derive_cp_scale_branch_forwarding_checks,
     project_cp_scale_canonical_stage,
 )
+from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
+    CPScaleCanonicalVoiceEvidence,
+)
 from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    ActionExecutionStatus,
     ConfigurationApplicationStatus,
+)
+from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+    CallExpectation,
+    CallExpectationResult,
+)
+from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+    CallState,
+    CallVerificationResult,
+    PhoneExecutionMethod,
+    VoiceApplicationResult,
 )
 from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
     cp_scale_canonical_voice_intent,
@@ -254,7 +268,61 @@ def test_full_preparation_keeps_the_unqualified_product_scope(preparation):
     }
 
 
-def _projection(stage, physical, configuration_ids):
+def _call_expectations():
+    return (
+        CallExpectation(
+            id="call/established",
+            source_phone_id="phone/1",
+            source_extension="1001",
+            dialed_extension="1002",
+            expected_target_phone_id="phone/2",
+            expected_result=CallExpectationResult.ESTABLISHED,
+            site_id="site/1",
+        ),
+        CallExpectation(
+            id="call/not-connected",
+            source_phone_id="phone/1",
+            source_extension="1001",
+            dialed_extension="1099",
+            expected_result=CallExpectationResult.NOT_CONNECTED,
+            site_id="site/1",
+        ),
+    )
+
+
+def _verified_call(expectation, index):
+    established = expectation.expected_result is CallExpectationResult.ESTABLISHED
+    states = (
+        [
+            CallState.IDLE,
+            CallState.DIALING,
+            CallState.RINGING,
+            CallState.CONNECTED,
+            CallState.DISCONNECTED,
+            CallState.IDLE,
+        ]
+        if established
+        else [CallState.IDLE, CallState.DIALING, CallState.FAILED, CallState.IDLE]
+    )
+    return CallVerificationResult(
+        call_expectation_id=expectation.id,
+        call_attempt_id=f"call-attempt/{index}",
+        source_phone_id=expectation.source_phone_id,
+        dialed_extension=expectation.dialed_extension,
+        status=ActionExecutionStatus.VERIFIED,
+        states=states,
+        connected=established,
+        teardown_verified=True,
+        observed_after_ns=index,
+        fresh_evidence=True,
+        evidence_method="typed_call_state_lifecycle",
+        execution_method=PhoneExecutionMethod.STRUCTURED_API,
+        expected_result=expectation.expected_result,
+        expected_target_phone_id=expectation.expected_target_phone_id,
+    )
+
+
+def _projection(stage, physical, configuration_ids, call_expectations=()):
     return SimpleNamespace(
         stage=stage,
         topology=SimpleNamespace(physical_identity_hash=physical),
@@ -266,17 +334,19 @@ def _projection(stage, physical, configuration_ids):
         voice=SimpleNamespace(
             actions=[SimpleNamespace(id="voice/retained")],
             phone_assignments=["phone/1"],
+            call_expectations=tuple(call_expectations),
         ),
     )
 
 
-def _verified(projection, report=None):
+def _verified(projection, report=None, voice=None):
     return SimpleNamespace(
         stage=projection.stage,
         outcome="verified",
         projection=projection,
         configuration_accepted=True,
         control_plane=SimpleNamespace(status=ConfigurationApplicationStatus.VERIFIED),
+        voice=voice,
         replay_audit=SimpleNamespace(
             verified=True, claim="NO_MUTATION_REPLAY", surfaces=(),
         ),
@@ -292,7 +362,26 @@ def _full_run():
         physical = "e4/final" if stage is ROUTER3 else "e4/" + stage.value
         projection = _projection(stage, physical, ["cfg/retained"])
         stages.append(CPScaleStageProgress(projection, result=_verified(projection)))
-    remaining = _projection(REMAINING, "e4/final", ["cfg/retained", "cfg/remaining"])
+    call_expectations = _call_expectations()
+    remaining = _projection(
+        REMAINING,
+        "e4/final",
+        ["cfg/retained", "cfg/remaining"],
+        call_expectations,
+    )
+    calls = [
+        _verified_call(expectation, index)
+        for index, expectation in enumerate(call_expectations, 1)
+    ]
+    voice_result = VoiceApplicationResult(
+        voice_plan_id="voice/remaining",
+        voice_semantic_hash="e7/remaining",
+        source_topology_hash="e4/final",
+        source_configuration_hash="e5/remaining",
+        status=ActionExecutionStatus.VERIFIED,
+        application_status=ActionExecutionStatus.APPLIED,
+        calls=calls,
+    )
 
     def check(identifier):
         return SimpleNamespace(
@@ -314,8 +403,15 @@ def _full_run():
             ("cfg/remaining",), ("cfg/retained",), (), ("cp/retained",),
             (), ("voice/retained",),
         ),
-        canonical_voice=SimpleNamespace(
-            complete=True, stage=REMAINING.value, expected_phone_count=1,
+        canonical_voice=CPScaleCanonicalVoiceEvidence(
+            complete=True,
+            stage=REMAINING.value,
+            expected_phone_count=1,
+            expected_call_count=len(call_expectations),
+            call_verified_count=len(call_expectations),
+            call_failed_count=0,
+            call_unobservable_count=0,
+            call_identity_errors=[],
         ),
         forwarding=SimpleNamespace(
             site=observed(remaining.branch_forwarding_checks),
@@ -348,7 +444,9 @@ def _full_run():
         replayed_voice_ids=(),
     )
     stages.append(CPScaleStageProgress(
-        remaining, transition=transition, result=_verified(remaining, report),
+        remaining,
+        transition=transition,
+        result=_verified(remaining, report, voice_result),
     ))
     return stages
 
@@ -424,6 +522,130 @@ def test_full_review_accepts_only_the_complete_remaining_authority(defect, reaso
         return
     assert review.error.startswith("Full qualification closure")
     assert reason in review.error
+
+
+@pytest.mark.parametrize(
+    "status",
+    (ActionExecutionStatus.UNOBSERVABLE, ActionExecutionStatus.FAILED),
+)
+def test_full_refuses_non_verified_calls_without_reclassifying_them(status):
+    stages = _full_run()
+    final = stages[-1].result
+    final.voice.calls[0] = final.voice.calls[0].model_copy(update={"status": status})
+    expected = len(final.projection.voice.call_expectations)
+    final.report.canonical_voice = final.report.canonical_voice.model_copy(update={
+        "call_verified_count": expected - 1,
+        "call_failed_count": int(status is ActionExecutionStatus.FAILED),
+        "call_unobservable_count": int(status is ActionExecutionStatus.UNOBSERVABLE),
+    })
+
+    review = CPScaleCompletion(cleanup=None).review_full_qualification(
+        _inspect(_service(), _request()), tuple(stages),
+    )
+
+    assert "FULL call acceptance" in review.error
+    assert status.value.upper() in review.error
+    assert final.voice.calls[0].status is status
+    assert final.report.canonical_voice.complete is True
+
+
+@pytest.mark.parametrize("defect", ("missing", "duplicate", "unexpected"))
+def test_full_requires_exactly_one_observation_per_planned_call(defect):
+    stages = _full_run()
+    calls = stages[-1].result.voice.calls
+    if defect == "missing":
+        calls.pop(0)
+    elif defect == "duplicate":
+        calls.append(calls[0].model_copy(update={"call_attempt_id": "duplicate"}))
+    else:
+        calls[0] = calls[0].model_copy(update={
+            "call_expectation_id": "call/unexpected",
+            "call_attempt_id": "unexpected",
+        })
+
+    review = CPScaleCompletion(cleanup=None).review_full_qualification(
+        _inspect(_service(), _request()), tuple(stages),
+    )
+
+    assert "exact 1:1" in review.error
+
+
+@pytest.mark.parametrize(
+    ("defect", "reason"),
+    (
+        ("stale", "fresh evidence"),
+        ("missing-attempt", "unique call-attempt identities"),
+        ("unobservable-method", "observable execution method"),
+        ("missing-evidence-method", "explicit evidence method"),
+        ("foreign-identity", "foreign call identity"),
+        ("expected-result", "typed expected result"),
+        ("established-disconnected", "ESTABLISHED behavior"),
+        ("established-lifecycle", "required call lifecycle"),
+        ("negative-connected", "NOT_CONNECTED behavior"),
+    ),
+)
+def test_full_audits_each_verified_call_evidence_contract(defect, reason):
+    stages = _full_run()
+    calls = stages[-1].result.voice.calls
+    index = 1 if defect == "negative-connected" else 0
+    call = calls[index]
+    if defect == "missing-attempt":
+        update = {"call_attempt_id": ""}
+    elif defect == "stale":
+        update = {"fresh_evidence": False}
+    elif defect == "unobservable-method":
+        update = {"execution_method": PhoneExecutionMethod.UNOBSERVABLE}
+    elif defect == "missing-evidence-method":
+        update = {"evidence_method": ""}
+    elif defect == "foreign-identity":
+        update = {"source_phone_id": "phone/foreign"}
+    elif defect == "expected-result":
+        update = {"expected_result": CallExpectationResult.NOT_CONNECTED}
+    elif defect == "established-disconnected":
+        update = {"connected": False, "states": [CallState.IDLE]}
+    elif defect == "established-lifecycle":
+        update = {"teardown_verified": False}
+    else:
+        update = {"connected": True, "states": [CallState.CONNECTED]}
+    calls[index] = call.model_copy(update=update)
+
+    review = CPScaleCompletion(cleanup=None).review_full_qualification(
+        _inspect(_service(), _request()), tuple(stages),
+    )
+
+    assert reason in review.error
+
+
+@pytest.mark.parametrize(
+    "defect",
+    (
+        "expected-count",
+        "verified-count",
+        "failed-count",
+        "unobservable-count",
+        "identity-errors",
+    ),
+)
+def test_full_requires_exact_canonical_call_aggregates(defect):
+    stages = _full_run()
+    canonical = stages[-1].result.report.canonical_voice
+    expected = len(stages[-1].projection.voice.call_expectations)
+    updates = {
+        "expected-count": {"expected_call_count": expected + 1},
+        "verified-count": {"call_verified_count": expected - 1},
+        "failed-count": {"call_failed_count": 1},
+        "unobservable-count": {"call_unobservable_count": 1},
+        "identity-errors": {"call_identity_errors": ["unexpected:call/foreign"]},
+    }
+    stages[-1].result.report.canonical_voice = canonical.model_copy(
+        update=updates[defect],
+    )
+
+    review = CPScaleCompletion(cleanup=None).review_full_qualification(
+        _inspect(_service(), _request()), tuple(stages),
+    )
+
+    assert "canonical Voice call aggregates" in review.error
 
 
 @pytest.mark.parametrize(

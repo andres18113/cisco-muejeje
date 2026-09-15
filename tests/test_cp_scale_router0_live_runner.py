@@ -622,6 +622,7 @@ def projection_for(composition, stage, **kwargs):
         ),
         voice=SimpleNamespace(
             actions=[], phone_assignments=["phone/remaining"] if remaining else [],
+            call_expectations=[],
         ),
         forwarding_checks={},
         branch_forwarding_checks=site_checks,

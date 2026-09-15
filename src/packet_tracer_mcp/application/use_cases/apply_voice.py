@@ -171,6 +171,19 @@ def _addressing_claim(
     return ActionExecutionStatus.VERIFIED, ""
 
 
+def call_observation_matches_expected_result(
+    expected_result: CallExpectationResult,
+    observation: RuntimeCallObservation,
+) -> bool:
+    """Apply E7's typed positive or negative call-behavior contract."""
+    connected_state = CallState.CONNECTED in observation.states
+    if expected_result is CallExpectationResult.ESTABLISHED:
+        return observation.connected and connected_state
+    if expected_result is CallExpectationResult.NOT_CONNECTED:
+        return not observation.connected and not connected_state
+    return False
+
+
 class VoiceRuntime(Protocol):
     def inventory(self) -> list[RuntimeConfigurationTarget]: ...
 
@@ -886,11 +899,9 @@ class VoiceApplicator:
                 observed.fresh_evidence and observed.call_attempt_id == attempt_id
                 and observed.observed_after_ns >= started_ns
             )
-            connected_state = CallState.CONNECTED in observed.states
-            expected_connected = expectation.expected_result is CallExpectationResult.ESTABLISHED
-            behavior_matches = (
-                observed.connected and connected_state if expected_connected
-                else not observed.connected and not connected_state
+            behavior_matches = call_observation_matches_expected_result(
+                expectation.expected_result,
+                observed,
             )
             if observed.status is ActionExecutionStatus.UNOBSERVABLE:
                 status = ActionExecutionStatus.UNOBSERVABLE

@@ -8,12 +8,25 @@ from .cleanup import CPScaleCleanup
 from .checkpoint import CPScaleCheckpointDecision
 from .contracts import CPScalePreflightOutcome, CPScalePreflightResult
 from .run_contracts import CPScaleStageProgress, CPScaleRunReplayAudit, CPScaleTerminalEvent, CPScaleCleanupResult, CPScaleCleanupRealtime
+from ..use_cases.apply_voice import call_observation_matches_expected_result
 from ..use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage, CPScaleCanonicalTarget, CPScaleCanonicalTargetContract,
     canonical_cp_scale_target_contract,
 )
-from ..use_cases.qualify_cp_scale_live import CPScaleFinalDisposition, canonical_final_disposition
-from ...domain.enterprise.models.configuration_runtime import ConfigurationApplicationStatus
+from ..use_cases.qualify_cp_scale_live import (
+    CPScaleCanonicalVoiceEvidence,
+    CPScaleFinalDisposition,
+    canonical_final_disposition,
+)
+from ...domain.enterprise.models.configuration_runtime import (
+    ActionExecutionStatus,
+    ConfigurationApplicationStatus,
+)
+from ...domain.enterprise.models.voice_plan import VoicePlan
+from ...domain.enterprise.models.voice_runtime import (
+    PhoneExecutionMethod,
+    VoiceApplicationResult,
+)
 
 
 @dataclass(frozen=True)
@@ -88,6 +101,95 @@ def _forwarding_complete(planned, requested, observations, verified, projection)
     )
 
 
+def _full_call_acceptance_error(
+    voice_plan: VoicePlan,
+    voice_result: VoiceApplicationResult | None,
+    canonical_voice: CPScaleCanonicalVoiceEvidence,
+) -> str:
+    """Require FULL-only call authority without changing global Voice completeness."""
+    expectations = tuple(voice_plan.call_expectations)
+    if not expectations:
+        return ""
+    prefix = "the REMAINING FULL call acceptance"
+    if voice_result is None:
+        return prefix + " has no typed call observations."
+
+    observations = tuple(voice_result.calls)
+    expected_ids = tuple(item.id for item in expectations)
+    observed_ids = tuple(item.call_expectation_id for item in observations)
+    if (
+        len(set(expected_ids)) != len(expected_ids)
+        or len(observations) != len(expectations)
+        or len(set(observed_ids)) != len(observed_ids)
+        or set(observed_ids) != set(expected_ids)
+    ):
+        return prefix + " does not provide an exact 1:1 plan-to-observation mapping."
+
+    attempt_ids = tuple(item.call_attempt_id for item in observations)
+    if any(not identifier for identifier in attempt_ids) or len(set(attempt_ids)) != len(
+        attempt_ids
+    ):
+        return prefix + " does not provide exact and unique call-attempt identities."
+
+    by_id = {item.call_expectation_id: item for item in observations}
+    for expectation in expectations:
+        observation = by_id[expectation.id]
+        if observation.expected_result is not expectation.expected_result:
+            return (
+                prefix
+                + f" observation {expectation.id!r} does not match its typed expected result."
+            )
+        if (
+            observation.source_phone_id != expectation.source_phone_id
+            or observation.dialed_extension != expectation.dialed_extension
+            or observation.expected_target_phone_id
+            != expectation.expected_target_phone_id
+        ):
+            return prefix + f" observation {expectation.id!r} has a foreign call identity."
+        if observation.status is not ActionExecutionStatus.VERIFIED:
+            return (
+                prefix
+                + f" observation {expectation.id!r} remains "
+                + observation.status.value.upper()
+                + "."
+            )
+        if observation.fresh_evidence is not True:
+            return prefix + f" observation {expectation.id!r} has no fresh evidence."
+        if observation.execution_method is PhoneExecutionMethod.UNOBSERVABLE:
+            return (
+                prefix
+                + f" observation {expectation.id!r} has no observable execution method."
+            )
+        if not observation.evidence_method.strip():
+            return prefix + f" observation {expectation.id!r} has no explicit evidence method."
+        if not call_observation_matches_expected_result(
+            expectation.expected_result,
+            observation,
+        ):
+            return (
+                prefix
+                + f" observation {expectation.id!r} does not prove "
+                + expectation.expected_result.name
+                + " behavior."
+            )
+        if observation.teardown_verified is not True:
+            return (
+                prefix
+                + f" observation {expectation.id!r} lacks the required call lifecycle."
+            )
+
+    expected_count = len(expectations)
+    if (
+        canonical_voice.expected_call_count != expected_count
+        or canonical_voice.call_verified_count != expected_count
+        or canonical_voice.call_failed_count != 0
+        or canonical_voice.call_unobservable_count != 0
+        or canonical_voice.call_identity_errors != []
+    ):
+        return prefix + " canonical Voice call aggregates are not fully VERIFIED."
+    return ""
+
+
 def _remaining_transition_error(previous: CPScaleStageProgress, final: CPScaleStageProgress) -> str:
     transition = final.transition
     scope = final.result.report.scope
@@ -156,6 +258,9 @@ def _full_qualification_error(preflight: CPScalePreflightResult, stages: tuple[C
             or canonical_voice.complete is not True or canonical_voice.stage != projection.stage.value
             or canonical_voice.expected_phone_count != len(voice.phone_assignments)):
         return "the REMAINING canonical Voice evidence is not complete for every planned phone."
+    call_error = _full_call_acceptance_error(voice, result.voice, canonical_voice)
+    if call_error:
+        return call_error
     forwarding = report.forwarding
     if forwarding is None or not _forwarding_complete(
             getattr(projection, "branch_forwarding_checks", ()), report.site_forwarding_checks,
@@ -239,7 +344,8 @@ class CPScaleCompletion:
         REMAINING is the single final authority. Every build stage and
         REMAINING must be VERIFIED under NO_MUTATION_REPLAY, and REMAINING must
         prove accepted configuration, a VERIFIED control plane, complete
-        canonical Voice, every derived site and representative PC pair, two
+        canonical Voice, exact VERIFIED call evidence for every planned call,
+        every derived site and representative PC pair, two
         workspace readbacks, and a zero-delta transition whose authorized scope
         is exactly the scope that executed. Wireless association stays
         unqualified and intersite calling stays off in the product, so neither
