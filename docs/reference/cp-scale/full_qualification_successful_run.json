@@ -1,0 +1,91 @@
+{
+  "schema": "cp-scale-full-qualification-successful-run-v1",
+  "classification": "VERIFIED",
+  "successful_closure": true,
+  "run_identity": "canonical-cp-scale-voice-20260915T193037865890Z-6a80b24626d4",
+  "executed_sha": "6a80b24626d40fb59bad5f0dc2e47d18a51f4a49",
+  "requested_target": "full-qualification",
+  "packet_tracer_version": "9.0.1.0858",
+  "precleanup_closure": "CP_SCALE_FULL_QUALIFICATION_VERIFIED_PRECLEANUP",
+  "closure": "CP_SCALE_FULL_QUALIFICATION_VERIFIED_AND_CLEANED",
+  "artifacts": [
+    {
+      "phase": "precleanup",
+      "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260915T193037865890Z-6a80b24626d4-precleanup.json",
+      "sha256": "170a7c3966f0dde726588f56818518716c87a18849a2e15390cff696b958c540"
+    },
+    {
+      "phase": "cleanup",
+      "path": "docs/reference/cp-scale/canonical-live-evidence/canonical-cp-scale-voice-20260915T193037865890Z-6a80b24626d4-cleanup.json",
+      "sha256": "66b954d72bc100d0782220a5cd991b168185de3d21fd6f6e7c39e7fda6ef2a0b"
+    }
+  ],
+  "verified": {
+    "stages": [
+      "routing-core",
+      "router4-switch10",
+      "floor1",
+      "floor2",
+      "floor3",
+      "router0-branch",
+      "router3-branch",
+      "remaining"
+    ],
+    "terminal_stage": "remaining",
+    "cumulative_devices": 314,
+    "cumulative_links": 219,
+    "remaining_transition": {
+      "previous_stage": "router3-branch",
+      "physical_delta_empty": true,
+      "configuration_mutations": 0,
+      "configuration_retained": 445,
+      "control_plane_mutations": 0,
+      "control_plane_retained": 217,
+      "voice_mutations": 0,
+      "voice_retained": 153,
+      "claim": "MUTATION_SCOPE_DISJOINT"
+    },
+    "configuration": "ACCEPTED_UNDER_GOVERNED_CEILINGS",
+    "control_plane": "VERIFIED",
+    "voice": "CANONICAL_COMPLETE_69_OF_69",
+    "phone_registration": "VERIFIED_69_OF_69",
+    "extension_binding": "VERIFIED_69_OF_69",
+    "site_forwarding": "VERIFIED_6_OF_6",
+    "representative_pc_forwarding": "VERIFIED_6_OF_6",
+    "typed_ping_authority": "DISPATCH_TRANSCRIPT_DELTA_CONFIRMED_UNIQUE_12_OF_12",
+    "mutation_replay": "NO_MUTATION_REPLAY",
+    "workspace_readback": "VERIFIED_TWICE"
+  },
+  "unqualified": {
+    "call_behavior": {
+      "status": "UNQUALIFIED",
+      "expected_calls": 9,
+      "verified_calls": 0,
+      "failed_calls": 0,
+      "unobservable_calls": 9,
+      "call_identity_errors": 0
+    },
+    "wireless_association": "UNQUALIFIED",
+    "intersite_calling": false
+  },
+  "cleanup": {
+    "deleted_devices": 314,
+    "first_semantic_devices": 0,
+    "first_links": 0,
+    "second_semantic_devices": 0,
+    "second_links": 0,
+    "realtime_restored": true
+  },
+  "final_checkpoint": {
+    "path": "docs/reference/cp-scale/live_canonical_checkpoint.json",
+    "checkpoint": "full-qualification",
+    "raw_progress_sha256": "720664e4f9b819406a79bbe4b515d2fd968e3da9bf32b34dc9dbace1f5d2a974"
+  },
+  "host_observations": {
+    "authority": "HOST_OBSERVATION_OUTSIDE_GOVERNED_ARCHIVE",
+    "session_process_id": 18192,
+    "session_process_alive_after_runner_exit": true,
+    "packet_tracer_application_errors_during_run": 0
+  },
+  "evidence_authority": "FULL_QUALIFICATION_SUCCESS"
+}
