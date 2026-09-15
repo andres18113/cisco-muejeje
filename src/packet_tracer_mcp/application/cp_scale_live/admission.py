@@ -14,6 +14,7 @@ from ..use_cases.compose_cp_scale_canonical import (
     canonical_cp_scale_target_contract,
 )
 from .contracts import (
+    CPScaleBackendQualificationPolicy,
     CPScaleCallObservabilityEvidence,
     CPScaleCheckState,
     CPScaleImportIsolationEvidence,
@@ -26,6 +27,7 @@ from .contracts import (
     CPScaleProcessRecord,
     CPScaleRepositoryEvidence,
     CPScaleRuntimeEvidence,
+    call_observations_required,
 )
 
 
@@ -118,6 +120,9 @@ class CPScaleLocalPreflight:
         expected_branch: str,
         expected_upstream: str,
         target_resolver: TargetResolver = canonical_cp_scale_target_contract,
+        qualification_policy_resolver: (
+            Callable[[str], CPScaleBackendQualificationPolicy] | None
+        ) = None,
     ) -> None:
         self._governed_root = governed_root
         self._runtime_reader = runtime_reader
@@ -129,6 +134,7 @@ class CPScaleLocalPreflight:
         self._expected_branch = expected_branch
         self._expected_upstream = expected_upstream
         self._target_resolver = target_resolver
+        self._qualification_policy_resolver = qualification_policy_resolver
 
     def inspect(
         self,
@@ -216,8 +222,31 @@ class CPScaleLocalPreflight:
                 live_authorization=authorization,
             )
 
+        # Only a target that plans calls consults the backend policy, and only
+        # an explicit declaration of UNQUALIFIED call behavior lifts the strict
+        # call gate; without a resolver the gate stays.
+        policy = None
+        if (
+            target.requires_call_observability
+            and self._qualification_policy_resolver is not None
+        ):
+            policy, policy_error = self._resolve_qualification_policy(
+                request.packet_tracer_version,
+            )
+            if policy_error:
+                return CPScalePreflightResult(
+                    target=target,
+                    runtime=runtime,
+                    import_isolation=import_evidence,
+                    repository=repository,
+                    process=not_run_process,
+                    identity=None,
+                    issues=(policy_error,),
+                    live_authorization=authorization,
+                )
+
         call_observability = not_run_call_observability
-        if target.requires_call_observability:
+        if call_observations_required(target, policy):
             call_observability = self._inspect_call_observability(
                 request.packet_tracer_version,
                 target,
@@ -233,6 +262,7 @@ class CPScaleLocalPreflight:
                     issues=(call_observability.error,),
                     live_authorization=authorization,
                     call_observability=call_observability,
+                    qualification_policy=policy,
                 )
 
         identity = CPScaleLiveSessionIdentity(
@@ -259,7 +289,29 @@ class CPScaleLocalPreflight:
             issues=process_issues,
             live_authorization=authorization,
             call_observability=call_observability,
+            qualification_policy=policy,
         )
+
+    def _resolve_qualification_policy(
+        self,
+        packet_tracer_version: str,
+    ) -> tuple[CPScaleBackendQualificationPolicy | None, str]:
+        try:
+            policy = self._qualification_policy_resolver(packet_tracer_version)
+        except Exception as exc:
+            return None, (
+                "Backend qualification policy could not be resolved: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        if (
+            not isinstance(policy, CPScaleBackendQualificationPolicy)
+            or policy.backend_version != packet_tracer_version
+        ):
+            return None, (
+                "Backend qualification policy does not describe this Packet "
+                "Tracer build."
+            )
+        return policy, ""
 
     def _inspect_call_observability(
         self,

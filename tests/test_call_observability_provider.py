@@ -3,10 +3,21 @@ from __future__ import annotations
 import hashlib
 from dataclasses import replace
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.application.cp_scale_live import CPScaleCheckState
+from src.packet_tracer_mcp.application.cp_scale_live import (
+    CPScaleCheckState,
+    call_observations_required,
+)
+from src.packet_tracer_mcp.application.cp_scale_live.errors import CanonicalLiveFailure
+from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+    canonical_cp_scale_target_contract,
+)
+from src.packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
+    packet_tracer_cp_scale_qualification_policy,
+)
 from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     DeviceCapabilities,
@@ -28,6 +39,9 @@ from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
 from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     VoiceCapabilityDimension,
     VoiceCapabilityStatus,
+)
+from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+    PhoneExecutionMethod,
 )
 from src.packet_tracer_mcp.infrastructure.catalog.voice_capabilities import (
     voice_capability_profile,
@@ -297,3 +311,65 @@ def test_voice_capability_consumes_the_same_validated_evidence():
         VoiceCapabilityDimension.CALL_STATE_READBACK
     ) is VoiceCapabilityStatus.SUPPORTED
     assert profile.call_observability_phone_models == ["7960"]
+
+
+def test_strict_call_gate_binds_only_the_adapter_its_readiness_qualified(tmp_path):
+    provider, _snapshot_value = _provider(tmp_path)
+    assert provider.read(BUILD).state is CPScaleCheckState.PASSED
+
+    bound = provider.phone_control_for(call_observations_required=True)
+
+    assert bound is provider.phone_control
+    assert isinstance(bound, PacketTracerNativeUiPhoneControlAdapter)
+    assert bound.execution_method is PhoneExecutionMethod.PACKET_TRACER_NATIVE_UI
+
+
+@pytest.mark.parametrize("state", ("never_read", "stale", "not_ready"))
+def test_strict_call_gate_never_falls_back_to_unavailable_phone_control(
+    tmp_path,
+    state,
+):
+    provider, _snapshot_value = _provider(
+        tmp_path,
+        snapshot_changes=(
+            {"dimensions": {"executed_sha": "9" * 40}} if state == "stale" else None
+        ),
+        ready=state != "not_ready",
+    )
+    if state != "never_read":
+        assert provider.read(BUILD).state is CPScaleCheckState.FAILED
+
+    with pytest.raises(CanonicalLiveFailure, match="qualified PhoneControl"):
+        provider.phone_control_for(call_observations_required=True)
+    assert isinstance(provider.phone_control, UnavailablePhoneControl)
+
+
+@pytest.mark.parametrize(
+    "target", ("full-qualification", "router0-branch", "router3-branch"),
+)
+def test_packet_tracer_policy_binds_the_explicit_unobservable_control(tmp_path, target):
+    provider, _snapshot_value = _provider(tmp_path)
+    assert provider.read(BUILD).state is CPScaleCheckState.PASSED
+
+    bound = provider.phone_control_for(call_observations_required=call_observations_required(
+        canonical_cp_scale_target_contract(target),
+        packet_tracer_cp_scale_qualification_policy(BUILD),
+    ))
+
+    assert isinstance(bound, UnavailablePhoneControl)
+    assert bound.execution_method is PhoneExecutionMethod.UNOBSERVABLE
+
+
+def test_cp_scale_live_binds_phone_control_through_the_backend_policy():
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "src" / "packet_tracer_mcp" / "adapters" / "cli" / "cp_scale_live.py"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        "qualification_policy_resolver=packet_tracer_cp_scale_qualification_policy"
+        in source
+    )
+    assert "phone_control=phone_control_provider.phone_control_for(" in source
+    assert "call_observations_required=call_observations_required(" in source
+    assert "phone_control=phone_control_provider.phone_control)" not in source

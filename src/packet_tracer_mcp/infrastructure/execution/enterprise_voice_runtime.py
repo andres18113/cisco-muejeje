@@ -38,9 +38,6 @@ from .ios_terminal import (
     parse_show_ephone,
     qualified_pager_retry_eligible,
 )
-from .phone_control import (
-    UnavailablePhoneControl,
-)
 from .runtime_inventory import normalize_runtime_inventory
 
 _MAC = re.compile(r"^[0-9A-Fa-f]{12}$")
@@ -117,17 +114,22 @@ class PacketTracerEnterpriseVoiceRuntime:
         send_and_wait: Callable[[str, float], str | None],
         *,
         ios_readiness: Callable[[str], bool] | None = None,
-        phone_control: PhoneControlPort | None = None,
+        phone_control: PhoneControlPort,
         registration_timeout_seconds: float = 30.0,
         convergence_interval_seconds: float = 0.5,
     ) -> None:
+        if phone_control is None:
+            raise ValueError(
+                "PacketTracerEnterpriseVoiceRuntime needs an explicit PhoneControlPort; "
+                "pass UnavailablePhoneControl() only where calls are genuinely unobservable."
+            )
         self._query_inventory = query_inventory
         self._send_and_wait = send_and_wait
         self._configuration = PacketTracerConfigurationRuntime(send)
         self._renderer = PacketTracerVoiceRenderer()
         self._ios = ControlledIosExecutor(send_and_wait)
         self._ios_readiness = ios_readiness or self._wait_for_ios
-        self._phone_control = phone_control or UnavailablePhoneControl()
+        self._phone_control = phone_control
         self._registration_timeout = registration_timeout_seconds
         self._convergence_interval = convergence_interval_seconds
         self._targets: dict[str, RuntimeConfigurationTarget] = {}

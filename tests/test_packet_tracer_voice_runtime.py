@@ -34,6 +34,7 @@ from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
 )
 from src.packet_tracer_mcp.infrastructure.execution.phone_control import (
     PacketTracerNativeUiPhoneControlAdapter,
+    UnavailablePhoneControl,
 )
 from tests.test_enterprise_voice import _compile
 
@@ -58,6 +59,7 @@ def _runtime(captured):
         send,
         send_and_wait,
         ios_readiness=lambda _name: True,
+        phone_control=UnavailablePhoneControl(),
     )
 
 
@@ -743,6 +745,7 @@ def test_the_voice_svi_dhcp_state_is_read_under_the_name_this_build_exposes(
     runtime = PacketTracerEnterpriseVoiceRuntime(
         lambda: [], lambda _source: True, send_and_wait,
         ios_readiness=lambda _name: True,
+        phone_control=UnavailablePhoneControl(),
     )
 
     observed = runtime.observe_registration(_expectation("3011"))
@@ -776,6 +779,7 @@ def test_the_typed_voice_svi_dhcp_setter_requires_exact_port_and_readback(enable
     runtime = PacketTracerEnterpriseVoiceRuntime(
         lambda: [], lambda _source: True, send_and_wait,
         ios_readiness=lambda _name: True,
+        phone_control=UnavailablePhoneControl(),
     )
 
     mutation = runtime.set_endpoint_dhcp_client_state(
@@ -826,6 +830,7 @@ def test_the_voice_svi_dhcp_setter_fails_closed_without_matching_readback(answer
         lambda: [], lambda _source: True,
         lambda _source, _timeout: json.dumps(answer),
         ios_readiness=lambda _name: True,
+        phone_control=UnavailablePhoneControl(),
     )
 
     mutation = runtime.set_endpoint_dhcp_client_state(
@@ -872,6 +877,7 @@ def test_registration_uses_fresh_privileged_show_ephone_when_available():
             {"name": "HQ-PHONE-02", "model": "7960"},
         ]},
         send, send_and_wait, ios_readiness=lambda _name: True,
+        phone_control=UnavailablePhoneControl(),
     )
     plan = _compile().plan
     bindings = [item for item in plan.actions if isinstance(item, BindPhoneToExtension)]
@@ -895,6 +901,19 @@ def test_inventory_preserves_runtime_model_and_interfaces():
     router = next(item for item in items if item.device_name == "HQ-R1")
     assert router.model == "2911"
     assert router.interfaces == ["Gi0/0"]
+
+
+def test_voice_runtime_requires_an_explicit_phone_control_port():
+    arguments = (lambda: [], lambda _source: True, lambda _source, _timeout: "{}")
+
+    with pytest.raises(TypeError, match="phone_control"):
+        PacketTracerEnterpriseVoiceRuntime(
+            *arguments, ios_readiness=lambda _name: True,
+        )
+    with pytest.raises(ValueError, match="explicit PhoneControlPort"):
+        PacketTracerEnterpriseVoiceRuntime(
+            *arguments, ios_readiness=lambda _name: True, phone_control=None,
+        )
 
 
 def test_legacy_ui_driver_is_encapsulated_and_execution_method_is_preserved():

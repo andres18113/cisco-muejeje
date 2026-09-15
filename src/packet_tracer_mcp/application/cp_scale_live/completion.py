@@ -6,7 +6,13 @@ from datetime import datetime, timezone
 
 from .cleanup import CPScaleCleanup
 from .checkpoint import CPScaleCheckpointDecision
-from .contracts import CPScalePreflightOutcome, CPScalePreflightResult
+from .contracts import (
+    CPScaleBackendQualificationPolicy,
+    CPScalePreflightOutcome,
+    CPScalePreflightResult,
+    CPScaleQualificationStatus,
+    call_observations_required,
+)
 from .run_contracts import CPScaleStageProgress, CPScaleRunReplayAudit, CPScaleTerminalEvent, CPScaleCleanupResult, CPScaleCleanupRealtime
 from ..use_cases.apply_voice import call_observation_matches_expected_result
 from ..use_cases.compose_cp_scale_canonical import (
@@ -37,10 +43,16 @@ class CPScaleBoundedTargetReview:
 
 @dataclass(frozen=True)
 class CPScaleFullQualificationReview:
-    """The whole run's replay audit FULL closure accepted, or why it refused."""
+    """The whole run's replay audit FULL closure accepted, or why it refused.
+
+    ``call_behavior`` records how the accepted closure treated planned calls:
+    QUALIFIED when every call carried exact VERIFIED evidence, UNQUALIFIED when
+    the backend's declared policy kept call behavior out of acceptance.
+    """
 
     replay: CPScaleRunReplayAudit | None
     error: str
+    call_behavior: CPScaleQualificationStatus | None = None
 
 
 @dataclass(frozen=True)
@@ -192,6 +204,82 @@ def _full_call_acceptance_error(
     return ""
 
 
+# What a planned call may honestly carry where the backend cannot govern calls:
+# skipped for an unqualified capability, or attempted without an observation.
+_UNQUALIFIED_CALL_STATUSES = frozenset({
+    ActionExecutionStatus.SKIPPED,
+    ActionExecutionStatus.UNOBSERVABLE,
+})
+
+
+def _unqualified_call_behavior_error(
+    voice_plan: VoicePlan,
+    voice_result: VoiceApplicationResult | None,
+    canonical_voice: CPScaleCanonicalVoiceEvidence,
+) -> str:
+    """Keep planned calls outside FULL acceptance where the backend cannot govern them.
+
+    No observation is required, and a skipped or unobservable call is not a
+    failure. Nothing is promoted either: an observation claiming VERIFIED,
+    FAILED, or any other behavior through this backend refuses closure instead
+    of being accepted or reclassified.
+    """
+    expectations = tuple(voice_plan.call_expectations)
+    prefix = "the REMAINING call behavior is UNQUALIFIED on this backend, but"
+    observations = tuple(voice_result.calls) if voice_result is not None else ()
+    observed_ids = [item.call_expectation_id for item in observations]
+    if (
+        len(set(observed_ids)) != len(observed_ids)
+        or not set(observed_ids) <= {item.id for item in expectations}
+    ):
+        return prefix + " its call observations are not distinct planned calls."
+    claimed = sorted(
+        f"{item.call_expectation_id}={item.status.value.upper()}"
+        for item in observations
+        if item.status not in _UNQUALIFIED_CALL_STATUSES
+    )
+    if claimed:
+        return prefix + " observations claim call behavior: " + ", ".join(claimed) + "."
+    if (
+        canonical_voice.expected_call_count != len(expectations)
+        or canonical_voice.call_verified_count != 0
+        or canonical_voice.call_failed_count != 0
+        or any(
+            not error.startswith("missing:")
+            for error in canonical_voice.call_identity_errors
+        )
+    ):
+        return prefix + " canonical Voice call aggregates claim call behavior."
+    return ""
+
+
+def _qualification_policy_error(
+    policy: CPScaleBackendQualificationPolicy | None,
+    packet_tracer_version: str,
+) -> str:
+    """A declared policy must describe this build and keep governed Voice required."""
+    if policy is None:
+        return ""
+    if policy.backend_version != packet_tracer_version:
+        return "the backend qualification policy does not describe this run's Packet Tracer build."
+    unqualified = [
+        name for name, status in (
+            ("voice_configuration", policy.voice_configuration),
+            ("phone_registration", policy.phone_registration),
+            ("extension_binding", policy.extension_binding),
+        )
+        if status is not CPScaleQualificationStatus.QUALIFIED
+    ]
+    if unqualified:
+        return (
+            "the backend qualification policy leaves governed Voice evidence unqualified: "
+            + ", ".join(unqualified) + "."
+        )
+    if policy.intersite_calling is not False:
+        return "the backend qualification policy claims intersite calling, which FULL does not qualify."
+    return ""
+
+
 def _remaining_transition_error(previous: CPScaleStageProgress, final: CPScaleStageProgress) -> str:
     transition = final.transition
     scope = final.result.report.scope
@@ -238,6 +326,10 @@ def _full_qualification_error(preflight: CPScalePreflightResult, stages: tuple[C
             or authorization is None or authorization.authorized_target is not contract.target
             or authorization.authorized_sha != identity.source_head):
         return "the run lacks an admitted FULL authorization bound to its own source provenance."
+    policy = preflight.qualification_policy
+    policy_error = _qualification_policy_error(policy, identity.packet_tracer_version)
+    if policy_error:
+        return policy_error
     executed = tuple(item.projection.stage for item in stages)
     if executed != contract.execution_stages:
         return ("the executed stages are not the exact build sequence followed by REMAINING: "
@@ -260,7 +352,11 @@ def _full_qualification_error(preflight: CPScalePreflightResult, stages: tuple[C
             or canonical_voice.complete is not True or canonical_voice.stage != projection.stage.value
             or canonical_voice.expected_phone_count != len(voice.phone_assignments)):
         return "the REMAINING canonical Voice evidence is not complete for every planned phone."
-    call_error = _full_call_acceptance_error(voice, result.voice, canonical_voice)
+    call_error = (
+        _full_call_acceptance_error(voice, result.voice, canonical_voice)
+        if call_observations_required(contract, policy)
+        else _unqualified_call_behavior_error(voice, result.voice, canonical_voice)
+    )
     if call_error:
         return call_error
     forwarding = report.forwarding
@@ -346,18 +442,30 @@ class CPScaleCompletion:
         REMAINING is the single final authority. Every build stage and
         REMAINING must be VERIFIED under NO_MUTATION_REPLAY, and REMAINING must
         prove accepted configuration, a VERIFIED control plane, complete
-        canonical Voice, exact VERIFIED call evidence for every planned call,
-        every derived site and representative PC pair, two
+        canonical Voice, every derived site and representative PC pair, two
         workspace readbacks, and a zero-delta transition whose authorized scope
-        is exactly the scope that executed. Wireless association stays
-        unqualified and intersite calling stays off in the product, so neither
-        is a criterion here.
+        is exactly the scope that executed.
+
+        Planned calls follow the backend's declared qualification policy. Where
+        call behavior is qualified, or no policy was declared, every planned
+        call needs exact VERIFIED evidence. Where the policy leaves call
+        behavior UNQUALIFIED, the calls stay planned, no observation is
+        required, none may claim behavior, and the review records the
+        dimension as UNQUALIFIED. Wireless association stays unqualified and
+        intersite calling stays off in the product, so neither is a criterion.
         """
         error = _full_qualification_error(preflight, stages)
         if error:
             return CPScaleFullQualificationReview(None, "Full qualification closure refused: " + error)
         replay = _run_replay_audit(stages)
-        return CPScaleFullQualificationReview(replay, _replay_error("Full qualification", replay))
+        call_behavior = (
+            CPScaleQualificationStatus.QUALIFIED
+            if call_observations_required(preflight.target, preflight.qualification_policy)
+            else CPScaleQualificationStatus.UNQUALIFIED
+        )
+        return CPScaleFullQualificationReview(
+            replay, _replay_error("Full qualification", replay), call_behavior,
+        )
 
     def plan(self, target: CPScaleCanonicalTargetContract, command: CPScaleCheckpointDecision,
              *, retain_authorized: bool) -> CPScaleClosurePlan:

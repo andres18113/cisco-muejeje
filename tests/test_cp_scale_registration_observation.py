@@ -44,6 +44,9 @@ from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
 from src.packet_tracer_mcp.infrastructure.execution.enterprise_voice_runtime import (
     PacketTracerEnterpriseVoiceRuntime,
 )
+from src.packet_tracer_mcp.infrastructure.execution.phone_control import (
+    UnavailablePhoneControl,
+)
 from tests.test_e95_serial_orientation_pager_capture import (
     _PagedTerminal,
     _executor,
@@ -203,6 +206,7 @@ def _floor1_runtime(pages, *, complete: bool = True, present: bool = True):
         ios_readiness=lambda _name: True,
         registration_timeout_seconds=0.2,
         convergence_interval_seconds=0.05,
+        phone_control=UnavailablePhoneControl(),
     )
     for extension in _FLOOR1_EXTENSIONS:
         runtime._registration_hosts[f"phone-{extension}"] = "F1-R4"  # noqa: SLF001
@@ -412,6 +416,7 @@ def _endpoint_runtime(pages, *, getter: bool, ipv4: str = "", present: bool = Tr
         ios_readiness=lambda _name: True,
         registration_timeout_seconds=0.2,
         convergence_interval_seconds=0.05,
+        phone_control=UnavailablePhoneControl(),
     )
     for extension in _FLOOR1_EXTENSIONS:
         runtime._registration_hosts[f"phone-{extension}"] = "F1-R4"  # noqa: SLF001
@@ -563,6 +568,7 @@ def _dhcp_runtime(pages, *, dhcp, getter: bool = True):
         ios_readiness=lambda _name: True,
         registration_timeout_seconds=0.2,
         convergence_interval_seconds=0.05,
+        phone_control=UnavailablePhoneControl(),
     )
     for extension in _FLOOR1_EXTENSIONS:
         runtime._registration_hosts[f"phone-{extension}"] = "F1-R4"  # noqa: SLF001
@@ -640,6 +646,7 @@ def _device_runtime(pages, *, device_ipv4=None, device_dhcp=None):
         ios_readiness=lambda _name: True,
         registration_timeout_seconds=0.2,
         convergence_interval_seconds=0.05,
+        phone_control=UnavailablePhoneControl(),
     )
     for extension in _FLOOR1_EXTENSIONS:
         runtime._registration_hosts[f"phone-{extension}"] = "F1-R4"  # noqa: SLF001

@@ -10,6 +10,8 @@ from ...application.cp_scale_live.contracts import (
     CPScaleCallObservabilityEvidence,
     CPScaleCheckState,
 )
+from ...application.cp_scale_live.errors import CanonicalLiveFailure
+from ...application.ports.phone_control import PhoneControlPort
 from ...domain.enterprise.services.call_observability import (
     decode_call_observability_probe,
 )
@@ -47,6 +49,35 @@ class PacketTracerNativeUiPhoneControlProvider:
         )
         self.phone_control = UnavailablePhoneControl()
         self.capability_snapshot_hash = ""
+
+    def phone_control_for(
+        self,
+        *,
+        call_observations_required: bool,
+    ) -> PhoneControlPort:
+        """Bind a voice runtime without substituting one PhoneControl for another.
+
+        When the strict call gate applies, only the adapter that ``read``
+        selected from qualified evidence and a fresh readiness handshake is
+        returned; ``UnavailablePhoneControl`` is never substituted for it.
+        Otherwise the explicit unavailable control is returned, so calls stay
+        UNOBSERVABLE and are never promoted.
+        """
+
+        if not call_observations_required:
+            return UnavailablePhoneControl()
+        if (
+            not self.capability_snapshot_hash
+            or not isinstance(
+                self.phone_control, PacketTracerNativeUiPhoneControlAdapter,
+            )
+        ):
+            raise CanonicalLiveFailure(
+                "The strict call gate applies but preflight selected no "
+                "qualified PhoneControl; UnavailablePhoneControl is never "
+                "substituted for call evidence."
+            )
+        return self.phone_control
 
     def read(self, packet_tracer_version: str) -> CPScaleCallObservabilityEvidence:
         self.phone_control = UnavailablePhoneControl()

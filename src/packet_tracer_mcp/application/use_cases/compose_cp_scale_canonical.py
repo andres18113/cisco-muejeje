@@ -176,6 +176,9 @@ class CPScaleCanonicalTargetContract:
     require_cleanup: bool
     precleanup_closure: str
     cleaned_closure: str
+    # The target plans governed calls. Whether their observations are required
+    # also depends on the backend qualification policy: see
+    # ``call_observations_required`` in ``cp_scale_live.contracts``.
     requires_call_observability: bool = False
     call_expectation_results: tuple[str, ...] = ()
     call_provider_id: str = ""

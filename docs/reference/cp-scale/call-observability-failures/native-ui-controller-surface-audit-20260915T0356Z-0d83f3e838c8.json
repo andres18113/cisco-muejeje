@@ -1,0 +1,116 @@
+{
+  "schema": "call-observability-controller-audit-v1",
+  "classification": "UNOBSERVABLE",
+  "authority": "DIAGNOSTIC_ONLY",
+  "scope": "operator-approved-native-ui-surface-probe",
+  "probe_identity": "uiaprobe-20260915-7960a",
+  "source_sha": "0d83f3e838c8ff704eac7031ce2288a0794b0300",
+  "packet_tracer_version": "9.0.1.0858",
+  "cause": "NO_STRUCTURED_CALL_API_AND_NO_UIA_PATTERN_PATH_TO_PHONE_DIALOG",
+  "structured_call_api": {
+    "status": "NOT_AVAILABLE",
+    "references": [
+      "docs/architecture/enterprise-voice.md",
+      "src/packet_tracer_mcp/domain/enterprise/models/voice_plan.py"
+    ]
+  },
+  "native_ui_surface": {
+    "method": "windows_ui_automation_patterns_without_coordinates",
+    "fixture": {
+      "model": "7960",
+      "devices_created": 1,
+      "links_created": 0
+    },
+    "main_window_descendants_enumerated": 140,
+    "main_window_descendants_naming_fixture": 0,
+    "workspace_list_row_cell_patterns": [
+      "Invoke",
+      "Value",
+      "GridItem",
+      "SelectionItem",
+      "TableItem"
+    ],
+    "actions": [
+      {
+        "action": "select_name_cell",
+        "outcome": "RETURNED",
+        "device_dialog_opened": false
+      },
+      {
+        "action": "invoke_model_cell",
+        "outcome": "RETURNED",
+        "device_dialog_opened": false
+      }
+    ],
+    "not_attempted": [
+      {
+        "action": "invoke_name_cell",
+        "reason": "A possible in-place rename would break exact-identity cleanup."
+      }
+    ],
+    "device_dialog_reached": false,
+    "gui_tab_reached": false
+  },
+  "controller": {
+    "status": "UNAVAILABLE",
+    "readiness_receipt_possible": false
+  },
+  "cleanup": {
+    "owned_devices_removed": 1,
+    "first_semantic_devices": 0,
+    "first_links": 0,
+    "second_semantic_devices": 0,
+    "second_links": 0,
+    "realtime_restored": true,
+    "primary_pid_stable": true
+  },
+  "forbidden_scope": {
+    "full_qualification_executed": false,
+    "router0_executed": false,
+    "router3_executed": false,
+    "call_observability_qualification_executed": false
+  },
+  "raw_evidence": {
+    "root": "LOCALAPPDATA/Cisco-MCP/native-ui-inventory/uiaprobe-20260915-7960a",
+    "tracked": false,
+    "local_preservation": true,
+    "files": [
+      {
+        "name": "preflight.json",
+        "digest": "772cf3d482ba539bed83e7b905d4ee9329230a0018df21198ccde9a59f86329c"
+      },
+      {
+        "name": "hold.json",
+        "digest": "9dc2e2fac47eaed8ad24ed931032dc34e8358f8d6b1799d0659a12f0f6e93c3c"
+      },
+      {
+        "name": "holding.json",
+        "digest": "3ea7e71f1885971590d0df7f38262f4406e5788169512471401ba9ad4c1381e1"
+      },
+      {
+        "name": "workspace-list-empty.raw.json",
+        "digest": "126b42d724620b6c7bd811761eda4aef7668ef4c67a38140c7371b305d622a0b"
+      },
+      {
+        "name": "workspace-list-with-phone.raw.json",
+        "digest": "6d910dabb43c3135732d52b5772246a7d94a9331b31654e6e9038c9602ac2583"
+      },
+      {
+        "name": "workspace-list-after-select.raw.json",
+        "digest": "966a4839f9a66c06494e6c560f0028abdcc4d1b500c025a6c7c1f30a933a49b7"
+      },
+      {
+        "name": "operator-scripts/uia_probe_session.py",
+        "digest": "4a2b2ca721503cdcb3f9423e8c007b690ba75b675e4b9da14814c899d66693ff"
+      },
+      {
+        "name": "operator-scripts/uia_tool.ps1",
+        "digest": "100e71aa0c9f8fe2ff6f485196a28456d0a7c965cba5a8998f50b8fc9a285187"
+      },
+      {
+        "name": "operator-scripts/show_tree.ps1",
+        "digest": "3d89285792951a680220ea94191c9a5ce738144134520f8c99092fd5bac4e583"
+      }
+    ]
+  }
+}

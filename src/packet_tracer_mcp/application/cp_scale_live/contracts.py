@@ -400,6 +400,60 @@ class CPScaleCallObservabilityEvidence:
         )
 
 
+class CPScaleQualificationStatus(str, Enum):
+    QUALIFIED = "qualified"
+    UNQUALIFIED = "unqualified"
+
+
+@dataclass(frozen=True)
+class CPScaleBackendQualificationPolicy:
+    """What one backend build can govern inside FULL acceptance.
+
+    The backend declares it; CP-SCALE only reads it. An UNQUALIFIED dimension
+    keeps its expectations in the plan, but its observations are neither FAILED
+    nor VERIFIED, and FULL records the dimension instead of requiring it. A
+    backend that qualifies call behavior keeps the strict call gate.
+    """
+
+    backend: str
+    backend_version: str
+    voice_configuration: CPScaleQualificationStatus
+    phone_registration: CPScaleQualificationStatus
+    extension_binding: CPScaleQualificationStatus
+    call_behavior: CPScaleQualificationStatus
+    wireless_association: CPScaleQualificationStatus
+    intersite_calling: bool
+
+    def dimensions(self) -> dict[str, str | bool]:
+        return {
+            "voice_configuration": self.voice_configuration.value,
+            "phone_registration": self.phone_registration.value,
+            "extension_binding": self.extension_binding.value,
+            "call_behavior": self.call_behavior.value,
+            "wireless_association": self.wireless_association.value,
+            "intersite_calling": self.intersite_calling,
+        }
+
+
+def call_observations_required(
+    target: CPScaleCanonicalTargetContract,
+    policy: CPScaleBackendQualificationPolicy | None,
+) -> bool:
+    """Whether the strict FULL call gate applies to this target and backend.
+
+    Only an explicit backend declaration of UNQUALIFIED call behavior lifts the
+    gate; an absent policy keeps it.
+    """
+
+    return bool(
+        target.requires_call_observability
+        and (
+            policy is None
+            or policy.call_behavior is not CPScaleQualificationStatus.UNQUALIFIED
+        )
+    )
+
+
 class CPScalePreflightOutcome(str, Enum):
     """A local continuation decision, never product admission."""
 
@@ -634,6 +688,7 @@ class CPScalePreflightResult:
             state=CPScaleCheckState.NOT_RUN,
         ),
     )
+    qualification_policy: CPScaleBackendQualificationPolicy | None = None
 
     @property
     def evidence_coherent(self) -> bool:
@@ -650,10 +705,22 @@ class CPScalePreflightResult:
         ):
             return False
         authorization = self.live_authorization
+        policy = self.qualification_policy
+        # An absent policy keeps the strict call gate; a declared one must
+        # describe exactly the build this session observed.
         call_observability_coherent = (
-            self.call_observability.passed_coherently
-            if self.target.requires_call_observability
-            else self.call_observability.state is CPScaleCheckState.NOT_RUN
+            (
+                self.call_observability.passed_coherently
+                if call_observations_required(self.target, policy)
+                else self.call_observability.state is CPScaleCheckState.NOT_RUN
+            )
+            and (
+                policy is None
+                or (
+                    isinstance(policy, CPScaleBackendQualificationPolicy)
+                    and policy.backend_version == identity.packet_tracer_version
+                )
+            )
         )
         # Every canonical target runs only under an authorization for itself,
         # bound to the exact repository and session provenance observed here.

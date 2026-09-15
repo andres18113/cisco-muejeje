@@ -24,6 +24,7 @@ from packet_tracer_mcp.application.cp_scale_live import (
     CPScaleLiveAuthorizationRequest,
     CPScaleLiveRequest,
     CPScaleLocalPreflight,
+    call_observations_required,
 )
 from packet_tracer_mcp.application.cp_scale_live.backend import CPScaleBackendQualification
 from packet_tracer_mcp.application.cp_scale_live.build_policy import CPScaleBuildPolicy
@@ -60,6 +61,9 @@ from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
 )
 from packet_tracer_mcp.infrastructure.catalog.control_plane_capabilities import (
     packet_tracer_control_plane_capabilities,
+)
+from packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
+    packet_tracer_cp_scale_qualification_policy,
 )
 from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     PacketTracerEnterpriseConfigurationRuntime,
@@ -126,6 +130,7 @@ def build_local_preflight(
         expected_branch=EXPECTED_BRANCH,
         expected_upstream=EXPECTED_UPSTREAM,
         target_resolver=canonical_cp_scale_target_contract,
+        qualification_policy_resolver=packet_tracer_cp_scale_qualification_policy,
     )
 
 def _inventory(physical: PacketTracerPhysicalTopologyRuntime) -> list[dict]:
@@ -237,9 +242,13 @@ def build_coordinator(request: CPScaleLiveRequest, *, governed_root: Path) -> CP
             transport.send, transport.send_and_wait, l3_timeout_seconds=20.0,
             trunk_transition_observer=observation.trunk_transition)
         control = PacketTracerEnterpriseControlPlaneRuntime(lambda: _inventory(physical), transport.send, transport.send_and_wait)
+        target = canonical_cp_scale_target_contract(request.target_stage)
+        policy = (packet_tracer_cp_scale_qualification_policy(request.packet_tracer_version)
+                  if target.requires_call_observability else None)
         voice = PacketTracerEnterpriseVoiceRuntime(lambda: _inventory(physical), transport.send, transport.send_and_wait,
             registration_timeout_seconds=180.0, convergence_interval_seconds=5.0,
-            phone_control=phone_control_provider.phone_control)
+            phone_control=phone_control_provider.phone_control_for(
+                call_observations_required=call_observations_required(target, policy)))
         return CPScaleRuntimeResources(configuration, control, voice)
 
     def session_factory() -> PacketTracerCPScaleSession:

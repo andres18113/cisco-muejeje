@@ -140,6 +140,13 @@ def run_evidence(report: CPScaleRunReport) -> dict[str, object]:
             "driver_source_sha256": call.driver_source_sha256,
             "error": call.error,
         }
+    if preflight.qualification_policy is not None:
+        policy = preflight.qualification_policy
+        value["qualification_policy"] = {
+            "backend": policy.backend,
+            "backend_version": policy.backend_version,
+            **policy.dimensions(),
+        }
     if preflight.process.state is not CPScaleCheckState.NOT_RUN:
         value["packet_tracer_processes"] = [process_record_mapping(item) for item in preflight.process.processes]
     for name in ("hard_stop", "failure", "closure_scope", "closure",

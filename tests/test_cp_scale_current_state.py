@@ -11,6 +11,9 @@ from pathlib import Path
 
 import pytest
 
+from src.packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
+    packet_tracer_cp_scale_qualification_policy,
+)
 from tests.cp_scale_historical_state import load_historical_pre_router0
 from tests.handoff_state import parse_handoff_state
 
@@ -175,22 +178,45 @@ def test_current_state_separates_operational_authority_from_history():
     }
     assert operational["live_execution_authorized"] is False
     assert operational["next_active_step"] == (
-        "READY_FOR_EXPLICIT_CALL_OBSERVABILITY_QUALIFICATION"
+        "READY_FOR_EXPLICIT_FULL_QUALIFICATION_LIVE_AUTHORIZATION"
     )
-    call = operational["full_qualification"]["call_observability"]
+    full = operational["full_qualification"]
+    assert full["live_execution_authorized"] is False
+    policy = packet_tracer_cp_scale_qualification_policy("9.0.1.0858")
+    assert full["qualification_policy"] == {
+        "authority": "PACKET_TRACER_DECLARED_BACKEND_POLICY",
+        "source": (
+            "src/packet_tracer_mcp/infrastructure/catalog/"
+            "cp_scale_qualification_policy.py"
+        ),
+        "backend": policy.backend,
+        "backend_version": policy.backend_version,
+        **policy.dimensions(),
+    }
+    assert (ROOT / full["qualification_policy"]["source"]).is_file()
+    call = full["call_observability"]
     assert call == {
-        "required": True,
-        "provider_id": "packet-tracer-native-ui-mailbox-v1",
-        "execution_method": "packet_tracer_native_ui",
-        "packet_tracer_version": "9.0.1.0858",
-        "call_control_models": ["2811"],
-        "phone_models": ["7960"],
-        "expectation_results": ["established", "not_connected"],
-        "qualification_scope": "call-observability-qualification",
-        "qualification": "NOT_VERIFIED",
+        "required": False,
+        "call_behavior": "unqualified",
+        "strict_gate": "APPLIES_ONLY_WHEN_BACKEND_POLICY_QUALIFIES_CALL_BEHAVIOR",
+        "call_expectations_in_plan": True,
+        "full_preflight": "CALL_PROVIDER_NOT_REQUIRED",
         "provider_qualified": False,
-        "full_preflight": "BLOCKED_BEFORE_PACKET_TRACER_MUTATION",
-        "evidence": None,
+        "controller_audit": {
+            "classification": "UNOBSERVABLE",
+            "authority": "DIAGNOSTIC_ONLY",
+            "cause": "NO_STRUCTURED_CALL_API_AND_NO_UIA_PATTERN_PATH_TO_PHONE_DIALOG",
+            "artifact": {
+                "path": (
+                    "docs/reference/cp-scale/call-observability-failures/"
+                    "native-ui-controller-surface-audit-20260915T0356Z-"
+                    "0d83f3e838c8.json"
+                ),
+                "sha256": (
+                    "4af171f8acff39ee532ba9abe880ebd420010c65de2a9600b08d0e5f5e251ec5"
+                ),
+            },
+        },
         "latest_attempt": {
             "classification": "BLOCKED",
             "authority": "DIAGNOSTIC_ONLY",
@@ -228,6 +254,34 @@ def test_current_state_separates_operational_authority_from_history():
         "second_links": 0,
         "realtime_restored": True,
         "mailbox_entries_after": [],
+    }
+    audit = call["controller_audit"]
+    audit_raw = (ROOT / audit["artifact"]["path"]).read_bytes()
+    assert hashlib.sha256(audit_raw).hexdigest() == audit["artifact"]["sha256"]
+    audit_evidence = json.loads(audit_raw)
+    assert audit_evidence["classification"] == audit["classification"]
+    assert audit_evidence["authority"] == audit["authority"]
+    assert audit_evidence["cause"] == audit["cause"]
+    assert audit_evidence["structured_call_api"]["status"] == "NOT_AVAILABLE"
+    assert audit_evidence["native_ui_surface"]["device_dialog_reached"] is False
+    assert audit_evidence["controller"] == {
+        "status": "UNAVAILABLE",
+        "readiness_receipt_possible": False,
+    }
+    assert audit_evidence["forbidden_scope"] == {
+        "full_qualification_executed": False,
+        "router0_executed": False,
+        "router3_executed": False,
+        "call_observability_qualification_executed": False,
+    }
+    assert audit_evidence["cleanup"] == {
+        "owned_devices_removed": 1,
+        "first_semantic_devices": 0,
+        "first_links": 0,
+        "second_semantic_devices": 0,
+        "second_links": 0,
+        "realtime_restored": True,
+        "primary_pid_stable": True,
     }
 
     history_reference = document["historical_pre_router0"]
@@ -317,6 +371,8 @@ def test_every_pinned_artifact_hash_survives_each_platform_checkout(autocrlf, eo
         "docs/reference/cp-scale/router3_successful_run.json",
         "docs/reference/cp-scale/call-observability-failures/"
         "call-observability-qualification-20260915T0201Z-334d5358cde8.json",
+        "docs/reference/cp-scale/call-observability-failures/"
+        "native-ui-controller-surface-audit-20260915T0356Z-0d83f3e838c8.json",
         "docs/reference/cp-scale/history/pre_router0.json",
     }
     for path, sha256 in pins:

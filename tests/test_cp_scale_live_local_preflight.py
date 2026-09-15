@@ -21,6 +21,7 @@ from src.packet_tracer_mcp.application.cp_scale_live import (
     CPScalePreflightOutcome,
     CPScaleProcessObservation,
     CPScaleProcessRecord,
+    CPScaleQualificationStatus,
     CPScaleRepositoryObservation,
     CPScaleRuntimeEvidence,
     process_record_mapping,
@@ -31,6 +32,9 @@ from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical impo
 )
 from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
     PhoneExecutionMethod,
+)
+from src.packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
+    packet_tracer_cp_scale_qualification_policy,
 )
 from src.packet_tracer_mcp.infrastructure.execution.cp_scale_live_preflight import (
     GitCPScaleRepositoryReader,
@@ -78,6 +82,7 @@ def _service(
     processes=None,
     call_observability=None,
     events=None,
+    policy_resolver=None,
 ):
     calls = events if events is not None else []
     return CPScaleLocalPreflight(
@@ -139,6 +144,7 @@ def _service(
         process_error_policy=packet_tracer_process_error,
         expected_branch="feature/runtime-ripv2",
         expected_upstream="cisco/feature/runtime-ripv2",
+        qualification_policy_resolver=policy_resolver,
     )
 
 
@@ -581,6 +587,89 @@ def test_only_full_target_declares_call_observability_readiness():
     assert canonical_cp_scale_target_contract(
         "router3-branch"
     ).requires_call_observability is False
+
+
+def test_packet_tracer_policy_admits_full_without_reading_the_call_provider():
+    events = []
+    result = _inspect(_service(
+        events=events,
+        call_observability=CPScaleCallObservabilityEvidence(
+            state=CPScaleCheckState.FAILED,
+            error="must not be read",
+        ),
+        policy_resolver=packet_tracer_cp_scale_qualification_policy,
+    ))
+
+    assert events == ["runtime", "imports", "repository", "processes"]
+    assert result.outcome is CPScalePreflightOutcome.ADMITTED
+    assert result.call_observability.state is CPScaleCheckState.NOT_RUN
+    assert result.qualification_policy == packet_tracer_cp_scale_qualification_policy(
+        "9.0.1.0858",
+    )
+    assert result.qualification_policy.call_behavior is (
+        CPScaleQualificationStatus.UNQUALIFIED
+    )
+    assert result.evidence_coherent is True
+
+
+def test_backend_qualifying_call_behavior_keeps_the_strict_provider_gate():
+    qualified = replace(
+        packet_tracer_cp_scale_qualification_policy("9.0.1.0858"),
+        call_behavior=CPScaleQualificationStatus.QUALIFIED,
+    )
+    events = []
+    result = _inspect(_service(
+        events=events,
+        call_observability=CPScaleCallObservabilityEvidence(
+            state=CPScaleCheckState.FAILED,
+            required=True,
+            packet_tracer_version="9.0.1.0858",
+            error="No qualified observable PhoneControl provider is available.",
+        ),
+        policy_resolver=lambda _version: qualified,
+    ))
+
+    assert events == ["runtime", "imports", "repository", "call_observability"]
+    assert result.outcome is CPScalePreflightOutcome.REJECTED
+    assert result.issues == (
+        "No qualified observable PhoneControl provider is available.",
+    )
+    assert result.process.state is CPScaleCheckState.NOT_RUN
+
+
+@pytest.mark.parametrize("defect", ("undeclared-build", "foreign-build"))
+def test_unresolvable_or_foreign_policy_rejects_before_provider_or_processes(defect):
+    def resolver(version):
+        if defect == "undeclared-build":
+            return packet_tracer_cp_scale_qualification_policy("9.0.2.0000")
+        return replace(
+            packet_tracer_cp_scale_qualification_policy(version),
+            backend_version="9.0.2.0000",
+        )
+
+    events = []
+    result = _inspect(_service(events=events, policy_resolver=resolver))
+
+    assert events == ["runtime", "imports", "repository"]
+    assert result.outcome is CPScalePreflightOutcome.REJECTED
+    assert "qualification policy" in result.issues[0]
+    assert result.qualification_policy is None
+    assert result.process.state is CPScaleCheckState.NOT_RUN
+
+
+@pytest.mark.parametrize("target", ("router0-branch", "router3-branch"))
+def test_bounded_router_targets_never_resolve_the_full_policy(target):
+    resolved = []
+
+    result = _inspect(
+        _service(policy_resolver=resolved.append),
+        _request(target_stage=target),
+    )
+
+    assert result.outcome is CPScalePreflightOutcome.ADMITTED
+    assert resolved == []
+    assert result.qualification_policy is None
+    assert result.call_observability.state is CPScaleCheckState.NOT_RUN
 
 
 @pytest.mark.parametrize(

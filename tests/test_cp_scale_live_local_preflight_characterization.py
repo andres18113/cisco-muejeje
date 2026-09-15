@@ -254,7 +254,7 @@ def test_process_rejection_stops_before_the_backend_boundary():
     assert verdict["code"] == 2
     assert verdict["events"] == [
         "runtime", "imports", "repository", "dirty", "upstream-head",
-        "source-tree", "call-observability", "processes", "write",
+        "source-tree", "processes", "write",
     ]
     assert verdict["hard_stop"] == "No running Packet Tracer process was observed."
     assert verdict["processes"] == []
@@ -267,7 +267,7 @@ def test_success_crosses_every_local_boundary_once_and_only_then_reaches_backend
     assert verdict["escaped"] == "BackendReached: local preflight passed"
     assert verdict["events"] == [
         "runtime", "imports", "repository", "dirty", "upstream-head",
-        "source-tree", "call-observability", "processes", "backend",
+        "source-tree", "processes", "backend",
     ]
     assert verdict["write_count"] == 0
     assert verdict["hard_stop"] == ""

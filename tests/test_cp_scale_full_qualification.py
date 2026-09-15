@@ -19,6 +19,8 @@ from src.packet_tracer_mcp.application.cp_scale_live.completion import (
 )
 from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
     CPScaleMutationScope,
+    CPScaleQualificationStatus,
+    call_observations_required,
 )
 from src.packet_tracer_mcp.application.cp_scale_live.run_contracts import (
     CPScaleStageProgress,
@@ -46,6 +48,8 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
 from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     CallExpectation,
     CallExpectationResult,
+    VoiceCapabilityDimension,
+    VoiceCapabilityStatus,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
     CallState,
@@ -58,6 +62,9 @@ from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import 
 )
 from src.packet_tracer_mcp.domain.enterprise.services.control_plane_compiler import (
     control_plane_plan_semantic_hash,
+)
+from src.packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
+    packet_tracer_cp_scale_qualification_policy,
 )
 from tests.poe_delivery_capabilities import (
     compose_delivery_qualified_cp_scale_canonical,
@@ -661,6 +668,217 @@ def test_full_requires_exact_canonical_call_aggregates(defect):
     assert "canonical Voice call aggregates" in review.error
 
 
+PT_POLICY = packet_tracer_cp_scale_qualification_policy("9.0.1.0858")
+
+
+def _policy_preflight(policy=PT_POLICY):
+    return _inspect(_service(policy_resolver=lambda _version: policy), _request())
+
+
+def _unqualified_calls(stages):
+    """What E7 records for planned calls when call capability is not qualified."""
+
+    final = stages[-1].result
+    final.voice.calls[:] = [
+        CallVerificationResult(
+            call_expectation_id=expectation.id,
+            call_attempt_id="",
+            source_phone_id=expectation.source_phone_id,
+            dialed_extension=expectation.dialed_extension,
+            expected_result=expectation.expected_result,
+            expected_target_phone_id=expectation.expected_target_phone_id,
+            status=ActionExecutionStatus.SKIPPED,
+        )
+        for expectation in final.projection.voice.call_expectations
+    ]
+    final.report.canonical_voice = final.report.canonical_voice.model_copy(update={
+        "call_verified_count": 0,
+        "call_unobservable_count": len(final.projection.voice.call_expectations),
+    })
+    return final
+
+
+def test_packet_tracer_policy_declares_the_governed_voice_contract(preparation):
+    remaining = preparation.remaining
+    profile = preparation.composition.voice_capabilities["2811"]
+
+    assert (PT_POLICY.backend, PT_POLICY.backend_version) == (
+        "packet_tracer", "9.0.1.0858",
+    )
+    assert PT_POLICY.dimensions() == {
+        "voice_configuration": "qualified",
+        "phone_registration": "qualified",
+        "extension_binding": "qualified",
+        "call_behavior": "unqualified",
+        "wireless_association": "unqualified",
+        "intersite_calling": False,
+    }
+    # The declaration matches the measured Packet Tracer Voice profile.
+    assert profile.status(VoiceCapabilityDimension.CALL_CONTROL_CONFIG) is (
+        VoiceCapabilityStatus.SUPPORTED
+    )
+    assert profile.status(VoiceCapabilityDimension.PHONE_REGISTRATION) is (
+        VoiceCapabilityStatus.SUPPORTED
+    )
+    assert profile.status(VoiceCapabilityDimension.PHONE_EXTENSION_CONFIG) is (
+        VoiceCapabilityStatus.SUPPORTED
+    )
+    assert profile.status(VoiceCapabilityDimension.CALL_INITIATION) is not (
+        VoiceCapabilityStatus.SUPPORTED
+    )
+    assert profile.status(VoiceCapabilityDimension.INTERSITE_CALLING) is (
+        VoiceCapabilityStatus.UNSUPPORTED
+    )
+    # E7 keeps its backend-neutral call expectations and intersite stays off.
+    assert {
+        item.expected_result.value for item in remaining.voice.call_expectations
+    } == {"established", "not_connected"}
+    assert cp_scale_canonical_voice_intent(remaining.topology).intersite_calling is False
+    assert call_observations_required(FULL, PT_POLICY) is False
+    assert call_observations_required(FULL, None) is True
+    assert call_observations_required(FULL, replace(
+        PT_POLICY, call_behavior=CPScaleQualificationStatus.QUALIFIED,
+    )) is True
+    for target in (
+        CPScaleCanonicalTarget.ROUTER0_BRANCH, CPScaleCanonicalTarget.ROUTER3_BRANCH,
+    ):
+        assert call_observations_required(
+            canonical_cp_scale_target_contract(target), PT_POLICY,
+        ) is False
+    with pytest.raises(ValueError, match="No CP-SCALE qualification policy"):
+        packet_tracer_cp_scale_qualification_policy("9.0.2.0000")
+
+
+@pytest.mark.parametrize(
+    "status", (ActionExecutionStatus.SKIPPED, ActionExecutionStatus.UNOBSERVABLE),
+)
+def test_packet_tracer_policy_closes_full_without_call_observations(status):
+    stages = _full_run()
+    final = _unqualified_calls(stages)
+    final.voice.calls[:] = [
+        item.model_copy(update={"status": status}) for item in final.voice.calls
+    ]
+
+    review = CPScaleCompletion(cleanup=None).review_full_qualification(
+        _policy_preflight(), tuple(stages),
+    )
+
+    assert review.error == ""
+    assert review.replay.verified is True
+    assert review.call_behavior is CPScaleQualificationStatus.UNQUALIFIED
+    assert final.projection.voice.call_expectations
+    assert [item.status for item in final.voice.calls] == [status] * len(
+        final.projection.voice.call_expectations
+    )
+    assert final.report.canonical_voice.call_verified_count == 0
+    assert final.report.canonical_voice.call_failed_count == 0
+
+
+def test_strict_call_acceptance_records_qualified_call_behavior():
+    review = CPScaleCompletion(cleanup=None).review_full_qualification(
+        _inspect(_service(), _request()), tuple(_full_run()),
+    )
+
+    assert review.error == ""
+    assert review.call_behavior is CPScaleQualificationStatus.QUALIFIED
+
+
+@pytest.mark.parametrize(
+    "status",
+    (
+        ActionExecutionStatus.VERIFIED,
+        ActionExecutionStatus.FAILED,
+        ActionExecutionStatus.PARTIAL,
+        ActionExecutionStatus.DEPENDENCY_BLOCKED,
+    ),
+)
+def test_unqualified_call_behavior_never_accepts_or_reclassifies_claims(status):
+    stages = _full_run()
+    final = _unqualified_calls(stages)
+    final.voice.calls[0] = final.voice.calls[0].model_copy(update={"status": status})
+
+    review = CPScaleCompletion(cleanup=None).review_full_qualification(
+        _policy_preflight(), tuple(stages),
+    )
+
+    assert "call behavior is UNQUALIFIED" in review.error
+    assert status.value.upper() in review.error
+    assert review.call_behavior is None
+    assert final.voice.calls[0].status is status
+
+
+@pytest.mark.parametrize(
+    "update",
+    (
+        {"call_verified_count": 1},
+        {"call_failed_count": 1},
+        {"expected_call_count": 3},
+        {"call_identity_errors": ["unexpected:call/foreign"]},
+    ),
+)
+def test_unqualified_call_behavior_refuses_aggregates_that_claim_calls(update):
+    stages = _full_run()
+    final = _unqualified_calls(stages)
+    final.report.canonical_voice = final.report.canonical_voice.model_copy(
+        update=update,
+    )
+
+    review = CPScaleCompletion(cleanup=None).review_full_qualification(
+        _policy_preflight(), tuple(stages),
+    )
+
+    assert "canonical Voice call aggregates claim call behavior" in review.error
+
+
+def test_backend_qualifying_call_behavior_keeps_the_strict_call_gate():
+    stages = _full_run()
+    _unqualified_calls(stages)
+    qualified = replace(PT_POLICY, call_behavior=CPScaleQualificationStatus.QUALIFIED)
+
+    review = CPScaleCompletion(cleanup=None).review_full_qualification(
+        _policy_preflight(qualified), tuple(stages),
+    )
+
+    assert "FULL call acceptance" in review.error
+    assert review.call_behavior is None
+
+
+@pytest.mark.parametrize(
+    ("defect", "reason"),
+    (
+        ("voice", "canonical Voice evidence is not complete"),
+        ("voice_configuration", "governed Voice evidence unqualified: voice_configuration"),
+        ("phone_registration", "governed Voice evidence unqualified: phone_registration"),
+        ("extension_binding", "governed Voice evidence unqualified: extension_binding"),
+        ("intersite", "intersite calling"),
+        # A foreign-build policy already makes the preflight incoherent.
+        ("foreign-build", "admitted FULL authorization"),
+    ),
+)
+def test_unqualified_calls_never_relax_governed_voice_evidence(defect, reason):
+    stages = _full_run()
+    final = _unqualified_calls(stages)
+    policy = PT_POLICY
+    if defect == "voice":
+        final.report.canonical_voice = final.report.canonical_voice.model_copy(
+            update={"complete": False},
+        )
+    elif defect == "intersite":
+        policy = replace(PT_POLICY, intersite_calling=True)
+    elif defect == "foreign-build":
+        policy = replace(PT_POLICY, backend_version="9.0.2.0000")
+    else:
+        policy = replace(PT_POLICY, **{defect: CPScaleQualificationStatus.UNQUALIFIED})
+    preflight = replace(_policy_preflight(), qualification_policy=policy)
+
+    review = CPScaleCompletion(cleanup=None).review_full_qualification(
+        preflight, tuple(stages),
+    )
+
+    assert review.error.startswith("Full qualification closure refused")
+    assert reason in review.error
+
+
 @pytest.mark.parametrize(
     "failure", ["", "review", "restoration", "realtime", "cleanup-archive"],
 )
@@ -777,9 +995,20 @@ def test_current_state_pins_the_derived_full_preparation_without_live_authority(
     flows = preparation.composition.enterprise.traffic_flows
 
     assert operational["next_active_step"] == (
-        "READY_FOR_EXPLICIT_CALL_OBSERVABILITY_QUALIFICATION"
+        "READY_FOR_EXPLICIT_FULL_QUALIFICATION_LIVE_AUTHORIZATION"
     )
     assert operational["live_execution_authorized"] is False
+    assert {
+        key: full["qualification_policy"][key]
+        for key in ("backend", "backend_version", *PT_POLICY.dimensions())
+    } == {
+        "backend": PT_POLICY.backend,
+        "backend_version": PT_POLICY.backend_version,
+        **PT_POLICY.dimensions(),
+    }
+    assert full["call_observability"]["required"] is call_observations_required(
+        FULL, PT_POLICY,
+    )
     assert {
         key: full[key] for key in (
             "executed", "verification", "live_evidence_acquired",

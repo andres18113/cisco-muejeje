@@ -8,6 +8,7 @@ from .admission import (
     process_record_mapping,
 )
 from .contracts import (
+    CPScaleBackendQualificationPolicy,
     CPScaleCallObservabilityEvidence,
     CPScaleCheckState,
     CPScaleImportIsolationEvidence,
@@ -19,11 +20,14 @@ from .contracts import (
     CPScalePreflightResult,
     CPScaleProcessEvidence,
     CPScaleProcessRecord,
+    CPScaleQualificationStatus,
     CPScaleRepositoryEvidence,
     CPScaleRuntimeEvidence,
+    call_observations_required,
 )
 
 __all__ = [
+    "CPScaleBackendQualificationPolicy",
     "CPScaleCallObservabilityEvidence",
     "CPScaleCheckState",
     "CPScaleImportIsolationEvidence",
