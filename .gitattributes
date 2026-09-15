@@ -5,6 +5,7 @@ docs/reference/cp-scale/router0_failed_run_bundles.json text eol=lf diff
 docs/reference/cp-scale/router0_successful_run.json text eol=lf diff
 docs/reference/cp-scale/router3_successful_run.json text eol=lf diff
 docs/reference/cp-scale/history/*.json text eol=lf diff
+docs/reference/cp-scale/call-observability-failures/*.json text eol=lf diff
 docs/reference/cp-scale/voice_root_cause_implementation_retrospective.md text eol=lf diff
 docs/reference/cp-scale/NEXT_GOVERNED_POE_LIVE_RELAY.md text eol=lf diff
 docs/reference/cp-scale/canonical-live-evidence/*.json -text -diff

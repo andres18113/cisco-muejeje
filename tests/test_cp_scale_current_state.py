@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -288,6 +289,45 @@ def test_historical_artifact_hash_is_stable_across_platform_checkouts():
     attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8").splitlines()
 
     assert "docs/reference/cp-scale/history/*.json text eol=lf diff" in attributes
+
+
+def _pinned_artifacts(node: object) -> list[tuple[str, str]]:
+    if isinstance(node, list):
+        return [pin for item in node for pin in _pinned_artifacts(item)]
+    if not isinstance(node, dict):
+        return []
+    pins = [pin for value in node.values() for pin in _pinned_artifacts(value)]
+    if isinstance(node.get("path"), str) and isinstance(node.get("sha256"), str):
+        pins.append((node["path"], node["sha256"]))
+    return pins
+
+
+@pytest.mark.parametrize(
+    ("autocrlf", "eol"),
+    (("true", "crlf"), ("false", "lf")),
+    ids=("windows-checkout", "linux-checkout"),
+)
+def test_every_pinned_artifact_hash_survives_each_platform_checkout(autocrlf, eol):
+    # A pin names the bytes a checkout produces, not the bytes in the index:
+    # git's checkout filter on the index blob reproduces each platform's copy.
+    pins = _pinned_artifacts(json.loads(STATE_PATH.read_bytes()))
+
+    assert {path for path, _ in pins} == {
+        "docs/reference/cp-scale/router0_successful_run.json",
+        "docs/reference/cp-scale/router3_successful_run.json",
+        "docs/reference/cp-scale/call-observability-failures/"
+        "call-observability-qualification-20260915T0201Z-334d5358cde8.json",
+        "docs/reference/cp-scale/history/pre_router0.json",
+    }
+    for path, sha256 in pins:
+        checkout = subprocess.run(
+            [
+                "git", "-c", f"core.autocrlf={autocrlf}", "-c", f"core.eol={eol}",
+                "cat-file", "--filters", f":{path}",
+            ],
+            cwd=ROOT, capture_output=True, check=True,
+        ).stdout
+        assert hashlib.sha256(checkout).hexdigest() == sha256, path
 
 
 @pytest.mark.parametrize(
