@@ -35,7 +35,6 @@ theme:
     - search.suggest
     - search.highlight
     - content.code.copy
-    - content.tabs.link
     - toc.follow
   icon:
     repo: fontawesome/brands/github

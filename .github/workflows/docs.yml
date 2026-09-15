@@ -26,7 +26,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r docs/requirements.txt
+      # The docs extra in pyproject.toml is the only declaration of this build's
+      # dependencies.
+      - run: pip install -e ".[docs]"
       - run: mkdocs build --site-dir _site
       - uses: actions/upload-pages-artifact@v3
         with:

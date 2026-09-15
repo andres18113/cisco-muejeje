@@ -133,8 +133,9 @@ since been superseded by the closure recorded under "Current state".
 
 ## Closure criteria
 
-CP-SCALE closes only as `FULL_TARGET_VERIFIED` or as a mechanically established
-lower reliable envelope that leaves the 279-endpoint target intact. Timing is
-reported but is not an arbitrary pass/fail gate. Correctness, attributable
-evidence, and cleanup dominate. BGP, IPv6, redistribution, HSRP, E10, and any
-other scope not already in the Enterprise chain remain excluded.
+CP-SCALE closed as `CP_SCALE_FULL_QUALIFICATION_VERIFIED_AND_CLEANED`, recorded
+under "Current state" above and pinned by its hash-pinned success index. That
+closure, and no earlier formulation, is the authority. Timing is reported but is
+not a pass/fail gate: correctness, attributable evidence and a verified cleanup
+decide. BGP, IPv6, redistribution, HSRP, E10, and any other scope not already in
+the Enterprise chain remain excluded.

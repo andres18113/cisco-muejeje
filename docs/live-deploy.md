@@ -51,7 +51,8 @@ The module is then registered.
 
 ## Use it (each session)
 
-1. Open Cisco Packet Tracer 8.2 or later.
+1. Open Cisco Packet Tracer. The governed qualification records in this
+   repository were measured on `9.0.1.0858`; other builds are not qualified here.
 2. Open **Extensions → MCP BUILDER**. The MCP Control Center window appears.
 3. It connects to the bridge and starts polling. There is no snippet to paste.
 

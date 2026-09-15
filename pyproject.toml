@@ -17,6 +17,9 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8"]
+# Single source for the documentation build; .github/workflows/docs.yml installs
+# this extra instead of a separate requirements file that would drift from here.
+docs = ["mkdocs-material>=9.5"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

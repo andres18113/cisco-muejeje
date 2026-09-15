@@ -7,7 +7,7 @@
 | Python | 3.11+ | |
 | `mcp[cli]` | ≥ 1.13, < 2 | Installed automatically |
 | `pydantic` | ≥ 2.11, < 3 | Installed automatically |
-| Cisco Packet Tracer | 8.2 or later | Only for live deploy. The governed evidence in this repository was recorded on `9.0.1.0858` |
+| Cisco Packet Tracer | `9.0.1.0858` | Only for live deploy. That is the build every governed record in this repository was measured on; other builds are not qualified here |
 | MCP Control Center extension | V5 or later | Packet Tracer extension (`.pts`), only for live deploy. Source in `EXTENSION/`; this repository publishes no compiled build — see [Live Deploy Setup](live-deploy.md) |
 
 `pydantic` 2.11 or later is required. Current `mcp` releases build tool output
