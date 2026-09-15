@@ -141,6 +141,8 @@ def _full_call_acceptance_error(
             )
         if (
             observation.source_phone_id != expectation.source_phone_id
+            or observation.destination_phone_id
+            != expectation.expected_target_phone_id
             or observation.dialed_extension != expectation.dialed_extension
             or observation.expected_target_phone_id
             != expectation.expected_target_phone_id

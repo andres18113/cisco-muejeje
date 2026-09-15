@@ -174,8 +174,23 @@ def test_current_state_separates_operational_authority_from_history():
     }
     assert operational["live_execution_authorized"] is False
     assert operational["next_active_step"] == (
-        "READY_FOR_EXPLICIT_FULL_QUALIFICATION_LIVE_AUTHORIZATION"
+        "READY_FOR_EXPLICIT_CALL_OBSERVABILITY_QUALIFICATION"
     )
+    call = operational["full_qualification"]["call_observability"]
+    assert call == {
+        "required": True,
+        "provider_id": "packet-tracer-native-ui-mailbox-v1",
+        "execution_method": "packet_tracer_native_ui",
+        "packet_tracer_version": "9.0.1.0858",
+        "call_control_models": ["2811"],
+        "phone_models": ["7960"],
+        "expectation_results": ["established", "not_connected"],
+        "qualification_scope": "call-observability-qualification",
+        "qualification": "NOT_VERIFIED",
+        "provider_qualified": False,
+        "full_preflight": "BLOCKED_BEFORE_PACKET_TRACER_MUTATION",
+        "evidence": None,
+    }
 
     history_reference = document["historical_pre_router0"]
     assert set(history_reference) == {

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -101,10 +102,17 @@ from packet_tracer_mcp.infrastructure.diagnostics.cp_scale_live import (
 )
 from packet_tracer_mcp.infrastructure.persistence.cp_scale_live import CPScaleLivePersistence
 from packet_tracer_mcp.infrastructure.execution.cp_scale_live_session import PacketTracerCPScaleSession
+from packet_tracer_mcp.infrastructure.execution.call_observability_provider import (
+    PacketTracerNativeUiPhoneControlProvider,
+)
 from packet_tracer_mcp.infrastructure.observation.cp_scale_live import PacketTracerCPScaleObservations
 from packet_tracer_mcp.infrastructure.observation.cp_scale_live_run import CPScaleActiveProjection, PacketTracerCPScaleRunObservations
 
-def build_local_preflight(governed_root: Path) -> CPScaleLocalPreflight:
+def build_local_preflight(
+    governed_root: Path,
+    *,
+    call_observability_reader,
+) -> CPScaleLocalPreflight:
     """Compose local readers without granting any backend or product authority."""
 
     return CPScaleLocalPreflight(
@@ -113,6 +121,7 @@ def build_local_preflight(governed_root: Path) -> CPScaleLocalPreflight:
         import_reader=PacketTracerImportIsolationReader(),
         repository_reader=GitCPScaleRepositoryReader(),
         process_reader=PowerShellPacketTracerProcessReader(),
+        call_observability_reader=call_observability_reader,
         process_error_policy=packet_tracer_process_error,
         expected_branch=EXPECTED_BRANCH,
         expected_upstream=EXPECTED_UPSTREAM,
@@ -215,6 +224,12 @@ def build_coordinator(request: CPScaleLiveRequest, *, governed_root: Path) -> CP
     persistence = CPScaleLivePersistence(governed_root)
     presentation = CPScaleConsolePresentation(persistence.evidence_path)
     active = CPScaleActiveProjection()
+    capabilities = CPScaleCapabilityAdapters(governed_root)
+    phone_control_provider = PacketTracerNativeUiPhoneControlProvider(
+        governed_root=governed_root,
+        store=capabilities.verified_store,
+        exchange_dir=os.environ.get("PT_MCP_PHONE_CONTROL_EXCHANGE_DIR"),
+    )
 
     def runtimes(transport, physical) -> CPScaleRuntimeResources:
         observation = PacketTracerCPScaleRunObservations(transport, active)
@@ -223,7 +238,8 @@ def build_coordinator(request: CPScaleLiveRequest, *, governed_root: Path) -> CP
             trunk_transition_observer=observation.trunk_transition)
         control = PacketTracerEnterpriseControlPlaneRuntime(lambda: _inventory(physical), transport.send, transport.send_and_wait)
         voice = PacketTracerEnterpriseVoiceRuntime(lambda: _inventory(physical), transport.send, transport.send_and_wait,
-            registration_timeout_seconds=180.0, convergence_interval_seconds=5.0)
+            registration_timeout_seconds=180.0, convergence_interval_seconds=5.0,
+            phone_control=phone_control_provider.phone_control)
         return CPScaleRuntimeResources(configuration, control, voice)
 
     def session_factory() -> PacketTracerCPScaleSession:
@@ -239,8 +255,10 @@ def build_coordinator(request: CPScaleLiveRequest, *, governed_root: Path) -> CP
             control_runtime=resources.control_plane, voice_runtime=resources.voice,
             transport=session.transport, packet_tracer_version=request.packet_tracer_version)
 
-    capabilities = CPScaleCapabilityAdapters(governed_root)
-    return CPScaleLiveCoordinator(preflight=build_local_preflight(governed_root),
+    return CPScaleLiveCoordinator(preflight=build_local_preflight(
+        governed_root,
+        call_observability_reader=phone_control_provider,
+    ),
         session_factory=session_factory, stage_factory=stage_factory,
         observations_factory=lambda session: PacketTracerCPScaleRunObservations(session.transport, active),
         backend=CPScaleBackendQualification(compose=capabilities.compose, discovery_factory=capabilities.discovery,

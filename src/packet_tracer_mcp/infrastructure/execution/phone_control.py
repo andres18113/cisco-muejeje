@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from ...domain.enterprise.models.configuration_runtime import ActionExecutionStatus
-from ...domain.enterprise.models.voice_plan import CallExpectation
+from ...domain.enterprise.models.voice_plan import CallExpectation, VoicePlan
 from ...domain.enterprise.models.voice_runtime import (
     PhoneExecutionMethod,
     RuntimeCallObservation,
@@ -20,6 +20,9 @@ class UnavailablePhoneControl:
 
     execution_method = PhoneExecutionMethod.UNOBSERVABLE
 
+    def bind_plan(self, plan: VoicePlan) -> None:
+        return None
+
     def execute_call(
         self,
         expectation: CallExpectation,
@@ -30,6 +33,7 @@ class UnavailablePhoneControl:
             call_expectation_id=expectation.id,
             call_attempt_id=call_attempt_id,
             source_phone_id=expectation.source_phone_id,
+            destination_phone_id=expectation.expected_target_phone_id,
             dialed_extension=expectation.dialed_extension,
             status=ActionExecutionStatus.UNOBSERVABLE,
             connected=False,
@@ -53,6 +57,11 @@ class PacketTracerNativeUiPhoneControlAdapter:
     def __init__(self, driver: CallDriver) -> None:
         self._driver = driver
 
+    def bind_plan(self, plan: VoicePlan) -> None:
+        binder = getattr(self._driver, "bind_plan", None)
+        if callable(binder):
+            binder(plan)
+
     def execute_call(
         self,
         expectation: CallExpectation,
@@ -60,6 +69,30 @@ class PacketTracerNativeUiPhoneControlAdapter:
         started_ns: int,
     ) -> RuntimeCallObservation:
         observed = self._driver(expectation, call_attempt_id, started_ns)
+        identity_matches = bool(
+            observed.call_expectation_id == expectation.id
+            and observed.call_attempt_id == call_attempt_id
+            and observed.source_phone_id == expectation.source_phone_id
+            and observed.destination_phone_id == expectation.expected_target_phone_id
+            and observed.dialed_extension == expectation.dialed_extension
+            and observed.observed_after_ns >= started_ns
+        )
+        if not identity_matches:
+            observed = RuntimeCallObservation(
+                call_expectation_id=expectation.id,
+                call_attempt_id=call_attempt_id,
+                source_phone_id=expectation.source_phone_id,
+                destination_phone_id=expectation.expected_target_phone_id,
+                dialed_extension=expectation.dialed_extension,
+                status=ActionExecutionStatus.UNOBSERVABLE,
+                observed_after_ns=started_ns,
+                fresh_evidence=False,
+                evidence_method="native_ui_driver_observation_identity_invalid",
+                message=(
+                    "The native-UI driver returned a foreign or stale call "
+                    "observation; no call behavior is claimed."
+                ),
+            )
         return observed.model_copy(update={"execution_method": self.execution_method})
 
 
@@ -70,6 +103,11 @@ class StructuredPhoneControlAdapter:
 
     def __init__(self, driver: CallDriver) -> None:
         self._driver = driver
+
+    def bind_plan(self, plan: VoicePlan) -> None:
+        binder = getattr(self._driver, "bind_plan", None)
+        if callable(binder):
+            binder(plan)
 
     def execute_call(
         self,

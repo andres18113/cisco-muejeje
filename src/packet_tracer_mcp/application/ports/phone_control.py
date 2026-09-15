@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from ...domain.enterprise.models.voice_plan import CallExpectation
+from ...domain.enterprise.models.voice_plan import CallExpectation, VoicePlan
 from ...domain.enterprise.models.voice_runtime import (
     PhoneExecutionMethod,
     RuntimeCallObservation,
@@ -17,6 +17,8 @@ class PhoneControlPort(Protocol):
 
     @property
     def execution_method(self) -> PhoneExecutionMethod: ...
+
+    def bind_plan(self, plan: VoicePlan) -> None: ...
 
     def execute_call(
         self,

@@ -257,6 +257,15 @@ def test_full_preparation_keeps_the_unqualified_product_scope(preparation):
     )
     assert cp_scale_canonical_voice_intent(remaining.topology).intersite_calling is False
     assert remaining.voice.call_expectations
+    assert tuple(sorted({
+        item.host_model for item in remaining.voice.call_controls
+    })) == FULL.call_control_models
+    assert tuple(sorted({
+        item.model for item in remaining.voice.phone_assignments
+    })) == FULL.phone_models
+    assert tuple(sorted({
+        item.expected_result.value for item in remaining.voice.call_expectations
+    })) == FULL.call_expectation_results
     assert all(
         phone_sites.get(item.source_phone_id) == item.site_id
         and phone_sites.get(item.expected_target_phone_id, item.site_id) == item.site_id
@@ -308,6 +317,7 @@ def _verified_call(expectation, index):
         call_expectation_id=expectation.id,
         call_attempt_id=f"call-attempt/{index}",
         source_phone_id=expectation.source_phone_id,
+        destination_phone_id=expectation.expected_target_phone_id,
         dialed_extension=expectation.dialed_extension,
         status=ActionExecutionStatus.VERIFIED,
         states=states,
@@ -578,6 +588,7 @@ def test_full_requires_exactly_one_observation_per_planned_call(defect):
         ("unobservable-method", "observable execution method"),
         ("missing-evidence-method", "explicit evidence method"),
         ("foreign-identity", "foreign call identity"),
+        ("foreign-destination", "foreign call identity"),
         ("expected-result", "typed expected result"),
         ("established-disconnected", "ESTABLISHED behavior"),
         ("established-lifecycle", "required call lifecycle"),
@@ -599,6 +610,8 @@ def test_full_audits_each_verified_call_evidence_contract(defect, reason):
         update = {"evidence_method": ""}
     elif defect == "foreign-identity":
         update = {"source_phone_id": "phone/foreign"}
+    elif defect == "foreign-destination":
+        update = {"destination_phone_id": "phone/foreign"}
     elif defect == "expected-result":
         update = {"expected_result": CallExpectationResult.NOT_CONNECTED}
     elif defect == "established-disconnected":
@@ -764,7 +777,7 @@ def test_current_state_pins_the_derived_full_preparation_without_live_authority(
     flows = preparation.composition.enterprise.traffic_flows
 
     assert operational["next_active_step"] == (
-        "READY_FOR_EXPLICIT_FULL_QUALIFICATION_LIVE_AUTHORIZATION"
+        "READY_FOR_EXPLICIT_CALL_OBSERVABILITY_QUALIFICATION"
     )
     assert operational["live_execution_authorized"] is False
     assert {

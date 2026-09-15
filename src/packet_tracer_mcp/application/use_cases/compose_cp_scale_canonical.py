@@ -176,6 +176,11 @@ class CPScaleCanonicalTargetContract:
     require_cleanup: bool
     precleanup_closure: str
     cleaned_closure: str
+    requires_call_observability: bool = False
+    call_expectation_results: tuple[str, ...] = ()
+    call_provider_id: str = ""
+    call_control_models: tuple[str, ...] = ()
+    phone_models: tuple[str, ...] = ()
 
     @property
     def execution_stages(self) -> tuple[CPScaleCanonicalStage, ...]:
@@ -407,6 +412,11 @@ def canonical_cp_scale_target_contract(
         require_cleanup=True,
         precleanup_closure="CP_SCALE_FULL_QUALIFICATION_VERIFIED_PRECLEANUP",
         cleaned_closure="CP_SCALE_FULL_QUALIFICATION_VERIFIED_AND_CLEANED",
+        requires_call_observability=True,
+        call_expectation_results=("established", "not_connected"),
+        call_provider_id="packet-tracer-native-ui-mailbox-v1",
+        call_control_models=("2811",),
+        phone_models=("7960",),
     )
 
 

@@ -27,12 +27,20 @@ import sys
 import packet_tracer_mcp
 import packet_tracer_mcp.adapters.cli.cp_scale_live as live
 from packet_tracer_mcp.application.cp_scale_live import (
+    CPScaleCallObservabilityEvidence,
+    CPScaleCheckState,
     CPScaleImportIsolationObservation,
     CPScaleLiveAuthorizationRequest,
     CPScaleProcessObservation,
     CPScaleProcessRecord,
     CPScaleRepositoryObservation,
     CPScaleRuntimeEvidence,
+)
+from packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+    PhoneExecutionMethod,
+)
+from packet_tracer_mcp.infrastructure.execution.phone_control import (
+    UnavailablePhoneControl,
 )
 from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     EXPECTED_BRANCH,
@@ -100,6 +108,29 @@ class ProcessReader:
         ),))
 
 
+class CallObservabilityProvider:
+    def __init__(self, **kwargs):
+        self.phone_control = UnavailablePhoneControl()
+
+    def read(self, version):
+        events.append("call-observability")
+        return CPScaleCallObservabilityEvidence(
+            state=CPScaleCheckState.PASSED,
+            required=True,
+            expectation_results=("established", "not_connected"),
+            provider_id="packet-tracer-native-ui-mailbox-v1",
+            execution_method=PhoneExecutionMethod.PACKET_TRACER_NATIVE_UI,
+            packet_tracer_version=version,
+            call_control_models=("2811",),
+            phone_models=("7960",),
+            qualification_run_identity="call-observability-qualification/test",
+            qualification_executed_sha="d" * 40,
+            evidence_path="docs/reference/cp-scale/call-observability.json",
+            evidence_sha256="e" * 64,
+            driver_source_sha256="f" * 64,
+        )
+
+
 class BackendReached(RuntimeError):
     pass
 
@@ -118,6 +149,7 @@ live.PythonRuntimeEvidenceReader = RuntimeReader
 live.PacketTracerImportIsolationReader = IsolationReader
 live.GitCPScaleRepositoryReader = RepositoryReader
 live.PowerShellPacketTracerProcessReader = ProcessReader
+live.PacketTracerNativeUiPhoneControlProvider = CallObservabilityProvider
 live.PacketTracerHttpTransport = transport
 from packet_tracer_mcp.infrastructure.persistence.cp_scale_run_evidence import run_evidence
 original_factory = live.build_coordinator
@@ -222,7 +254,7 @@ def test_process_rejection_stops_before_the_backend_boundary():
     assert verdict["code"] == 2
     assert verdict["events"] == [
         "runtime", "imports", "repository", "dirty", "upstream-head",
-        "source-tree", "processes", "write",
+        "source-tree", "call-observability", "processes", "write",
     ]
     assert verdict["hard_stop"] == "No running Packet Tracer process was observed."
     assert verdict["processes"] == []
@@ -235,7 +267,7 @@ def test_success_crosses_every_local_boundary_once_and_only_then_reaches_backend
     assert verdict["escaped"] == "BackendReached: local preflight passed"
     assert verdict["events"] == [
         "runtime", "imports", "repository", "dirty", "upstream-head",
-        "source-tree", "processes", "backend",
+        "source-tree", "call-observability", "processes", "backend",
     ]
     assert verdict["write_count"] == 0
     assert verdict["hard_stop"] == ""

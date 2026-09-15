@@ -13,6 +13,7 @@ import pytest
 
 from src.packet_tracer_mcp.application.cp_scale_live import (
     CPScaleCheckState,
+    CPScaleCallObservabilityEvidence,
     CPScaleImportIsolationObservation,
     CPScaleLiveAuthorizationRequest,
     CPScaleLiveRequest,
@@ -26,6 +27,10 @@ from src.packet_tracer_mcp.application.cp_scale_live import (
 )
 from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalTarget,
+    canonical_cp_scale_target_contract,
+)
+from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+    PhoneExecutionMethod,
 )
 from src.packet_tracer_mcp.infrastructure.execution.cp_scale_live_preflight import (
     GitCPScaleRepositoryReader,
@@ -71,6 +76,7 @@ def _service(
     imports=None,
     repository=None,
     processes=None,
+    call_observability=None,
     events=None,
 ):
     calls = events if events is not None else []
@@ -103,6 +109,25 @@ def _service(
                 upstream_head=HEAD,
                 source_tree=TREE,
                 dirty=False,
+            ),
+            calls,
+        ),
+        call_observability_reader=Reader(
+            "call_observability",
+            call_observability or CPScaleCallObservabilityEvidence(
+                state=CPScaleCheckState.PASSED,
+                required=True,
+                expectation_results=("established", "not_connected"),
+                provider_id="packet-tracer-native-ui-mailbox-v1",
+                execution_method=PhoneExecutionMethod.PACKET_TRACER_NATIVE_UI,
+                packet_tracer_version="9.0.1.0858",
+                call_control_models=("2811",),
+                phone_models=("7960",),
+                qualification_run_identity="call-observability-qualification/run-1",
+                qualification_executed_sha="c" * 40,
+                evidence_path="docs/reference/cp-scale/call-observability.json",
+                evidence_sha256="d" * 64,
+                driver_source_sha256="e" * 64,
             ),
             calls,
         ),
@@ -157,7 +182,9 @@ def test_success_uses_the_real_coordinator_and_process_policy_with_controlled_re
     events = []
     result = _inspect(_service(events=events))
 
-    assert events == ["runtime", "imports", "repository", "processes"]
+    assert events == [
+        "runtime", "imports", "repository", "call_observability", "processes",
+    ]
     assert result.outcome is CPScalePreflightOutcome.ADMITTED
     assert result.issues == ()
     assert result.evidence_coherent is True
@@ -318,7 +345,11 @@ def test_authorization_binds_exact_repository_provenance(target):
     events = []
     result = _inspect(_service(events=events), _request(target_stage=target))
 
-    assert events == ["runtime", "imports", "repository", "processes"]
+    expected = ["runtime", "imports", "repository"]
+    if target == "full-qualification":
+        expected.append("call_observability")
+    expected.append("processes")
+    assert events == expected
     assert result.outcome is CPScalePreflightOutcome.ADMITTED
     authorization = result.live_authorization
     assert authorization is not None
@@ -400,6 +431,22 @@ def test_authorization_provenance_is_persisted_without_secrets():
         "upstream_head": HEAD,
         "source_tree": TREE,
     }
+    assert payload["call_observability"] == {
+        "state": "passed",
+        "required": True,
+        "expectation_results": ["established", "not_connected"],
+        "provider_id": "packet-tracer-native-ui-mailbox-v1",
+        "execution_method": "packet_tracer_native_ui",
+        "packet_tracer_version": "9.0.1.0858",
+        "call_control_models": ["2811"],
+        "phone_models": ["7960"],
+        "qualification_run_identity": "call-observability-qualification/run-1",
+        "qualification_executed_sha": "c" * 40,
+        "evidence_path": "docs/reference/cp-scale/call-observability.json",
+        "evidence_sha256": "d" * 64,
+        "driver_source_sha256": "e" * 64,
+        "error": "",
+    }
 
 
 def test_import_rejection_short_circuits_before_repository_and_processes():
@@ -455,11 +502,85 @@ def test_process_rejection_is_the_last_local_boundary_and_retains_empty_evidence
         processes=CPScaleProcessObservation(),
     ))
 
-    assert events == ["runtime", "imports", "repository", "processes"]
+    assert events == [
+        "runtime", "imports", "repository", "call_observability", "processes",
+    ]
     assert result.outcome is CPScalePreflightOutcome.REJECTED
     assert result.issues == ("No running Packet Tracer process was observed.",)
     assert result.process.state is CPScaleCheckState.FAILED
     assert result.process.processes == ()
+
+
+def test_full_without_qualified_phone_control_rejects_before_process_or_pt():
+    events = []
+    result = _inspect(_service(
+        events=events,
+        call_observability=CPScaleCallObservabilityEvidence(
+            state=CPScaleCheckState.FAILED,
+            required=True,
+            packet_tracer_version="9.0.1.0858",
+            error="No qualified observable PhoneControl provider is available.",
+        ),
+    ))
+
+    assert events == ["runtime", "imports", "repository", "call_observability"]
+    assert result.outcome is CPScalePreflightOutcome.REJECTED
+    assert result.issues == (
+        "No qualified observable PhoneControl provider is available.",
+    )
+    assert result.call_observability.state is CPScaleCheckState.FAILED
+    assert result.process.state is CPScaleCheckState.NOT_RUN
+
+
+@pytest.mark.parametrize(
+    ("change", "value"),
+    (
+        ("packet_tracer_version", "9.0.2.0000"),
+        ("provider_id", "foreign-provider"),
+        ("call_control_models", ("1941",)),
+        ("phone_models", ("7970",)),
+        ("qualification_executed_sha", "not-a-sha"),
+        ("evidence_sha256", "not-a-hash"),
+        ("driver_source_sha256", "not-a-hash"),
+    ),
+)
+def test_full_rejects_stale_or_foreign_call_qualification(change, value):
+    qualified = _service()._call_observability_reader.value
+    candidate = replace(qualified, **{change: value})
+
+    result = _inspect(_service(call_observability=candidate))
+
+    assert result.outcome is CPScalePreflightOutcome.REJECTED
+    assert result.process.state is CPScaleCheckState.NOT_RUN
+    assert "call observability" in result.issues[0].casefold()
+
+
+@pytest.mark.parametrize("target", ("router0-branch", "router3-branch"))
+def test_bounded_router_targets_do_not_acquire_or_require_call_provider(target):
+    events = []
+    result = _inspect(_service(
+        events=events,
+        call_observability=CPScaleCallObservabilityEvidence(
+            state=CPScaleCheckState.FAILED,
+            error="must not be read",
+        ),
+    ), _request(target_stage=target))
+
+    assert result.outcome is CPScalePreflightOutcome.ADMITTED
+    assert "call_observability" not in events
+    assert result.call_observability.state is CPScaleCheckState.NOT_RUN
+
+
+def test_only_full_target_declares_call_observability_readiness():
+    assert canonical_cp_scale_target_contract(
+        "full-qualification"
+    ).requires_call_observability is True
+    assert canonical_cp_scale_target_contract(
+        "router0-branch"
+    ).requires_call_observability is False
+    assert canonical_cp_scale_target_contract(
+        "router3-branch"
+    ).requires_call_observability is False
 
 
 @pytest.mark.parametrize(

@@ -23,6 +23,9 @@ from ...domain.enterprise.models.voice_plan import (
     VoiceCapabilityProfile,
     VoiceCapabilityStatus,
 )
+from ...domain.enterprise.services.call_observability import (
+    decode_call_observability_evidence,
+)
 
 
 _STATUS = {
@@ -46,6 +49,25 @@ def voice_capability_profile(
     """Translate one model's measured facts into the dimensions E7 gates on."""
     cme = _status(capabilities.supports_cme)
     dhcp = _status(capabilities.supports_dhcp_server)
+    call_authorities = [
+        authority
+        for evidence in capabilities.evidence
+        if (
+            authority := decode_call_observability_evidence(
+                evidence,
+                packet_tracer_version=(
+                    packet_tracer_version
+                    or capabilities.packet_tracer_version
+                    or ""
+                ),
+            )
+        ) is not None
+    ]
+    call_authority = call_authorities[-1] if call_authorities else None
+    call_observability = (
+        VoiceCapabilityStatus.SUPPORTED
+        if call_authority is not None else VoiceCapabilityStatus.UNOBSERVABLE
+    )
     return VoiceCapabilityProfile(
         model=capabilities.model,
         dimensions={
@@ -64,12 +86,8 @@ def voice_capability_profile(
             # No call driver exists in this codebase: the only shipped phone
             # control returns UNOBSERVABLE and never dials. Claiming otherwise
             # would let a call expectation look skipped rather than unbuilt.
-            VoiceCapabilityDimension.CALL_INITIATION: (
-                VoiceCapabilityStatus.UNOBSERVABLE
-            ),
-            VoiceCapabilityDimension.CALL_STATE_READBACK: (
-                VoiceCapabilityStatus.UNOBSERVABLE
-            ),
+            VoiceCapabilityDimension.CALL_INITIATION: call_observability,
+            VoiceCapabilityDimension.CALL_STATE_READBACK: call_observability,
             # The renderer refuses to emit intersite voice: it is not verified
             # on this backend, and that refusal is the honest status.
             VoiceCapabilityDimension.INTERSITE_CALLING: (
@@ -81,6 +99,9 @@ def voice_capability_profile(
             packet_tracer_version or capabilities.packet_tracer_version
         ),
         capability_readiness=dict(capabilities.capability_readiness),
+        call_observability_phone_models=(
+            list(call_authority.phone_models) if call_authority else []
+        ),
     )
 
 

@@ -14,6 +14,7 @@ from ..use_cases.compose_cp_scale_canonical import (
     canonical_cp_scale_target_contract,
 )
 from .contracts import (
+    CPScaleCallObservabilityEvidence,
     CPScaleCheckState,
     CPScaleImportIsolationEvidence,
     CPScaleLiveAuthorizationEvidence,
@@ -72,6 +73,12 @@ class CPScaleProcessReader(Protocol):
     def read(self) -> CPScaleProcessObservation: ...
 
 
+class CPScaleCallObservabilityReader(Protocol):
+    def read(
+        self, packet_tracer_version: str,
+    ) -> CPScaleCallObservabilityEvidence: ...
+
+
 ProcessErrorPolicy = Callable[
     [Sequence[Mapping[str, object]], str],
     str,
@@ -106,6 +113,7 @@ class CPScaleLocalPreflight:
         import_reader: CPScaleImportIsolationReader,
         repository_reader: CPScaleRepositoryReader,
         process_reader: CPScaleProcessReader,
+        call_observability_reader: CPScaleCallObservabilityReader,
         process_error_policy: ProcessErrorPolicy,
         expected_branch: str,
         expected_upstream: str,
@@ -116,6 +124,7 @@ class CPScaleLocalPreflight:
         self._import_reader = import_reader
         self._repository_reader = repository_reader
         self._process_reader = process_reader
+        self._call_observability_reader = call_observability_reader
         self._process_error_policy = process_error_policy
         self._expected_branch = expected_branch
         self._expected_upstream = expected_upstream
@@ -137,6 +146,9 @@ class CPScaleLocalPreflight:
             state=CPScaleCheckState.NOT_RUN,
         )
         not_run_process = CPScaleProcessEvidence(
+            state=CPScaleCheckState.NOT_RUN,
+        )
+        not_run_call_observability = CPScaleCallObservabilityEvidence(
             state=CPScaleCheckState.NOT_RUN,
         )
 
@@ -204,6 +216,25 @@ class CPScaleLocalPreflight:
                 live_authorization=authorization,
             )
 
+        call_observability = not_run_call_observability
+        if target.requires_call_observability:
+            call_observability = self._inspect_call_observability(
+                request.packet_tracer_version,
+                target,
+            )
+            if call_observability.state is not CPScaleCheckState.PASSED:
+                return CPScalePreflightResult(
+                    target=target,
+                    runtime=runtime,
+                    import_isolation=import_evidence,
+                    repository=repository,
+                    process=not_run_process,
+                    identity=None,
+                    issues=(call_observability.error,),
+                    live_authorization=authorization,
+                    call_observability=call_observability,
+                )
+
         identity = CPScaleLiveSessionIdentity(
             run_identity=run_identity,
             started_at=started_at,
@@ -227,6 +258,66 @@ class CPScaleLocalPreflight:
             identity=identity,
             issues=process_issues,
             live_authorization=authorization,
+            call_observability=call_observability,
+        )
+
+    def _inspect_call_observability(
+        self,
+        packet_tracer_version: str,
+        target: CPScaleCanonicalTargetContract,
+    ) -> CPScaleCallObservabilityEvidence:
+        try:
+            evidence = self._call_observability_reader.read(
+                packet_tracer_version,
+            )
+        except Exception as exc:
+            return CPScaleCallObservabilityEvidence(
+                state=CPScaleCheckState.FAILED,
+                required=True,
+                packet_tracer_version=packet_tracer_version,
+                error=(
+                    "Call observability readiness failed: "
+                    f"{type(exc).__name__}: {exc}"
+                ),
+            )
+        mismatch = (
+            not isinstance(evidence, CPScaleCallObservabilityEvidence)
+            or not evidence.passed_coherently
+            or evidence.packet_tracer_version != packet_tracer_version
+            or evidence.expectation_results != target.call_expectation_results
+            or evidence.provider_id != target.call_provider_id
+            or evidence.call_control_models != target.call_control_models
+            or evidence.phone_models != target.phone_models
+        )
+        if not mismatch:
+            return evidence
+        if (
+            isinstance(evidence, CPScaleCallObservabilityEvidence)
+            and evidence.state is CPScaleCheckState.FAILED
+            and evidence.error
+        ):
+            return evidence
+        detail = (
+            evidence.error
+            if isinstance(evidence, CPScaleCallObservabilityEvidence)
+            else "reader returned an invalid evidence type"
+        )
+        message = (
+            "FULL call observability evidence is unavailable, stale, "
+            "foreign, or incoherent."
+            + (f" {detail}" if detail else "")
+        )
+        if isinstance(evidence, CPScaleCallObservabilityEvidence):
+            return replace(
+                evidence,
+                state=CPScaleCheckState.FAILED,
+                error=message,
+            )
+        return CPScaleCallObservabilityEvidence(
+            state=CPScaleCheckState.FAILED,
+            required=True,
+            packet_tracer_version=packet_tracer_version,
+            error=message,
         )
 
     def _read_runtime(self) -> CPScaleRuntimeEvidence:

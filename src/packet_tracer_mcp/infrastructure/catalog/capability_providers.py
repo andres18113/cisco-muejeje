@@ -71,6 +71,32 @@ class ManualVerificationCapabilityProvider:
         ))
 
 
+class VerifiedCapabilityProvider:
+    """Expose the store's reviewed namespace without changing provenance."""
+
+    def __init__(
+        self,
+        store: CapabilitySnapshotStore,
+        packet_tracer_version: str | None = None,
+    ) -> None:
+        self._store = store
+        self._packet_tracer_version = packet_tracer_version
+
+    def evidence_for(
+        self, model: str, packet_tracer_version: str | None = None,
+    ) -> Iterable[CapabilityEvidence]:
+        version = packet_tracer_version or self._packet_tracer_version
+        for snapshot in self._store.list_verified(version):
+            for result in snapshot.session.results:
+                if result.model != model:
+                    continue
+                evidence = result.evidence()
+                if evidence is not None:
+                    yield evidence.model_copy(update={
+                        "source_detail": "verified-store:" + evidence.source_detail,
+                    })
+
+
 def _snapshot_evidence(snapshots, model: str, source: EvidenceSource) -> Iterable[CapabilityEvidence]:
     for snapshot in snapshots:
         for result in snapshot.session.results:

@@ -109,7 +109,7 @@ class RefusingTransport(Transport):
     def start(self, **kwargs):
         record("offline.start")
         raise RuntimeError("OFFLINE_START_FAILURE")
-live.build_local_preflight = lambda governed_root: LocalPreflight()
+live.build_local_preflight = lambda governed_root, **kwargs: LocalPreflight()
 live.PacketTracerHttpTransport = RefusingTransport
 request = CPScaleLiveRequest("9.0.1.0858", HEAD, False, "full-qualification", authorized("full-qualification"))
 coordinator = PRODUCT_SYMBOLS["build_coordinator"](request, governed_root=root)

@@ -36,6 +36,7 @@ from .capability_providers import (
     ProbeCapabilityProvider,
     RuntimeCapabilityProvider,
     StaticVerifiedCapabilityProvider,
+    VerifiedCapabilityProvider,
 )
 from ..persistence.capability_snapshot_store import CapabilitySnapshotStore
 
@@ -403,6 +404,7 @@ def packet_tracer_enterprise_capability_adapter(
     packet_tracer_version: str,
     *,
     store: CapabilitySnapshotStore | None = None,
+    verified_store: CapabilitySnapshotStore | None = None,
 ) -> EnterpriseCapabilityAdapter:
     """Build the productive, exact-version capability composition root."""
 
@@ -410,9 +412,11 @@ def packet_tracer_enterprise_capability_adapter(
     if not version:
         raise ValueError("An exact Packet Tracer version is required.")
     snapshots = store or CapabilitySnapshotStore()
+    reviewed = verified_store or snapshots
     return EnterpriseCapabilityAdapter(
         providers=[
             StaticVerifiedCapabilityProvider(measured_capability_evidence()),
+            VerifiedCapabilityProvider(reviewed, version),
             ManualVerificationCapabilityProvider(snapshots, version),
             ProbeCapabilityProvider(snapshots, version),
             RuntimeCapabilityProvider(snapshots, version),

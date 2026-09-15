@@ -1,6 +1,6 @@
 {
   "schema": "cp-scale-current-state-v5",
-  "updated_at": "2026-09-14T23:04:41Z",
+  "updated_at": "2026-09-15T01:21:51Z",
   "operational_state": {
     "authority": "HASH_PINNED_ROUTER0_AND_ROUTER3_SUCCESS_INDEXES",
     "router0": {
@@ -96,9 +96,30 @@
           "wireless_association": "unqualified",
           "intersite_calling": false
         }
+      },
+      "call_observability": {
+        "required": true,
+        "provider_id": "packet-tracer-native-ui-mailbox-v1",
+        "execution_method": "packet_tracer_native_ui",
+        "packet_tracer_version": "9.0.1.0858",
+        "call_control_models": [
+          "2811"
+        ],
+        "phone_models": [
+          "7960"
+        ],
+        "expectation_results": [
+          "established",
+          "not_connected"
+        ],
+        "qualification_scope": "call-observability-qualification",
+        "qualification": "NOT_VERIFIED",
+        "provider_qualified": false,
+        "full_preflight": "BLOCKED_BEFORE_PACKET_TRACER_MUTATION",
+        "evidence": null
       }
     },
-    "next_active_step": "READY_FOR_EXPLICIT_FULL_QUALIFICATION_LIVE_AUTHORIZATION",
+    "next_active_step": "READY_FOR_EXPLICIT_CALL_OBSERVABILITY_QUALIFICATION",
     "live_execution_authorized": false
   },
   "historical_pre_router0": {

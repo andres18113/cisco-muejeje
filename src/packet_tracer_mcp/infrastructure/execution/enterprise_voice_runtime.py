@@ -23,6 +23,7 @@ from ...domain.enterprise.models.voice_plan import (
     VoiceAction,
     VoicePhase,
     VoiceVerificationExpectation,
+    VoicePlan,
 )
 from ...domain.enterprise.models.voice_runtime import (
     RuntimeCallObservation,
@@ -1132,6 +1133,9 @@ class PacketTracerEnterpriseVoiceRuntime:
         return self._phone_control.execute_call(
             expectation, call_attempt_id, started_ns,
         )
+
+    def bind_call_plan(self, plan: VoicePlan) -> None:
+        self._phone_control.bind_plan(plan)
 
     def _wait_for_ios(self, device_name: str) -> bool:
         return self._ios.wait_until_ready(device_name).state.value == "operational_ready"

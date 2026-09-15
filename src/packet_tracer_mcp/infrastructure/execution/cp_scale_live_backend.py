@@ -10,6 +10,9 @@ from ...application.use_cases.capability_discovery import CapabilityDiscoverySer
 from ...application.use_cases.compose_cp_scale_canonical import compose_cp_scale_canonical
 from ...application.use_cases.qualify_cp_scale_live import read_git_repository_state
 from ..catalog.enterprise_capabilities import EnterpriseCapabilityAdapter
+from ..catalog.enterprise_capabilities import (
+    packet_tracer_enterprise_capability_adapter,
+)
 from ..persistence.capability_snapshot_store import CapabilitySnapshotStore
 from .probe_runtime import PacketTracerBridgeProbeRuntime
 
@@ -49,6 +52,7 @@ class CPScaleCapabilityAdapters:
     def __init__(self, governed_root: Path) -> None:
         self.root = governed_root
         self._store = None
+        self._verified_store = None
 
     @property
     def store(self):
@@ -56,8 +60,26 @@ class CPScaleCapabilityAdapters:
             self._store = CapabilitySnapshotStore(self.root / "data" / "capabilities")
         return self._store
 
+    @property
+    def verified_store(self):
+        if self._verified_store is None:
+            self._verified_store = CapabilitySnapshotStore(
+                self.root / "docs" / "reference" / "cp-scale"
+                / "call-capabilities"
+            )
+        return self._verified_store
+
     def compose(self, *, packet_tracer_version: str):
-        return compose_cp_scale_canonical(packet_tracer_version=packet_tracer_version, capability_store=self.store)
+        catalog = packet_tracer_enterprise_capability_adapter(
+            packet_tracer_version,
+            store=self.store,
+            verified_store=self.verified_store,
+        )
+        return compose_cp_scale_canonical(
+            packet_tracer_version=packet_tracer_version,
+            capability_store=self.store,
+            capability_catalog=catalog,
+        )
 
     def discovery(self, session, version: str):
         transport = session.transport

@@ -195,6 +195,8 @@ class VoiceRuntime(Protocol):
         self, expectation: CallExpectation, call_attempt_id: str, started_ns: int,
     ) -> RuntimeCallObservation: ...
 
+    def bind_call_plan(self, plan: VoicePlan) -> None: ...
+
 
 class VoiceApplicator:
     """Ejecuta sólo VoicePlan; nunca recompila E4, E5 ni E6."""
@@ -509,9 +511,12 @@ class VoiceApplicator:
                 fresh_evidence=item.fresh_evidence,
                 observed_value={
                     "connected": item.connected,
+                    "destination_phone_id": item.destination_phone_id,
                     "states": [state.value for state in item.states],
                     "teardown_verified": item.teardown_verified,
                     "execution_method": item.execution_method.value,
+                    "evidence_artifact_path": item.evidence_artifact_path,
+                    "evidence_sha256": item.evidence_sha256,
                 },
                 backend=context.evidence_backend,
                 backend_version=context.evidence_backend_version,
@@ -801,6 +806,23 @@ class VoiceApplicator:
         return [settled[index] for index in range(len(expectations))]
 
     def _calls(self, plan, registrations, capabilities):
+        binder = getattr(self._runtime, "bind_call_plan", None)
+        if callable(binder):
+            try:
+                binder(plan)
+            except Exception as exc:
+                return [CallVerificationResult(
+                    call_expectation_id=expectation.id,
+                    call_attempt_id="",
+                    source_phone_id=expectation.source_phone_id,
+                    destination_phone_id=expectation.expected_target_phone_id,
+                    dialed_extension=expectation.dialed_extension,
+                    expected_result=expectation.expected_result,
+                    expected_target_phone_id=expectation.expected_target_phone_id,
+                    status=ActionExecutionStatus.FAILED,
+                    failure_code=ConfigurationFailureCode.SESSION_FAILED,
+                    message=f"PhoneControl plan binding failed: {exc}",
+                ) for expectation in plan.call_expectations]
         registration_by_phone = {item.phone_id: item for item in registrations}
         registration_by_expectation = {
             item.expectation_id: item for item in registrations
@@ -866,9 +888,24 @@ class VoiceApplicator:
                 profile.status(VoiceCapabilityDimension.CALL_STATE_READBACK)
                 if profile else VoiceCapabilityStatus.UNKNOWN
             )
+            qualified_phone_models = set(
+                profile.call_observability_phone_models if profile else ()
+            )
+            source_model = assignments[expectation.source_phone_id].model
+            target_model = (
+                assignments[expectation.expected_target_phone_id].model
+                if expectation.expected_target_phone_id else ""
+            )
+            models_covered = bool(
+                source_model in qualified_phone_models
+                and (
+                    not target_model
+                    or target_model in qualified_phone_models
+                )
+            )
             if initiation is not VoiceCapabilityStatus.SUPPORTED or readback not in {
                 VoiceCapabilityStatus.SUPPORTED, VoiceCapabilityStatus.UNOBSERVABLE,
-            }:
+            } or not models_covered:
                 results.append(CallVerificationResult(
                     call_expectation_id=expectation.id, call_attempt_id="",
                     source_phone_id=expectation.source_phone_id,
@@ -877,7 +914,10 @@ class VoiceApplicator:
                     expected_target_phone_id=expectation.expected_target_phone_id,
                     status=ActionExecutionStatus.SKIPPED,
                     failure_code=ConfigurationFailureCode.CAPABILITY_UNKNOWN,
-                    message=f"Call initiation/readback is {initiation.value}/{readback.value}.",
+                    message=(
+                        f"Call initiation/readback is {initiation.value}/{readback.value}; "
+                        f"qualified phone models are {sorted(qualified_phone_models)}."
+                    ),
                 ))
                 continue
             attempt_id = f"call-{uuid4().hex}"
@@ -898,6 +938,11 @@ class VoiceApplicator:
             fresh = bool(
                 observed.fresh_evidence and observed.call_attempt_id == attempt_id
                 and observed.observed_after_ns >= started_ns
+                and observed.call_expectation_id == expectation.id
+                and observed.source_phone_id == expectation.source_phone_id
+                and observed.destination_phone_id
+                == expectation.expected_target_phone_id
+                and observed.dialed_extension == expectation.dialed_extension
             )
             behavior_matches = call_observation_matches_expected_result(
                 expectation.expected_result,

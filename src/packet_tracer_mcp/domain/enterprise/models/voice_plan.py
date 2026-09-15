@@ -42,6 +42,7 @@ class VoiceCapabilityProfile(BaseModel):
     evidence_source: str = ""
     packet_tracer_version: str | None = None
     capability_readiness: dict[str, CapabilityReadiness] = Field(default_factory=dict)
+    call_observability_phone_models: list[str] = Field(default_factory=list)
 
     def status(self, dimension: VoiceCapabilityDimension) -> VoiceCapabilityStatus:
         return self.dimensions.get(dimension, VoiceCapabilityStatus.UNKNOWN)

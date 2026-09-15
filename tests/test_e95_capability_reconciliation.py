@@ -22,6 +22,7 @@ from src.packet_tracer_mcp.infrastructure.catalog.capability_providers import (
     ProbeCapabilityProvider,
     RuntimeCapabilityProvider,
     StaticVerifiedCapabilityProvider,
+    VerifiedCapabilityProvider,
 )
 from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
@@ -244,6 +245,7 @@ class TestTheBoundaryIsExactAndVisible:
             ProbeCapabilityProvider,
             RuntimeCapabilityProvider,
             StaticVerifiedCapabilityProvider,
+            VerifiedCapabilityProvider,
         }
 
     def test_the_composition_root_demands_an_exact_version(self):

@@ -100,7 +100,8 @@ def run_evidence(report: CPScaleRunReport) -> dict[str, object]:
             "run_remaining_reconciliation": target.run_remaining_reconciliation,
             "run_full_qualification": target.run_full_qualification, "allow_retention": target.allow_retention,
             "require_cleanup": target.require_cleanup,
-            "precleanup_closure": target.precleanup_closure, "cleaned_closure": target.cleaned_closure},
+            "precleanup_closure": target.precleanup_closure, "cleaned_closure": target.cleaned_closure,
+            "requires_call_observability": target.requires_call_observability},
         "stages": [stage_progress_evidence(stage) for stage in report.stages],
         "presentation_retained": report.presentation_retained,
     }
@@ -120,6 +121,24 @@ def run_evidence(report: CPScaleRunReport) -> dict[str, object]:
             "repository_head": authorization.repository_head,
             "upstream_head": authorization.upstream_head,
             "source_tree": authorization.source_tree,
+        }
+    if preflight.call_observability.state is not CPScaleCheckState.NOT_RUN:
+        call = preflight.call_observability
+        value["call_observability"] = {
+            "state": call.state.value,
+            "required": call.required,
+            "expectation_results": list(call.expectation_results),
+            "provider_id": call.provider_id,
+            "execution_method": call.execution_method.value,
+            "packet_tracer_version": call.packet_tracer_version,
+            "call_control_models": list(call.call_control_models),
+            "phone_models": list(call.phone_models),
+            "qualification_run_identity": call.qualification_run_identity,
+            "qualification_executed_sha": call.qualification_executed_sha,
+            "evidence_path": call.evidence_path,
+            "evidence_sha256": call.evidence_sha256,
+            "driver_source_sha256": call.driver_source_sha256,
+            "error": call.error,
         }
     if preflight.process.state is not CPScaleCheckState.NOT_RUN:
         value["packet_tracer_processes"] = [process_record_mapping(item) for item in preflight.process.processes]

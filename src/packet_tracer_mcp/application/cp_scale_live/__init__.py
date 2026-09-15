@@ -8,6 +8,7 @@ from .admission import (
     process_record_mapping,
 )
 from .contracts import (
+    CPScaleCallObservabilityEvidence,
     CPScaleCheckState,
     CPScaleImportIsolationEvidence,
     CPScaleLiveAuthorizationEvidence,
@@ -23,6 +24,7 @@ from .contracts import (
 )
 
 __all__ = [
+    "CPScaleCallObservabilityEvidence",
     "CPScaleCheckState",
     "CPScaleImportIsolationEvidence",
     "CPScaleImportIsolationObservation",

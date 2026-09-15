@@ -483,6 +483,7 @@ import packet_tracer_mcp.adapters.cli.cp_scale_live as live
 from types import SimpleNamespace
 seams = SimpleNamespace()
 from packet_tracer_mcp.application.cp_scale_live import (
+    CPScaleCallObservabilityEvidence,
     CPScaleCheckState,
     CPScaleImportIsolationEvidence,
     CPScaleLiveAuthorizationEvidence,
@@ -511,6 +512,9 @@ from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
 )
 from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentStatus,
+)
+from packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+    PhoneExecutionMethod,
 )
 
 # Taken before the first double is installed, so a probe can name exactly which
@@ -838,6 +842,27 @@ class LocalPreflight:
             ),
             issues=(),
             live_authorization=authorization,
+            call_observability=(
+                CPScaleCallObservabilityEvidence(
+                    state=CPScaleCheckState.PASSED,
+                    required=True,
+                    expectation_results=("established", "not_connected"),
+                    provider_id="packet-tracer-native-ui-mailbox-v1",
+                    execution_method=PhoneExecutionMethod.PACKET_TRACER_NATIVE_UI,
+                    packet_tracer_version=request.packet_tracer_version,
+                    call_control_models=("2811",),
+                    phone_models=("7960",),
+                    qualification_run_identity="call-observability-qualification/test",
+                    qualification_executed_sha="c" * 40,
+                    evidence_path="docs/reference/cp-scale/call-observability.json",
+                    evidence_sha256="d" * 64,
+                    driver_source_sha256="e" * 64,
+                )
+                if target.requires_call_observability
+                else CPScaleCallObservabilityEvidence(
+                    state=CPScaleCheckState.NOT_RUN,
+                )
+            ),
         )
 
 

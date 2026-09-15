@@ -83,6 +83,7 @@ class RuntimeCallObservation(BaseModel):
     call_expectation_id: str
     call_attempt_id: str
     source_phone_id: str
+    destination_phone_id: str = ""
     dialed_extension: str
     status: ActionExecutionStatus = ActionExecutionStatus.UNKNOWN
     states: list[CallState] = Field(default_factory=list)
@@ -91,6 +92,8 @@ class RuntimeCallObservation(BaseModel):
     observed_after_ns: int = 0
     fresh_evidence: bool = False
     evidence_method: str = ""
+    evidence_artifact_path: str = ""
+    evidence_sha256: str = ""
     execution_method: PhoneExecutionMethod = PhoneExecutionMethod.UNOBSERVABLE
     message: str = ""
 

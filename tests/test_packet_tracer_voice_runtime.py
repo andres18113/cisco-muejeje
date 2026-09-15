@@ -20,6 +20,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     VoiceActionType,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+    CallState,
     PhoneExecutionMethod,
     RuntimeCallObservation,
 )
@@ -905,6 +906,7 @@ def test_legacy_ui_driver_is_encapsulated_and_execution_method_is_preserved():
             call_expectation_id=expectation.id,
             call_attempt_id=attempt_id,
             source_phone_id=expectation.source_phone_id,
+            destination_phone_id=expectation.expected_target_phone_id,
             dialed_extension=expectation.dialed_extension,
             status=ActionExecutionStatus.VERIFIED,
             observed_after_ns=started_ns + 1,
@@ -922,6 +924,41 @@ def test_legacy_ui_driver_is_encapsulated_and_execution_method_is_preserved():
     observed = runtime.verify_call(call, "attempt-current", 123)
 
     assert requests == [(call.id, "attempt-current", 123)]
+    assert observed.execution_method is PhoneExecutionMethod.PACKET_TRACER_NATIVE_UI
+
+
+def test_native_ui_adapter_rejects_foreign_driver_identity_as_unobservable():
+    def driver(expectation, attempt_id, started_ns):
+        return RuntimeCallObservation(
+            call_expectation_id="call/foreign",
+            call_attempt_id=attempt_id,
+            source_phone_id=expectation.source_phone_id,
+            destination_phone_id=expectation.expected_target_phone_id,
+            dialed_extension=expectation.dialed_extension,
+            status=ActionExecutionStatus.VERIFIED,
+            states=[CallState.CONNECTED],
+            connected=True,
+            teardown_verified=True,
+            observed_after_ns=started_ns + 1,
+            fresh_evidence=True,
+            evidence_method="controlled_native_ui",
+        )
+
+    runtime = PacketTracerEnterpriseVoiceRuntime(
+        lambda: [], lambda _source: True, lambda _source, _timeout: "{}",
+        ios_readiness=lambda _name: True,
+        phone_control=PacketTracerNativeUiPhoneControlAdapter(driver),
+    )
+    call = _compile().plan.call_expectations[0]
+
+    observed = runtime.verify_call(call, "attempt-current", 123)
+
+    assert observed.status is ActionExecutionStatus.UNOBSERVABLE
+    assert observed.call_expectation_id == call.id
+    assert observed.call_attempt_id == "attempt-current"
+    assert observed.source_phone_id == call.source_phone_id
+    assert observed.destination_phone_id == call.expected_target_phone_id
+    assert observed.fresh_evidence is False
     assert observed.execution_method is PhoneExecutionMethod.PACKET_TRACER_NATIVE_UI
 
 

@@ -46,7 +46,11 @@ def _profile(overrides=None):
         VoiceCapabilityDimension.VOICE_DHCP_OPTIONS: VoiceCapabilityStatus.SUPPORTED,
     }
     dimensions.update(overrides or {})
-    return {"2911": VoiceCapabilityProfile(model="2911", dimensions=dimensions)}
+    return {"2911": VoiceCapabilityProfile(
+        model="2911",
+        dimensions=dimensions,
+        call_observability_phone_models=["7960"],
+    )}
 
 
 class FakeVoiceRuntime:
@@ -56,6 +60,10 @@ class FakeVoiceRuntime:
         self.calls = {}
         self.call_requests = []
         self.timeline: list[str] = []
+        self.bound_call_plan = None
+
+    def bind_call_plan(self, plan):
+        self.bound_call_plan = plan
 
     def inventory(self):
         return [
@@ -87,6 +95,7 @@ class FakeVoiceRuntime:
             call_expectation_id=expectation.id,
             call_attempt_id=attempt_id,
             source_phone_id=expectation.source_phone_id,
+            destination_phone_id=expectation.expected_target_phone_id,
             dialed_extension=expectation.dialed_extension,
             status=ActionExecutionStatus.VERIFIED,
             states=(
@@ -525,14 +534,18 @@ def test_ring_without_connect_and_hangup_failure_are_distinct_failures():
     runtime = FakeVoiceRuntime()
     runtime.calls[calls[0].id] = RuntimeCallObservation(
         call_expectation_id=calls[0].id, call_attempt_id="",
-        source_phone_id=calls[0].source_phone_id, dialed_extension=calls[0].dialed_extension,
+        source_phone_id=calls[0].source_phone_id,
+        destination_phone_id=calls[0].expected_target_phone_id,
+        dialed_extension=calls[0].dialed_extension,
         states=[CallState.IDLE, CallState.DIALING, CallState.RINGING], connected=False,
         teardown_verified=True, status=ActionExecutionStatus.FAILED,
         fresh_evidence=True,
     )
     runtime.calls[calls[1].id] = RuntimeCallObservation(
         call_expectation_id=calls[1].id, call_attempt_id="",
-        source_phone_id=calls[1].source_phone_id, dialed_extension=calls[1].dialed_extension,
+        source_phone_id=calls[1].source_phone_id,
+        destination_phone_id=calls[1].expected_target_phone_id,
+        dialed_extension=calls[1].dialed_extension,
         states=[CallState.IDLE, CallState.DIALING, CallState.CONNECTED], connected=True,
         teardown_verified=False, status=ActionExecutionStatus.PARTIAL,
         fresh_evidence=True,
@@ -607,6 +620,50 @@ def test_each_direction_receives_a_distinct_current_attempt_id():
     assert len(positives) == 2
     assert len({item.call_attempt_id for item in positives}) == 2
     assert all(item.fresh_evidence for item in positives)
+    assert runtime.bound_call_plan is plan
+
+
+def test_foreign_destination_identity_cannot_verify_call_behavior():
+    plan = _compile().plan
+    runtime = FakeVoiceRuntime()
+    call = next(
+        item for item in plan.call_expectations
+        if item.expected_result is CallExpectationResult.ESTABLISHED
+    )
+    runtime.calls[call.id] = RuntimeCallObservation(
+        call_expectation_id=call.id,
+        call_attempt_id="",
+        source_phone_id=call.source_phone_id,
+        destination_phone_id="phone/foreign",
+        dialed_extension=call.dialed_extension,
+        status=ActionExecutionStatus.VERIFIED,
+        states=[CallState.CONNECTED],
+        connected=True,
+        teardown_verified=True,
+        fresh_evidence=True,
+    )
+
+    _, _, result = _apply(runtime)
+    observed = next(
+        item for item in result.calls if item.call_expectation_id == call.id
+    )
+
+    assert observed.status is ActionExecutionStatus.FAILED
+    assert observed.destination_phone_id == "phone/foreign"
+    assert observed.fresh_evidence is False
+
+
+def test_call_capability_does_not_cover_a_foreign_phone_model():
+    profiles = _profile()
+    profiles["2911"].call_observability_phone_models = ["7970"]
+
+    _, runtime, result = _apply(capabilities=profiles)
+
+    assert runtime.call_requests == []
+    assert result.calls
+    assert all(
+        item.status is ActionExecutionStatus.SKIPPED for item in result.calls
+    )
 
 
 def test_unassigned_extension_is_a_fresh_negative_control():

@@ -30,7 +30,10 @@ from ...domain.enterprise.models.deployment import DeploymentManifest, Environme
 from ...domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentResult, PhysicalWorkspaceObservation,
 )
-from ...domain.enterprise.models.voice_runtime import VoiceApplicationResult
+from ...domain.enterprise.models.voice_runtime import (
+    PhoneExecutionMethod,
+    VoiceApplicationResult,
+)
 from ...domain.models.plans import TopologyPlan
 from ...domain.models.typed_ping import TypedPingResult
 
@@ -357,6 +360,46 @@ class CPScaleCheckState(str, Enum):
     FAILED = "failed"
 
 
+@dataclass(frozen=True)
+class CPScaleCallObservabilityEvidence:
+    """One FULL readiness fact derived from qualified provider evidence."""
+
+    state: CPScaleCheckState
+    required: bool = False
+    expectation_results: tuple[str, ...] = ()
+    provider_id: str = ""
+    execution_method: PhoneExecutionMethod = PhoneExecutionMethod.UNOBSERVABLE
+    packet_tracer_version: str = ""
+    call_control_models: tuple[str, ...] = ()
+    phone_models: tuple[str, ...] = ()
+    qualification_run_identity: str = ""
+    qualification_executed_sha: str = ""
+    evidence_path: str = ""
+    evidence_sha256: str = ""
+    driver_source_sha256: str = ""
+    error: str = ""
+
+    @property
+    def passed_coherently(self) -> bool:
+        return bool(
+            self.state is CPScaleCheckState.PASSED
+            and self.required is True
+            and self.expectation_results
+            and len(set(self.expectation_results)) == len(self.expectation_results)
+            and self.provider_id
+            and self.execution_method is not PhoneExecutionMethod.UNOBSERVABLE
+            and self.packet_tracer_version
+            and self.call_control_models
+            and self.phone_models
+            and self.qualification_run_identity
+            and _is_full_sha(self.qualification_executed_sha)
+            and self.evidence_path
+            and _is_sha256(self.evidence_sha256)
+            and _is_sha256(self.driver_source_sha256)
+            and not self.error
+        )
+
+
 class CPScalePreflightOutcome(str, Enum):
     """A local continuation decision, never product admission."""
 
@@ -586,6 +629,11 @@ class CPScalePreflightResult:
     identity: CPScaleLiveSessionIdentity | None
     issues: tuple[str, ...]
     live_authorization: CPScaleLiveAuthorizationEvidence | None = None
+    call_observability: CPScaleCallObservabilityEvidence = field(
+        default_factory=lambda: CPScaleCallObservabilityEvidence(
+            state=CPScaleCheckState.NOT_RUN,
+        ),
+    )
 
     @property
     def evidence_coherent(self) -> bool:
@@ -602,6 +650,11 @@ class CPScalePreflightResult:
         ):
             return False
         authorization = self.live_authorization
+        call_observability_coherent = (
+            self.call_observability.passed_coherently
+            if self.target.requires_call_observability
+            else self.call_observability.state is CPScaleCheckState.NOT_RUN
+        )
         # Every canonical target runs only under an authorization for itself,
         # bound to the exact repository and session provenance observed here.
         authorization_coherent = (
@@ -628,6 +681,7 @@ class CPScalePreflightResult:
             and identity.package_file == self.runtime.package_file
             and identity.loaded_namespace == self.runtime.loaded_namespaces[0]
             and authorization_coherent
+            and call_observability_coherent
             and _processes_match_version_and_path(
                 self.process.processes,
                 identity.packet_tracer_version,
@@ -664,6 +718,14 @@ def _is_full_sha(value: object) -> bool:
     return bool(
         isinstance(value, str)
         and len(value) == 40
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _is_sha256(value: object) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
         and all(character in "0123456789abcdef" for character in value)
     )
 
