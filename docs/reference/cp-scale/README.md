@@ -13,18 +13,21 @@ post-execution reconciliation are later commits, not the executed SHA. No
 Router0 or Router3 re-execution, remaining-stage run, full qualification, or
 other LIVE scope is authorized by this record.
 
-Full qualification executed once, at
-`ff117655a97301aa05cad6c7696f89dd87ec71fc` (run
-`canonical-cp-scale-voice-20260915T181618415152Z-ff117655a973`), and FAILED at
-floor3 after the floor2 checkpoint; REMAINING never ran and no FULL closure
-exists. The [failed FULL run index](full_qualification_failed_runs.json) pins
-both archives and keeps the runner's failure text verbatim. Under its own
-host-observation authority it also records that the session's Packet Tracer
-process crashed (`0xc0000005` in `Qt6Gui.dll`) before floor3's serial
-read-back, and that cleanup's two empty observations were answered by a
-replacement process, so all 232 owned removals were no-ops. Implementation
-causation of the crash is UNKNOWN. The evidence promotion and this
-reconciliation are later commits, not the executed SHA. Every canonical target, `full-qualification` included, is refused before
+Full qualification is closed. Run
+`canonical-cp-scale-voice-20260915T193037865890Z-6a80b24626d4` executed
+`full-qualification` at `6a80b24626d40fb59bad5f0dc2e47d18a51f4a49` and reached
+`CP_SCALE_FULL_QUALIFICATION_VERIFIED_AND_CLEANED`. The
+[FULL success index](full_qualification_successful_run.json) pins its precleanup
+closure, cleanup attestation and final checkpoint; the closure is valid only
+with both archives. An earlier run at
+`ff117655a97301aa05cad6c7696f89dd87ec71fc` FAILED at floor3 when the session's
+Packet Tracer process crashed (`0xc0000005` in `Qt6Gui.dll`). The operator then
+relaunched Packet Tracer, whose new process answered that run's cleanup
+observations, so all 232 owned removals were no-ops. The
+[failed FULL run index](full_qualification_failed_runs.json) keeps that run
+FAILED, and the later success does not reinterpret it. Implementation causation
+of the crash is UNKNOWN. Evidence promotions and reconciliations are later
+commits, never executed SHAs. Every canonical target, `full-qualification` included, is refused before
 Packet Tracer contact unless an explicit authorization names that target and
 the exact SHA that is also the expected, repository, upstream and session
 source HEAD, over one source tree. FULL builds the seven stages from an empty
@@ -55,6 +58,12 @@ separate content-addressed artifacts, never inline in `current_state.json`.
 
 Supporting records:
 
+- [FULL success index](full_qualification_successful_run.json) pins the first
+  governed `CP_SCALE_FULL_QUALIFICATION_VERIFIED_AND_CLEANED` closure: all eight
+  stages, REMAINING's zero-delta disjoint transition, complete governed Voice,
+  6 of 6 site and representative PC forwarding probes, NO_MUTATION_REPLAY, the
+  UNQUALIFIED call accounting, its precleanup evidence and cleanup attestation.
+  It is the FULL success authority; the earlier FAILED run stays FAILED.
 - [Failed FULL run index](full_qualification_failed_runs.json) pins the first
   governed `full-qualification` execution, which FAILED at floor3, with both
   immutable archives, its verbatim failure text and its cleanup facts. Host

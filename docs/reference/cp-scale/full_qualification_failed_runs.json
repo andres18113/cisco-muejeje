@@ -64,7 +64,8 @@
         "replacement_process": {
           "process_id": 18192,
           "started_at": "2026-09-15T18:36:41+00:00",
-          "start_cause": "UNKNOWN",
+          "start_cause": "OPERATOR_RELAUNCH",
+          "start_cause_source": "OPERATOR_STATEMENT",
           "polled_the_session_bridge": true
         }
       },

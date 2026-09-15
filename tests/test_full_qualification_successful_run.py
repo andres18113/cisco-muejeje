@@ -240,3 +240,25 @@ def test_full_cleanup_is_attested_after_the_precleanup_closure():
     assert checkpoint["checkpoint"] == index["final_checkpoint"]["checkpoint"]
     assert checkpoint["raw_evidence_sha256"] == index["final_checkpoint"]["raw_progress_sha256"]
     assert (checkpoint["live_devices"], checkpoint["live_links"]) == (314, 219)
+
+
+def test_current_state_points_to_the_full_success_index():
+    state = json.loads(
+        (ROOT / "docs" / "reference" / "cp-scale" / "current_state.json").read_text(
+            encoding="utf-8",
+        )
+    )
+    full = state["operational_state"]["full_qualification"]
+
+    assert full["evidence"] == {
+        "path": "docs/reference/cp-scale/full_qualification_successful_run.json",
+        "sha256": hashlib.sha256(INDEX.read_bytes()).hexdigest(),
+        "run_identity": RUN_ID,
+        "executed_sha": HEAD,
+        "classification": "VERIFIED",
+        "successful_closure": True,
+    }
+    assert full["status"] == "VERIFIED_AND_CLEANED"
+    assert full["closure"] == _index()["closure"]
+    assert full["closure_requires_cleanup"] is True
+    assert full["reexecution_authorized"] is False

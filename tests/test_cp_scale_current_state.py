@@ -128,7 +128,7 @@ def test_current_state_separates_operational_authority_from_history():
     index = json.loads(authority_raw)
 
     assert operational["authority"] == (
-        "HASH_PINNED_ROUTER0_AND_ROUTER3_SUCCESS_INDEXES"
+        "HASH_PINNED_ROUTER0_ROUTER3_AND_FULL_SUCCESS_INDEXES"
     )
     assert authority_path == (
         ROOT / "docs/reference/cp-scale/router0_successful_run.json"
@@ -178,30 +178,39 @@ def test_current_state_separates_operational_authority_from_history():
     }
     assert operational["live_execution_authorized"] is False
     assert operational["next_active_step"] == (
-        "READY_FOR_EXPLICIT_FULL_QUALIFICATION_LIVE_AUTHORIZATION"
+        "CP_LIVE_CLOSED_BY_VERIFIED_FULL_QUALIFICATION"
     )
     full = operational["full_qualification"]
     assert full["live_execution_authorized"] is False
     assert full["executed"] is True
-    assert full["verification"] == "NOT_VERIFIED"
-    full_run = full["latest_run"]
-    full_raw = (ROOT / full_run["evidence"]["path"]).read_bytes()
-    (full_index_run,) = json.loads(full_raw)["runs"]
-    assert hashlib.sha256(full_raw).hexdigest() == full_run["evidence"]["sha256"]
-    assert full_run["run_identity"] == full_index_run["run_identity"]
-    assert full_run["executed_sha"] == full_index_run["executed_sha"]
-    assert full_run["failed_stage"] == full_index_run["failed_stage"]
-    assert full_run["classification"] == full_index_run["classification"] == "FAILED"
-    assert full_run["successful_closure"] is full_index_run["successful_closure"] is False
-    assert full_run["cause_classification"] == (
-        full_index_run["causal_analysis"]["cause_classification"]
-    )
+    assert full["status"] == "VERIFIED_AND_CLEANED"
+    assert full["verification"] == "VERIFIED"
+    assert full["closure"] == "CP_SCALE_FULL_QUALIFICATION_VERIFIED_AND_CLEANED"
+    full_authority = full["evidence"]
+    full_raw = (ROOT / full_authority["path"]).read_bytes()
+    full_index = json.loads(full_raw)
+    assert hashlib.sha256(full_raw).hexdigest() == full_authority["sha256"]
+    assert full_authority["run_identity"] == full_index["run_identity"]
+    assert full_authority["executed_sha"] == full_index["executed_sha"]
+    assert full_authority["classification"] == full_index["classification"] == "VERIFIED"
+    assert full_authority["successful_closure"] is full_index["successful_closure"] is True
+    assert full["closure"] == full_index["closure"]
     assert full["reconciliation"] == {
-        "executed_sha": "ff117655a97301aa05cad6c7696f89dd87ec71fc",
-        "evidence_promotion_sha": "32a094234235cada64ddb2a34840e556418fe7b8",
+        "executed_sha": "6a80b24626d40fb59bad5f0dc2e47d18a51f4a49",
+        "evidence_promotion_sha": "4206ee313dc20c15ad11e1664d1dddd499b60056",
         "reconciliation_sha_role": "GIT_COMMIT_CONTAINING_THIS_DOCUMENT",
         "executed_sha_is_reconciliation_sha": False,
     }
+    # The earlier FULL failure stays indexed as FAILED; the success does not
+    # reinterpret it.
+    failed = full["failed_runs"]
+    failed_raw = (ROOT / failed["path"]).read_bytes()
+    failed_index = json.loads(failed_raw)
+    assert hashlib.sha256(failed_raw).hexdigest() == failed["sha256"]
+    assert failed["run_count"] == len(failed_index["runs"]) == 1
+    assert failed["classification"] == failed_index["classification"] == "FAILED"
+    assert failed["successful_closure"] is False
+    assert failed_index["full_qualification_successful_closure"] is False
     policy = packet_tracer_cp_scale_qualification_policy("9.0.1.0858")
     assert full["qualification_policy"] == {
         "authority": "PACKET_TRACER_DECLARED_BACKEND_POLICY",
@@ -366,7 +375,7 @@ def test_current_state_v6_versions_the_policy_conditioned_call_shape():
         "router3": "ROUTER3_BRANCH_VERIFIED_AND_CLEANED",
         "full_executed": True,
         "next_active_step": (
-            "READY_FOR_EXPLICIT_FULL_QUALIFICATION_LIVE_AUTHORIZATION"
+            "CP_LIVE_CLOSED_BY_VERIFIED_FULL_QUALIFICATION"
         ),
         "live_execution_authorized": False,
     }
@@ -423,6 +432,7 @@ def test_every_pinned_artifact_hash_survives_each_platform_checkout(autocrlf, eo
         "docs/reference/cp-scale/router0_successful_run.json",
         "docs/reference/cp-scale/router3_successful_run.json",
         "docs/reference/cp-scale/full_qualification_failed_runs.json",
+        "docs/reference/cp-scale/full_qualification_successful_run.json",
         "docs/reference/cp-scale/call-observability-failures/"
         "call-observability-qualification-20260915T0201Z-334d5358cde8.json",
         "docs/reference/cp-scale/call-observability-failures/"

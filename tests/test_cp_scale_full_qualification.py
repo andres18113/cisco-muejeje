@@ -1040,7 +1040,7 @@ def test_current_state_pins_the_derived_full_preparation_without_live_authority(
     flows = preparation.composition.enterprise.traffic_flows
 
     assert operational["next_active_step"] == (
-        "READY_FOR_EXPLICIT_FULL_QUALIFICATION_LIVE_AUTHORIZATION"
+        "CP_LIVE_CLOSED_BY_VERIFIED_FULL_QUALIFICATION"
     )
     assert operational["live_execution_authorized"] is False
     assert {
@@ -1056,18 +1056,21 @@ def test_current_state_pins_the_derived_full_preparation_without_live_authority(
     )
     assert {
         key: full[key] for key in (
-            "executed", "verification", "live_evidence_acquired",
+            "executed", "verification", "closure", "live_evidence_acquired",
             "live_execution_authorized", "authorization_required",
         )
     } == {
         "executed": True,
-        "verification": "NOT_VERIFIED",
+        "verification": "VERIFIED",
+        "closure": FULL.cleaned_closure,
         "live_evidence_acquired": True,
         "live_execution_authorized": False,
         "authorization_required": "EXPLICIT_TARGET_AND_SHA_SCOPED",
     }
     assert "authorized_sha" not in json.dumps(full)
-    assert not (ROOT / "docs/reference/cp-scale/full_successful_run.json").exists()
+    assert full["evidence"]["path"] == (
+        "docs/reference/cp-scale/full_qualification_successful_run.json"
+    )
     assert {
         key: offline[key] for key in (
             "target", "execution_stages", "terminal_stage",

@@ -271,7 +271,7 @@ def test_current_state_keeps_closed_router3_as_hash_pinned_authority_only():
     assert "router3_live_authorization" not in state
     assert operational["live_execution_authorized"] is False
     assert operational["next_active_step"] == (
-        "READY_FOR_EXPLICIT_FULL_QUALIFICATION_LIVE_AUTHORIZATION"
+        "CP_LIVE_CLOSED_BY_VERIFIED_FULL_QUALIFICATION"
     )
     assert operational["full_qualification"]["offline_preparation"]["target"] == (
         "full-qualification"

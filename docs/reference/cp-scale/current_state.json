@@ -1,8 +1,8 @@
 {
   "schema": "cp-scale-current-state-v6",
-  "updated_at": "2026-09-15T18:58:08Z",
+  "updated_at": "2026-09-15T20:42:43Z",
   "operational_state": {
-    "authority": "HASH_PINNED_ROUTER0_AND_ROUTER3_SUCCESS_INDEXES",
+    "authority": "HASH_PINNED_ROUTER0_ROUTER3_AND_FULL_SUCCESS_INDEXES",
     "router0": {
       "executed": true,
       "status": "VERIFIED_AND_CLEANED",
@@ -45,29 +45,35 @@
     },
     "full_qualification": {
       "executed": true,
-      "verification": "NOT_VERIFIED",
+      "status": "VERIFIED_AND_CLEANED",
+      "verification": "VERIFIED",
+      "closure": "CP_SCALE_FULL_QUALIFICATION_VERIFIED_AND_CLEANED",
+      "closure_requires_cleanup": true,
+      "reexecution_authorized": false,
       "live_evidence": "HASH_PINNED",
       "live_evidence_acquired": true,
       "live_execution_authorized": false,
-      "reexecution_authorized": false,
       "authorization_required": "EXPLICIT_TARGET_AND_SHA_SCOPED",
-      "latest_run": {
-        "classification": "FAILED",
-        "successful_closure": false,
-        "run_identity": "canonical-cp-scale-voice-20260915T181618415152Z-ff117655a973",
-        "executed_sha": "ff117655a97301aa05cad6c7696f89dd87ec71fc",
-        "failed_stage": "floor3",
-        "cause_classification": "BACKEND_PROCESS_CRASH",
-        "evidence": {
-          "path": "docs/reference/cp-scale/full_qualification_failed_runs.json",
-          "sha256": "25d2a05d7d391e16eedcf09b417366715c01138d894dd65c124326cfff6cc300"
-        }
+      "evidence": {
+        "path": "docs/reference/cp-scale/full_qualification_successful_run.json",
+        "sha256": "1ff5eb92331ad4f13e3780b31d7fba0b991942e2176989b6669940662f1a5011",
+        "run_identity": "canonical-cp-scale-voice-20260915T193037865890Z-6a80b24626d4",
+        "executed_sha": "6a80b24626d40fb59bad5f0dc2e47d18a51f4a49",
+        "classification": "VERIFIED",
+        "successful_closure": true
       },
       "reconciliation": {
-        "executed_sha": "ff117655a97301aa05cad6c7696f89dd87ec71fc",
-        "evidence_promotion_sha": "32a094234235cada64ddb2a34840e556418fe7b8",
+        "executed_sha": "6a80b24626d40fb59bad5f0dc2e47d18a51f4a49",
+        "evidence_promotion_sha": "4206ee313dc20c15ad11e1664d1dddd499b60056",
         "reconciliation_sha_role": "GIT_COMMIT_CONTAINING_THIS_DOCUMENT",
         "executed_sha_is_reconciliation_sha": false
+      },
+      "failed_runs": {
+        "path": "docs/reference/cp-scale/full_qualification_failed_runs.json",
+        "sha256": "4b1c5ad0c56c08bcd7acb360a34f293c457c75cd1ca0a0edf479c7cd1da1d8b9",
+        "run_count": 1,
+        "classification": "FAILED",
+        "successful_closure": false
       },
       "offline_preparation_role": "PRE_EXECUTION_PROJECTION_NON_GOVERNING",
       "offline_preparation": {
@@ -159,7 +165,7 @@
         }
       }
     },
-    "next_active_step": "READY_FOR_EXPLICIT_FULL_QUALIFICATION_LIVE_AUTHORIZATION",
+    "next_active_step": "CP_LIVE_CLOSED_BY_VERIFIED_FULL_QUALIFICATION",
     "live_execution_authorized": false
   },
   "historical_pre_router0": {
