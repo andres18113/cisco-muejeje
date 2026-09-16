@@ -69,6 +69,16 @@ class DeterministicNamingService:
         components.extend([_token(zone_id.rsplit("/", 1)[-1]), self.role_token(role), f"{index:02d}"])
         return self._bounded("-".join(components))
 
+    @staticmethod
+    def wireless_cluster_id(scope: str, scope_id: str, segment_role: str) -> str:
+        return f"wcluster/{scope}/{scope_id}/{segment_role}"
+
+    def wireless_cluster_name(self, scope_id: str, segment_role: str) -> str:
+        components = [
+            _token(scope_id.rsplit("/", 1)[-1]), _token(segment_role), "WLAN",
+        ]
+        return self._bounded("-".join(components))
+
     def network_name(
         self, site_id: str, role: DeviceRole, index: int, zone_id: str = "",
     ) -> str:

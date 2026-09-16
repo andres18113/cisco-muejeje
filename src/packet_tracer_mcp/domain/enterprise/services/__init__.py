@@ -14,6 +14,7 @@ from .requirements_validator import validate_enterprise_intent
 from .service_compiler import ServiceCompiler
 from .voice_compiler import VoiceCompiler
 from .control_plane_compiler import ControlPlaneCompiler
+from .wireless_cluster_planner import WirelessClusterPlanner
 from .topology_identity import TopologyHashes, compute_topology_hashes, stamp_topology_hashes
 from .poe_claims import (
     PoEAuthorizedBinding,
@@ -31,6 +32,7 @@ __all__ = [
     "TopologyHashes", "compute_topology_hashes", "stamp_topology_hashes",
     "PoEAuthorizedBinding", "PoEDeliveryClaimScope", "PoEDeliveryTestedBinding",
     "decode_poe_delivery_scope", "encode_poe_delivery_dimensions",
+    "WirelessClusterPlanner",
     "build_failure_domain_catalog",
     "validate_enterprise_intent",
 ]

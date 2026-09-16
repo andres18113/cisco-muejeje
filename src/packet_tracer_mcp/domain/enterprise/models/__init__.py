@@ -147,6 +147,22 @@ from .control_plane_runtime import (
 from .roles import DeviceRole
 from .segments import NetworkSegment, SegmentRequirement, SegmentRole
 from .topology import NetworkLayer, TopologyDesign, TopologyPattern
+from .wireless_connectivity import (
+    AccessPointCandidate, AccessPointOwnership, AccessPointSelection,
+    AddressingSource, IntendedNetworkSegment, IoTFunction,
+    IoTFunctionDeclaration, NetworkAttachmentObservation,
+    NetworkAttachmentState, WirelessAssociationIntent,
+    WirelessAssociationObservation, WirelessAssociationReading,
+    WirelessAssociationState, WirelessAttachmentReading,
+    WirelessCapability, WirelessCapabilityAssessment,
+    WirelessCapabilityAudit, WirelessCapabilityStatus, WirelessCluster,
+    WirelessClusterScope, WirelessConfigurationOutcome,
+    WirelessConfigurationStatus, WirelessConnectivityPlan,
+    WirelessEndpointConnectivityResult, WirelessEndpointMembership,
+    WirelessSecurityMode, WirelessServiceSetIntent,
+    classify_association_state, classify_attachment_state,
+    iot_function_for_role,
+)
 from .verification import (
     PrerequisiteKind, VerificationDependencyError, VerificationPrerequisite,
     legacy_action_prerequisites, order_verification_expectations,
@@ -247,6 +263,20 @@ __all__ = [
     "FailureDomain", "FailureDomainCatalog", "FailureDomainCoverageGap",
     "FailureDomainIndependenceResult", "FailureDomainProvenance", "FailureDomainType",
     "FailurePath", "FailureScenario", "FailureScenarioScope", "IndependenceStatus",
+    "AccessPointCandidate", "AccessPointOwnership", "AccessPointSelection",
+    "AddressingSource", "IntendedNetworkSegment", "IoTFunction",
+    "IoTFunctionDeclaration", "NetworkAttachmentObservation",
+    "NetworkAttachmentState", "WirelessAssociationIntent",
+    "WirelessAssociationObservation", "WirelessAssociationReading",
+    "WirelessAssociationState", "WirelessAttachmentReading",
+    "WirelessCapability", "WirelessCapabilityAssessment",
+    "WirelessCapabilityAudit", "WirelessCapabilityStatus", "WirelessCluster",
+    "WirelessClusterScope", "WirelessConfigurationOutcome",
+    "WirelessConfigurationStatus", "WirelessConnectivityPlan",
+    "WirelessEndpointConnectivityResult", "WirelessEndpointMembership",
+    "WirelessSecurityMode", "WirelessServiceSetIntent",
+    "classify_association_state", "classify_attachment_state",
+    "iot_function_for_role",
     "PrerequisiteKind", "VerificationDependencyError", "VerificationPrerequisite",
     "legacy_action_prerequisites", "order_verification_expectations",
     "prerequisites_satisfied",

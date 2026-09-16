@@ -87,6 +87,11 @@ Access-point SSID and WPA2 settings cannot be configured from here: Packet Trace
 does not expose them through its Script Engine, so a custom SSID or security
 profile has to be set in the access point's own GUI.
 
+The backend-neutral contract behind wireless IoT endpoints — clusters, candidate
+access points, association and network attachment evidence, and the full Packet
+Tracer capability audit — is described in
+[IoT Wireless Connectivity](architecture/iot-wireless-connectivity.md).
+
 ## Layer-2 security and device hardening
 
 These are configuration-driven and accept `dry_run=True` to preview the CLI:

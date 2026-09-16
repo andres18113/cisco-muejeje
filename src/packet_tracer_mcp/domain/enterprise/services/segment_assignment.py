@@ -36,11 +36,30 @@ class SegmentAssignmentPolicy:
     }
 
     def segment_for(self, requirement: EndpointRequirement) -> SegmentRole:
-        if requirement.segment_role is not None:
-            return requirement.segment_role
-        if requirement.role is DeviceRole.LAPTOP and requirement.wireless:
+        return self.segment_for_role(
+            requirement.role,
+            wireless=requirement.wireless,
+            declared=requirement.segment_role,
+        )
+
+    def segment_for_role(
+        self,
+        role: DeviceRole,
+        *,
+        wireless: bool = False,
+        declared: SegmentRole | None = None,
+    ) -> SegmentRole:
+        """Misma política para un requisito agregado y para un endpoint expandido.
+
+        La expansión E4 conserva `role`, `wireless` y `segment_role`, así que un
+        consumidor posterior no necesita reconstruir un `EndpointRequirement`
+        para preguntar lo mismo, ni copiar el mapa de roles.
+        """
+        if declared is not None:
+            return declared
+        if role is DeviceRole.LAPTOP and wireless:
             return SegmentRole.WIRELESS_CORPORATE
-        return self._BY_ROLE.get(requirement.role, SegmentRole.DATA)
+        return self._BY_ROLE.get(role, SegmentRole.DATA)
 
     @staticmethod
     def consumes_ipv4(requirement: EndpointRequirement) -> bool:

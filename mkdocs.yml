@@ -80,6 +80,7 @@ nav:
       - Enterprise Planning: architecture/enterprise-planning.md
       - Enterprise Hardware Planner: architecture/enterprise-hardware.md
       - Packet Tracer Capability Discovery: architecture/packet-tracer-capability-discovery.md
+      - IoT Wireless Connectivity: architecture/iot-wireless-connectivity.md
       - Capability Probes QA: qa/capability-probes.md
       - Testing: testing.md
   - Credits & Attribution: credits.md

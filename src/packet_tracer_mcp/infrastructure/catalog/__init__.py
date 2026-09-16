@@ -12,3 +12,4 @@ from .modules import ALL_MODULES, ModuleSpec, resolve_module, get_serial_module,
 from .service_capabilities import packet_tracer_service_capabilities
 from .security_capabilities import packet_tracer_security_capabilities
 from .control_plane_capabilities import packet_tracer_control_plane_capabilities
+from .wireless_capabilities import packet_tracer_wireless_capability_audit

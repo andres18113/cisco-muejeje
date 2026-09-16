@@ -80,3 +80,12 @@ from .poe_delivery_qualification import (
     PoEDeliveryObserver,
     PoEDeliveryQualificationService,
 )
+from .plan_iot_connectivity import (
+    IoTConnectivityAdmission,
+    IoTConnectivityClosure,
+    IoTConnectivityPlanResult,
+    IoTConnectivityPolicy,
+    IoTConnectivityQualification,
+    plan_iot_connectivity,
+    qualify_iot_connectivity,
+)

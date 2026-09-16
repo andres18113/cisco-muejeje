@@ -2,5 +2,10 @@
 
 from .phone_control import PhoneControlPort
 from .voice_call_operation import VoiceCallOperationPort
+from .wireless_connectivity import WirelessConnectivityPort
 
-__all__ = ["PhoneControlPort", "VoiceCallOperationPort"]
+__all__ = [
+    "PhoneControlPort",
+    "VoiceCallOperationPort",
+    "WirelessConnectivityPort",
+]
