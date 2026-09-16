@@ -581,8 +581,8 @@ live run. The 2026-08-17 reconciliation was entirely offline and deliberately
 did not touch it.
 
 The canonical contract, already declared in `pyproject.toml`
-(`pythonpath = ["."]`, with the comment that it "garantiza una sola identidad
-del módulo"):
+(`pythonpath = ["."]`, with the comment that it "guarantees a single module
+identity"):
 
 - tests import `src.packet_tracer_mcp`;
 - run `python -m pytest` from the worktree root, no custom `PYTHONPATH`;

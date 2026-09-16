@@ -1,34 +1,34 @@
 # tests/
 
-Suite de pruebas con pytest. Corre **offline**: ningún test necesita Packet Tracer
-(los casos de bridge levantan un `PTCommandBridge` en un puerto efímero o simulan el
-Script Engine en un hilo).
+Pytest suite. It runs **offline**: no test requires Packet Tracer. Bridge cases
+start a `PTCommandBridge` on an ephemeral port or simulate the Script Engine in
+a thread.
 
-Para el conteo actual y el desglose por archivo:
+For the current count and per-file breakdown, use:
 
 ```bash
 python -m pytest --collect-only -q     # no se fija un número que caduque
 ```
 
-## Ejecución
+## Running tests
 
 ```bash
-# Todos los tests (desde la raíz del repo)
-python -m pytest
+# All tests, from the repository root. Use the checkout-local interpreter.
+.venv/Scripts/python.exe -m pytest
 
-# Un archivo específico
-python -m pytest tests/test_full_build.py -v
+# One file
+.venv/Scripts/python.exe -m pytest tests/test_full_build.py -v
 
-# Un test específico
-python -m pytest tests/test_full_build.py::TestFullBuild::test_basic_2_routers -v
+# One test
+.venv/Scripts/python.exe -m pytest tests/test_full_build.py::TestFullBuild::test_basic_2_routers -v
 ```
 
-## Qué se cubre
+## Coverage
 
-- **Dominio**: validación (IP, VLAN, ACL, hardening, cables, dispositivos), planning,
-  asignación de IPs, auto-fixer, estimación.
-- **Generadores**: PTBuilder JS e IOS CLI, incluyendo tests **adversariales** de inyección
-  (comillas, saltos de línea, `..`) en `test_injection_regressions.py`.
-- **Seguridad del bridge**: token, límites de cuerpo, DNS rebinding, long-poll y lote
-  (`test_bridge_security.py`); protocolo del file-bridge (`test_file_bridge.py`).
-- **Integración**: `pt_full_build` end-to-end, diff/health-check, reconcile.
+- **Domain:** validation, planning, addressing, repair suggestions, and estimates.
+- **Generation:** Script Engine JavaScript and IOS CLI, including adversarial
+  injection regressions.
+- **Bridge security:** authentication, request limits, DNS-rebinding defenses,
+  polling, batching, and the file-mailbox protocol.
+- **Integration:** classic build flows, comparison, health checks, and
+  reconciliation, plus typed Enterprise contracts.

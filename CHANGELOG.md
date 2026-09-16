@@ -74,35 +74,35 @@ they cite describe upstream at that time.
 
 ### 0.8.0
 
-El servidor podía construir una red y leerla, pero no mostrarla. Esta versión
-cierra eso: el agente ahora entrega un diagrama, no una descripción.
+The server could build and inspect a network but could not show it. This
+release closes that gap: the agent returns a diagram rather than a description.
 
-**58 → 61 tools · 319 → 349 tests.** Verificado contra Packet Tracer 9.0.0.0810.
+**58 → 61 tools · 319 → 349 tests.** Verified against Packet Tracer 9.0.0.0810.
 
 #### Added
 
-- **`pt_screenshot`** — captura el canvas lógico a un archivo y devuelve su ruta.
-  No devuelve la imagen: son decenas de miles de bytes y llenarían el contexto
-  del modelo con datos que nadie puede mirar. PNG por defecto, porque comprime un
-  diagrama mucho mejor que JPG (33 KB contra 105 KB sobre el mismo canvas).
-- **`pt_add_note`** — escribe una nota sobre el canvas: etiquetar una subred,
-  marcar un área OSPF, nombrar un troncal.
-- **`pt_clear_annotations`** — borra notas y dibujos. Nunca toca dispositivos ni
-  enlaces.
+- **`pt_screenshot`** — captures the logical canvas to a file and returns its
+  path. It does not return the image itself: that would fill the model context
+  with tens of thousands of bytes that cannot be inspected there. PNG is the
+  default because it compressed the same canvas better than JPG (33 KB versus
+  105 KB).
+- **`pt_add_note`** — writes a note on the canvas, for example to label a
+  subnet, mark an OSPF area, or name a trunk.
+- **`pt_clear_annotations`** — removes notes and drawings. It never touches
+  devices or links.
 
-Juntas permiten **topologías auto-documentadas**: construir con `pt_full_build`,
-etiquetar cada subred y enlace, y capturar — un diagrama listo para una clase a
-partir de un solo prompt.
+Together they support **self-documenting topologies**: build with
+`pt_full_build`, label each subnet and link, then capture a diagram ready for a
+class from a single prompt.
 
-#### Limitación conocida
+#### Known limitation
 
-**No hay tool de dibujo.** Packet Tracer dibuja líneas y círculos en el canvas,
-pero no de forma útil desde una extensión: el argumento donde iría el tamaño
-resultó controlar el orden de apilado —tres círculos pidiendo 60, 60 y 300
-salieron todos del mismo tamaño diminuto— y los colores no producen el color
-pedido. Antes que exponer parámetros que no hacen lo que dicen, la anotación
-queda limitada a notas de texto. El tamaño de fuente tampoco es configurable,
-por la misma razón.
+**There is no drawing tool.** Packet Tracer can draw lines and circles on the
+canvas, but not usefully from an extension: the argument expected to set size
+controlled stacking order instead—three circles requesting 60, 60, and 300 all
+appeared at the same tiny size—and colors did not produce the requested value.
+Rather than expose parameters that do not do what they say, annotation is
+limited to text notes. Font size is likewise not configurable.
 
 ### 0.7.0
 
@@ -116,7 +116,7 @@ devices back, and explaining what they decided and why.
 #### Fixed
 
 - **`pt_full_build(deploy=True)` now deploys.** It always went to the clipboard,
-  so with the bridge connected it reported `Validación: PASS` and left the canvas
+  so with the bridge connected it reported `Validation: PASS` and left the canvas
   empty — the main pipeline silently built nothing. It now deploys through the
   `pt_live_deploy` path (device and link verification, plus the reconcile pass
   for the devices PT drops) and falls back to the clipboard only when no channel

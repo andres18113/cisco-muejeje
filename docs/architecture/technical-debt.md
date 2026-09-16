@@ -1098,8 +1098,8 @@ inverse, so overwriting a residue with it was a weakening. The third is the
 fixed before commit.** Both were real and both are now regressions:
 
 1. `record_scenario_restore(SUCCEEDED)` after `mark_cleanup(FAILED)` recomposed
-   to `CLEAN`, contradicting `record_scenario_restore`'s own docstring — *"sólo
-   puede empeorar el estado, nunca mejorarlo"*. Recording a second verdict
+   to `CLEAN`, contradicting `record_scenario_restore`'s own docstring — *"it
+   can only worsen the state; it can never improve it"*. Recording a second verdict
    replaced the first. Fixed by `residue_floor`, which only ever rises: no
    verdict can erase a residue another verdict already established.
 2. `mark_cleanup(SUCCEEDED)` followed by appends recomposed those **later**

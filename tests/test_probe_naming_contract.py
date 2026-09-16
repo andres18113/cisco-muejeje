@@ -294,16 +294,18 @@ def test_the_prefix_selection_guard_would_catch_a_real_regression():
         assert any(token in line for token in _SELECTION_TOKENS), line
 
 
-# ============ E. QA cubre los dos namespaces =============================
+# ============ E. QA covers both namespaces ================================
 
 
 def test_the_qa_residue_contract_covers_both_namespaces():
     qa = (REPO / "docs" / "qa" / "capability-probes.md").read_text(encoding="utf-8")
-    checklist = qa.split("## Secuencia mínima", 1)[1].split("##", 1)[0]
+    checklist = qa.split("## Operating procedure", 1)[1].split(
+        "## Evidence discipline", 1,
+    )[0]
 
     assert DISCOVERY_PREFIX in checklist
     assert TYPED_PREFIX in checklist
-    assert "Namespaces desechables" in qa
+    assert "two disposable naming schemes" in qa
 
 
 def test_the_authority_document_no_longer_claims_one_universal_namespace():
