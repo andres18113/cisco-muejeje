@@ -190,6 +190,20 @@ behavioral tests prove both a clean positive control and a known failing
 violation. Expanding the enforced scope is a separate change with its own debt
 assessment.
 
+Touching a file semantically means owning its current Ruff state. An authorized
+mechanical migration is the one exception, because rewriting one token per import
+across hundreds of files would otherwise report untouched historical debt as new.
+`--mechanical-migration IDENTIFIER` authorizes one transformation registered in
+`scripts/mechanical_migration.py` for that run, and a file is exempt only when
+the classifier reconstructs the candidate byte for byte by applying that
+transformation to the base revision. Registration, invocation, and per-file proof
+are all required; diff size, file name, branch, and in-file markers grant
+nothing. An unproven delta is authored work and an unverifiable comparison fails
+the gate. The exemption exists only relative to a comparison base, so it cannot
+accumulate, and a run that grants one prints every exempted path. The
+[mechanical migration quality boundary](change-briefs/mechanical-migration-quality-boundary.md)
+brief holds the contract and the procedure for registering a new transformation.
+
 | Automated | Requires human or independent review |
 | --- | --- |
 | Ruff lint and format on changed Python | Risk classification and justified test levels |

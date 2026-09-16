@@ -10,11 +10,29 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+# This module is both the documented `python scripts/quality_gate.py` entry point,
+# where only `scripts/` is importable, and `scripts.quality_gate` under pytest,
+# where only the repository root is. Import the sibling under whichever name the
+# running interpreter can resolve; a process only ever resolves one of them.
+try:
+    from scripts import mechanical_migration
+except ImportError:
+    import mechanical_migration
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 class QualityGateError(RuntimeError):
     """Report an input or repository state that makes the gate inconclusive."""
+
+
+@dataclass(frozen=True)
+class ClassifiedFile:
+    """Pair one selected Python file with its mechanical-migration verdict."""
+
+    path: Path
+    relative: str
+    verdict: mechanical_migration.Verdict
 
 
 @dataclass(frozen=True)
@@ -27,6 +45,23 @@ class ChangeSelection:
     base_sha: str
     merge_base_sha: str
     target_sha: str
+    classified: tuple[ClassifiedFile, ...] = ()
+    authorized: tuple[str, ...] = ()
+
+    @property
+    def exempt(self) -> tuple[Path, ...]:
+        """Return the files a proven mechanical migration removed from the gate."""
+        return tuple(item.path for item in self.classified if item.verdict.is_exempt)
+
+    @property
+    def unverifiable(self) -> tuple[Path, ...]:
+        """Return the files whose classification could not be established."""
+        unverifiable = mechanical_migration.Classification.UNVERIFIABLE
+        return tuple(
+            item.path
+            for item in self.classified
+            if item.verdict.classification is unverifiable
+        )
 
 
 def _run_git(repository: Path, *arguments: str) -> str:
@@ -44,6 +79,23 @@ def _run_git(repository: Path, *arguments: str) -> str:
     if result.returncode != 0:
         detail = result.stderr.strip() or "Git returned no diagnostic."
         raise QualityGateError(detail)
+    return result.stdout
+
+
+def _run_git_bytes(repository: Path, *arguments: str) -> bytes:
+    """Return raw Git output so stored bytes survive the comparison unchanged."""
+    try:
+        result = subprocess.run(
+            ["git", *arguments],
+            cwd=repository,
+            check=False,
+            capture_output=True,
+        )
+    except OSError as error:
+        raise QualityGateError("Git could not be executed.") from error
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", "replace").strip()
+        raise QualityGateError(detail or "Git returned no diagnostic.")
     return result.stdout
 
 
@@ -113,7 +165,74 @@ def _existing_python_files(repository: Path, names: set[str]) -> tuple[Path, ...
     )
 
 
-def select_worktree_changes(repository: Path, base: str) -> ChangeSelection:
+def _classify_selection(
+    repository: Path,
+    merge_base_sha: str,
+    files: Sequence[Path],
+    transformations: Sequence[mechanical_migration.MechanicalTransformation],
+) -> tuple[ClassifiedFile, ...]:
+    """Classify each selected file against the authorized mechanical migrations.
+
+    Classification runs only when a migration is authorized, so the default gate
+    performs exactly the work and the selection it performed before.
+    """
+    if not transformations or not files:
+        return ()
+    tracked = _paths_from_git(
+        repository,
+        "ls-tree",
+        "-r",
+        "--name-only",
+        "-z",
+        merge_base_sha,
+    )
+    classified: list[ClassifiedFile] = []
+    for path in files:
+        relative = path.relative_to(repository).as_posix()
+        base_bytes = None
+        if relative in tracked:
+            base_bytes = _run_git_bytes(
+                repository,
+                "cat-file",
+                "blob",
+                f"{merge_base_sha}:{relative}",
+            )
+        try:
+            candidate_bytes = path.read_bytes()
+        except OSError as error:
+            raise QualityGateError(
+                f"Selected Python path {relative!r} could not be read."
+            ) from error
+        classified.append(
+            ClassifiedFile(
+                path=path,
+                relative=relative,
+                verdict=mechanical_migration.classify_bytes_change(
+                    base_bytes,
+                    candidate_bytes,
+                    transformations,
+                ),
+            )
+        )
+    return tuple(classified)
+
+
+def _gated_files(
+    files: tuple[Path, ...],
+    classified: tuple[ClassifiedFile, ...],
+) -> tuple[Path, ...]:
+    """Remove only the files a proven mechanical migration exempted."""
+    if not classified:
+        return files
+    exempt = {item.path for item in classified if item.verdict.is_exempt}
+    return tuple(path for path in files if path not in exempt)
+
+
+def select_worktree_changes(
+    repository: Path,
+    base: str,
+    transformations: Sequence[mechanical_migration.MechanicalTransformation] = (),
+) -> ChangeSelection:
     """Select current files for provisional worktree validation."""
     repository = repository.resolve()
     base_sha, target_sha, merge_base_sha = _comparison(repository, base, "HEAD")
@@ -147,13 +266,22 @@ def select_worktree_changes(repository: Path, base: str) -> ChangeSelection:
     names.update(
         _paths_from_git(repository, "ls-files", "--others", "--exclude-standard", "-z")
     )
+    selected = _existing_python_files(repository, names)
+    classified = _classify_selection(
+        repository,
+        merge_base_sha,
+        selected,
+        transformations,
+    )
     return ChangeSelection(
         mode="worktree",
-        files=_existing_python_files(repository, names),
+        files=_gated_files(selected, classified),
         base_ref=base,
         base_sha=base_sha,
         merge_base_sha=merge_base_sha,
         target_sha=target_sha,
+        classified=classified,
+        authorized=tuple(item.identifier for item in transformations),
     )
 
 
@@ -161,6 +289,7 @@ def select_delivery_changes(
     repository: Path,
     base: str,
     delivery_commit: str,
+    transformations: Sequence[mechanical_migration.MechanicalTransformation] = (),
 ) -> ChangeSelection:
     """Select files only when a clean tree matches an exact delivery commit."""
     repository = repository.resolve()
@@ -188,13 +317,22 @@ def select_delivery_changes(
         "-z",
         f"{merge_base_sha}...{target_sha}",
     )
+    selected = _existing_python_files(repository, names)
+    classified = _classify_selection(
+        repository,
+        merge_base_sha,
+        selected,
+        transformations,
+    )
     return ChangeSelection(
         mode="delivery",
-        files=_existing_python_files(repository, names),
+        files=_gated_files(selected, classified),
         base_ref=base,
         base_sha=base_sha,
         merge_base_sha=merge_base_sha,
         target_sha=target_sha,
+        classified=classified,
+        authorized=tuple(item.identifier for item in transformations),
     )
 
 
@@ -251,6 +389,47 @@ def _print_selection(selection: ChangeSelection) -> None:
     )
     print(f"Merge base: {selection.merge_base_sha}", flush=True)
     print(f"Selected Python files: {len(selection.files)}", flush=True)
+    _print_mechanical_boundary(selection)
+
+
+def _print_mechanical_boundary(selection: ChangeSelection) -> None:
+    """Print every granted exemption so no run can use one silently."""
+    if not selection.authorized:
+        return
+    print(
+        f"Authorized mechanical migrations: {', '.join(selection.authorized)}",
+        flush=True,
+    )
+    for item in selection.classified:
+        if not item.verdict.is_exempt:
+            continue
+        print(
+            f"  {item.verdict.classification.value} {item.relative} "
+            f"({item.verdict.applied_sites} authorized sites)",
+            flush=True,
+        )
+    print(
+        f"Files exempted from Ruff by a proven mechanical migration: "
+        f"{len(selection.exempt)}",
+        flush=True,
+    )
+
+
+def _report_unverifiable(selection: ChangeSelection) -> int:
+    """Fail the gate for any file whose classification could not be established."""
+    unverifiable = mechanical_migration.Classification.UNVERIFIABLE
+    reported = 0
+    for item in selection.classified:
+        if item.verdict.classification is not unverifiable:
+            continue
+        reported += 1
+        print(
+            f"Unverifiable mechanical comparison for {item.relative}: "
+            f"{item.verdict.reason}",
+            file=sys.stderr,
+            flush=True,
+        )
+    return int(reported > 0)
 
 
 def _parse_arguments(arguments: Sequence[str] | None) -> argparse.Namespace:
@@ -270,17 +449,46 @@ def _parse_arguments(arguments: Sequence[str] | None) -> argparse.Namespace:
         type=Path,
         help="Focused Python files; never constitutes full delivery validation.",
     )
+    parser.add_argument(
+        "--mechanical-migration",
+        action="append",
+        metavar="IDENTIFIER",
+        help=(
+            "Authorize one registered mechanical transformation for this "
+            "comparison; repeatable. Registered: "
+            f"{', '.join(mechanical_migration.registered_identifiers())}."
+        ),
+    )
     return parser.parse_args(arguments)
+
+
+def _authorized_transformations(
+    identifiers: Sequence[str] | None,
+) -> tuple[mechanical_migration.MechanicalTransformation, ...]:
+    """Resolve requested migrations, rejecting any identifier that is unregistered."""
+    if not identifiers:
+        return ()
+    try:
+        return mechanical_migration.resolve_transformations(identifiers)
+    except mechanical_migration.MechanicalMigrationError as error:
+        raise QualityGateError(str(error)) from error
 
 
 def main(arguments: Sequence[str] | None = None) -> int:
     """Select files, run Ruff, and return a process exit status."""
     parsed = _parse_arguments(arguments)
+    unverifiable_status = 0
     try:
+        transformations = _authorized_transformations(parsed.mechanical_migration)
         if parsed.files is not None:
             if parsed.base is not None or parsed.delivery_commit is not None:
                 raise QualityGateError(
                     "--files cannot be combined with --base or --delivery-commit."
+                )
+            if transformations:
+                raise QualityGateError(
+                    "--mechanical-migration needs a comparison base; a focused "
+                    "check cannot prove mechanical equivalence."
                 )
             files = _explicit_files(parsed.files)
             print(
@@ -293,20 +501,26 @@ def main(arguments: Sequence[str] | None = None) -> int:
                     "A comparison base is required; pass --base <ref-or-sha>."
                 )
             if parsed.delivery_commit is None:
-                selection = select_worktree_changes(REPOSITORY_ROOT, parsed.base)
+                selection = select_worktree_changes(
+                    REPOSITORY_ROOT,
+                    parsed.base,
+                    transformations,
+                )
             else:
                 selection = select_delivery_changes(
                     REPOSITORY_ROOT,
                     parsed.base,
                     parsed.delivery_commit,
+                    transformations,
                 )
             _print_selection(selection)
+            unverifiable_status = _report_unverifiable(selection)
             files = selection.files
     except QualityGateError as error:
         print(f"Ruff gate inconclusive: {error}", file=sys.stderr, flush=True)
         return 2
 
-    return run_ruff(files)
+    return max(run_ruff(files), unverifiable_status)
 
 
 if __name__ == "__main__":
