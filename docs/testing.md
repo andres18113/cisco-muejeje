@@ -25,6 +25,20 @@ full depth on purpose: the CP-LIVE M0 oracle verifies the provenance of its
 expected values against the commit object it characterised, and a shallow
 checkout does not contain that commit.
 
+The workflow also runs two non-matrix jobs on the same commit: `quality` invokes
+the incremental Ruff lint/format entry point and `docs` builds the MkDocs site.
+Run their local equivalents with the checkout interpreter:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\quality_gate.py --base origin/main
+.\.venv\Scripts\python.exe -m mkdocs build --site-dir _site
+git diff --check
+```
+
+The quality gate covers complete new and changed Python files. Repository-wide
+legacy debt is intentionally outside this incremental boundary; see the
+[engineering standard](engineering/standards.md) for the normative policy.
+
 ## What is covered
 
 - Topology planning, IPv4 and VLSM addressing, and DHCP pool generation.

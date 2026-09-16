@@ -10,25 +10,17 @@ jobs:
   pytest:
     runs-on: ${{ matrix.os }}
     env:
-      # Token fijo para que los tests del bridge no toquen el archivo real
-      # del usuario que corre el runner.
+      # Keep bridge tests away from the runner user's real token file.
       PT_MCP_BRIDGE_TOKEN: ci-token-long-enough-to-be-considered-valid-0123456789
     strategy:
       fail-fast: false
       matrix:
-        # Windows es la plataforma principal (Packet Tracer, portapapeles vía
-        # clip.exe). Ubuntu corre igual para detectar suposiciones de rutas.
+        # Windows is primary; Ubuntu detects platform and path assumptions.
         os: [windows-latest, ubuntu-latest]
         python-version: ["3.11", "3.13"]
 
     steps:
-      # Historia completa a proposito: el oraculo CP-LIVE M0 comprueba la
-      # procedencia de su expected contra el objeto commit que caracterizo
-      # (`git show -s --format=%T <sha>` en
-      # tests/test_cp_live_m0_equivalence_baseline.py). El checkout superficial
-      # por defecto no trae ese commit, la comprobacion no puede hacerse y el
-      # test falla en vez de saltarse. Es una lectura local: no hay red dentro
-      # de pytest.
+      # Full history lets provenance tests resolve their characterized commits.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -37,9 +29,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      # El preflight de import y el entorno de desarrollo comparten contrato:
-      # el proceso gobernado pertenece a la .venv del checkout. setup-python
-      # es solo el bootstrap con el que se crea ese entorno local.
+      # setup-python bootstraps the environment; governed commands run in the
+      # virtual environment owned by this checkout.
       - name: Create checkout-local environment
         run: python -m venv .venv
 
@@ -47,13 +38,13 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           .\.venv\Scripts\python.exe -m pip install --upgrade pip
-          .\.venv\Scripts\python.exe -m pip install -e ".[test]"
+          .\.venv\Scripts\python.exe -m pip install -e ".[test,quality]"
 
       - name: Install (Ubuntu)
         if: runner.os == 'Linux'
         run: |
           .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/python -m pip install -e ".[test]"
+          .venv/bin/python -m pip install -e ".[test,quality]"
 
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
@@ -62,3 +53,69 @@ jobs:
       - name: Run tests (Ubuntu)
         if: runner.os == 'Linux'
         run: .venv/bin/python -m pytest -q
+
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Create checkout-local environment
+        run: python -m venv .venv
+
+      - name: Install quality tools
+        run: |
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e ".[quality]"
+
+      - name: Resolve comparison base
+        id: comparison
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          default_base="origin/$DEFAULT_BRANCH"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            comparison="$PR_BASE_SHA"
+          elif [[ "$REF_NAME" == "$DEFAULT_BRANCH" ]] \
+            && git cat-file -e "$PUSH_BEFORE_SHA^{commit}" 2>/dev/null; then
+            comparison="$PUSH_BEFORE_SHA"
+          else
+            comparison="$default_base"
+          fi
+          echo "ref=$comparison" >> "$GITHUB_OUTPUT"
+
+      - name: Run Ruff lint and format gate
+        run: .venv/bin/python scripts/quality_gate.py --base "${{ steps.comparison.outputs.ref }}"
+
+      - name: Check whitespace
+        run: git diff --check "${{ steps.comparison.outputs.ref }}...HEAD"
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Create checkout-local environment
+        run: python -m venv .venv
+
+      - name: Install documentation tools
+        run: |
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e ".[docs]"
+
+      - name: Build documentation
+        run: .venv/bin/python -m mkdocs build --site-dir _site

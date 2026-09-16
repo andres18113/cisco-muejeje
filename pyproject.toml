@@ -17,16 +17,16 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8"]
+quality = ["ruff==0.16.7"]
 # Single source for the documentation build; .github/workflows/docs.yml installs
 # this extra instead of a separate requirements file that would drift from here.
 docs = ["mkdocs-material>=9.5"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Los tests importan `src.packet_tracer_mcp`. Fijarlo acá evita depender de la
-# inserción implícita de rootdir y garantiza una sola identidad del módulo.
-# Además, un par de tests leen archivos por ruta relativa al repo, así que la
-# suite debe correrse desde la raíz.
+# Tests import `src.packet_tracer_mcp`. Setting this explicitly avoids implicit
+# rootdir insertion and preserves one module identity. Some tests also read
+# repository-relative files, so run the suite from the repository root.
 pythonpath = ["."]
 
 [project.scripts]
@@ -34,3 +34,14 @@ pt-mcp = "packet_tracer_mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/packet_tracer_mcp"]
+
+[tool.ruff]
+required-version = "==0.16.7"
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B", "UP", "D", "RUF"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
