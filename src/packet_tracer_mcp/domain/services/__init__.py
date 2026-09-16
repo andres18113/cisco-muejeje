@@ -1,4 +1,5 @@
-"""Domain services."""
+"""Planning services: orchestration, validation, IP planning, auto-fix, explanation
+and estimation."""
 
 from .orchestrator import plan_from_request
 from .validator import validate_plan

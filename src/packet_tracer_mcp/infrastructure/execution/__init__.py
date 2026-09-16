@@ -1,4 +1,5 @@
-"""Execution infrastructure."""
+"""Execution: the runtimes, transports and guards through which commands reach Packet
+Tracer, together with the session-integrity and import-isolation boundaries."""
 
 from .executor_base import ExecutorBase
 from .manual_executor import ManualExecutor

@@ -1,4 +1,4 @@
-"""Persistence infrastructure."""
+"""Persistence: saved projects and deployment manifests on disk."""
 
 from .deployment_manifest_store import (
     DeploymentManifestStore,

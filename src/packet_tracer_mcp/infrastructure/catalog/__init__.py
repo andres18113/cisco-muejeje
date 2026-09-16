@@ -1,4 +1,5 @@
-"""Infrastructure catalog."""
+"""Backend catalogs and capability policies: device models and ports, cables, modules,
+aliases, templates, and the measured capability profiles the planners consume."""
 
 from .devices import (
     ALL_MODELS, DeviceModel, PortSpec,

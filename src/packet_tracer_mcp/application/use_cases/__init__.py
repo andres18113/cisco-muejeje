@@ -1,4 +1,5 @@
-"""Application use cases."""
+"""Use cases: the classic plan-validate-generate pipeline, the Enterprise compile and
+apply flows, and the offline and LIVE qualification entry points."""
 
 from .plan_topology import plan_topology
 from .validate_plan import validate_plan_uc

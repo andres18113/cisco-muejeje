@@ -1,4 +1,4 @@
-"""Enterprise validation rules."""
+"""Reglas de validación del dominio Enterprise."""
 
 from .live_session_safety import validate_live_session_positive_admission
 from .poe_delivery import (
