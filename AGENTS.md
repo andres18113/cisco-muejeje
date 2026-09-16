@@ -61,9 +61,13 @@ not inside an unimportable closure.
 
 Use the checkout-local virtual environment from the repository root. Do not set
 a custom `PYTHONPATH` and do not substitute another checkout's interpreter.
+The authoritative remote in this maintainer checkout is `cisco`, so its verified
+base is `cisco/main`. This name is local to this checkout, not a universal
+convention. Never infer the base from a feature branch upstream.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[test,docs,quality]"
+git rev-parse --verify "cisco/main^{commit}"
 .\.venv\Scripts\python.exe scripts\quality_gate.py --base cisco/main
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m mkdocs build --site-dir _site
@@ -73,6 +77,7 @@ git diff --check
 The command above is provisional while the worktree is dirty. After committing,
 validate delivery from a clean tree with
 `scripts\quality_gate.py --base cisco/main --delivery-commit HEAD`.
+If `cisco/main` cannot resolve to a commit, stop before running the gate.
 
 On Linux, use `.venv/bin/python` with the same modules and arguments. CI uses
 the same quality entry point and preserves the Windows/Linux × Python 3.11/3.13

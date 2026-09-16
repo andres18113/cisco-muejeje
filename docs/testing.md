@@ -27,9 +27,20 @@ checkout does not contain that commit.
 
 The workflow also runs two non-matrix jobs on the same commit: `quality` invokes
 the incremental Ruff lint/format entry point and `docs` builds the MkDocs site.
-Run their local equivalents with the checkout interpreter:
+The gate has no universal remote name. Select and verify the authoritative-main
+reference for the environment before invoking it:
+
+| Context | Verified `main` reference |
+| --- | --- |
+| Current maintainer checkout | `cisco/main` |
+| Standard clone from `CONTRIBUTING.md` | `origin/main` |
+| GitHub Actions checkout | `origin/main`, created by `actions/checkout` |
+
+Never infer the base from the current feature branch upstream. In this
+maintainer checkout, run the local equivalents with its checkout interpreter:
 
 ```powershell
+git rev-parse --verify "cisco/main^{commit}"
 .\.venv\Scripts\python.exe scripts\quality_gate.py --base cisco/main
 .\.venv\Scripts\python.exe -m mkdocs build --site-dir _site
 git diff --check
@@ -42,6 +53,10 @@ commit from a clean tree:
 .\.venv\Scripts\python.exe scripts\quality_gate.py `
   --base cisco/main --delivery-commit HEAD
 ```
+
+The verification workflow uses `origin/main` because GitHub Actions creates its
+own `origin`; this does not redefine the maintainer checkout's authoritative
+remote.
 
 The full quality gate covers complete new and changed Python files and prints
 the resolved comparison identity. `--files` is focused feedback only.

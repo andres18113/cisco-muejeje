@@ -221,3 +221,31 @@ conflict is reported as a separate proposed change and is not edited here.
   `a535d4811589226bcb1afe9ce9c90d2c40ae4eb4` locally and remotely.
 - Clean-tree delivery validation, effective CI permission logs, all six final-SHA
   jobs, and independent audit remain pending.
+
+## Authoritative-main reference clarification
+
+- Status: implemented; local verification complete; clean-tree delivery and
+  exact-SHA CI pending
+- Risk: **L**, because this changes shared engineering authority even though it
+  does not change runtime or gate behavior.
+- Requirement R18: quality-gate instructions must select the verified reference
+  for the authoritative `main` in the current checkout, never silently infer a
+  remote or use the feature branch upstream. The maintainer checkout uses
+  `cisco/main`; the standard clone documented by `CONTRIBUTING.md` and GitHub
+  Actions use `origin/main`. The selected reference must resolve to a commit
+  before the gate runs.
+- Acceptance: normative documentation states the general rule and each concrete
+  context; searches show no portable clone instructions using `cisco/main` and
+  no maintainer instructions using `origin/main`. Existing historical results
+  and the deliberate `cisco/main` gate regression remain unchanged.
+- Test design: search both reference names, run affected documentation tests and
+  MkDocs, then full pytest, `git diff --check`, clean-tree delivery validation,
+  and all six exact-SHA CI jobs. No unit test is invented for this documentation
+  correction.
+- Local results: the reference search confirmed maintainer-only `cisco/main`,
+  clone-only `origin/main`, and both contexts in the shared standard/testing
+  explanation. `cisco/main` resolved to
+  `9cb1c1ceb1e77e17daa5a06e4bf21a52db932479`; 14 affected tests passed, MkDocs
+  built with the two known historical warnings, the provisional quality gate
+  passed, `git diff --check` passed, and the full suite reported 5,030 passed,
+  3 skipped, and 3 inherited warnings in 286.41 seconds.

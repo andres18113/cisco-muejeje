@@ -171,12 +171,18 @@ Self-review is mandatory but is not independent audit. Delivery status is
 
 `pyproject.toml` pins Ruff and holds its lint/format configuration.
 `scripts/quality_gate.py` is the one local and CI entry point. A full gate
-requires `--base`; it resolves and prints the base and merge-base SHAs. Worktree
-mode checks complete committed, staged, unstaged, and untracked Python paths but
-is provisional because it reads filesystem bytes. Delivery mode additionally
-requires `--delivery-commit`, a clean tree/index, and exact equality with `HEAD`,
-so filesystem bytes equal the requested commit. Missing paths and unresolved
-identities fail closed. `--files` is a focused check, never delivery validation.
+requires `--base`. There is no universal remote name: select the reference for
+the authoritative `main` in the current checkout and prove it resolves to a
+commit before invoking the gate. This maintainer checkout uses `cisco/main`; a
+standard clone and GitHub Actions use `origin/main`. Never silently guess a
+remote or derive the base from the feature branch upstream, which could compare
+the branch with itself. The gate re-resolves the selected reference and prints
+the base and merge-base SHAs. Worktree mode checks complete committed, staged,
+unstaged, and untracked Python paths but is provisional because it reads
+filesystem bytes. Delivery mode additionally requires `--delivery-commit`, a
+clean tree/index, and exact equality with `HEAD`, so filesystem bytes equal the
+requested commit. Missing paths and unresolved identities fail closed. `--files`
+is a focused check, never delivery validation.
 
 The gate intentionally does not scan every legacy Python file. This makes the
 adoption boundary measurable without global ignores or mass formatting. The
