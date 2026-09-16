@@ -1,20 +1,25 @@
 """Audited wireless capabilities of Packet Tracer, pinned to an exact build.
 
-Every record below names the surface it was read from, inside this repository
-or inside the maintained documentation. Nothing here was inferred from a
-screenshot, from the canvas, or from how close two icons sit: graphical
-proximity is not evidence of an association, and an API that nobody has called
-is UNKNOWN, not UNSUPPORTED.
+Three sources feed this module and they are not interchangeable.
 
-The four classes are not interchangeable:
+* A **measurement** on this exact build makes a capability SUPPORTED. Only a
+  measurement can.
+* The **vendor reference** shipped with the product makes it DOCUMENTED. The
+  reference names a class and a method; it does not say that this build exposes
+  it to the script engine, that a given model owns the process, or that the
+  call returns anything useful. Its own wording on `Device::getProcess` is
+  explicit that "not all names have an interface to interact with".
+* Everything else is UNKNOWN.
 
-* SUPPORTED    a named surface exists and this repository already drives it.
-* UNSUPPORTED  the backend does not offer it at all through this channel.
-* UNOBSERVABLE the state exists but no registered reading exposes it.
-* UNKNOWN      never measured on this build. The default for anything absent.
+Nothing here is inferred from a screenshot, from the canvas, or from how close
+two icons sit: graphical proximity is not evidence of an association. An API
+that nobody has called is UNKNOWN or DOCUMENTED, never UNSUPPORTED.
 
-An absent (capability, subject) pair therefore resolves UNKNOWN, and a model
-this module does not name inherits the backend-wide record when there is one.
+The reference is the Extensions API help bundled with the Packet Tracer
+9.0.1.0858 installation, under `help/default/IpcAPI`. Its own title page reads
+"Cisco Packet Tracer Extensions API 8.1.0", so the documentation ships one
+version behind the binary it comes with. That gap is exactly why a documented
+surface is not a measured one, and it is recorded on every DOCUMENTED record.
 """
 
 from __future__ import annotations
@@ -31,6 +36,17 @@ from .measured_port_inventories import MEASURED_BACKEND_VERSION
 
 _BACKEND = CapabilityBackend.PACKET_TRACER.value
 _DECLARED_BUILDS = frozenset({MEASURED_BACKEND_VERSION})
+
+#: Where a DOCUMENTED record comes from, named once so every record agrees.
+EXTENSIONS_API_REFERENCE = (
+    "Cisco Packet Tracer Extensions API 8.1.0 reference bundled with the "
+    "9.0.1.0858 installation (help/default/IpcAPI)"
+)
+_DOCUMENTED_NOT_MEASURED = (
+    "Documented in the bundled reference, which is labelled 8.1.0 and does not "
+    "answer for build 9.0.1.0858, for the models in use, or for what the "
+    "script engine exposes. No run has called it."
+)
 
 
 def _assessment(
@@ -54,6 +70,26 @@ def _assessment(
         evidence_reference=evidence_reference,
         note=note,
         resolved_by=resolved_by,
+    )
+
+
+def _documented(
+    capability: WirelessCapability,
+    surface: str,
+    *,
+    backend_version: str,
+    subject: str = "",
+    note: str = "",
+) -> WirelessCapabilityAssessment:
+    return _assessment(
+        capability,
+        Status.DOCUMENTED,
+        backend_version=backend_version,
+        subject=subject,
+        surface=surface,
+        evidence_reference=EXTENSIONS_API_REFERENCE,
+        note=(note + " " if note else "") + _DOCUMENTED_NOT_MEASURED,
+        resolved_by="vendor reference only; no measurement on this build",
     )
 
 
@@ -96,67 +132,57 @@ def packet_tracer_wireless_capability_audit(
                 WirelessCapability.RADIO_ENABLEMENT,
                 Status.UNKNOWN,
                 backend_version=version,
-                surface="",
                 note=(
                     "No module-swap path is registered for any other model, and "
                     "no IoT model has a measured port inventory on this build."
                 ),
                 resolved_by="absence of a measured surface",
             ),
-            _assessment(
+            _documented(
                 WirelessCapability.SERVICE_SET_CONFIGURATION,
-                Status.UNSUPPORTED,
+                "WirelessCommon.setSsid(string) / getSsid(); "
+                "WirelessServerProcess.setAuthenType / setEncryptType / "
+                "setSsidBrdCastEnabled, reached via Device.getProcess(\"WirelessServer\")",
                 backend_version=version,
-                surface="none (access point GUI only)",
-                evidence_reference="docs/advanced-features.md",
                 note=(
-                    "SSID and WPA2 settings of an access point are not exposed "
-                    "through the Script Engine; they are set in the device GUI. "
-                    "Plans therefore run on the backend default service set."
+                    "The maintained note that a custom SSID needs the device "
+                    "GUI describes this repository, which drives no such call, "
+                    "not the backend."
                 ),
-                resolved_by="maintained documentation of the backend limit",
             ),
-            _assessment(
+            _documented(
                 WirelessCapability.ENDPOINT_SERVICE_SET_SELECTION,
-                Status.UNKNOWN,
+                "WirelessClientProcess.setCurrentProfile(...) / addProfile(...) / "
+                "getCurrentProfile(), reached via Device.getProcess(\"WirelessClient\")",
                 backend_version=version,
-                surface="",
                 note=(
-                    "The only described client path is radio auto-association "
-                    "to the default service set. No primitive that selects a "
-                    "service set from an endpoint has been confirmed."
+                    "A profile carries the service set, the authentication type "
+                    "and the addressing mode together."
                 ),
-                resolved_by="absence of a confirmed primitive",
             ),
-            _assessment(
+            _documented(
                 WirelessCapability.ASSOCIATION_STATE_OBSERVATION,
-                Status.UNKNOWN,
+                "WirelessClientProcess.getCurrentApMac() / getSsid() / "
+                "getCurrentProfile(); WirelessCommon.getPort()",
                 backend_version=version,
-                surface="",
-                evidence_reference=(
-                    "infrastructure/catalog/cp_scale_qualification_policy.py"
-                ),
                 note=(
-                    "The governed backend policy records wireless association "
-                    "as unqualified: no governed run has established that an "
-                    "association, or the lease that depends on it, is readable "
-                    "on this build. Unmeasured, not refuted."
+                    "The governed CP qualification policy records wireless "
+                    "association as unqualified. That is the absence of a "
+                    "measurement, and it neither confirms nor refutes these "
+                    "surfaces."
                 ),
-                resolved_by="governed qualification policy",
             ),
-            _assessment(
+            _documented(
                 WirelessCapability.ASSOCIATED_ACCESS_POINT_IDENTIFICATION,
-                Status.UNOBSERVABLE,
+                "WirelessClientProcess.getCurrentApMac(); "
+                "Antenna.getReceiverCount() / getReceiverAt(int) -> Antenna, "
+                "each with getPort() and Port.getOwnerDevice()",
                 backend_version=version,
-                surface="Link.getClassName() == 'Antenna', Link.getPort()",
-                evidence_reference="adapters/mcp/tool_registry.py topology export",
                 note=(
-                    "A wireless link is enumerated through a single getPort(), "
-                    "which names one radio owner. No registered reading returns "
-                    "both ends, so endpoint-to-access-point pairing cannot be "
-                    "read from the link surface."
+                    "An Antenna enumerates its receivers, so a pairing is "
+                    "reachable in the reference by identity rather than by "
+                    "position. Whether this build populates it is unmeasured."
                 ),
-                resolved_by="shape of the registered link surface",
             ),
             _assessment(
                 WirelessCapability.WIRELESS_PORT_CLASSIFICATION,
@@ -175,14 +201,14 @@ def packet_tracer_wireless_capability_audit(
                 Status.UNKNOWN,
                 backend_version=version,
                 subject="AccessPoint-PT",
-                surface="Device.getPortAt(i).getName()",
+                surface="Device.getPortAt(int).getName(), Port.isWirelessPort()",
                 evidence_reference=(
                     "infrastructure/catalog/measured_port_inventories.py"
                 ),
                 note=(
                     "The measured inventory is exactly ['Port 0', 'Port 1']. "
-                    "Which of the two is a radio was never read back with "
-                    "isWirelessPort(), and the catalogue declares only Port 0."
+                    "Which of the two is a radio was never read back, and the "
+                    "catalogue declares only Port 0."
                 ),
                 resolved_by="measured inventory without a radio classification",
             ),
@@ -220,28 +246,27 @@ def packet_tracer_wireless_capability_audit(
                 surface="Port.isDhcpClientOn()",
                 evidence_reference="adapters/mcp/tool_registry.py port inventory",
                 note=(
-                    "A configuration read-back only. It says the port asks for "
-                    "a lease, never that it holds one."
+                    "A configuration read-back only. It says whether the port "
+                    "asks for a lease, never that it holds one, and a disabled "
+                    "flag is not a static assignment."
                 ),
                 resolved_by="registered production read path",
             ),
-            _assessment(
+            _documented(
                 WirelessCapability.NETWORK_ATTACHMENT_OBSERVATION,
-                Status.UNKNOWN,
+                "WirelessClientProcess.getCurrentProfile() -> WirelessProfile"
+                ".isDhcpEnabled / .ipAddress / .subnetMask / .defaultGateway",
                 backend_version=version,
-                surface="",
                 note=(
-                    "No registered primitive returns lease state. An address on "
-                    "a DHCP-flagged port is indirect evidence and has never "
-                    "been qualified for a wireless endpoint on this build."
+                    "The profile is the client view of its addressing. It is "
+                    "not a lease table, so even once measured it may describe "
+                    "what was requested rather than what was granted."
                 ),
-                resolved_by="absence of a lease surface",
             ),
             _assessment(
                 WirelessCapability.IOT_FUNCTION_OBSERVATION,
                 Status.UNKNOWN,
                 backend_version=version,
-                surface="",
                 note=(
                     "Out of scope for this phase by design. Smoke, motion and "
                     "video behaviour is neither attempted nor inferred from any "

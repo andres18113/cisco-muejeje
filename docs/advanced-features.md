@@ -83,9 +83,12 @@ Wireless association is **not qualified**. The governed backend policy in
 the DHCP lease that depends on it, occurs in a given Packet Tracer build. Treat
 the wireless path as planned configuration, not as verified behaviour.
 
-Access-point SSID and WPA2 settings cannot be configured from here: Packet Tracer
-does not expose them through its Script Engine, so a custom SSID or security
-profile has to be set in the access point's own GUI.
+Access-point SSID and WPA2 settings are not configured from here: this server
+drives no such call, so a custom SSID or security profile has to be set in the
+access point's own GUI. That is a limit of this tool, not a proven limit of
+Packet Tracer — the bundled Extensions API reference documents
+`WirelessCommon.setSsid` and the `WirelessServer` process, and no run has yet
+established whether build 9.0.1.0858 exposes them.
 
 The backend-neutral contract behind wireless IoT endpoints — clusters, candidate
 access points, association and network attachment evidence, and the full Packet

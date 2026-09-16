@@ -251,7 +251,7 @@ def test_a_fresh_direct_reading_reaches_associated():
     for item in qualification.results:
         assert item.association_state is WirelessAssociationState.ASSOCIATED
         assert item.attachment_state is NetworkAttachmentState.ATTACHED
-        assert item.attachment.addressing_source is AddressingSource.DHCP_CLIENT_FLAG
+        assert item.attachment.addressing_source is AddressingSource.DHCP_CLIENT_ENABLED
         assert item.attachment.in_intended_segment is True
         assert item.association.backend_version == BUILD
 
@@ -369,6 +369,7 @@ def test_a_policy_that_requires_observation_rejects_a_planned_run(requirement):
 
     assert qualification.admission is IoTConnectivityAdmission.REJECTED
     assert qualification.reasons
+    assert qualification.closure is not IoTConnectivityClosure.OBSERVED
 
 
 def test_iot_function_stays_declared_and_separate_from_association():
@@ -400,7 +401,8 @@ def test_iot_function_stays_declared_and_separate_from_association():
     }
 
 
-def test_a_partially_observed_run_says_so():
+def test_a_run_with_one_failed_member_closes_failed_not_partial():
+    """A real failure is not a partial success, whatever the others did."""
     audit = _audit(
         association_state_observation=WirelessCapabilityStatus.SUPPORTED,
     )
@@ -422,5 +424,34 @@ def test_a_partially_observed_run_says_so():
         _plan(), audit=audit, port=_Mixed(audit),
     )
 
-    assert qualification.closure is IoTConnectivityClosure.PARTIALLY_OBSERVED
+    assert qualification.closure is IoTConnectivityClosure.FAILED
     assert WirelessAssociationState.FAILED.value in qualification.association_summary
+
+
+def test_a_partially_observed_run_says_so():
+    """Some members observed, none contradicted, nothing claimed for the rest."""
+    audit = _audit(
+        association_state_observation=WirelessCapabilityStatus.SUPPORTED,
+    )
+
+    class _Partial(_StubPort):
+        def observe_association(self, intent):
+            if not intent.endpoint_id.endswith("001"):
+                return None
+            return WirelessAssociationReading(
+                endpoint_id=intent.endpoint_id,
+                backend=BACKEND,
+                backend_version=BUILD,
+                attempted=True,
+                associated=True,
+                fresh=True,
+                method=VerificationMethod.DIRECT_STATE,
+            )
+
+    qualification = qualify_iot_connectivity(
+        _plan(), audit=audit, port=_Partial(audit),
+    )
+
+    assert qualification.closure is IoTConnectivityClosure.PARTIALLY_OBSERVED
+    assert WirelessAssociationState.FAILED.value not in qualification.association_summary
+    assert WirelessAssociationState.ASSOCIATED.value in qualification.association_summary

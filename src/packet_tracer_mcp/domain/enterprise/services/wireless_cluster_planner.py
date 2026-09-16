@@ -4,9 +4,11 @@ Pure and deterministic: the same endpoints always produce the same clusters,
 candidates and intents. The planner decides nothing about acceptance and knows
 no backend; both belong one layer up.
 
-The membership criterion is the endpoint intent itself (``wireless``), not a
-list of IoT roles. A smoke detector, a webcam and a wireless laptop enter the
-same way, and a humiture or temperature monitor needs no new code to join.
+Membership is decided by ``wireless_participation``, not by a list of IoT roles
+and not by the radio flag alone. A smoke detector, a webcam and a wireless
+laptop enter the same way, a humiture or temperature monitor needs no new code
+to join, and a wireless bridge or lightweight access point serves the cluster
+instead of quietly becoming one of its clients.
 """
 
 from __future__ import annotations
@@ -14,7 +16,6 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 
-from ..models.roles import DeviceRole
 from ..models.segments import NetworkSegment, SegmentRole
 from ..models.wireless_connectivity import (
     AccessPointCandidate,
@@ -27,8 +28,10 @@ from ..models.wireless_connectivity import (
     WirelessClusterScope,
     WirelessConnectivityPlan,
     WirelessEndpointMembership,
+    WirelessParticipation,
     WirelessServiceSetIntent,
     iot_function_for_role,
+    wireless_participation,
 )
 from .endpoint_expander import ExpandedEndpoint
 from .naming import DeterministicNamingService
@@ -64,9 +67,21 @@ class WirelessClusterPlanner:
         service_sets: Mapping[SegmentRole, WirelessServiceSetIntent] | None = None,
         pinned_access_points: Mapping[str, str] | None = None,
     ) -> WirelessConnectivityPlan:
-        members = [item for item in endpoints if item.wireless]
+        participation = {
+            item.id: wireless_participation(
+                item.role,
+                wireless=item.wireless,
+                metadata=item.requirement_metadata,
+            )
+            for item in endpoints
+        }
+        members = [
+            item for item in endpoints
+            if participation[item.id] is WirelessParticipation.CLIENT
+        ]
         access_points = [
-            item for item in endpoints if item.role is DeviceRole.ACCESS_POINT
+            item for item in endpoints
+            if participation[item.id] is WirelessParticipation.INFRASTRUCTURE
         ]
         declared_segments = self._segment_index(segments)
         pinned = dict(pinned_access_points or {})

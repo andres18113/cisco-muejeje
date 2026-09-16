@@ -182,9 +182,9 @@ def test_the_two_state_vocabularies_stay_distinct():
     assert association - {"associated"} == attachment - {"attached"}
 
 
-def test_the_capability_vocabulary_keeps_all_four_classes():
+def test_the_capability_vocabulary_keeps_its_classes_distinct():
     assert {item.value for item in WirelessCapabilityStatus} == {
-        "supported", "unsupported", "unknown", "unobservable",
+        "supported", "documented", "unsupported", "unknown", "unobservable",
     }
 
 

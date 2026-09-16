@@ -99,9 +99,18 @@ class NetworkAttachmentState(str, Enum):
 
 
 class AddressingSource(str, Enum):
+    """What an observation actually said about how the address was obtained.
+
+    ``DHCP_CLIENT_DISABLED`` is a fact about one flag, not a static assignment:
+    a port can have the client off and hold no address at all. ``STATIC`` is
+    reserved for a backend that positively reports a static assignment, and
+    nothing derives it from an intent or from the absence of DHCP.
+    """
+
     UNKNOWN = "unknown"
     STATIC = "static"
-    DHCP_CLIENT_FLAG = "dhcp_client_flag"
+    DHCP_CLIENT_ENABLED = "dhcp_client_enabled"
+    DHCP_CLIENT_DISABLED = "dhcp_client_disabled"
 
 
 class IoTFunction(str, Enum):
@@ -132,12 +141,67 @@ class WirelessCapability(str, Enum):
 
 
 class WirelessCapabilityStatus(str, Enum):
-    """Four-way classification; absence of a record is UNKNOWN, never a no."""
+    """Classification of one capability on one exact backend build.
+
+    ``DOCUMENTED`` is the honest middle: a vendor reference describes the
+    surface, and nobody has run it on this build. It licenses writing a probe;
+    it licenses no claim about a state, so everything that gates a promotion
+    treats it exactly like UNKNOWN. Absence of a record is UNKNOWN, never a no.
+    """
 
     SUPPORTED = "supported"
+    DOCUMENTED = "documented"
     UNSUPPORTED = "unsupported"
     UNKNOWN = "unknown"
     UNOBSERVABLE = "unobservable"
+
+
+#: Statuses that positively establish a capability cannot be observed here.
+BLOCKED_CAPABILITY_STATUSES = frozenset({
+    WirelessCapabilityStatus.UNSUPPORTED,
+    WirelessCapabilityStatus.UNOBSERVABLE,
+})
+
+#: Statuses that license driving a surface for evidence. DOCUMENTED is absent
+#: on purpose: a reference is not a measurement.
+MEASURED_CAPABILITY_STATUSES = frozenset({WirelessCapabilityStatus.SUPPORTED})
+
+
+class WirelessParticipation(str, Enum):
+    """How an endpoint takes part in a wireless cluster.
+
+    Radio capability alone does not make an endpoint a client. A wireless
+    bridge, repeater or lightweight access point carries a radio and serves the
+    cluster; classifying it by its ``wireless`` flag would quietly turn
+    infrastructure into a member.
+    """
+
+    CLIENT = "client"
+    INFRASTRUCTURE = "infrastructure"
+    EXCLUDED = "excluded"
+
+
+class BackendErrorKind(str, Enum):
+    """Why a backend read produced no answer.
+
+    None of these is an absent property, so none of them may become
+    UNOBSERVABLE. They say the question could not be asked or the answer could
+    not be parsed, which is a probe failure and leaves the state UNKNOWN.
+    """
+
+    TRANSPORT_EXCEPTION = "transport_exception"
+    TRANSPORT_TIMEOUT = "transport_timeout"
+    ENGINE_ERROR = "engine_error"
+    PROTOCOL_ERROR = "protocol_error"
+
+
+class ReadingProvenance(str, Enum):
+    """Whether a reading belongs to the subject and build it is used for."""
+
+    MATCHED = "matched"
+    FOREIGN_ENDPOINT = "foreign_endpoint"
+    FOREIGN_BACKEND = "foreign_backend"
+    FOREIGN_BUILD = "foreign_build"
 
 
 _IOT_FUNCTION_BY_ROLE: Mapping[DeviceRole, IoTFunction] = MappingProxyType({
@@ -157,6 +221,77 @@ def iot_function_for_role(role: DeviceRole) -> IoTFunction:
     wireless laptop joins the same cluster contract with ``NONE``.
     """
     return _IOT_FUNCTION_BY_ROLE.get(role, IoTFunction.NONE)
+
+
+#: Roles that serve a cluster rather than join it. Kept deliberately small:
+#: the general signal is the ``infrastructure_class`` metadata below, which any
+#: new wireless infrastructure model can set without touching this set.
+_INFRASTRUCTURE_ROLES = frozenset({DeviceRole.ACCESS_POINT})
+
+#: Metadata keys an endpoint can use to state its own part, in priority order.
+PARTICIPATION_METADATA_KEY = "wireless_participation"
+INFRASTRUCTURE_METADATA_KEY = "infrastructure_class"
+
+
+def wireless_participation(
+    role: DeviceRole,
+    *,
+    wireless: bool,
+    metadata: Mapping[str, str] | None = None,
+) -> WirelessParticipation:
+    """Decide how an endpoint takes part, never from the radio flag alone.
+
+    An explicit declaration wins, then an infrastructure class, then the
+    infrastructure roles. Only what is left over and carries a radio is a
+    client. A wireless bridge or lightweight access point therefore stays
+    infrastructure instead of silently joining its own cluster, and a new IoT
+    role needs no entry anywhere to be treated as a client.
+    """
+    declared = dict(metadata or {}).get(PARTICIPATION_METADATA_KEY, "").strip()
+    if declared:
+        try:
+            return WirelessParticipation(declared)
+        except ValueError:
+            # An unreadable declaration is not an invitation to guess.
+            return WirelessParticipation.EXCLUDED
+    if dict(metadata or {}).get(INFRASTRUCTURE_METADATA_KEY, "").strip():
+        return WirelessParticipation.INFRASTRUCTURE
+    if role in _INFRASTRUCTURE_ROLES:
+        return WirelessParticipation.INFRASTRUCTURE
+    if wireless:
+        return WirelessParticipation.CLIENT
+    return WirelessParticipation.EXCLUDED
+
+
+def reading_provenance(
+    *,
+    endpoint_id: str,
+    reading_endpoint_id: str,
+    expected: BackendIdentity,
+    reading_backend: str,
+    reading_backend_version: str,
+) -> ReadingProvenance:
+    """Whether a reading may be attributed to this endpoint on this build.
+
+    An empty backend on the reading is treated as foreign rather than as a
+    match: a reading that cannot say where it came from cannot be credited to
+    a build.
+    """
+    if reading_endpoint_id != endpoint_id:
+        return ReadingProvenance.FOREIGN_ENDPOINT
+    if reading_backend != expected.backend:
+        return ReadingProvenance.FOREIGN_BACKEND
+    if reading_backend_version != expected.backend_version:
+        return ReadingProvenance.FOREIGN_BUILD
+    return ReadingProvenance.MATCHED
+
+
+def _capability_label(capability: WirelessCapability, subject: str) -> str:
+    return capability.value + (f"/{subject}" if subject else "")
+
+
+def _status_label(status: "WirelessCapabilityStatus | None") -> str:
+    return "absent" if status is None else status.value
 
 
 @dataclass(frozen=True)
@@ -339,6 +474,8 @@ class WirelessAssociationReading:
     method: VerificationMethod = VerificationMethod.NONE
     fresh: bool = False
     unavailable_reading: str = ""
+    error_kind: BackendErrorKind | None = None
+    error_stage: str = ""
     detail: str = ""
 
 
@@ -357,6 +494,8 @@ class WirelessAttachmentReading:
     method: VerificationMethod = VerificationMethod.NONE
     fresh: bool = False
     unavailable_reading: str = ""
+    error_kind: BackendErrorKind | None = None
+    error_stage: str = ""
     detail: str = ""
 
 
@@ -375,6 +514,9 @@ class WirelessAssociationObservation:
     backend: str = ""
     backend_version: str = ""
     unavailable_reading: str = ""
+    error_kind: BackendErrorKind | None = None
+    error_stage: str = ""
+    provenance: ReadingProvenance = ReadingProvenance.MATCHED
     detail: str = ""
 
 
@@ -397,6 +539,9 @@ class NetworkAttachmentObservation:
     backend: str = ""
     backend_version: str = ""
     unavailable_reading: str = ""
+    error_kind: BackendErrorKind | None = None
+    error_stage: str = ""
+    provenance: ReadingProvenance = ReadingProvenance.MATCHED
     detail: str = ""
 
 
@@ -416,12 +561,66 @@ class WirelessCapabilityAssessment:
 
 
 @dataclass(frozen=True)
+class BackendIdentity:
+    """One backend and one exact build. Neither half alone identifies it."""
+
+    backend: str
+    backend_version: str
+
+    def __str__(self) -> str:
+        return f"{self.backend} {self.backend_version}"
+
+
+@dataclass(frozen=True)
 class WirelessCapabilityAudit:
     """Everything known about one backend build, with UNKNOWN as the default."""
 
     backend: str
     backend_version: str
     assessments: tuple[WirelessCapabilityAssessment, ...] = ()
+
+    @property
+    def identity(self) -> BackendIdentity:
+        return BackendIdentity(self.backend, self.backend_version)
+
+    def binding_conflicts(self) -> tuple[str, ...]:
+        """Records that do not belong to the build this audit claims to be."""
+        return tuple(sorted(
+            f"{_capability_label(item.capability, item.subject)} is recorded for "
+            f"{item.backend} {item.backend_version}"
+            for item in self.assessments
+            if item.backend != self.backend
+            or item.backend_version != self.backend_version
+        ))
+
+    def equivalence_conflicts(
+        self, other: "WirelessCapabilityAudit",
+    ) -> tuple[str, ...]:
+        """Why two audits cannot be treated as the same authority."""
+        conflicts: list[str] = []
+        if self.identity != other.identity:
+            conflicts.append(
+                f"backend identity {self.identity} does not equal {other.identity}"
+            )
+        mine = {
+            (item.capability, item.subject): item.status
+            for item in self.assessments
+        }
+        theirs = {
+            (item.capability, item.subject): item.status
+            for item in other.assessments
+        }
+        keys = sorted(
+            set(mine) | set(theirs), key=lambda item: (item[0].value, item[1]),
+        )
+        for key in keys:
+            if mine.get(key) is not theirs.get(key):
+                conflicts.append(
+                    f"{_capability_label(key[0], key[1])} is "
+                    f"{_status_label(mine.get(key))} here and "
+                    f"{_status_label(theirs.get(key))} there"
+                )
+        return tuple(conflicts)
 
     def status(
         self, capability: WirelessCapability, subject: str = "",
@@ -513,24 +712,31 @@ def classify_association_state(
     configured: bool,
     reading: WirelessAssociationReading | None,
     observation_capability: WirelessCapabilityStatus,
+    provenance: ReadingProvenance = ReadingProvenance.MATCHED,
 ) -> WirelessAssociationState:
     """Turn one raw reading into a state without ever inflating it.
 
-    Configuration alone can only reach CONFIGURED. A backend that cannot expose
-    the state at all yields UNOBSERVABLE whatever was configured, and a reading
-    that stopped somewhere yields UNOBSERVABLE rather than a verdict.
+    The order matters. A reading belonging to another endpoint or another
+    build is a contradiction, and a contradiction is FAILED: reattributing it
+    is the one mistake nothing downstream could detect. A transport, engine or
+    protocol failure leaves the state UNKNOWN, because the property was never
+    asked. Only a named stopping member is UNOBSERVABLE, and configuration
+    alone can only reach CONFIGURED.
     """
+    if provenance is not ReadingProvenance.MATCHED:
+        return WirelessAssociationState.FAILED
     baseline = (
         WirelessAssociationState.CONFIGURED
         if configured else WirelessAssociationState.PLANNED
     )
-    if observation_capability in {
-        WirelessCapabilityStatus.UNSUPPORTED,
-        WirelessCapabilityStatus.UNOBSERVABLE,
-    }:
+    if observation_capability in BLOCKED_CAPABILITY_STATUSES:
         return WirelessAssociationState.UNOBSERVABLE
     if reading is None:
         return baseline
+    if reading.error_kind is not None:
+        # The probe broke, not the property. Claiming UNOBSERVABLE here would
+        # hide an exception behind a statement about the backend.
+        return WirelessAssociationState.UNKNOWN
     if reading.unavailable_reading:
         # A named stopping member is an answer: the backend was asked and the
         # reading does not exist. That is not the same as never having looked.
@@ -552,23 +758,25 @@ def classify_attachment_state(
     reading: WirelessAttachmentReading | None,
     observation_capability: WirelessCapabilityStatus,
     segment: IntendedNetworkSegment,
+    provenance: ReadingProvenance = ReadingProvenance.MATCHED,
 ) -> NetworkAttachmentState:
     """Same rules on the addressing axis.
 
     An address outside the intended segment is a FAILED attachment, not an
     absent one: the endpoint attached to something the plan did not intend.
     """
+    if provenance is not ReadingProvenance.MATCHED:
+        return NetworkAttachmentState.FAILED
     baseline = (
         NetworkAttachmentState.CONFIGURED
         if configured else NetworkAttachmentState.PLANNED
     )
-    if observation_capability in {
-        WirelessCapabilityStatus.UNSUPPORTED,
-        WirelessCapabilityStatus.UNOBSERVABLE,
-    }:
+    if observation_capability in BLOCKED_CAPABILITY_STATUSES:
         return NetworkAttachmentState.UNOBSERVABLE
     if reading is None:
         return baseline
+    if reading.error_kind is not None:
+        return NetworkAttachmentState.UNKNOWN
     if reading.unavailable_reading:
         return NetworkAttachmentState.UNOBSERVABLE
     if not reading.attempted:

@@ -49,6 +49,15 @@ from .import_isolation_preflight import (
     governed_root_from_env,
 )
 from .packet_tracer_wireless_connectivity import (
+    BackendCallOutcome,
     PacketTracerWirelessConnectivityAdapter,
     WirelessRuntimeEndpoint,
+)
+from .iot0_wireless_probe import (
+    IoT0ProbeContract,
+    IoT0WirelessProbe,
+    ProbeRole,
+    ProbeScript,
+    ProbeStep,
+    ProbeTarget,
 )

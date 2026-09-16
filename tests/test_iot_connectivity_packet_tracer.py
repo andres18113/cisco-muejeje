@@ -16,11 +16,14 @@ from src.packet_tracer_mcp.application.ports.wireless_connectivity import (
     WirelessConnectivityPort,
 )
 from src.packet_tracer_mcp.application.use_cases.plan_iot_connectivity import (
+    IoTConnectivityAdmission,
     IoTConnectivityClosure,
     plan_iot_connectivity,
     qualify_iot_connectivity,
 )
 from src.packet_tracer_mcp.domain.enterprise.models.wireless_connectivity import (
+    BLOCKED_CAPABILITY_STATUSES,
+    MEASURED_CAPABILITY_STATUSES,
     NetworkAttachmentState,
     WirelessAssociationState,
     WirelessCapability,
@@ -33,6 +36,7 @@ from src.packet_tracer_mcp.infrastructure.catalog.measured_port_inventories impo
     MEASURED_BACKEND_VERSION,
 )
 from src.packet_tracer_mcp.infrastructure.catalog.wireless_capabilities import (
+    EXTENSIONS_API_REFERENCE,
     packet_tracer_wireless_capability_audit,
 )
 from src.packet_tracer_mcp.infrastructure.execution.packet_tracer_wireless_connectivity import (
@@ -91,21 +95,54 @@ def test_an_unaudited_capability_subject_falls_back_and_never_invents_support():
     ) is WirelessCapabilityStatus.UNKNOWN
 
 
-def test_the_audit_records_the_known_backend_limits():
+def test_documented_wireless_surfaces_are_documented_and_never_unsupported():
+    """A vendor reference refutes nothing and establishes nothing."""
+    audit = _audit()
+
+    for capability in (
+        WirelessCapability.SERVICE_SET_CONFIGURATION,
+        WirelessCapability.ENDPOINT_SERVICE_SET_SELECTION,
+        WirelessCapability.ASSOCIATION_STATE_OBSERVATION,
+        WirelessCapability.ASSOCIATED_ACCESS_POINT_IDENTIFICATION,
+        WirelessCapability.NETWORK_ATTACHMENT_OBSERVATION,
+    ):
+        assert audit.status(capability) is WirelessCapabilityStatus.DOCUMENTED
+
+
+def test_a_documented_surface_never_licenses_a_claim():
+    """DOCUMENTED gates exactly like UNKNOWN wherever a promotion is decided."""
+    assert WirelessCapabilityStatus.DOCUMENTED not in BLOCKED_CAPABILITY_STATUSES
+    assert WirelessCapabilityStatus.DOCUMENTED not in MEASURED_CAPABILITY_STATUSES
+
+
+def test_the_audit_keeps_unmeasured_things_unknown():
     audit = _audit()
 
     assert audit.status(
-        WirelessCapability.SERVICE_SET_CONFIGURATION,
-    ) is WirelessCapabilityStatus.UNSUPPORTED
-    assert audit.status(
-        WirelessCapability.ASSOCIATED_ACCESS_POINT_IDENTIFICATION,
-    ) is WirelessCapabilityStatus.UNOBSERVABLE
-    assert audit.status(
-        WirelessCapability.ASSOCIATION_STATE_OBSERVATION,
-    ) is WirelessCapabilityStatus.UNKNOWN
-    assert audit.status(
         WirelessCapability.IOT_FUNCTION_OBSERVATION,
     ) is WirelessCapabilityStatus.UNKNOWN
+    assert audit.status(
+        WirelessCapability.ACCESS_POINT_RADIO_PORT_IDENTITY, "AccessPoint-PT",
+    ) is WirelessCapabilityStatus.UNKNOWN
+    assert not any(
+        item.status is WirelessCapabilityStatus.UNSUPPORTED
+        for item in audit.assessments
+    ), "nothing on this build has been measured to be impossible"
+
+
+def test_every_documented_record_names_the_reference_and_its_gap():
+    audit = _audit()
+
+    documented = [
+        item for item in audit.assessments
+        if item.status is WirelessCapabilityStatus.DOCUMENTED
+    ]
+    assert documented
+    for item in documented:
+        assert item.evidence_reference == EXTENSIONS_API_REFERENCE
+        assert "8.1.0" in item.evidence_reference
+        assert MEASURED_BACKEND_VERSION in item.note
+        assert item.surface
 
 
 def _adapter(bindings, transport=None):
@@ -150,7 +187,8 @@ def test_a_custom_service_set_is_refused_rather_than_silently_skipped():
     outcome = adapter.configure_association(replace(intent, service_set=custom))
 
     assert outcome.status is WirelessConfigurationStatus.REFUSED
-    assert "unsupported" in outcome.detail
+    assert "documented" in outcome.detail
+    assert "no wireless mutation" in outcome.detail
     assert calls == []
 
 
@@ -167,9 +205,14 @@ def test_the_adapter_never_asks_packet_tracer_for_an_association():
 
     reading = adapter.observe_association(intent)
 
-    assert reading.unavailable_reading == "Port.isAssociated"
-    assert reading.access_point_id == ""
+    assert reading.attempted is False
     assert reading.associated is None
+    assert reading.access_point_id == ""
+    assert reading.error_kind is None
+    assert reading.unavailable_reading == "", (
+        "an unmeasured capability is not an absent property"
+    )
+    assert "documented" in reading.detail
     assert calls == []
 
 
@@ -188,8 +231,10 @@ def test_an_iot_endpoint_has_no_measured_interface_so_addressing_stops_there():
     reading = adapter.observe_attachment(intent, cluster.segment)
 
     assert reading.attempted is False
-    assert reading.unavailable_reading == "Port.getIpAddress"
+    assert reading.unavailable_reading == ""
+    assert reading.error_kind is None
     assert reading.ipv4 == ""
+    assert "unknown" in reading.detail
     assert calls == []
 
 
@@ -257,7 +302,7 @@ def test_every_generated_script_serializes_its_fields():
         assert json.dumps(hostile) in script
 
 
-def test_packet_tracer_today_can_only_reach_an_unobservable_closure():
+def test_packet_tracer_today_observes_nothing_and_claims_nothing():
     plan = _plan()
     bindings = {
         intent.endpoint_id: WirelessRuntimeEndpoint(
@@ -273,10 +318,10 @@ def test_packet_tracer_today_can_only_reach_an_unobservable_closure():
         plan, audit=_audit(), port=adapter, configure=True,
     )
 
-    assert calls == []
-    assert qualification.closure is IoTConnectivityClosure.UNOBSERVABLE_BACKEND
+    assert calls == [], "no measured surface is driven on this build"
+    assert qualification.closure is IoTConnectivityClosure.CONFIGURED_NOT_OBSERVED
     for item in qualification.results:
-        assert item.association_state is WirelessAssociationState.UNOBSERVABLE
-        assert item.attachment_state is NetworkAttachmentState.UNOBSERVABLE
+        assert item.association_state is WirelessAssociationState.PLANNED
+        assert item.attachment_state is NetworkAttachmentState.PLANNED
         assert item.association.observed_access_point_id == ""
-    assert qualification.admission.value == "accepted"
+    assert qualification.admission is IoTConnectivityAdmission.ACCEPTED
