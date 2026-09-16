@@ -7,7 +7,7 @@ a thread.
 For the current count and per-file breakdown, use:
 
 ```bash
-python -m pytest --collect-only -q     # no se fija un número que caduque
+python -m pytest --collect-only -q     # avoids pinning a count that will age
 ```
 
 ## Running tests

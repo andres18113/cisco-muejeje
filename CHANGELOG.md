@@ -68,7 +68,8 @@ history is the detailed record.
 
 The entries below are release notes written by the upstream project,
 [Mats2208/MCP-Packet-Tracer](https://github.com/Mats2208/MCP-Packet-Tracer),
-before Cisco-Muejeje diverged. They are kept verbatim as provenance and are not
+before Cisco-Muejeje diverged. Their content and provenance are retained,
+although some wording has been translated into English; they are not
 Cisco-Muejeje releases. The tool counts, test counts and Packet Tracer version
 they cite describe upstream at that time.
 
