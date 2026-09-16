@@ -5,6 +5,36 @@ statements using **must** are local policy. The external standards in the final
 section inform that policy; this project does not claim full conformance,
 certification, or a clause-by-clause implementation.
 
+## Instruction authority and verification
+
+Instruction scope is intentionally separated:
+
+- Global Codex or Claude files contain only the user's cross-project
+  preferences.
+- The active checkout's `AGENTS.md` is the shared Cisco-Muejeje authority.
+- This file owns the detailed engineering method and rules.
+- The active checkout's `CLAUDE.md` imports both files above and contains only
+  Claude Code-specific differences.
+
+Never copy project rules into global files or import an absolute path to another
+checkout. Policy reaches other branches and worktrees through Git integration.
+File existence proves documented configuration, not effective loading.
+
+Codex builds its chain once per run: it uses `AGENTS.override.md` before
+`AGENTS.md` at each applicable level, reads global instructions from
+`CODEX_HOME` (default `~/.codex`), and then walks from repository root toward the
+working directory. In a fresh session, run
+`codex --cd <checkout> --ask-for-approval never "Show which instruction files are active."`
+or inspect enabled session logs. Record the checkout and reported sources.
+
+Claude Code loads user and project `CLAUDE.md` files and expands relative `@`
+imports from the importing file. In a fresh interactive session, run `/context`
+and inspect Memory files. If either product cannot be started independently,
+record the check as pending rather than inferring success. These procedures are
+based on the official
+[Codex AGENTS.md guide](https://developers.openai.com/codex/guides/agents-md)
+and [Claude Code memory guide](https://docs.anthropic.com/en/docs/claude-code/memory).
+
 ## Incremental V-Model and risk
 
 Classify the change from its credible impact, never from diff size:
@@ -140,9 +170,13 @@ Self-review is mandatory but is not independent audit. Delivery status is
 ## Executable controls and human review
 
 `pyproject.toml` pins Ruff and holds its lint/format configuration.
-`scripts/quality_gate.py` is the one local and CI entry point. It checks complete
-new or changed Python files relative to an explicit Git base, plus staged,
-unstaged, and untracked Python files locally. An unresolved base fails closed.
+`scripts/quality_gate.py` is the one local and CI entry point. A full gate
+requires `--base`; it resolves and prints the base and merge-base SHAs. Worktree
+mode checks complete committed, staged, unstaged, and untracked Python paths but
+is provisional because it reads filesystem bytes. Delivery mode additionally
+requires `--delivery-commit`, a clean tree/index, and exact equality with `HEAD`,
+so filesystem bytes equal the requested commit. Missing paths and unresolved
+identities fail closed. `--files` is a focused check, never delivery validation.
 
 The gate intentionally does not scan every legacy Python file. This makes the
 adoption boundary measurable without global ignores or mass formatting. The

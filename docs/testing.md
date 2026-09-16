@@ -30,13 +30,22 @@ the incremental Ruff lint/format entry point and `docs` builds the MkDocs site.
 Run their local equivalents with the checkout interpreter:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\quality_gate.py --base origin/main
+.\.venv\Scripts\python.exe scripts\quality_gate.py --base cisco/main
 .\.venv\Scripts\python.exe -m mkdocs build --site-dir _site
 git diff --check
 ```
 
-The quality gate covers complete new and changed Python files. Repository-wide
-legacy debt is intentionally outside this incremental boundary; see the
+That worktree command is provisional. Exact delivery validation runs only after
+commit from a clean tree:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\quality_gate.py `
+  --base cisco/main --delivery-commit HEAD
+```
+
+The full quality gate covers complete new and changed Python files and prints
+the resolved comparison identity. `--files` is focused feedback only.
+Repository-wide legacy debt remains outside this incremental boundary; see the
 [engineering standard](engineering/standards.md) for the normative policy.
 
 ## What is covered

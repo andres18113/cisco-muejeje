@@ -109,3 +109,115 @@ historical evidence to the repository-root `handoff.md`; they remain unchanged.
   listed above remain deferred.
 - Workflow configuration parsed successfully as YAML. `git diff --check` passed.
 - CI and independent audit remain pending; the delivery state is not approval.
+
+## Audit closure revision
+
+### Record
+
+- Status: implemented; local verification complete; clean-tree delivery and
+  exact-SHA CI pending
+- Risk: **L**
+- Audited starting commit: `708980548ac8976e918d903834c4318550088fde`
+- Scope: close instruction-authority, quality-gate, CI-permission, collaboration,
+  and namespace-planning findings without changing product or LIVE behavior.
+
+### Requirements and acceptance
+
+| ID | Requirement | Acceptance evidence |
+| --- | --- | --- |
+| R9 | Separate global user preferences, checkout authority, detailed standards, and Claude-specific imports without editing global files. | Record discovered instruction sources, installed versions, effective locations, and any conflicts without publishing private content. |
+| R10 | Require agents to read the standard from the current checkout before planning or editing; make Claude import both shared authority files. | `AGENTS.md` contains an explicit read requirement; `CLAUDE.md` contains `@AGENTS.md` and `@docs/engineering/standards.md` with no duplicated project rules. |
+| R11 | Define authoritative-main, one-writer, checkout/SHA, per-worktree environment, local-instruction, Git-propagation, and handoff invariants. | Shared-authority review covers every invariant; the migration brief records the four-step integration sequence without executing it. |
+| R12 | Make the quality gate explicit about its comparison base and about provisional worktree versus exact clean-commit delivery validation. | The gate prints resolved SHAs, fails on an invalid base or missing selected file, refuses dirty/exact-SHA mismatches for delivery, and labels `--files` as focused only. |
+| R13 | Cover authoritative remote `cisco`, all Git change states, staged/worktree divergence, missing files, lint failure, format failure, and positive controls. | Focused regressions reproduce every case and fail before the causal implementation where applicable. |
+| R14 | Apply least privilege to verification CI without changing Pages deployment privileges or the four-job pytest matrix. | Verification workflow declares `contents: read`, all checkouts disable credential persistence, YAML inspection passes, and final job logs show read-only token permissions. |
+| R15 | State `packet_tracer_mcp` as the target namespace for production and tests while retaining `src.packet_tracer_mcp` as temporary containment until a separate migration. | Shared authority preserves current isolation controls, performs no import migration, and links a separate L migration brief with the approved inventory and acceptance criteria. |
+| R16 | Reproduce the dual-namespace defect outside ordinary pytest and preserve the result without aliases or source/package changes. | A standalone isolated diagnostic demonstrates distinct identities; its normalized result is recorded in the migration brief and is absent from normal test collection. |
+| R17 | Deliver only from the audited branch by fast-forward push, with local validation and all six final-SHA jobs green. | Clean-tree delivery gate, focused/affected/full tests, docs, diff check, remote SHA equality, and four pytest plus quality/docs success. |
+
+### Architecture, risks, and invariants
+
+The quality gate remains one small cross-platform script. Worktree mode examines
+filesystem bytes and is explicitly provisional. Delivery mode requires a clean
+tree whose `HEAD` equals the requested commit, so checked filesystem bytes are
+the exact committed bytes. `--files` remains a focused diagnostic and cannot
+claim delivery validation.
+
+Primary risks are comparing a feature branch with its own upstream, silently
+skipping a path missing from disk, certifying corrected working-tree bytes while
+bad bytes remain staged, leaking checkout credentials in CI, inheriting
+instructions from another checkout, or loading both package namespaces in the
+ordinary pytest process. Each is addressed fail-closed. Existing product,
+bridge, evidence, and namespace-isolation controls remain unchanged.
+
+Global instruction files, other worktrees, `feature/iot-connectivity`, runtime
+source, extension source, and historical evidence are out of scope. Any global
+conflict is reported as a separate proposed change and is not edited here.
+
+### Test design
+
+- Unit/integration: temporary Git repositories exercise `cisco/main`, invalid
+  bases, committed/staged/unstaged/untracked selection, staged/worktree
+  divergence, and an index path missing from the filesystem.
+- Tool behavior: subprocess controls prove one clean file passes, one lint
+  violation fails, and one formatting violation fails; focused output cannot be
+  mistaken for full delivery validation.
+- Delivery: a clean temporary repository validates an exact commit; dirty or
+  mismatched commits fail before Ruff.
+- Namespace: a standalone script launches an isolated child interpreter and
+  records the current duplicate-module identity result. Ordinary pytest never
+  imports both namespaces.
+- Documentation/CI: review instruction discovery against official Codex and
+  Claude Code documentation and installed versions; parse workflows, build docs,
+  inspect final permission logs, and run `git diff --check`.
+- System: run affected tests and the full offline suite. LIVE validation is not
+  applicable and historical CP-LIVE evidence is not reused.
+- Fresh-session instruction loading remains pending unless it can be inspected
+  without launching another agent; documented configuration is not labeled as
+  loaded merely because its files exist.
+
+### Instruction-source audit
+
+- Installed tools: Codex CLI 0.154.0 and Claude Code 2.1.273.
+- `CODEX_HOME` is unset and resolves to `C:\Users\Andres\.codex`.
+  `CLAUDE_CONFIG_DIR` is unset and resolves to
+  `C:\Users\Andres\.claude`.
+- The global Codex `AGENTS.md` exists but is empty; no global
+  `AGENTS.override.md` exists. Codex configuration does not override fallback
+  instruction names or the default project-document byte limit.
+- No user or managed Claude `CLAUDE.md`, user/project `.claude/rules`, managed
+  `claudeMd`, or `claudeMdExcludes` setting was found. Existing user settings
+  were inspected only for instruction-resolution keys; private values were not
+  copied into the project.
+- The only applicable ancestor instruction files found from this checkout are
+  its own `AGENTS.md` and `CLAUDE.md`. No absolute import to another checkout was
+  found, so no global conflict proposal is pending.
+- `codex debug prompt-input` on the installed version verified that the current
+  checkout `AGENTS.md` is model-visible. It correctly did not auto-load
+  `CLAUDE.md` or the linked standards body. Reading the standard remains the
+  explicit first project action.
+- A genuinely fresh Codex agent session and Claude `/context` session were not
+  launched because this task prohibits subagents. Their documented checks remain
+  pending and must not be reported as verified loading.
+
+### Audit closure local results
+
+- RED: the expanded gate tests failed collection because the delivery/worktree
+  selection contracts did not yet exist. After the causal implementation, all
+  gate regressions passed.
+- Full offline suite: 5,030 passed, 3 skipped, and 3 pre-existing pytest
+  deprecation warnings in 266.71 seconds.
+- Provisional gate: `cisco/main` resolved to
+  `9cb1c1ceb1e77e17daa5a06e4bf21a52db932479`; three changed Python files passed
+  Ruff lint and format. The output explicitly denied delivery status.
+- Namespace diagnostic: the isolated child reproduced equal physical origins
+  but distinct package, enum type, and enum member identities, with cross-namespace
+  `isinstance` false. Ordinary pytest did not import both namespaces.
+- Affected instruction, worktree-isolation, documentation, and gate tests passed;
+  MkDocs built successfully with the two already-recorded historical warnings.
+  Workflow YAML parsed and `git diff --check` passed.
+- Runtime source, extension source, and historical evidence have no diff.
+  `feature/iot-connectivity` remains unchanged at
+  `a535d4811589226bcb1afe9ce9c90d2c40ae4eb4` locally and remotely.
+- Clean-tree delivery validation, effective CI permission logs, all six final-SHA
+  jobs, and independent audit remain pending.

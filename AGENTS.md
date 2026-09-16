@@ -6,6 +6,11 @@ this file and must not restate its rules.
 
 ## Engineering method
 
+Before planning or modifying anything, open and read
+`docs/engineering/standards.md` from the current checkout. A Markdown link, an
+instruction copied from another checkout, or prior familiarity does not prove
+that the current file was read.
+
 The mandatory engineering standard is
 [`docs/engineering/standards.md`](docs/engineering/standards.md). It defines the
 incremental V-Model, S/M/L risk classification, proportional change brief,
@@ -16,6 +21,22 @@ Classify risk and record the change design before implementation. Risk may rise
 when new facts emerge; it may not be lowered to avoid a control. Stay within the
 approved contract and preserve unrelated or user-owned changes. Do not perform
 Packet Tracer LIVE work without explicit authorization for that exact scope.
+
+## Repository authority and collaboration
+
+- `main` contains integrated and accepted work, not experimental development.
+- Every task identifies its checkout, branch, and starting SHA before edits.
+- Only one active writer may modify a worktree at a time.
+- Every worktree owns its `.venv` and editable installation.
+- Read instructions from the active worktree, never from another checkout.
+- Propagate policy through reviewed Git integration, never by copying files
+  between worktrees.
+- A Claude/Codex handoff records branch, SHA, pending changes, and completed
+  verification.
+
+Prefer sibling worktrees of `Cisco-MCP` when creating future worktrees so parent
+instruction inheritance is explicit. Never relocate, delete, or rewrite another
+worktree, environment, or unpublished work as incidental cleanup.
 
 ## Repository and layers
 
@@ -43,11 +64,15 @@ a custom `PYTHONPATH` and do not substitute another checkout's interpreter.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[test,docs,quality]"
-.\.venv\Scripts\python.exe scripts\quality_gate.py --base origin/main
+.\.venv\Scripts\python.exe scripts\quality_gate.py --base cisco/main
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m mkdocs build --site-dir _site
 git diff --check
 ```
+
+The command above is provisional while the worktree is dirty. After committing,
+validate delivery from a clean tree with
+`scripts\quality_gate.py --base cisco/main --delivery-commit HEAD`.
 
 On Linux, use `.venv/bin/python` with the same modules and arguments. CI uses
 the same quality entry point and preserves the Windows/Linux × Python 3.11/3.13
@@ -73,10 +98,14 @@ pytest matrix.
 
 ## Import namespace and LIVE process gate
 
-`packet_tracer_mcp` is the production namespace. Production code must never
-import `src.packet_tracer_mcp`. Tests use `src.packet_tracer_mcp`; a bare
-`packet_tracer_mcp` import in tests is prohibited and checked by
-`tests/test_worktree_isolation.py`.
+The target architecture has one identity: `packet_tracer_mcp` in production and
+tests. Production code already uses it. The suite's `src.packet_tracer_mcp`
+imports are temporary containment for a historical editable-install defect, not
+the final architecture. Until the separate
+[`namespace migration`](docs/engineering/change-briefs/namespace-migration.md)
+is authorized and verified, preserve the current containment and
+`tests/test_worktree_isolation.py`; do not create a mixed interval or aliases in
+`sys.modules`.
 
 Before any LIVE Packet Tracer mutation, prove all three conditions in the exact
 process that will mutate state:

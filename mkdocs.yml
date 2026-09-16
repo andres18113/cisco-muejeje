@@ -79,6 +79,7 @@ nav:
       - Architecture: architecture.md
       - Engineering Standards: engineering/standards.md
       - Standards Change Brief: engineering/change-briefs/engineering-standards.md
+      - Namespace Migration Brief: engineering/change-briefs/namespace-migration.md
       - Enterprise Planning: architecture/enterprise-planning.md
       - Enterprise Hardware Planner: architecture/enterprise-hardware.md
       - Packet Tracer Capability Discovery: architecture/packet-tracer-capability-discovery.md

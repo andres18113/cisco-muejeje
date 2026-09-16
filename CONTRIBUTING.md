@@ -23,11 +23,14 @@ Create the proportional change brief required by the engineering standard, then
 run the same entry points used by CI:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\quality_gate.py --base origin/main
+.\.venv\Scripts\python.exe scripts\quality_gate.py --base cisco/main
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m mkdocs build --site-dir _site
 git diff --check
 ```
+
+Before delivery, commit the reviewed files, require a clean tree, and rerun the
+gate with `--base cisco/main --delivery-commit HEAD`.
 
 The offline suite must not require Packet Tracer. Report vulnerabilities through
 the private process in [`SECURITY.md`](SECURITY.md), not a public issue. Use an
