@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from src.packet_tracer_mcp.application.use_cases.compile_control_plane import (
+from packet_tracer_mcp.application.use_cases.compile_control_plane import (
     compile_enterprise_control_plane,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigureAccessPort,
     ConfigureRoutedInterface,
     ConfigureTrunk,
@@ -15,7 +15,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     CreateVlan,
     SetEndpointStaticAddress,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ConfigureEigrpIpv4,
     ConfigureEtherChannel,
     ConfigureHsrp,
@@ -35,20 +35,20 @@ from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
     StpIntent,
     StpMode,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.security_plan import (
+from packet_tracer_mcp.domain.enterprise.models.security_plan import (
     ApplyDeviceHardening,
     SecurityCapabilityDimension,
     SecurityCapabilityStatus,
     SecurityPhase,
     SecurityPlan,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.failure_domain import (
+from packet_tracer_mcp.domain.enterprise.models.failure_domain import (
     FailureDomain,
     FailureDomainProvenance,
     FailureDomainType,
     IndependenceStatus,
 )
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
 
 
 def _device(

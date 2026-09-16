@@ -10,12 +10,12 @@ import re
 
 import pytest
 
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ControlledIosExecutor,
     OperationalQueryId,
 )
-from src.packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingExecutor
-from src.packet_tracer_mcp.infrastructure.execution.command_dispatch import (
+from packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingExecutor
+from packet_tracer_mcp.infrastructure.execution.command_dispatch import (
     DispatchClassification,
     FreshWindowStrategy,
     PAGER_GUARD_JS,
@@ -843,7 +843,7 @@ def test_the_javascript_guard_skips_trailing_syslog_too():
     Sin esto, el ping tipado seguiria rechazando el despacho aunque el helper
     de Python ya lo aceptara.
     """
-    from src.packet_tracer_mcp.infrastructure.execution.command_dispatch import (
+    from packet_tracer_mcp.infrastructure.execution.command_dispatch import (
         IDLE_GUARD_JS,
     )
 

@@ -20,14 +20,14 @@ por la misma ruta respondía.
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+from packet_tracer_mcp.domain.enterprise.models.discovery import (
     Layer3ProbeStrategy,
     MultilayerDimension,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     parse_show_ip_interface,
 )
-from src.packet_tracer_mcp.infrastructure.execution.probe_runtime import (
+from packet_tracer_mcp.infrastructure.execution.probe_runtime import (
     bounded_reach,
     layer3_strategy_for,
 )
@@ -139,7 +139,7 @@ class TestTheLayer3StrategyComesFromTheCatalogueNotAHandList:
         )
 
     def test_every_router_in_the_catalogue_resolves_a_strategy(self):
-        from src.packet_tracer_mcp.infrastructure.catalog.devices import ALL_MODELS
+        from packet_tracer_mcp.infrastructure.catalog.devices import ALL_MODELS
 
         routers = [
             model.pt_type for model in ALL_MODELS.values()
@@ -159,10 +159,10 @@ class TestTheLayer3StrategyComesFromTheCatalogueNotAHandList:
         assert layer3_strategy_for("3560-24PS") is Layer3ProbeStrategy.SVI
 
     def test_the_declared_map_holds_only_what_the_category_cannot_decide(self):
-        from src.packet_tracer_mcp.infrastructure.execution.probe_runtime import (
+        from packet_tracer_mcp.infrastructure.execution.probe_runtime import (
             _LAYER3_STRATEGY_BY_MODEL,
         )
-        from src.packet_tracer_mcp.infrastructure.catalog.devices import resolve_model
+        from packet_tracer_mcp.infrastructure.catalog.devices import resolve_model
 
         # Un router en el mapa seria una entrada que la categoria ya deriva, y
         # es exactamente la clase de duplicado que dejo a 1941 fuera.

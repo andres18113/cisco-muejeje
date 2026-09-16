@@ -4,20 +4,20 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.enterprise_plan import EnterprisePlan, SitePlan
-from src.packet_tracer_mcp.domain.enterprise.models.hierarchy import (
+from packet_tracer_mcp.domain.enterprise.models.enterprise_plan import EnterprisePlan, SitePlan
+from packet_tracer_mcp.domain.enterprise.models.hierarchy import (
     BuildingIntent,
     EndpointGroup,
     FloorIntent,
     ZoneIntent,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.intent import EnterpriseIntent, SiteIntent, SiteType
-from src.packet_tracer_mcp.domain.enterprise.models.requirements import EndpointRequirement
-from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
-from src.packet_tracer_mcp.domain.enterprise.models.segments import NetworkSegment, SegmentRole
-from src.packet_tracer_mcp.domain.enterprise.models.topology import NetworkLayer, TopologyPattern
-from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import EnterpriseDesigner
-from src.packet_tracer_mcp.domain.enterprise.services.ipam_planner import (
+from packet_tracer_mcp.domain.enterprise.models.intent import EnterpriseIntent, SiteIntent, SiteType
+from packet_tracer_mcp.domain.enterprise.models.requirements import EndpointRequirement
+from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from packet_tracer_mcp.domain.enterprise.models.segments import NetworkSegment, SegmentRole
+from packet_tracer_mcp.domain.enterprise.models.topology import NetworkLayer, TopologyPattern
+from packet_tracer_mcp.domain.enterprise.services.enterprise_designer import EnterpriseDesigner
+from packet_tracer_mcp.domain.enterprise.services.ipam_planner import (
     IPAMPlanner,
     subnet_requirement_for,
 )

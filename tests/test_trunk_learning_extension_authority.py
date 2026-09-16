@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     VerificationExpectation,
     VerificationKind,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
 )
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     PacketTracerEnterpriseConfigurationRuntime,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosCommandResult,
     OperationalQueryId,
 )
-from src.packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
+from packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
     SimulationStateObservation,
 )
 

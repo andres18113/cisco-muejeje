@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.compilation import ConcreteLinkRole
-from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+from packet_tracer_mcp.domain.enterprise.models.compilation import ConcreteLinkRole
+from packet_tracer_mcp.domain.enterprise.models.link_performance import (
     ENTERPRISE_SERIAL_FALLBACK_BPS,
     CapacityRequestMode,
     CapacitySource,
@@ -24,7 +24,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
     TrafficContribution,
     capacity_source_rank,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
+from packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
     LinkPerformancePlanner,
 )
 
@@ -429,7 +429,7 @@ class TestExplainability:
 
 class TestTypedActions:
     def test_the_link_actions_exist_and_carry_no_command_strings(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+        from packet_tracer_mcp.domain.enterprise.models.configuration import (
             ConfigureEthernetLinkMode,
             ConfigureInterfaceBandwidth,
             ConfigureSerialClock,
@@ -442,10 +442,10 @@ class TestTypedActions:
         assert {"speed", "duplex"} <= set(ConfigureEthernetLinkMode.model_fields)
 
     def test_the_serial_clock_action_is_pinned_to_the_dce_role(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+        from packet_tracer_mcp.domain.enterprise.models.configuration import (
             ConfigureSerialClock,
         )
-        from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+        from packet_tracer_mcp.domain.enterprise.models.configuration import (
             ConfigurationPhase,
         )
 
@@ -472,7 +472,7 @@ class TestLiveVerifiedSerialCeiling:
     """
 
     def test_the_live_verified_rates_are_the_selectable_ones(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+        from packet_tracer_mcp.domain.enterprise.models.link_performance import (
             SUPPORTED_SERIAL_RATES_BPS,
         )
 
@@ -500,10 +500,10 @@ class TestLiveVerifiedSerialCeiling:
 
 class TestSerialRenderer:
     def test_the_clock_renders_in_bits_per_second_on_its_interface(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+        from packet_tracer_mcp.domain.enterprise.models.configuration import (
             ConfigurationPhase, ConfigureSerialClock,
         )
-        from src.packet_tracer_mcp.infrastructure.generator.link_performance_renderer import (
+        from packet_tracer_mcp.infrastructure.generator.link_performance_renderer import (
             render_serial_clock,
         )
 
@@ -516,10 +516,10 @@ class TestSerialRenderer:
         assert lines == ["interface Serial0/0/0", " clock rate 2000000"]
 
     def test_bandwidth_renders_in_kbps_and_never_as_a_clock(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+        from packet_tracer_mcp.domain.enterprise.models.configuration import (
             ConfigurationPhase, ConfigureInterfaceBandwidth,
         )
-        from src.packet_tracer_mcp.infrastructure.generator.link_performance_renderer import (
+        from packet_tracer_mcp.infrastructure.generator.link_performance_renderer import (
             render_interface_bandwidth,
         )
 
@@ -533,10 +533,10 @@ class TestSerialRenderer:
         assert "clock" not in " ".join(lines)
 
     def test_auto_ethernet_renders_nothing(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+        from packet_tracer_mcp.domain.enterprise.models.configuration import (
             ConfigurationPhase, ConfigureEthernetLinkMode,
         )
-        from src.packet_tracer_mcp.infrastructure.generator.link_performance_renderer import (
+        from packet_tracer_mcp.infrastructure.generator.link_performance_renderer import (
             render_ethernet_link_mode,
         )
 
@@ -563,7 +563,7 @@ class TestControllerParser:
     )
 
     def test_the_dce_end_reports_its_role_and_clock(self):
-        from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+        from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
             parse_serial_controller,
         )
         row = parse_serial_controller(self._DCE)
@@ -572,7 +572,7 @@ class TestControllerParser:
         assert row.clock_rate_bps == 2_000_000
 
     def test_the_dte_end_reports_no_clock_of_its_own(self):
-        from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+        from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
             parse_serial_controller,
         )
         row = parse_serial_controller(self._DTE)
@@ -581,7 +581,7 @@ class TestControllerParser:
         assert row.clock_rate_bps is None
 
     def test_unrelated_output_yields_nothing(self):
-        from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+        from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
             parse_serial_controller,
         )
 
@@ -592,7 +592,7 @@ class TestProvenanceScoping:
     """La capability serial es evidencia con procedencia, no una tabla Cisco."""
 
     def test_the_measured_profile_names_its_backend_and_hardware(self):
-        from src.packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
+        from packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
             PT_2911_HWIC2T_SERIAL_CLOCK,
         )
         profile = PT_2911_HWIC2T_SERIAL_CLOCK
@@ -603,7 +603,7 @@ class TestProvenanceScoping:
         assert 8_000_000 in profile.rejected_rates_bps
 
     def test_the_highest_tested_rate_is_not_claimed_as_an_absolute_maximum(self):
-        from src.packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
+        from packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
             PT_2911_HWIC2T_SERIAL_CLOCK,
         )
         profile = PT_2911_HWIC2T_SERIAL_CLOCK
@@ -624,7 +624,7 @@ class TestProvenanceScoping:
         )
 
     def test_encapsulation_defaults_are_never_claimed_as_a_choice(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+        from packet_tracer_mcp.domain.enterprise.models.link_performance import (
             EncapsulationSource,
         )
         decision = LinkPerformancePlanner().plan(_serial())

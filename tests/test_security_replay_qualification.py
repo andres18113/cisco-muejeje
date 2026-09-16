@@ -15,16 +15,16 @@ mide. Lo que estos tests fijan es lo que no puede afirmar de más:
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.application.use_cases.qualify_security_replay import (
+from packet_tracer_mcp.application.use_cases.qualify_security_replay import (
     CONTROL_ACL_NUMBER,
     CONTROL_NAT_ACL_NUMBER,
     QUALIFICATION_PREFIX,
     SecurityReplayQualifier,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     RuntimeActionMutation,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     MutationDisposition,
     PhysicalDeviceObservation,
     PhysicalMutationResult,
@@ -32,10 +32,10 @@ from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceDeviceObservation,
     PhysicalWorkspaceObservation,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.security_plan import (
+from packet_tracer_mcp.domain.enterprise.models.security_plan import (
     SecurityActionType,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosCommandResult,
     IosSessionState,
     OperationalQueryId,

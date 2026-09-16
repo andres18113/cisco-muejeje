@@ -1,7 +1,7 @@
 """Tests para el Estimator."""
 
-from src.packet_tracer_mcp.domain.models.requests import TopologyRequest
-from src.packet_tracer_mcp.domain.services.estimator import estimate_from_request
+from packet_tracer_mcp.domain.models.requests import TopologyRequest
+from packet_tracer_mcp.domain.services.estimator import estimate_from_request
 
 
 class TestEstimator:

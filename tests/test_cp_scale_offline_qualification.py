@@ -4,22 +4,22 @@ from __future__ import annotations
 
 import json
 
-from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_offline import (
+from packet_tracer_mcp.application.use_cases.qualify_cp_scale_offline import (
     qualify_cp_scale_offline,
     write_cp_scale_offline_artifacts,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneActionType,
     ControlPlaneVerificationKind,
     DynamicRoutingProtocol,
     StpMode,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import VoiceActionType
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import VoiceActionType
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
 )
 from tests.poe_delivery_capabilities import synthetic_poe_authorized_bindings

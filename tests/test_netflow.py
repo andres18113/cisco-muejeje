@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.domain.models.errors import ErrorCode
-from src.packet_tracer_mcp.domain.models.netflow import NetflowExporter
-from src.packet_tracer_mcp.domain.rules.netflow_rules import (
+from packet_tracer_mcp.domain.models.errors import ErrorCode
+from packet_tracer_mcp.domain.models.netflow import NetflowExporter
+from packet_tracer_mcp.domain.rules.netflow_rules import (
     VALID_VERSIONS,
     validate_netflow,
     validate_netflow_against_topology,

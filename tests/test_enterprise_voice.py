@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from src.packet_tracer_mcp.application.use_cases.compile_voice import (
+from packet_tracer_mcp.application.use_cases.compile_voice import (
     compile_enterprise_voice,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationPhase,
     ConfigurationPlan,
     ConfigureAccessPort,
@@ -17,10 +17,10 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     CreateVlan,
     SetEndpointDhcp,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.enterprise_plan import EnterprisePlan, SitePlan
-from src.packet_tracer_mcp.domain.enterprise.models.intent import SiteType
-from src.packet_tracer_mcp.domain.enterprise.models.service_plan import ServicePlan
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+from packet_tracer_mcp.domain.enterprise.models.enterprise_plan import EnterprisePlan, SitePlan
+from packet_tracer_mcp.domain.enterprise.models.intent import SiteType
+from packet_tracer_mcp.domain.enterprise.models.service_plan import ServicePlan
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     CallExpectationResult,
     ConfigureVoiceDhcpOption,
     ExtensionRange,
@@ -32,7 +32,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     VoiceIntent,
     VoicePolicy,
 )
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
 
 
 def _endpoint(phone_id: str, index: int, site_id: str = "hq") -> DevicePlan:
@@ -516,7 +516,7 @@ def test_service_hash_is_bound_when_real_dependency_exists():
     assert not missing.is_valid
 
     # The compiler accepts only an actually declared service dependency.
-    from src.packet_tracer_mcp.domain.enterprise.models.service_plan import (
+    from packet_tracer_mcp.domain.enterprise.models.service_plan import (
         ServiceDefinition,
         ServiceType,
     )

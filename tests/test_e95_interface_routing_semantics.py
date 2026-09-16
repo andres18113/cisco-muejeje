@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationPhase,
     ConfigurationPolicy,
     ConfigureAccessPort,
@@ -23,15 +23,15 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigureSubinterface,
     ConfigureTrunk,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.enterprise_plan import EnterprisePlan
-from src.packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
+from packet_tracer_mcp.domain.enterprise.models.enterprise_plan import EnterprisePlan
+from packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
     ConfigurationCompiler,
     InterfaceRoutingSemantics,
     interface_is_routed,
     interface_routing_semantics,
 )
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
-from src.packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
+from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
     link_mode_capability_for,
 )
 
@@ -156,7 +156,7 @@ def _topology(model: str = "2960-24TT") -> TopologyPlan:
 def _emit_with(decision, *, routed: bool):
     """El clasificador se prueba con una decision construida, no forzando
     al producto a producir una que bajo AUTO no existe."""
-    from src.packet_tracer_mcp.domain.enterprise.services.link_performance_integration import (
+    from packet_tracer_mcp.domain.enterprise.services.link_performance_integration import (
         LinkPerformanceIntegration,
     )
 
@@ -167,7 +167,7 @@ def _emit_with(decision, *, routed: bool):
 
 
 def _ethernet_decision_with_bandwidth():
-    from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+    from packet_tracer_mcp.domain.enterprise.models.link_performance import (
         LinkMedia,
         LinkPerformanceDecision,
     )
@@ -247,11 +247,11 @@ class TestAutoNeverSynthesisesAnEffectiveCapacity:
 
     @staticmethod
     def _auto_decision(sync: bool):
-        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+        from packet_tracer_mcp.domain.enterprise.models.link_performance import (
             LinkMedia,
             LinkPerformanceIntent,
         )
-        from src.packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
+        from packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
             LinkPerformancePlanner,
         )
 
@@ -286,14 +286,14 @@ class TestSerialSyncStillWorks:
 
     @staticmethod
     def _serial_decision(sync: bool):
-        from src.packet_tracer_mcp.domain.enterprise.models.compilation import (
+        from packet_tracer_mcp.domain.enterprise.models.compilation import (
             ConcreteLinkRole,
         )
-        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+        from packet_tracer_mcp.domain.enterprise.models.link_performance import (
             LinkMedia,
             LinkPerformanceIntent,
         )
-        from src.packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
+        from packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
             LinkPerformancePlanner,
         )
 
@@ -342,11 +342,11 @@ class TestTheReferenceIsUnchanged:
 
 class TestSerialIsUntouched:
     def test_serial_bandwidth_does_not_depend_on_the_interface_classifier(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+        from packet_tracer_mcp.domain.enterprise.models.link_performance import (
             LinkMedia,
             LinkPerformanceDecision,
         )
-        from src.packet_tracer_mcp.domain.enterprise.services.link_performance_integration import (
+        from packet_tracer_mcp.domain.enterprise.services.link_performance_integration import (
             LinkPerformanceIntegration,
         )
 
@@ -365,11 +365,11 @@ class TestSerialIsUntouched:
             )
 
     def test_the_serial_clock_still_only_reaches_the_dce(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+        from packet_tracer_mcp.domain.enterprise.models.link_performance import (
             LinkMedia,
             LinkPerformanceDecision,
         )
-        from src.packet_tracer_mcp.domain.enterprise.services.link_performance_integration import (
+        from packet_tracer_mcp.domain.enterprise.services.link_performance_integration import (
             LinkPerformanceIntegration,
         )
 
@@ -401,7 +401,7 @@ class TestBandwidthObservabilityIsNotDestroyed:
 
     @staticmethod
     def _observed(autonegotiated: bool, kbps: int = 1_000_000):
-        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+        from packet_tracer_mcp.domain.enterprise.models.link_performance import (
             ObservedLinkPerformance,
         )
 
@@ -414,7 +414,7 @@ class TestBandwidthObservabilityIsNotDestroyed:
         )
 
     def test_a_platform_tracked_bandwidth_still_infers_capacity(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+        from packet_tracer_mcp.domain.enterprise.models.link_performance import (
             BandwidthProvenance,
         )
 
@@ -424,7 +424,7 @@ class TestBandwidthObservabilityIsNotDestroyed:
         assert observed.effective_capacity_bps == 1_000_000_000
 
     def test_an_explicitly_configured_bandwidth_is_not_a_capacity(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+        from packet_tracer_mcp.domain.enterprise.models.link_performance import (
             BandwidthProvenance,
         )
 
@@ -437,11 +437,11 @@ class TestBandwidthObservabilityIsNotDestroyed:
 
     def test_the_auto_plan_leaves_the_channel_intact(self):
         """Al no emitir bandwidth bajo AUTO, la observacion sigue disponible."""
-        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+        from packet_tracer_mcp.domain.enterprise.models.link_performance import (
             LinkMedia,
             LinkPerformanceIntent,
         )
-        from src.packet_tracer_mcp.domain.enterprise.services.link_performance_integration import (
+        from packet_tracer_mcp.domain.enterprise.services.link_performance_integration import (
             LinkPerformanceIntegration,
         )
 
@@ -463,11 +463,11 @@ class TestBandwidthObservabilityIsNotDestroyed:
         assert self._observed(True).effective_capacity_bps == 1_000_000_000
 
     def test_the_verifier_still_catches_a_shortfall_after_an_auto_plan(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+        from packet_tracer_mcp.domain.enterprise.models.link_performance import (
             LinkMedia,
             LinkPerformanceDecision,
         )
-        from src.packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
+        from packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
             LinkPerformancePlanner,
         )
 

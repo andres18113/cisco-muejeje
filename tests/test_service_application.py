@@ -2,27 +2,27 @@
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.application.use_cases.apply_services import ServiceApplicator
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.application.use_cases.apply_services import ServiceApplicator
+from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationStatus,
     ConfigurationFailureCode,
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.service_plan import (
+from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceCapabilityProfile,
     ServiceActionType,
     ServiceEvidenceKind,
     ServiceType,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.service_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.service_runtime import (
     RuntimeServiceVerification,
 )
 
 from test_enterprise_services import _fixture
-from src.packet_tracer_mcp.application.use_cases.compile_services import (
+from packet_tracer_mcp.application.use_cases.compile_services import (
     compile_enterprise_services,
 )
 

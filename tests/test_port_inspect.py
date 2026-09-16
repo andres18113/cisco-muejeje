@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.domain.services.port_inspect import (
+from packet_tracer_mcp.domain.services.port_inspect import (
     NAT_MODES,
     nat_mode_label,
     summarize_ports,

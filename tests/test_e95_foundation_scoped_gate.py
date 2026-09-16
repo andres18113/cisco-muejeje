@@ -30,19 +30,19 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
+from packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
     compose_enterprise_reference,
 )
-from src.packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
+from packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
     EnterpriseExecutionStage,
     EnterpriseExecutionStatus,
     EnterpriseRuntimes,
     execute_enterprise_reference,
 )
-from src.packet_tracer_mcp.application.use_cases.foundational_evidence import (
+from packet_tracer_mcp.application.use_cases.foundational_evidence import (
     derive_foundational_statuses,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationStatus,
     ConfigurationFailureCode,
@@ -51,13 +51,13 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
     RuntimeConfigurationTarget,
     RuntimeVerification,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     VerificationKind,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlanePlan,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import VoiceIntent
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import VoiceIntent
 
 from test_e95_e5_capability_evidence import (
     BOUNDED_REQUIREMENTS,

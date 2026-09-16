@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.compile_control_plane import (
+from packet_tracer_mcp.application.use_cases.compile_control_plane import (
     compile_enterprise_control_plane,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ConfigureEigrpIpv4,
     ConfigureEtherChannel,
     ConfigureHsrp,
@@ -21,7 +21,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
     RoutingNetwork,
     StpMode,
 )
-from src.packet_tracer_mcp.infrastructure.generator.control_plane_renderer import (
+from packet_tracer_mcp.infrastructure.generator.control_plane_renderer import (
     PacketTracerControlPlaneFaultRenderer,
     PacketTracerControlPlaneRenderer,
 )

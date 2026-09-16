@@ -1,137 +1,166 @@
-"""Un worktree limpio debe probar SU PROPIO source.
+"""A clean worktree must test its own source, under one name.
 
-Por que existe:
-El `.venv` compartido tiene un editable install que apunta al checkout
-principal. Un worktree recien creado hereda ese `.pth`, asi que un import
-`packet_tracer_mcp` pelado resolvia al checkout principal aunque el operador
-estuviera editando el worktree. Medido durante Runtime Safety R1: 18 archivos
-de test validaban codigo que no era el que se estaba modificando, y el fallo
-era silencioso -- los tests pasaban, simplemente probaban otra cosa.
+Why this file exists
+--------------------
+A shared `.venv` carries an editable install that records one absolute tree. A
+newly created worktree inherits that `.pth`, so a bare `import
+packet_tracer_mcp` resolved to the main checkout while the operator was editing
+the worktree. Measured during Runtime Safety R1: 18 test files were validating
+code that was not the code being changed, and the failure was silent -- the
+tests passed, they simply tested something else.
 
-Estos tests hacen que esa condicion no pueda volver sin que alguien se entere.
+The suite's historical containment for that defect was to import the package as
+`src.packet_tracer_mcp`, which pinned resolution to the repository root. It
+worked, but it bought isolation with a second identity of the same files, and
+two identities make every cross-namespace `isinstance` and enum comparison
+silently false.
+
+The canonical namespace migration removed the second name. Isolation is now
+established by the thing that was wrong in the first place -- the environment
+and its editable install -- and proved here:
+
+* `tests.namespace_preflight` decides identity and origin, and the suite
+  already refuses to collect without it. This module asserts the same rule
+  holds, so the guarantee is visible as a test and not only as a side effect
+  of collection.
+* The runtime entrypoints are exercised **from the repository root**. The
+  superseded version ran them with `cwd=src`, where Python puts the current
+  directory first on `sys.path`; that made the checks pass whatever the
+  editable install pointed at, which is precisely the fault they existed to
+  detect. Running from the root has no such fallback: it resolves through the
+  environment, so a foreign or missing install fails here instead of hiding.
+
+What this module does not own: proving that no source still imports the retired
+namespace. `tests/test_namespace_inventory.py` measures that across every
+tracked file, and duplicating it here with a narrower glob would only create a
+second, weaker answer.
 """
 
 from __future__ import annotations
 
-import ast
+import subprocess
+import sys
 from pathlib import Path
 
-import src.packet_tracer_mcp as package_under_test
+import packet_tracer_mcp as package_under_test
+from tests.namespace_preflight import (
+    LEGACY_NAMESPACE,
+    PRODUCTION_NAMESPACE,
+    NamespacePreflight,
+    NamespacePreflightState,
+)
 
 REPO = Path(__file__).resolve().parents[1]
-TESTS = REPO / "tests"
-
-# El unico import legitimo del paquete pelado: vive DENTRO de un string que se
-# ejecuta en un subprocess con su propio sys.path. No es un import de este
-# proceso y normalizarlo romperia el aislamiento que ese test busca.
-_SUBPROCESS_SOURCE_TEST = "test_bridge_security.py"
+EXPECTED_PACKAGE_FILE = REPO / "src" / PRODUCTION_NAMESPACE / "__init__.py"
 
 
 def test_the_package_under_test_belongs_to_this_worktree():
+    """The source being tested is the source in this tree."""
     resolved = Path(package_under_test.__file__).resolve()
 
     assert REPO in resolved.parents, (
-        "Los tests estan importando el paquete desde fuera de este worktree: "
-        f"{resolved}. Revisa el editable install del entorno y `pythonpath` "
-        "en pyproject.toml antes de confiar en cualquier resultado."
+        "The tests are importing the package from outside this worktree: "
+        f"{resolved}. Check this checkout's editable install before trusting "
+        "any result."
     )
 
 
 def test_the_package_resolves_under_the_src_layout_of_this_repo():
-    assert Path(package_under_test.__file__).resolve() == (
-        REPO / "src" / "packet_tracer_mcp" / "__init__.py"
-    )
+    """And it resolves at the exact path this checkout's layout declares."""
+    assert Path(package_under_test.__file__).resolve() == EXPECTED_PACKAGE_FILE
 
 
-def _imported_roots(path: Path) -> set[str]:
-    """Raices de import reales, via AST.
+def test_this_process_satisfies_the_namespace_preflight():
+    """The gate that guards collection is asserted, not merely assumed."""
+    result = NamespacePreflight(REPO).evaluate()
 
-    Se parsea en vez de usar grep para no confundir un import escrito dentro de
-    un string literal con un import de verdad.
+    assert result.state is NamespacePreflightState.ISOLATED, result.render(REPO)
+
+
+def test_a_bare_import_from_the_repository_root_resolves_to_this_worktree():
+    """The real editable-install check, with no directory trick to soften it.
+
+    From the root there is no `src` on `sys.path`, so this name can only come
+    from the environment. If the environment belongs to another checkout, this
+    is where it shows.
     """
-    roots: set[str] = set()
-    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-        if isinstance(node, ast.Import):
-            roots.update(alias.name.split(".")[0] for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            roots.add(node.module.split(".")[0])
-    return roots
-
-
-def test_the_runtime_entrypoint_resolves_to_this_worktree():
-    """Que los tests resuelvan local no alcanza: el runtime tambien debe.
-
-    El namespace canonico de produccion es `packet_tracer_mcp` (lo usa el
-    console script `pt-mcp` y `python -m`). Desde la RAIZ del repo ese nombre
-    resuelve por el editable install del entorno, que apunta a un solo arbol
-    absoluto -- en un worktree, al arbol equivocado, y en silencio. La
-    invocacion soportada sin PYTHONPATH es con `cwd` en `src/`, donde Python
-    pone el directorio actual al frente de sys.path.
-    """
-    import subprocess
-    import sys
-
-    out = subprocess.run(
+    completed = subprocess.run(
         [sys.executable, "-c", "import packet_tracer_mcp as m; print(m.__file__)"],
-        cwd=REPO / "src", capture_output=True, text=True, timeout=60,
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
     )
 
-    assert out.returncode == 0, out.stderr
-    resolved = Path(out.stdout.strip()).resolve()
-    assert resolved == REPO / "src" / "packet_tracer_mcp" / "__init__.py", (
-        f"El runtime cargo el paquete desde {resolved}, fuera de este worktree."
+    assert completed.returncode == 0, completed.stderr
+    resolved = Path(completed.stdout.strip()).resolve()
+    assert resolved == EXPECTED_PACKAGE_FILE, (
+        f"The runtime loaded the package from {resolved}, outside this worktree."
     )
 
 
-def test_the_runtime_starts_from_this_worktree():
-    """Arranque no mutante: `--help` prueba que el modulo ejecutable es el local."""
-    import subprocess
-    import sys
-
-    out = subprocess.run(
-        [sys.executable, "-m", "packet_tracer_mcp", "--help"],
-        cwd=REPO / "src", capture_output=True, text=True, timeout=120,
+def test_the_module_entrypoint_starts_from_the_repository_root():
+    """Non-mutating startup: `--help` proves the executable module is the local one."""
+    completed = subprocess.run(
+        [sys.executable, "-m", PRODUCTION_NAMESPACE, "--help"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
     )
 
-    assert out.returncode == 0, out.stderr
-    assert "pt-mcp" in out.stdout
+    assert completed.returncode == 0, completed.stderr
+    assert "pt-mcp" in completed.stdout
+
+
+def test_the_console_entrypoint_starts_from_the_repository_root():
+    """The installed `pt-mcp` script is the shipped entrypoint; it is tested too."""
+    script = Path(sys.executable).parent / (
+        "pt-mcp.exe" if sys.platform == "win32" else "pt-mcp"
+    )
+
+    assert script.is_file(), (
+        f"The console entrypoint is missing from this environment: {script}. "
+        "Install this checkout in editable mode."
+    )
+
+    completed = subprocess.run(
+        [str(script), "--help"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "pt-mcp" in completed.stdout
 
 
 def test_only_one_identity_of_the_package_is_loaded_in_a_process():
-    """Dos identidades hacian que un `isinstance` cruzado fuera siempre falso."""
-    import subprocess
-    import sys
-
+    """Two identities made a cross-namespace `isinstance` always false."""
     code = (
-        "import sys; sys.path.insert(0, '.')\n"
-        "import src.packet_tracer_mcp\n"
+        "import sys\n"
+        "import packet_tracer_mcp\n"
         "print(sorted(n for n in sys.modules "
-        "if n in ('packet_tracer_mcp', 'src.packet_tracer_mcp')))"
+        f"if n in ({PRODUCTION_NAMESPACE!r}, {LEGACY_NAMESPACE!r})))"
     )
-    out = subprocess.run(
-        [sys.executable, "-c", code], cwd=REPO,
-        capture_output=True, text=True, timeout=60,
-    )
-
-    assert out.returncode == 0, out.stderr
-    assert out.stdout.strip() == "['src.packet_tracer_mcp']"
-
-
-def test_no_test_imports_the_package_outside_the_repo_namespace():
-    """Un solo namespace: `src.packet_tracer_mcp`.
-
-    Dos identidades del mismo codigo hacian que un `isinstance` entre objetos
-    de una y clases de la otra fuera siempre falso, y una asercion escrita asi
-    pasaba sin comprobar nada.
-    """
-    offenders = sorted(
-        path.name
-        for path in TESTS.glob("test_*.py")
-        if path.name != _SUBPROCESS_SOURCE_TEST
-        and "packet_tracer_mcp" in _imported_roots(path)
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
     )
 
-    assert offenders == [], (
-        "Estos tests importan `packet_tracer_mcp` pelado, que resuelve por el "
-        f"editable install y no por este worktree: {offenders}"
-    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == f"['{PRODUCTION_NAMESPACE}']"
+
+
+def test_the_retired_namespace_is_not_loaded_by_the_running_suite():
+    """`src/` is where the package lives, not a name the suite may import."""
+    assert LEGACY_NAMESPACE not in sys.modules
+    assert "src" not in sys.modules

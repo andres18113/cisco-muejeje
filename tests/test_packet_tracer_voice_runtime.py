@@ -8,31 +8,31 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationFailureCode,
     FieldVerificationStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     BindPhoneToExtension,
     ConfigureDialRule,
     GeneratePhoneConfigurationFiles,
     VoiceActionType,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
     CallState,
     PhoneExecutionMethod,
     RuntimeCallObservation,
 )
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_voice_runtime import (
+from packet_tracer_mcp.infrastructure.execution.enterprise_voice_runtime import (
     EndpointDhcpClientStateMutation,
     PacketTracerEnterpriseVoiceRuntime,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosCommandResult,
     OperationalQueryId,
 )
-from src.packet_tracer_mcp.infrastructure.execution.phone_control import (
+from packet_tracer_mcp.infrastructure.execution.phone_control import (
     PacketTracerNativeUiPhoneControlAdapter,
     UnavailablePhoneControl,
 )
@@ -1009,7 +1009,7 @@ _ONE_EPHONE = (chr(13) + chr(10)).join([
 
 def _registration_runtime(output, *, complete):
     """A voice runtime whose `show ephone` returns exactly one captured window."""
-    from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+    from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
         IosCommandResult,
         IosSessionState,
         OperationalQueryId,
@@ -1039,7 +1039,7 @@ def _registration_runtime(output, *, complete):
 
 
 def _expectation(extension):
-    from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+    from packet_tracer_mcp.domain.enterprise.models.voice_plan import (
         VoiceVerificationExpectation,
         VoiceVerificationKind,
     )

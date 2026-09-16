@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.qualify_frame_vlan_calibration import (
+from packet_tracer_mcp.application.use_cases.qualify_frame_vlan_calibration import (
     CALIBRATION_PREFIX,
     CONTROL_VLAN_IDS,
     FrameVlanCalibrationResult,
@@ -143,19 +143,19 @@ def test_a_non_numeric_reading_never_becomes_a_match():
 # The orchestration is what decides which frame is allowed to calibrate, so it
 # is proven offline before any Packet Tracer run pays for it.
 
-from src.packet_tracer_mcp.application.use_cases.qualify_frame_vlan_calibration import (  # noqa: E402
+from packet_tracer_mcp.application.use_cases.qualify_frame_vlan_calibration import (  # noqa: E402
     CONTROL_VLAN_IDS as VLANS,
     FrameVlanCalibrationQualifier,
     MAX_ENUMERATED,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.execution import (  # noqa: E402
+from packet_tracer_mcp.domain.enterprise.models.execution import (  # noqa: E402
     MutationDisposition,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (  # noqa: E402
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (  # noqa: E402
     PhysicalWorkspaceDeviceObservation,
     PhysicalWorkspaceObservation,
 )
-from src.packet_tracer_mcp.infrastructure.execution.frame_observer_probe import (  # noqa: E402
+from packet_tracer_mcp.infrastructure.execution.frame_observer_probe import (  # noqa: E402
     FrameChildDiscovery,
     FrameInstanceDiscovery,
     FrameObserverDiscovery,

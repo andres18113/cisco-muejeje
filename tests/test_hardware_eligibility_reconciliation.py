@@ -34,22 +34,22 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.plan_enterprise_hardware import (
+from packet_tracer_mcp.application.use_cases.plan_enterprise_hardware import (
     capability_catalog_for,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     DeviceCandidateStatus,
     DeviceRequirement,
     DeviceSelectionStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
-from src.packet_tracer_mcp.domain.enterprise.services.device_selector import DeviceSelector
-from src.packet_tracer_mcp.infrastructure.catalog.capability_providers import (
+from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from packet_tracer_mcp.domain.enterprise.services.device_selector import DeviceSelector
+from packet_tracer_mcp.infrastructure.catalog.capability_providers import (
     ProbeCapabilityProvider,
     RuntimeCapabilityProvider,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
 )
 from tests.test_e95_capability_reconciliation import (

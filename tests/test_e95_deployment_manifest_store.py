@@ -5,23 +5,23 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     RuntimeConfigurationTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     DeploymentManifest,
     EnvironmentFingerprint,
     build_deployment_manifest,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.topology_identity import (
+from packet_tracer_mcp.domain.enterprise.services.topology_identity import (
     stamp_topology_hashes,
 )
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, TopologyPlan
-from src.packet_tracer_mcp.infrastructure.persistence.deployment_manifest_store import (
+from packet_tracer_mcp.domain.models.plans import DevicePlan, TopologyPlan
+from packet_tracer_mcp.infrastructure.persistence.deployment_manifest_store import (
     DeploymentManifestStore,
     ManifestPersistenceError,
 )
-from src.packet_tracer_mcp.infrastructure.persistence import deployment_manifest_store
+from packet_tracer_mcp.infrastructure.persistence import deployment_manifest_store
 
 
 def _manifest(

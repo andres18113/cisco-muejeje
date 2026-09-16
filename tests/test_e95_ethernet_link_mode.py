@@ -16,8 +16,8 @@ enlazado se acepta sin efecto observable ni tras rebotar el enlace.
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.domain.enterprise.models.evidence import ReadinessStatus
-from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+from packet_tracer_mcp.domain.enterprise.models.evidence import ReadinessStatus
+from packet_tracer_mcp.domain.enterprise.models.link_performance import (
     DuplexMode,
     LinkMedia,
     LinkModeContext,
@@ -32,16 +32,16 @@ from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
     nominal_link_ceiling_bps,
     port_kind_of,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
+from packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
     LinkPerformancePlanner,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
     PT_2911_GIGABIT_LINK_MODE,
     PT_3560_FASTETHERNET_LINK_MODE,
     PT_3560_GIGABIT_LINK_MODE,
     link_mode_capability_for,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ios_rejection_reason,
     parse_ethernet_link_mode,
 )

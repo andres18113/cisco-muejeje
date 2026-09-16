@@ -9,20 +9,20 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     project_cp_scale_canonical_stage,
 )
 from tests.poe_delivery_capabilities import (
     compose_delivery_qualified_cp_scale_canonical as compose_cp_scale_canonical,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigureAccessPort,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
+from packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
     MEASURED_BACKEND_VERSION,
 )
-from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
 )
 

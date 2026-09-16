@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (
+from packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (
     ACQUISITION_NOT_STARTED_SHARED_FOUNDATION_UNREADY,
     ACQUISITION_NOT_STARTED_STP_PRECONDITION_UNMET,
     DATA_VLAN_ID,
@@ -59,7 +59,7 @@ from tests.test_positive_voice_slice import (
     _mutation,
     _qualifier,
 )
-from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (
+from packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (
     PositiveVoiceSliceQualifier,
 )
 

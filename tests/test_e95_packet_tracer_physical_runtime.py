@@ -2,18 +2,18 @@ from __future__ import annotations
 
 import json
 
-from src.packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
+from packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
     EnterprisePhysicalTopologyDeployer,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint
-from src.packet_tracer_mcp.domain.enterprise.models.execution import MutationDisposition
-from src.packet_tracer_mcp.domain.enterprise.models.execution import DirtyState
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint
+from packet_tracer_mcp.domain.enterprise.models.execution import MutationDisposition
+from packet_tracer_mcp.domain.enterprise.models.execution import DirtyState
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.topology_identity import stamp_topology_hashes
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
-from src.packet_tracer_mcp.infrastructure.execution.packet_tracer_physical_runtime import (
+from packet_tracer_mcp.domain.enterprise.services.topology_identity import stamp_topology_hashes
+from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from packet_tracer_mcp.infrastructure.execution.packet_tracer_physical_runtime import (
     PacketTracerPhysicalTopologyRuntime,
 )
 
@@ -27,7 +27,7 @@ def _double_port_inventory(topology):
     prestada evidencia tomada contra el backend real. Se declara la del doble,
     igual que ya se declaran sus observaciones.
     """
-    from src.packet_tracer_mcp.domain.enterprise.models.port_inventory import (
+    from packet_tracer_mcp.domain.enterprise.models.port_inventory import (
         PortInventoryEvidenceTier,
         PortInventoryResolution,
     )

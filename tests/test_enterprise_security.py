@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from src.packet_tracer_mcp.application.use_cases.compile_security import (
+from packet_tracer_mcp.application.use_cases.compile_security import (
     compile_enterprise_security,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.security_compiler import (
+from packet_tracer_mcp.domain.enterprise.services.security_compiler import (
     SecurityCompiler,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationPhase,
     ConfigurationPlan,
     ConfigureAccessPort,
@@ -19,7 +19,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     CreateVlan,
     SetEndpointStaticAddress,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.security_plan import (
+from packet_tracer_mcp.domain.enterprise.models.security_plan import (
     AddSecurityAclRule,
     AttachSecurityAcl,
     ConfigureDhcpSnooping,
@@ -41,12 +41,12 @@ from src.packet_tracer_mcp.domain.enterprise.models.security_plan import (
     SecurityVerificationKind,
     StaticNatMappingIntent,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.service_plan import (
+from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceDefinition,
     ServicePlan,
     ServiceType,
 )
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
 
 
 def _fixture():

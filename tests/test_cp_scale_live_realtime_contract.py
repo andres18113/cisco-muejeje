@@ -9,8 +9,8 @@ from tests.cp_scale_stage_fixture import voice_window_trace
 
 
 def test_stage_window_retains_typed_required_observations_and_compatible_evidence() -> None:
-    from src.packet_tracer_mcp.application.cp_scale_live import contracts
-    from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_stage_evidence import (
+    from packet_tracer_mcp.application.cp_scale_live import contracts
+    from packet_tracer_mcp.infrastructure.persistence.cp_scale_stage_evidence import (
         stage_result_evidence,
     )
 
@@ -35,7 +35,7 @@ def test_stage_window_retains_typed_required_observations_and_compatible_evidenc
 
 
 def test_failed_after_boundary_preserves_typed_absence_error_and_authority() -> None:
-    from src.packet_tracer_mcp.application.cp_scale_live import contracts
+    from packet_tracer_mcp.application.cp_scale_live import contracts
 
     result, _ = voice_window_trace(after_simulating=True)
     window = result.report.realtime
@@ -49,8 +49,8 @@ def test_failed_after_boundary_preserves_typed_absence_error_and_authority() -> 
 
 
 def test_packet_tracer_observation_adapter_converts_runtime_state_field_by_field() -> None:
-    from src.packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleRealtimeState
-    from src.packet_tracer_mcp.infrastructure.observation.cp_scale_live import (
+    from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleRealtimeState
+    from packet_tracer_mcp.infrastructure.observation.cp_scale_live import (
         PacketTracerCPScaleObservations,
     )
 
@@ -123,10 +123,10 @@ def test_packet_tracer_observation_adapter_converts_runtime_state_field_by_field
 def test_realtime_rule_rejects_absent_mistyped_or_presence_inconsistent_state(
     state,
 ) -> None:
-    from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
+    from packet_tracer_mcp.application.cp_scale_live.contracts import (
         CPScaleRealtimeState,
     )
-    from src.packet_tracer_mcp.application.cp_scale_live.voice_stage import (
+    from packet_tracer_mcp.application.cp_scale_live.voice_stage import (
         realtime_boundary_error,
     )
 
@@ -138,10 +138,10 @@ def test_realtime_rule_rejects_absent_mistyped_or_presence_inconsistent_state(
 def test_stage_stops_before_voice_when_realtime_mode_is_not_explicitly_false() -> None:
     from dataclasses import replace
 
-    from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
+    from packet_tracer_mcp.application.cp_scale_live.contracts import (
         CPScaleRealtimeState,
     )
-    from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import (
+    from packet_tracer_mcp.application.cp_scale_live.stage_executor import (
         CPScaleStageExecutor,
     )
     from tests.cp_scale_stage_fixture import stage_fixture
@@ -183,7 +183,7 @@ def test_cleanup_consumer_fails_closed_for_incoherent_realtime_state(
     monkeypatch,
     raw,
 ) -> None:
-    from src.packet_tracer_mcp.infrastructure.observation import cp_scale_live_run
+    from packet_tracer_mcp.infrastructure.observation import cp_scale_live_run
 
     monkeypatch.setattr(cp_scale_live_run, "_voice_window_state", lambda runtime: raw)
     observations = cp_scale_live_run.PacketTracerCPScaleRunObservations(
@@ -216,13 +216,13 @@ def test_stage_and_serializer_reject_unknown_realtime_presence_without_crashing(
 ) -> None:
     from dataclasses import replace
 
-    from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
+    from packet_tracer_mcp.application.cp_scale_live.contracts import (
         CPScaleRealtimeState,
     )
-    from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import (
+    from packet_tracer_mcp.application.cp_scale_live.stage_executor import (
         CPScaleStageExecutor,
     )
-    from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_stage_evidence import (
+    from packet_tracer_mcp.infrastructure.persistence.cp_scale_stage_evidence import (
         stage_result_evidence,
     )
     from tests.cp_scale_stage_fixture import stage_fixture
@@ -262,11 +262,11 @@ def test_cleanup_rejects_unknown_realtime_presence_and_stays_serializable(
     monkeypatch,
     present,
 ) -> None:
-    from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
+    from packet_tracer_mcp.application.cp_scale_live.contracts import (
         CPScaleRealtimeState,
     )
-    from src.packet_tracer_mcp.infrastructure.observation import cp_scale_live_run
-    from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_run_evidence import (
+    from packet_tracer_mcp.infrastructure.observation import cp_scale_live_run
+    from packet_tracer_mcp.infrastructure.persistence.cp_scale_run_evidence import (
         realtime_evidence,
     )
 
@@ -293,10 +293,10 @@ def test_cleanup_rejects_unknown_realtime_presence_and_stays_serializable(
 def test_stage_wrong_realtime_object_fails_closed_and_serializes_as_absent() -> None:
     from dataclasses import replace
 
-    from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import (
+    from packet_tracer_mcp.application.cp_scale_live.stage_executor import (
         CPScaleStageExecutor,
     )
-    from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_stage_evidence import (
+    from packet_tracer_mcp.infrastructure.persistence.cp_scale_stage_evidence import (
         stage_result_evidence,
     )
     from tests.cp_scale_stage_fixture import stage_fixture
@@ -320,8 +320,8 @@ def test_stage_wrong_realtime_object_fails_closed_and_serializes_as_absent() -> 
 def test_cleanup_wrong_realtime_object_fails_closed_and_serializes_as_absent(
     monkeypatch,
 ) -> None:
-    from src.packet_tracer_mcp.infrastructure.observation import cp_scale_live_run
-    from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_run_evidence import (
+    from packet_tracer_mcp.infrastructure.observation import cp_scale_live_run
+    from packet_tracer_mcp.infrastructure.persistence.cp_scale_run_evidence import (
         realtime_evidence,
     )
 

@@ -7,36 +7,36 @@ productive fail-closed baseline.
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     compose_cp_scale_canonical as _compose_cp_scale_canonical,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityEvidence,
     CapabilityStatus,
     EvidenceSource,
     PoEAuthorizedBinding,
 )
-from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
+from packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
     cp_scale_physical_design,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
+from packet_tracer_mcp.domain.enterprise.models.hardware import (
     EndpointPortBinding,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.poe_claims import (
+from packet_tracer_mcp.domain.enterprise.services.poe_claims import (
     PoEDeliveryClaimScope,
     PoEDeliveryTestedBinding,
     encode_poe_delivery_dimensions,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.capability_providers import (
+from packet_tracer_mcp.infrastructure.catalog.capability_providers import (
     StaticVerifiedCapabilityProvider,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.measured_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.measured_capabilities import (
     measured_capability_evidence,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
+from packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
     MEASURED_BACKEND_VERSION,
 )
 

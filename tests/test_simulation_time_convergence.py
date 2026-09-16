@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ConvergenceOutcome,
 )
-from src.packet_tracer_mcp.infrastructure.execution.simulation_time_convergence import (
+from packet_tracer_mcp.infrastructure.execution.simulation_time_convergence import (
     OBSERVER_INCOMPLETE_STOP_REASONS,
     PVST_SIMULATION_PROGRESS_WALL_CAP_SECONDS,
     BoundedPvstLearningExtension,
@@ -13,7 +13,7 @@ from src.packet_tracer_mcp.infrastructure.execution.simulation_time_convergence 
     classify_extension_stop_reason,
     pvst_learning_progress_target_ms,
 )
-from src.packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
+from packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
     SimulationStateObservation,
 )
 

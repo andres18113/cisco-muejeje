@@ -24,29 +24,29 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.execution import (
+from packet_tracer_mcp.domain.enterprise.models.execution import (
     MutationDisposition,
 )
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan
-from src.packet_tracer_mcp.infrastructure.catalog.factory_modules import (
+from packet_tracer_mcp.domain.models.plans import DevicePlan
+from packet_tracer_mcp.infrastructure.catalog.factory_modules import (
     FactoryModulePolicyError,
     factory_module_requirement_for,
 )
-from src.packet_tracer_mcp.infrastructure.execution.factory_module_preparation import (
+from packet_tracer_mcp.infrastructure.execution.factory_module_preparation import (
     PacketTracerFactoryModulePreparer,
     classify_factory_power_hypothesis,
 )
-from src.packet_tracer_mcp.infrastructure.execution.factory_module_contracts import (
+from packet_tracer_mcp.infrastructure.execution.factory_module_contracts import (
     FactoryModuleObservation,
     FactoryModuleSlotState,
 )
-from src.packet_tracer_mcp.infrastructure.execution import (
+from packet_tracer_mcp.infrastructure.execution import (
     factory_module_preparation as factory_module_runtime,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     PoEInlineTable,
 )
-from src.packet_tracer_mcp.infrastructure.execution.packet_tracer_physical_runtime import (
+from packet_tracer_mcp.infrastructure.execution.packet_tracer_physical_runtime import (
     PacketTracerPhysicalTopologyRuntime,
 )
 

@@ -178,7 +178,7 @@ class TestTheWholeDomainStaysNeutral:
 
 class TestTheProfilesLiveInInfrastructure:
     def test_the_ethernet_profiles_resolve_from_the_catalog(self):
-        from src.packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
+        from packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
             PT_2911_GIGABIT_LINK_MODE,
             PT_3560_FASTETHERNET_LINK_MODE,
             PT_3560_GIGABIT_LINK_MODE,
@@ -191,8 +191,8 @@ class TestTheProfilesLiveInInfrastructure:
 
     def test_the_serial_profile_moved_out_of_the_domain_too(self):
         """Mismo descuido, otra etapa: tambien vivia en el dominio."""
-        from src.packet_tracer_mcp.domain.enterprise.models import link_performance
-        from src.packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
+        from packet_tracer_mcp.domain.enterprise.models import link_performance
+        from packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
             PT_2911_HWIC2T_SERIAL_CLOCK,
         )
 
@@ -200,7 +200,7 @@ class TestTheProfilesLiveInInfrastructure:
         assert not hasattr(link_performance, "PT_2911_HWIC2T_SERIAL_CLOCK")
 
     def test_the_domain_still_exposes_the_generic_capability_type(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+        from packet_tracer_mcp.domain.enterprise.models.link_performance import (
             EthernetLinkModeCapability,
         )
 

@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.infrastructure.execution.file_bridge import (
+from packet_tracer_mcp.infrastructure.execution.file_bridge import (
     FileBridge,
     RequestDisposition,
 )

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     EvidenceSource,
     PoEAuthorizedBinding,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+from packet_tracer_mcp.domain.enterprise.models.discovery import (
     CapabilityProbeResult,
     CapabilitySnapshot,
     CleanupStatus,
@@ -16,20 +16,20 @@ from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
     ProbeSession,
     ProbeSessionResult,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.poe_claims import (
+from packet_tracer_mcp.domain.enterprise.services.poe_claims import (
     PoEDeliveryClaimScope,
     PoEDeliveryTestedBinding,
     encode_poe_delivery_dimensions,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.capability_providers import (
+from packet_tracer_mcp.infrastructure.catalog.capability_providers import (
     ManualVerificationCapabilityProvider,
     ProbeCapabilityProvider,
     RuntimeCapabilityProvider,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     packet_tracer_enterprise_capability_adapter,
 )
-from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
 )
 from tests.poe_session_safety import healthy_live_session_safety

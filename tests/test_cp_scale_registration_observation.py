@@ -28,23 +28,23 @@ from __future__ import annotations
 
 import json
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationFailureCode,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     VoiceVerificationExpectation,
     VoiceVerificationKind,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     OperationalQueryId,
     PagerContinuation,
     parse_show_ephone,
 )
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_voice_runtime import (
+from packet_tracer_mcp.infrastructure.execution.enterprise_voice_runtime import (
     PacketTracerEnterpriseVoiceRuntime,
 )
-from src.packet_tracer_mcp.infrastructure.execution.phone_control import (
+from packet_tracer_mcp.infrastructure.execution.phone_control import (
     UnavailablePhoneControl,
 )
 from tests.test_e95_serial_orientation_pager_capture import (
@@ -157,7 +157,7 @@ class _CountingCallControl:
     """A voice runtime whose `show ephone` is scripted and counted."""
 
     def __init__(self, runtime, pages, *, complete: bool = True) -> None:
-        from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+        from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
             IosCommandResult,
             IosSessionState,
         )
@@ -471,13 +471,13 @@ def test_an_addressed_phone_svi_reports_its_address_and_its_channel():
 
 def test_an_unreadable_phone_address_channel_never_reads_as_a_failed_lease():
     """The applicator's claim must name the ceiling, not invent an absence."""
-    from src.packet_tracer_mcp.application.use_cases.apply_voice import (
+    from packet_tracer_mcp.application.use_cases.apply_voice import (
         _addressing_claim,
     )
-    from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+    from packet_tracer_mcp.domain.enterprise.models.voice_plan import (
         PhoneAssignment,
     )
-    from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+    from packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
         RuntimePhoneRegistration,
     )
 

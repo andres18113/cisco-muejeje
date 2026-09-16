@@ -14,7 +14,7 @@ no es una cuestión de aridad pendiente.
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.infrastructure.execution.probe_runtime import (
+from packet_tracer_mcp.infrastructure.execution.probe_runtime import (
     PacketTracerBridgeProbeRuntime,
 )
 

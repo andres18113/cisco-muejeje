@@ -6,7 +6,7 @@ from dataclasses import replace
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     CPScaleCanonicalTarget,
     CPScaleForwardingAuthority,
@@ -17,50 +17,50 @@ from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical impo
     project_cp_scale_canonical_delta,
     project_cp_scale_canonical_stage,
 )
-from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
+from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     CanonicalMutationSurfaceObservation,
     canonical_configuration_reread_scope,
     canonical_stage_mutation_replay_audit,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
     SetEndpointDhcp,
     SetEndpointStaticAddress,
 )
-from src.packet_tracer_mcp.application.use_cases.apply_control_plane import (
+from packet_tracer_mcp.application.use_cases.apply_control_plane import (
     ControlPlaneApplicator,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionApplicationResult,
     ActionExecutionStatus,
     ConfigurationApplicationResult,
     ConfigurationApplicationStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ConfigureRipv2,
     ConfigureSpanningTree,
     ConfigureStpEdgePort,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import (
     ControlPlaneApplicationResult,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.execution import (
+from packet_tracer_mcp.domain.enterprise.models.execution import (
     journal_from_action_results,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
-from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
     VoiceApplicationResult,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
+from packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
     configuration_plan_semantic_hash,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.control_plane_compiler import (
+from packet_tracer_mcp.domain.enterprise.services.control_plane_compiler import (
     control_plane_plan_semantic_hash,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.forwarding_target import (
+from packet_tracer_mcp.domain.enterprise.services.forwarding_target import (
     select_forwarding_workload,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.topology_identity import (
+from packet_tracer_mcp.domain.enterprise.services.topology_identity import (
     stamp_topology_hashes,
 )
 from tests.poe_delivery_capabilities import (

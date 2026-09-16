@@ -7,7 +7,7 @@ import json
 from functools import cache
 from pathlib import Path
 
-from src.packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
+from packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
     packet_tracer_cp_scale_qualification_policy,
 )
 

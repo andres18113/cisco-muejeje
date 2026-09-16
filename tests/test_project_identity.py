@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
-from src.packet_tracer_mcp.settings import (
+from packet_tracer_mcp.settings import (
     DEVELOPER_CAPABILITY_INVESTIGATION_INSTRUCTIONS,
     SERVER_INSTRUCTIONS,
 )

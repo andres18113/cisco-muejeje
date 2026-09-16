@@ -18,17 +18,17 @@ import pathlib
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ConfigureRipv2,
     ControlPlaneCapabilityDimension,
     ControlPlanePhase,
     LinkFailureScenario,
     RipNetwork,
 )
-from src.packet_tracer_mcp.infrastructure.execution.probe_runtime import (
+from packet_tracer_mcp.infrastructure.execution.probe_runtime import (
     PacketTracerBridgeProbeRuntime,
 )
-from src.packet_tracer_mcp.infrastructure.generator.control_plane_renderer import (
+from packet_tracer_mcp.infrastructure.generator.control_plane_renderer import (
     PacketTracerControlPlaneFaultRenderer,
     PacketTracerControlPlaneRenderer,
 )
@@ -46,8 +46,8 @@ TYPED_PREFIX = "MCP-PROBE-"
 def test_capability_discovery_still_names_probes_with_the_underscore_prefix(tmp_path):
     """Ejercita el caso de uso real, no el texto del generador."""
     from test_capability_discovery import _observation, _service
-    from src.packet_tracer_mcp.domain.enterprise.models.discovery import ProbeRequest
-    from src.packet_tracer_mcp.infrastructure.execution.fake_probe_runtime import (
+    from packet_tracer_mcp.domain.enterprise.models.discovery import ProbeRequest
+    from packet_tracer_mcp.infrastructure.execution.fake_probe_runtime import (
         FakePacketTracerProbeRuntime,
     )
 

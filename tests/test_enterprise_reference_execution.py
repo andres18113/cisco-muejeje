@@ -19,23 +19,23 @@ from __future__ import annotations
 import ast
 import pathlib
 
-from src.packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
+from packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
     HardwarePlanningPolicy,
 )
-from src.packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
+from packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
     EnterpriseExecutionStage,
     EnterpriseExecutionStatus,
     EnterpriseRuntimes,
     execute_enterprise_reference,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneIntent,
     DynamicRoutingIntent,
     DynamicRoutingProtocol,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint
-from src.packet_tracer_mcp.domain.enterprise.models.link_performance import TrafficFlowIntent
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint
+from packet_tracer_mcp.domain.enterprise.models.link_performance import TrafficFlowIntent
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     MutationDisposition,
     PhysicalDeploymentFailureCode,
     PhysicalMutationResult,
@@ -43,12 +43,12 @@ from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceDeviceObservation,
     PhysicalWorkspaceObservation,
 )
-from src.packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
+from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
     ImportIsolationPreflight,
     ImportIsolationState,
 )
 from tests.test_e95_serial_product_planning import _reference_planning_intent
-from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
 )
 from tests.subprocess_harness import (
@@ -84,13 +84,13 @@ def _bounded_intent():
     salen (`IE-2000`, `PC-PT`, y ningun router) tienen inventario de puertos
     medido, de modo que el preflight de puertos deja pasar.
     """
-    from src.packet_tracer_mcp.domain.enterprise.models.intent import (
+    from packet_tracer_mcp.domain.enterprise.models.intent import (
         EnterpriseIntent, SiteIntent, SiteType,
     )
-    from src.packet_tracer_mcp.domain.enterprise.models.requirements import (
+    from packet_tracer_mcp.domain.enterprise.models.requirements import (
         EndpointRequirement,
     )
-    from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+    from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
 
     return EnterpriseIntent(
         name="bounded execution slice",

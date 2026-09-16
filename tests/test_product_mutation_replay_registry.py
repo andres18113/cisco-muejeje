@@ -7,12 +7,12 @@ from typing import get_args
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import ConfigurationAction
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import ControlPlaneAction
-from src.packet_tracer_mcp.domain.enterprise.models.security_plan import SecurityAction
-from src.packet_tracer_mcp.domain.enterprise.models.service_plan import ServiceAction
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import VoiceAction
-from src.packet_tracer_mcp.domain.enterprise.mutation_replay import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import ConfigurationAction
+from packet_tracer_mcp.domain.enterprise.models.control_plane import ControlPlaneAction
+from packet_tracer_mcp.domain.enterprise.models.security_plan import SecurityAction
+from packet_tracer_mcp.domain.enterprise.models.service_plan import ServiceAction
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import VoiceAction
+from packet_tracer_mcp.domain.enterprise.mutation_replay import (
     PRODUCT_MUTATION_REPLAY_REGISTRY,
     MutationSurface,
     ReplayClassification,
@@ -21,7 +21,7 @@ from src.packet_tracer_mcp.domain.enterprise.mutation_replay import (
     policy_for_action_type,
     taxonomy_by_surface,
 )
-from src.packet_tracer_mcp.infrastructure.execution.packet_tracer_physical_runtime import (
+from packet_tracer_mcp.infrastructure.execution.packet_tracer_physical_runtime import (
     PacketTracerPhysicalTopologyRuntime,
 )
 

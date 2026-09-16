@@ -7,22 +7,22 @@ from dataclasses import replace
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityEvidence,
     CapabilityStatus,
     EvidenceSource,
     PoEAuthorizedBinding,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.poe_claims import (
+from packet_tracer_mcp.domain.enterprise.services.poe_claims import (
     decode_poe_authorized_claim,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.poe_pse_claims import (
+from packet_tracer_mcp.domain.enterprise.services.poe_pse_claims import (
     PoEPseCapture,
     PoEPseDeliveryScope,
     decode_poe_pse_delivery_scope,
     encode_poe_pse_dimensions,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.poe_pse_multiport_claims import (
+from packet_tracer_mcp.domain.enterprise.services.poe_pse_multiport_claims import (
     PoEPseBindingCapture,
     PoEPseMultiPortCapture,
     PoEPseMultiPortDeliveryScope,

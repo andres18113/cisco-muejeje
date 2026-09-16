@@ -27,7 +27,7 @@ las que imprime PT. Eso sale de la corrida en vivo, no de este archivo.
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ControlledIosExecutor,
     IosQualificationQueryId,
     PagerContinuation,
@@ -140,7 +140,7 @@ def test_a_capture_that_cannot_finish_stays_truncated_rather_than_guessing()  ->
 
 def test_capture_retains_the_prompt_at_dispatch_not_after_user_mode_restore():
     import json
-    from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import IosSessionState
+    from packet_tracer_mcp.infrastructure.execution.ios_terminal import IosSessionState
 
     class ReturningToUserMode(_PagedTerminal):
         def __call__(self, js, timeout):

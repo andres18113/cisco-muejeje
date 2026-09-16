@@ -1,11 +1,11 @@
 """Tests para el Validator."""
 
 import pytest
-from src.packet_tracer_mcp.domain.models.plans import (
+from packet_tracer_mcp.domain.models.plans import (
     TopologyPlan, DevicePlan, LinkPlan,
 )
-from src.packet_tracer_mcp.domain.services.validator import validate_plan
-from src.packet_tracer_mcp.domain.models.errors import ErrorCode
+from packet_tracer_mcp.domain.services.validator import validate_plan
+from packet_tracer_mcp.domain.models.errors import ErrorCode
 
 
 class TestValidator:

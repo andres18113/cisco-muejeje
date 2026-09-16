@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     project_cp_scale_canonical_delta,
     project_cp_scale_canonical_stage,
@@ -10,7 +10,7 @@ from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical impo
 from tests.poe_delivery_capabilities import (
     compose_delivery_qualified_cp_scale_canonical as compose_cp_scale_canonical,
 )
-from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
+from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     canonical_capability_probe_error,
     canonical_required_capability_probes,
     canonical_checkpoint_repository_error,
@@ -19,21 +19,21 @@ from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     canonical_stage_configuration_error,
     canonical_stage_resume_error,
 )
-from src.packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
+from packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
     configuration_application_contradiction,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     EvidenceSource,
 )
-from src.packet_tracer_mcp.application.use_cases.reconcile_canonical_stage import (
+from packet_tracer_mcp.application.use_cases.reconcile_canonical_stage import (
     canonical_delta_deployment_error,
     reconcile_canonical_stage_deployment,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     VerificationKind,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionApplicationResult,
     ActionExecutionStatus,
     ConfigurationApplicationResult,
@@ -42,13 +42,13 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
     VerificationResult,
     VoiceSignalBarrierResult,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     DeploymentLinkBinding,
     DeploymentLinkEndpoint,
     EnvironmentFingerprint,
     build_deployment_manifest,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.evidence import (
+from packet_tracer_mcp.domain.enterprise.models.evidence import (
     EvidenceFreshness,
     EvidenceRecord,
     EvidenceStrength,
@@ -57,11 +57,11 @@ from src.packet_tracer_mcp.domain.enterprise.models.evidence import (
     VerificationMethod,
     VerificationStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.execution import (
+from packet_tracer_mcp.domain.enterprise.models.execution import (
     ApplicationExecutionJournal,
     MutationDisposition,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentItemResult,
     PhysicalDeploymentResult,
     PhysicalDeploymentStatus,
@@ -72,10 +72,10 @@ from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceLinkObservation,
     PhysicalWorkspaceObservation,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     RuntimeConfigurationTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+from packet_tracer_mcp.domain.enterprise.models.discovery import (
     BackendVersionProvenance,
     CapabilityProbeResult,
     CapabilitySnapshot,

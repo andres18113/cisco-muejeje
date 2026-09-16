@@ -21,21 +21,21 @@ from typing import Literal
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     BaseConfigurationAction,
     ConfigurationAction,
     ConfigurationPhase,
     ConfigureInterfaceBandwidth,
     CreateVlan,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+from packet_tracer_mcp.domain.enterprise.models.link_performance import (
     LinkMedia,
     LinkPerformanceDecision,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.link_performance_integration import (
+from packet_tracer_mcp.domain.enterprise.services.link_performance_integration import (
     LinkPerformanceIntegration,
 )
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     _ENDPOINT_ACTIONS,
     _IOS_ACTIONS,
     PacketTracerEnterpriseConfigurationRuntime,
@@ -207,7 +207,7 @@ class TestBandwidthTargetFollowsTheInterfaceNotTheMedium:
         """Un switch multicapa tiene puertos de los dos tipos en la misma caja."""
         import inspect
 
-        from src.packet_tracer_mcp.domain.enterprise.services import (
+        from packet_tracer_mcp.domain.enterprise.services import (
             configuration_compiler,
         )
 

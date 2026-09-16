@@ -17,11 +17,11 @@ import pathlib
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.plan_enterprise_hardware import (
+from packet_tracer_mcp.application.use_cases.plan_enterprise_hardware import (
     plan_enterprise_hardware,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
-from src.packet_tracer_mcp.domain.enterprise.models.hardware import HardwareCandidate
+from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
+from packet_tracer_mcp.domain.enterprise.models.hardware import HardwareCandidate
 from tests.test_e95_capability_reconciliation import (
     MEASURED_VERSION,
     _probe_result,

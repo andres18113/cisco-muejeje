@@ -11,9 +11,9 @@ import pytest
 def _api():
     # An assertion, rather than a collection error, records the missing slice.
     assert find_spec(
-        "src.packet_tracer_mcp.application.cp_scale_live.stage_executor"
+        "packet_tracer_mcp.application.cp_scale_live.stage_executor"
     ) is not None, "M2-A real typed stage executor has not been extracted"
-    from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import (
+    from packet_tracer_mcp.application.cp_scale_live.stage_executor import (
         CPScaleStageExecutor,
     )
     return CPScaleStageExecutor
@@ -101,7 +101,7 @@ def test_continuation_retains_results_and_hashes_without_replaying_actions():
 def test_physical_failure_preserves_partial_evidence_before_any_application():
     executor_type = _api()
     from tests.cp_scale_stage_fixture import stage_fixture
-    from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+    from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
         PhysicalDeploymentStatus,
     )
 
@@ -135,9 +135,9 @@ def test_unexpected_read_failure_preserves_the_typed_attempt_and_first_boundary(
 
 
 def test_ping_result_is_the_same_neutral_value_at_the_legacy_import():
-    assert find_spec("src.packet_tracer_mcp.domain.models.typed_ping") is not None
-    from src.packet_tracer_mcp.domain.models.typed_ping import TypedPingResult
-    from src.packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingResult as LegacyResult
+    assert find_spec("packet_tracer_mcp.domain.models.typed_ping") is not None
+    from packet_tracer_mcp.domain.models.typed_ping import TypedPingResult
+    from packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingResult as LegacyResult
     assert TypedPingResult is LegacyResult
     result = LegacyResult(False, False)
     assert result.device_identity_provenance == "not_observed"
@@ -145,9 +145,9 @@ def test_ping_result_is_the_same_neutral_value_at_the_legacy_import():
 
 
 def test_forwarding_retains_each_typed_attempt_with_its_exact_planned_authority():
-    from src.packet_tracer_mcp.infrastructure.observation.cp_scale_live import PacketTracerCPScaleObservations
-    from src.packet_tracer_mcp.domain.models.typed_ping import TypedPingResult
-    from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import CPScaleSiteForwardingCheck, CPScaleForwardingAuthority
+    from packet_tracer_mcp.infrastructure.observation.cp_scale_live import PacketTracerCPScaleObservations
+    from packet_tracer_mcp.domain.models.typed_ping import TypedPingResult
+    from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import CPScaleSiteForwardingCheck, CPScaleForwardingAuthority
 
     check = CPScaleSiteForwardingCheck(
         id="synthetic-forward", source_device_id="r", source_device_name="R",
@@ -180,9 +180,9 @@ def test_forwarding_retains_each_typed_attempt_with_its_exact_planned_authority(
 @pytest.mark.parametrize("drain_raises", [False, True])
 def test_real_voice_collaborator_preserves_deferred_signal_and_lifecycle_order(drain_raises):
     from types import SimpleNamespace
-    from src.packet_tracer_mcp.application.cp_scale_live.voice_stage import CPScaleVoiceStage
-    from src.packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
-    from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import ActionExecutionStatus, ConfigurationRuntimeContext
+    from packet_tracer_mcp.application.cp_scale_live.voice_stage import CPScaleVoiceStage
+    from packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
+    from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import ActionExecutionStatus, ConfigurationRuntimeContext
     from tests.test_voice_runtime import FakeVoiceRuntime, _compile, _profile
 
     plan = _compile().plan
@@ -232,7 +232,7 @@ def test_diagnostic_exception_never_replaces_the_acquired_voice_cause():
 def test_a_second_synthetic_target_uses_its_own_sequence_and_acceptance_policy():
     executor_type = _api()
     from tests.cp_scale_stage_fixture import stage_fixture
-    from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+    from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
         CPScaleCanonicalStage, CPScaleCanonicalTarget, canonical_cp_scale_target_contract,
     )
 
@@ -281,10 +281,10 @@ def test_second_workspace_exception_keeps_the_first_accumulated_readback():
 def test_forwarding_port_cannot_verify_an_omitted_declared_check(malformation):
     from types import SimpleNamespace
     from tests.cp_scale_stage_fixture import stage_fixture
-    from src.packet_tracer_mcp.application.cp_scale_live.forwarding_stage import CPScaleForwardingStage
-    from src.packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleSiteForwardingObservation
-    from src.packet_tracer_mcp.domain.models.typed_ping import TypedPingResult
-    from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import CPScaleSiteForwardingCheck, CPScaleForwardingAuthority
+    from packet_tracer_mcp.application.cp_scale_live.forwarding_stage import CPScaleForwardingStage
+    from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleSiteForwardingObservation
+    from packet_tracer_mcp.domain.models.typed_ping import TypedPingResult
+    from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import CPScaleSiteForwardingCheck, CPScaleForwardingAuthority
 
     fixture = stage_fixture(_api())
     check = CPScaleSiteForwardingCheck(

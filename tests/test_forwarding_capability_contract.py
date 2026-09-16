@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     FieldVerificationStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ConfigureRipv2,
     ControlPlaneCapabilityDimension,
     ControlPlaneCapabilityProfile,
@@ -25,20 +25,20 @@ from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneVerificationKind,
     RipNetwork,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.security_plan import (
+from packet_tracer_mcp.domain.enterprise.models.security_plan import (
     SecurityCapabilityStatus,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.control_plane_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.control_plane_capabilities import (
     packet_tracer_control_plane_capabilities,
 )
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (
+from packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (
     PacketTracerEnterpriseControlPlaneRuntime,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     DeviceIdentityEvidence,
     DeviceIdentityProvenance,
 )
-from src.packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingResult
+from packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingResult
 
 
 # ==========================================================================
@@ -357,7 +357,7 @@ def _verify(expectation, ping_result: TypedPingResult):
 )
 def test_a_non_runnable_capability_never_becomes_runnable(status):
     """El conjunto ejecutable no admite ni desconocido ni no soportado."""
-    from src.packet_tracer_mcp.application.use_cases.apply_control_plane import (
+    from packet_tracer_mcp.application.use_cases.apply_control_plane import (
         _RUNNABLE_CAPABILITIES,
     )
 

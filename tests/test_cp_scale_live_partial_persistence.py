@@ -9,30 +9,30 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.packet_tracer_mcp.application.cp_scale_live.backend import CPScaleBackendQualification
-from src.packet_tracer_mcp.application.cp_scale_live.cleanup import CPScaleCleanup
-from src.packet_tracer_mcp.application.cp_scale_live.completion import CPScaleCompletion
-from src.packet_tracer_mcp.application.cp_scale_live.coordinator import CPScaleLiveCoordinator
-from src.packet_tracer_mcp.application.cp_scale_live.run_contracts import (
+from packet_tracer_mcp.application.cp_scale_live.backend import CPScaleBackendQualification
+from packet_tracer_mcp.application.cp_scale_live.cleanup import CPScaleCleanup
+from packet_tracer_mcp.application.cp_scale_live.completion import CPScaleCompletion
+from packet_tracer_mcp.application.cp_scale_live.coordinator import CPScaleLiveCoordinator
+from packet_tracer_mcp.application.cp_scale_live.run_contracts import (
     CPScaleBridgeStatus,
     CPScaleCapabilityQualification,
     CPScaleCleanupRealtime,
     CPScaleCleanupResult,
 )
-from src.packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleRealtimeState
-from src.packet_tracer_mcp.application.cp_scale_live.run_state import (
+from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleRealtimeState
+from packet_tracer_mcp.application.cp_scale_live.run_state import (
     CPScaleProgressState,
     CPScaleQualificationState,
     CPScaleTerminalState,
     publication_snapshot,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceObservation,
 )
-from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_live import (
+from packet_tracer_mcp.infrastructure.persistence.cp_scale_live import (
     CPScaleLivePersistence,
 )
-from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_run_evidence import (
+from packet_tracer_mcp.infrastructure.persistence.cp_scale_run_evidence import (
     cleanup_evidence,
     run_evidence,
 )
@@ -148,7 +148,7 @@ def test_cleanup_serializer_does_not_drop_a_later_restoration_failure() -> None:
 def test_second_capability_workspace_failure_persists_first_observation_and_primary_cause(
     tmp_path: Path,
 ) -> None:
-    from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import CPScaleStageExecutor
+    from packet_tracer_mcp.application.cp_scale_live.stage_executor import CPScaleStageExecutor
 
     fixture = stage_fixture(CPScaleStageExecutor)
     projection = fixture.request.projection

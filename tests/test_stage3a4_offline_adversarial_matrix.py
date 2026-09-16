@@ -33,40 +33,40 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
+from packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
     compose_enterprise_reference,
 )
-from src.packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
+from packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
     EnterpriseExecutionStage,
     EnterpriseExecutionStatus,
     EnterpriseRuntimes,
     execute_enterprise_reference,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
     RuntimeVerification,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneIntent,
     DynamicRoutingIntent,
     DynamicRoutingProtocol,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     EnvironmentFingerprint,
     SerialEndpointOrientation,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.intent import (
+from packet_tracer_mcp.domain.enterprise.models.intent import (
     EnterpriseIntent,
     SiteIntent,
     SiteType,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+from packet_tracer_mcp.domain.enterprise.models.link_performance import (
     LinkMedia,
     TrafficFlowIntent,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     EvidenceFreshness,
     MutationDisposition,
     ObservationStatus,
@@ -80,33 +80,33 @@ from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceObservation,
     SupportStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.requirements import (
+from packet_tracer_mcp.domain.enterprise.models.requirements import (
     EndpointRequirement,
     WanLinkRequirement,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentFailureCode,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.port_inventory import (
+from packet_tracer_mcp.domain.enterprise.models.port_inventory import (
     PortInventoryEvidenceTier,
     PortInventoryResolution,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
+from packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
     HardwarePlanningPolicy,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.topology_identity import (
+from packet_tracer_mcp.domain.enterprise.services.topology_identity import (
     stamp_topology_hashes,
 )
-from src.packet_tracer_mcp.domain.models.plans import (
+from packet_tracer_mcp.domain.models.plans import (
     DevicePlan,
     LinkPlan,
     TopologyPlan,
 )
-from src.packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
+from packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
     EnterprisePhysicalTopologyDeployer,
 )
-from src.packet_tracer_mcp.application.use_cases.observe_serial_orientation import (
+from packet_tracer_mcp.application.use_cases.observe_serial_orientation import (
     SerialControllerObservation,
     SerialOrientationObserver,
 )
@@ -592,7 +592,7 @@ class TestSelectionMustCarryPortEvidenceBeforeItCanBind:
 
     def test_the_exemplar_model_really_is_unmeasured(self):
         """Si alguien lo mide, esta fila deja de probar lo que dice probar."""
-        from src.packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
+        from packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
             MEASURED_PORT_INVENTORIES,
         )
 

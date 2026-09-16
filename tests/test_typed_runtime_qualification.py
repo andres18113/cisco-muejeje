@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from src.packet_tracer_mcp.application.use_cases.qualify_typed_runtime import (
+from packet_tracer_mcp.application.use_cases.qualify_typed_runtime import (
     qualification_evidence_value,
     typed_runtime_batch_errors,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     RuntimeActionMutation,
     RuntimeVerification,

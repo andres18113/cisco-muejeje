@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.application.use_cases.capability_discovery import CapabilityDiscoveryService
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus, EvidenceSource
-from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+from packet_tracer_mcp.application.use_cases.capability_discovery import CapabilityDiscoveryService
+from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus, EvidenceSource
+from packet_tracer_mcp.domain.enterprise.models.discovery import (
     CapabilityProbeResult,
     DeviceInitializationState,
     ProbeExecutionStatus,
     ProbeRequest,
     RuntimeDeviceObservation,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import EnterpriseCapabilityAdapter
-from src.packet_tracer_mcp.infrastructure.execution.device_lifecycle import DeviceOperationalReadinessWaiter, DeviceReadinessWaiter, IosBootWaiter, StateConvergenceWaiter
-from src.packet_tracer_mcp.infrastructure.execution.fake_probe_runtime import FakePacketTracerProbeRuntime
-from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import CapabilitySnapshotStore
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import EnterpriseCapabilityAdapter
+from packet_tracer_mcp.infrastructure.execution.device_lifecycle import DeviceOperationalReadinessWaiter, DeviceReadinessWaiter, IosBootWaiter, StateConvergenceWaiter
+from packet_tracer_mcp.infrastructure.execution.fake_probe_runtime import FakePacketTracerProbeRuntime
+from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import CapabilitySnapshotStore
 
 
 def test_readiness_waiter_returns_ready_after_bounded_polling():

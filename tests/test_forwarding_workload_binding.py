@@ -5,21 +5,21 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.forwarding import (
+from packet_tracer_mcp.domain.enterprise.models.forwarding import (
     ForwardingAddressMode,
     ForwardingAddressObservation,
     ForwardingEndpointSelection,
     ForwardingKnownAddress,
     ForwardingRuntimeEndpoint,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.forwarding_target import (
+from packet_tracer_mcp.domain.enterprise.services.forwarding_target import (
     bind_forwarding_address,
     forwarding_binding_stability,
 )
-from src.packet_tracer_mcp.domain.models.typed_ping import TypedPingResult
+from packet_tracer_mcp.domain.models.typed_ping import TypedPingResult
 
 
 def _selection(
@@ -129,7 +129,7 @@ def test_binding_drift_fails_without_changing_the_selected_endpoint():
 
 
 def test_pc_to_pc_probe_binds_both_endpoints_before_typed_ping_and_rechecks_them():
-    from src.packet_tracer_mcp.infrastructure.execution.forwarding_probe import (
+    from packet_tracer_mcp.infrastructure.execution.forwarding_probe import (
         ForwardingProbeExecutor,
         forwarding_probe_evidence,
     )
@@ -187,7 +187,7 @@ def _probe_with_reply(
     source_drift: bool = False,
     destination_drift: bool = False,
 ):
-    from src.packet_tracer_mcp.infrastructure.execution.forwarding_probe import (
+    from packet_tracer_mcp.infrastructure.execution.forwarding_probe import (
         ForwardingProbeExecutor,
     )
 
@@ -310,7 +310,7 @@ def test_fresh_ping_from_the_wrong_runtime_device_is_not_attributable():
 
 
 def test_absent_address_getter_channel_is_unobservable_and_dispatches_no_ping():
-    from src.packet_tracer_mcp.infrastructure.execution.forwarding_probe import (
+    from packet_tracer_mcp.infrastructure.execution.forwarding_probe import (
         ForwardingProbeExecutor,
     )
 

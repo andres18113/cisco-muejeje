@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.mutation_replay import (
+from packet_tracer_mcp.domain.enterprise.mutation_replay import (
     ReplayClassification,
     taxonomy_by_surface,
 )

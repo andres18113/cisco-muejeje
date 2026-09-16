@@ -9,51 +9,51 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.packet_tracer_mcp.application.cp_scale_live.backend import (
+from packet_tracer_mcp.application.cp_scale_live.backend import (
     CPScaleBackendQualification,
 )
-from src.packet_tracer_mcp.application.cp_scale_live.build_policy import (
+from packet_tracer_mcp.application.cp_scale_live.build_policy import (
     CPScaleBuildPolicy,
 )
-from src.packet_tracer_mcp.application.cp_scale_live.cleanup import CPScaleCleanup
-from src.packet_tracer_mcp.application.cp_scale_live.completion import (
+from packet_tracer_mcp.application.cp_scale_live.cleanup import CPScaleCleanup
+from packet_tracer_mcp.application.cp_scale_live.completion import (
     CPScaleClosurePlan,
     CPScaleCompletion,
     CPScaleBoundedTargetReview,
 )
-from src.packet_tracer_mcp.application.cp_scale_live.coordinator import (
+from packet_tracer_mcp.application.cp_scale_live.coordinator import (
     CPScaleLiveCoordinator,
 )
-from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
+from packet_tracer_mcp.application.cp_scale_live.contracts import (
     CPScaleRealtimeState,
 )
-from src.packet_tracer_mcp.application.cp_scale_live.run_contracts import (
+from packet_tracer_mcp.application.cp_scale_live.run_contracts import (
     CPScaleBridgeStatus,
     CPScaleCleanupRealtime,
     CPScaleRunOutcome,
     CPScaleTerminalEvent,
 )
-from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import (
+from packet_tracer_mcp.application.cp_scale_live.stage_executor import (
     CPScaleStageExecutor,
 )
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
 )
-from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
+from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     CPScaleFinalDisposition,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentItemResult,
     PhysicalDeploymentItemStatus,
     PhysicalMutationResult,
     PhysicalObjectKind,
     PhysicalWorkspaceObservation,
 )
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, TopologyPlan
-from src.packet_tracer_mcp.infrastructure.execution.cp_scale_live_session import (
+from packet_tracer_mcp.domain.models.plans import DevicePlan, TopologyPlan
+from packet_tracer_mcp.infrastructure.execution.cp_scale_live_session import (
     PacketTracerCPScaleSession,
 )
-from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_live import (
+from packet_tracer_mcp.infrastructure.persistence.cp_scale_live import (
     CPScaleLivePersistence,
 )
 from tests.cp_scale_stage_fixture import stage_fixture

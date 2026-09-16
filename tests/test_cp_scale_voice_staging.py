@@ -24,15 +24,15 @@ import pytest
 
 from tests.subprocess_harness import run_isolated_python, subprocess_failure
 
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     project_cp_scale_canonical_stage,
 )
-from src.packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
-from src.packet_tracer_mcp.application.use_cases.foundational_evidence import (
+from packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
+from packet_tracer_mcp.application.use_cases.foundational_evidence import (
     derive_foundational_statuses,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationResult,
     ConfigurationApplicationStatus,
@@ -41,12 +41,12 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
 from tests.poe_delivery_capabilities import (
     compose_delivery_qualified_cp_scale_canonical as compose_cp_scale_canonical,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import VoiceActionType
-from src.packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
+from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import VoiceActionType
+from packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
     MEASURED_BACKEND_VERSION,
 )
-from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
 )
 
@@ -417,5 +417,12 @@ def test_a_refused_voice_action_stops_the_stage(gate):
     assert gate["refused_action_fails"]
 
 
-def test_this_suite_never_loaded_the_production_namespace():
-    assert "packet_tracer_mcp" not in sys.modules
+def test_this_suite_loads_exactly_one_package_identity():
+    """One identity, and not the retired one.
+
+    Superseded the pre-migration form, which asserted that the
+    production namespace was absent because the suite imported the
+    package under the retired name.
+    """
+    assert "packet_tracer_mcp" in sys.modules
+    assert "src.packet_tracer_mcp" not in sys.modules

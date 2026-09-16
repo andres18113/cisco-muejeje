@@ -1,10 +1,10 @@
 """Tests para el Auto-Fixer."""
 
 import pytest
-from src.packet_tracer_mcp.domain.models.plans import (
+from packet_tracer_mcp.domain.models.plans import (
     TopologyPlan, DevicePlan, LinkPlan,
 )
-from src.packet_tracer_mcp.domain.services.auto_fixer import fix_plan
+from packet_tracer_mcp.domain.services.auto_fixer import fix_plan
 
 
 class TestAutoFixer:

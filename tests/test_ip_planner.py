@@ -1,7 +1,7 @@
 """Tests para el IP Planner."""
 
 import pytest
-from src.packet_tracer_mcp.domain.services.ip_planner import IPPlanner
+from packet_tracer_mcp.domain.services.ip_planner import IPPlanner
 
 
 class TestIPPlanner:

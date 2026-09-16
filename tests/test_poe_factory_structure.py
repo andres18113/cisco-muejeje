@@ -8,7 +8,7 @@ import subprocess
 
 import pytest
 
-from src.packet_tracer_mcp.infrastructure.execution.poe_delivery_runtime import (
+from packet_tracer_mcp.infrastructure.execution.poe_delivery_runtime import (
     PacketTracerPoEDeliveryFixtureRuntime,
 )
 

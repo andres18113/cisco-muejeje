@@ -8,18 +8,18 @@ import json
 
 import pytest
 
-from src.packet_tracer_mcp.shared.utils import (
+from packet_tracer_mcp.shared.utils import (
     js_escape,
     safe_name_component,
     resolve_within,
     interpret_ping,
 )
-from src.packet_tracer_mcp.domain.models.plans import TopologyPlan, DevicePlan
-from src.packet_tracer_mcp.infrastructure.generator.ptbuilder_generator import (
+from packet_tracer_mcp.domain.models.plans import TopologyPlan, DevicePlan
+from packet_tracer_mcp.infrastructure.generator.ptbuilder_generator import (
     generate_ptbuilder_script,
 )
-from src.packet_tracer_mcp.infrastructure.execution.manual_executor import ManualExecutor
-from src.packet_tracer_mcp.application.use_cases.apply_hardening import (
+from packet_tracer_mcp.infrastructure.execution.manual_executor import ManualExecutor
+from packet_tracer_mcp.application.use_cases.apply_hardening import (
     build_hardening_config,
     apply_hardening_uc,
 )

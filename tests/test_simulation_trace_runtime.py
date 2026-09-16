@@ -23,7 +23,7 @@ import json
 
 import pytest
 
-from src.packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
+from packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
     PacketTraceObservation,
     SimulationTraceRuntime,
     packet_trace_js,
@@ -80,7 +80,7 @@ class TestOneDefinitionOfTheJavaScript:
     """La fachada publica no puede divergir del runtime gobernado."""
 
     def test_the_mcp_tool_module_imports_the_shared_builders(self):
-        from src.packet_tracer_mcp.adapters.mcp import tool_registry
+        from packet_tracer_mcp.adapters.mcp import tool_registry
 
         # Si la fachada volviera a inlinear su propio JS, estos nombres dejarian
         # de estar importados y el drift seria invisible.
@@ -275,7 +275,7 @@ class TestPureSimulationStateRead:
     """Leer el estado no puede ser un efecto secundario de cambiarlo."""
 
     def test_the_pure_state_builder_carries_no_mutator(self):
-        from src.packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
+        from packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
             simulation_state_js,
         )
 
@@ -292,7 +292,7 @@ class TestPureSimulationStateRead:
             assert mutator not in js
 
     def test_the_pure_read_reports_the_observed_state(self):
-        from src.packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
+        from packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
             SimulationTraceRuntime as _R,
         )
 
@@ -309,7 +309,7 @@ class TestPureSimulationStateRead:
         assert state.current_index == 3
 
     def test_a_state_without_a_mode_is_not_a_reading(self):
-        from src.packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
+        from packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
             SimulationTraceRuntime as _R,
         )
 
@@ -319,7 +319,7 @@ class TestPureSimulationStateRead:
         assert state.simulation_mode is False
 
     def test_a_silent_bridge_is_not_a_realtime_reading(self):
-        from src.packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
+        from packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
             SimulationTraceRuntime as _R,
         )
 
@@ -355,7 +355,7 @@ class TestRawTrafficIdentitySurvives:
         assert hop.traffic_type == "typeNone"
 
     def test_no_dhcp_label_exists_yet(self):
-        from src.packet_tracer_mcp.domain.services import packet_trace
+        from packet_tracer_mcp.domain.services import packet_trace
 
         assert packet_trace.TRAFFIC_TYPES == {0: "ICMP", 5: "ARP"}
         assert "DHCP" not in set(packet_trace.TRAFFIC_TYPES.values())
@@ -490,7 +490,7 @@ class TestNoClassifierExistsYet:
 
     def test_no_integer_is_mapped_to_a_dhcp_label(self):
         """El mapeo es la superficie donde un nombre inventado entraria."""
-        from src.packet_tracer_mcp.domain.services.packet_trace import (
+        from packet_tracer_mcp.domain.services.packet_trace import (
             TRAFFIC_TYPES, traffic_type_label,
         )
 

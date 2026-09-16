@@ -6,14 +6,14 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+from packet_tracer_mcp.domain.enterprise.models.discovery import (
     ActiveWorkspaceBindingEvidence,
     ActiveWorkspaceIdentityMethod,
     LivePathIdentitySemantics,
     LiveSessionSafetyEvidence,
 )
-from src.packet_tracer_mcp.domain.enterprise.rules import live_session_safety
-from src.packet_tracer_mcp.domain.enterprise.rules.live_session_safety import (
+from packet_tracer_mcp.domain.enterprise.rules import live_session_safety
+from packet_tracer_mcp.domain.enterprise.rules.live_session_safety import (
     validate_live_session_positive_admission,
 )
 from tests.poe_session_safety import healthy_live_session_safety

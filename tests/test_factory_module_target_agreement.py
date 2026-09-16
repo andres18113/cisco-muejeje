@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.infrastructure.execution.factory_module_preparation import (
+from packet_tracer_mcp.infrastructure.execution.factory_module_preparation import (
     PacketTracerFactoryModulePreparer,
 )
 from tests.support.factory_module_cases import (

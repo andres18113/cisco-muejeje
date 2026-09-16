@@ -17,24 +17,24 @@ and the runtime reported a contradiction about a port nobody configured.
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.application.use_cases.compile_configuration import (
+from packet_tracer_mcp.application.use_cases.compile_configuration import (
     compile_enterprise_configuration,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
     ConfigurationIssueCode,
     VerificationKind,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     FieldVerificationStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.segments import (
+from packet_tracer_mcp.domain.enterprise.models.segments import (
     NetworkSegment,
     SegmentRole,
 )
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+from packet_tracer_mcp.domain.models.plans import DevicePlan
+from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     PacketTracerEnterpriseConfigurationRuntime,
 )
 

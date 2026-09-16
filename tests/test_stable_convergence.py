@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.infrastructure.execution.stable_convergence import (
+from packet_tracer_mcp.infrastructure.execution.stable_convergence import (
     StableConvergenceStatus,
     StableConvergenceWaiter,
 )

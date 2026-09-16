@@ -8,14 +8,14 @@ en `layout_hash`, y lo negociado en runtime en ninguno.
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+from packet_tracer_mcp.domain.enterprise.models.link_performance import (
     DuplexMode,
     LinkMedia,
     LinkSpeedMode,
     ObservedLinkPerformance,
     TrafficContribution,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.link_performance_integration import (
+from packet_tracer_mcp.domain.enterprise.services.link_performance_integration import (
     LINK_DCE_KEY,
     LINK_DTE_KEY,
     LINK_MEDIA_KEY,
@@ -23,10 +23,10 @@ from src.packet_tracer_mcp.domain.enterprise.services.link_performance_integrati
     resolve_link_media,
     summarize_decisions,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.topology_identity import (
+from packet_tracer_mcp.domain.enterprise.services.topology_identity import (
     compute_topology_hashes,
 )
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
 
 
 def _topology(**link_overrides) -> TopologyPlan:

@@ -7,21 +7,21 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.application.cp_scale_live import (
+from packet_tracer_mcp.application.cp_scale_live import (
     CPScaleCheckState,
     CPScalePreflightOutcome,
     CPScaleQualificationStatus,
 )
-from src.packet_tracer_mcp.application.cp_scale_live.errors import CanonicalLiveFailure
-from src.packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
+from packet_tracer_mcp.application.cp_scale_live.errors import CanonicalLiveFailure
+from packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
     packet_tracer_cp_scale_qualification_policy,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     DeviceCapabilities,
     EvidenceSource,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+from packet_tracer_mcp.domain.enterprise.models.discovery import (
     BackendVersionProvenance,
     CapabilityBackend,
     CapabilityProbeResult,
@@ -34,24 +34,24 @@ from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
     ProbeSession,
     ProbeSessionResult,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     VoiceCapabilityDimension,
     VoiceCapabilityStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
     PhoneExecutionMethod,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.voice_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.voice_capabilities import (
     voice_capability_profile,
 )
-from src.packet_tracer_mcp.infrastructure.execution.call_observability_provider import (
+from packet_tracer_mcp.infrastructure.execution.call_observability_provider import (
     PacketTracerNativeUiPhoneControlProvider,
 )
-from src.packet_tracer_mcp.infrastructure.execution.phone_control import (
+from packet_tracer_mcp.infrastructure.execution.phone_control import (
     PacketTracerNativeUiPhoneControlAdapter,
     UnavailablePhoneControl,
 )
-from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
 )
 from tests.test_cp_scale_live_local_preflight import _inspect, _request, _service

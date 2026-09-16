@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from src.packet_tracer_mcp.infrastructure.execution.factory_module_contracts import (
+from packet_tracer_mcp.infrastructure.execution.factory_module_contracts import (
     FactoryModuleObservation,
     FactoryModuleTarget,
 )

@@ -4,32 +4,32 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     DeviceCapabilities,
     DeviceRequirement,
     DeviceSelectionStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.enterprise_plan import EnterprisePlan
-from src.packet_tracer_mcp.domain.enterprise.models.intent import (
+from packet_tracer_mcp.domain.enterprise.models.enterprise_plan import EnterprisePlan
+from packet_tracer_mcp.domain.enterprise.models.intent import (
     EnterpriseIntent,
     SiteIntent,
     SiteType,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.requirements import EndpointRequirement
-from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
-from src.packet_tracer_mcp.domain.enterprise.models.segments import SegmentRole
-from src.packet_tracer_mcp.domain.enterprise.services.capability_resolver import (
+from packet_tracer_mcp.domain.enterprise.models.requirements import EndpointRequirement
+from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from packet_tracer_mcp.domain.enterprise.models.segments import SegmentRole
+from packet_tracer_mcp.domain.enterprise.services.capability_resolver import (
     CapabilityResolver,
     CatalogDeviceFacts,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.device_selector import DeviceSelector
-from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import EnterpriseDesigner
-from src.packet_tracer_mcp.domain.enterprise.services.requirements_validator import (
+from packet_tracer_mcp.domain.enterprise.services.device_selector import DeviceSelector
+from packet_tracer_mcp.domain.enterprise.services.enterprise_designer import EnterpriseDesigner
+from packet_tracer_mcp.domain.enterprise.services.requirements_validator import (
     validate_enterprise_intent,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.devices import ALL_MODELS
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.devices import ALL_MODELS
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
 )
 

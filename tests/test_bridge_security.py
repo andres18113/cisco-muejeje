@@ -11,7 +11,7 @@ import urllib.request
 
 import pytest
 
-from src.packet_tracer_mcp.infrastructure.execution.live_bridge import (
+from packet_tracer_mcp.infrastructure.execution.live_bridge import (
     PTCommandBridge,
     MAX_BODY_BYTES,
 )
@@ -220,7 +220,7 @@ def test_next_long_polls_instead_of_returning_empty(bridge):
 
 
 def test_batch_is_capped(bridge):
-    from src.packet_tracer_mcp.infrastructure.execution.live_bridge import (
+    from packet_tracer_mcp.infrastructure.execution.live_bridge import (
         MAX_BATCH_COMMANDS,
     )
 
@@ -280,7 +280,7 @@ def test_importing_the_server_does_not_open_a_socket():
 
 def test_report_result_js_carries_token_and_stays_single_line():
     """PT elimina los \\n del código, así que el JS inyectado no puede depender de ellos."""
-    from src.packet_tracer_mcp.infrastructure.execution.live_bridge import (
+    from packet_tracer_mcp.infrastructure.execution.live_bridge import (
         report_result_js,
     )
 

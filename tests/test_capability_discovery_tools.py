@@ -12,8 +12,8 @@ from pathlib import Path
 import pytest
 from mcp.server.fastmcp import FastMCP
 
-from src.packet_tracer_mcp.adapters.mcp import tool_registry
-from src.packet_tracer_mcp.infrastructure.execution.transport_health import (
+from packet_tracer_mcp.adapters.mcp import tool_registry
+from packet_tracer_mcp.infrastructure.execution.transport_health import (
     TransportName,
     TransportSelection,
 )

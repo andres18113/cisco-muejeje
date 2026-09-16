@@ -22,7 +22,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from src.packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
+from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
     ImportIsolationPreflight,
     ImportIsolationState,
     governed_root_from_env,
@@ -78,6 +78,31 @@ class TestTheGateRefusesWhatItMustRefuse:
         assert result.state is ImportIsolationState.DUAL_IDENTITY
         assert not result.isolated
         assert _TEST_NAMESPACE in result.render()
+
+    def test_a_test_process_is_refused_even_when_everything_else_is_right(self):
+        """A suite run is not the live process, and may not be credentialed as one.
+
+        Before the canonical namespace migration this was decided for free: the
+        suite imported the package under its own name, so a pytest process
+        tripped PRODUCTION_NAMESPACE_NOT_LOADED. With one namespace that
+        accident is gone, and a pytest process otherwise satisfies every check.
+        The disqualification is therefore stated directly, on the property that
+        actually distinguishes the process.
+        """
+        result = _preflight(
+            modules={_PRODUCTION: object(), "pytest": object()},
+        ).ensure_isolated()
+
+        assert result.state is ImportIsolationState.TEST_PROCESS
+        assert not result.isolated
+        assert "pytest" in result.render()
+
+    def test_the_same_observations_without_pytest_are_accepted(self):
+        """Positive control: only the test-process fact causes that refusal."""
+        result = _preflight(modules={_PRODUCTION: object()}).ensure_isolated()
+
+        assert result.state is ImportIsolationState.ISOLATED
+        assert result.isolated
 
     def test_a_package_outside_the_governed_tree_is_refused(self):
         foreign = REPO.parent / "foreign-checkout" / "src" / _PRODUCTION / "__init__.py"
@@ -155,31 +180,59 @@ class TestTheGateFailsClosed:
 
 
 class TestThisSuiteIsNotALivePreflight:
-    """La afirmacion de gobernanza, ahora ejecutable.
+    """The governance claim, executable against the real running process.
 
-    Correr los tests NO establece aislamiento en vivo. Este proceso importa el
-    namespace de test y no el de produccion, asi que el gate lo rechaza -- y esa
-    es la respuesta correcta, no un falso negativo.
+    Running the suite does NOT establish live isolation, and the gate says so
+    about *this* process, with nothing injected.
+
+    What changed with the canonical namespace migration: the suite used to
+    import the package as `src.packet_tracer_mcp`, so this process simply had
+    no production namespace loaded and the gate refused it for that reason.
+    The suite now imports the one canonical name, so that incidental
+    disqualification is gone and the refusal rests on the property that really
+    separates a test run from a live run.
     """
 
     def test_the_pytest_process_is_refused_because_it_is_not_the_live_process(self):
-        assert _TEST_NAMESPACE in sys.modules
-        assert _PRODUCTION not in sys.modules
+        assert _TEST_NAMESPACE not in sys.modules
+        assert _PRODUCTION in sys.modules
+        assert "pytest" in sys.modules
 
         result = ImportIsolationPreflight(REPO).ensure_isolated()
 
-        assert result.state is ImportIsolationState.PRODUCTION_NAMESPACE_NOT_LOADED
+        assert result.state is ImportIsolationState.TEST_PROCESS
         assert not result.isolated
 
     def test_the_check_never_imports_the_production_namespace_itself(self):
-        """Observar no puede crear la condicion que se observa.
+        """Observing must not create the condition being observed.
 
-        Si el resolver importara `packet_tracer_mcp` para leer su `__file__`,
-        fabricaria la segunda identidad justo en el proceso que dice auditar.
+        If the resolver imported `packet_tracer_mcp` to read its `__file__`, it
+        would manufacture a loaded namespace inside the very process it claims
+        to audit, and the answer would be about the audit rather than about the
+        process.
+
+        Observing this by looking at the real `sys.modules` is not possible in
+        any process that can run the gate: the gate lives inside the package,
+        so importing it imports the package first. Before the canonical
+        namespace migration the suite hid that -- it loaded the package under
+        the retired name, leaving the production name genuinely absent -- and
+        the assertion passed for a reason that no longer exists.
+
+        The contract is therefore measured at the seam that carries it: given a
+        module mapping without the production namespace, the default resolver
+        must answer "not loaded" instead of importing the package to find out.
         """
-        ImportIsolationPreflight(REPO).ensure_isolated()
+        preflight = ImportIsolationPreflight(
+            REPO,
+            executable=lambda: str(checkout_venv_python(REPO)),
+            environment_prefix=lambda: str(checkout_venv_root(REPO)),
+            modules=lambda: {},
+        )
 
-        assert _PRODUCTION not in sys.modules
+        result = preflight.ensure_isolated()
+
+        assert result.state is ImportIsolationState.PRODUCTION_NAMESPACE_NOT_LOADED
+        assert not result.isolated
 
 
 class TestARealGovernedProcessPasses:

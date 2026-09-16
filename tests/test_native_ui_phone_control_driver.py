@@ -8,21 +8,21 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     CallExpectation,
     CallExpectationResult,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
     CallState,
     PhoneExecutionMethod,
 )
-from src.packet_tracer_mcp.infrastructure.execution.native_ui_phone_driver import (
+from packet_tracer_mcp.infrastructure.execution.native_ui_phone_driver import (
     PacketTracerNativeUiCallDriver,
 )
-from src.packet_tracer_mcp.infrastructure.execution.phone_control import (
+from packet_tracer_mcp.infrastructure.execution.phone_control import (
     PacketTracerNativeUiPhoneControlAdapter,
 )
 

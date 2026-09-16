@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ControlledIosExecutor,
     IosQualificationQueryId,
     OperationalQueryId,

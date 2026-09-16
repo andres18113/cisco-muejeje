@@ -48,8 +48,12 @@ from typing import TypeVar
 
 #: Namespace de produccion: lo usan el console script `pt-mcp` y `python -m`.
 PRODUCTION_NAMESPACE = "packet_tracer_mcp"
-#: Namespace de tests, fijado por `tests/test_worktree_isolation.py`.
-TEST_NAMESPACE = "src.packet_tracer_mcp"
+#: Namespace retirado por la migracion canonica. `src/` sigue siendo la
+#: ubicacion fisica del paquete, pero ya no es un nombre de import valido:
+#: cargarlo vuelve a crear la segunda identidad que este gate rechaza.
+LEGACY_NAMESPACE = "src.packet_tracer_mcp"
+#: Modulo cuya presencia identifica un proceso de test.
+TEST_RUNNER_MODULE = "pytest"
 
 #: Variable por la que el operador declara cual es el arbol gobernado.
 GOVERNED_ROOT_ENV_VAR = "PT_MCP_GOVERNED_ROOT"
@@ -62,6 +66,7 @@ class ImportIsolationState(str, Enum):
     PRODUCTION_NAMESPACE_NOT_LOADED = "PRODUCTION_NAMESPACE_NOT_LOADED"
     FOREIGN_TREE = "FOREIGN_TREE"
     DUAL_IDENTITY = "DUAL_IDENTITY"
+    TEST_PROCESS = "TEST_PROCESS"
     INDETERMINATE = "INDETERMINATE"
 
 
@@ -85,7 +90,10 @@ class ImportIsolationResult:
             ImportIsolationState.FOREIGN_TREE:
                 "El paquete de produccion cargo desde fuera del arbol gobernado.",
             ImportIsolationState.DUAL_IDENTITY:
-                f"Conviven {PRODUCTION_NAMESPACE!r} y {TEST_NAMESPACE!r} como identidades distintas.",
+                f"Conviven {PRODUCTION_NAMESPACE!r} y {LEGACY_NAMESPACE!r} como identidades distintas.",
+            ImportIsolationState.TEST_PROCESS:
+                f"This is a {TEST_RUNNER_MODULE} process, not the live one; a suite run "
+                "never establishes live isolation.",
             ImportIsolationState.INDETERMINATE:
                 "El preflight no pudo determinar el aislamiento; se cierra por defecto.",
         }
@@ -174,10 +182,21 @@ class ImportIsolationPreflight:
             return ImportIsolationResult(ImportIsolationState.FOREIGN_TREE, str(resolved))
 
         loaded = self._modules()
-        if PRODUCTION_NAMESPACE in loaded and TEST_NAMESPACE in loaded:
+        if PRODUCTION_NAMESPACE in loaded and LEGACY_NAMESPACE in loaded:
             return ImportIsolationResult(
                 ImportIsolationState.DUAL_IDENTITY,
-                f"{PRODUCTION_NAMESPACE} + {TEST_NAMESPACE}",
+                f"{PRODUCTION_NAMESPACE} + {LEGACY_NAMESPACE}",
+            )
+        # Una corrida de tests nunca es el proceso vivo. Antes de la migracion
+        # canonica esto se decidia solo: el suite cargaba el paquete con el
+        # nombre retirado, asi que un proceso de pytest caia en
+        # PRODUCTION_NAMESPACE_NOT_LOADED. Con un unico namespace ese rechazo
+        # incidental desaparece y un proceso de pytest satisface todo lo
+        # demas, asi que la descalificacion se declara sobre la propiedad que
+        # de verdad distingue al proceso.
+        if TEST_RUNNER_MODULE in loaded:
+            return ImportIsolationResult(
+                ImportIsolationState.TEST_PROCESS, TEST_RUNNER_MODULE
             )
         return ImportIsolationResult(ImportIsolationState.ISOLATED, str(resolved))
 

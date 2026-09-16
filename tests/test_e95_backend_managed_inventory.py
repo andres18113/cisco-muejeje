@@ -14,11 +14,11 @@ la semántica debe coincidir exactamente, la backend-managed sólo puede crecer.
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+from packet_tracer_mcp.domain.enterprise.models.discovery import (
     decode_inventory_observation,
     inventory_restoration_matches,
 )
-from src.packet_tracer_mcp.infrastructure.execution.probe_runtime import (
+from packet_tracer_mcp.infrastructure.execution.probe_runtime import (
     PacketTracerBridgeProbeRuntime,
 )
 

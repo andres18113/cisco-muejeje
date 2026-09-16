@@ -5,31 +5,31 @@ from __future__ import annotations
 import ipaddress
 from itertools import combinations
 
-from src.packet_tracer_mcp.application.use_cases.compile_enterprise import (
+from packet_tracer_mcp.application.use_cases.compile_enterprise import (
     compile_enterprise_topology,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.compilation import LayoutProfile
-from src.packet_tracer_mcp.domain.enterprise.models.hardware import HardwarePlanStatus
-from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import (
+from packet_tracer_mcp.domain.enterprise.models.compilation import LayoutProfile
+from packet_tracer_mcp.domain.enterprise.models.hardware import HardwarePlanStatus
+from packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import (
     cp_scale_scale_fixture_intent,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
+from packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
     EnterpriseDesigner,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
+from packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
     HardwarePlanner,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.layout_metrics import (
+from packet_tracer_mcp.domain.enterprise.services.layout_metrics import (
     LayoutMetricsEvaluator,
 )
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
+from packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
     PacketTracerTopologyCatalogAdapter,
 )
 from tests.poe_delivery_capabilities import synthetic_poe_authorized_bindings

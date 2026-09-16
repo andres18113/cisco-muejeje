@@ -2,14 +2,14 @@
 
 import pytest
 
-from src.packet_tracer_mcp.domain.models.hardening import HardeningConfig, LocalUser, SSHConfig
-from src.packet_tracer_mcp.domain.rules.hardening_rules import (
+from packet_tracer_mcp.domain.models.hardening import HardeningConfig, LocalUser, SSHConfig
+from packet_tracer_mcp.domain.rules.hardening_rules import (
     validate_hardening, validate_hardening_against_topology,
 )
-from src.packet_tracer_mcp.infrastructure.generator.hardening_cli_generator import (
+from packet_tracer_mcp.infrastructure.generator.hardening_cli_generator import (
     generate_hardening_cli,
 )
-from src.packet_tracer_mcp.application.use_cases.apply_hardening import (
+from packet_tracer_mcp.application.use_cases.apply_hardening import (
     build_hardening_config, apply_hardening_uc,
 )
 

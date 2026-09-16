@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.packet_tracer_mcp.application.cp_scale_live import (
+from packet_tracer_mcp.application.cp_scale_live import (
     CPScaleCheckState,
     CPScaleCallObservabilityEvidence,
     CPScaleImportIsolationObservation,
@@ -26,23 +26,23 @@ from src.packet_tracer_mcp.application.cp_scale_live import (
     CPScaleRuntimeEvidence,
     process_record_mapping,
 )
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalTarget,
     canonical_cp_scale_target_contract,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
     PhoneExecutionMethod,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
+from packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
     packet_tracer_cp_scale_qualification_policy,
 )
-from src.packet_tracer_mcp.infrastructure.execution.cp_scale_live_preflight import (
+from packet_tracer_mcp.infrastructure.execution.cp_scale_live_preflight import (
     GitCPScaleRepositoryReader,
     PacketTracerImportIsolationReader,
     PowerShellPacketTracerProcessReader,
     PythonRuntimeEvidenceReader,
 )
-from src.packet_tracer_mcp.infrastructure.execution.live_environment_preflight import (
+from packet_tracer_mcp.infrastructure.execution.live_environment_preflight import (
     packet_tracer_process_error,
 )
 
@@ -416,10 +416,10 @@ def test_authorization_cannot_contradict_observed_provenance(changes):
 
 
 def test_authorization_provenance_is_persisted_without_secrets():
-    from src.packet_tracer_mcp.application.cp_scale_live.run_contracts import (
+    from packet_tracer_mcp.application.cp_scale_live.run_contracts import (
         CPScaleRunReport,
     )
-    from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_run_evidence import (
+    from packet_tracer_mcp.infrastructure.persistence.cp_scale_run_evidence import (
         run_evidence,
     )
 

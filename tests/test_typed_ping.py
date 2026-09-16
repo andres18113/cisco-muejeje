@@ -8,7 +8,7 @@ import subprocess
 
 import pytest
 
-from src.packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingExecutor
+from packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingExecutor
 
 
 @pytest.mark.parametrize(

@@ -165,8 +165,8 @@ print(json.dumps({"count": len(sequences), "steps": len(sequence.steps), "succee
 
 def test_cleanup_realtime_payload_is_not_a_mutable_dictionary():
     from dataclasses import is_dataclass
-    from src.packet_tracer_mcp.infrastructure.observation.cp_scale_live_run import PacketTracerCPScaleRunObservations
-    from src.packet_tracer_mcp.infrastructure.observation import cp_scale_live_run as module
+    from packet_tracer_mcp.infrastructure.observation.cp_scale_live_run import PacketTracerCPScaleRunObservations
+    from packet_tracer_mcp.infrastructure.observation import cp_scale_live_run as module
     from unittest.mock import patch
 
     raw = {"observed": True, "simulation_mode": False}
@@ -252,9 +252,9 @@ print(json.dumps({"outcome": result.outcome.value if result else None, "raised":
     ("", "Realtime unavailable"), ("restoration failed", "later Realtime failure"),
 ])
 def test_completion_cleanup_policy_keeps_the_exact_first_cause(restoration_error, realtime_error):
-    from src.packet_tracer_mcp.application.cp_scale_live.completion import CPScaleCompletion
-    from src.packet_tracer_mcp.application.cp_scale_live.run_contracts import CPScaleCleanupResult, CPScaleCleanupRealtime
-    from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import CPScaleCanonicalStage
+    from packet_tracer_mcp.application.cp_scale_live.completion import CPScaleCompletion
+    from packet_tracer_mcp.application.cp_scale_live.run_contracts import CPScaleCleanupResult, CPScaleCleanupRealtime
+    from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import CPScaleCanonicalStage
 
     policy = CPScaleCompletion(cleanup=None)
     result = policy.review_cleanup(CPScaleCleanupResult(not restoration_error, restoration_error),

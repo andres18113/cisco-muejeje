@@ -20,17 +20,25 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
+from packet_tracer_mcp.infrastructure.execution.bridge_token import token_path
+from packet_tracer_mcp.infrastructure.persistence import capability_snapshot_store
 from tests.cp_live_data_integrity import (
     assert_protected_paths_unchanged,
     capture_protected_paths,
     cp_live_workspace_protected_paths,
     isolated_subprocess_environment,
 )
-from src.packet_tracer_mcp.infrastructure.execution.bridge_token import token_path
-from src.packet_tracer_mcp.infrastructure.persistence import capability_snapshot_store
+from tests.namespace_preflight import NamespacePreflight
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# Fail closed before any test module is imported. `packet_tracer_mcp` resolves
+# through this environment's editable install, which records one absolute tree,
+# so an environment belonging to another checkout silently validates that other
+# checkout's source. The imports above are the first use of that name in this
+# process; this rule decides whether what they loaded may be trusted.
+NamespacePreflight(ROOT).enforce()
 _ISOLATION_ATTRIBUTE = "_cp_live_early_isolation"
 
 

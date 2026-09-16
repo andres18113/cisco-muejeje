@@ -19,8 +19,8 @@ from ...application.cp_scale_live.contracts import (
     CPScaleRuntimeEvidence,
 )
 from .import_isolation_preflight import (
+    LEGACY_NAMESPACE,
     PRODUCTION_NAMESPACE,
-    TEST_NAMESPACE,
     ImportIsolationPreflight,
 )
 from .source_preflight import GitOutput, GitSourceReader
@@ -45,7 +45,7 @@ class PythonRuntimeEvidenceReader:
         modules = self._modules()
         loaded = tuple(
             name
-            for name in (PRODUCTION_NAMESPACE, TEST_NAMESPACE)
+            for name in (PRODUCTION_NAMESPACE, LEGACY_NAMESPACE)
             if name in modules
         )
         production = modules.get(PRODUCTION_NAMESPACE)

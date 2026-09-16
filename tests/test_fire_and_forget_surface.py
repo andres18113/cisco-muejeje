@@ -23,20 +23,20 @@ from pathlib import Path
 import pytest
 from mcp.server.fastmcp import FastMCP
 
-from src.packet_tracer_mcp.adapters.mcp import tool_registry
-from src.packet_tracer_mcp.adapters.mcp.resource_registry import register_resources
-from src.packet_tracer_mcp.adapters.mcp.public_surface import (
+from packet_tracer_mcp.adapters.mcp import tool_registry
+from packet_tracer_mcp.adapters.mcp.resource_registry import register_resources
+from packet_tracer_mcp.adapters.mcp.public_surface import (
     PUBLIC_MCP_SURFACE_ENV_VAR,
     PublicMcpSurface,
     public_mcp_surface_from_env,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     RuntimeActionMutation,
     mutation_execution_status,
 )
-from src.packet_tracer_mcp.infrastructure.execution.file_bridge import FileBridge
-from src.packet_tracer_mcp.settings import (
+from packet_tracer_mcp.infrastructure.execution.file_bridge import FileBridge
+from packet_tracer_mcp.settings import (
     DEVELOPER_CAPABILITY_INVESTIGATION_INSTRUCTIONS,
     SERVER_INSTRUCTIONS,
 )
@@ -111,7 +111,7 @@ def test_dispatch_never_reaches_verified_on_its_own():
 
     VERIFIED sale de releer el estado, nunca del retorno del envio.
     """
-    from src.packet_tracer_mcp.domain.enterprise.models.execution import (
+    from packet_tracer_mcp.domain.enterprise.models.execution import (
         MutationDisposition,
     )
 
@@ -436,7 +436,7 @@ def test_the_typed_rip_action_is_a_first_class_control_plane_action():
     Es lo que le da un `RuntimeActionMutation` y una expectativa de relectura;
     un texto suelto no tendria ninguno de los dos.
     """
-    from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+    from packet_tracer_mcp.domain.enterprise.models.control_plane import (
         ConfigureRipv2,
         ControlPlaneActionType,
         ControlPlanePlan,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.packet_tracer_mcp.infrastructure.execution.topology_observation import (
+from packet_tracer_mcp.infrastructure.execution.topology_observation import (
     LinkEndpoint,
     LinkExpectation,
     LinkObservationStatus,
@@ -14,7 +14,7 @@ from src.packet_tracer_mcp.infrastructure.execution.topology_observation import 
     parse_exact_link_readback,
     verify_exact_link_convergence,
 )
-from src.packet_tracer_mcp.infrastructure.execution.transport_health import (
+from packet_tracer_mcp.infrastructure.execution.transport_health import (
     TransportHealth,
     TransportHealthState,
     TransportName,
@@ -400,7 +400,7 @@ class TestExactLinkIdentityUsesUuid:
     """
 
     def _script(self):
-        from src.packet_tracer_mcp.infrastructure.execution.topology_observation import (
+        from packet_tracer_mcp.infrastructure.execution.topology_observation import (
             LinkEndpoint, LinkExpectation, build_exact_link_readback_js,
         )
         return build_exact_link_readback_js(LinkExpectation(

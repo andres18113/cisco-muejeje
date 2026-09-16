@@ -1,6 +1,6 @@
 """E8 capability baseline records measurements without optimistic defaults."""
 
-from src.packet_tracer_mcp.domain.enterprise.models.security_plan import (
+from packet_tracer_mcp.domain.enterprise.models.security_plan import (
     ConfigureSecurityNat,
     NatMode,
     SecurityCapabilityDimension as Dimension,
@@ -8,7 +8,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.security_plan import (
     SecurityVerificationKind,
     security_verification_capability,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.security_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.security_capabilities import (
     packet_tracer_security_capabilities,
 )
 from tests.test_enterprise_security import _compile

@@ -5,27 +5,27 @@ from __future__ import annotations
 from copy import deepcopy
 from time import perf_counter
 
-from src.packet_tracer_mcp.application.use_cases.compile_services import (
+from packet_tracer_mcp.application.use_cases.compile_services import (
     compile_enterprise_services,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationIssueCode,
     ConfigurationPhase,
     ConfigurationPlan,
     ConfigureRoutedInterface,
     SetEndpointStaticAddress,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.enterprise_plan import (
+from packet_tracer_mcp.domain.enterprise.models.enterprise_plan import (
     EnterprisePlan,
     SitePlan,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.intent import SiteType
-from src.packet_tracer_mcp.domain.enterprise.models.requirements import (
+from packet_tracer_mcp.domain.enterprise.models.intent import SiteType
+from packet_tracer_mcp.domain.enterprise.models.requirements import (
     DnsRecordRequirement,
     ServiceRequirement,
     TftpFileRequirement,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.service_plan import (
+from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     AddDnsRecord,
     EnableDnsService,
     EnableHttpService,
@@ -35,8 +35,8 @@ from src.packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceType,
     SetHttpContent,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, TopologyPlan
+from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
+from packet_tracer_mcp.domain.models.plans import DevicePlan, TopologyPlan
 
 
 def _foundation_action(device_id: str, name: str, address: str, segment: str = "hq-servers"):

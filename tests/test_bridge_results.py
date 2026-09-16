@@ -15,7 +15,7 @@ import urllib.request
 
 import pytest
 
-from src.packet_tracer_mcp.infrastructure.execution.live_bridge import (
+from packet_tracer_mcp.infrastructure.execution.live_bridge import (
     PacketTracerHttpTransport,
     PTCommandBridge,
     report_result_js,
@@ -230,7 +230,7 @@ def test_rid_validation_and_duplicate_results_fail_closed(bridge):
 
 
 def test_generated_rids_are_unique_and_strictly_serializable():
-    from src.packet_tracer_mcp.infrastructure.execution.live_bridge import next_rid
+    from packet_tracer_mcp.infrastructure.execution.live_bridge import next_rid
 
     rids = {next_rid() for _ in range(1000)}
 
@@ -248,7 +248,7 @@ def test_report_result_js_carries_encoded_token_and_rid_on_one_line():
 
 
 def test_active_http_caller_reuses_one_rid_and_extends_the_socket_wait():
-    from src.packet_tracer_mcp.infrastructure.execution.live_bridge import (
+    from packet_tracer_mcp.infrastructure.execution.live_bridge import (
         RESULT_SOCKET_GRACE_SECONDS,
         correlated_http_send_and_wait,
     )
@@ -302,7 +302,7 @@ def test_active_http_caller_reuses_one_rid_and_extends_the_socket_wait():
 
 
 def test_wait_budget_has_a_finite_global_ceiling():
-    from src.packet_tracer_mcp.infrastructure.execution.live_bridge import (
+    from packet_tracer_mcp.infrastructure.execution.live_bridge import (
         MAX_RESULT_WAIT_SECONDS,
         bounded_result_wait,
     )

@@ -14,22 +14,22 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.packet_tracer_mcp.application.cp_scale_live.completion import (
+from packet_tracer_mcp.application.cp_scale_live.completion import (
     CPScaleCompletion,
     _unqualified_call_behavior_error,
 )
-from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
+from packet_tracer_mcp.application.cp_scale_live.contracts import (
     CPScaleMutationScope,
     CPScaleQualificationStatus,
     call_observations_required,
 )
-from src.packet_tracer_mcp.application.cp_scale_live.run_contracts import (
+from packet_tracer_mcp.application.cp_scale_live.run_contracts import (
     CPScaleStageProgress,
 )
-from src.packet_tracer_mcp.application.cp_scale_live.step_policy import (
+from packet_tracer_mcp.application.cp_scale_live.step_policy import (
     canonical_step_decision,
 )
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     CPScaleCanonicalStageTransition,
     CPScaleCanonicalTarget,
@@ -39,32 +39,32 @@ from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical impo
     derive_cp_scale_branch_forwarding_checks,
     project_cp_scale_canonical_stage,
 )
-from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
+from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     CPScaleCanonicalVoiceEvidence,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     CallExpectation,
     CallExpectationResult,
     VoiceCapabilityDimension,
     VoiceCapabilityStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
     CallState,
     CallVerificationResult,
     PhoneExecutionMethod,
     VoiceApplicationResult,
 )
-from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
+from packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
     cp_scale_canonical_voice_intent,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.control_plane_compiler import (
+from packet_tracer_mcp.domain.enterprise.services.control_plane_compiler import (
     control_plane_plan_semantic_hash,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
+from packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
     packet_tracer_cp_scale_qualification_policy,
 )
 from tests.poe_delivery_capabilities import (

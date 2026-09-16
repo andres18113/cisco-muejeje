@@ -23,27 +23,27 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from src.packet_tracer_mcp.application.use_cases.apply_voice import (
+from packet_tracer_mcp.application.use_cases.apply_voice import (
     VoiceApplicator,
     _addressing_claim,
 )
-from src.packet_tracer_mcp.application.use_cases.compile_configuration import (
+from packet_tracer_mcp.application.use_cases.compile_configuration import (
     compile_enterprise_configuration,
 )
-from src.packet_tracer_mcp.application.use_cases.compile_voice import (
+from packet_tracer_mcp.application.use_cases.compile_voice import (
     compile_enterprise_voice,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
     ConfigureAccessPort,
     VerificationKind,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationFailureCode,
     ConfigurationRuntimeContext,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
     RuntimePhoneRegistration,
 )
 

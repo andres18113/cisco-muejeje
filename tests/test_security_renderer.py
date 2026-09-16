@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.infrastructure.generator.security_renderer import (
+from packet_tracer_mcp.infrastructure.generator.security_renderer import (
     PacketTracerSecurityRenderer,
 )
 from tests.test_enterprise_security import _compile
 from tests.test_enterprise_security import _fixture
-from src.packet_tracer_mcp.application.use_cases.compile_security import (
+from packet_tracer_mcp.application.use_cases.compile_security import (
     compile_enterprise_security,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.security_plan import (
+from packet_tracer_mcp.domain.enterprise.models.security_plan import (
     AddSecurityAclRule,
     SecurityCapabilityDimension,
     SecurityDecision,

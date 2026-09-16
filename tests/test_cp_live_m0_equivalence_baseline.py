@@ -453,5 +453,14 @@ def test_comparator_detects_deliberate_semantic_drift(
     assert any(needle in item for item in differences)
 
 
-def test_parent_pytest_process_never_loads_the_production_namespace():
-    assert "packet_tracer_mcp" not in sys.modules
+def test_parent_pytest_process_loads_exactly_one_package_identity():
+    """The parent keeps one identity; the probes still run in children.
+
+    The pre-migration form asserted the production namespace was absent
+    from the parent, which held because the suite imported the package
+    under the retired name. It never proved the probes were isolated --
+    that is established by `run_product_probe` running each one in its
+    own interpreter, and asserted through each child's own provenance.
+    """
+    assert "packet_tracer_mcp" in sys.modules
+    assert "src.packet_tracer_mcp" not in sys.modules

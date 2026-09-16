@@ -23,20 +23,20 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.apply_configuration import (
+from packet_tracer_mcp.application.use_cases.apply_configuration import (
     ConfigurationApplicator,
 )
-from src.packet_tracer_mcp.application.use_cases.compile_configuration import (
+from packet_tracer_mcp.application.use_cases.compile_configuration import (
     compile_enterprise_configuration,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     DeviceCapabilities,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationStatus,
     ConfigurationFailureCode,

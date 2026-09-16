@@ -14,11 +14,11 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.poe2 import PoE2Capture
-from src.packet_tracer_mcp.infrastructure.execution.poe2_evidence import (
+from packet_tracer_mcp.domain.enterprise.models.poe2 import PoE2Capture
+from packet_tracer_mcp.infrastructure.execution.poe2_evidence import (
     BINDING, BUILD, START_HEAD, capture_delivery, off_calibration_valid,
 )
-from src.packet_tracer_mcp.shared.utils import resolve_within, safe_name_component
+from packet_tracer_mcp.shared.utils import resolve_within, safe_name_component
 
 ROOT = Path(__file__).resolve().parents[1]
 DIRECTORY = "poe2-off-calibration-7bb812cdf106"

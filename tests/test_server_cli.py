@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp import server
+from packet_tracer_mcp import server
 
 
 def test_main_help_exits_without_starting_the_server(capsys, monkeypatch):

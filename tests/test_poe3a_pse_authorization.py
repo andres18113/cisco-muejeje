@@ -20,17 +20,17 @@ from dataclasses import replace
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityEvidence, CapabilityStatus, EvidenceSource, PoEAuthorizedBinding,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.capability_resolver import (
+from packet_tracer_mcp.domain.enterprise.services.capability_resolver import (
     CapabilityResolver, CatalogDeviceFacts,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.poe_claims import (
+from packet_tracer_mcp.domain.enterprise.services.poe_claims import (
     _AUTHORIZED_OBSERVATION_METHODS, PoEDeliveryClaimScope, PoEDeliveryTestedBinding,
     encode_poe_delivery_dimensions,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.poe_pse_claims import (
+from packet_tracer_mcp.domain.enterprise.services.poe_pse_claims import (
     PoEPseCapture, PoEPseDeliveryScope, POE_PSE_CAPTURES, POE_PSE_GATES,
     POE_PSE_PACKET_TRACER_BUILD, POE_PSE_SWITCH_MODEL, POE_PSE_SWITCH_PORT,
     encode_poe_pse_dimensions,
@@ -145,7 +145,7 @@ def test_the_manual_allowlist_did_not_grow_to_make_that_work():
 # ==========================================================================
 
 def test_the_observer_and_its_raw_captures_are_not_a_claim():
-    from src.packet_tracer_mcp.infrastructure.execution.poe_inline_observer import (
+    from packet_tracer_mcp.infrastructure.execution.poe_inline_observer import (
         GovernedPoEInlineObserver,
     )
     observer = GovernedPoEInlineObserver(lambda *a, **k: None)
@@ -411,7 +411,7 @@ def test_historical_poe2_evidence_does_not_become_authority():
     It has no dimensions the claim layer reads, so it cannot authorize, and
     nothing in POE-3A retroactively promotes it.
     """
-    from src.packet_tracer_mcp.infrastructure.execution import poe2_evidence
+    from packet_tracer_mcp.infrastructure.execution import poe2_evidence
 
     assert not hasattr(poe2_evidence, "encode_poe_pse_dimensions")
     historical = CapabilityEvidence(
@@ -430,7 +430,7 @@ def test_historical_poe2_evidence_does_not_become_authority():
 
 def _pse_probe_result(scope: PoEPseDeliveryScope | None = None, **overrides):
     """A PSE reading as it is actually persisted and read back."""
-    from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+    from packet_tracer_mcp.domain.enterprise.models.discovery import (
         CapabilityProbeResult, CapabilityVerificationMethod, ProbeContext,
         ProbeExecutionStatus,
     )
@@ -458,13 +458,13 @@ def _pse_probe_result(scope: PoEPseDeliveryScope | None = None, **overrides):
 
 
 def _adapter_for(tmp_path, results):
-    from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+    from packet_tracer_mcp.domain.enterprise.models.discovery import (
         CapabilitySnapshot, ProbeSession, ProbeSessionResult,
     )
-    from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+    from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
         packet_tracer_enterprise_capability_adapter,
     )
-    from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+    from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
         CapabilitySnapshotStore,
     )
     store = CapabilitySnapshotStore(tmp_path / "capabilities")
@@ -591,7 +591,7 @@ def test_every_capture_label_the_runner_uses_is_in_the_closed_vocabulary():
     import typing
     from pathlib import Path
 
-    from src.packet_tracer_mcp.domain.enterprise.models.poe_capacity import (
+    from packet_tracer_mcp.domain.enterprise.models.poe_capacity import (
         PoE3BCapture,
     )
 

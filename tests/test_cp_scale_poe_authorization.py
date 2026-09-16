@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.application.use_cases.plan_enterprise_hardware import (
+from packet_tracer_mcp.application.use_cases.plan_enterprise_hardware import (
     plan_enterprise_hardware,
 )
-from src.packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
+from packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
     compose_enterprise_reference,
 )
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     compose_cp_scale_canonical,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     EvidenceSource,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+from packet_tracer_mcp.domain.enterprise.models.discovery import (
     CapabilityProbeResult,
     CapabilitySnapshot,
     CleanupStatus,
@@ -24,23 +24,23 @@ from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
     ProbeSession,
     ProbeSessionResult,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
-from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import (
+from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import (
     CPScalePoint,
     cp_scale_intent_for,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
+from packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
     EnterpriseDesigner,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.poe_claims import (
+from packet_tracer_mcp.domain.enterprise.services.poe_claims import (
     PoEDeliveryClaimScope,
     PoEDeliveryTestedBinding,
     encode_poe_delivery_dimensions,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     packet_tracer_enterprise_capability_adapter,
 )
-from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
 )
 from tests.poe_session_safety import healthy_live_session_safety

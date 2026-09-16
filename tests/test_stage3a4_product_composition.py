@@ -2,45 +2,45 @@
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.application.use_cases.compile_configuration import (
+from packet_tracer_mcp.application.use_cases.compile_configuration import (
     compile_enterprise_configuration,
 )
-from src.packet_tracer_mcp.application.use_cases.compile_control_plane import (
+from packet_tracer_mcp.application.use_cases.compile_control_plane import (
     compile_enterprise_control_plane,
 )
-from src.packet_tracer_mcp.application.use_cases.apply_configuration import (
+from packet_tracer_mcp.application.use_cases.apply_configuration import (
     ConfigurationApplicator,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
     VerificationKind,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ConfigurationApplicationStatus,
     ConfigurationFailureCode,
     ConfigurationRuntimeContext,
     RuntimeConfigurationTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     DeploymentLinkBinding,
     DeploymentLinkEndpoint,
     EnvironmentFingerprint,
     SerialEndpointOrientation,
     build_deployment_manifest,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneIntent,
     ControlPlaneVerificationKind,
     DynamicRoutingIntent,
     DynamicRoutingProtocol,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+from packet_tracer_mcp.domain.enterprise.models.link_performance import (
     TrafficFlowIntent,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
+from packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
     EnterpriseDesigner,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.traffic_attribution import (
+from packet_tracer_mcp.domain.enterprise.services.traffic_attribution import (
     attribute_enterprise_traffic,
 )
 from tests.test_e95_serial_product_planning import (
@@ -66,10 +66,10 @@ def _product_chain():
     _, hardware, original = _compile_reference_planning()
     # Hardware is the already-governed product-planner output; compile the
     # addressed semantic plan through the same production compiler.
-    from src.packet_tracer_mcp.application.use_cases.compile_enterprise import (
+    from packet_tracer_mcp.application.use_cases.compile_enterprise import (
         compile_enterprise_topology,
     )
-    from src.packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
+    from packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
         PacketTracerTopologyCatalogAdapter,
     )
 

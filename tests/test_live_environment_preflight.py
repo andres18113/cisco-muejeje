@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.infrastructure.execution.live_environment_preflight import (
+from packet_tracer_mcp.infrastructure.execution.live_environment_preflight import (
     packet_tracer_process_error,
 )
 

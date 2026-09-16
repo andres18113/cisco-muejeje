@@ -21,7 +21,7 @@ from typing import Literal
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     BaseConfigurationAction,
     ConfigurationAction,
     ConfigurationPhase,
@@ -31,7 +31,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigureSerialClock,
     CreateVlan,
 )
-from src.packet_tracer_mcp.infrastructure.generator.configuration_renderer import (
+from packet_tracer_mcp.infrastructure.generator.configuration_renderer import (
     PacketTracerIosRenderer,
     UnrenderableConfigurationAction,
     renderer_coverage,
@@ -177,14 +177,14 @@ class TestTheCompilerReachesLinkPerformance:
         """Si algo quedara sin renderer, esto ya no pasaria en silencio.
 
         Antes la cadena de referencia se importaba por `packet_tracer_mcp` y
-        este modulo por `src.packet_tracer_mcp`: dos identidades del mismo
-        codigo. Los tests se normalizaron a un solo namespace, asi que un
+        este modulo por el namespace de test retirado: dos identidades del
+        mismo codigo. La migracion canonica dejo un unico namespace, asi que un
         `isinstance` contra la cadena vuelve a significar lo que dice.
         """
-        from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+        from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
             _IOS_ACTIONS,
         )
-        from src.packet_tracer_mcp.infrastructure.generator.configuration_renderer import (
+        from packet_tracer_mcp.infrastructure.generator.configuration_renderer import (
             PacketTracerIosRenderer as ReferenceRenderer,
         )
 
@@ -205,7 +205,7 @@ class TestTheCompilerReachesLinkPerformance:
 
     def test_the_runtime_routes_every_planned_action_somewhere(self, reference):
         """El descarte mudo estaba tambien aqui, una capa por debajo."""
-        from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+        from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
             _ENDPOINT_ACTIONS,
             _IOS_ACTIONS,
         )
@@ -222,7 +222,7 @@ class TestTheCompilerReachesLinkPerformance:
         assert unrouted == [], f"Planned actions no runtime channel handles: {unrouted}"
 
     def test_the_link_performance_actions_are_routed_by_the_runtime(self):
-        from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+        from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
             _IOS_ACTIONS,
         )
 
@@ -246,7 +246,7 @@ class TestUnknownProfileNeverMutates:
 
     @staticmethod
     def _compile(reference, resolver):
-        from src.packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
+        from packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
             ConfigurationCompiler,
         )
 
@@ -283,7 +283,7 @@ class TestUnknownProfileNeverMutates:
 
     def test_the_measured_reference_needs_no_unverified_warning(self, reference):
         """Contraste: no emitir acciones no prueba por si solo que falte el perfil."""
-        from src.packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
+        from packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
             link_mode_capability_for,
         )
 
@@ -303,7 +303,7 @@ class TestTheUseCaseInjectsTheBackendProfiles:
         """Sin esto el compilador nunca veria un perfil y no decidiria nada."""
         import inspect
 
-        from src.packet_tracer_mcp.application.use_cases import compile_configuration
+        from packet_tracer_mcp.application.use_cases import compile_configuration
 
         source = inspect.getsource(compile_configuration.compile_enterprise_configuration)
 

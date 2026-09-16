@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.application.use_cases.compile_configuration import (
+from packet_tracer_mcp.application.use_cases.compile_configuration import (
     compile_enterprise_configuration,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
 )
 from tests.test_cp_scale_layout import _compile

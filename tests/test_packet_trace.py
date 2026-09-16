@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.domain.services.packet_trace import (
+from packet_tracer_mcp.domain.services.packet_trace import (
     FAILURE_STATUSES,
     TRAFFIC_TYPES,
     frame_status,

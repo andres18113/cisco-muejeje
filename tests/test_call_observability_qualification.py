@@ -2,30 +2,30 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from src.packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
-from src.packet_tracer_mcp.application.use_cases.qualify_call_observability import (
+from packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
+from packet_tracer_mcp.application.use_cases.qualify_call_observability import (
     CallObservabilityQualification,
     CallObservabilityQualificationStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     FieldVerificationStatus,
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.execution import (
+from packet_tracer_mcp.domain.enterprise.models.execution import (
     MutationDisposition,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalMutationResult,
     PhysicalObjectKind,
     PhysicalWorkspaceDeviceObservation,
     PhysicalWorkspaceObservation,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     CallExpectationResult,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
     CallState,
     PhoneExecutionMethod,
     RuntimeCallObservation,

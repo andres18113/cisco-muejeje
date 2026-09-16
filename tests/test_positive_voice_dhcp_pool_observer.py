@@ -13,26 +13,26 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.qualify_dhcp_pool_command import (
+from packet_tracer_mcp.application.use_cases.qualify_dhcp_pool_command import (
     QUALIFICATION_POOL_NAME,
     DhcpPoolCommandQualifier,
     DhcpPoolCommandSupport,
     classify_dhcp_pool_command_support,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigureDhcpPool,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     RuntimeActionMutation,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     MutationDisposition,
     PhysicalMutationResult,
     PhysicalObjectKind,
     PhysicalWorkspaceDeviceObservation,
     PhysicalWorkspaceObservation,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ControlledIosExecutor,
     DeviceIdentityProvenance,
     DhcpPoolSubnetStatistics,
@@ -43,7 +43,7 @@ from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     OperationalQueryId,
     parse_show_ip_dhcp_pool,
 )
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     PacketTracerEnterpriseConfigurationRuntime,
 )
 

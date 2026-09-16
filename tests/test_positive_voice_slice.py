@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (
+from packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (
     ABSENT,
     ACQUISITION_NOT_STARTED_FRESH_DHCP_TRIGGER_UNPROVEN,
     ACQUISITION_NOT_STARTED_PRE_RETRIGGER_ADDRESS_BASELINE_UNPROVEN,
@@ -54,25 +54,25 @@ from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice im
     StpReadObservation,
     await_stp_forwarding,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     RuntimeActionMutation,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalMutationResult,
     PhysicalObjectKind,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceDeviceObservation,
     PhysicalWorkspaceObservation,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     VoiceVerificationExpectation,
     VoiceVerificationKind,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
+from packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
     _phone_addressing_interface,
 )
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     DhcpPoolReadbackObservation,
 )
 
@@ -1583,7 +1583,7 @@ def test_the_pool_ladder_stage_never_claims_the_whole_pool_configuration():
     # stage called DHCP_POOL_DEFINITION reading VERIFIED would tell the next
     # session the pool is configured correctly -- a claim this evidence cannot
     # support. The stage is named for the table it actually read.
-    from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (  # noqa: E501
+    from packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (  # noqa: E501
         FOUNDATION_STAGES,
     )
 
@@ -1604,7 +1604,7 @@ def test_the_pool_read_asks_for_exactly_the_pool_the_slice_configures():
     # the same lease window. Two independent literals drift apart silently,
     # and the failure that drift produces is `pool_present=False` -- a WRONG
     # strong causal claim, not a visible error.
-    from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+    from packet_tracer_mcp.domain.enterprise.models.configuration import (
         ConfigureDhcpPool,
     )
 
@@ -2089,7 +2089,7 @@ def test_the_disposable_names_render_through_the_trusted_control_plane_renderer(
     run was a baseline wearing an experiment's name.  This contract is the
     offline version of that lesson.
     """
-    from src.packet_tracer_mcp.infrastructure.generator.control_plane_renderer import (
+    from packet_tracer_mcp.infrastructure.generator.control_plane_renderer import (
         PacketTracerControlPlaneRenderer,
     )
 

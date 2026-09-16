@@ -2,15 +2,15 @@
 
 import pytest
 
-from src.packet_tracer_mcp.domain.models.switch_security import STPConfig, PortSecurityConfig
-from src.packet_tracer_mcp.domain.rules.switch_security_rules import (
+from packet_tracer_mcp.domain.models.switch_security import STPConfig, PortSecurityConfig
+from packet_tracer_mcp.domain.rules.switch_security_rules import (
     validate_stp, validate_port_security,
     validate_stp_against_topology,
 )
-from src.packet_tracer_mcp.infrastructure.generator.switch_security_cli_generator import (
+from packet_tracer_mcp.infrastructure.generator.switch_security_cli_generator import (
     generate_stp_cli, generate_port_security_cli,
 )
-from src.packet_tracer_mcp.application.use_cases.apply_switch_security import (
+from packet_tracer_mcp.application.use_cases.apply_switch_security import (
     apply_stp_uc, apply_port_security_uc,
 )
 

@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.foundational_evidence import (
+from packet_tracer_mcp.application.use_cases.foundational_evidence import (
     derive_foundational_hashes,
     derive_foundational_statuses,
     unmet_foundations,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionApplicationResult,
     ActionExecutionStatus,
     ConfigurationApplicationResult,
@@ -23,17 +23,17 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
     FieldVerificationStatus,
     VerificationResult,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneFoundationRequirement,
     ControlPlanePlan,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     EnvironmentFingerprint,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.execution import (
+from packet_tracer_mcp.domain.enterprise.models.execution import (
     ApplicationExecutionJournal,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentItemResult,
     PhysicalDeploymentItemStatus,
     PhysicalDeploymentResult,
@@ -468,7 +468,7 @@ def test_the_preview_agrees_with_the_applicator_gate(statuses, hashes):
     orchestrator would dispatch believing it had cleared a check it had not.
     Compared against the real `_foundation_errors`, not against a copy of it.
     """
-    from src.packet_tracer_mcp.application.use_cases.apply_control_plane import (
+    from packet_tracer_mcp.application.use_cases.apply_control_plane import (
         ControlPlaneApplicator,
     )
 

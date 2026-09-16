@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.domain.services.security_audit import (
+from packet_tracer_mcp.domain.services.security_audit import (
     CONFIG_REGISTER_BYPASS,
     CONFIG_REGISTER_NORMAL,
     audit_security,

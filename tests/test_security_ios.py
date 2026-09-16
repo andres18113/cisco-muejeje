@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from src.packet_tracer_mcp.infrastructure.execution.security_ios import (
+from packet_tracer_mcp.infrastructure.execution.security_ios import (
     parse_show_access_lists,
     parse_show_ip_arp_inspection,
     parse_show_ip_dhcp_snooping,

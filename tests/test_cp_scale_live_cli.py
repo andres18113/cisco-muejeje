@@ -73,10 +73,10 @@ print(json.dumps({
 
 def test_persistence_uses_the_composed_root_and_hashes_the_actual_progress(tmp_path):
     spec = importlib.util.find_spec(
-        "src.packet_tracer_mcp.infrastructure.persistence.cp_scale_live"
+        "packet_tracer_mcp.infrastructure.persistence.cp_scale_live"
     )
     assert spec is not None, "Persistence is still tied to the tool module path"
-    from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_live import (
+    from packet_tracer_mcp.infrastructure.persistence.cp_scale_live import (
         CPScaleLivePersistence,
     )
 

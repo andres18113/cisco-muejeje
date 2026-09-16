@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections import Counter
 
-from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
-from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import (
+from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import (
     CP_SCALE_ACCESS_POINT_COUNT,
     CP_SCALE_SITE_WORKLOAD_COUNTS,
     CP_SCALE_WORKLOAD_COUNTS,
@@ -13,20 +13,20 @@ from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import (
     cp_scale_intent,
     cp_scale_intent_for,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
+from packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
     EnterpriseDesigner,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.endpoint_expander import (
+from packet_tracer_mcp.domain.enterprise.services.endpoint_expander import (
     EndpointGroupExpander,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.naming import (
+from packet_tracer_mcp.domain.enterprise.services.naming import (
     DeterministicNamingService,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.segment_assignment import (
+from packet_tracer_mcp.domain.enterprise.services.segment_assignment import (
     SegmentAssignmentPolicy,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.segments import SegmentRole
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
+from packet_tracer_mcp.domain.enterprise.models.segments import SegmentRole
+from packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
     PacketTracerTopologyCatalogAdapter,
 )
 

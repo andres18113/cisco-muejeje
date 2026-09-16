@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.infrastructure.execution import live_file_integrity
-from src.packet_tracer_mcp.infrastructure.execution.live_file_integrity import (
+from packet_tracer_mcp.infrastructure.execution import live_file_integrity
+from packet_tracer_mcp.infrastructure.execution.live_file_integrity import (
     PacketTracerLiveFileGuard,
     PacketTracerLiveSessionSafety,
 )

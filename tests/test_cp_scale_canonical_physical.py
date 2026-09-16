@@ -4,41 +4,41 @@ from __future__ import annotations
 
 from collections import Counter
 
-from src.packet_tracer_mcp.application.use_cases.compile_enterprise import (
+from packet_tracer_mcp.application.use_cases.compile_enterprise import (
     compile_enterprise_topology,
 )
 from tests.poe_delivery_capabilities import (
     compose_delivery_qualified_cp_scale_canonical as compose_cp_scale_canonical,
     delivery_qualified_capability_catalog,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
+from packet_tracer_mcp.domain.enterprise.models.hardware import (
     EndpointPortBinding,
     HardwarePlanStatus,
     PortClass,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     EnableCallControl,
 )
-from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import cp_scale_intent
-from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
+from packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import cp_scale_intent
+from packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
     cp_scale_physical_design,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.endpoint_expander import (
+from packet_tracer_mcp.domain.enterprise.services.endpoint_expander import (
     EndpointGroupExpander,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
+from packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
     EnterpriseDesigner,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.naming import (
+from packet_tracer_mcp.domain.enterprise.services.naming import (
     DeterministicNamingService,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.reference_hardware_planner import (
+from packet_tracer_mcp.domain.enterprise.services.reference_hardware_planner import (
     ReferenceHardwarePlanner,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
+from packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
     PacketTracerTopologyCatalogAdapter,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
+from packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
     MEASURED_BACKEND_VERSION,
 )
 

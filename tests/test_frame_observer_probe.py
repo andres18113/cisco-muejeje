@@ -21,7 +21,7 @@ import pytest
 
 from tests.subprocess_harness import run_isolated_python, subprocess_failure
 
-from src.packet_tracer_mcp.infrastructure.execution.frame_observer_probe import (
+from packet_tracer_mcp.infrastructure.execution.frame_observer_probe import (
     MAX_FRAME_TARGETS,
     MAX_MEMBER_NAMES,
     MAX_MEMBER_NAME_LENGTH,
@@ -596,7 +596,7 @@ def test_a_discovered_child_candidate_is_never_invoked_in_this_phase():
 
 
 def test_child_discovery_is_bounded_per_frame():
-    from src.packet_tracer_mcp.infrastructure.execution.frame_observer_probe import (
+    from packet_tracer_mcp.infrastructure.execution.frame_observer_probe import (
         CHILD_FRAME_GETTERS,
         MAX_CHILD_OBJECTS_PER_FRAME,
     )
@@ -925,7 +925,7 @@ def _one_tag(rows):
 # 1 -- exactly four names, and they are the measured ones.
 
 def test_exactly_the_four_measured_tag_fields_are_read():
-    from src.packet_tracer_mcp.infrastructure.execution.frame_observer_probe import (
+    from packet_tracer_mcp.infrastructure.execution.frame_observer_probe import (
         CHILD_TAG_FIELDS,
     )
 
@@ -1055,7 +1055,7 @@ def test_an_asserted_observation_without_a_finite_number_does_not_survive():
 
 
 def test_the_target_bound_admits_the_comparison_and_the_two_controls():
-    from src.packet_tracer_mcp.infrastructure.execution.frame_observer_probe import (
+    from packet_tracer_mcp.infrastructure.execution.frame_observer_probe import (
         MAX_VLAN_CONTROL_TARGETS,
     )
 

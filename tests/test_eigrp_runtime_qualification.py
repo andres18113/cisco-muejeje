@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.shared.utils import (
+from packet_tracer_mcp.shared.utils import (
     serialize_typed_ping_evidence,
     typed_ping_behavior_transition_verified,
 )
-from src.packet_tracer_mcp.infrastructure.execution.typed_ping import (
+from packet_tracer_mcp.infrastructure.execution.typed_ping import (
     TypedPingResult,
 )
 

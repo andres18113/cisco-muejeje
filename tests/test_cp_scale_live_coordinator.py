@@ -10,7 +10,7 @@ from tests.test_cp_scale_router0_live_runner import RUN_DOUBLES, _probe
 
 def test_application_coordinator_is_available_without_loading_the_tool():
     spec = importlib.util.find_spec(
-        "src.packet_tracer_mcp.application.cp_scale_live.coordinator"
+        "packet_tracer_mcp.application.cp_scale_live.coordinator"
     )
     assert spec is not None, "The coordinator still lives in the executable tool"
 
@@ -18,10 +18,10 @@ def test_application_coordinator_is_available_without_loading_the_tool():
 @pytest.mark.parametrize("failure", ["start", "physical", "configuration", "cancel"])
 def test_partial_session_acquisition_closes_the_acquired_transport_once(failure):
     spec = importlib.util.find_spec(
-        "src.packet_tracer_mcp.infrastructure.execution.cp_scale_live_session"
+        "packet_tracer_mcp.infrastructure.execution.cp_scale_live_session"
     )
     assert spec is not None, "There is no session owner before partial acquisition"
-    from src.packet_tracer_mcp.infrastructure.execution.cp_scale_live_session import (
+    from packet_tracer_mcp.infrastructure.execution.cp_scale_live_session import (
         PacketTracerCPScaleSession,
     )
 
@@ -73,10 +73,10 @@ def test_partial_session_acquisition_closes_the_acquired_transport_once(failure)
 
 def test_session_reuses_resources_and_marks_close_before_a_failing_stop():
     spec = importlib.util.find_spec(
-        "src.packet_tracer_mcp.infrastructure.execution.cp_scale_live_session"
+        "packet_tracer_mcp.infrastructure.execution.cp_scale_live_session"
     )
     assert spec is not None, "Session identity and idempotent close are missing"
-    from src.packet_tracer_mcp.infrastructure.execution.cp_scale_live_session import (
+    from packet_tracer_mcp.infrastructure.execution.cp_scale_live_session import (
         PacketTracerCPScaleSession,
     )
 
@@ -117,13 +117,13 @@ def test_session_reuses_resources_and_marks_close_before_a_failing_stop():
 
 
 def test_session_is_bound_to_the_single_admitted_preflight():
-    from src.packet_tracer_mcp.application.cp_scale_live.coordinator import (
+    from packet_tracer_mcp.application.cp_scale_live.coordinator import (
         CPScaleLiveCoordinator,
     )
-    from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
+    from packet_tracer_mcp.application.cp_scale_live.contracts import (
         CPScaleQualificationStatus,
     )
-    from src.packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
+    from packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
         packet_tracer_cp_scale_qualification_policy,
     )
     from tests.test_cp_scale_live_local_preflight import _request, _service
@@ -199,7 +199,7 @@ print(json.dumps({"outcome": result.outcome.value, "stages": [item.stage.value f
 
 @pytest.mark.parametrize("cancel", [False, True])
 def test_generic_terminal_obligations_preserve_order_and_cancellation(cancel):
-    from src.packet_tracer_mcp.application.cp_scale_live.lifecycle import finalize_session
+    from packet_tracer_mcp.application.cp_scale_live.lifecycle import finalize_session
 
     calls = []
     reports = []
@@ -232,10 +232,10 @@ def test_generic_terminal_obligations_preserve_order_and_cancellation(cancel):
 
 def test_backend_qualification_exposes_original_snapshot_before_serialization():
     from types import SimpleNamespace
-    from src.packet_tracer_mcp.application.cp_scale_live import run_contracts
+    from packet_tracer_mcp.application.cp_scale_live import run_contracts
     assert hasattr(run_contracts, "CPScaleCapabilityQualification"), "Backend still serializes capability evidence inside application"
-    from src.packet_tracer_mcp.application.cp_scale_live.backend import CPScaleBackendQualification
-    from src.packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
+    from packet_tracer_mcp.application.cp_scale_live.backend import CPScaleBackendQualification
+    from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
 
     def forbidden_serialization():
         raise AssertionError("Application serialized the acquired capability snapshot")
@@ -299,21 +299,21 @@ def test_integrated_real_executor_persistence_cleanup_and_session_preserve_failu
     from types import SimpleNamespace
     from tests.cp_scale_stage_fixture import stage_fixture
     from tests.test_cp_scale_live_local_preflight import _service, _request
-    from src.packet_tracer_mcp.application.cp_scale_live.backend import CPScaleBackendQualification
-    from src.packet_tracer_mcp.application.cp_scale_live.build_policy import CPScaleBuildPolicy
-    from src.packet_tracer_mcp.application.cp_scale_live.cleanup import CPScaleCleanup
-    from src.packet_tracer_mcp.application.cp_scale_live.completion import CPScaleCompletion
-    from src.packet_tracer_mcp.application.cp_scale_live.coordinator import CPScaleLiveCoordinator
-    from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import CPScaleStageExecutor
-    from src.packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleRealtimeState
-    from src.packet_tracer_mcp.application.cp_scale_live.run_contracts import CPScaleCleanupRealtime
-    from src.packet_tracer_mcp.infrastructure.execution.cp_scale_live_session import PacketTracerCPScaleSession
-    from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_live import CPScaleLivePersistence
-    from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+    from packet_tracer_mcp.application.cp_scale_live.backend import CPScaleBackendQualification
+    from packet_tracer_mcp.application.cp_scale_live.build_policy import CPScaleBuildPolicy
+    from packet_tracer_mcp.application.cp_scale_live.cleanup import CPScaleCleanup
+    from packet_tracer_mcp.application.cp_scale_live.completion import CPScaleCompletion
+    from packet_tracer_mcp.application.cp_scale_live.coordinator import CPScaleLiveCoordinator
+    from packet_tracer_mcp.application.cp_scale_live.stage_executor import CPScaleStageExecutor
+    from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleRealtimeState
+    from packet_tracer_mcp.application.cp_scale_live.run_contracts import CPScaleCleanupRealtime
+    from packet_tracer_mcp.infrastructure.execution.cp_scale_live_session import PacketTracerCPScaleSession
+    from packet_tracer_mcp.infrastructure.persistence.cp_scale_live import CPScaleLivePersistence
+    from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
         PhysicalDeploymentItemResult, PhysicalDeploymentItemStatus, PhysicalObjectKind,
         PhysicalMutationResult, PhysicalWorkspaceObservation,
     )
-    from src.packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint, deployment_manifest_semantic_hash
+    from packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint, deployment_manifest_semantic_hash
 
     fixture = stage_fixture(CPScaleStageExecutor, unobservable=True)
     projection = fixture.request.projection

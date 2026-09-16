@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from src.packet_tracer_mcp.application.use_cases.apply_security import (
+from packet_tracer_mcp.application.use_cases.apply_security import (
     SecurityApplicator,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationStatus,
     ConfigurationFailureCode,
@@ -15,7 +15,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.security_plan import (
+from packet_tracer_mcp.domain.enterprise.models.security_plan import (
     SecurityAction,
     SecurityCapabilityDimension,
     SecurityCapabilityProfile,
@@ -23,7 +23,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.security_plan import (
     SecurityVerificationExpectation,
     SecurityVerificationKind,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.security_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.security_runtime import (
     RuntimeSecurityVerification,
     SecurityVerificationStage,
 )

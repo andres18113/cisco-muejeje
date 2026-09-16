@@ -1,14 +1,14 @@
 """Catálogo E6 medido para Packet Tracer 9.0.1.0858."""
 
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
-from src.packet_tracer_mcp.domain.enterprise.models.service_plan import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
+from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceActionType,
     ServiceType,
 )
-from src.packet_tracer_mcp.infrastructure.catalog import (
+from packet_tracer_mcp.infrastructure.catalog import (
     packet_tracer_service_capabilities,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.evidence import ReadinessStatus
+from packet_tracer_mcp.domain.enterprise.models.evidence import ReadinessStatus
 
 
 def test_packet_tracer_service_matrix_keeps_four_capability_dimensions():

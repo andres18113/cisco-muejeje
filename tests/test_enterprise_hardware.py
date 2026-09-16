@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityEvidence,
     CapabilityStatus,
     DeviceCandidateStatus,
     DeviceCapabilities,
     EvidenceSource,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
+from packet_tracer_mcp.domain.enterprise.models.hardware import (
     HardwareCandidate,
     HardwarePlanStatus,
     ModuleInstallation,
@@ -18,25 +18,25 @@ from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
     PortDescriptor,
     ResiliencyLevel,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.hierarchy import BuildingIntent, EndpointGroup, FloorIntent, ZoneIntent
-from src.packet_tracer_mcp.domain.enterprise.models.intent import EnterpriseIntent, SiteIntent, SiteType
-from src.packet_tracer_mcp.domain.enterprise.models.requirements import EndpointRequirement
-from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
-from src.packet_tracer_mcp.domain.enterprise.services.capability_resolver import CapabilityResolver
-from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import EnterpriseDesigner
-from src.packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
+from packet_tracer_mcp.domain.enterprise.models.hierarchy import BuildingIntent, EndpointGroup, FloorIntent, ZoneIntent
+from packet_tracer_mcp.domain.enterprise.models.intent import EnterpriseIntent, SiteIntent, SiteType
+from packet_tracer_mcp.domain.enterprise.models.requirements import EndpointRequirement
+from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from packet_tracer_mcp.domain.enterprise.services.capability_resolver import CapabilityResolver
+from packet_tracer_mcp.domain.enterprise.services.enterprise_designer import EnterpriseDesigner
+from packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
     HardwarePlanner,
     HardwarePlanningPolicy,
     ModulePlanner,
     SwitchCountPlanner,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.poe_claims import (
+from packet_tracer_mcp.domain.enterprise.services.poe_claims import (
     PoEAuthorizedBinding,
     PoEDeliveryClaimScope,
     PoEDeliveryTestedBinding,
     encode_poe_delivery_dimensions,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import EnterpriseCapabilityAdapter
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import EnterpriseCapabilityAdapter
 
 
 def _ports(access: int = 24, uplinks: int = 2) -> list[PortDescriptor]:

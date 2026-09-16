@@ -1,16 +1,16 @@
-from src.packet_tracer_mcp.application.use_cases.apply_configuration import ConfigurationApplicator
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.application.use_cases.apply_configuration import ConfigurationApplicator
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationFailureCode,
     ConfigurationRuntimeContext,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import ConfigurationActionType
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import ConfigurationActionType
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     EnvironmentFingerprint,
     build_deployment_manifest,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.execution import MutationDisposition
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import RuntimeActionMutation
+from packet_tracer_mcp.domain.enterprise.models.execution import MutationDisposition
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import RuntimeActionMutation
 from test_configuration_application import (
     FakeConfigurationRuntime,
     _compiled,

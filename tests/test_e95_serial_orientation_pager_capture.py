@@ -23,29 +23,29 @@ import json
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
+from packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
     EnterpriseExecutionStage,
     EnterpriseExecutionStatus,
     EnterpriseRuntimes,
     execute_enterprise_reference,
 )
-from src.packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
+from packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
     compose_enterprise_reference,
 )
-from src.packet_tracer_mcp.application.use_cases.observe_serial_orientation import (
+from packet_tracer_mcp.application.use_cases.observe_serial_orientation import (
     SerialControllerObservation,
     SerialOrientationObserver,
     SerialOrientationStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     SerialEndpointOrientation,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ControlledIosExecutor,
     OperationalQueryId,
     PagerContinuation,
 )
-from src.packet_tracer_mcp.infrastructure.execution.serial_orientation_runtime import (
+from packet_tracer_mcp.infrastructure.execution.serial_orientation_runtime import (
     PacketTracerSerialOrientationRuntime,
 )
 from tests.test_e95_serial_orientation_observer import _manifest, _topology

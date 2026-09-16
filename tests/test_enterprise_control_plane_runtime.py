@@ -6,32 +6,32 @@ from collections.abc import Iterable
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     FieldVerificationStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneCapabilityDimension,
     ControlPlaneVerificationExpectation,
     ControlPlaneVerificationKind,
     EtherChannelProtocol,
     StpMode,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import (
     ControlPlaneExecutionStage,
 )
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (
+from packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (
     PacketTracerEnterpriseControlPlaneRuntime,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosCommandResult,
     IosSessionState,
     OperationalQueryId,
 )
-from src.packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
+from packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
     SimulationStateObservation,
 )
-from src.packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingResult
+from packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingResult
 from test_enterprise_control_plane import _compile
 from test_ios_terminal import (
     _PT_9_0_1_0858_EIGRP_NEIGHBORS_R1,

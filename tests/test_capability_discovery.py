@@ -8,17 +8,17 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.capability_discovery import (
+from packet_tracer_mcp.application.use_cases.capability_discovery import (
     CapabilityDiscoveryService,
     CapabilityProbeRegistry,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityEvidence,
     CapabilityStatus,
     DeviceRequirement,
     EvidenceSource,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+from packet_tracer_mcp.domain.enterprise.models.discovery import (
     CapabilityProbeResult,
     CapabilitySnapshot,
     CleanupStatus,
@@ -31,10 +31,10 @@ from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
     RuntimeDeviceObservation,
     RuntimePortDescriptor,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
-from src.packet_tracer_mcp.domain.enterprise.services.capability_resolver import CapabilityResolver
-from src.packet_tracer_mcp.domain.enterprise.services.device_selector import DeviceSelector
-from src.packet_tracer_mcp.domain.enterprise.services.poe_claims import (
+from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from packet_tracer_mcp.domain.enterprise.services.capability_resolver import CapabilityResolver
+from packet_tracer_mcp.domain.enterprise.services.device_selector import DeviceSelector
+from packet_tracer_mcp.domain.enterprise.services.poe_claims import (
     POE_ACCESS_PORTS,
     POE_DELIVERY_ACTIVE_BINDINGS,
     POE_DELIVERY_CLEANUP_STATUS,
@@ -49,17 +49,17 @@ from src.packet_tracer_mcp.domain.enterprise.services.poe_claims import (
     decode_poe_delivery_scope,
     encode_poe_delivery_dimensions,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.capability_providers import (
+from packet_tracer_mcp.infrastructure.catalog.capability_providers import (
     ManualVerificationCapabilityProvider,
     ProbeCapabilityProvider,
     RuntimeCapabilityProvider,
     StaticVerifiedCapabilityProvider,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import EnterpriseCapabilityAdapter
-from src.packet_tracer_mcp.infrastructure.execution.fake_probe_runtime import FakePacketTracerProbeRuntime
-from src.packet_tracer_mcp.infrastructure.execution.probe_runtime import PacketTracerBridgeProbeRuntime
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import IosCommandResult, IosSessionState, OperationalQueryId
-from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import EnterpriseCapabilityAdapter
+from packet_tracer_mcp.infrastructure.execution.fake_probe_runtime import FakePacketTracerProbeRuntime
+from packet_tracer_mcp.infrastructure.execution.probe_runtime import PacketTracerBridgeProbeRuntime
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import IosCommandResult, IosSessionState, OperationalQueryId
+from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
     compare_snapshots,
 )

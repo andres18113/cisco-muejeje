@@ -2,8 +2,8 @@
 
 import pytest
 
-from src.packet_tracer_mcp.domain.models.plans import TopologyPlan, DevicePlan
-from src.packet_tracer_mcp.domain.services.topology_diff import diff, health_check
+from packet_tracer_mcp.domain.models.plans import TopologyPlan, DevicePlan
+from packet_tracer_mcp.domain.services.topology_diff import diff, health_check
 
 
 def _plan():

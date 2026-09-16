@@ -18,21 +18,21 @@ from __future__ import annotations
 
 import json
 
-from src.packet_tracer_mcp.application.use_cases.qualify_access_port_readback import (
+from packet_tracer_mcp.application.use_cases.qualify_access_port_readback import (
     CONTROL_VLAN_ID,
     QUALIFICATION_PREFIX,
     AccessPortReadbackQualifier,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     FieldVerificationStatus,
     RuntimeActionMutation,
     RuntimeVerification,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     MutationDisposition,
     PhysicalDeviceObservation,
     PhysicalMutationResult,
@@ -41,11 +41,11 @@ from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceLinkObservation,
     PhysicalWorkspaceObservation,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosCommandResult,
     IosSessionState,
 )
-from src.packet_tracer_mcp.infrastructure.execution.access_port_probe import (
+from packet_tracer_mcp.infrastructure.execution.access_port_probe import (
     PacketTracerAccessPortProbe,
 )
 

@@ -8,7 +8,7 @@ from tests.test_cp_scale_router0_live_runner import RUN_DOUBLES, _probe
 
 @pytest.mark.parametrize("cancel", [False, True])
 def test_report_callback_failure_cannot_mask_obligations_or_cancellation(cancel):
-    from src.packet_tracer_mcp.application.cp_scale_live.lifecycle import finalize_session
+    from packet_tracer_mcp.application.cp_scale_live.lifecycle import finalize_session
 
     calls = []
 
@@ -47,7 +47,7 @@ def test_report_callback_failure_cannot_mask_obligations_or_cancellation(cancel)
 def test_later_baseexception_never_replaces_the_original_cancellation(
     secondary_boundary,
 ):
-    from src.packet_tracer_mcp.application.cp_scale_live.lifecycle import (
+    from packet_tracer_mcp.application.cp_scale_live.lifecycle import (
         finalize_session,
     )
 

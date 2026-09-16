@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.service_plan import (
+from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     AddDnsRecord,
     EnableDnsService,
     EnableHttpService,
@@ -18,7 +18,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceVerificationKind,
     SetHttpContent,
 )
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_service_runtime import (
+from packet_tracer_mcp.infrastructure.execution.enterprise_service_runtime import (
     PacketTracerEnterpriseServiceRuntime,
 )
 

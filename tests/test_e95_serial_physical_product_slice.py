@@ -9,33 +9,33 @@ import subprocess
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
+from packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
     EnterprisePhysicalTopologyDeployer,
 )
-from src.packet_tracer_mcp.application.use_cases.qualify_serial_physical_slice import (
+from packet_tracer_mcp.application.use_cases.qualify_serial_physical_slice import (
     SerialPhysicalSliceQualificationStatus,
     qualify_serial_physical_slice,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     DeploymentIdentityError,
     DeploymentLinkBinding,
     DeploymentLinkEndpoint,
     EnvironmentFingerprint,
     build_deployment_manifest,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     RuntimeConfigurationTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.evidence import (
+from packet_tracer_mcp.domain.enterprise.models.evidence import (
     EvidenceFreshness,
     ObservationStatus,
     SupportStatus,
     VerificationStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.execution import (
+from packet_tracer_mcp.domain.enterprise.models.execution import (
     MutationDisposition,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentFailureCode,
     PhysicalDeploymentStatus,
     PhysicalDeviceObservation,
@@ -49,19 +49,19 @@ from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceObservation,
     physical_workspace_restoration_matches,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.topology_identity import (
+from packet_tracer_mcp.domain.enterprise.services.topology_identity import (
     stamp_topology_hashes,
 )
-from src.packet_tracer_mcp.domain.models.plans import (
+from packet_tracer_mcp.domain.models.plans import (
     DevicePlan,
     LinkPlan,
     ModulePlan,
     TopologyPlan,
 )
-from src.packet_tracer_mcp.infrastructure.execution.packet_tracer_physical_runtime import (
+from packet_tracer_mcp.infrastructure.execution.packet_tracer_physical_runtime import (
     PacketTracerPhysicalTopologyRuntime,
 )
-from src.packet_tracer_mcp.infrastructure.generator.ptbuilder_generator import (
+from packet_tracer_mcp.infrastructure.generator.ptbuilder_generator import (
     generate_module_command,
     generate_ptbuilder_script,
 )

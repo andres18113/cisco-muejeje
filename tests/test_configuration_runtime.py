@@ -5,30 +5,30 @@ from __future__ import annotations
 import itertools
 import json
 
-from src.packet_tracer_mcp.application.use_cases.compile_configuration import (
+from packet_tracer_mcp.application.use_cases.compile_configuration import (
     compile_enterprise_configuration,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
     VerificationExpectation,
     VerificationKind,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     FieldVerificationStatus,
 )
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     PacketTracerEnterpriseConfigurationRuntime,
     voice_access_learning_extension_is_authorized,
 )
-from src.packet_tracer_mcp.infrastructure.execution import (
+from packet_tracer_mcp.infrastructure.execution import (
     enterprise_configuration_runtime as configuration_runtime_module,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosCommandResult,
     OperationalQueryId,
 )
-from src.packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
+from packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
     SimulationStateObservation,
 )
 

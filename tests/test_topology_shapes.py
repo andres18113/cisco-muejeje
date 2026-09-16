@@ -1,9 +1,9 @@
 """Tests de forma de topología por template (F5: el orquestador debe honrar el template)."""
 
 import pytest
-from src.packet_tracer_mcp.domain.models.requests import TopologyRequest
-from src.packet_tracer_mcp.domain.services.orchestrator import plan_from_request
-from src.packet_tracer_mcp.shared.enums import TopologyTemplate, RoutingProtocol
+from packet_tracer_mcp.domain.models.requests import TopologyRequest
+from packet_tracer_mcp.domain.services.orchestrator import plan_from_request
+from packet_tracer_mcp.shared.enums import TopologyTemplate, RoutingProtocol
 
 
 def _router_link_pairs(plan):

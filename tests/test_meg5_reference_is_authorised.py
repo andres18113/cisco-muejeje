@@ -24,28 +24,28 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
+from packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
     compose_enterprise_reference,
 )
-from src.packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
+from packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
     _port_evidence_errors,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneCapabilityDimension,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     EnvironmentFingerprint,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.security_plan import (
+from packet_tracer_mcp.domain.enterprise.models.security_plan import (
     SecurityCapabilityStatus,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.control_plane_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.control_plane_capabilities import (
     packet_tracer_control_plane_capabilities,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
+from packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
     backend_verified_port_inventory,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.port_inventory import (
+from packet_tracer_mcp.domain.enterprise.models.port_inventory import (
     PortInventoryEvidenceTier,
 )
 

@@ -6,10 +6,10 @@ from collections.abc import Sequence
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.apply_control_plane import (
+from packet_tracer_mcp.application.use_cases.apply_control_plane import (
     ControlPlaneApplicator,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationStatus,
     ConfigurationFailureCode,
@@ -17,7 +17,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ConfigureEtherChannel,
     ConfigureRipv2,
     ConfigureSpanningTree,
@@ -33,11 +33,11 @@ from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
     RipNetwork,
     StpMode,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.verification import (
+from packet_tracer_mcp.domain.enterprise.models.verification import (
     PrerequisiteKind,
     VerificationPrerequisite,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import (
     ControlPlaneExecutionStage,
     FailureScenarioTransition,
     FailureTransitionPhase,

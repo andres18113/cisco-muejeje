@@ -11,16 +11,16 @@ import json
 from pathlib import Path
 import subprocess
 
-from src.packet_tracer_mcp.infrastructure.catalog.factory_modules import (
+from packet_tracer_mcp.infrastructure.catalog.factory_modules import (
     factory_module_requirement_for,
 )
-from src.packet_tracer_mcp.infrastructure.execution.factory_module_contracts import (
+from packet_tracer_mcp.infrastructure.execution.factory_module_contracts import (
     FactoryModuleSlotState,
 )
-from src.packet_tracer_mcp.infrastructure.execution.factory_module_preparation import (
+from packet_tracer_mcp.infrastructure.execution.factory_module_preparation import (
     PacketTracerFactoryModulePreparer,
 )
-from src.packet_tracer_mcp.infrastructure.execution.factory_module_runtime import (
+from packet_tracer_mcp.infrastructure.execution.factory_module_runtime import (
     _install_factory_module_js,
     _observation_guard,
 )

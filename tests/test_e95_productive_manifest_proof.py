@@ -13,15 +13,15 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.apply_configuration import (
+from packet_tracer_mcp.application.use_cases.apply_configuration import (
     ConfigurationApplicator,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ConfigurationFailureCode,
     ConfigurationRuntimeContext,
     RuntimeConfigurationTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     DeploymentIdentityError,
     DeploymentLinkBinding,
     DeploymentLinkEndpoint,
@@ -29,7 +29,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
     SerialEndpointOrientation,
     build_deployment_manifest,
 )
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     PacketTracerEnterpriseConfigurationRuntime,
 )
 from test_configuration_application import _compiled, _supported_capabilities
@@ -311,7 +311,7 @@ class TestPolicyVersionScope:
     def test_the_decision_never_travels_into_the_configuration_plan(self):
         import typing
 
-        from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+        from packet_tracer_mcp.domain.enterprise.models.configuration import (
             ConfigurationAction,
         )
 
@@ -324,11 +324,11 @@ class TestPolicyVersionScope:
         assert carriers == [], f"Actions carrying a policy version: {carriers}"
 
     def test_the_emitted_actions_do_not_depend_on_the_decision_version(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+        from packet_tracer_mcp.domain.enterprise.models.link_performance import (
             LinkMedia,
             LinkPerformanceIntent,
         )
-        from src.packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
+        from packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
             LinkPerformancePlanner,
         )
 
@@ -341,7 +341,7 @@ class TestPolicyVersionScope:
         assert default.routing_bandwidth_kbps == relabelled.routing_bandwidth_kbps
 
     def test_the_pinned_version_moved_with_the_planner_change(self):
-        from src.packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
+        from packet_tracer_mcp.domain.enterprise.services.link_performance_planner import (
             LinkPerformancePlanner,
         )
 

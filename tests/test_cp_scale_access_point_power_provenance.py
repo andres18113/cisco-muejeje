@@ -34,11 +34,11 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 
-from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
-from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import (
+from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import (
     CP_SCALE_ACCESS_POINT_COUNT, cp_scale_intent,
 )
-from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
+from packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
     cp_scale_physical_design,
 )
 
@@ -82,13 +82,13 @@ def test_phones_still_require_inline_power():
 
 
 def _powered_endpoint_ids() -> set[str]:
-    from src.packet_tracer_mcp.domain.enterprise.services.endpoint_expander import (
+    from packet_tracer_mcp.domain.enterprise.services.endpoint_expander import (
         EndpointGroupExpander,
     )
-    from src.packet_tracer_mcp.domain.enterprise.services.naming import (
+    from packet_tracer_mcp.domain.enterprise.services.naming import (
         DeterministicNamingService,
     )
-    from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
+    from packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
         EnterpriseDesigner,
     )
     designed = EnterpriseDesigner().design(cp_scale_intent())

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from src.packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionApplicationResult,
     ActionExecutionStatus,
     ConfigurationFailureCode,
@@ -14,7 +14,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     BindPhoneToExtension,
     CallExpectationResult,
     EnableCallControl,
@@ -24,12 +24,12 @@ from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     VoiceCapabilityStatus,
     VoicePhase,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
     CallState,
     RuntimeCallObservation,
     RuntimePhoneRegistration,
 )
-from src.packet_tracer_mcp.infrastructure.generator.voice_renderer import (
+from packet_tracer_mcp.infrastructure.generator.voice_renderer import (
     PacketTracerVoiceRenderer,
 )
 from tests.test_enterprise_voice import _compile

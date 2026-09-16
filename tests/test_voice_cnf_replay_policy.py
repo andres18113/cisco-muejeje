@@ -27,13 +27,13 @@ De ahí salen tres correcciones, y cada una es una afirmación que se retira:
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.domain.enterprise.models.execution import OperationSemantics
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+from packet_tracer_mcp.domain.enterprise.models.execution import OperationSemantics
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     GeneratePhoneConfigurationFiles,
     VoiceCapabilityDimension,
     VoicePhase,
 )
-from src.packet_tracer_mcp.domain.enterprise.mutation_replay import (
+from packet_tracer_mcp.domain.enterprise.mutation_replay import (
     EvidenceBasis,
     ReplayClassification,
     ReplayContainment,
@@ -108,7 +108,7 @@ def test_an_unobservable_repeat_can_never_be_registered_as_replay_safe(monkeypat
     """
     import pytest
 
-    from src.packet_tracer_mcp.domain.enterprise import mutation_replay as module
+    from packet_tracer_mcp.domain.enterprise import mutation_replay as module
 
     offending = module.MutationReplayPolicy(
         surface=module.MutationSurface.VOICE,
@@ -129,6 +129,6 @@ def test_an_unobservable_repeat_can_never_be_registered_as_replay_safe(monkeypat
 
 
 def test_the_registry_as_shipped_still_validates():
-    from src.packet_tracer_mcp.domain.enterprise import mutation_replay as module
+    from packet_tracer_mcp.domain.enterprise import mutation_replay as module
 
     module._validate_registry()

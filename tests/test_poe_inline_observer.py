@@ -18,10 +18,10 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.infrastructure.execution.command_dispatch import (
+from packet_tracer_mcp.infrastructure.execution.command_dispatch import (
     DispatchClassification,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ControlledIosExecutor,
     DeviceIdentityProvenance,
     IosCommandResult,
@@ -29,7 +29,7 @@ from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosSessionState,
     PoEInlineDelivery,
 )
-from src.packet_tracer_mcp.infrastructure.execution.poe_inline_observer import (
+from packet_tracer_mcp.infrastructure.execution.poe_inline_observer import (
     GovernedPoEInlineObserver,
     PoEInlineObservationStatus,
 )

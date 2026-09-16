@@ -7,35 +7,35 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     project_cp_scale_canonical_stage,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     DeploymentBinding,
     DeploymentLinkBinding,
     DeploymentLinkEndpoint,
     DeploymentManifest,
     EnvironmentFingerprint,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.forwarding import (
+from packet_tracer_mcp.domain.enterprise.models.forwarding import (
     ForwardingAddressObservation,
 )
-from src.packet_tracer_mcp.domain.models.typed_ping import TypedPingResult
-from src.packet_tracer_mcp.infrastructure.execution.forwarding_probe import (
+from packet_tracer_mcp.domain.models.typed_ping import TypedPingResult
+from packet_tracer_mcp.infrastructure.execution.forwarding_probe import (
     ForwardingProbeExecutor,
 )
-from src.packet_tracer_mcp.infrastructure.observation.cp_scale_live import (
+from packet_tracer_mcp.infrastructure.observation.cp_scale_live import (
     PacketTracerCPScaleObservations,
     _observe_user_forwarding,
 )
-from src.packet_tracer_mcp.application.cp_scale_live.forwarding_stage import (
+from packet_tracer_mcp.application.cp_scale_live.forwarding_stage import (
     CPScaleForwardingStage,
 )
-from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
+from packet_tracer_mcp.application.cp_scale_live.contracts import (
     CPScaleSiteForwardingObservation,
     CPScaleUserForwardingObservation,
 )

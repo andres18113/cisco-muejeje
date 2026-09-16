@@ -17,14 +17,14 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationPhase,
     ConfigureEthernetLinkMode,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     RuntimeConfigurationTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     DeploymentBinding,
     DeploymentIdentityError,
     DeploymentLinkBinding,
@@ -33,18 +33,18 @@ from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
     EnvironmentFingerprint,
     validate_manifest_environment,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+from packet_tracer_mcp.domain.enterprise.models.link_performance import (
     DuplexMode,
     LinkSpeedMode,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.link_performance_integration import (
+from packet_tracer_mcp.domain.enterprise.services.link_performance_integration import (
     LinkPerformanceIntegration,
 )
-from src.packet_tracer_mcp.domain.models.plans import LinkPlan
-from src.packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
+from packet_tracer_mcp.domain.models.plans import LinkPlan
+from packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
     link_mode_capability_for,
 )
-from src.packet_tracer_mcp.infrastructure.generator.link_performance_renderer import (
+from packet_tracer_mcp.infrastructure.generator.link_performance_renderer import (
     render_ethernet_link_mode,
 )
 

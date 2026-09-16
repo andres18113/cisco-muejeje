@@ -15,11 +15,11 @@ moverse por separado.
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
+from packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
     compose_enterprise_reference,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.link_performance import TrafficFlowIntent
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import ExtensionRange, VoiceIntent
+from packet_tracer_mcp.domain.enterprise.models.link_performance import TrafficFlowIntent
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import ExtensionRange, VoiceIntent
 from tests.test_stage3a4_product_composition import _oriented_manifest
 from tests.test_e95_serial_product_planning import _reference_planning_intent
 

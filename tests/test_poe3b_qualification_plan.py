@@ -4,30 +4,30 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     cp_scale_canonical_stage_includes_device,
 )
-from src.packet_tracer_mcp.application.use_cases.plan_cp_scale_poe_capacity import (
+from packet_tracer_mcp.application.use_cases.plan_cp_scale_poe_capacity import (
     cp_scale_poe_capacity_qualification_plan,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     PoEAuthorizedBinding,
 )
-from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import (
+from packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import (
     cp_scale_intent,
 )
-from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
+from packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
     SW3,
     cp_scale_physical_design,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.endpoint_expander import (
+from packet_tracer_mcp.domain.enterprise.services.endpoint_expander import (
     EndpointGroupExpander,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
+from packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
     EnterpriseDesigner,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.naming import (
+from packet_tracer_mcp.domain.enterprise.services.naming import (
     DeterministicNamingService,
 )
 

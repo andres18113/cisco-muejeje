@@ -6,16 +6,16 @@ import json
 import subprocess
 from pathlib import Path
 
-from src.packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
+from packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
     EnterpriseReferenceComposition,
 )
-from src.packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
+from packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
     EnterpriseExecutionResult,
     EnterpriseExecutionStage,
     EnterpriseExecutionStatus,
     EnterpriseRuntimes,
 )
-from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
+from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     CPScaleLivePointResult,
     CPScaleLiveQualification,
     CPScalePointStatus,
@@ -26,25 +26,25 @@ from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     read_git_repository_state,
     write_cp_scale_live_artifacts,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import ControlPlaneIntent
-from src.packet_tracer_mcp.domain.enterprise.models.compilation import EnterpriseCompileSummary
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import VoiceIntent
-from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import CPScalePoint
-from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import ControlPlaneIntent
+from packet_tracer_mcp.domain.enterprise.models.compilation import EnterpriseCompileSummary
+from packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import VoiceIntent
+from packet_tracer_mcp.domain.enterprise.scenarios.cp_scale import CPScalePoint
+from packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
     EnterpriseDesigner,
 )
-from src.packet_tracer_mcp.domain.models.plans import (
+from packet_tracer_mcp.domain.models.plans import (
     DevicePlan,
     LinkPlan,
     TopologyPlan,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceDeviceObservation,
     PhysicalWorkspaceLinkObservation,
     PhysicalWorkspaceObservation,
 )
-from src.packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
+from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
     ImportIsolationPreflight,
 )
 

@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityEvidence,
     CapabilityStatus,
     EvidenceSource,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+from packet_tracer_mcp.domain.enterprise.models.discovery import (
     CapabilityProbeResult,
     CapabilitySnapshot,
     CapabilityVerificationMethod,
@@ -24,29 +24,29 @@ from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
     ProbeSession,
     ProbeSessionResult,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.capability_resolver import (
+from packet_tracer_mcp.domain.enterprise.services.capability_resolver import (
     CapabilityResolver,
     CatalogDeviceFacts,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.poe_claims import (
+from packet_tracer_mcp.domain.enterprise.services.poe_claims import (
     PoEAuthorizedBinding,
     PoEDeliveryClaimScope,
     PoEDeliveryTestedBinding,
     encode_poe_delivery_dimensions,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
     packet_tracer_enterprise_capability_adapter,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.measured_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.measured_capabilities import (
     MEASURED_CAPABILITY_RECORDS,
     MeasuredCapabilityRecord,
     measured_capability_evidence,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
+from packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
     MEASURED_BACKEND_VERSION,
 )
-from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
 )
 
@@ -196,7 +196,7 @@ def test_measured_capability_record_preserves_claim_dimensions(monkeypatch):
     with pytest.raises(TypeError):
         record.dimensions["poe_access_port_count"] = "99"
 
-    import src.packet_tracer_mcp.infrastructure.catalog.measured_capabilities as measured
+    import packet_tracer_mcp.infrastructure.catalog.measured_capabilities as measured
 
     monkeypatch.setattr(measured, "MEASURED_CAPABILITY_RECORDS", (record,))
     projected = measured_capability_evidence()["3560-24PS"][0]

@@ -11,37 +11,37 @@ import pathlib
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.apply_control_plane import (
+from packet_tracer_mcp.application.use_cases.apply_control_plane import (
     ControlPlaneApplicator,
     _profiles_in_environment_scope,
 )
-from src.packet_tracer_mcp.application.use_cases.compile_control_plane import (
+from packet_tracer_mcp.application.use_cases.compile_control_plane import (
     compile_enterprise_control_plane,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigureRoutedInterface,
     ConfigurationPhase,
     ConfigurationPlan,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationFailureCode,
     ConfigurationRuntimeContext,
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneCapabilityDimension as Dimension,
     ControlPlaneCapabilityProfile,
     ControlPlaneIntent,
     DynamicRoutingIntent,
     DynamicRoutingProtocol,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.security_plan import (
+from packet_tracer_mcp.domain.enterprise.models.security_plan import (
     SecurityCapabilityStatus as Status,
 )
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
-from src.packet_tracer_mcp.infrastructure.catalog.control_plane_capabilities import (
+from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from packet_tracer_mcp.infrastructure.catalog.control_plane_capabilities import (
     packet_tracer_control_plane_capabilities,
 )
 
@@ -451,14 +451,14 @@ def test_an_unmatched_environment_never_inherits_supported(declared):
 
 
 def test_the_scope_rule_is_the_existing_exact_version_contract():
-    from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+    from packet_tracer_mcp.domain.enterprise.models.capabilities import (
         CapabilityEvidence,
     )
-    from src.packet_tracer_mcp.domain.enterprise.services.capability_resolver import (
+    from packet_tracer_mcp.domain.enterprise.services.capability_resolver import (
         _evidence_matches_version,
     )
 
-    from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+    from packet_tracer_mcp.domain.enterprise.models.capabilities import (
         CapabilityStatus,
         EvidenceSource,
     )
@@ -494,7 +494,7 @@ def test_a_profile_that_declares_no_version_claims_no_scope():
 
 
 def test_the_environment_scope_uses_the_fingerprint_when_present():
-    from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+    from packet_tracer_mcp.domain.enterprise.models.deployment import (
         EnvironmentFingerprint,
     )
 
@@ -561,11 +561,11 @@ def test_every_routing_protocol_shares_the_same_process_state_gate():
 
 def test_a_supported_process_state_gate_does_not_fabricate_eigrp_evidence():
     """El gate autoriza observar; sin salida actual el runtime no promueve."""
-    from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+    from packet_tracer_mcp.domain.enterprise.models.control_plane import (
         ConfigureEigrpIpv4, ControlPlanePhase, ControlPlaneVerificationExpectation,
         ControlPlaneVerificationKind, RoutingNetwork,
     )
-    from src.packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (
+    from packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (
         PacketTracerEnterpriseControlPlaneRuntime,
     )
 

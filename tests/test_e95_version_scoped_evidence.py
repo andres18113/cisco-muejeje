@@ -8,23 +8,23 @@ indistinguibles: `find_cached` no puede devolverla a una sesión posterior.
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.application.use_cases.capability_discovery import (
+from packet_tracer_mcp.application.use_cases.capability_discovery import (
     CapabilityDiscoveryService,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+from packet_tracer_mcp.domain.enterprise.models.discovery import (
     BackendVersionProvenance,
     PROBE_SCHEMA_VERSION,
     ProbeRequest,
     RuntimeDeviceObservation,
     RuntimePortDescriptor,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
 )
-from src.packet_tracer_mcp.infrastructure.execution.fake_probe_runtime import (
+from packet_tracer_mcp.infrastructure.execution.fake_probe_runtime import (
     FakePacketTracerProbeRuntime,
 )
-from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
 )
 

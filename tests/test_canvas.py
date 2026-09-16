@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.domain.services.canvas import (
+from packet_tracer_mcp.domain.services.canvas import (
     IMAGE_FORMATS,
     CanvasImageError,
     decode_pt_image,

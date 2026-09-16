@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (
+from packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (
     APPLIED,
     CONTRADICTED,
     DATA_ACCESS_PREPARATION_CAUSAL_EFFECT_OBSERVED,

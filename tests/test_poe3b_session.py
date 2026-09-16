@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.packet_tracer_mcp.infrastructure.execution.poe3b_session import (
+from packet_tracer_mcp.infrastructure.execution.poe3b_session import (
     PacketTracerPoE3BLiveTransport,
     PacketTracerPoE3BSession,
     PoE3BSessionOperation,

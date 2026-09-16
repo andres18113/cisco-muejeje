@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.infrastructure.execution.call_observability_provider import (
+from packet_tracer_mcp.infrastructure.execution.call_observability_provider import (
     PacketTracerNativeUiPhoneControlProvider,
 )
-from src.packet_tracer_mcp.infrastructure.persistence.call_observability_evidence import (
+from packet_tracer_mcp.infrastructure.persistence.call_observability_evidence import (
     promote_verified_call_observability,
 )
-from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
 )
 

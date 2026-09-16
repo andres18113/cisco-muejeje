@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.application.cp_scale_live.sequence import execute_stage_sequence, StageStepResult
+from packet_tracer_mcp.application.cp_scale_live.sequence import execute_stage_sequence, StageStepResult
 
 
 @dataclass(frozen=True)
@@ -239,27 +239,27 @@ FIXED_TIME = datetime(2026, 9, 9, tzinfo=timezone.utc)
 
 
 def _cp_snapshot(count):
-    from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
+    from packet_tracer_mcp.application.cp_scale_live.contracts import (
         CPScaleLiveStageResult, CPScaleStageContinuity, CPScaleStageReport, CPScaleMutationScope,
         CPScaleObservationRecord, CPScaleDiagnosticRecord,
     )
-    from src.packet_tracer_mcp.application.cp_scale_live.run_contracts import CPScaleStageProgress
-    from src.packet_tracer_mcp.application.cp_scale_live.run_state import (
+    from packet_tracer_mcp.application.cp_scale_live.run_contracts import CPScaleStageProgress
+    from packet_tracer_mcp.application.cp_scale_live.run_state import (
         CPScaleQualificationState, CPScaleProgressState, CPScaleTerminalState, publication_snapshot,
     )
-    from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import CPScaleCanonicalStageProjection
-    from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import CPScaleEvidenceArchive
-    from src.packet_tracer_mcp.domain.models.plans import TopologyPlan
-    from src.packet_tracer_mcp.domain.enterprise.models.configuration import ConfigurationPlan
-    from src.packet_tracer_mcp.domain.enterprise.models.control_plane import ControlPlanePlan
-    from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import ConfigurationApplicationResult, ConfigurationApplicationStatus
-    from src.packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import ControlPlaneApplicationResult
-    from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import PhysicalDeploymentResult, PhysicalDeploymentStatus
-    from src.packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint
-    from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+    from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import CPScaleCanonicalStageProjection
+    from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import CPScaleEvidenceArchive
+    from packet_tracer_mcp.domain.models.plans import TopologyPlan
+    from packet_tracer_mcp.domain.enterprise.models.configuration import ConfigurationPlan
+    from packet_tracer_mcp.domain.enterprise.models.control_plane import ControlPlanePlan
+    from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import ConfigurationApplicationResult, ConfigurationApplicationStatus
+    from packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import ControlPlaneApplicationResult
+    from packet_tracer_mcp.domain.enterprise.models.physical_deployment import PhysicalDeploymentResult, PhysicalDeploymentStatus
+    from packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint
+    from packet_tracer_mcp.domain.enterprise.models.voice_plan import (
         VoicePlan, EnableCallControl, VoicePhase, VoiceCapabilityDimension,
     )
-    from src.packet_tracer_mcp.domain.enterprise.models.execution import (
+    from packet_tracer_mcp.domain.enterprise.models.execution import (
         ApplicationExecutionJournal, ExecutionJournalEntry, OperationSemantics, MutationDisposition,
     )
     from tests.test_cp_scale_live_local_preflight import _service, _request
@@ -344,13 +344,13 @@ def _unique_objects(value):
 
 
 def _json_bytes(report):
-    from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_run_evidence import run_evidence
+    from packet_tracer_mcp.infrastructure.persistence.cp_scale_run_evidence import run_evidence
     return (json.dumps(run_evidence(report), ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 
 @pytest.mark.parametrize("count", [1, 2, 4])
 def test_measured_bytes_are_the_exact_public_writer_bytes(tmp_path, count):
-    from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_live import CPScaleLivePersistence
+    from packet_tracer_mcp.infrastructure.persistence.cp_scale_live import CPScaleLivePersistence
     report, _, _ = _cp_snapshot(count)
     persistence = CPScaleLivePersistence(tmp_path)
     persistence.write_progress(report)
@@ -366,10 +366,10 @@ def _json_stage_count(payload):
 @pytest.mark.parametrize("count", [1, 2, 4])
 def test_public_cp_snapshot_keeps_complete_journals_with_plan_bounded_linear_size(count):
     from dataclasses import FrozenInstanceError
-    from src.packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveStageResult, CPScaleStageExecutionInput
-    from src.packet_tracer_mcp.application.use_cases.compose_enterprise_reference import EnterpriseReferenceComposition
-    from src.packet_tracer_mcp.application.cp_scale_live.run_contracts import CPScaleLiveFinalResult, CPScaleRunOutcome
-    from src.packet_tracer_mcp.domain.enterprise.models.execution import ApplicationExecutionJournal
+    from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleLiveStageResult, CPScaleStageExecutionInput
+    from packet_tracer_mcp.application.use_cases.compose_enterprise_reference import EnterpriseReferenceComposition
+    from packet_tracer_mcp.application.cp_scale_live.run_contracts import CPScaleLiveFinalResult, CPScaleRunOutcome
+    from packet_tracer_mcp.domain.enterprise.models.execution import ApplicationExecutionJournal
 
     report, progress, journals = _cp_snapshot(count)
     with pytest.raises(FrozenInstanceError):

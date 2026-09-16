@@ -14,10 +14,10 @@ quedo ambiguo no puede reintentarse a ciegas ni darse por aplicada.
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
 )
-from src.packet_tracer_mcp.infrastructure.execution.configuration_runtime import (
+from packet_tracer_mcp.infrastructure.execution.configuration_runtime import (
     PacketTracerConfigurationRuntime,
 )
 
@@ -86,10 +86,10 @@ def test_a_failed_enqueue_never_reaches_packet_tracer():
 # -- lo que la aplicacion hace con ese hecho ------------------------------
 
 def _mutation_status(applied: bool):
-    from src.packet_tracer_mcp.application.use_cases.apply_configuration import (
+    from packet_tracer_mcp.application.use_cases.apply_configuration import (
         ConfigurationApplicator,
     )
-    from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
         RuntimeActionMutation,
     )
 
@@ -133,11 +133,11 @@ def test_the_ping_budget_is_a_default_and_every_product_caller_meets_the_floor()
     """
     import inspect
 
-    from src.packet_tracer_mcp.infrastructure.execution import (
+    from packet_tracer_mcp.infrastructure.execution import (
         enterprise_control_plane_runtime,
         enterprise_security_runtime,
     )
-    from src.packet_tracer_mcp.infrastructure.execution.typed_ping import (
+    from packet_tracer_mcp.infrastructure.execution.typed_ping import (
         SAFE_PING_TIMEOUT_S,
         TypedPingExecutor,
     )
@@ -166,13 +166,13 @@ def test_the_ping_budget_is_a_default_and_every_product_caller_meets_the_floor()
 def test_the_connectivity_tool_budget_meets_the_floor():
     import inspect
 
-    from src.packet_tracer_mcp.infrastructure.execution.typed_ping import (
+    from packet_tracer_mcp.infrastructure.execution.typed_ping import (
         SAFE_PING_TIMEOUT_S,
     )
 
     source = inspect.getsource(
         __import__(
-            "src.packet_tracer_mcp.adapters.mcp.tool_registry",
+            "packet_tracer_mcp.adapters.mcp.tool_registry",
             fromlist=["register_tools"],
         ).register_tools,
     )

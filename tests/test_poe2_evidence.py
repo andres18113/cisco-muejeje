@@ -8,11 +8,11 @@ import json
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.poe2 import PoE2Capture, PoE2Evidence
-from src.packet_tracer_mcp.infrastructure.execution.poe2_evidence import (
+from packet_tracer_mcp.domain.enterprise.models.poe2 import PoE2Capture, PoE2Evidence
+from packet_tracer_mcp.infrastructure.execution.poe2_evidence import (
     BINDING, BUILD, START_HEAD, completeness, validate_poe2_evidence,
 )
-from src.packet_tracer_mcp.infrastructure.execution.poe_inline_observer import GovernedPoEInlineObserver
+from packet_tracer_mcp.infrastructure.execution.poe_inline_observer import GovernedPoEInlineObserver
 from tests.test_poe_inline_observer import _result, _StubExecutor, _SWITCH
 from tests.test_poe_inline_parser import _MEASURED_AUTO
 

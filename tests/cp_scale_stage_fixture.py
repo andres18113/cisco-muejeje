@@ -4,28 +4,28 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from src.packet_tracer_mcp.application.cp_scale_live.configuration_stage import CPScaleConfigurationStage
-from src.packet_tracer_mcp.application.cp_scale_live.control_plane_stage import CPScaleControlPlaneStage
-from src.packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleStageExecutionInput
-from src.packet_tracer_mcp.application.cp_scale_live.forwarding_stage import CPScaleForwardingStage
-from src.packet_tracer_mcp.application.cp_scale_live.reconciliation import CPScaleReconciliation
-from src.packet_tracer_mcp.application.cp_scale_live.voice_stage import CPScaleVoiceStage
-from src.packet_tracer_mcp.application.use_cases.apply_configuration import ConfigurationApplicator
-from src.packet_tracer_mcp.application.use_cases.apply_control_plane import ControlPlaneApplicator
-from src.packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import CPScaleCanonicalStage, CPScaleCanonicalStageProjection
-from src.packet_tracer_mcp.application.use_cases.compose_enterprise_reference import EnterpriseReferenceComposition
-from src.packet_tracer_mcp.application.use_cases.observe_serial_orientation import SerialOrientationObserver
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import DeviceCapabilities
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import ConfigurationPlan, ConfigurationPhase, ConfigureHostname, VerificationExpectation, VerificationKind
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import ActionExecutionStatus, ConfigurationApplicationStatus, RuntimeConfigurationTarget, RuntimeActionMutation, RuntimeVerification
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import ControlPlanePlan, ControlPlaneCapabilityProfile
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import RuntimeControlPlaneVerification, ControlPlaneExecutionStage
+from packet_tracer_mcp.application.cp_scale_live.configuration_stage import CPScaleConfigurationStage
+from packet_tracer_mcp.application.cp_scale_live.control_plane_stage import CPScaleControlPlaneStage
+from packet_tracer_mcp.application.cp_scale_live.contracts import CPScaleStageExecutionInput
+from packet_tracer_mcp.application.cp_scale_live.forwarding_stage import CPScaleForwardingStage
+from packet_tracer_mcp.application.cp_scale_live.reconciliation import CPScaleReconciliation
+from packet_tracer_mcp.application.cp_scale_live.voice_stage import CPScaleVoiceStage
+from packet_tracer_mcp.application.use_cases.apply_configuration import ConfigurationApplicator
+from packet_tracer_mcp.application.use_cases.apply_control_plane import ControlPlaneApplicator
+from packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import CPScaleCanonicalStage, CPScaleCanonicalStageProjection
+from packet_tracer_mcp.application.use_cases.compose_enterprise_reference import EnterpriseReferenceComposition
+from packet_tracer_mcp.application.use_cases.observe_serial_orientation import SerialOrientationObserver
+from packet_tracer_mcp.domain.enterprise.models.capabilities import DeviceCapabilities
+from packet_tracer_mcp.domain.enterprise.models.configuration import ConfigurationPlan, ConfigurationPhase, ConfigureHostname, VerificationExpectation, VerificationKind
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import ActionExecutionStatus, ConfigurationApplicationStatus, RuntimeConfigurationTarget, RuntimeActionMutation, RuntimeVerification
+from packet_tracer_mcp.domain.enterprise.models.control_plane import ControlPlanePlan, ControlPlaneCapabilityProfile
+from packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import RuntimeControlPlaneVerification, ControlPlaneExecutionStage
 from tests.test_control_plane_application import _routing_plan
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint, DeploymentManifest, DeploymentBinding, deployment_manifest_semantic_hash
-from src.packet_tracer_mcp.domain.enterprise.models.execution import ApplicationExecutionJournal
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import PhysicalDeploymentResult, PhysicalDeploymentStatus, PhysicalWorkspaceObservation, PhysicalWorkspaceDeviceObservation
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, TopologyPlan
+from packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint, DeploymentManifest, DeploymentBinding, deployment_manifest_semantic_hash
+from packet_tracer_mcp.domain.enterprise.models.execution import ApplicationExecutionJournal
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import PhysicalDeploymentResult, PhysicalDeploymentStatus, PhysicalWorkspaceObservation, PhysicalWorkspaceDeviceObservation
+from packet_tracer_mcp.domain.models.plans import DevicePlan, TopologyPlan
 
 
 def stage_fixture(executor_type, *, partial=False, unobservable=False, reread=False, omit_journal=False):
@@ -194,13 +194,13 @@ def stage_fixture(executor_type, *, partial=False, unobservable=False, reread=Fa
 
 def voice_window_trace(*, after_simulating=False, diagnostic_raises=False):
     from dataclasses import replace
-    from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import CPScaleStageExecutor
-    from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
+    from packet_tracer_mcp.application.cp_scale_live.stage_executor import CPScaleStageExecutor
+    from packet_tracer_mcp.application.cp_scale_live.contracts import (
         CPScaleDiagnosticRecord,
         CPScaleRealtimeState,
         CPScaleVoiceStageResult,
     )
-    from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import VoicePlan
+    from packet_tracer_mcp.domain.enterprise.models.voice_plan import VoicePlan
     from tests.test_voice_runtime import _compile
 
     fixture = stage_fixture(CPScaleStageExecutor)

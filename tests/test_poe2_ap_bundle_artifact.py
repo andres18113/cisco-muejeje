@@ -25,14 +25,14 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.poe2 import PoE2Capture, PoE2Evidence
-from src.packet_tracer_mcp.domain.enterprise.services.poe_claims import (
+from packet_tracer_mcp.domain.enterprise.models.poe2 import PoE2Capture, PoE2Evidence
+from packet_tracer_mcp.domain.enterprise.services.poe_claims import (
     _AUTHORIZED_OBSERVATION_METHODS,
 )
-from src.packet_tracer_mcp.infrastructure.execution.poe2_evidence import (
+from packet_tracer_mcp.infrastructure.execution.poe2_evidence import (
     BINDING, BUILD, COMPLETENESS_KEYS, START_HEAD, capture_delivery, validate_poe2_evidence,
 )
-from src.packet_tracer_mcp.shared.utils import resolve_within, safe_name_component
+from packet_tracer_mcp.shared.utils import resolve_within, safe_name_component
 
 ROOT = Path(__file__).resolve().parents[1]
 DIRECTORY = "poe2-20260907T173336Z-b4d3459e"

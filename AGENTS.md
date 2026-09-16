@@ -103,27 +103,45 @@ pytest matrix.
 
 ## Import namespace and LIVE process gate
 
-The target architecture has one identity: `packet_tracer_mcp` in production and
-tests. Production code already uses it. The suite's `src.packet_tracer_mcp`
-imports are temporary containment for a historical editable-install defect, not
-the final architecture. Until the separate
+There is one identity: `packet_tracer_mcp`, in production and in tests. The
 [`namespace migration`](docs/engineering/change-briefs/namespace-migration.md)
-is authorized and verified, preserve the current containment and
-`tests/test_worktree_isolation.py`; do not create a mixed interval or aliases in
-`sys.modules`.
+retired `src.packet_tracer_mcp`; `src/` is now only where the package lives on
+disk, never a name to import through. Loading the same files under both names
+creates distinct module, class, and enum objects, so identity and `isinstance`
+checks fail silently.
 
-Before any LIVE Packet Tracer mutation, prove all three conditions in the exact
+Isolation is held by the environment, not by a second name:
+
+- Every worktree owns its `.venv` and its editable installation, so
+  `packet_tracer_mcp` resolves inside the worktree being edited.
+- `tests/conftest.py` runs `tests/namespace_preflight.py` before collection and
+  refuses a foreign interpreter, a foreign package origin, or a loaded
+  `src.packet_tracer_mcp`.
+- `scripts/namespace_inventory.py` fails if any tracked source imports the
+  retired namespace, as a statement or as a dynamic import target.
+
+Never add aliases in `sys.modules`, and never delete `src/__init__.py` to
+"close" the retired namespace: with the repository root on `sys.path`, `src`
+remains a PEP 420 namespace package and the import still resolves, so deleting
+it removes the marker and keeps the defect.
+
+Before any LIVE Packet Tracer mutation, prove all four conditions in the exact
 process that will mutate state:
 
 ```text
 sys.executable              is the checkout-local .venv interpreter
 packet_tracer_mcp.__file__  resolves inside the current checkout
-sys.modules holds exactly one of packet_tracer_mcp / src.packet_tracer_mcp
+sys.modules does not hold   src.packet_tracer_mcp
+sys.modules does not hold   pytest
 ```
 
-Loading both namespaces creates distinct classes and enums over the same files;
-identity and `isinstance` checks then fail silently. Static tests in another
-process do not establish the LIVE process identity.
+The last condition is explicit because the migration removed the accident that
+used to enforce it: when the suite imported the package under the retired name,
+a pytest process failed the gate for lacking the production namespace. With one
+namespace a pytest process satisfies everything else, so
+`ImportIsolationPreflight` refuses it as `TEST_PROCESS`. A green suite is not
+evidence of LIVE isolation, and static tests in another process never establish
+the LIVE process identity.
 
 ## Bridge and evidence boundaries
 

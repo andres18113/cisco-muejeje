@@ -42,18 +42,18 @@ import json
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
+from packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
     EnterprisePhysicalTopologyDeployer,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.evidence import (
+from packet_tracer_mcp.domain.enterprise.models.evidence import (
     EvidenceFreshness,
     ObservationStatus,
     SupportStatus,
     VerificationStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.execution import MutationDisposition
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, ModulePlan
-from src.packet_tracer_mcp.infrastructure.execution.packet_tracer_physical_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.execution import MutationDisposition
+from packet_tracer_mcp.domain.models.plans import DevicePlan, ModulePlan
+from packet_tracer_mcp.infrastructure.execution.packet_tracer_physical_runtime import (
     PacketTracerPhysicalTopologyRuntime,
 )
 

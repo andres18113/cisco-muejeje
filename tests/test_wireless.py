@@ -2,9 +2,9 @@
 
 import pytest
 
-from src.packet_tracer_mcp.domain.models.requests import TopologyRequest
-from src.packet_tracer_mcp.domain.services.orchestrator import plan_from_request
-from src.packet_tracer_mcp.infrastructure.generator.ptbuilder_generator import (
+from packet_tracer_mcp.domain.models.requests import TopologyRequest
+from packet_tracer_mcp.domain.services.orchestrator import plan_from_request
+from packet_tracer_mcp.infrastructure.generator.ptbuilder_generator import (
     generate_executable_script, generate_ptbuilder_script,
 )
 

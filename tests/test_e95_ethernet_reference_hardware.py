@@ -17,23 +17,23 @@ import collections
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationPhase,
     ConfigureEthernetLinkMode,
     ConfigureInterfaceBandwidth,
     ConfigureSerialClock,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.link_performance import (
+from packet_tracer_mcp.domain.enterprise.models.link_performance import (
     DuplexMode,
     LinkModeContext,
     LinkSpeedMode,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.link_mode_capabilities import (
     PT_2960_FASTETHERNET_LINK_MODE,
     PT_2960_GIGABIT_LINK_MODE,
     link_mode_capability_for,
 )
-from src.packet_tracer_mcp.infrastructure.generator.configuration_renderer import (
+from packet_tracer_mcp.infrastructure.generator.configuration_renderer import (
     PacketTracerIosRenderer,
 )
 

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 
-from src.packet_tracer_mcp.infrastructure.execution.poe_delivery_runtime import (
+from packet_tracer_mcp.infrastructure.execution.poe_delivery_runtime import (
     PacketTracerPoEDeliveryFixtureRuntime,
 )
 from tests.test_poe_delivery_runtime import RecordingTransport

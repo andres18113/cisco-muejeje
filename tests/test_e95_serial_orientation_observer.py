@@ -6,32 +6,32 @@ import json
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.observe_serial_orientation import (
+from packet_tracer_mcp.application.use_cases.observe_serial_orientation import (
     SerialControllerObservation,
     SerialOrientationObserver,
     SerialOrientationStatus,
     inherit_verified_serial_orientation,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     RuntimeConfigurationTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     DeploymentLinkBinding,
     DeploymentLinkEndpoint,
     EnvironmentFingerprint,
     SerialEndpointOrientation,
     build_deployment_manifest,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.topology_identity import (
+from packet_tracer_mcp.domain.enterprise.services.topology_identity import (
     stamp_topology_hashes,
 )
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ControlledIosExecutor,
     IosCommandResult,
     OperationalQueryId,
 )
-from src.packet_tracer_mcp.infrastructure.execution.serial_orientation_runtime import (
+from packet_tracer_mcp.infrastructure.execution.serial_orientation_runtime import (
     PacketTracerSerialOrientationRuntime,
 )
 

@@ -6,11 +6,11 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     FieldVerificationStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.security_plan import (
+from packet_tracer_mcp.domain.enterprise.models.security_plan import (
     ApplyDeviceHardening,
     CompiledDynamicNatPool,
     CompiledStaticNatMapping,
@@ -24,18 +24,18 @@ from src.packet_tracer_mcp.domain.enterprise.models.security_plan import (
     SecurityVerificationExpectation,
     SecurityVerificationKind,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.security_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.security_runtime import (
     RuntimeSecurityVerification,
     SecurityVerificationStage,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
     PhoneExecutionMethod,
     RuntimeCallObservation,
 )
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_security_runtime import (
+from packet_tracer_mcp.infrastructure.execution.enterprise_security_runtime import (
     PacketTracerEnterpriseSecurityRuntime,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosCommandResult,
     IosSessionState,
     OperationalQueryId,

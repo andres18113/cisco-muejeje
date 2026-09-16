@@ -14,27 +14,27 @@ prohibe, con otro nombre.
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
+from packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
     compose_enterprise_reference,
 )
-from src.packet_tracer_mcp.application.use_cases.plan_enterprise_hardware import (
+from packet_tracer_mcp.application.use_cases.plan_enterprise_hardware import (
     plan_enterprise_hardware,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.intent import (
+from packet_tracer_mcp.domain.enterprise.models.intent import (
     EnterpriseIntent,
     SiteIntent,
     SiteType,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.link_performance import LinkMedia
-from src.packet_tracer_mcp.domain.enterprise.models.requirements import (
+from packet_tracer_mcp.domain.enterprise.models.link_performance import LinkMedia
+from packet_tracer_mcp.domain.enterprise.models.requirements import (
     EndpointRequirement,
     WanLinkRequirement,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
-from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
+from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
     EnterpriseDesigner,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
+from packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
     HardwarePlanningPolicy,
 )
 
@@ -203,7 +203,7 @@ class TestSteeringIsWhatTheLiveGateNeeds:
         perfil: si `2911` lo perdiera, la corrida acotada quedaria sin autorizar
         y habria que dirigir a otro lado.
         """
-        from src.packet_tracer_mcp.infrastructure.catalog.control_plane_capabilities import (
+        from packet_tracer_mcp.infrastructure.catalog.control_plane_capabilities import (
             packet_tracer_control_plane_capabilities,
         )
 

@@ -4,18 +4,18 @@ from copy import deepcopy
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
+from packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
     EnterprisePhysicalTopologyDeployer,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint
-from src.packet_tracer_mcp.domain.enterprise.models.execution import DirtyState, MutationDisposition
-from src.packet_tracer_mcp.domain.enterprise.models.evidence import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint
+from packet_tracer_mcp.domain.enterprise.models.execution import DirtyState, MutationDisposition
+from packet_tracer_mcp.domain.enterprise.models.evidence import (
     EvidenceFreshness,
     ObservationStatus,
     SupportStatus,
     VerificationStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentFailureCode,
     PhysicalDeploymentStatus,
     PhysicalDeviceObservation,
@@ -25,8 +25,8 @@ from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalMutationResult,
     PhysicalObjectKind,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.topology_identity import stamp_topology_hashes
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, ModulePlan, TopologyPlan
+from packet_tracer_mcp.domain.enterprise.services.topology_identity import stamp_topology_hashes
+from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, ModulePlan, TopologyPlan
 
 
 def _topology() -> TopologyPlan:
@@ -64,7 +64,7 @@ def _double_port_inventory(topology):
     prestada evidencia tomada contra el backend real. Se declara la del doble,
     igual que ya se declaran sus observaciones.
     """
-    from src.packet_tracer_mcp.domain.enterprise.models.port_inventory import (
+    from packet_tracer_mcp.domain.enterprise.models.port_inventory import (
         PortInventoryEvidenceTier,
         PortInventoryResolution,
     )

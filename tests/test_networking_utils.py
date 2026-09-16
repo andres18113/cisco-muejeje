@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.shared.utils import normalize_ip
+from packet_tracer_mcp.shared.utils import normalize_ip
 
 
 @pytest.mark.parametrize(
@@ -76,7 +76,7 @@ def test_connectivity_tool_passes_the_validated_ip_as_json_data():
     ],
 )
 def test_same_interface_name_reconciles_both_ios_spellings(observed, expected):
-    from src.packet_tracer_mcp.shared.utils import same_interface_name
+    from packet_tracer_mcp.shared.utils import same_interface_name
 
     assert same_interface_name(observed, expected)
 
@@ -95,7 +95,7 @@ def test_same_interface_name_reconciles_both_ios_spellings(observed, expected):
     ],
 )
 def test_same_interface_name_never_conflates_distinct_ports(observed, expected):
-    from src.packet_tracer_mcp.shared.utils import same_interface_name
+    from packet_tracer_mcp.shared.utils import same_interface_name
 
     assert not same_interface_name(observed, expected)
 

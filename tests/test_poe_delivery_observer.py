@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from src.packet_tracer_mcp.domain.enterprise.models.poe_delivery import (
+from packet_tracer_mcp.domain.enterprise.models.poe_delivery import (
     PoEDeliveryArmObservation,
     PoEDeliveryArmState,
     PoEDeliveryBindingFixtureIdentity,
@@ -14,7 +14,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.poe_delivery import (
     PoEDeliveryLinkIdentity,
     PoEDeliveryQualificationRequest,
 )
-from src.packet_tracer_mcp.infrastructure.execution.poe_delivery_observer import (
+from packet_tracer_mcp.infrastructure.execution.poe_delivery_observer import (
     GovernedPoEDeliveryObserver,
     PoEVisualCaptureReceipt,
 )

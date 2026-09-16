@@ -5,22 +5,22 @@ from __future__ import annotations
 from collections import defaultdict
 from pathlib import Path
 
-from src.packet_tracer_mcp.application.use_cases.apply_configuration import (
+from packet_tracer_mcp.application.use_cases.apply_configuration import (
     ConfigurationApplicator,
 )
-from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
+from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     canonical_configuration_reread_scope,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     DeviceCapabilities,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
     ConfigureAccessPort,
     VerificationKind,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationStatus,
     ConfigurationFailureCode,
@@ -30,16 +30,16 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
     RuntimeConfigurationTarget,
     RuntimeVerification,
 )
-from src.packet_tracer_mcp.domain.models.plans import TopologyPlan
+from packet_tracer_mcp.domain.models.plans import TopologyPlan
 
 from test_enterprise_configuration import _fixture
-from src.packet_tracer_mcp.application.use_cases.compile_configuration import (
+from packet_tracer_mcp.application.use_cases.compile_configuration import (
     compile_enterprise_configuration,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
+from packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
     configuration_plan_semantic_hash,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.configuration_dependencies import (
+from packet_tracer_mcp.domain.enterprise.services.configuration_dependencies import (
     order_configuration_actions,
 )
 

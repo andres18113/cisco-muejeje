@@ -4,19 +4,19 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from src.packet_tracer_mcp.application.cp_scale_live.configuration_stage import (
+from packet_tracer_mcp.application.cp_scale_live.configuration_stage import (
     CPScaleConfigurationStage,
 )
-from src.packet_tracer_mcp.application.cp_scale_live import (
+from packet_tracer_mcp.application.cp_scale_live import (
     endpoint_dhcp_reassertion,
 )
-from src.packet_tracer_mcp.application.use_cases.apply_configuration import (
+from packet_tracer_mcp.application.use_cases.apply_configuration import (
     ConfigurationApplicator,
 )
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationPhase,
     ConfigurationPlan,
     ConfigureAccessPort,
@@ -24,7 +24,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     VerificationExpectation,
     VerificationKind,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionApplicationResult,
     ActionExecutionStatus,
     ConfigurationApplicationResult,
@@ -38,13 +38,13 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
     VerificationResult,
     VoiceSignalBarrierResult,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     EnvironmentFingerprint,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.forwarding import (
+from packet_tracer_mcp.domain.enterprise.models.forwarding import (
     ForwardingAddressObservation,
 )
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     PacketTracerEnterpriseConfigurationRuntime,
 )
 

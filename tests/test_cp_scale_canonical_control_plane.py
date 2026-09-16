@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.application.use_cases.compile_control_plane import (
+from packet_tracer_mcp.application.use_cases.compile_control_plane import (
     compile_enterprise_control_plane,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ConfigureRipv2,
     ConfigureSpanningTree,
     ConfigureStpEdgePort,
@@ -13,7 +13,7 @@ from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneVerificationKind,
     StpMode,
 )
-from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
+from packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import (
     MLS3,
     MLS7,
     SW3,

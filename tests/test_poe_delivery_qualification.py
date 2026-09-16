@@ -5,23 +5,23 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.poe_delivery_qualification import (
+from packet_tracer_mcp.application.use_cases.poe_delivery_qualification import (
     PoEDeliveryQualificationService,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     EvidenceSource,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+from packet_tracer_mcp.domain.enterprise.models.discovery import (
     CleanupStatus,
     LiveSessionSafetyEvidence,
     ProbeExecutionStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.evidence import (
+from packet_tracer_mcp.domain.enterprise.models.evidence import (
     ObservationStatus,
     VerificationStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.poe_delivery import (
+from packet_tracer_mcp.domain.enterprise.models.poe_delivery import (
     PoEDeliveryArmObservation,
     PoEDeliveryArmState,
     PoEDeliveryBindingFixtureIdentity,
@@ -34,14 +34,14 @@ from src.packet_tracer_mcp.domain.enterprise.models.poe_delivery import (
     PoEDeliveryManualObservation,
     PoEDeliveryQualificationRequest,
 )
-from src.packet_tracer_mcp.domain.enterprise.rules.poe_delivery import (
+from packet_tracer_mcp.domain.enterprise.rules.poe_delivery import (
     validate_poe_delivery_observation,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.poe_claims import (
+from packet_tracer_mcp.domain.enterprise.services.poe_claims import (
     decode_poe_delivery_scope,
     poe_claim_has_delivery_basis,
 )
-from src.packet_tracer_mcp.infrastructure.execution.live_file_integrity import (
+from packet_tracer_mcp.infrastructure.execution.live_file_integrity import (
     PacketTracerLiveFileGuard,
     PacketTracerLiveSessionSafety,
 )
@@ -597,7 +597,7 @@ def test_service_degrades_dimension_encoder_rejection_to_typed_unknown(
         raise ValueError("synthetic canonical scope rejection")
 
     monkeypatch.setattr(
-        "src.packet_tracer_mcp.application.use_cases.poe_delivery_qualification."
+        "packet_tracer_mcp.application.use_cases.poe_delivery_qualification."
         "_observation_dimensions",
         reject_scope,
     )

@@ -6,19 +6,19 @@ from time import perf_counter
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.compile_configuration import (
+from packet_tracer_mcp.application.use_cases.compile_configuration import (
     compile_enterprise_configuration,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.addressing import (
+from packet_tracer_mcp.domain.enterprise.models.addressing import (
     AddressSpace,
     AddressingPlan,
     SubnetAllocation,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     DeviceCapabilities,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
     ConfigurationIssueCode,
     ConfigurationPhase,
@@ -28,18 +28,18 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
     CreateVlan,
     SetEndpointStaticAddress,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.enterprise_plan import EnterprisePlan, SitePlan
-from src.packet_tracer_mcp.domain.enterprise.models.intent import SiteType
-from src.packet_tracer_mcp.domain.enterprise.models.segments import NetworkSegment, SegmentRole
-from src.packet_tracer_mcp.domain.enterprise.services.configuration_dependencies import (
+from packet_tracer_mcp.domain.enterprise.models.enterprise_plan import EnterprisePlan, SitePlan
+from packet_tracer_mcp.domain.enterprise.models.intent import SiteType
+from packet_tracer_mcp.domain.enterprise.models.segments import NetworkSegment, SegmentRole
+from packet_tracer_mcp.domain.enterprise.services.configuration_dependencies import (
     ConfigurationDependencyError,
     order_configuration_actions,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.configuration_validator import (
+from packet_tracer_mcp.domain.enterprise.services.configuration_validator import (
     validate_configuration_actions,
 )
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
-from src.packet_tracer_mcp.infrastructure.generator.configuration_renderer import (
+from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from packet_tracer_mcp.infrastructure.generator.configuration_renderer import (
     PacketTracerIosRenderer,
 )
 

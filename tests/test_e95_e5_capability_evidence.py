@@ -22,25 +22,25 @@ import pathlib
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
+from packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
     compose_enterprise_reference,
 )
-from src.packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
+from packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
     EnterpriseExecutionStage,
     EnterpriseExecutionStatus,
     EnterpriseRuntimes,
     execute_enterprise_reference,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     EvidenceSource,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneIntent,
     DynamicRoutingIntent,
     DynamicRoutingProtocol,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+from packet_tracer_mcp.domain.enterprise.models.discovery import (
     CapabilityProbeResult,
     CapabilitySnapshot,
     CapabilityVerificationMethod,
@@ -48,21 +48,21 @@ from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
     ProbeSession,
     ProbeSessionResult,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ConfigurationFailureCode,
     RuntimeConfigurationTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
+from packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
     HardwarePlanningPolicy,
 )
-from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.capability_providers import (
+from packet_tracer_mcp.infrastructure.catalog.capability_providers import (
     ProbeCapabilityProvider,
     RuntimeCapabilityProvider,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
 )
 
@@ -210,7 +210,7 @@ def test_the_default_mutable_store_is_machine_state_and_tests_must_inject_it():
     ).read_text(encoding="utf-8")
     assert 'DEFAULT_BASE_DIR = Path("data") / "capabilities"' in source
 
-    from src.packet_tracer_mcp.infrastructure.persistence import (
+    from packet_tracer_mcp.infrastructure.persistence import (
         capability_snapshot_store,
     )
     assert (
@@ -349,7 +349,7 @@ def test_default_execution_materializes_one_catalog_for_both_compositions(
 ):
     """Rebuilding the default root can change evidence after deployment."""
     hardware_composition = importlib.import_module(
-        "src.packet_tracer_mcp.application.use_cases.plan_enterprise_hardware",
+        "packet_tracer_mcp.application.use_cases.plan_enterprise_hardware",
     )
     constructions = 0
     snapshots = []

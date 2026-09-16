@@ -5,49 +5,49 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from src.packet_tracer_mcp.application.use_cases.compile_enterprise import (
+from packet_tracer_mcp.application.use_cases.compile_enterprise import (
     compile_enterprise_topology,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     DeviceCapabilities,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.compilation import (
+from packet_tracer_mcp.domain.enterprise.models.compilation import (
     CompilationIssueCode,
     ConcreteLinkRole,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.enterprise_plan import SitePlan
-from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
+from packet_tracer_mcp.domain.enterprise.models.enterprise_plan import SitePlan
+from packet_tracer_mcp.domain.enterprise.models.hardware import (
     HardwareCandidate,
     HardwarePlanStatus,
     ModuleInstallation,
     PortClass,
     PortDescriptor,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.intent import (
+from packet_tracer_mcp.domain.enterprise.models.intent import (
     EnterpriseIntent,
     SiteIntent,
     SiteType,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.link_performance import LinkMedia
-from src.packet_tracer_mcp.domain.enterprise.models.requirements import (
+from packet_tracer_mcp.domain.enterprise.models.link_performance import LinkMedia
+from packet_tracer_mcp.domain.enterprise.models.requirements import (
     EndpointRequirement,
     WanLinkRequirement,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
-from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
+from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
     EnterpriseDesigner,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
+from packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
     HardwarePlanner,
     HardwarePlanningPolicy,
     HierarchyPolicy,
     ModulePlanner,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
+from packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
     PacketTracerTopologyCatalogAdapter,
 )
 

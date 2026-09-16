@@ -1,6 +1,6 @@
 """Preflight E3.6: bootstrap oficial antes de cualquier probe mutante."""
 
-from src.packet_tracer_mcp.infrastructure.execution.bridge_preflight import (
+from packet_tracer_mcp.infrastructure.execution.bridge_preflight import (
     BridgePreflightState,
     BridgeReadinessPreflight,
 )

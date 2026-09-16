@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.execution import (
+from packet_tracer_mcp.domain.enterprise.models.execution import (
     ApplicationExecutionJournal,
     CompensationStatus,
     DirtyState,

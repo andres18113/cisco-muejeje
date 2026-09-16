@@ -7,10 +7,10 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     EvidenceSource,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+from packet_tracer_mcp.domain.enterprise.models.discovery import (
     CapabilityProbeResult,
     CapabilitySnapshot,
     EphemeralUntitledWorkspaceSafetyEvidence,
@@ -20,10 +20,10 @@ from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
     ProbeSession,
     ProbeSessionResult,
 )
-from src.packet_tracer_mcp.domain.enterprise.rules.live_session_safety import (
+from packet_tracer_mcp.domain.enterprise.rules.live_session_safety import (
     validate_live_session_positive_admission,
 )
-from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
     CorruptCapabilitySnapshotError,
 )

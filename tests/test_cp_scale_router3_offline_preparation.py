@@ -7,19 +7,19 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.application.cp_scale_live.checkpoint import (
+from packet_tracer_mcp.application.cp_scale_live.checkpoint import (
     CPScaleCheckpointDecision,
 )
-from src.packet_tracer_mcp.application.cp_scale_live.completion import (
+from packet_tracer_mcp.application.cp_scale_live.completion import (
     CPScaleCompletion,
 )
-from src.packet_tracer_mcp.application.cp_scale_live.run_contracts import (
+from packet_tracer_mcp.application.cp_scale_live.run_contracts import (
     CPScaleTerminalEvent,
 )
-from src.packet_tracer_mcp.application.cp_scale_live.step_policy import (
+from packet_tracer_mcp.application.cp_scale_live.step_policy import (
     canonical_step_decision,
 )
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     CPScaleCanonicalTarget,
     CPScaleForwardingAuthority,
@@ -27,11 +27,11 @@ from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical impo
     canonical_stage_transition_contract,
     project_cp_scale_canonical_stage,
 )
-from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
+from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     CPScaleFinalDisposition,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
-from src.packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import SMALL
+from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from packet_tracer_mcp.domain.enterprise.scenarios.cp_scale_physical import SMALL
 from tests.poe_delivery_capabilities import (
     compose_delivery_qualified_cp_scale_canonical,
 )

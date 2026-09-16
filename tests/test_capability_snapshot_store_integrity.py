@@ -25,15 +25,15 @@ import pathlib
 import pytest
 from pydantic_core import SchemaError
 
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus, EvidenceSource,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+from packet_tracer_mcp.domain.enterprise.models.discovery import (
     CapabilityProbeResult, CapabilitySnapshot, CapabilityVerificationMethod,
     ProbeExecutionStatus, ProbeSession, ProbeSessionResult,
 )
-from src.packet_tracer_mcp.infrastructure.persistence import capability_snapshot_store
-from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+from packet_tracer_mcp.infrastructure.persistence import capability_snapshot_store
+from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore, CorruptCapabilitySnapshotError,
     UnusableCapabilitySnapshotError, VanishedCapabilitySnapshotError,
 )
@@ -168,7 +168,7 @@ def test_one_corrupt_file_never_yields_partial_authority(tmp_path):
 
 def test_corruption_does_not_become_a_negative_capability_fact(tmp_path):
     """The read fails; it does not quietly answer "no evidence for this model"."""
-    from src.packet_tracer_mcp.infrastructure.catalog.capability_providers import (
+    from packet_tracer_mcp.infrastructure.catalog.capability_providers import (
         RuntimeCapabilityProvider,
     )
     store = _store(tmp_path)
@@ -239,7 +239,7 @@ def test_a_vanished_file_returns_no_survivors(tmp_path, monkeypatch):
 
 
 def test_a_vanished_file_gives_the_provider_no_partial_authority(tmp_path, monkeypatch):
-    from src.packet_tracer_mcp.infrastructure.catalog.capability_providers import (
+    from packet_tracer_mcp.infrastructure.catalog.capability_providers import (
         RuntimeCapabilityProvider,
     )
     store = _store(tmp_path)

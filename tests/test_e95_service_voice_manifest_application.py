@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.application.use_cases.apply_services import ServiceApplicator
-from src.packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.application.use_cases.apply_services import ServiceApplicator
+from packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationStatus,
     ConfigurationFailureCode,
@@ -12,12 +12,12 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     EnvironmentFingerprint,
     build_deployment_manifest,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.execution import MutationDisposition
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import BindPhoneToExtension
+from packet_tracer_mcp.domain.enterprise.models.execution import MutationDisposition
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import BindPhoneToExtension
 
 from test_enterprise_services import _fixture as _service_fixture
 from test_enterprise_voice import _compile as _compile_voice
@@ -25,7 +25,7 @@ from test_enterprise_voice import _fixture as _voice_fixture
 from test_service_application import FakeServiceRuntime, _foundation as _service_foundation
 from test_voice_runtime import FakeVoiceRuntime, _profile
 
-from src.packet_tracer_mcp.application.use_cases.compile_services import (
+from packet_tracer_mcp.application.use_cases.compile_services import (
     compile_enterprise_services,
 )
 

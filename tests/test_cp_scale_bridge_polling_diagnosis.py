@@ -15,7 +15,7 @@ be read as an answer about this channel.
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
+from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     canonical_bridge_polling_error,
 )
 

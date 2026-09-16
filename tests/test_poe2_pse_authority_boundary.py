@@ -27,14 +27,14 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus, EvidenceSource, PoEAuthorizedBinding,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.poe_claims import (
+from packet_tracer_mcp.domain.enterprise.services.poe_claims import (
     _AUTHORIZED_OBSERVATION_METHODS, PoEDeliveryClaimScope, PoEDeliveryTestedBinding,
     decode_poe_delivery_scope, encode_poe_delivery_dimensions, poe_claim_has_delivery_basis,
 )
-from src.packet_tracer_mcp.infrastructure.execution.poe2_evidence import BINDING, BUILD
+from packet_tracer_mcp.infrastructure.execution.poe2_evidence import BINDING, BUILD
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "src" / "packet_tracer_mcp"
@@ -144,7 +144,7 @@ def test_the_observer_is_a_measurement_not_a_claim():
     It has no capability, no status and no dimensions, so it cannot be read as
     a claim by any downstream reader — it can only feed a validated contract.
     """
-    from src.packet_tracer_mcp.infrastructure.execution.poe_inline_observer import (
+    from packet_tracer_mcp.infrastructure.execution.poe_inline_observer import (
         GovernedPoEInlineObserver,
     )
     observer = GovernedPoEInlineObserver(lambda *a, **k: None)

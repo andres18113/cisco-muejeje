@@ -1088,9 +1088,19 @@ def test_voice_failure_keeps_the_statistics_delta_observation(verdict):
     }
 
 
-def test_this_suite_never_loaded_the_production_namespace():
-    """The isolation invariant this file must not be the one to break."""
-    assert "packet_tracer_mcp" not in sys.modules
+def test_this_suite_loads_exactly_one_package_identity():
+    """The isolation invariant this file must not be the one to break.
+
+    This used to read "the production namespace is never loaded", which
+    was the retired containment: the suite imported the package as
+    `src.packet_tracer_mcp`, so the production spelling being absent was
+    the evidence. The canonical migration made that spelling the only
+    one, so the invariant is now stated the way it actually holds --
+    one identity, and not the retired one. `tests/namespace_preflight.py`
+    owns the rule; this is the runtime tripwire in a LIVE-adjacent file.
+    """
+    assert "packet_tracer_mcp" in sys.modules
+    assert "src.packet_tracer_mcp" not in sys.modules
 
 
 def test_the_post_failure_diagnostic_owns_and_returns_the_simulation_mode(verdict):

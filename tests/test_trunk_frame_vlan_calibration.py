@@ -5,22 +5,22 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
-from src.packet_tracer_mcp.application.use_cases.qualify_trunk_frame_vlan_calibration import (
+from packet_tracer_mcp.application.use_cases.qualify_trunk_frame_vlan_calibration import (
     CONTROL_VLAN_IDS,
     TRUNK_CALIBRATION_PREFIX,
     TrunkFrameVlanCalibrationQualifier,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.execution import (
+from packet_tracer_mcp.domain.enterprise.models.execution import (
     MutationDisposition,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceDeviceObservation,
     PhysicalWorkspaceObservation,
 )
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     TrunkReadbackObservation,
 )
-from src.packet_tracer_mcp.infrastructure.execution.frame_observer_probe import (
+from packet_tracer_mcp.infrastructure.execution.frame_observer_probe import (
     FrameChildDiscovery,
     FrameInstanceDiscovery,
     FrameObserverDiscovery,

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
+from packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
     EnterpriseDiagnosticContext,
     EnterpriseExecutionStage,
     EnterpriseExecutionStatus,
@@ -155,7 +155,7 @@ class TestBlockedRunsNeverDiagnose:
     """BLOCKED significa que no se toco Packet Tracer: no hay escena que mirar."""
 
     def test_a_blocked_run_does_not_call_the_observer(self):
-        from src.packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
+        from packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
             EnterpriseRuntimes,
             execute_enterprise_reference,
         )
@@ -166,7 +166,7 @@ class TestBlockedRunsNeverDiagnose:
             _bounded_intent,
             _control_plane_intent,
         )
-        from src.packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
+        from packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
             compose_enterprise_reference,
         )
         from test_enterprise_reference_execution import _isolated_preflight

@@ -14,119 +14,119 @@ import json
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
-from src.packet_tracer_mcp.application.use_cases.compile_configuration import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
+from packet_tracer_mcp.application.use_cases.compile_configuration import (
     compile_enterprise_configuration,
 )
-from src.packet_tracer_mcp.application.use_cases.compile_control_plane import (
+from packet_tracer_mcp.application.use_cases.compile_control_plane import (
     compile_enterprise_control_plane,
 )
-from src.packet_tracer_mcp.application.use_cases.compile_enterprise import (
+from packet_tracer_mcp.application.use_cases.compile_enterprise import (
     compile_enterprise_topology,
 )
-from src.packet_tracer_mcp.application.use_cases.compile_security import (
+from packet_tracer_mcp.application.use_cases.compile_security import (
     compile_enterprise_security,
 )
-from src.packet_tracer_mcp.application.use_cases.compile_services import (
+from packet_tracer_mcp.application.use_cases.compile_services import (
     compile_enterprise_services,
 )
-from src.packet_tracer_mcp.application.use_cases.compile_voice import (
+from packet_tracer_mcp.application.use_cases.compile_voice import (
     compile_enterprise_voice,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.compilation import (
+from packet_tracer_mcp.domain.enterprise.models.compilation import (
     EnterpriseCompileResult,
     LayoutProfile,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationCompileResult,
     ConfigureSubinterface,
     CreateVlan,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     RuntimeConfigurationTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneCompileResult,
     ControlPlaneIntent,
     StpIntent,
     StpMode,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     EnvironmentFingerprint,
     IdentityMethod,
     build_deployment_manifest,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.enterprise_plan import EnterprisePlan
-from src.packet_tracer_mcp.domain.enterprise.models.failure_domain import (
+from packet_tracer_mcp.domain.enterprise.models.enterprise_plan import EnterprisePlan
+from packet_tracer_mcp.domain.enterprise.models.failure_domain import (
     FailurePath,
     FailureScenario,
     FailureScenarioScope,
     IndependenceStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
+from packet_tracer_mcp.domain.enterprise.models.hardware import (
     HardwarePlan,
     HardwarePlanStatus,
     ResiliencyLevel,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.hierarchy import (
+from packet_tracer_mcp.domain.enterprise.models.hierarchy import (
     BuildingIntent,
     EndpointGroup,
     FloorIntent,
     ZoneIntent,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.intent import (
+from packet_tracer_mcp.domain.enterprise.models.intent import (
     EnterpriseIntent,
     SiteIntent,
     SiteType,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.ipam_reconciliation import (
+from packet_tracer_mcp.domain.enterprise.models.ipam_reconciliation import (
     AddressPurpose,
     AddressReconcileStatus,
     ExistingAddressBinding,
     InfrastructureAddressDemand,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.requirements import (
+from packet_tracer_mcp.domain.enterprise.models.requirements import (
     EndpointRequirement,
     ServiceRequirement,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
-from src.packet_tracer_mcp.domain.enterprise.models.security_plan import (
+from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from packet_tracer_mcp.domain.enterprise.models.security_plan import (
     SecurityCompileResult,
     SecurityDecision,
     SecurityIntent,
     SecurityPolicyIntent,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.service_plan import (
+from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceCompileResult,
     ServiceType,
     TftpFileRequirement,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     VoiceCompileResult,
     VoiceIntent,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.address_reconciler import (
+from packet_tracer_mcp.domain.enterprise.services.address_reconciler import (
     AddressReconciler,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
+from packet_tracer_mcp.domain.enterprise.services.enterprise_designer import (
     EnterpriseDesigner,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.failure_domain_analyzer import (
+from packet_tracer_mcp.domain.enterprise.services.failure_domain_analyzer import (
     FailureDomainAnalyzer,
     build_failure_domain_catalog,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
+from packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
     HardwarePlanner,
     HardwarePlanningPolicy,
     HierarchyPolicy,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.topology_identity import (
+from packet_tracer_mcp.domain.enterprise.services.topology_identity import (
     compute_topology_hashes,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
+from packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
     PacketTracerTopologyCatalogAdapter,
 )
 from tests.poe_delivery_capabilities import synthetic_poe_authorized_bindings

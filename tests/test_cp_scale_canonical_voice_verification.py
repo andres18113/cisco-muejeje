@@ -7,23 +7,23 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     project_cp_scale_canonical_stage,
 )
 from tests.poe_delivery_capabilities import (
     compose_delivery_qualified_cp_scale_canonical as compose_cp_scale_canonical,
 )
-from src.packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
+from packet_tracer_mcp.application.use_cases.qualify_cp_scale_live import (
     CPScaleFinalDisposition,
     archive_cp_scale_canonical_evidence,
     canonical_cp_scale_voice_evidence,
     canonical_final_disposition,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigureAccessPort,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationResult,
     ConvergenceOutcome,
@@ -34,15 +34,15 @@ from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import
     VerificationResult,
     VoiceSignalBarrierResult,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.voice_runtime import (
     CallVerificationResult,
     PhoneRegistrationResult,
     VoiceApplicationResult,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
+from packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
     MEASURED_BACKEND_VERSION,
 )
-from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
 )
 

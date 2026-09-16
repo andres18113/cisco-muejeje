@@ -33,7 +33,7 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     PoEInlineDelivery,
     classify_poe_inline_delivery,
     parse_show_power_inline,

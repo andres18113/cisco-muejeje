@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.infrastructure.execution import ios_terminal as ios_module
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution import ios_terminal as ios_module
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ControlledIosExecutor, EigrpQueryClassification,
     EtherChannelQueryClassification, OperationalQueryId, OspfQueryClassification,
     StpQueryClassification,

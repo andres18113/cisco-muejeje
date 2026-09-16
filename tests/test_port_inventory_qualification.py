@@ -21,13 +21,13 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.qualify_port_inventories import (
+from packet_tracer_mcp.application.use_cases.qualify_port_inventories import (
     QUALIFICATION_PREFIX,
     PortInventoryMeasurement,
     PortInventoryQualifier,
     PortInventoryTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     MutationDisposition,
     PhysicalDeviceObservation,
     PhysicalMutationResult,

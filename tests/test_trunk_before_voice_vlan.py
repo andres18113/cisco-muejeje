@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (
+from packet_tracer_mcp.application.use_cases.qualify_positive_voice_slice import (
     ACQUISITION_NOT_STARTED_PRECONTROL_FOUNDATION_UNREADY,
     ACQUISITION_NOT_STARTED_POSTCONTROL_TRUNK_STATE_UNPROVEN,
     CONTRADICTED,

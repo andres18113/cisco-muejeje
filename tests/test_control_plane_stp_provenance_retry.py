@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     FieldVerificationStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ConfigureSpanningTree,
     ControlPlaneCapabilityDimension,
     ControlPlanePhase,
@@ -14,10 +14,10 @@ from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneVerificationKind,
     StpMode,
 )
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (
+from packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (
     PacketTracerEnterpriseControlPlaneRuntime,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     DeviceIdentityProvenance,
     IosCommandResult,
     OperationalQueryId,

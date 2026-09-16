@@ -24,10 +24,22 @@ docs = ["mkdocs-material>=9.5"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Tests import `src.packet_tracer_mcp`. Setting this explicitly avoids implicit
-# rootdir insertion and preserves one module identity. Some tests also read
-# repository-relative files, so run the suite from the repository root.
+# The suite imports the one canonical namespace, `packet_tracer_mcp`, which
+# resolves through this checkout's editable install; `tests/conftest.py` refuses
+# to collect if it resolved anywhere else. The repository root is on the path for
+# the suite's own packages -- `tests.*` helpers and `scripts.*` under test -- not
+# for the product. Some tests also read repository-relative files, so run the
+# suite from the repository root.
 pythonpath = ["."]
+# Import mode is a measured decision, not a default left to drift. Measured on
+# pytest 9.1.1 at the canonical namespace migration:
+#   prepend   (chosen)   5059 tests collected, 0 collection errors
+#   importlib (rejected) 4762 tests collected, 18 collection errors
+# Nineteen test modules import a sibling by bare module name, which only
+# resolves because prepend puts the test's own directory first on sys.path.
+# importlib does not, so those modules fail to collect. Pinned so a future
+# change of the pytest default is a deliberate, re-measured decision.
+addopts = ["--import-mode=prepend"]
 
 [project.scripts]
 pt-mcp = "packet_tracer_mcp.server:main"

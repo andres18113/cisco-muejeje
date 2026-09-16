@@ -14,14 +14,14 @@ import subprocess
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.apply_control_plane import (
+from packet_tracer_mcp.application.use_cases.apply_control_plane import (
     ControlPlaneApplicator,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     FieldVerificationStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ConfigureRipv2,
     ControlPlaneCapabilityDimension,
     ControlPlanePhase,
@@ -30,13 +30,13 @@ from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneVerificationKind,
     RipNetwork,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     DeploymentIdentityError,
 )
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (
+from packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (
     PacketTracerEnterpriseControlPlaneRuntime,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     ControlledIosExecutor,
     DeviceIdentityEvidence,
     DeviceIdentityProvenance,

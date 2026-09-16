@@ -10,20 +10,20 @@ import pathlib
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.compile_control_plane import (
+from packet_tracer_mcp.application.use_cases.compile_control_plane import (
     compile_enterprise_control_plane,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigureRoutedInterface,
     ConfigurationIssueCode,
     ConfigurationPhase,
     ConfigurationPlan,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     FieldVerificationStatus,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ConfigureRipv2,
     ControlPlaneActionType,
     ControlPlaneCapabilityDimension,
@@ -35,11 +35,11 @@ from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
     DynamicRoutingProtocol,
     RipNetwork,
 )
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (
+from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from packet_tracer_mcp.infrastructure.execution.enterprise_control_plane_runtime import (
     PacketTracerEnterpriseControlPlaneRuntime,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     DeviceIdentityProvenance,
     IosCommandResult,
     IosSessionState,
@@ -48,7 +48,7 @@ from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     parse_show_ip_protocols_rip,
     parse_show_ip_route_rip,
 )
-from src.packet_tracer_mcp.infrastructure.generator.control_plane_renderer import (
+from packet_tracer_mcp.infrastructure.generator.control_plane_renderer import (
     PacketTracerControlPlaneRenderer,
 )
 
@@ -664,7 +664,7 @@ def test_cp_scale_route_inherits_the_explicit_single_mask_block_header():
 
 def test_a_serial_learned_route_is_not_lost_to_an_interface_family_anchor():
     """El parser de OSPF ancla `GigabitEthernet` y por eso no sirve aqui."""
-    from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+    from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
         parse_show_ip_route_ospf,
     )
 
@@ -721,7 +721,7 @@ def test_route_evidence_is_distinct_from_configuration_evidence():
 
 
 def test_the_rip_route_query_is_registered_and_unprivileged():
-    from src.packet_tracer_mcp.infrastructure.execution import ios_terminal
+    from packet_tracer_mcp.infrastructure.execution import ios_terminal
 
     assert ios_terminal._COMMANDS[
         OperationalQueryId.SHOW_IP_ROUTE_RIP
@@ -731,7 +731,7 @@ def test_the_rip_route_query_is_registered_and_unprivileged():
 
 def test_show_ip_protocols_uses_the_bounded_qualified_pager_capture():
     """PT 9.0.1.0858 paginates this readback on the canonical 2811 core."""
-    from src.packet_tracer_mcp.infrastructure.execution import ios_terminal
+    from packet_tracer_mcp.infrastructure.execution import ios_terminal
 
     assert (
         OperationalQueryId.SHOW_IP_PROTOCOLS
@@ -1136,7 +1136,7 @@ def test_route_expectations_require_prefix_and_rip_but_not_topology_details():
 
 def _route_case(output, *, network="150.1.1.0", prefix_length=27, truncated=False):
     """Verifica UNA expectativa de ruta contra una salida dada."""
-    from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+    from packet_tracer_mcp.domain.enterprise.models.control_plane import (
         ControlPlaneVerificationExpectation,
     )
 
@@ -1315,7 +1315,7 @@ _EMPTY_ROUTE_TABLE = "show ip route rip\nRouter>"
 
 def _converging_case(outputs, *, attempts=4, network="150.1.1.0", prefix_length=27):
     """Verifica una expectativa de ruta con reloj y sleeper deterministas."""
-    from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+    from packet_tracer_mcp.domain.enterprise.models.control_plane import (
         ControlPlaneVerificationExpectation,
     )
 
@@ -1526,7 +1526,7 @@ def test_rip_compiles_configuration_and_route_expectations_but_no_adjacency():
 
 
 def test_the_typed_path_never_calls_the_legacy_rip_generator(monkeypatch):
-    import src.packet_tracer_mcp.infrastructure.generator.cli_config_generator as legacy
+    import packet_tracer_mcp.infrastructure.generator.cli_config_generator as legacy
 
     def explode(*args, **kwargs):
         raise AssertionError("the typed RIPv2 path used the legacy CLI generator")
@@ -1552,7 +1552,7 @@ def test_the_typed_path_never_calls_the_legacy_rip_generator(monkeypatch):
 
 
 def test_the_typed_renderer_module_does_not_import_the_legacy_generator():
-    from src.packet_tracer_mcp.infrastructure.generator import control_plane_renderer
+    from packet_tracer_mcp.infrastructure.generator import control_plane_renderer
 
     source = pathlib.Path(control_plane_renderer.__file__).read_text(encoding="utf-8")
 
@@ -1561,7 +1561,7 @@ def test_the_typed_renderer_module_does_not_import_the_legacy_generator():
 
 
 def test_the_legacy_rip_generator_still_exists_and_is_untouched():
-    from src.packet_tracer_mcp.infrastructure.generator import cli_config_generator
+    from packet_tracer_mcp.infrastructure.generator import cli_config_generator
 
     source = pathlib.Path(cli_config_generator.__file__).read_text(encoding="utf-8")
 

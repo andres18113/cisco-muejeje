@@ -7,17 +7,17 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.packet_tracer_mcp.application.cp_scale_live.contracts import (
+from packet_tracer_mcp.application.cp_scale_live.contracts import (
     CPScaleCoreForwardingObservation, CPScaleDiagnosticRecord,
     CPScaleDhcpStatisticsTarget, CPScaleObservationRecord,
     CPScaleRealtimeState, CPScaleSiteForwardingObservation,
 )
-from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import CPScaleStageExecutor
-from src.packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+from packet_tracer_mcp.application.cp_scale_live.stage_executor import CPScaleStageExecutor
+from packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleForwardingAuthority, CPScaleSiteForwardingCheck,
 )
-from src.packet_tracer_mcp.infrastructure.persistence.cp_scale_stage_evidence import stage_result_evidence
+from packet_tracer_mcp.infrastructure.persistence.cp_scale_stage_evidence import stage_result_evidence
 from tests.cp_scale_stage_fixture import stage_fixture
 from tests.test_voice_runtime import FakeVoiceRuntime, _compile, _profile
 
@@ -110,7 +110,7 @@ def _acquired_voice_failure(*, failing=(), after_state=None, monkeypatch):
 
     fixture.executor.observations.bindings = lambda projection: observation("bindings", [])
     fixture.executor.observations.dhcp_exchange = lambda *args: observation("statistics", {})
-    from src.packet_tracer_mcp.application.cp_scale_live import stage_executor
+    from packet_tracer_mcp.application.cp_scale_live import stage_executor
     correlate = stage_executor.canonical_cp_scale_voice_evidence
 
     def correlation(**kwargs):

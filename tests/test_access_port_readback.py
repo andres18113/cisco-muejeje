@@ -28,15 +28,15 @@ import json
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     VerificationExpectation,
     VerificationKind,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     FieldVerificationStatus,
 )
-from src.packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     ADMIN_OP_MODE_ACCESS,
     MEASURED_ADMIN_OP_MODES,
     PacketTracerEnterpriseConfigurationRuntime,
@@ -516,11 +516,11 @@ class TestTheCompilerClaimsTheVoiceVlan:
     """Lo que nadie reclama, nadie puede verificar ni contradecir."""
 
     def test_a_phone_facing_access_port_expectation_carries_the_voice_vlan(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+        from packet_tracer_mcp.domain.enterprise.models.configuration import (
             ConfigurationPhase,
             ConfigureAccessPort,
         )
-        from src.packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
+        from packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
             ConfigurationCompiler,
         )
 
@@ -538,11 +538,11 @@ class TestTheCompilerClaimsTheVoiceVlan:
         assert expectation.expected["voice_vlan_id"] == VOICE_VLAN
 
     def test_a_data_only_access_port_expectation_gains_no_voice_key(self):
-        from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+        from packet_tracer_mcp.domain.enterprise.models.configuration import (
             ConfigurationPhase,
             ConfigureAccessPort,
         )
-        from src.packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
+        from packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
             ConfigurationCompiler,
         )
 
@@ -562,7 +562,7 @@ class TestTheExistingProductGateKeepsItsContradictionSemantics:
 
     @staticmethod
     def _application(verification_status: ActionExecutionStatus):
-        from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+        from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
             ConfigurationApplicationResult,
             ConfigurationApplicationStatus,
             VerificationResult,
@@ -581,7 +581,7 @@ class TestTheExistingProductGateKeepsItsContradictionSemantics:
         )
 
     def test_a_partial_voice_observation_does_not_fabricate_a_contradiction(self):
-        from src.packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
+        from packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
             configuration_application_contradiction,
         )
 
@@ -590,7 +590,7 @@ class TestTheExistingProductGateKeepsItsContradictionSemantics:
         assert configuration_application_contradiction(result) == ""
 
     def test_a_readable_voice_mismatch_still_blocks_the_product_flow(self):
-        from src.packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
+        from packet_tracer_mcp.application.use_cases.execute_enterprise_reference import (
             configuration_application_contradiction,
         )
 

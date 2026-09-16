@@ -2,15 +2,15 @@
 
 import pytest
 
-from src.packet_tracer_mcp.domain.models.errors import ErrorCode
-from src.packet_tracer_mcp.domain.models.interface_tuning import InterfaceTuning
-from src.packet_tracer_mcp.domain.rules.interface_tuning_rules import (
+from packet_tracer_mcp.domain.models.errors import ErrorCode
+from packet_tracer_mcp.domain.models.interface_tuning import InterfaceTuning
+from packet_tracer_mcp.domain.rules.interface_tuning_rules import (
     validate_interface_tuning, validate_interface_tuning_against_topology,
 )
-from src.packet_tracer_mcp.infrastructure.generator.interface_tuning_cli_generator import (
+from packet_tracer_mcp.infrastructure.generator.interface_tuning_cli_generator import (
     generate_interface_tuning_cli,
 )
-from src.packet_tracer_mcp.application.use_cases.apply_interface_tuning import (
+from packet_tracer_mcp.application.use_cases.apply_interface_tuning import (
     apply_interface_tuning_uc,
 )
 

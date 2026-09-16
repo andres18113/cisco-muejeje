@@ -2,14 +2,14 @@
 
 import pytest
 
-from src.packet_tracer_mcp.domain.models.requests import TopologyRequest
-from src.packet_tracer_mcp.domain.services.orchestrator import plan_from_request
-from src.packet_tracer_mcp.shared.enums import TopologyTemplate
-from src.packet_tracer_mcp.infrastructure.generator.cli_config_generator import (
+from packet_tracer_mcp.domain.models.requests import TopologyRequest
+from packet_tracer_mcp.domain.services.orchestrator import plan_from_request
+from packet_tracer_mcp.shared.enums import TopologyTemplate
+from packet_tracer_mcp.infrastructure.generator.cli_config_generator import (
     generate_all_configs,
 )
-from src.packet_tracer_mcp.domain.models.vlans import VLANPlan, VLANConfig, AccessPortConfig
-from src.packet_tracer_mcp.domain.rules.vlan_rules import (
+from packet_tracer_mcp.domain.models.vlans import VLANPlan, VLANConfig, AccessPortConfig
+from packet_tracer_mcp.domain.rules.vlan_rules import (
     validate_vlan_plan, validate_vlan_against_topology,
 )
 
@@ -96,7 +96,7 @@ class TestVLANPlanValidation:
 
 class TestApplyVlanUseCase:
     def test_dry_run_builds_payload_without_sending(self):
-        from src.packet_tracer_mcp.application.use_cases.apply_vlan import (
+        from packet_tracer_mcp.application.use_cases.apply_vlan import (
             build_vlan_plan, apply_vlan_uc,
         )
         plan = build_vlan_plan(
@@ -111,7 +111,7 @@ class TestApplyVlanUseCase:
         assert 'configureIosDevice("SW1"' in result["js_payload"]
 
     def test_js_payload_is_single_line(self):
-        from src.packet_tracer_mcp.application.use_cases.apply_vlan import (
+        from packet_tracer_mcp.application.use_cases.apply_vlan import (
             build_vlan_plan, apply_vlan_uc,
         )
         plan = build_vlan_plan(

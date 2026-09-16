@@ -4,42 +4,42 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from src.packet_tracer_mcp.application.use_cases.apply_control_plane import (
+from packet_tracer_mcp.application.use_cases.apply_control_plane import (
     ControlPlaneApplicator,
 )
-from src.packet_tracer_mcp.application.use_cases.apply_security import SecurityApplicator
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.application.use_cases.apply_security import SecurityApplicator
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationFailureCode,
     ConfigurationRuntimeContext,
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ControlPlaneAction,
     ControlPlaneVerificationExpectation,
     LinkFailureScenario,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane_runtime import (
     ControlPlaneExecutionStage,
     RuntimeControlPlaneVerification,
     RuntimeFailureScenarioResult,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     DeploymentBinding,
     DeploymentManifest,
     EnvironmentFingerprint,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.execution import (
+from packet_tracer_mcp.domain.enterprise.models.execution import (
     CompensationStatus,
     DirtyState,
     MutationDisposition,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.security_plan import (
+from packet_tracer_mcp.domain.enterprise.models.security_plan import (
     SecurityAction,
     SecurityVerificationExpectation,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.verification import (
+from packet_tracer_mcp.domain.enterprise.models.verification import (
     PrerequisiteKind,
     VerificationPrerequisite,
 )

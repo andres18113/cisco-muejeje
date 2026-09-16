@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.mutation_replay import (
+from packet_tracer_mcp.domain.enterprise.mutation_replay import (
     PRODUCT_MUTATION_REPLAY_REGISTRY,
     EvidenceBasis,
     MutationSurface,

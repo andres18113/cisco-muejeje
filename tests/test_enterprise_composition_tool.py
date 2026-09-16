@@ -27,7 +27,7 @@ import pathlib
 
 from mcp.server.fastmcp import FastMCP
 
-from src.packet_tracer_mcp.adapters.mcp import tool_registry
+from packet_tracer_mcp.adapters.mcp import tool_registry
 
 _TOOL = "pt_compose_enterprise_reference"
 _REGISTRY_SOURCE = pathlib.Path(inspect.getfile(tool_registry))

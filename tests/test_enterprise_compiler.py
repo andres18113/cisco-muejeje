@@ -6,18 +6,18 @@ from time import perf_counter
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.compile_enterprise import compile_enterprise_topology
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.application.use_cases.compile_enterprise import compile_enterprise_topology
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     DeviceCapabilities,
     PoEAuthorizedBinding,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.compilation import (
+from packet_tracer_mcp.domain.enterprise.models.compilation import (
     CompilationIssueCode,
     ConcreteLinkRole,
     LayoutProfile,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
+from packet_tracer_mcp.domain.enterprise.models.hardware import (
     EndpointPortBinding,
     HardwareCandidate,
     HardwarePlanStatus,
@@ -26,26 +26,26 @@ from src.packet_tracer_mcp.domain.enterprise.models.hardware import (
     PortClass,
     PortDescriptor,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.hierarchy import (
+from packet_tracer_mcp.domain.enterprise.models.hierarchy import (
     BuildingIntent,
     EndpointGroup,
     FloorIntent,
     ZoneIntent,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.intent import EnterpriseIntent, SiteIntent, SiteType
-from src.packet_tracer_mcp.domain.enterprise.models.requirements import EndpointRequirement
-from src.packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
-from src.packet_tracer_mcp.domain.enterprise.services.enterprise_designer import EnterpriseDesigner
-from src.packet_tracer_mcp.domain.enterprise.services.hardware_planner import HardwarePlanner
-from src.packet_tracer_mcp.domain.enterprise.services.layout_planner import LayoutPlanner
-from src.packet_tracer_mcp.domain.enterprise.services.naming import DeterministicNamingService
-from src.packet_tracer_mcp.domain.enterprise.services.physical_ports import (
+from packet_tracer_mcp.domain.enterprise.models.intent import EnterpriseIntent, SiteIntent, SiteType
+from packet_tracer_mcp.domain.enterprise.models.requirements import EndpointRequirement
+from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
+from packet_tracer_mcp.domain.enterprise.services.enterprise_designer import EnterpriseDesigner
+from packet_tracer_mcp.domain.enterprise.services.hardware_planner import HardwarePlanner
+from packet_tracer_mcp.domain.enterprise.services.layout_planner import LayoutPlanner
+from packet_tracer_mcp.domain.enterprise.services.naming import DeterministicNamingService
+from packet_tracer_mcp.domain.enterprise.services.physical_ports import (
     is_logical_interface,
     natural_interface_key,
     physical_ports,
 )
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
+from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from packet_tracer_mcp.infrastructure.catalog.enterprise_topology import (
     PacketTracerTopologyCatalogAdapter,
 )
 from tests.poe_delivery_capabilities import synthetic_poe_authorized_bindings

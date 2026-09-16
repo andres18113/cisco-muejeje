@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
+from packet_tracer_mcp.infrastructure.catalog.cp_scale_qualification_policy import (
     packet_tracer_cp_scale_qualification_policy,
 )
 from tests.cp_scale_historical_state import load_historical_pre_router0

@@ -19,14 +19,14 @@ telefonía, y `VlanManager` como único proceso que responde de nueve candidatos
 
 from __future__ import annotations
 
-from src.packet_tracer_mcp.application.use_cases.qualify_voice_replay import (
+from packet_tracer_mcp.application.use_cases.qualify_voice_replay import (
     QUALIFICATION_PREFIX,
     VoiceReplayQualifier,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     RuntimeActionMutation,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     MutationDisposition,
     PhysicalDeviceObservation,
     PhysicalMutationResult,
@@ -34,13 +34,13 @@ from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceDeviceObservation,
     PhysicalWorkspaceObservation,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     VoiceActionType,
 )
-from src.packet_tracer_mcp.infrastructure.execution.access_port_probe import (
+from packet_tracer_mcp.infrastructure.execution.access_port_probe import (
     DeviceObserverDiscovery,
 )
-from src.packet_tracer_mcp.infrastructure.execution.ios_terminal import (
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosCommandResult,
     IosSessionState,
     OperationalQueryId,

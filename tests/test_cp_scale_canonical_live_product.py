@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
+from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     canonical_stage_configuration_mutation_ids,
     canonical_stage_control_plane_mutation_ids,
@@ -19,23 +19,23 @@ from src.packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical impo
 from tests.poe_delivery_capabilities import (
     compose_delivery_qualified_cp_scale_canonical as compose_cp_scale_canonical,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.configuration import (
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityStatus,
     EvidenceSource,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.control_plane import (
+from packet_tracer_mcp.domain.enterprise.models.control_plane import (
     ConfigureRipv2,
     ControlPlaneVerificationKind,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.voice_plan import (
+from packet_tracer_mcp.domain.enterprise.models.voice_plan import (
     BindPhoneToExtension,
     CreateExtension,
     GeneratePhoneConfigurationFiles,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
+from packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
     MEASURED_BACKEND_VERSION,
 )
 
@@ -470,7 +470,7 @@ def test_every_control_plane_stage_mutates_only_new_actions():
 def test_canonical_live_runner_uses_delta_mutation_with_cumulative_plan():
     from dataclasses import replace
     from tests.cp_scale_stage_fixture import stage_fixture
-    from src.packet_tracer_mcp.application.cp_scale_live.stage_executor import CPScaleStageExecutor
+    from packet_tracer_mcp.application.cp_scale_live.stage_executor import CPScaleStageExecutor
 
     fixture = stage_fixture(CPScaleStageExecutor)
     first = fixture.executor.execute(fixture.request)

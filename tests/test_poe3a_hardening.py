@@ -22,10 +22,10 @@ from dataclasses import replace
 
 import pytest
 
-from src.packet_tracer_mcp.domain.enterprise.models.capabilities import (
+from packet_tracer_mcp.domain.enterprise.models.capabilities import (
     CapabilityEvidence, CapabilityStatus, EvidenceSource,
 )
-from src.packet_tracer_mcp.domain.enterprise.services.poe_pse_claims import (
+from packet_tracer_mcp.domain.enterprise.services.poe_pse_claims import (
     PSE_SCHEMA_VERSION, PoEPseCapture, PoEPseDeliveryScope,
     POE_PSE_EVIDENCE_KIND, decode_poe_pse_delivery_scope, encode_poe_pse_dimensions,
 )
@@ -111,7 +111,7 @@ def test_a_current_record_still_decodes_so_the_guard_is_not_vacuous():
 # ==========================================================================
 
 def _probe(dimensions: dict, *, safety):
-    from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+    from packet_tracer_mcp.domain.enterprise.models.discovery import (
         CapabilityProbeResult, CapabilityVerificationMethod, ProbeContext,
         ProbeExecutionStatus,
     )
@@ -131,13 +131,13 @@ def _probe(dimensions: dict, *, safety):
 
 
 def _compose(results, tmp_path):
-    from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+    from packet_tracer_mcp.domain.enterprise.models.discovery import (
         CapabilitySnapshot, ProbeSession, ProbeSessionResult,
     )
-    from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+    from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
         packet_tracer_enterprise_capability_adapter,
     )
-    from src.packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
+    from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
         CapabilitySnapshotStore,
     )
     store = CapabilitySnapshotStore(tmp_path / "capabilities")
@@ -174,7 +174,7 @@ def test_the_same_measurement_with_admitted_safety_is_authority(tmp_path):
 
 def test_unadmitted_safety_evidence_is_not_enough_either(tmp_path):
     """Present but failing admission is refused just like absent."""
-    from src.packet_tracer_mcp.domain.enterprise.models.discovery import (
+    from packet_tracer_mcp.domain.enterprise.models.discovery import (
         LiveSessionSafetyEvidence,
     )
     incomplete = LiveSessionSafetyEvidence(
@@ -196,7 +196,7 @@ def test_no_productive_provider_injects_pse_evidence_without_a_probe_context():
     directly is the static measured catalog, and this is what keeps it from
     ever being a PSE bypass.
     """
-    from src.packet_tracer_mcp.infrastructure.catalog.measured_capabilities import (
+    from packet_tracer_mcp.infrastructure.catalog.measured_capabilities import (
         measured_capability_evidence,
     )
     assert "context" not in CapabilityEvidence.model_fields
@@ -393,7 +393,7 @@ def test_the_live_producer_builds_a_scope_of_the_current_schema(monkeypatch):
         plan=plan, run_id="poe3b-producer-fixture",
         observed_at="2026-09-09T18:00:00Z", captures=typed_captures(runner, plan), gates=GATES,
     )
-    from src.packet_tracer_mcp.domain.enterprise.services.poe_pse_multiport_claims import (
+    from packet_tracer_mcp.domain.enterprise.services.poe_pse_multiport_claims import (
         decode_poe_pse_multi_port_delivery_scope,
     )
     assert built.schema_version == 3
@@ -427,7 +427,7 @@ def test_the_live_producer_tracks_the_contract_rather_than_a_literal(monkeypatch
 # ==========================================================================
 
 def test_the_schema_two_key_set_is_exact():
-    from src.packet_tracer_mcp.domain.enterprise.services.poe_pse_claims import (
+    from packet_tracer_mcp.domain.enterprise.services.poe_pse_claims import (
         PSE_SCHEMA_2_DIMENSIONS,
     )
     assert set(encode_poe_pse_dimensions(scope())) == PSE_SCHEMA_2_DIMENSIONS

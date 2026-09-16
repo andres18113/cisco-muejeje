@@ -23,29 +23,29 @@ from __future__ import annotations
 
 import pytest
 
-from src.packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
+from packet_tracer_mcp.application.use_cases.deploy_enterprise_topology import (
     EnterprisePhysicalTopologyDeployer,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.deployment import (
+from packet_tracer_mcp.domain.enterprise.models.deployment import (
     EnvironmentFingerprint,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
+from packet_tracer_mcp.domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentFailureCode,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.port_inventory import (
+from packet_tracer_mcp.domain.enterprise.models.port_inventory import (
     BackendVerifiedPortInventory,
     PortInventoryEvidenceTier,
     resolve_port_inventory,
 )
-from src.packet_tracer_mcp.domain.enterprise.models.hardware import PortClass
-from src.packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
-from src.packet_tracer_mcp.domain.enterprise.services.topology_identity import (
+from packet_tracer_mcp.domain.enterprise.models.hardware import PortClass
+from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from packet_tracer_mcp.domain.enterprise.services.topology_identity import (
     compute_topology_hashes,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
+from packet_tracer_mcp.infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
 )
-from src.packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
+from packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
     MEASURED_BACKEND_VERSION,
     MEASURED_PORT_INVENTORIES,
     backend_verified_port_inventory,
@@ -521,7 +521,7 @@ class TestRow12TheUniversalCatalogueIsNotRewritten:
         planificacion en una afirmacion sobre un build concreto, que es
         precisamente la confusion que este contrato existe para deshacer.
         """
-        from src.packet_tracer_mcp.infrastructure.catalog.devices import SWITCH_IE2000
+        from packet_tracer_mcp.infrastructure.catalog.devices import SWITCH_IE2000
 
         assert [port.full_name for port in SWITCH_IE2000.ports][:2] == [
             "FastEthernet0/1", "FastEthernet0/2",
