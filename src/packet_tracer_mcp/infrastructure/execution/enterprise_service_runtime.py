@@ -32,7 +32,6 @@ from ...domain.enterprise.models.service_runtime import RuntimeServiceVerificati
 from .command_dispatch import PAGER_GUARD_JS
 from .runtime_inventory import normalize_runtime_inventory
 
-
 _HOSTNAME = re.compile(
     r"(?=^.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*"
     r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
@@ -53,6 +52,7 @@ class PacketTracerEnterpriseServiceRuntime:
         clock: Callable[[], float] = monotonic,
         sleeper: Callable[[float], None] = sleep,
     ) -> None:
+        """Bind the runtime to one inventory reader and one command channel."""
         self._query_inventory = query_inventory
         self._send_and_wait = send_and_wait
         self._dns_timeout = dns_timeout_seconds
@@ -62,12 +62,14 @@ class PacketTracerEnterpriseServiceRuntime:
         self._sleep = sleeper
 
     def inventory(self) -> list[RuntimeConfigurationTarget]:
+        """Return the runtime inventory, normalized to typed targets."""
         return normalize_runtime_inventory(self._query_inventory())
 
     def apply_actions(
         self,
         actions: Sequence[ServiceAction],
     ) -> list[RuntimeActionMutation]:
+        """Apply one single-host batch and report the observed facts per action."""
         if not actions:
             return []
         host_names = {item.host_device_name for item in actions}
@@ -168,6 +170,7 @@ class PacketTracerEnterpriseServiceRuntime:
         self,
         expectation: ServiceVerificationExpectation,
     ) -> RuntimeServiceVerification:
+        """Observe one expectation and state the observation fact it supports."""
         if expectation.evidence_kind is ServiceEvidenceKind.DIRECT_STATE:
             return self._verify_direct(expectation)
         if expectation.kind in {

@@ -17,6 +17,8 @@ from .service_plan import ServiceEvidenceKind, ServiceType
 
 
 class RuntimeServiceVerification(BaseModel):
+    """What a service runtime reports about one expectation."""
+
     expectation_id: str
     status: ActionExecutionStatus
     evidence_kind: ServiceEvidenceKind
@@ -27,11 +29,15 @@ class RuntimeServiceVerification(BaseModel):
 
 
 class ServiceVerificationResult(RuntimeServiceVerification):
+    """A runtime verification bound to its service, with a failure code."""
+
     service_id: str
     failure_code: ConfigurationFailureCode = ConfigurationFailureCode.NONE
 
 
 class ServiceOutcome(BaseModel):
+    """The four separate status axes of one service."""
+
     service_id: str
     service_type: ServiceType
     application_status: ActionExecutionStatus
@@ -41,6 +47,8 @@ class ServiceOutcome(BaseModel):
 
 
 class ServiceApplicationResult(BaseModel):
+    """Full typed outcome of one service application."""
+
     service_plan_id: str
     service_semantic_hash: str
     source_topology_hash: str
@@ -61,6 +69,7 @@ class ServiceApplicationResult(BaseModel):
     duration_ms: int = 0
 
     def compact_summary(self) -> dict[str, object]:
+        """Return the stable report shape; consumers depend on these keys."""
         action_counts: dict[str, int] = {}
         for item in self.action_results:
             action_counts[item.status.value] = (

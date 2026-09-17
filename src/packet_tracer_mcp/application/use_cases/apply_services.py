@@ -8,7 +8,6 @@ from typing import Protocol
 
 from ...domain.enterprise.models.capabilities import CapabilityStatus
 from ...domain.enterprise.models.configuration_runtime import (
-    mutation_execution_status,
     ActionApplicationResult,
     ActionExecutionStatus,
     ConfigurationApplicationStatus,
@@ -16,6 +15,7 @@ from ...domain.enterprise.models.configuration_runtime import (
     ConfigurationRuntimeContext,
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
+    mutation_execution_status,
 )
 from ...domain.enterprise.models.deployment import (
     DeploymentIdentityError,
@@ -24,13 +24,15 @@ from ...domain.enterprise.models.deployment import (
     resolve_manifest_targets,
     validate_manifest_environment,
 )
+from ...domain.enterprise.models.evidence import (
+    ReadinessStatus,
+    evidence_from_legacy_result,
+)
 from ...domain.enterprise.models.execution import (
     MutationDisposition,
     journal_from_action_results,
     satisfies_apply_dependency,
 )
-from ...domain.enterprise.models.evidence import evidence_from_legacy_result
-from ...domain.enterprise.models.evidence import ReadinessStatus
 from ...domain.enterprise.models.service_plan import (
     ServiceAction,
     ServiceCapabilityProfile,
@@ -44,36 +46,42 @@ from ...domain.enterprise.models.service_runtime import (
     ServiceOutcome,
     ServiceVerificationResult,
 )
-from ...domain.enterprise.services.configuration_dependencies import (
-    ConfigurationDependencyError,
-    order_dependency_actions,
-)
 from ...domain.enterprise.models.verification import (
     PrerequisiteKind,
     VerificationPrerequisite,
     order_verification_expectations,
     prerequisites_satisfied,
 )
+from ...domain.enterprise.services.configuration_dependencies import (
+    ConfigurationDependencyError,
+    order_dependency_actions,
+)
 
 
 class ServiceRuntime(Protocol):
-    def inventory(self) -> list[RuntimeConfigurationTarget]: ...
+    """The port an E6 service runtime must implement."""
+
+    def inventory(self) -> list[RuntimeConfigurationTarget]:
+        """Return the devices the runtime can see."""
 
     def apply_actions(
         self,
         actions: Sequence[ServiceAction],
-    ) -> list[RuntimeActionMutation]: ...
+    ) -> list[RuntimeActionMutation]:
+        """Apply one batch and report what was observed per action."""
 
     def verify(
         self,
         expectation: ServiceVerificationExpectation,
-    ) -> RuntimeServiceVerification: ...
+    ) -> RuntimeServiceVerification:
+        """Observe one expectation."""
 
 
 class ServiceApplicator:
     """Ejecuta un ServicePlan; nunca compila ni aplica configuración E5."""
 
     def __init__(self, runtime: ServiceRuntime) -> None:
+        """Bind the applicator to one service runtime."""
         self._runtime = runtime
 
     def apply(
@@ -87,6 +95,7 @@ class ServiceApplicator:
         runtime_context: ConfigurationRuntimeContext | None = None,
         deployment_manifest: DeploymentManifest | None = None,
     ) -> ServiceApplicationResult:
+        """Apply one ServicePlan and return its full typed outcome."""
         started = monotonic()
         runtime_context = runtime_context or ConfigurationRuntimeContext()
         deployment_id = deployment_manifest.deployment_id if deployment_manifest else ""

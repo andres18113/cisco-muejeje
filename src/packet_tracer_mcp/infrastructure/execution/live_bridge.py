@@ -12,7 +12,6 @@ can consume only the result registered for its own operation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hmac
 import http.server
 import json
@@ -21,15 +20,15 @@ import re
 import secrets
 import threading
 import time
-from http.server import ThreadingHTTPServer
-from queue import Empty, Full, Queue
-from typing import Callable
 import urllib.error
 import urllib.request
+from collections.abc import Callable
+from dataclasses import dataclass
+from http.server import ThreadingHTTPServer
+from queue import Empty, Full, Queue
 from urllib.parse import parse_qs, urlencode, urlparse
 
 from .bridge_token import get_bridge_token, token_fingerprint
-
 
 DEFAULT_PORT = 54321
 
@@ -145,6 +144,7 @@ class PacketTracerHttpTransport:
     bridge_transport = "http"
 
     def __init__(self, port: int = DEFAULT_PORT, token: str | None = None) -> None:
+        """Bind one authenticated bridge to this transport."""
         self._bridge = PTCommandBridge(port=port, token=token)
         self.port = port
         self.token = self._bridge.token
@@ -152,9 +152,11 @@ class PacketTracerHttpTransport:
 
     @property
     def is_connected(self) -> bool:
+        """Whether the webview polled the bridge recently."""
         return self._bridge.is_connected
 
     def status_dict(self) -> dict:
+        """Return the bridge status as the webview and diagnostics see it."""
         return self._bridge.status_dict()
 
     def start(
@@ -164,6 +166,7 @@ class PacketTracerHttpTransport:
         timeout_seconds: float = 8.0,
         poll_interval_seconds: float = 0.1,
     ) -> bool:
+        """Start the bridge and optionally wait for the webview to poll."""
         self._bridge.start()
         self.port = self._bridge.port
         self.base_url = f"http://127.0.0.1:{self.port}"
@@ -175,14 +178,17 @@ class PacketTracerHttpTransport:
         return self.is_connected
 
     def stop(self) -> None:
+        """Stop the bridge server."""
         self._bridge.stop()
 
     def send(self, js_code: str) -> bool:
+        """Queue one guarded fire-and-forget command; True means queued."""
         guarded = "try{" + js_code + "}catch(__pterr){}"
         status, _ = self._http_post(self.base_url + "/queue", guarded, 3.0)
         return status == 200
 
     def send_and_wait(self, js_code: str, timeout: float = 12.0) -> str | None:
+        """Queue one command and return only its correlated result body."""
         guarded = (
             "try{" + js_code + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
         )
@@ -237,6 +243,7 @@ class PTCommandBridge:
     """HTTP bridge between Python and Packet Tracer's webview extension."""
 
     def __init__(self, port: int = DEFAULT_PORT, token: str | None = None):
+        """Prepare the bridge state; `start` binds the socket."""
         self.port = port
         self.token = token or get_bridge_token()
         self.token_id = token_fingerprint(self.token)
@@ -256,6 +263,7 @@ class PTCommandBridge:
 
     @property
     def is_connected(self) -> bool:
+        """Whether Packet Tracer polled `/next` within the freshness window."""
         if self._last_poll_time == 0:
             return False
         return time.time() - self._last_poll_time < 10.0
@@ -266,6 +274,7 @@ class PTCommandBridge:
         return self._unauth_last > 0 and time.time() - self._unauth_last < 30.0
 
     def status_dict(self) -> dict:
+        """Return connection, unauthorized-request and token-identity state."""
         ago = time.time() - self._last_poll_time
         return {
             "connected": self._last_poll_time > 0 and ago < 10.0,

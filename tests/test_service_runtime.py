@@ -10,7 +10,6 @@ from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     AddDnsRecord,
     EnableDnsService,
-    EnableHttpService,
     ServiceEvidenceKind,
     ServicePhase,
     ServiceType,
@@ -36,6 +35,7 @@ def _common(service_id="service/hq/dns", service_type=ServiceType.DNS):
 
 
 def test_dns_actions_use_documented_process_api_and_json_escaping():
+    """The DNS batch uses documented process calls and serializes every value."""
     captured = []
 
     def send_and_wait(js, timeout):
@@ -76,6 +76,7 @@ def test_dns_actions_use_documented_process_api_and_json_escaping():
 
 
 def test_http_content_is_serialized_and_never_interpolated_as_javascript():
+    """Page content reaches the script as JSON data, never as source."""
     captured = []
     marker = 'MCP_E6_HTTP_OK_"quoted"\\tail'
 
@@ -99,6 +100,7 @@ def test_http_content_is_serialized_and_never_interpolated_as_javascript():
 
 
 def test_direct_dns_readback_requires_enabled_state_and_expected_record():
+    """A direct DNS read-back needs both the enabled flag and the record."""
     responses = [
         json.dumps(
             {
@@ -135,6 +137,7 @@ def test_direct_dns_readback_requires_enabled_state_and_expected_record():
 
 
 def test_dns_behavior_starts_typed_ping_and_reads_only_fresh_command_output():
+    """DNS behavior is read from the window this command opened."""
     calls = []
 
     def send_and_wait(js, timeout):
@@ -180,6 +183,7 @@ def test_dns_behavior_starts_typed_ping_and_reads_only_fresh_command_output():
 
 
 def test_dns_negative_control_requires_fresh_not_found_output():
+    """The negative control needs a fresh not-found window, not silence."""
     responses = [
         json.dumps({"started": True, "before": "C:\\>old\n"}),
         json.dumps(
@@ -220,6 +224,7 @@ def test_dns_negative_control_requires_fresh_not_found_output():
 
 
 def test_dns_behavior_rejects_a_fresh_but_wrong_address():
+    """A fresh window carrying the wrong address is fresh negative evidence."""
     responses = [
         json.dumps({"started": True, "before": "C:\\>"}),
         json.dumps(
@@ -259,6 +264,7 @@ def test_dns_behavior_rejects_a_fresh_but_wrong_address():
 
 
 def test_http_behavior_uses_a_fresh_background_client_and_releases_it():
+    """The owned HTTP client is created for this read and released after it."""
     calls = []
     responses = [
         json.dumps({"started": True, "content_before": ""}),
@@ -293,6 +299,7 @@ def test_http_behavior_uses_a_fresh_background_client_and_releases_it():
 
 
 def test_http_behavior_rejects_stale_marker_and_accepts_fresh_fetch():
+    """A marker present before the request decides nothing; a fresh one does."""
     marker = "MCP_E6_HTTP_OK_FRESH"
     responses = [
         json.dumps({"started": True, "content_before": ""}),
@@ -337,6 +344,7 @@ def test_http_behavior_rejects_stale_marker_and_accepts_fresh_fetch():
 
 
 def test_http_behavior_rejects_fresh_content_without_expected_marker():
+    """Fresh content without the marker is fresh negative evidence."""
     responses = [
         json.dumps({"started": True, "content_before": ""}),
         json.dumps({"found": True, "content": "WRONG_PAGE"}),
@@ -368,6 +376,7 @@ def test_http_behavior_rejects_fresh_content_without_expected_marker():
 
 
 def test_ntp_and_tftp_behavior_remain_unobservable_without_client_evidence():
+    """NTP and TFTP have no registered client proof, so nothing is claimed."""
     runtime = PacketTracerEnterpriseServiceRuntime(lambda: [], lambda js, timeout: "{}")
     for kind in (
         ServiceVerificationKind.NTP_SYNC,
@@ -391,6 +400,7 @@ def test_ntp_and_tftp_behavior_remain_unobservable_without_client_evidence():
 
 
 def test_https_behavior_uses_https_url_and_never_substitutes_http():
+    """The HTTPS read uses the https URL and confirms the mode it claims."""
     calls = []
     responses = [
         json.dumps({"started": True, "content_before": ""}),

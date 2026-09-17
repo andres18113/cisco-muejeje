@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 
 
 class OperationSemantics(str, Enum):
+    """What one action intends to do to the state it names."""
+
     ENSURE_PRESENT = "ensure_present"
     ENSURE_ABSENT = "ensure_absent"
     SET_VALUE = "set_value"
@@ -19,6 +21,8 @@ class OperationSemantics(str, Enum):
 
 
 class MutationDisposition(str, Enum):
+    """What an applied action turned out to do to the observed state."""
+
     CHANGED = "changed"
     NO_OP = "no_op"
     REASSERTED = "reasserted"
@@ -65,6 +69,8 @@ class CompensationStatus(str, Enum):
 
 
 class ExecutionJournalEntry(BaseModel):
+    """One append-only record of what happened to one action."""
+
     ordinal: int
     action_id: str
     operation: OperationSemantics
@@ -126,6 +132,7 @@ class ApplicationExecutionJournal(BaseModel):
         return _derive_dirty_state(self.entries)
 
     def append(self, entry: ExecutionJournalEntry) -> None:
+        """Append one entry in ordinal order and recompose the dirty state."""
         expected = len(self.entries) + 1
         if entry.ordinal != expected:
             raise ValueError(
@@ -135,10 +142,12 @@ class ApplicationExecutionJournal(BaseModel):
         self._recompose()
 
     def mark_preflight_failure(self, message: str) -> None:
+        """Record an admission failure that produced no mutation."""
         self.preflight_errors.append(message)
         self._recompose()
 
     def mark_transport_unknown(self, message: str = "") -> None:
+        """Record that the transport could not prove the mutation did not run."""
         if message:
             self.preflight_errors.append(message)
         self.transport_unknown = True
@@ -244,6 +253,7 @@ class ApplicationExecutionJournal(BaseModel):
         self.dirty_state = max(floors, key=_RESIDUE_SEVERITY.__getitem__)
 
     def compact_summary(self) -> dict[str, object]:
+        """Return the stable report shape; consumers depend on these keys."""
         counts: dict[str, int] = {}
         for entry in self.entries:
             counts[entry.disposition.value] = counts.get(entry.disposition.value, 0) + 1
@@ -259,6 +269,7 @@ class ApplicationExecutionJournal(BaseModel):
 
 
 def satisfies_apply_dependency(status: Any) -> bool:
+    """Whether a dependent action may proceed after this status."""
     value = status.value if isinstance(status, Enum) else str(status)
     return value in {"applied", "no_op", "reasserted", "verified"}
 
@@ -294,6 +305,7 @@ def journal_from_action_results(
     actions: list[Any],
     results: list[Any],
 ) -> ApplicationExecutionJournal:
+    """Build a journal from action results, copying the facts they carry."""
     actions_by_id = {item.id: item for item in actions}
     operations = {
         identifier: getattr(item, "operation", OperationSemantics.SET_VALUE)

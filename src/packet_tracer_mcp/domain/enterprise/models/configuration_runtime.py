@@ -63,6 +63,8 @@ class ActionExecutionStatus(str, Enum):
 
 
 class ConfigurationApplicationStatus(str, Enum):
+    """Aggregate status of one configuration application."""
+
     APPLIED = "applied"
     VERIFIED = "verified"
     PARTIAL = "partial"
@@ -71,6 +73,8 @@ class ConfigurationApplicationStatus(str, Enum):
 
 
 class ConfigurationFailureCode(str, Enum):
+    """Typed reason a configuration action or run did not succeed."""
+
     NONE = "none"
     SOURCE_TOPOLOGY_MISMATCH = "source_topology_mismatch"
     TARGET_NOT_FOUND = "target_not_found"
@@ -110,6 +114,8 @@ class ConfigurationFailureCode(str, Enum):
 
 
 class FieldVerificationStatus(str, Enum):
+    """Per-field outcome of one verification read."""
+
     VERIFIED = "verified"
     FAILED = "failed"
     UNKNOWN = "unknown"
@@ -143,6 +149,8 @@ class ConvergenceOutcome(str, Enum):
 
 
 class ConvergenceReport(BaseModel):
+    """Terminal evidence of one bounded convergence authority."""
+
     attempts: int = 0
     elapsed_ms: int = 0
     final_status: ActionExecutionStatus = ActionExecutionStatus.UNKNOWN
@@ -155,6 +163,8 @@ class ConvergenceReport(BaseModel):
 
 
 class RuntimeConfigurationTarget(BaseModel):
+    """One device as the runtime actually reports it."""
+
     device_name: str
     model: str
     interfaces: list[str] = Field(default_factory=list)
@@ -164,6 +174,8 @@ class RuntimeConfigurationTarget(BaseModel):
 
 
 class ConfigurationRuntimeContext(BaseModel):
+    """Backend identity carried into every evidence record of a run."""
+
     backend: str = ""
     backend_version: str = ""
     capability_snapshot_hash: str = ""
@@ -171,24 +183,29 @@ class ConfigurationRuntimeContext(BaseModel):
 
     @property
     def evidence_backend(self) -> str:
+        """Backend name the fingerprint establishes, else the declared one."""
         if self.environment_fingerprint is not None:
             return self.environment_fingerprint.backend
         return self.backend
 
     @property
     def evidence_backend_version(self) -> str:
+        """Backend version the fingerprint establishes, else the declared one."""
         if self.environment_fingerprint is not None:
             return self.environment_fingerprint.backend_version
         return self.backend_version
 
     @property
     def environment_semantic_hash(self) -> str:
+        """Semantic hash of the environment, empty without a fingerprint."""
         if self.environment_fingerprint is None:
             return ""
         return self.environment_fingerprint.semantic_hash
 
 
 class RuntimeActionMutation(BaseModel):
+    """What a runtime reports about one dispatched action."""
+
     action_id: str
     applied: bool
     operation: OperationSemantics = OperationSemantics.SET_VALUE
@@ -233,6 +250,8 @@ def mutation_execution_status(
 
 
 class RuntimeVerification(BaseModel):
+    """What a runtime reports about one verification read."""
+
     expectation_id: str
     status: ActionExecutionStatus
     evidence_method: str = ""
@@ -243,6 +262,8 @@ class RuntimeVerification(BaseModel):
 
 
 class ActionApplicationResult(BaseModel):
+    """The applicator's decided outcome for one action."""
+
     action_id: str
     status: ActionExecutionStatus
     failure_code: ConfigurationFailureCode = ConfigurationFailureCode.NONE
@@ -253,6 +274,8 @@ class ActionApplicationResult(BaseModel):
 
 
 class VerificationResult(BaseModel):
+    """One verification outcome bound to the action it observes."""
+
     expectation_id: str
     action_id: str
     status: ActionExecutionStatus
@@ -286,6 +309,7 @@ class VoiceSignalBarrierResult(BaseModel):
     message: str = ""
 
     def compact_summary(self) -> dict[str, object]:
+        """Return the stable barrier report shape; consumers depend on it."""
         return {
             "required": self.required,
             "deferred_action_ids": self.deferred_action_ids,
@@ -300,6 +324,8 @@ class VoiceSignalBarrierResult(BaseModel):
 
 
 class ConfigurationApplicationResult(BaseModel):
+    """Full typed outcome of one configuration application."""
+
     config_plan_id: str
     config_semantic_hash: str
     source_topology_hash: str
@@ -321,6 +347,7 @@ class ConfigurationApplicationResult(BaseModel):
     duration_ms: int = 0
 
     def compact_summary(self) -> dict[str, object]:
+        """Return the stable report shape; consumers depend on these keys."""
         action_counts: dict[str, int] = {}
         for item in self.action_results:
             action_counts[item.status.value] = (

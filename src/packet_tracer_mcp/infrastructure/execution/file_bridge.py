@@ -112,10 +112,12 @@ class RequestDisposition(str, Enum):
 
 
 def bridge_dir() -> Path:
+    """Return the mailbox directory under the token directory."""
     return token_dir() / _BRIDGE_SUBDIR
 
 
 def ensure_bridge_dir() -> Path:
+    """Create the mailbox directory with user-only permissions."""
     d = bridge_dir()
     d.mkdir(parents=True, exist_ok=True, mode=0o700)
     return d
@@ -134,6 +136,7 @@ class FileBridge:
         *,
         cancel_observation_seconds: float = _CANCEL_OBSERVATION_S,
     ):
+        """Bind this bridge to one mailbox directory."""
         self.dir = Path(directory) if directory else bridge_dir()
         self._observation = cancel_observation_seconds
         self._seq = 0
@@ -155,7 +158,11 @@ class FileBridge:
     # -- vida del Script Engine ----------------------------------------
 
     def pt_alive(self) -> bool:
-        """True si el Script Engine tocó su heartbeat hace poco."""
+        """Report whether the Script Engine touched its heartbeat recently.
+
+        Liveness only: a fresh heartbeat says the engine is running, never that
+        it read, claimed or executed any particular request.
+        """
         alive = self.dir / "alive.txt"
         try:
             age = time.time() - alive.stat().st_mtime
@@ -231,7 +238,6 @@ class FileBridge:
 
     def has_pending_requests(self) -> bool:
         """Report only whether this bridge still owns unretired sends."""
-
         return bool(self._pending)
 
     def send_and_wait(self, js_code: str, timeout: float = 12.0) -> str | None:
