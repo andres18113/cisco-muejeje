@@ -465,6 +465,10 @@ def test_an_unobservable_publication_is_unknown_and_never_not_submitted(
     assert "synthetic rename error" in outcome.detail
     assert "synthetic stat error" in outcome.detail
     assert "existence_unobservable" in outcome.detail
+    # The temporary residue is cleaned up, and the `req_` path is left
+    # exactly as it was: withdrawing it would claim the non-execution this
+    # phase cannot establish.
+    assert not list((tmp_path / "mailbox").glob("*.tmp"))
 
 
 def test_an_unobservable_publication_that_is_answered_is_accepted(
