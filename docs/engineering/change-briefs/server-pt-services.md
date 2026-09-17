@@ -2249,6 +2249,11 @@ for the S0 slice. It is written before behavioral implementation and completed
 with measured results at delivery. Everything above it is the design contract
 (`rev2.2 + TD-12`); this chapter is what was actually done against it.
 
+This chapter records the candidate `ec8c8bc45c848bbc5651f99e1bc0816be346d95d`,
+which an independent review returned as `REQUIRES_CHANGES`. It is kept as
+written: its statements were true of that tree. Chapter 9 records the
+correction and names every statement here that it supersedes.
+
 ### 8.1 Identity and authorization
 
 | Item | Value |
@@ -2505,7 +2510,7 @@ measured separately in baseline vocabulary rather than inferred from it.
 | Docs | `mkdocs build --site-dir _site` succeeds; the only warnings are the pre-existing `handoff.md` links in `docs/reference/cp-scale/` |
 | Whitespace | `git diff --check` clean |
 | Delivery gate | `scripts/quality_gate.py --base cisco/main --delivery-commit HEAD` on the final commit; see below |
-| CI on the exact delivery SHA | **pending**: nothing was pushed by this work, so no authorized remote commit exists to run it on. No other SHA's status is offered in its place |
+| CI on the exact delivery SHA | **pending**: nothing was pushed by this work, so no authorized remote commit exists to run it on. No other SHA's status is offered in its place. *Historical, as of this chapter: the branch was pushed afterwards and run `35273030571` ran on `ec8c8bc`. See 9.2 for the verified current status.* |
 
 #### Positive controls, all green and unchanged
 
@@ -2554,6 +2559,197 @@ three named modules.
 - Delivery status is `READY_FOR_REVIEW`. Self-review is not independent audit,
   and this slice claims no capability promotion and no Packet Tracer
   functionality.
+
+## 9. S0 correction record (independent review, `REQUIRES_CHANGES`)
+
+An independent review of `ec8c8bc45c848bbc5651f99e1bc0816be346d95d` returned
+`REQUIRES_CHANGES` with five findings and one narrow design clarification. This
+chapter is the durable record of the correction. Chapter 8 is left as the
+record of the reviewed candidate and is **not** rewritten: its statements were
+true of that tree, including the ones this chapter supersedes.
+
+### 9.1 Identity, authorization and instruction loading
+
+| Item | Value |
+| --- | --- |
+| Checkout | `C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP` |
+| Authoritative `main` reference in this checkout | `cisco/main` (remote `cisco` = `https://github.com/andres18113/cisco-muejeje.git`) |
+| Branch | `feature/server-pt-s0-observation-integrity`, upstream `cisco/feature/server-pt-s0-observation-integrity` |
+| Starting SHA for this correction | `ec8c8bc45c848bbc5651f99e1bc0816be346d95d` (the reviewed candidate; `HEAD` had not moved) |
+| Starting tree | `b1b14f510932b19eac5c3c85d80acb12c9f36882`, clean (`git status --porcelain` empty) |
+| Verified base | `cisco/main` = `6263344e31ba3b0de6539d652f2cd06fc73a3562`, the TD-12 baseline |
+| Risk class | **L**, unchanged: the corrections touch evidence semantics, the transport contract and a shared domain field |
+| Authorization | TD-12, `APPROVED_WITH_BINDING_AMENDMENTS, S0 OFFLINE IMPLEMENTATION ONLY`, plus the review's narrow golden-payload clarification recorded in 9.3 |
+| Interpreter | checkout-local `.venv\Scripts\python.exe`, CPython 3.12.10; `packet_tracer_mcp.__file__` resolves inside this checkout |
+| Ruff | 0.16.7 (pinned) |
+| Node for the generated-script harnesses | v24.19.0 present locally |
+| LIVE Packet Tracer | not contacted; no bridge started for product use; no `EXTENSION/` change |
+
+Instruction loading, this correction session: the contents of `CLAUDE.md`,
+`AGENTS.md` and `docs/engineering/standards.md` **from this checkout** were
+present in the session context and were read before any change. The
+interactive `/context` panel is a user-invoked command and was again **not**
+independently observed by the implementer, so per
+`docs/engineering/standards.md` that check stays recorded as **pending**. No
+earlier session's observation is reused as evidence for this one.
+
+### 9.2 What the review superseded, and what it did not
+
+* **CI status.** Chapter 8 recorded CI on the delivery SHA as *pending*
+  because nothing had been pushed by that work. That statement is retained as
+  a dated historical report and is **no longer current**: the branch was
+  pushed afterwards and GitHub Actions run `35273030571` ran on head SHA
+  `ec8c8bc45c848bbc5651f99e1bc0816be346d95d`. Verified directly from this
+  checkout with `gh run view 35273030571 --repo andres18113/cisco-muejeje`:
+  status `completed`, conclusion `success`, six jobs -- `quality`, `docs`, and
+  `pytest` on `{ubuntu-latest, windows-latest} x {3.11, 3.13}` -- all
+  `success`. The `pytest (ubuntu-latest, 3.13)` job (`105376774386`) logged
+  `5694 passed, 2 skipped, 3 warnings`. The `quality` job (`105376774082`)
+  logged `--base "origin/main"`, `Changed Python files: 15`,
+  `Mechanical-only exempt: 0`, `All checks passed!`,
+  `15 files already formatted`. That run says nothing about the corrected
+  tree; 9.6 records the new SHA's status separately.
+* **The audit counterexamples are not the correction.** The review's extracted
+  predicates and stub runs were reproduced here against the real runtime, the
+  real applicator and the real `FileBridge`, with controlled boundaries
+  injected at the channel and at the filesystem. No audit predicate was copied
+  into production code or used as a test oracle.
+* **The substring check keeps a behaviour test beside it.** The review
+  noted that `test_every_applicator_uses_the_single_domain_definition` --
+  a source check -- cannot prove that a duplicated local classifier is
+  absent. It is left as written, and
+  `test_the_applicator_routes_every_row_through_the_domain_decision` now
+  observes the real `ServiceApplicator` calling `decide_mutation`
+  pass-through, once per row, with exactly the mutation the runtime
+  reported and the row's status taken from that call.
+* **Unchanged by design.** The TD-12 decision table, the canonical namespace,
+  the legacy `send_and_wait` contract, the DNS partial-footprint limitation,
+  the snapshot and provenance rules, and the measured DNS UNKNOWN baseline in
+  8.5 all stand. No capability was promoted, no endpoint or transport was
+  added, and no LIVE work was performed or claimed.
+
+### 9.3 R1: the ownership/finalization payload exception
+
+The review's narrow clarification takes precedence over byte-identical
+ownership payloads, and only for the minimum R1 needs. Exactly three
+generated strings changed, and the scope is recorded here:
+
+| Builder | Change | Why the minimum |
+| --- | --- | --- |
+| `_background_http_start` | the tracking assignment moves to immediately after `createClient()`, the stale slot is dropped only once the previous client is actually deleted, and the payload reports `owned` | a client created and then lost to a throw in `getLastPageContent()`, `go()` or the mode calls was untracked, so no later release could find it |
+| `_background_https_start` | the same two changes; the mode calls keep their position relative to `go()` | the HTTPS start is the HTTP start plus the mode read, and the golden test that asserts exactly that relation still holds |
+| `_background_http_release` (was inline in `_release_background_http`) | reports `found`, `deleted`, `present` and a bounded `error` instead of `released:!slot||!bag[key]`; the deletion is guarded and the slot is dropped only when the deletion completed | `released` was true whenever the slot was absent, so an untracked live client and a real deletion were the same answer |
+
+Preserved in all three: the vendor call surface
+(`getProcess("HttpBackgroundClientManager")`, `createClient`, `deleteClient`,
+`getLastPageContent`, `setHttps`, `isHttps`, `go`), `json.dumps` serialization
+of every data field, single-line source with no `//` comments, and the device
+lookup the baseline performed. The inspect script and the direct read-back
+scripts are byte-identical to the baseline and their golden tests are
+untouched.
+
+The affected golden expectation is **not** replaced by a weaker string
+comparison. `tests/test_service_runtime_observation.py` keeps
+`test_the_https_start_adds_only_the_mode_calls_to_the_http_start` (a relation
+between the two builders, which the change preserves) and the frozen
+`_GOLDEN_HTTP_INSPECT`; the ownership behaviour itself is asserted by the new
+lifecycle harness in `tests/test_service_client_ownership_harness.py`, where
+the oracle is the stub's own live-client count and call log. A changed payload
+is not evidence of LIVE support: `HttpBackgroundClient` ownership remains gate
+M-HTTPS-2 and is **unqualified**.
+
+### 9.4 Finding to requirement to acceptance test to result
+
+Every row's RED was measured on `ec8c8bc` by checking out `src/` at that
+commit with the corrected tests in place (`git stash push -- src/`), per module,
+and the GREEN on the corrected tree.
+
+| Finding | Correction (requirement) | Acceptance tests | Measured RED on `ec8c8bc` | GREEN |
+| --- | --- | --- | --- | --- |
+| **R1** HTTP/HTTPS ownership is not finalized on every exit | Ownership is established before any later fallible call and recorded in a `ClientLease`; `_verify_http` finalizes exactly once on success, start-response loss, engine error, malformed reply, poll exception, deadline and cleanup failure; primary and cleanup outcomes are separate records; a missing slot after an unobserved start is `ownership_unknown`, never a release | `tests/test_service_client_ownership_harness.py`, 20 scenarios, oracle = the stub's live-client count and `deleteClient` log | **13 failed, 7 passed.** Six scenarios ended with `engine.live == 1`: a live client the row reported as released. `not_submitted` on the start produced `KeyError: 'released'` (no ownership record at all). The `manager_missing` and `create_returns_null` scenarios dispatched a release for a client that never existed | 20 passed |
+| **R2** recovery admission removes unrelated prerequisites | The recovery rule withholds exactly the ACTION_APPLIED prerequisites it admits, by typed `(kind, reference_id)` identity, and re-evaluates the rest through the unchanged `prerequisites_satisfied` | `tests/test_service_application_uncertainty.py` section 6b: positive recovery for ACTION_APPLIED alone; ACTION_APPLIED + ACTION_VERIFIED for the same id; ACTION_APPLIED + RESOURCE_READY for the same id; an unrelated missing id; `verification_verified:check-<id>` on a blocked verification. Every blocked case asserts the runtime verifier was NOT called | **3 failed.** `action_verified:<id>`, `resource_ready:<id>` and `verification_verified:check-<id>` were all erased by the suffix filter, the row ran and `runtime.verify_calls` contained it | 37 passed |
+| **R3a** HTTP/DNS payload shape and subject | Stage-appropriate exact-type validation before freshness, content or success; `found` is read, not assumed; `owned:false` is a missing subject; uncertainty, malformed payload, subject-not-found and fresh contradiction stay distinct; R1 finalization holds on every malformed path | `tests/test_service_runtime_observation.py` section 7: the audited `{"found": false, "content": {"unexpected": "AUDIT_MARKER"}}`; six malformed page shapes; six malformed start shapes; five malformed DNS start shapes; three DNS window shapes; valid positive and negative controls | the audited counterexample returned **VERIFIED/OBSERVED**; `found: 1` and `found: "true"` with a matching marker returned **OBSERVED**; a dict or list `content` returned **OBSERVED**; a DNS start missing `blocked` or reporting `blocked: "pager_active"` was read as not blocked | 120 passed in the module |
+| **R3b** DNS address equality | The resolved address is parsed from the supported complete shapes (`Pinging <address> with`, `Pinging <host> [<address>] with`, `Ping statistics for <address>:`) and compared by value; ambiguous or unreadable output is inconclusive; window completeness no longer depends on the expectation | same module, section 8: `192.0.2.10` versus `192.0.2.100`; the expected address only in the echo; only in a reply line; the exact address; the bracketed form; two disagreeing addresses; no address; an unparsable address; both negative-control directions; poll termination; an unreadable expectation | `192.0.2.100` satisfied an expectation of `192.0.2.10` and reported **VERIFIED**; the echo-only and reply-line-only windows reported **VERIFIED**; a complete wrong-address window polled to the deadline instead of terminating | 120 passed in the module |
+| **R4** unobservable publication classified as NOT_SUBMITTED | `_publish` returns a three-valued `PublicationPhase`; a rename failure whose existence probe also raises is `UNKNOWN` and maps to `ACCEPTANCE_UNKNOWN` + `NOT_OBSERVED` with both causes preserved; a correlated answer still upgrades it to ACCEPTED; the `.tmp` residue is discarded best effort and the `req_` path is never withdrawn on that branch | `tests/test_transport_dispatch_facts.py` section 4: write failure; rename failure with the request present; rename failure with the request absent; rename failure with an unobservable probe; the same, answered; the domain reading of the uncertain phase; per-call independence; the frozen `send_and_wait` behaviour | **5 failed.** The unobservable probe reported `NOT_SUBMITTED` + `NOT_APPLICABLE`, which `decide_mutation` reads as row 1 -- a definite local FAILURE that authorizes a retry -- instead of row 3, UNKNOWN and sticky | 197 passed in the module |
+| **R5** the mapper drops a setter error | `RuntimeActionMutation.call_error` carries the bounded sanitized setter detail on every admitted row, beside whatever canonical reason `cause` needs; `sanitized_mutation_snapshot` bounds it; `decide_mutation` never reads it | `tests/test_service_runtime_observation.py` section 9 (adapter), `tests/test_execution_status_facts.py` (decision and snapshot), `tests/test_service_mutation_script_harness.py` section 7 (the real generated script plus the real applicator and a real JSON round trip) | **12 failed** across the three modules. `test_no_stored_record_drops_the_setter_error_it_was_given`, which names no new field, failed because the detail was absent from the whole serialized record: for a failed pre-read `cause` was set to `""`, and for an attempted DNS add it was replaced by the footprint label | 78 + 120 + 27 passed in the three modules |
+
+Two assertions in the R3a/R1 rows failed on `ec8c8bc` because the release
+payload contract itself changed (`observed["released"]` read
+`release_unverified` where the corrected contract reads `released`). They are
+positive controls affected by the 9.3 payload exception, not behavioural REDs,
+and are reported as such rather than counted as evidence of a defect.
+
+### 9.5 Changed files in this correction
+
+| File | Change |
+| --- | --- |
+| `domain/enterprise/models/configuration_runtime.py` | `RuntimeActionMutation.call_error`; `sanitized_mutation_snapshot` bounds it. No decision input, no new row, no change to the table |
+| `infrastructure/execution/enterprise_service_runtime.py` | R1: `ClientOwnership`, `ClientLease`, `ReleaseOutcome`, `_web_fetch` split out of `_verify_http`, `_finalize_client`, `_with_release`, `_background_http_release`, ownership-first start scripts. R3a: `_typed_payload`, `TextReading`, `_text_reading`, stage validation in both readers. R3b: `_PING_TARGET`, `_PING_STATISTICS`, `_dns_resolution`, expectation-independent `_dns_window_complete`, the expected-address admission check. R5: `call_error` on every admitted row |
+| `application/use_cases/apply_services.py` | R2: the suffix filter replaced by typed `(kind, reference_id)` withholding plus a re-evaluation through `prerequisites_satisfied` |
+| `infrastructure/execution/file_bridge.py` | R4: `PublicationPhase`; `_publish` returns it; `dispatch_and_wait` maps `UNKNOWN` to `ACCEPTANCE_UNKNOWN` + `NOT_OBSERVED`. `send_and_wait` and `_write_atomic` untouched |
+| `tests/test_service_client_ownership_harness.py` (new) | the client-ownership lifecycle harness: one long-lived Node process, the real generated scripts, per-phase injected channel boundaries, oracle = live-client count and call log |
+| `tests/test_service_runtime_observation.py` | sections 7, 8 and 9 (R3a, R3b, R5 adapter); stub payloads updated to the shape the real scripts report |
+| `tests/test_service_runtime.py` | stub payloads updated to the real shape; the stale-marker fixture rebound to its own script so it exercises the path it claims |
+| `tests/test_service_application_uncertainty.py` | section 6b (R2); `_apply` gains an optional plan `transform`; one behaviour test that the real applicator routes every row through `decide_mutation` with exactly the mutation the runtime reported |
+| `tests/test_transport_dispatch_facts.py` | R4: the `_publish` stub replaced by real filesystem-boundary injection, plus the four publication phases and the domain reading of the uncertain one |
+| `tests/test_execution_status_facts.py` | R5 at DTO level: the snapshot retains and bounds `call_error`, and the decision ignores it |
+| `tests/test_service_mutation_script_harness.py` | R5 through the real script: a `fail_before` and a `failure_detail` stub switch, four setter-error scenarios, the JSON round trip and the size bound |
+
+Untouched: `EXTENSION/`, the E5 compiler/applicator/runtime, the security
+runtime, `mutation_replay.py`, `service_plan.py`, `tool_registry.py`, every
+MCP tool, `pyproject.toml`, and the TD-12 decision table in
+`configuration_runtime.py`. No `# noqa`, no broadened ignore, no removed gate,
+no unrelated cleanup.
+
+### 9.6 Verification results for the correction
+
+| Level | Result |
+| --- | --- |
+| Focused RED then GREEN, per finding | recorded in 9.4, measured per module |
+| Client-ownership harness | 20 scenarios executed by **Node v24.19.0** against the stub client manager, running the actual generated start, inspect and release scripts; skips only when Node is absent locally and fails under `GITHUB_ACTIONS` |
+| Generated mutation-script harness | 27 scenarios, same Node engine, same fail-not-skip rule |
+| Affected runtime, application and transport modules | `tests/test_service_runtime.py`, `test_service_runtime_observation.py`, `test_service_application_uncertainty.py`, `test_transport_dispatch_facts.py`, `test_execution_status_facts.py`, `test_service_mutation_script_harness.py`, `test_service_client_ownership_harness.py`, `test_fire_and_forget_surface.py` |
+| Full offline suite | see 9.7 |
+| Ruff | `ruff check` and `ruff format --check` clean on every changed Python file, `ruff 0.16.7` |
+| Docs | `mkdocs build --site-dir _site` |
+| Whitespace | `git diff --check` |
+| Delivery gate | `scripts\quality_gate.py --base cisco/main --delivery-commit HEAD` on the correction commit |
+| CI on the new delivery SHA | see 9.7 |
+
+### 9.7 Remaining limitations of the correction
+
+- **Nothing here is evidence of Packet Tracer behaviour.** Every observation
+  comes from a stub, a fake, a local socket or the local filesystem. The two
+  Node harnesses prove what the generated scripts do against an in-memory
+  object graph, not what `HttpBackgroundClient`, `DnsServerProcess` or the
+  Script Engine do in a running instance. No Packet Tracer instance was
+  contacted and no bridge was started for product use.
+- The R1 finalization is bounded to **one** release dispatch. When that
+  dispatch is not correlated, or the start was never observed and no slot is
+  found, the row reports unresolved ownership explicitly
+  (`release_failed`, `release_unverified`, `ownership_unknown`) and the
+  ownership state stays **UNKNOWN**. That is the honest answer under the known
+  engine boundary: a command that may execute late can create a client this
+  process will never see, and no bounded observation can exclude it.
+- The `Pinging`/`Ping statistics` output shapes R3b parses are taken from the
+  PC command-prompt output the existing fixtures already carry, not from a
+  measured LIVE run. A Packet Tracer build whose ping output uses a third
+  shape would be read as `address_not_reported`, which is inconclusive and
+  fail-closed rather than wrong, and would be a real gap to close with
+  measured output.
+- R4's `UNKNOWN` publication phase is now provoked by injecting `OSError`
+  into `os.replace` and into `Path.exists` for the request path. That
+  exercises the classification and the mapping; it is still not a real partial
+  rename on a real filesystem, and the review's own acceptance list treats the
+  injected boundary as the available evidence.
+- `ServiceApplicationResult.compact_summary()` still does not carry
+  `limitations`, and `call_error` is reachable through the full `model_dump`
+  and `received_mutation`, not through the frozen compact shapes.
+- The enum presentation equivalence remains measured locally on CPython
+  3.12.10 only; 3.11 and 3.13 are settled by the CI matrix.
+- Delivery status is `READY_FOR_REVIEW`. Self-review is not independent audit.
+  This correction claims no capability promotion, no LIVE behaviour and no
+  merge authorization.
 
 ---
 
