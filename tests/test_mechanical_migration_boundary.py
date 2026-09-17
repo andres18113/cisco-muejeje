@@ -23,56 +23,28 @@ from scripts.quality_gate import (
     select_delivery_changes,
     select_worktree_changes,
 )
+from tests.mechanical_migration_fixtures import (
+    CANONICAL,
+    HISTORICAL_MODULE,
+    LEGACY,
+    QUALITY_GATE,
+    RENAMED_MODULE,
+    REPOSITORY_ROOT,
+    TARGET,
+)
+from tests.mechanical_migration_fixtures import (
+    git as _git,
+)
+from tests.mechanical_migration_fixtures import (
+    initialize_repository as _initialize_repository,
+)
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-QUALITY_GATE = REPOSITORY_ROOT / "scripts" / "quality_gate.py"
-CANONICAL = "CANONICAL_PYTHON_NAMESPACE"
 AUTHORIZED = resolve_transformations([CANONICAL])
-LEGACY = "src.packet_tracer_mcp"
-TARGET = "packet_tracer_mcp"
-
-# A historical module carrying pre-existing Ruff debt: the public function has no
-# docstring (D103) and the imports are unsorted (I001). The migration never
-# authors that debt, so a rename-only delta must not make the gate report it.
-HISTORICAL_MODULE = '''"""Historical module."""
-
-from src.packet_tracer_mcp.domain.models import Device
-import os
-
-
-def build(name):
-    return Device(name, os.name)
-'''
-
-RENAMED_MODULE = HISTORICAL_MODULE.replace(LEGACY, TARGET)
 
 
 def _classify(base: str, candidate: str) -> Verdict:
     """Classify a source-level delta with the canonical namespace authorized."""
     return classify_source_change(base, candidate, AUTHORIZED)
-
-
-def _git(repository: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
-    """Run Git in a temporary repository and require success."""
-    return subprocess.run(
-        ["git", *arguments],
-        cwd=repository,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-
-def _initialize_repository(repository: Path) -> str:
-    """Create a repository holding the historical module and return its SHA."""
-    repository.mkdir(parents=True, exist_ok=True)
-    _git(repository, "init", "--initial-branch=main")
-    _git(repository, "config", "user.email", "quality-gate@example.invalid")
-    _git(repository, "config", "user.name", "Quality Gate Test")
-    (repository / "historical.py").write_text(HISTORICAL_MODULE, encoding="utf-8")
-    _git(repository, "add", "historical.py")
-    _git(repository, "commit", "-m", "test: create historical module")
-    return _git(repository, "rev-parse", "HEAD").stdout.strip()
 
 
 def _relative_names(paths: tuple[Path, ...], repository: Path) -> list[str]:
@@ -129,48 +101,44 @@ def test_many_authorized_imports_in_one_file_are_mechanical_only() -> None:
     assert verdict.applied_sites == 3
 
 
-def test_recognized_dynamic_import_targets_are_mechanical_only() -> None:
-    """Accept the explicitly registered dynamic import call targets."""
-    base = (
-        '"""Module."""\n\n'
-        "import importlib\n\n"
-        'first = importlib.import_module("src.packet_tracer_mcp.foo")\n'
-        'second = __import__("src.packet_tracer_mcp.bar")\n'
-    )
+@pytest.mark.parametrize(
+    ("label", "base"),
+    [
+        (
+            "dynamic import calls",
+            '"""Module."""\n\n'
+            "import importlib\n\n"
+            'first = importlib.import_module("src.packet_tracer_mcp.foo")\n'
+            'second = __import__("src.packet_tracer_mcp.bar")\n',
+        ),
+        (
+            "patch and monkeypatch targets",
+            '"""Module."""\n\n'
+            "from unittest import mock\n\n\n"
+            "def run(monkeypatch):\n"
+            '    with mock.patch("src.packet_tracer_mcp.foo.Bar"):\n'
+            '        monkeypatch.setattr("src.packet_tracer_mcp.foo.value", 1)\n',
+        ),
+        (
+            "patch keyword target",
+            '"""Module."""\n\n'
+            "from unittest.mock import patch\n\n"
+            'context = patch(target="src.packet_tracer_mcp.foo.Bar")\n',
+        ),
+    ],
+    ids=["dynamic-imports", "patch-and-monkeypatch", "patch-keyword"],
+)
+def test_unaudited_dynamic_targets_are_authored(label: str, base: str) -> None:
+    """Refuse dynamic string rewrites that no audited site registers.
 
+    A recognizable callee name is not evidence of what the name is bound to, so
+    these constructs are proven only at audited sites; see
+    `test_mechanical_dynamic_site_authority.py`.
+    """
     verdict = _classify(base, base.replace(LEGACY, TARGET))
 
-    assert verdict.classification is Classification.MECHANICAL_ONLY
-    assert verdict.applied_sites == 2
-
-
-def test_recognized_patch_targets_are_mechanical_only() -> None:
-    """Accept the explicitly registered patch and monkeypatch string targets."""
-    base = (
-        '"""Module."""\n\n'
-        "from unittest import mock\n\n\n"
-        "def run(monkeypatch):\n"
-        '    with mock.patch("src.packet_tracer_mcp.foo.Bar"):\n'
-        '        monkeypatch.setattr("src.packet_tracer_mcp.foo.value", 1)\n'
-    )
-
-    verdict = _classify(base, base.replace(LEGACY, TARGET))
-
-    assert verdict.classification is Classification.MECHANICAL_ONLY
-    assert verdict.applied_sites == 2
-
-
-def test_patch_keyword_target_is_mechanical_only() -> None:
-    """Accept the registered keyword form of a patch target."""
-    base = (
-        '"""Module."""\n\n'
-        "from unittest.mock import patch\n\n"
-        'context = patch(target="src.packet_tracer_mcp.foo.Bar")\n'
-    )
-
-    verdict = _classify(base, base.replace(LEGACY, TARGET))
-
-    assert verdict.classification is Classification.MECHANICAL_ONLY
+    assert verdict.classification is Classification.SEMANTIC_OR_AUTHORED_CHANGE, label
+    assert not verdict.is_exempt
 
 
 def test_untouched_comment_and_docstring_do_not_block_classification() -> None:
@@ -373,14 +341,18 @@ def test_identical_revisions_are_unchanged() -> None:
     assert verdict.applied_sites == 0
 
 
-def test_windows_line_endings_do_not_defeat_classification() -> None:
-    """Compare a stored LF base with a checked-out CRLF candidate."""
+def test_line_ending_change_beside_a_rename_is_authored() -> None:
+    """Compare revisions exactly: the classifier never normalizes line endings.
+
+    Checkout conversion is handled by the gate, which proves delivery over stored
+    Git blobs; see `test_mechanical_delivery_blobs.py`.
+    """
     base = HISTORICAL_MODULE.encode("utf-8")
     candidate = RENAMED_MODULE.replace("\n", "\r\n").encode("utf-8")
 
     verdict = classify_bytes_change(base, candidate, AUTHORIZED)
 
-    assert verdict.classification is Classification.MECHANICAL_ONLY
+    assert verdict.classification is Classification.SEMANTIC_OR_AUTHORED_CHANGE
 
 
 def test_undecodable_base_is_unverifiable() -> None:

@@ -180,9 +180,10 @@ the branch with itself. The gate re-resolves the selected reference and prints
 the base and merge-base SHAs. Worktree mode checks complete committed, staged,
 unstaged, and untracked Python paths but is provisional because it reads
 filesystem bytes. Delivery mode additionally requires `--delivery-commit`, a
-clean tree/index, and exact equality with `HEAD`, so filesystem bytes equal the
-requested commit. Missing paths and unresolved identities fail closed. `--files`
-is a focused check, never delivery validation.
+clean tree/index, and exact equality with `HEAD`, so the checked-out files are the
+requested commit's content after Git's checkout conversion. Missing paths and
+unresolved identities fail closed. `--files` is a focused check, never delivery
+validation.
 
 The gate intentionally does not scan every legacy Python file. This makes the
 adoption boundary measurable without global ignores or mass formatting. The
@@ -193,14 +194,20 @@ assessment.
 Touching a file semantically means owning its current Ruff state. An authorized
 mechanical migration is the one exception, because rewriting one token per import
 across hundreds of files would otherwise report untouched historical debt as new.
-`--mechanical-migration IDENTIFIER` authorizes one transformation registered in
-`scripts/mechanical_migration.py` for that run, and a file is exempt only when
-the classifier reconstructs the candidate byte for byte by applying that
-transformation to the base revision. Registration, invocation, and per-file proof
-are all required; diff size, file name, branch, and in-file markers grant
-nothing. An unproven delta is authored work and an unverifiable comparison fails
-the gate. The exemption exists only relative to a comparison base, so it cannot
-accumulate, and a run that grants one prints every exempted path. The
+A file is exempt only when applying a transformation registered in
+`scripts/mechanical_migration.py` to its base revision reconstructs the candidate
+exactly. In delivery mode both revisions are the stored Git blobs at the merge
+base and the delivery commit, so no checkout conversion participates; worktree
+mode compares filesystem bytes with normalized line endings and stays
+provisional. A delivery exemption needs a committed authorization record, passed
+with `--mechanical-authorization`, whose exact base commit equals the comparison
+merge base; any other merge base leaves the record inactive and grants nothing.
+`--mechanical-migration IDENTIFIER` authorizes provisional worktree runs only.
+Registration, a base-bound authorization, and per-file proof are all required;
+diff size, file name, branch, callee names, and in-file markers grant nothing,
+and a dynamic string is rewritten only at a registered audited site. An unproven
+delta is authored work and an unverifiable comparison fails the gate. A run that
+grants an exemption prints every authorization and exempted path. The
 [mechanical migration quality boundary](change-briefs/mechanical-migration-quality-boundary.md)
 brief holds the contract and the procedure for registering a new transformation.
 
