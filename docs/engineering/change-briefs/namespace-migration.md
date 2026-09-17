@@ -2,16 +2,22 @@
 
 ## Record
 
-- Status: **IMPLEMENTED — READY_FOR_REVIEW** (self-review complete; independent
-  audit outstanding)
+- Status: **IMPLEMENTED — READY_FOR_REVIEW** once the exact delivery commit
+  passes CI; the delivery report, not this file, records that run
 - Risk: **L**
 - Authorized starting point: `main@5330e0dd424bfa746007034ba0672e570cc4ff0f`
+- First implementation: `73494e3c095595a01cbccb36f398b24ccea47169`
+- Integrated base: `main@502c14ba2b586e46045b1a2bfeedbb944a355af0`, which adds
+  the mechanical migration quality boundary, merged into this branch by
+  `89b914f06c86815a5677010e665f736f208d542d`
+- Blocker correction: `31772fe6af409b5eb6f5db505d2cb6e7383b6b14`
 - Delivery branch: `feature/canonical-python-namespace`
 - Target identity: `packet_tracer_mcp` in production and tests — **achieved**
-- Former containment: `src.packet_tracer_mcp` is retired. `src/` is now only the
-  package's physical location and is not an import namespace.
-- Known unmet criterion: **NM9**, deferred by explicit maintainer decision. See
-  [Ruff boundary debt](#ruff-boundary-debt-nm9-deferred).
+- Retired identity: `src.packet_tracer_mcp` is **not importable**. `src/` is only
+  the package's physical location, and `src/__init__.py` refuses any import
+  through it.
+- NM9: **met** through the mechanical migration quality boundary; see
+  [Ruff boundary (NM9)](#ruff-boundary-nm9).
 
 ## Problem, scope, and exclusions
 
@@ -99,7 +105,16 @@ that fresh inventory.
 
 ## Preserved isolated reproduction
 
-Command, run outside ordinary pytest with the checkout-local interpreter:
+The reproduction lived at `scripts/reproduce_namespace_identity.py` through
+`main@502c14ba2b586e46045b1a2bfeedbb944a355af0` and is removed by this
+migration. It cannot succeed after it, because `src/__init__.py` now refuses
+the import it depends on, and its child source is an executable import of the
+retired namespace, which the inventory rejects in any file. To reproduce the
+defect, check out that commit and run it there. Its recorded observation is
+kept below.
+
+Command, run outside ordinary pytest with the checkout-local interpreter, at
+`502c14b` or earlier:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\reproduce_namespace_identity.py
@@ -152,39 +167,60 @@ Documented only; this brief does not authorize any step:
 ## Delivery record
 
 Implemented on `feature/canonical-python-namespace` from
-`main@5330e0dd424bfa746007034ba0672e570cc4ff0f`. All measurements below were
-taken in this checkout with `.\.venv\Scripts\python.exe` (pytest 9.1.1), whose
-editable install resolves inside this checkout.
+`main@5330e0dd424bfa746007034ba0672e570cc4ff0f`, then corrected at `31772fe`
+after integrating `main@502c14b`. Each measurement names the commit it was taken
+at. All were taken in this checkout with `.\.venv\Scripts\python.exe` (pytest
+9.1.1), whose editable install resolves inside this checkout, except where a
+sibling worktree or an outside environment is named.
 
 ### Inventory, before and after
 
 Measured with `scripts/namespace_inventory.py`, which parses every tracked
-Python file and separates import statements from string constants from prose,
-because a name in an import and the same name inside a guard's list of
-forbidden values are not the same fact.
+Python file and classifies each mention of the retired namespace by its
+syntactic context, never by the file it is in:
 
-| Category | Before | After |
+- **Active** mentions load or register a second identity: an import statement
+  (including `from src import ...`), a string passed to a callable that imports
+  or patches by name, a key added to `sys.modules`, or source text executed by
+  `exec`, `eval`, `compile`, or after `-c`, including source kept in a string
+  constant and launched later. Active mentions fail the inventory in every file.
+- **Inert** mentions name the retired namespace as data: a guard's list of
+  forbidden names, an assertion subject, a `sys.modules` lookup, or source text
+  that is never executed. They are allowed only in the files listed in
+  `RETAINED_STRING_REFERENCES` with a reason, and an inert mention anywhere else
+  fails as **unreviewed**.
+- Docstrings and comments are prose and never fail it.
+
+| Category | Before, at `502c14b` | After, at `31772fe` |
 | --- | --- | --- |
-| Active legacy import statements | 1384, in 240 files | **0** |
-| Active legacy dynamic-import / patch targets | 9 | **0** |
-| Retained rejection references | 19, in 14 files | 22, in 18 files |
-| Prose mentions (never active) | 4 | 6 |
+| Active import statements | 1384, in 240 files | **0** |
+| Active dynamic-import and patch targets | 9 | **0** |
+| Active executed source | 2 | **0** |
+| Unreviewed inert mentions | not applicable | **0** |
+| Retained inert mentions | not applicable | 65, in 22 files |
+| Prose mentions | 6 | 11 |
 | Command exit status | 1 | **0** |
 
-The nine active string targets were `importlib.util.find_spec`,
+The nine dynamic targets were `importlib.util.find_spec`,
 `importlib.import_module`, `__import__` and one `monkeypatch.setattr` target in
 `test_cp_scale_live_cli.py`, `test_cp_scale_live_coordinator.py`,
 `test_cp_scale_stage_executor.py`, `test_e95_e5_capability_evidence.py`,
 `test_mutation_transport_ambiguity.py` and `test_poe_delivery_qualification.py`.
 A `find_spec` on a legacy submodule imports the legacy parent package, so these
-were live producers of the second identity, not inert text.
+were live producers of the second identity, not inert text. The two executed
+sources were the child processes of the reproduction script and of the superseded
+containment tests in `test_worktree_isolation.py`. The retained-mention counts are
+measured only after the migration, because the allowlist describes the migrated
+file set.
 
-Retained references grew and shrank by none. Three superseded containment
-assertions (below) now state the migrated invariant, and the guard and the
-inventory added by this change necessarily name the retired namespace in order
-to reject it. Every allowlist entry is asserted to name a file that exists and
-to carry a non-empty reason, so the list cannot become a place to park a real
-use.
+The first implementation's inventory decided retention per file: any string in
+an allowlisted file counted as retained, so an `import_module`, a patch target, a
+`sys.modules` registration, or a `-c` child source in such a file was hidden, and
+`from src import packet_tracer_mcp` was not seen at all. Each of those thirteen
+executable forms was reproduced against it — all hidden — before the
+classification was replaced. Every allowlist entry must name an existing file with
+a reason, and the allowlist must equal the set of files that still hold a retained
+mention, so it can neither park a real use nor keep a stale entry.
 
 ### Cohorts
 
@@ -228,11 +264,16 @@ Each was reproduced first and then corrected at the layer that owned it.
    so it would have been order-dependent fiction. They now assert what is true
    and still worth guarding - one identity loaded, and not the retired one.
 
-3. **`src/__init__.py`** was kept, not deleted. Deleting it does not close the
-   namespace: with the repository root on `sys.path`, `src` remains a PEP 420
-   namespace package and `import src.packet_tracer_mcp` still resolves. Verified
-   empirically on a synthetic tree with no `__init__.py`. The file now documents
-   that, and the boundary is held by enforcement instead.
+3. **`src/__init__.py`** refuses import. Deleting it does not close the
+   namespace: with the repository root on `sys.path`, `src` becomes a PEP 420
+   namespace package and `import src.packet_tracer_mcp` still resolves. The first
+   implementation kept the file as a documented marker, which left the second
+   identity importable — measured, from the repository root, `import src`,
+   `import src.packet_tracer_mcp`, a submodule import, and `find_spec` of the
+   package and of a submodule all succeeded. The file now raises `ImportError`
+   naming `import packet_tracer_mcp`, and all five forms are refused. The
+   installed package never reaches it: the editable install and the wheel expose
+   `packet_tracer_mcp` directly, and the wheel holds no `src/`.
 
 4. **The LIVE import-isolation gate** lost a safety property and had it restored
    under NM10. Before the migration a pytest process failed the gate for lacking
@@ -277,14 +318,15 @@ identity this change exists to remove, and is not attempted here.
 
 ### Packaging (NM6)
 
-The wheel was built and installed into a fresh environment **outside the
-repository**, with no editable install present. Observed there: the package
-resolves from `site-packages`; `import src.packet_tracer_mcp` does **not**
-resolve; `CapabilityStatus.SUPPORTED is CapabilityStatus.SUPPORTED` and the
-corresponding `isinstance` both hold; `python -m packet_tracer_mcp --help` and
-the `pt-mcp` console script both exit 0. The wheel contains `packet_tracer_mcp/`
-at top level with no `src/` prefix, confirming `src/` is a build-time layout
-only.
+Re-verified at `31772fe`. The wheel was built from the clean tree and installed
+into a fresh environment **outside the repository**, with no editable install
+present. Observed there: the package resolves from `site-packages`; the retired
+namespace does not resolve (`ModuleNotFoundError`) and `src` is never loaded;
+`CapabilityStatus.SUPPORTED` keeps one identity and `isinstance` holds; `python -m
+packet_tracer_mcp --help` and the `pt-mcp` console script both exit 0; and
+planning a two-router DHCP topology yields a valid plan of 8 devices and 7 links.
+The wheel contains only `packet_tracer_mcp/` and its metadata at top level, with
+no `src/` prefix, confirming `src/` is a build-time layout only.
 
 ### Persisted names (NM8)
 
@@ -301,46 +343,74 @@ Line endings were preserved throughout: this checkout is CRLF under
 `core.autocrlf=true`, and the rewrite was performed on bytes so no file was
 silently normalized.
 
-### Ruff boundary debt (NM9, deferred)
+### Ruff boundary (NM9)
 
-**NM9 is not met on this branch, by explicit maintainer decision.**
+**NM9 is met.** The first implementation deferred it: a one-line import rename
+pulls every migrated file across the incremental Ruff boundary, and the gate
+attributed about 3845 historical violations to the migration. The mechanical
+migration quality boundary, integrated from `main@502c14b`, removes exactly that
+false debt and nothing else.
 
-The gate selects files changed against the base, so a one-line import rename
-pulls every migrated test file across the incremental Ruff boundary at once.
-Measured in delivery mode on the exact delivery commit, with a clean tree:
+The authorization is the committed record
+`scripts/mechanical_authorizations/canonical-python-namespace.json`, which binds
+`CANONICAL_PYTHON_NAMESPACE` to base commit
+`502c14ba2b586e46045b1a2bfeedbb944a355af0` under this brief. The CI quality job
+passes it with `--mechanical-authorization`; it is active only while the
+comparison merge base is that commit.
 
-| Measure | Value |
-| --- | --- |
-| Files selected by the gate | 250 |
-| The migration's own diff | ~1419 lines |
-| `ruff format` would reformat | 235 files, ~36 200 lines |
-| `ruff check` violations | 3844 |
-| - of which missing-docstring (D100/101/102/103/107) | 3315 |
-| - substantive, after `ruff format` and all autofixes | ~530 before autofix, ~77 after |
+Measured in delivery mode at `31772fe`, with a clean tree, over exact Git blobs:
 
-For context, the boundary is repository-wide and not specific to tests: `src/`
-itself currently reports 2746 violations and 262 unformatted files. No
-configuration resolves this, because `ruff format` has no per-file ignores.
+| Measure | With the record | Without it (control) |
+| --- | --- | --- |
+| Selected Python files | 249 | 249 |
+| Record state | **ACTIVE** at merge base `502c14b` | — |
+| Exempt as `MECHANICAL_ONLY` | 235 | 0 |
+| Checked by Ruff | 14 | 249 |
+| Ruff lint findings | **0** | 3663 |
+| Files needing formatting | **0** | 226 |
+| Gate exit status | **0** | 1 |
 
-The options were measured and put to the maintainer, who chose to deliver the
-migration alone and open the boundary expansion as its own change with its own
-debt assessment - which is what `docs/engineering/standards.md` already
-prescribes for expanding enforced scope. Consequences, stated plainly:
+The 14 checked files are the ones this migration authored or created, and each
+passes Ruff in full:
 
-- `scripts/quality_gate.py --delivery-commit HEAD` **fails** on this branch, and
-  the CI `quality` job fails with it. The `pytest` and `docs` jobs pass.
-- No Ruff rule was weakened, no global ignore added, and no exclusion grown.
-- Every file this change **authored** does pass the gate:
-  `tests/namespace_preflight.py`, `tests/test_namespace_preflight.py`,
-  `tests/test_namespace_inventory.py`, `scripts/namespace_inventory.py`,
-  `tests/test_worktree_isolation.py` and `src/__init__.py`.
-- Two production files carrying legacy format debt were edited for NM10 and are
-  left unformatted deliberately, so the security-relevant diff stays readable:
-  `import_isolation_preflight.py` and `cp_scale_live_preflight.py`.
+- new: `scripts/namespace_inventory.py`, `tests/namespace_preflight.py`,
+  `tests/test_namespace_preflight.py`, `tests/test_namespace_inventory.py`;
+- authored: `src/__init__.py`, `import_isolation_preflight.py`,
+  `cp_scale_live_preflight.py`, `tests/conftest.py`,
+  `test_cp_live_m0_equivalence_baseline.py`,
+  `test_cp_scale_live_failure_evidence.py`, `test_cp_scale_voice_staging.py`,
+  `test_import_isolation_preflight.py`, `test_poe_delivery_qualification.py`,
+  `test_worktree_isolation.py`.
+
+`test_poe_delivery_qualification.py` is authored because its patch target was an
+implicitly concatenated literal, which the boundary deliberately never rewrites.
+Two files had changed only in docstring prose — `tests/cp_live_m0_harness.py` and
+`tests/test_e95_productive_pipeline.py` — and that prose was reverted, so the first
+is unchanged and the second is proven mechanical instead of reformatting a
+CP-LIVE-adjacent harness.
+
+Bringing the authored files to the gate took formatting, 119 docstrings, and
+Ruff's fixes for import order, an unused import, `datetime.UTC`, unpacking, 27
+unused unpacked names, and an `Optional` ordering. No rule was changed, and no
+ignore, exclusion, or `noqa` was added. One fix reaches production behavior:
+`ImportIsolationState` is now a `StrEnum` instead of `(str, Enum)`. That changes
+only `str()` and `format()` of a member, which no consumer uses: the LIVE runners
+and CP-SCALE evidence record `state.value`, the rendered diagnostic starts with it,
+and JSON writes the value either way. A test pins those recorded forms for every
+state.
 
 ### Worktree ownership (NM1)
 
-Proved on a real sibling worktree created at the delivery commit,
+Re-verified at `31772fe` on a fresh sibling worktree, `Cisco-MCP-nm1`, detached
+at that commit with its own `.venv` and editable install. Its interpreter
+resolves `packet_tracer_mcp` inside that worktree. Installed with the
+prescribed `.[test,docs,quality]` extras, its complete suite ran there with
+5297 passed, 3 skipped, exit 0, matching this checkout; a first run installed
+with only `.[test]` failed the two tests that invoke Ruff. Each checkout's
+`conftest` refused the other checkout's interpreter as `FOREIGN_INTERPRETER`,
+naming both paths, before collection. The worktree was removed afterwards.
+
+First proved on a real sibling worktree created at the first implementation,
 `Cisco-MCP-nm1`, which was given its own `.venv` and its own editable install.
 
 Positive: from that worktree's repository root, its own interpreter resolves
@@ -364,39 +434,61 @@ now a refusal rather than a silent substitution.
 
 ### Verification results
 
-All offline, in this checkout, with the checkout-local interpreter.
+All offline, with the checkout-local interpreter. Counts are at `31772fe` unless
+stated.
 
 | Check | Result |
 | --- | --- |
-| Pre-migration reproduction, at the base SHA | Reproduced: one file tree, two module identities, `isinstance` across them false |
-| Legacy inventory | 0 active imports, 0 active targets, exit 0 |
-| Baseline suite, before the change | 5030 passed, 3 skipped, exit 0 |
-| Full suite, after the change | **5056 passed, 3 skipped, exit 0** |
-| Focused: preflight, inventory, worktree identity | 30 passed |
-| Focused: LIVE import-isolation gate | 16 passed |
+| Pre-migration reproduction, at `5330e0d` | Reproduced: one file tree, two module identities, `isinstance` across them false |
+| Retired namespace from the repository root | `import src`, the package, a submodule, and `find_spec` of the package and a submodule are all refused with `ImportError` |
+| Legacy inventory | 0 active imports, 0 active string references, 0 unreviewed mentions, exit 0 |
+| Inventory controls | 13 executable forms are active in allowlisted and unlisted files alike; 6 inert forms are retained only where allowlisted |
+| Mutation checks | 8 of 8 detected: refusal removed, allowlist hiding active references, `from src import` missed, registry, dynamic import, executed source, name-resolved source, and unreviewed mentions each ignored |
+| Affected suites | 544 passed |
+| Full suite | **5297 passed, 3 skipped, exit 0** |
 | Root entrypoints | `python -m packet_tracer_mcp --help` and `pt-mcp --help` exit 0 from the repository root, no `PYTHONPATH`, no `cwd=src` |
-| Wheel in an environment outside the repository | Import, `python -m`, console script, enum identity and domain behaviour all pass; the retired namespace does not resolve |
+| Wheel in an environment outside the repository | Import, `python -m`, console script, enum identity and a domain plan all pass; the retired namespace does not resolve |
 | Foreign-environment rejection | Refused with injected observations, end-to-end in a child process, and across two real sibling worktrees |
-| Fresh sibling worktree, own `.venv` and editable install | 5056 passed, 3 skipped, exit 0 |
+| Fresh sibling worktree, own `.venv` and editable install | 5297 passed, 3 skipped, exit 0, matching this checkout, once installed with the prescribed `.[test,docs,quality]` extras (a first run installed with only `.[test]` failed the two tests that invoke Ruff) |
+| Ruff delivery gate with the committed record | Exit 0: 235 exempt, 14 checked, 0 findings |
+| Ruff delivery gate without it (control) | Exit 1: 249 checked, 3663 findings, 226 files to format |
 | MkDocs build | Exit 0; the two link warnings are pre-existing in `docs/reference/cp-scale/` |
 | `git diff --check` | Clean |
-| Ruff gate on files this change authored | Passes |
-| Ruff delivery gate over the whole change | **Fails** - NM9 deferred, measured above |
 
-The suite grew by 26 tests: the preflight contract, the inventory controls, the
-rewritten worktree identity guard, and the new `TEST_PROCESS` refusal.
+### Requirement results
+
+| ID | Result at `31772fe` | Evidence |
+| --- | --- | --- |
+| NM1 | Met | Fresh sibling worktree with its own environment; origin inside it; foreign interpreters refused in both directions |
+| NM2 | Met | Inventory: no active import, dynamic target, registry key, or executed source; controls prove the classification |
+| NM3 | Met | `tests/namespace_preflight.py` refuses before collection, naming expected and observed values |
+| NM4 | Met | Retired namespace refused at import; preflight and LIVE gate reject any mixture; no `sys.modules` alias |
+| NM5 | Met | Module and console entrypoints exit 0 from the repository root without `cwd=src` |
+| NM6 | Met | Wheel installed outside the repository passes import, entrypoints, identity, and a domain plan |
+| NM7 | Met at `73494e3`, unchanged since | `prepend` chosen and pinned; `importlib` measured and rejected |
+| NM8 | Met at `73494e3`, unchanged since | No module-qualified persisted name affected; historical evidence untouched |
+| NM9 | Met | Delivery gate exit 0 with the base-bound record; control without it exits 1 |
+| NM10 | Met offline; exact-SHA CI in the delivery report | Focused, affected, full, packaging, and entrypoint checks pass; `TEST_PROCESS` refusal retained; LIVE unclaimed |
 
 ### Residual risk and debt
 
-- **NM9 Ruff boundary expansion** is open and unscheduled. Until it is done, CI
-  is red on the `quality` job for this branch, and a reviewer must not read that
-  failure as a defect in the migration.
 - **Duplicate test-module identity** is untouched and pre-existing: under
   `prepend`, a module collected as `test_x` and imported elsewhere as
   `tests.test_x` is two module objects over one file. This is the same class of
-  defect as the one just removed, one level up, and is not in this change's
-  scope. It is the reason the `importlib` alternative is worth revisiting once
-  sibling imports are normalized.
+  defect as the one removed, one level up, and is not in this change's scope. It
+  is the reason the `importlib` alternative is worth revisiting once sibling
+  imports are normalized.
+- **The inventory reads literal text.** A module name assembled at run time from
+  separate pieces, or a callee reached through `getattr`, is outside any static
+  scan; `src/__init__.py` refuses such an import at run time.
+- **Outside pytest there is no preflight.** An interpreter from one checkout
+  started in another still imports that other checkout's package silently, as
+  measured for NM1; the environment rule and the LIVE gate, not the suite, own
+  that boundary.
+- **The authorization record goes stale on purpose.** Once the migration is
+  integrated and `main` moves past `502c14b`, the quality job prints the record as
+  INACTIVE and grants nothing. Removing the record and its workflow argument is a
+  cleanup for a later change.
 - **LIVE behaviour is unverified and unclaimed.** Everything above is offline.
   The `TEST_PROCESS` refusal was measured in ordinary processes; no authorized
   LIVE Packet Tracer run was performed or is implied.
