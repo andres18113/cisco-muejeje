@@ -1422,37 +1422,124 @@ def test_the_bracketed_hostname_form_reports_the_same_address():
     assert row.observed["address"] == "192.0.2.10"
 
 
-@pytest.mark.parametrize(
-    ("output", "cause"),
-    [
-        (
-            "ping web.e6.example.local\n"
-            "Pinging 192.0.2.10 with 32 bytes of data:\n"
-            "Ping statistics for 192.0.2.99:\n"
-            "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n",
-            "address_ambiguous",
-        ),
-        (
-            "ping web.e6.example.local\n"
-            "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n",
-            "address_not_reported",
-        ),
-        (
-            "ping web.e6.example.local\n"
-            "Pinging not-an-address with 32 bytes of data:\n"
-            "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n",
-            "address_not_parsable",
-        ),
-    ],
-)
-def test_an_unreadable_address_is_inconclusive_in_both_directions(output, cause):
-    """An ambiguous window supports neither the expectation nor its negation."""
-    row, _ = _dns(output)
+#: Terminal windows that no supported shape can read as one observation. The
+#: policy is a property of the WINDOW, so it has to hold for the positive
+#: expectation and for the negative control alike (V2).
+_UNREADABLE_WINDOWS = [
+    (
+        "ping web.e6.example.local\n"
+        "Pinging 192.0.2.10 with 32 bytes of data:\n"
+        "Ping statistics for 192.0.2.99:\n"
+        "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n",
+        "address_ambiguous",
+    ),
+    (
+        "ping web.e6.example.local\n"
+        "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n",
+        "address_not_reported",
+    ),
+    (
+        "ping web.e6.example.local\n"
+        "Pinging not-an-address with 32 bytes of data:\n"
+        "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n",
+        "address_not_parsable",
+    ),
+]
+
+#: A window carrying BOTH a not-found statement and a successful resolution,
+#: in either order. No Packet Tracer output shape produces this, so it is an
+#: unrecognized dialect, not a non-resolution: taking whichever signal is read
+#: first made it VERIFIED for the negative control.
+_MIXED_WINDOWS = [
+    (
+        "ping web.e6.example.local\n"
+        "Ping request could not find host web.e6.example.local.\n"
+        "Pinging 192.0.2.10 with 32 bytes of data:\n"
+        "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n",
+        "not_found_first",
+    ),
+    (
+        "ping web.e6.example.local\n"
+        "Pinging 192.0.2.10 with 32 bytes of data:\n"
+        "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n"
+        "Ping request could not find host web.e6.example.local.\n",
+        "resolution_first",
+    ),
+]
+
+
+@pytest.mark.parametrize(("output", "cause"), _UNREADABLE_WINDOWS)
+@pytest.mark.parametrize("negative", [False, True])
+def test_an_unreadable_address_is_inconclusive_in_both_directions(
+    output, cause, negative
+):
+    """An ambiguous window supports neither the expectation nor its negation.
+
+    The negative control used to return before the address was ever parsed, so
+    the same unreadable window was INCONCLUSIVE for a positive expectation and
+    CONTRADICTED -- fresh negative evidence -- for a negative one (V2).
+    """
+    row, _ = _dns(output, negative=negative)
 
     assert row.status is ActionExecutionStatus.UNKNOWN
     assert row.observation is ObservationFact.INCONCLUSIVE
     assert row.fresh_evidence is False
     assert row.cause == cause
+    assert row.observed == {}
+
+
+@pytest.mark.parametrize(("output", "order"), _MIXED_WINDOWS)
+@pytest.mark.parametrize("negative", [False, True])
+def test_a_window_that_both_resolves_and_fails_decides_nothing(output, order, negative):
+    """Mutually conflicting signals cannot produce a verdict in either direction.
+
+    Whichever boolean was tested first won: the negative control read the
+    not-found line and reported OBSERVED/VERIFIED, and the positive
+    expectation read it and reported a fresh contradiction. Neither is an
+    unambiguous observation of anything.
+    """
+    row, _ = _dns(output, negative=negative)
+
+    assert row.status is ActionExecutionStatus.UNKNOWN
+    assert row.observation is ObservationFact.INCONCLUSIVE
+    assert row.fresh_evidence is False
+    assert row.cause == "mixed_not_found_and_resolution"
+
+
+@pytest.mark.parametrize("negative", [False, True])
+def test_an_incomplete_window_is_inconclusive_in_both_directions(negative):
+    """Nothing terminal arrived, so neither direction may be claimed."""
+    row, _ = _dns("ping web.e6.example.local\n", negative=negative)
+
+    assert row.observation is ObservationFact.INCONCLUSIVE
+    assert row.cause == "incomplete_window"
+
+
+def test_an_unreadable_window_still_ends_the_poll():
+    """Termination and classification are separate: it stops, then abstains.
+
+    The window carries a terminal statistics line, so polling has nothing left
+    to wait for; it is the READING that cannot decide.
+    """
+    ticks = iter([0.0, 0.0, 10.0, 20.0, 30.0, 40.0, 50.0])
+    row, calls = _dns(
+        _UNREADABLE_WINDOWS[1][0],
+        dns_timeout_seconds=30.0,
+        clock=lambda: next(ticks),
+    )
+
+    assert len(calls) == 2
+    assert row.observation is ObservationFact.INCONCLUSIVE
+    assert row.cause == "address_not_reported"
+
+
+def test_the_negative_control_reports_the_address_that_contradicted_it():
+    """A fresh negative measurement keeps the value it measured."""
+    row, _ = _dns(_WINDOW.format(address="192.0.2.10"), negative=True)
+
+    assert row.observation is ObservationFact.CONTRADICTED
+    assert row.fresh_evidence is True
+    assert row.observed["address"] == "192.0.2.10"
 
 
 def test_a_host_not_found_window_contradicts_a_positive_expectation():

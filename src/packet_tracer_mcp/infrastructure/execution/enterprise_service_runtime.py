@@ -305,6 +305,107 @@ def _text_reading(payload: dict, field_name: str, absent_cause: str) -> TextRead
     return TextReading(True, content=payload[field_name])
 
 
+class DnsWindowKind(StrEnum):
+    """What one terminal `ping` window is, before any expectation is applied.
+
+    The window is read ONCE and the reading is shared by both claim
+    directions. The negative control used to return before the address was
+    ever parsed, so an unreadable window was inconclusive for a positive
+    expectation and fresh negative evidence for a negative one, and a window
+    carrying both a not-found line and a successful resolution was whichever
+    signal happened to be tested first (V2).
+    """
+
+    __str__ = Enum.__str__
+
+    NOT_FOUND = "not_found"
+    RESOLVED = "resolved"
+    AMBIGUOUS = "ambiguous"
+
+
+@dataclass(frozen=True)
+class DnsWindowReading:
+    """One terminal window classified, with what it reported."""
+
+    kind: DnsWindowKind
+    address: str = ""
+    reason: str = ""
+
+
+def _dns_window_reading(window: str) -> DnsWindowReading:
+    """Classify one terminal window as an observation, or as neither.
+
+    AMBIGUOUS covers every window no supported shape reads as one thing:
+    mutually conflicting signals, a resolution with no readable address, an
+    unparsable address, and two addresses that disagree. None of them may
+    produce a verdict in either direction, and an unsupported output dialect
+    stays unqualified rather than being guessed at.
+    """
+    not_found = bool(_NOT_FOUND.search(window))
+    statistics = "packets: sent" in window.casefold()
+    address, reason = _dns_resolution(window)
+    resolution_line = bool(address) or reason != "address_not_reported"
+    if not_found and (statistics or resolution_line):
+        return DnsWindowReading(
+            DnsWindowKind.AMBIGUOUS,
+            reason="mixed_not_found_and_resolution",
+        )
+    if not_found:
+        return DnsWindowReading(DnsWindowKind.NOT_FOUND)
+    if statistics and address:
+        return DnsWindowReading(DnsWindowKind.RESOLVED, address=address)
+    return DnsWindowReading(
+        DnsWindowKind.AMBIGUOUS,
+        reason=reason or "no_terminal_line",
+    )
+
+
+def _no_client_contradiction(payload: dict, *, secure: bool) -> str:
+    """Name the field that refutes a start payload's claim of no client.
+
+    Derived from what the builder can emit, not from taste. `owned` is
+    `!!(m&&p)`, and `p` is `m&&m.createClient()`, so no client means `p` is
+    falsy, which forces `content_before` to `''`, `started` to `false` and
+    `https_mode` to `null`. A payload that denies the client while reporting
+    any of those is not a coherent observation of absence, and absence is the
+    one answer that lets the reader skip its cleanup entirely (V1).
+
+    Returns the empty string when the no-client tuple is coherent.
+    """
+    if payload["started"]:
+        return "started_without_client"
+    if payload["content_before"]:
+        return "content_without_client"
+    if secure and isinstance(payload.get("https_mode"), bool):
+        return "https_mode_without_client"
+    return ""
+
+
+def _release_contradiction(payload: dict) -> str:
+    """Name what refutes a release payload, field types being satisfied.
+
+    `deleted` is only ever set inside `if(found)`, after `deleteClient`
+    returned and before the `catch` that fills `error`, and the slot is
+    dropped in the same evaluation. So a deletion cannot coexist with a
+    missing slot, a surviving slot, or an error, and a slot that was found and
+    not deleted cannot have vanished. Each of those combinations came back
+    with correct field TYPES and still described nothing that could have
+    happened; `deleted && !present` alone was read as success (V1).
+
+    Returns the empty string when the tuple is one the script can produce.
+    """
+    if payload["deleted"]:
+        if not payload["found"]:
+            return "deleted_without_slot"
+        if payload["present"]:
+            return "deleted_but_present"
+        if payload["error"]:
+            return "deleted_with_error"
+    elif payload["found"] and not payload["present"]:
+        return "not_deleted_but_absent"
+    return ""
+
+
 def _dns_resolution(window: str) -> tuple[str, str]:
     """Return the address the window reported, or why it cannot be read.
 
@@ -1183,46 +1284,37 @@ class PacketTracerEnterpriseServiceRuntime:
                 cause="incomplete_window",
                 message="The DNS command window was still incomplete at the deadline.",
             )
-        not_found = bool(_NOT_FOUND.search(window))
-        if negative:
-            return self._observed(
-                expectation,
-                observation=(
-                    ObservationFact.OBSERVED
-                    if not_found
-                    else ObservationFact.CONTRADICTED
-                ),
-                method=method,
-                claim_level=claim,
-                observed={"hostname": hostname, "resolved": False} if not_found else {},
-                message=(
-                    "DNS negative control did not resolve."
-                    if not_found
-                    else "Fresh DNS command output contradicted the expectation."
-                ),
-            )
-        if not_found:
-            return self._observed(
-                expectation,
-                observation=ObservationFact.CONTRADICTED,
-                method=method,
-                claim_level=claim,
-                cause="host_not_found",
-                message="Fresh DNS command output contradicted the expectation.",
-            )
-        resolved, reason = _dns_resolution(window)
-        if not resolved:
-            # The window is terminal but does not report a single parsed
-            # address, so it supports no comparison in either direction.
+        # The window is read once, before either expectation is applied, so
+        # the admissibility policy cannot differ between the two directions.
+        reading = _dns_window_reading(window)
+        if reading.kind is DnsWindowKind.AMBIGUOUS:
             return self._observed(
                 expectation,
                 observation=ObservationFact.INCONCLUSIVE,
                 method=method,
                 claim_level=claim,
-                cause=reason,
-                message="The DNS command window reported no readable address.",
+                cause=reading.reason,
+                message="The DNS command window is not a readable observation.",
             )
-        matched = resolved == expected
+        if reading.kind is DnsWindowKind.NOT_FOUND:
+            return self._observed(
+                expectation,
+                observation=(
+                    ObservationFact.OBSERVED
+                    if negative
+                    else ObservationFact.CONTRADICTED
+                ),
+                method=method,
+                claim_level=claim,
+                cause="" if negative else "host_not_found",
+                observed={"hostname": hostname, "resolved": False} if negative else {},
+                message=(
+                    "DNS negative control did not resolve."
+                    if negative
+                    else "Fresh DNS command output contradicted the expectation."
+                ),
+            )
+        matched = not negative and reading.address == expected
         return self._observed(
             expectation,
             observation=(
@@ -1230,7 +1322,7 @@ class PacketTracerEnterpriseServiceRuntime:
             ),
             method=method,
             claim_level=claim,
-            observed={"hostname": hostname, "address": resolved},
+            observed={"hostname": hostname, "address": reading.address},
             message=(
                 "DNS resolved expected address."
                 if matched
@@ -1358,11 +1450,7 @@ class PacketTracerEnterpriseServiceRuntime:
             )
         payload = start.payload or {}
         owned = payload.get("owned")
-        if isinstance(owned, bool):
-            # The one field that reports ownership decides the lease, even if
-            # the rest of the payload turns out to be inadmissible.
-            lease.state = ClientOwnership.OWNED if owned else ClientOwnership.ABSENT
-        else:
+        if not isinstance(owned, bool):
             return self._observed(
                 expectation,
                 observation=ObservationFact.MALFORMED,
@@ -1371,17 +1459,11 @@ class PacketTracerEnterpriseServiceRuntime:
                 cause=f"start_shape:{_typed_payload(payload, {'owned': bool})}",
                 message="The start payload did not report client ownership.",
             )
-        if not owned:
-            # No client exists, so nothing about the server was observed and
-            # there is no page to attribute anything to.
-            return self._observed(
-                expectation,
-                observation=ObservationFact.SUBJECT_NOT_FOUND,
-                method=method,
-                claim_level=claim,
-                cause="client_not_created",
-                message="The device did not provide a background HTTP client.",
-            )
+        # A reported client settles the lease at once. A DENIED client does
+        # not: absence is the only answer that lets the finalization skip its
+        # one bounded attempt, so it is granted below and only from a payload
+        # that is coherent about it. Until then the obligation stands (V1).
+        lease.state = ClientOwnership.OWNED if owned else ClientOwnership.UNKNOWN
         shape = _typed_payload(payload, {"content_before": str, "started": bool})
         if shape:
             return self._observed(
@@ -1391,6 +1473,31 @@ class PacketTracerEnterpriseServiceRuntime:
                 claim_level=claim,
                 cause=f"start_shape:{shape}",
                 message="The start payload is not the typed shape.",
+            )
+        if not owned:
+            contradiction = _no_client_contradiction(payload, secure=secure)
+            if contradiction:
+                return self._observed(
+                    expectation,
+                    observation=ObservationFact.MALFORMED,
+                    method=method,
+                    claim_level=claim,
+                    cause=f"start_inconsistent:{contradiction}",
+                    message=(
+                        "The start payload denied a client it also reported "
+                        "working with."
+                    ),
+                )
+            # No client exists, so nothing about the server was observed and
+            # there is no page to attribute anything to.
+            lease.state = ClientOwnership.ABSENT
+            return self._observed(
+                expectation,
+                observation=ObservationFact.SUBJECT_NOT_FOUND,
+                method=method,
+                claim_level=claim,
+                cause="client_not_created",
+                message="The device did not provide a background HTTP client.",
             )
         if secure:
             mode = payload.get("https_mode")
@@ -1649,17 +1756,29 @@ class PacketTracerEnterpriseServiceRuntime:
         payload = observation.payload or {}
         shape = _typed_payload(
             payload,
-            {"found": bool, "deleted": bool, "present": bool},
+            {"found": bool, "deleted": bool, "present": bool, "error": str},
         )
         if shape:
             return ReleaseOutcome(_RELEASE_UNVERIFIED, f"release_shape:{shape}")
-        if payload["deleted"] and not payload["present"]:
+        contradiction = _release_contradiction(payload)
+        if contradiction:
+            # Correct types describing an impossible evaluation. It proves
+            # nothing, least of all a deletion.
+            return ReleaseOutcome(
+                _RELEASE_UNVERIFIED,
+                f"release_inconsistent:{contradiction}",
+            )
+        if payload["deleted"]:
             return ReleaseOutcome(_RELEASE_RELEASED)
         if payload["found"]:
             return ReleaseOutcome(
                 _RELEASE_UNVERIFIED,
-                sanitized_detail(payload.get("error")) or "delete_not_confirmed",
+                sanitized_detail(payload["error"]) or "delete_not_confirmed",
             )
+        if payload["present"]:
+            # The slot survives without a manager or a client, so there is
+            # something owned here that this release could not act on.
+            return ReleaseOutcome(_RELEASE_UNVERIFIED, "slot_not_usable")
         if lease.state is ClientOwnership.OWNED:
             # The start reported a tracked client and the slot is gone
             # without this release removing it. Something else took it, and

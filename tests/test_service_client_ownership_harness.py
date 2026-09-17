@@ -43,7 +43,10 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceVerificationExpectation,
     ServiceVerificationKind,
 )
-from packet_tracer_mcp.domain.enterprise.models.service_runtime import ObservationFact
+from packet_tracer_mcp.domain.enterprise.models.service_runtime import (
+    ObservationFact,
+    RuntimeServiceVerification,
+)
 from packet_tracer_mcp.infrastructure.execution.enterprise_service_runtime import (
     PacketTracerEnterpriseServiceRuntime,
 )
@@ -166,6 +169,12 @@ class _ClientStub:
     effects happen while Python observes nothing usable, and `not_submitted`
     does not execute it at all. That is how a start whose response was lost is
     distinguished from a start that never reached the engine.
+
+    `payload` replaces the reported body of one phase AFTER its script has run,
+    so the stub's real state stands while the reader is handed a payload the
+    generated script could not have produced. That is the only way to ask what
+    the reader concludes from a self-contradictory stage answer without
+    rewriting the script under test.
     """
 
     def __init__(self, tmp_path, **overrides) -> None:
@@ -184,6 +193,7 @@ class _ClientStub:
         }
         self.state.update(overrides)
         self.transport: dict[str, str] = {}
+        self.payload: dict[str, str] = {}
         self.phases: list[str] = []
         self.log: list[str] = []
         self.live = 0
@@ -266,6 +276,8 @@ class _ClientStub:
         body = (
             "PT_ERROR: " + reply["failure"] if reply["failure"] else reply["reported"]
         )
+        if phase in self.payload:
+            body = self.payload[phase]
         return BridgeDispatchOutcome(
             dispatch=DispatchFact.ACCEPTED,
             result=ResultFact.CORRELATED,
@@ -625,3 +637,164 @@ def test_a_second_read_retires_the_first_read_own_client(stub):
     assert engine.creations() == 3
     assert engine.live == 0
     assert third.observed["released"] == "released"
+
+
+# -- 8. a stage answer that contradicts itself ----------------------------
+
+
+def test_a_start_denying_a_client_it_started_does_not_prove_absence(stub):
+    """`owned:false` with `started:true` cannot have come from the builder.
+
+    `started` is `!!(p&&p.go(url))`, so it cannot be true without a client.
+    Reading `owned` alone and returning at once granted ABSENT from a tuple
+    that contradicts itself, and the finalization then reported
+    `nothing_owned` without looking -- while the stub still held the client
+    the script really did create.
+    """
+    engine = stub()
+    engine.payload["start"] = json.dumps(
+        {"owned": False, "started": True, "content_before": ""}
+    )
+
+    row = _runtime(engine).verify(_expectation())
+
+    # Oracle: the script ran, so a client exists whatever the payload says.
+    assert engine.creations() == 1
+    # One start, one finalization, no re-dispatch and no channel fallback.
+    assert engine.phases == ["start", "release"]
+    assert engine.live == 0
+    assert row.observed["released"] != "nothing_owned"
+    assert row.observed["released"] == "released"
+    assert row.observation is ObservationFact.MALFORMED
+    assert row.cause == "start_inconsistent:started_without_client"
+
+
+def test_a_start_denying_a_client_whose_page_it_read_does_not_prove_absence(stub):
+    """`content_before` is `p?String(...):''`, so text implies a client."""
+    engine = stub()
+    engine.payload["start"] = json.dumps(
+        {"owned": False, "started": False, "content_before": "PAGE"}
+    )
+
+    row = _runtime(engine).verify(_expectation())
+
+    assert engine.creations() == 1
+    assert engine.live == 0
+    assert row.observation is ObservationFact.MALFORMED
+    assert row.cause == "start_inconsistent:content_without_client"
+    assert row.observed["released"] == "released"
+
+
+def test_a_coherent_no_client_start_still_avoids_unnecessary_cleanup(stub):
+    """The positive control: a real no-client answer releases nothing."""
+    engine = stub(manager_missing=True)
+
+    row = _runtime(engine).verify(_expectation())
+
+    assert engine.creations() == 0
+    assert engine.phases.count("release") == 0
+    assert row.observation is ObservationFact.SUBJECT_NOT_FOUND
+    assert row.cause == "client_not_created"
+    assert row.observed["released"] == "nothing_owned"
+    assert _unresolved(row) == []
+
+
+@pytest.mark.parametrize(
+    ("payload", "cause"),
+    [
+        (
+            {"found": False, "deleted": True, "present": False, "error": ""},
+            "release_inconsistent:deleted_without_slot",
+        ),
+        (
+            {"found": True, "deleted": True, "present": True, "error": ""},
+            "release_inconsistent:deleted_but_present",
+        ),
+        (
+            {"found": True, "deleted": True, "present": False, "error": "boom"},
+            "release_inconsistent:deleted_with_error",
+        ),
+        (
+            {"found": True, "deleted": False, "present": False, "error": "boom"},
+            "release_inconsistent:not_deleted_but_absent",
+        ),
+        (
+            {"found": True, "deleted": True, "present": False},
+            "release_shape:missing:error",
+        ),
+        (
+            {"found": True, "deleted": True, "present": False, "error": 7},
+            "release_shape:not_a_string:error",
+        ),
+        (
+            {"found": True, "deleted": 1, "present": False, "error": ""},
+            "release_shape:not_a_boolean:deleted",
+        ),
+    ],
+)
+def test_a_release_that_contradicts_itself_is_never_a_release(stub, payload, cause):
+    """Individually well-typed flags can still describe nothing coherent.
+
+    Each tuple here is one the release script cannot produce: `deleted` is
+    only ever set inside `if(found)`, after the call returned and before the
+    `catch` that fills `error`, and the slot is dropped in the same
+    evaluation. What the script CAN produce is not listed, however odd it
+    looks -- see the malformed-slot case below.
+    """
+    engine = stub()
+    engine.payload["release"] = json.dumps(payload)
+
+    row = _runtime(engine).verify(_expectation())
+
+    assert row.status is ActionExecutionStatus.VERIFIED
+    assert row.observation is ObservationFact.OBSERVED
+    assert row.observed["released"] == "release_unverified"
+    assert _unresolved(row) == [
+        "client_ownership_unresolved:release_unverified:" + cause
+    ]
+
+
+def test_an_unresolved_release_survives_serialization(stub):
+    """An ownership residue must still be visible in a stored record."""
+    engine = stub()
+    engine.payload["release"] = json.dumps(
+        {"found": False, "deleted": True, "present": False, "error": ""}
+    )
+
+    row = _runtime(engine).verify(_expectation())
+    restored = RuntimeServiceVerification.model_validate_json(row.model_dump_json())
+
+    assert restored.observed["released"] == "release_unverified"
+    assert "deleted_without_slot" in " ".join(restored.limitations)
+
+
+def test_a_coherent_release_still_closes_normally(stub):
+    """The positive control: the real release payload is still a release."""
+    engine = stub()
+
+    row = _runtime(engine).verify(_expectation())
+
+    assert engine.live == 0
+    assert row.observed["released"] == "released"
+    assert _unresolved(row) == []
+
+
+def test_a_slot_without_a_client_is_unresolved_rather_than_contradictory(stub):
+    """`found:false` with `present:true` is reachable, so it is not a lie.
+
+    `found` is `!!(slot&&slot.manager&&slot.client)`, so a slot object
+    missing either member reports exactly this. There is something owned
+    here that the release could not act on, which is unresolved ownership --
+    not an impossible answer and not a release.
+    """
+    engine = stub()
+    engine.payload["release"] = json.dumps(
+        {"found": False, "deleted": False, "present": True, "error": ""}
+    )
+
+    row = _runtime(engine).verify(_expectation())
+
+    assert row.observed["released"] == "release_unverified"
+    assert _unresolved(row) == [
+        "client_ownership_unresolved:release_unverified:slot_not_usable"
+    ]
