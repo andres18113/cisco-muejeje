@@ -2631,12 +2631,13 @@ earlier session's observation is reused as evidence for this one.
 ### 9.3 R1: the ownership/finalization payload exception
 
 The review's narrow clarification takes precedence over byte-identical
-ownership payloads, and only for the minimum R1 needs. Exactly three
-generated strings changed, and the scope is recorded here:
+ownership payloads, and only for the minimum R1 needs. Three generated
+strings changed, plus the two `reportResult` calls in the reader that carry the
+new `owned` field the start builders define. The scope is recorded here:
 
 | Builder | Change | Why the minimum |
 | --- | --- | --- |
-| `_background_http_start` | the tracking assignment moves to immediately after `createClient()`, the stale slot is dropped only once the previous client is actually deleted, and the payload reports `owned` | a client created and then lost to a throw in `getLastPageContent()`, `go()` or the mode calls was untracked, so no later release could find it |
+| `_background_http_start` | the tracking assignment moves to immediately after `createClient()`, the stale slot is dropped only once the previous client is actually deleted, and the builder defines `owned` for the reader's `reportResult` to carry | a client created and then lost to a throw in `getLastPageContent()`, `go()` or the mode calls was untracked, so no later release could find it |
 | `_background_https_start` | the same two changes; the mode calls keep their position relative to `go()` | the HTTPS start is the HTTP start plus the mode read, and the golden test that asserts exactly that relation still holds |
 | `_background_http_release` (was inline in `_release_background_http`) | reports `found`, `deleted`, `present` and a bounded `error` instead of `released:!slot||!bag[key]`; the deletion is guarded and the slot is dropped only when the deletion completed | `released` was true whenever the slot was absent, so an untracked live client and a real deletion were the same answer |
 
@@ -2709,12 +2710,29 @@ no unrelated cleanup.
 | Client-ownership harness | 20 scenarios executed by **Node v24.19.0** against the stub client manager, running the actual generated start, inspect and release scripts; skips only when Node is absent locally and fails under `GITHUB_ACTIONS` |
 | Generated mutation-script harness | 27 scenarios, same Node engine, same fail-not-skip rule |
 | Affected runtime, application and transport modules | `tests/test_service_runtime.py`, `test_service_runtime_observation.py`, `test_service_application_uncertainty.py`, `test_transport_dispatch_facts.py`, `test_execution_status_facts.py`, `test_service_mutation_script_harness.py`, `test_service_client_ownership_harness.py`, `test_fire_and_forget_surface.py` |
-| Full offline suite | see 9.7 |
+| Full offline suite | `pytest -q -rs` on the delivery tree at `cc1d8951700c102693fe1512685aa071ce3ed35a`: **5779 passed, 3 skipped, 3 warnings in 365.97s**, against 5300 passed at the baseline and 5694 passed on the reviewed candidate. No test was removed, skipped or weakened |
 | Ruff | `ruff check` and `ruff format --check` clean on every changed Python file, `ruff 0.16.7` |
-| Docs | `mkdocs build --site-dir _site` |
-| Whitespace | `git diff --check` |
-| Delivery gate | `scripts\quality_gate.py --base cisco/main --delivery-commit HEAD` on the correction commit |
-| CI on the new delivery SHA | see 9.7 |
+| Docs | `mkdocs build --site-dir _site` succeeds; the only warnings are the pre-existing `handoff.md` links under `docs/reference/cp-scale/` |
+| Whitespace | `git diff --check` clean |
+| Delivery gate | `scripts\quality_gate.py --base cisco/main --delivery-commit HEAD` on `cc1d8951700c102693fe1512685aa071ce3ed35a`: clean tree at the exact commit, comparison base and merge base both `6263344`, 16 changed Python files, 0 mechanical exemptions, all checks passed, 16 files already formatted. Re-run on the final documentation commit, which changes no Python file; both runs are reported in the delivery summary |
+| CI on the new delivery SHA | **pending**: the corrected commits are local and no push was authorized for them. Run `35273030571` stands for `ec8c8bc` only and is never offered in their place. The Windows/Linux x Python 3.11/3.13 matrix on the new delivery SHA is required before delivery is complete |
+
+The three skipped tests are pre-existing, environmental, and unrelated to this
+correction. `pytest -q -rs` names them exactly:
+
+* `tests/test_cp_live_data_integrity.py:103` -- `Symlinks are unavailable for
+  this test account: [WinError 1314]`. Creating a symlink on Windows needs a
+  privilege this non-elevated account does not hold, so the protected-snapshot
+  detection cannot be exercised locally. It runs on the Linux CI legs.
+* `tests/test_positive_voice_ab_evidence_ledger.py:131` -- `no retained raw run
+  is present in this checkout`. The test re-hashes a retained raw LIVE run
+  against its ledger entry; that evidence is gitignored, so there is nothing to
+  compare and skipping is correct rather than asserting over an empty set.
+* `tests/test_positive_voice_dhcp_pool_observer.py:562` -- `the ignored
+  qualification artefact is absent here`, the same gitignored-evidence reason.
+
+Neither Node harness skips here: Node v24.19.0 is present, and under
+`GITHUB_ACTIONS` both fail rather than skip, so CI is the oracle.
 
 ### 9.7 Remaining limitations of the correction
 
