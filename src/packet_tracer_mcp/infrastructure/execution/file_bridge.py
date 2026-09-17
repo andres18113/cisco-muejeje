@@ -79,6 +79,24 @@ _CANCEL_OBSERVATION_S = 1.5
 _OWN_STALE_TTL_S = 120.0
 
 
+class PublicationPhase(StrEnum):
+    """Whether one request reached the mailbox, as the sender can prove it.
+
+    PUBLISHED and NOT_PUBLISHED are observations: the `req_` path was seen
+    present, or seen absent, after the rename decided. UNKNOWN is the
+    fail-closed value for the case where the sender could not look -- the
+    rename raised AND the existence probe itself raised -- because failing to
+    inspect the path is not an observation that the path is absent. It
+    authorizes no claim in either direction, and in particular no replay.
+    """
+
+    __str__ = Enum.__str__
+
+    PUBLISHED = "published"
+    NOT_PUBLISHED = "not_published"
+    UNKNOWN = "unknown"
+
+
 class RequestDisposition(StrEnum):
     """Qué se OBSERVÓ de un request cuyo resultado no llegó a tiempo.
 
@@ -264,12 +282,19 @@ class FileBridge:
         * `os.replace` raised -- the rename is atomic, so the only question is
           whether the `req_` path is there afterwards. Present means the
           engine can see it: ACCEPTED. Absent means it cannot: NOT_SUBMITTED.
-          This is the one phase where `send_and_wait` and this method
-          deliberately differ: `send_and_wait` keeps its baseline behavior of
-          giving up on any write error, and collapsing the two would change
-          the contract the older callers were written against;
+          Unobservable, because the existence probe raised too, means
+          publication was never decided: ACCEPTANCE_UNKNOWN, which is not a
+          proven non-submission and authorizes no replay. This is the one
+          phase where `send_and_wait` and this method deliberately differ:
+          `send_and_wait` keeps its baseline behavior of giving up on any
+          write error, and collapsing the two would change the contract the
+          older callers were written against;
         * the replace succeeded -- ACCEPTED, whatever happens next;
-        * the response was read -- CORRELATED;
+        * the response was read -- CORRELATED. A correlated answer settles an
+          undecided publication by itself: the engine could only answer a
+          request it found, so an UNKNOWN phase that produces a response is
+          reported ACCEPTED. That is why the undecided phase still waits
+          instead of returning at once;
         * the deadline passed -- NOT_OBSERVED carrying THIS call's
           `RequestDisposition`. No disposition proves the command did not run
           (`proves_no_execution` is uniformly False), so the outcome never
@@ -286,8 +311,8 @@ class FileBridge:
         name = self._next_name()
         req_path = self.dir / f"req_{name}.js"
         res_path = self.dir / f"res_{name}.txt"
-        published, detail = self._publish(req_path, js_code)
-        if not published:
+        phase, detail = self._publish(req_path, js_code)
+        if phase is PublicationPhase.NOT_PUBLISHED:
             return BridgeDispatchOutcome(
                 dispatch=DispatchFact.NOT_SUBMITTED,
                 result=ResultFact.NOT_APPLICABLE,
@@ -303,6 +328,13 @@ class FileBridge:
                 disposition=disposition.value,
                 detail=detail,
             )
+        if phase is PublicationPhase.UNKNOWN:
+            return BridgeDispatchOutcome(
+                dispatch=DispatchFact.ACCEPTANCE_UNKNOWN,
+                result=ResultFact.NOT_OBSERVED,
+                disposition=disposition.value,
+                detail=detail,
+            )
         return BridgeDispatchOutcome(
             dispatch=DispatchFact.ACCEPTED,
             result=ResultFact.NOT_OBSERVED,
@@ -310,31 +342,48 @@ class FileBridge:
             detail=detail or "deadline",
         )
 
-    def _publish(self, path: Path, text: str) -> tuple[bool, str]:
+    def _publish(self, path: Path, text: str) -> tuple[PublicationPhase, str]:
         """Write and rename one request, reporting which phase decided.
 
-        Split out of `_write_atomic` because its two failures are different
-        facts: a failed write never reached the mailbox, while a failed rename
-        might have, and only the `req_` path can settle which.
+        Split out of `_write_atomic` because its failures are different facts:
+        a failed write never reached the mailbox, while a failed rename might
+        have, and only the `req_` path can settle which.
+
+        The third case is the one that must not be collapsed. When the rename
+        raises and `path.exists()` ALSO raises, the sender never observed the
+        path at all, so publication is UNKNOWN. Reporting that as
+        `NOT_PUBLISHED` turned a failure to look into an observation that the
+        request is absent, and the caller then reported a proven
+        non-submission for a command that may be in the mailbox and may run
+        (R4). The `.tmp` residue is still discarded best effort -- it is
+        either already gone, because the rename succeeded, or not executable,
+        because the deployed engine lists only `req_*.js` -- and the `req_`
+        path is never touched, because withdrawing it would be exactly the
+        unprovable claim this branch exists to avoid.
         """
         tmp = path.with_suffix(path.suffix + ".tmp")
         try:
             tmp.write_bytes(text.encode("utf-8"))
         except OSError as error:
             self._discard(tmp)
-            return False, sanitized_detail(error)
+            return PublicationPhase.NOT_PUBLISHED, sanitized_detail(error)
         try:
             os.replace(tmp, path)
         except OSError as error:
+            detail = sanitized_detail(error)
             try:
                 published = path.exists()
-            except OSError:
-                published = False
+            except OSError as probe_error:
+                self._discard(tmp)
+                return PublicationPhase.UNKNOWN, sanitized_detail(
+                    f"rename_failed:{detail} existence_unobservable:"
+                    f"{sanitized_detail(probe_error)}"
+                )
             if published:
-                return True, sanitized_detail(error)
+                return PublicationPhase.PUBLISHED, detail
             self._discard(tmp)
-            return False, sanitized_detail(error)
-        return True, ""
+            return PublicationPhase.NOT_PUBLISHED, detail
+        return PublicationPhase.PUBLISHED, ""
 
     def _await_response(
         self,

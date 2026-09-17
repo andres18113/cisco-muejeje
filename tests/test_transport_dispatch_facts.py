@@ -12,13 +12,23 @@ import dataclasses
 import itertools
 import socket
 import threading
+from pathlib import Path
 
 import pytest
 
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    ActionExecutionStatus,
+    MutationResidue,
+    RuntimeActionMutation,
+    decide_mutation,
+)
 from packet_tracer_mcp.domain.enterprise.models.execution import (
     DispatchFact,
+    PostconditionFact,
     ResultFact,
+    TransitionFact,
 )
+from packet_tracer_mcp.infrastructure.execution import file_bridge
 from packet_tracer_mcp.infrastructure.execution.file_bridge import (
     FileBridge,
     RequestDisposition,
@@ -37,6 +47,11 @@ from packet_tracer_mcp.infrastructure.execution.transport_outcome import (
 )
 
 TOKEN = "test-token-that-is-long-enough-to-be-valid-0123456789"
+
+#: The real probe, kept so an injected failure can be scoped to the one
+#: path whose existence the publication phase depends on. Blinding every
+#: `exists` would also blind the response poll, which is not the injury.
+real_exists = Path.exists
 
 
 # -- 1. the HTTP classification against an independent truth table -------
@@ -350,19 +365,226 @@ def test_a_result_posted_after_the_timeout_is_refused_and_never_attributed():
 # -- 4. the file channel --------------------------------------------------
 
 
-def test_a_publication_failure_leaves_no_request_and_reports_not_submitted(tmp_path):
-    """Nothing reached the mailbox, so nothing can execute later."""
-    bridge = FileBridge(tmp_path / "mailbox", cancel_observation_seconds=0.0)
-    original = bridge._publish
-    bridge._publish = lambda path, text: (False, "synthetic_write_error")
+def test_a_publication_failure_leaves_no_request_and_reports_not_submitted(
+    tmp_path,
+    monkeypatch,
+):
+    """Nothing reached the mailbox, so nothing can execute later.
 
+    The write is what fails, injected at the filesystem boundary, so the real
+    `_publish` decides the phase. Stubbing `_publish` itself would have made
+    the test the author of the very classification under test.
+    """
+    bridge = FileBridge(tmp_path / "mailbox", cancel_observation_seconds=0.0)
+
+    def refuse(self, data):
+        raise OSError("synthetic write error")
+
+    monkeypatch.setattr(Path, "write_bytes", refuse)
     outcome = bridge.dispatch_and_wait("noop();", timeout=0.05)
-    bridge._publish = original
 
     assert outcome.dispatch is DispatchFact.NOT_SUBMITTED
     assert outcome.result is ResultFact.NOT_APPLICABLE
     assert outcome.disposition == ""
+    assert "synthetic write error" in outcome.detail
     assert not list((tmp_path / "mailbox").glob("req_*"))
+
+
+def test_a_rename_failure_with_the_request_present_is_accepted(tmp_path, monkeypatch):
+    """The rename raised and the engine can see the request: it may run."""
+    directory = tmp_path / "mailbox"
+    bridge = FileBridge(directory, cancel_observation_seconds=0.0)
+    landed: dict[str, bool] = {}
+
+    def half_rename(source, target):
+        # The atomic rename raised AFTER the destination appeared, which is
+        # the phase `send_and_wait` cannot distinguish and this one must.
+        Path(target).write_bytes(Path(source).read_bytes())
+        Path(source).unlink()
+        landed["present"] = Path(target).exists()
+        raise OSError("synthetic rename error")
+
+    monkeypatch.setattr(file_bridge.os, "replace", half_rename)
+    outcome = bridge.dispatch_and_wait("noop();", timeout=0.05)
+
+    # The engine could see the request when the phase was decided; the
+    # deadline then withdrew it, which is a different fact.
+    assert landed["present"] is True
+    assert outcome.dispatch is DispatchFact.ACCEPTED
+    assert outcome.result is ResultFact.NOT_OBSERVED
+    assert "synthetic rename error" in outcome.detail
+
+
+def test_a_rename_failure_with_the_request_absent_is_not_submitted(
+    tmp_path,
+    monkeypatch,
+):
+    """The rename raised and the request is observably absent."""
+    bridge = FileBridge(tmp_path / "mailbox", cancel_observation_seconds=0.0)
+
+    def failed_rename(source, target):
+        raise OSError("synthetic rename error")
+
+    monkeypatch.setattr(file_bridge.os, "replace", failed_rename)
+    outcome = bridge.dispatch_and_wait("noop();", timeout=0.05)
+
+    assert outcome.dispatch is DispatchFact.NOT_SUBMITTED
+    assert outcome.result is ResultFact.NOT_APPLICABLE
+    assert not list((tmp_path / "mailbox").glob("req_*"))
+    assert not list((tmp_path / "mailbox").glob("*.tmp"))
+
+
+def test_an_unobservable_publication_is_unknown_and_never_not_submitted(
+    tmp_path,
+    monkeypatch,
+):
+    """Failing to look at the path is not an observation that it is absent.
+
+    The rename raises and so does the existence probe, so the request may be
+    in the mailbox and may execute. NOT_SUBMITTED would have claimed the
+    command cannot run later, which is the one thing this phase cannot
+    establish, and it is also the only phase that proves a mutation did not
+    happen (R4).
+    """
+    bridge = FileBridge(tmp_path / "mailbox", cancel_observation_seconds=0.0)
+
+    def failed_rename(source, target):
+        raise OSError("synthetic rename error")
+
+    def unobservable(self):
+        if self.name.startswith("req_"):
+            raise OSError("synthetic stat error")
+        return real_exists(self)
+
+    monkeypatch.setattr(file_bridge.os, "replace", failed_rename)
+    monkeypatch.setattr(Path, "exists", unobservable)
+    outcome = bridge.dispatch_and_wait("noop();", timeout=0.05)
+
+    assert outcome.dispatch is DispatchFact.ACCEPTANCE_UNKNOWN
+    assert outcome.result is ResultFact.NOT_OBSERVED
+    assert "synthetic rename error" in outcome.detail
+    assert "synthetic stat error" in outcome.detail
+    assert "existence_unobservable" in outcome.detail
+
+
+def test_an_unobservable_publication_that_is_answered_is_accepted(
+    tmp_path,
+    monkeypatch,
+):
+    """A correlated answer settles the undecided publication by itself.
+
+    The engine can only answer a request it found, so the response is direct
+    evidence of publication -- stronger than the probe that could not be
+    taken. This is why the undecided phase still waits for the deadline
+    instead of returning at once.
+    """
+    directory = tmp_path / "mailbox"
+    directory.mkdir(parents=True, exist_ok=True)
+    bridge = FileBridge(directory, cancel_observation_seconds=0.0)
+
+    def answered_rename(source, target):
+        destination = Path(target)
+        destination.write_bytes(Path(source).read_bytes())
+        Path(source).unlink()
+        name = destination.name[len("req_") : -len(".js")]
+        (directory / f"res_{name}.txt").write_text("OK", encoding="utf-8")
+        raise OSError("synthetic rename error")
+
+    def unobservable(self):
+        if self.name.startswith("req_"):
+            raise OSError("synthetic stat error")
+        return real_exists(self)
+
+    monkeypatch.setattr(file_bridge.os, "replace", answered_rename)
+    monkeypatch.setattr(Path, "exists", unobservable)
+    outcome = bridge.dispatch_and_wait("noop();", timeout=1.0)
+
+    assert outcome.dispatch is DispatchFact.ACCEPTED
+    assert outcome.result is ResultFact.CORRELATED
+    assert outcome.body == "OK"
+
+
+def test_an_unobservable_publication_maps_to_an_unknown_mutation(tmp_path, monkeypatch):
+    """The domain reads the uncertain phase as row 3, never as row 1.
+
+    Row 1 is `not_submitted`, a definite local FAILURE that authorizes a
+    retry because the payload never left the process. Row 3 is UNKNOWN and
+    sticky, which is what an undecided publication supports.
+    """
+    bridge = FileBridge(tmp_path / "mailbox", cancel_observation_seconds=0.0)
+
+    def failed_rename(source, target):
+        raise OSError("synthetic rename error")
+
+    def unobservable(self):
+        if self.name.startswith("req_"):
+            raise OSError("synthetic stat error")
+        return real_exists(self)
+
+    monkeypatch.setattr(file_bridge.os, "replace", failed_rename)
+    monkeypatch.setattr(Path, "exists", unobservable)
+    outcome = bridge.dispatch_and_wait("noop();", timeout=0.05)
+
+    decision = decide_mutation(
+        RuntimeActionMutation(
+            action_id="a",
+            applied=False,
+            dispatch=outcome.dispatch,
+            result=outcome.result,
+            postcondition=PostconditionFact.UNOBSERVED,
+            transition=TransitionFact.UNOBSERVED,
+        )
+    )
+
+    assert decision.row == "3"
+    assert decision.status is ActionExecutionStatus.UNKNOWN
+    assert decision.residue is MutationResidue.UNKNOWN
+    assert decision.sticky is True
+
+
+def test_each_publication_phase_keeps_its_own_disposition(tmp_path, monkeypatch):
+    """Per-call independence survives the new phase: no cross-call latch."""
+    directory = tmp_path / "mailbox"
+    bridge = FileBridge(directory, cancel_observation_seconds=0.0)
+
+    def failed_rename(source, target):
+        raise OSError("synthetic rename error")
+
+    def unobservable(self):
+        if self.name.startswith("req_"):
+            raise OSError("synthetic stat error")
+        return real_exists(self)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(file_bridge.os, "replace", failed_rename)
+        patched.setattr(Path, "exists", unobservable)
+        uncertain = bridge.dispatch_and_wait("noop();", timeout=0.05)
+
+    published = bridge.dispatch_and_wait("noop();", timeout=0.05)
+
+    assert uncertain.dispatch is DispatchFact.ACCEPTANCE_UNKNOWN
+    assert published.dispatch is DispatchFact.ACCEPTED
+    assert published.result is ResultFact.NOT_OBSERVED
+
+
+def test_the_legacy_send_and_wait_keeps_its_frozen_publication_behavior(
+    tmp_path,
+    monkeypatch,
+):
+    """`send_and_wait` still gives up on any write error, by contract.
+
+    Its compatibility boundary is explicitly frozen: the older callers were
+    written against `None` for every failure, and the typed path is where the
+    phase distinction lives.
+    """
+    bridge = FileBridge(tmp_path / "mailbox", cancel_observation_seconds=0.0)
+
+    def failed_rename(source, target):
+        raise OSError("synthetic rename error")
+
+    monkeypatch.setattr(file_bridge.os, "replace", failed_rename)
+
+    assert bridge.send_and_wait("noop();", timeout=0.05) is None
 
 
 def test_a_deadline_after_publication_reports_not_observed_with_a_disposition(
@@ -438,3 +660,19 @@ def test_a_frozen_outcome_cannot_be_edited_after_the_fact():
 
     with pytest.raises(dataclasses.FrozenInstanceError):
         outcome.dispatch = DispatchFact.NOT_SUBMITTED
+
+
+def test_the_publication_phases_stay_three_distinct_values():
+    """None of the three may stand for another, and unknown is not absent.
+
+    Imported inside the test on purpose: every other test in this module
+    states a behaviour that the baseline module can be measured against, and
+    a module-level import of a new symbol would turn those measurements into
+    a collection error instead.
+    """
+    from packet_tracer_mcp.infrastructure.execution.file_bridge import (
+        PublicationPhase,
+    )
+
+    assert len({member.value for member in PublicationPhase}) == len(PublicationPhase)
+    assert PublicationPhase.UNKNOWN is not PublicationPhase.NOT_PUBLISHED
