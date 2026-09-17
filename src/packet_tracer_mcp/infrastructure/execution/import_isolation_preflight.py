@@ -42,7 +42,7 @@ import os
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import TypeVar
 
@@ -59,7 +59,9 @@ TEST_RUNNER_MODULE = "pytest"
 GOVERNED_ROOT_ENV_VAR = "PT_MCP_GOVERNED_ROOT"
 
 
-class ImportIsolationState(str, Enum):
+class ImportIsolationState(StrEnum):
+    """Name the outcome of one import-isolation evaluation."""
+
     ISOLATED = "ISOLATED"
     GOVERNED_ROOT_NOT_DECLARED = "GOVERNED_ROOT_NOT_DECLARED"
     FOREIGN_INTERPRETER = "FOREIGN_INTERPRETER"
@@ -72,33 +74,32 @@ class ImportIsolationState(str, Enum):
 
 @dataclass(frozen=True)
 class ImportIsolationResult:
+    """Carry an isolation state and the observed detail behind it."""
+
     state: ImportIsolationState
     detail: str = ""
 
     @property
     def isolated(self) -> bool:
+        """Return whether the evaluation established isolation."""
         return self.state is ImportIsolationState.ISOLATED
 
     def render(self) -> str:
+        """Return a diagnostic line naming the state, its meaning, and the detail."""
         messages = {
-            ImportIsolationState.GOVERNED_ROOT_NOT_DECLARED:
-                "No se declaro el arbol gobernado; sin raiz declarada no hay nada que verificar.",
-            ImportIsolationState.FOREIGN_INTERPRETER:
-                "El interprete en ejecucion no pertenece al arbol gobernado.",
-            ImportIsolationState.PRODUCTION_NAMESPACE_NOT_LOADED:
-                f"Este proceso no tiene cargado {PRODUCTION_NAMESPACE!r}; no es el proceso vivo.",
-            ImportIsolationState.FOREIGN_TREE:
-                "El paquete de produccion cargo desde fuera del arbol gobernado.",
-            ImportIsolationState.DUAL_IDENTITY:
-                f"Conviven {PRODUCTION_NAMESPACE!r} y {LEGACY_NAMESPACE!r} como identidades distintas.",
-            ImportIsolationState.TEST_PROCESS:
-                f"This is a {TEST_RUNNER_MODULE} process, not the live one; a suite run "
-                "never establishes live isolation.",
-            ImportIsolationState.INDETERMINATE:
-                "El preflight no pudo determinar el aislamiento; se cierra por defecto.",
+            ImportIsolationState.GOVERNED_ROOT_NOT_DECLARED: "No se declaro el arbol gobernado; sin raiz declarada no hay nada que verificar.",
+            ImportIsolationState.FOREIGN_INTERPRETER: "El interprete en ejecucion no pertenece al arbol gobernado.",
+            ImportIsolationState.PRODUCTION_NAMESPACE_NOT_LOADED: f"Este proceso no tiene cargado {PRODUCTION_NAMESPACE!r}; no es el proceso vivo.",
+            ImportIsolationState.FOREIGN_TREE: "El paquete de produccion cargo desde fuera del arbol gobernado.",
+            ImportIsolationState.DUAL_IDENTITY: f"Conviven {PRODUCTION_NAMESPACE!r} y {LEGACY_NAMESPACE!r} como identidades distintas.",
+            ImportIsolationState.TEST_PROCESS: f"This is a {TEST_RUNNER_MODULE} process, not the live one; a suite run "
+            "never establishes live isolation.",
+            ImportIsolationState.INDETERMINATE: "El preflight no pudo determinar el aislamiento; se cierra por defecto.",
         }
         message = messages.get(self.state, "Aislamiento de import verificado.")
-        return f"{self.state.value}: {message}{f' ({self.detail})' if self.detail else ''}"
+        return (
+            f"{self.state.value}: {message}{f' ({self.detail})' if self.detail else ''}"
+        )
 
 
 T = TypeVar("T")
@@ -108,7 +109,9 @@ def governed_root_from_env(
     environ: Mapping[str, str] | None = None,
 ) -> Path | None:
     """Lee la raiz gobernada declarada por el operador; ausente no es un default."""
-    value = (environ if environ is not None else os.environ).get(GOVERNED_ROOT_ENV_VAR, "")
+    value = (environ if environ is not None else os.environ).get(
+        GOVERNED_ROOT_ENV_VAR, ""
+    )
     return Path(value).resolve() if value.strip() else None
 
 
@@ -130,6 +133,7 @@ class ImportIsolationPreflight:
         resolve_package_file: Callable[[], str | None] | None = None,
         modules: Callable[[], Mapping[str, object]] = lambda: sys.modules,
     ) -> None:
+        """Bind the declared governed root and the process observations to evaluate."""
         self._governed_root = Path(governed_root) if governed_root is not None else None
         self._executable = executable
         self._environment_prefix = environment_prefix
@@ -141,13 +145,15 @@ class ImportIsolationPreflight:
         )
 
     def ensure_isolated(self) -> ImportIsolationResult:
+        """Evaluate isolation, reporting any unexpected error as `INDETERMINATE`."""
         try:
             return self._evaluate()
         except Exception as exc:  # cerrado por defecto: un error no es un pase
             return ImportIsolationResult(ImportIsolationState.INDETERMINATE, str(exc))
 
     def execute_if_isolated(
-        self, action: Callable[[], T],
+        self,
+        action: Callable[[], T],
     ) -> tuple[ImportIsolationResult, T | None]:
         """Impide que una operacion mutante alcance Packet Tracer sin aislamiento."""
         result = self.ensure_isolated()
@@ -155,7 +161,9 @@ class ImportIsolationPreflight:
 
     def _evaluate(self) -> ImportIsolationResult:
         if self._governed_root is None:
-            return ImportIsolationResult(ImportIsolationState.GOVERNED_ROOT_NOT_DECLARED)
+            return ImportIsolationResult(
+                ImportIsolationState.GOVERNED_ROOT_NOT_DECLARED
+            )
         root = self._governed_root.resolve()
 
         environment_prefix = Path(self._environment_prefix()).resolve()
@@ -165,9 +173,8 @@ class ImportIsolationPreflight:
         # resolved sys.prefix proves which environment owns the invocation and
         # prevents an arbitrary in-tree symlink from bypassing the gate.
         executable = Path(os.path.abspath(self._executable()))
-        if (
-            not self._within(environment_prefix, root)
-            or not self._within(executable, environment_prefix)
+        if not self._within(environment_prefix, root) or not self._within(
+            executable, environment_prefix
         ):
             return ImportIsolationResult(
                 ImportIsolationState.FOREIGN_INTERPRETER,
@@ -176,10 +183,14 @@ class ImportIsolationPreflight:
 
         package_file = self._resolve_package_file()
         if package_file is None:
-            return ImportIsolationResult(ImportIsolationState.PRODUCTION_NAMESPACE_NOT_LOADED)
+            return ImportIsolationResult(
+                ImportIsolationState.PRODUCTION_NAMESPACE_NOT_LOADED
+            )
         resolved = Path(package_file).resolve()
         if not self._within(resolved, root / "src" / PRODUCTION_NAMESPACE):
-            return ImportIsolationResult(ImportIsolationState.FOREIGN_TREE, str(resolved))
+            return ImportIsolationResult(
+                ImportIsolationState.FOREIGN_TREE, str(resolved)
+            )
 
         loaded = self._modules()
         if PRODUCTION_NAMESPACE in loaded and LEGACY_NAMESPACE in loaded:

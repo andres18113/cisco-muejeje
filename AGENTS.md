@@ -114,16 +114,21 @@ Isolation is held by the environment, not by a second name:
 
 - Every worktree owns its `.venv` and its editable installation, so
   `packet_tracer_mcp` resolves inside the worktree being edited.
+- `src/__init__.py` raises `ImportError`, so `import src`, any
+  `src.packet_tracer_mcp` module, and `find_spec` of one are refused wherever
+  the repository root is on `sys.path`.
 - `tests/conftest.py` runs `tests/namespace_preflight.py` before collection and
   refuses a foreign interpreter, a foreign package origin, or a loaded
   `src.packet_tracer_mcp`.
-- `scripts/namespace_inventory.py` fails if any tracked source imports the
-  retired namespace, as a statement or as a dynamic import target.
+- `scripts/namespace_inventory.py` classifies every mention by syntactic
+  context. It fails on any import, dynamic import or patch target,
+  `sys.modules` registration, or executed source that uses the retired
+  namespace, whatever file it is in, and on any inert mention outside its
+  reviewed allowlist.
 
-Never add aliases in `sys.modules`, and never delete `src/__init__.py` to
-"close" the retired namespace: with the repository root on `sys.path`, `src`
-remains a PEP 420 namespace package and the import still resolves, so deleting
-it removes the marker and keeps the defect.
+Never add aliases in `sys.modules`, and never delete `src/__init__.py`: without
+it, `src` becomes a PEP 420 namespace package and `import
+src.packet_tracer_mcp` loads the package a second time.
 
 Before any LIVE Packet Tracer mutation, prove all four conditions in the exact
 process that will mutate state:

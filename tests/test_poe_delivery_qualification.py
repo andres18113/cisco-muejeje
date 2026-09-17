@@ -1,6 +1,8 @@
+"""Behavioral tests for PoE delivery qualification and its evidence release."""
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -90,7 +92,10 @@ def _link(
 
 
 class FakeRuntime:
+    """Record the fixture operations a PoE qualification performs."""
+
     def __init__(self, request: PoEDeliveryQualificationRequest) -> None:
+        """Start from the request's build with a converging inventory and no failures."""
         self.request = request
         self.initial_fingerprint = "inventory-before"
         self.final_fingerprint = self.initial_fingerprint
@@ -102,10 +107,12 @@ class FakeRuntime:
         self.creation_arms: dict[str, str | None] = {}
 
     def packet_tracer_build(self) -> str | None:
+        """Record the call and return the requested Packet Tracer build."""
         self.calls.append("packet_tracer_build")
         return self.request.packet_tracer_build
 
     def inventory_fingerprint(self) -> str:
+        """Record the call and return the initial inventory fingerprint."""
         self.calls.append("inventory_fingerprint")
         return self.initial_fingerprint
 
@@ -117,6 +124,7 @@ class FakeRuntime:
         *,
         arm: str | None = None,
     ) -> PoEDeliveryDeviceIdentity:
+        """Record a device creation and return its observed identity."""
         self.calls.append(f"create:{temporary_name}")
         self.attempted_names.append(temporary_name)
         self.creation_arms[temporary_name] = arm
@@ -139,16 +147,19 @@ class FakeRuntime:
         endpoint: PoEDeliveryDeviceIdentity,
         endpoint_port: str,
     ) -> PoEDeliveryLinkIdentity:
+        """Record a link creation and return its identity."""
         self.calls.append(f"link:{switch.name}:{endpoint.name}")
         if self.fail_operation == "link":
             raise RuntimeError("link creation failed")
         return _link(switch, switch_port, endpoint, endpoint_port)
 
     def delete_device(self, temporary_name: str) -> bool:
+        """Record a deletion and report whether it succeeded."""
         self.calls.append(f"delete:{temporary_name}")
         return temporary_name not in self.delete_failures
 
     def wait_for_inventory_fingerprint(self, expected: str) -> str:
+        """Record the restoration wait and return the final fingerprint."""
         self.calls.append(f"restore:{expected}")
         if self.fail_operation == "restore":
             raise TimeoutError("inventory did not converge")
@@ -156,7 +167,10 @@ class FakeRuntime:
 
 
 class FakeObserver:
+    """Return a scripted manual PoE observation for each fixture binding."""
+
     def __init__(self) -> None:
+        """Start with no calls, mutation, or scripted failure."""
         self.calls = 0
         self.mutate = None
         self.raise_error = False
@@ -169,6 +183,7 @@ class FakeObserver:
         fixture: PoEDeliveryFixtureIdentity,
         deadline_utc: datetime,
     ) -> PoEDeliveryManualObservation:
+        """Record the deadline and return, mutate, or refuse the scripted observation."""
         self.calls += 1
         self.deadlines.append(deadline_utc)
         if self.raise_error:
@@ -177,38 +192,40 @@ class FakeObserver:
             return None
         observations = []
         for binding in fixture.bindings:
-            observations.append(PoEDeliveryBindingObservation(
-                binding=binding.request,
-                candidate=PoEDeliveryArmObservation(
-                    switch_name=binding.candidate_switch.name,
-                    switch_model=binding.candidate_switch.model,
-                    switch_port=binding.request.candidate_port,
-                    endpoint_name=binding.candidate_endpoint.name,
-                    endpoint_model=binding.candidate_endpoint.model,
-                    endpoint_port=binding.request.endpoint_port,
-                    state=PoEDeliveryArmState.POWERED,
-                    visible_indicator="phone display booted",
-                    switch_ready=True,
-                    link_ready=True,
-                    endpoint_settled=True,
-                ),
-                comparison=PoEDeliveryArmObservation(
-                    switch_name=binding.comparison_switch.name,
-                    switch_model=binding.comparison_switch.model,
-                    switch_port=binding.request.comparison_port,
-                    endpoint_name=binding.comparison_endpoint.name,
-                    endpoint_model=binding.comparison_endpoint.model,
-                    endpoint_port=binding.request.endpoint_port,
-                    state=PoEDeliveryArmState.NOT_POWERED,
-                    visible_indicator="phone display remained dark",
-                    switch_ready=True,
-                    link_ready=True,
-                    endpoint_settled=True,
-                ),
-            ))
+            observations.append(
+                PoEDeliveryBindingObservation(
+                    binding=binding.request,
+                    candidate=PoEDeliveryArmObservation(
+                        switch_name=binding.candidate_switch.name,
+                        switch_model=binding.candidate_switch.model,
+                        switch_port=binding.request.candidate_port,
+                        endpoint_name=binding.candidate_endpoint.name,
+                        endpoint_model=binding.candidate_endpoint.model,
+                        endpoint_port=binding.request.endpoint_port,
+                        state=PoEDeliveryArmState.POWERED,
+                        visible_indicator="phone display booted",
+                        switch_ready=True,
+                        link_ready=True,
+                        endpoint_settled=True,
+                    ),
+                    comparison=PoEDeliveryArmObservation(
+                        switch_name=binding.comparison_switch.name,
+                        switch_model=binding.comparison_switch.model,
+                        switch_port=binding.request.comparison_port,
+                        endpoint_name=binding.comparison_endpoint.name,
+                        endpoint_model=binding.comparison_endpoint.model,
+                        endpoint_port=binding.request.endpoint_port,
+                        state=PoEDeliveryArmState.NOT_POWERED,
+                        visible_indicator="phone display remained dark",
+                        switch_ready=True,
+                        link_ready=True,
+                        endpoint_settled=True,
+                    ),
+                )
+            )
         observation = PoEDeliveryManualObservation(
             observer_id="operator@example.test",
-            observed_at=datetime(2026, 9, 4, 15, 0, tzinfo=timezone.utc),
+            observed_at=datetime(2026, 9, 4, 15, 0, tzinfo=UTC),
             method="manual_visible_power_state",
             simultaneous=True,
             bindings=observations,
@@ -219,11 +236,15 @@ class FakeObserver:
 
 
 class FakeSnapshotWriter:
+    """Keep runtime snapshots in memory instead of writing them."""
+
     def __init__(self) -> None:
+        """Start with no snapshot and no scripted failure."""
         self.snapshots = []
         self.raise_error = False
 
     def save_runtime(self, snapshot):
+        """Keep a snapshot and return a fixed path, or raise the scripted failure."""
         if self.raise_error:
             raise OSError("snapshot store unavailable")
         self.snapshots.append(snapshot)
@@ -231,6 +252,8 @@ class FakeSnapshotWriter:
 
 
 class FakeSessionSafety:
+    """Return a scripted session-safety result or error."""
+
     def __init__(
         self,
         *,
@@ -242,6 +265,7 @@ class FakeSessionSafety:
         on_finalize=None,
         raise_error: bool = False,
     ) -> None:
+        """Script the session-safety result and whether finalizing raises."""
         self.result = healthy_live_session_safety().model_copy(
             update={
                 "session_reusable": session_reusable,
@@ -256,6 +280,7 @@ class FakeSessionSafety:
         self.calls = 0
 
     def finalize(self) -> LiveSessionSafetyEvidence:
+        """Record finalization and return or raise the scripted outcome."""
         self.calls += 1
         if self.on_finalize is not None:
             self.on_finalize()
@@ -264,7 +289,9 @@ class FakeSessionSafety:
         return self.result
 
 
-def _fixture_for_rules(request: PoEDeliveryQualificationRequest) -> PoEDeliveryFixtureIdentity:
+def _fixture_for_rules(
+    request: PoEDeliveryQualificationRequest,
+) -> PoEDeliveryFixtureIdentity:
     candidate_switch = PoEDeliveryDeviceIdentity(
         name="candidate",
         model=request.candidate_model,
@@ -277,17 +304,35 @@ def _fixture_for_rules(request: PoEDeliveryQualificationRequest) -> PoEDeliveryF
     )
     identities = []
     for index, binding in enumerate(request.bindings, start=1):
-        candidate_endpoint = _device(f"candidate-endpoint-{index}", binding.endpoint_model, binding.endpoint_port)
-        comparison_endpoint = _device(f"comparison-endpoint-{index}", binding.endpoint_model, binding.endpoint_port)
-        identities.append(PoEDeliveryBindingFixtureIdentity(
-            request=binding,
-            candidate_switch=candidate_switch,
-            comparison_switch=comparison_switch,
-            candidate_endpoint=candidate_endpoint,
-            comparison_endpoint=comparison_endpoint,
-            candidate_link=_link(candidate_switch, binding.candidate_port, candidate_endpoint, binding.endpoint_port),
-            comparison_link=_link(comparison_switch, binding.comparison_port, comparison_endpoint, binding.endpoint_port),
-        ))
+        candidate_endpoint = _device(
+            f"candidate-endpoint-{index}", binding.endpoint_model, binding.endpoint_port
+        )
+        comparison_endpoint = _device(
+            f"comparison-endpoint-{index}",
+            binding.endpoint_model,
+            binding.endpoint_port,
+        )
+        identities.append(
+            PoEDeliveryBindingFixtureIdentity(
+                request=binding,
+                candidate_switch=candidate_switch,
+                comparison_switch=comparison_switch,
+                candidate_endpoint=candidate_endpoint,
+                comparison_endpoint=comparison_endpoint,
+                candidate_link=_link(
+                    candidate_switch,
+                    binding.candidate_port,
+                    candidate_endpoint,
+                    binding.endpoint_port,
+                ),
+                comparison_link=_link(
+                    comparison_switch,
+                    binding.comparison_port,
+                    comparison_endpoint,
+                    binding.endpoint_port,
+                ),
+            )
+        )
     return PoEDeliveryFixtureIdentity(
         candidate_switch=candidate_switch,
         comparison_switch=comparison_switch,
@@ -302,16 +347,19 @@ def _valid_observation(
     return FakeObserver().observe(
         request,
         fixture,
-        datetime(2026, 9, 4, 15, 5, tzinfo=timezone.utc),
+        datetime(2026, 9, 4, 15, 5, tzinfo=UTC),
     )
 
 
 def test_observation_rule_accepts_complete_exact_differential() -> None:
+    """Accept a complete, exact differential observation."""
     request = _request(bindings=2)
     fixture = _fixture_for_rules(request)
 
     result = validate_poe_delivery_observation(
-        request, fixture, _valid_observation(request, fixture),
+        request,
+        fixture,
+        _valid_observation(request, fixture),
     )
 
     assert result.is_valid
@@ -323,13 +371,42 @@ def test_observation_rule_accepts_complete_exact_differential() -> None:
         (lambda item: setattr(item, "observer_id", ""), "observer"),
         (lambda item: setattr(item, "simultaneous", False), "simultaneous"),
         (lambda item: setattr(item, "method", "structured_api"), "manual visible"),
-        (lambda item: setattr(item.bindings[0].candidate, "visible_indicator", ""), "indicator"),
-        (lambda item: setattr(item.bindings[0].candidate, "state", PoEDeliveryArmState.UNOBSERVABLE), "unobservable"),
-        (lambda item: setattr(item.bindings[0].comparison, "state", PoEDeliveryArmState.POWERED), "comparison"),
-        (lambda item: setattr(item.bindings[0].candidate, "switch_port", "FastEthernet0/24"), "identity"),
-        (lambda item: setattr(item.bindings[0].candidate, "switch_ready", False), "switch_ready"),
-        (lambda item: setattr(item.bindings[0].comparison, "link_ready", False), "link_ready"),
-        (lambda item: setattr(item.bindings[0].comparison, "endpoint_settled", False), "endpoint_settled"),
+        (
+            lambda item: setattr(item.bindings[0].candidate, "visible_indicator", ""),
+            "indicator",
+        ),
+        (
+            lambda item: setattr(
+                item.bindings[0].candidate, "state", PoEDeliveryArmState.UNOBSERVABLE
+            ),
+            "unobservable",
+        ),
+        (
+            lambda item: setattr(
+                item.bindings[0].comparison, "state", PoEDeliveryArmState.POWERED
+            ),
+            "comparison",
+        ),
+        (
+            lambda item: setattr(
+                item.bindings[0].candidate, "switch_port", "FastEthernet0/24"
+            ),
+            "identity",
+        ),
+        (
+            lambda item: setattr(item.bindings[0].candidate, "switch_ready", False),
+            "switch_ready",
+        ),
+        (
+            lambda item: setattr(item.bindings[0].comparison, "link_ready", False),
+            "link_ready",
+        ),
+        (
+            lambda item: setattr(
+                item.bindings[0].comparison, "endpoint_settled", False
+            ),
+            "endpoint_settled",
+        ),
         (
             lambda item: setattr(
                 item,
@@ -338,11 +415,17 @@ def test_observation_rule_accepts_complete_exact_differential() -> None:
             ),
             "utc",
         ),
-        (lambda item: item.bindings.append(item.bindings[0].model_copy(deep=True)), "duplicate"),
+        (
+            lambda item: item.bindings.append(item.bindings[0].model_copy(deep=True)),
+            "duplicate",
+        ),
         (lambda item: item.bindings.pop(), "coverage"),
     ],
 )
-def test_observation_rule_fails_closed_for_each_incomplete_cause(mutation, expected_fragment: str) -> None:
+def test_observation_rule_fails_closed_for_each_incomplete_cause(
+    mutation, expected_fragment: str
+) -> None:
+    """Fail the observation rule closed for each incomplete cause."""
     request = _request(bindings=2)
     fixture = _fixture_for_rules(request)
     observation = _valid_observation(request, fixture)
@@ -365,13 +448,16 @@ def _service_fixture():
         snapshots=writer,
         session_safety=FakeSessionSafety(),
         session_id_factory=lambda: "fixed-session",
-        clock=lambda: datetime(2026, 9, 4, 15, 0, tzinfo=timezone.utc),
+        clock=lambda: datetime(2026, 9, 4, 15, 0, tzinfo=UTC),
         observation_window_seconds=120,
     )
     return request, runtime, observer, writer, service
 
 
-def test_service_persists_supported_manual_evidence_only_after_clean_restoration() -> None:
+def test_service_persists_supported_manual_evidence_only_after_clean_restoration() -> (
+    None
+):
+    """Persist supported manual evidence only after a clean restoration."""
     request, runtime, observer, writer, service = _service_fixture()
 
     result = service.qualify(request)
@@ -380,7 +466,9 @@ def test_service_persists_supported_manual_evidence_only_after_clean_restoration
     assert result.observation_status is ObservationStatus.OBSERVED
     assert result.verification_status is VerificationStatus.VERIFIED
     assert result.capability_result.status is CapabilityStatus.SUPPORTED
-    assert result.capability_result.evidence_source is EvidenceSource.MANUAL_VERIFICATION
+    assert (
+        result.capability_result.evidence_source is EvidenceSource.MANUAL_VERIFICATION
+    )
     assert result.capability_result.verified is True
     assert result.capability_result.observed_value == 2
     assert result.cleanup_status is CleanupStatus.CLEAN
@@ -403,8 +491,12 @@ def test_service_persists_supported_manual_evidence_only_after_clean_restoration
     assert scope.cleanup_status == "clean"
     assert scope.inventory_restoration == "restored"
     assert scope.observed_at == "2026-09-04T15:00:00Z"
-    assert all(binding.candidate_state == "powered" for binding in scope.tested_bindings)
-    assert all(binding.comparison_state == "not_powered" for binding in scope.tested_bindings)
+    assert all(
+        binding.candidate_state == "powered" for binding in scope.tested_bindings
+    )
+    assert all(
+        binding.comparison_state == "not_powered" for binding in scope.tested_bindings
+    )
     assert all(
         binding.candidate_indicator == "phone display booted"
         for binding in scope.tested_bindings
@@ -416,15 +508,21 @@ def test_service_persists_supported_manual_evidence_only_after_clean_restoration
     assert all(binding.candidate_ready for binding in scope.tested_bindings)
     assert all(binding.comparison_ready for binding in scope.tested_bindings)
     assert {binding.switch_port for binding in scope.active_bindings} == {
-        "FastEthernet0/1", "FastEthernet0/2",
+        "FastEthernet0/1",
+        "FastEthernet0/2",
     }
     assert observer.calls == 1
     assert result.fixture is not None
     assert result.observation is not None
     assert result.observation.observed_at == datetime(
-        2026, 9, 4, 15, 0, tzinfo=timezone.utc,
+        2026,
+        9,
+        4,
+        15,
+        0,
+        tzinfo=UTC,
     )
-    assert observer.deadlines == [datetime(2026, 9, 4, 15, 2, tzinfo=timezone.utc)]
+    assert observer.deadlines == [datetime(2026, 9, 4, 15, 2, tzinfo=UTC)]
     delete_calls = [call for call in runtime.calls if call.startswith("delete:")]
     assert "ENDPOINT" in delete_calls[0]
     assert "SWITCH" in delete_calls[-1]
@@ -432,6 +530,7 @@ def test_service_persists_supported_manual_evidence_only_after_clean_restoration
 
 @pytest.mark.parametrize("stage", ["create", "link"])
 def test_service_attempts_cleanup_after_fixture_failure(stage: str) -> None:
+    """Attempt cleanup after a fixture failure."""
     request, runtime, observer, writer, service = _service_fixture()
     runtime.fail_operation = stage
 
@@ -444,12 +543,15 @@ def test_service_attempts_cleanup_after_fixture_failure(stage: str) -> None:
     assert result.capability_result.verified is False
     assert observer.calls == 0
     assert [name for name in result.attempted_identities] == runtime.attempted_names
-    assert all(f"delete:{name}" in runtime.calls for name in result.attempted_identities)
+    assert all(
+        f"delete:{name}" in runtime.calls for name in result.attempted_identities
+    )
     assert writer.snapshots[0].session.results[0].evidence() is None
 
 
 def test_service_cleans_up_after_observer_failure_without_promoting_unknown() -> None:
-    request, runtime, observer, writer, service = _service_fixture()
+    """Clean up after an observer failure without promoting an unknown result."""
+    request, _runtime, observer, _writer, service = _service_fixture()
     observer.raise_error = True
 
     result = service.qualify(request)
@@ -461,8 +563,11 @@ def test_service_cleans_up_after_observer_failure_without_promoting_unknown() ->
     assert "observer" in result.failure_reason.casefold()
 
 
-def test_service_classifies_missing_observation_as_unobservable_verification_failure() -> None:
-    request, runtime, observer, writer, service = _service_fixture()
+def test_service_classifies_missing_observation_as_unobservable_verification_failure() -> (
+    None
+):
+    """Classify a missing observation as an unobservable verification failure."""
+    request, _runtime, observer, _writer, service = _service_fixture()
     observer.return_none = True
 
     result = service.qualify(request)
@@ -476,16 +581,17 @@ def test_service_classifies_missing_observation_as_unobservable_verification_fai
 
 
 def test_service_rejects_observation_outside_bounded_deadline() -> None:
-    request, runtime, observer, writer, service = _service_fixture()
+    """Reject an observation outside the bounded deadline."""
+    request, _runtime, observer, _writer, service = _service_fixture()
     observer.mutate = lambda item: setattr(
         item,
         "observed_at",
-        datetime(2026, 9, 4, 15, 3, tzinfo=timezone.utc),
+        datetime(2026, 9, 4, 15, 3, tzinfo=UTC),
     )
 
     result = service.qualify(request)
 
-    assert observer.deadlines == [datetime(2026, 9, 4, 15, 2, tzinfo=timezone.utc)]
+    assert observer.deadlines == [datetime(2026, 9, 4, 15, 2, tzinfo=UTC)]
     assert result.execution_status is ProbeExecutionStatus.VERIFY_FAILED
     assert result.capability_result.status is CapabilityStatus.UNKNOWN
     assert result.observation_status is ObservationStatus.OBSERVED
@@ -493,9 +599,12 @@ def test_service_rejects_observation_outside_bounded_deadline() -> None:
     assert "bounded observation window" in result.failure_reason
 
 
-def test_service_rejects_observation_returned_after_deadline_even_with_timely_timestamp() -> None:
+def test_service_rejects_observation_returned_after_deadline_even_with_timely_timestamp() -> (
+    None
+):
+    """Reject an observation returned after the deadline despite a timely timestamp."""
     request, runtime, observer, writer, _service = _service_fixture()
-    started = datetime(2026, 9, 4, 15, 0, tzinfo=timezone.utc)
+    started = datetime(2026, 9, 4, 15, 0, tzinfo=UTC)
     times = iter((started, started + timedelta(seconds=121)))
     service = PoEDeliveryQualificationService(
         runtime=runtime,
@@ -536,7 +645,8 @@ def test_service_rejects_observation_returned_after_deadline_even_with_timely_ti
 def test_service_rejects_untrimmed_manual_observation_text_without_raising(
     mutate,
 ) -> None:
-    request, runtime, observer, writer, service = _service_fixture()
+    """Reject untrimmed manual observation text without raising."""
+    request, _runtime, observer, _writer, service = _service_fixture()
     observer.mutate = mutate
 
     result = service.qualify(request)
@@ -552,15 +662,21 @@ def test_service_rejects_untrimmed_manual_observation_text_without_raising(
     "mutate",
     [
         lambda item: setattr(
-            item, "packet_tracer_build", " Packet Tracer 9.0.0 build 1234 ",
+            item,
+            "packet_tracer_build",
+            " Packet Tracer 9.0.0 build 1234 ",
         ),
         lambda item: setattr(item, "candidate_model", " 3560-24PS "),
         lambda item: setattr(item, "comparison_model", " 2960-24TT "),
         lambda item: setattr(
-            item.bindings[0], "candidate_port", " FastEthernet0/1 ",
+            item.bindings[0],
+            "candidate_port",
+            " FastEthernet0/1 ",
         ),
         lambda item: setattr(
-            item.bindings[0], "comparison_port", " FastEthernet0/1 ",
+            item.bindings[0],
+            "comparison_port",
+            " FastEthernet0/1 ",
         ),
         lambda item: setattr(item.bindings[0], "endpoint_model", " 7960 "),
         lambda item: setattr(item.bindings[0], "endpoint_port", " Switch "),
@@ -576,7 +692,8 @@ def test_service_rejects_untrimmed_manual_observation_text_without_raising(
     ],
 )
 def test_service_rejects_untrimmed_request_identity_without_raising(mutate) -> None:
-    request, runtime, observer, writer, service = _service_fixture()
+    """Reject an untrimmed request identity without raising."""
+    request, _runtime, observer, _writer, service = _service_fixture()
     mutate(request)
 
     result = service.qualify(request)
@@ -591,7 +708,8 @@ def test_service_rejects_untrimmed_request_identity_without_raising(mutate) -> N
 def test_service_degrades_dimension_encoder_rejection_to_typed_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    request, runtime, observer, writer, service = _service_fixture()
+    """Degrade a dimension encoder rejection to a typed unknown."""
+    request, _runtime, _observer, writer, service = _service_fixture()
 
     def reject_scope(*_args) -> dict[str, str]:
         raise ValueError("synthetic canonical scope rejection")
@@ -615,7 +733,8 @@ def test_service_degrades_dimension_encoder_rejection_to_typed_unknown(
 
 
 def test_visible_non_discriminating_comparison_is_failed_not_unobservable() -> None:
-    request, runtime, observer, writer, service = _service_fixture()
+    """Fail a visible but non-discriminating comparison rather than call it unobservable."""
+    request, _runtime, observer, _writer, service = _service_fixture()
     observer.mutate = lambda item: setattr(
         item.bindings[0].comparison,
         "state",
@@ -631,7 +750,8 @@ def test_visible_non_discriminating_comparison_is_failed_not_unobservable() -> N
 
 
 def test_missing_arm_prerequisite_is_unobservable_not_failed() -> None:
-    request, runtime, observer, writer, service = _service_fixture()
+    """Treat a missing arm prerequisite as unobservable, not failed."""
+    request, _runtime, observer, _writer, service = _service_fixture()
     observer.mutate = lambda item: setattr(
         item.bindings[0].comparison,
         "endpoint_settled",
@@ -646,8 +766,11 @@ def test_missing_arm_prerequisite_is_unobservable_not_failed() -> None:
     assert result.capability_result.status is CapabilityStatus.UNKNOWN
 
 
-def test_service_retains_all_cleanup_failures_and_invalidates_positive_observation() -> None:
-    request, runtime, observer, writer, service = _service_fixture()
+def test_service_retains_all_cleanup_failures_and_invalidates_positive_observation() -> (
+    None
+):
+    """Retain every cleanup failure and invalidate a positive observation."""
+    request, runtime, _observer, writer, service = _service_fixture()
     runtime.delete_failures = {
         "__MCP_POE_fixed-session_CANDIDATE_ENDPOINT_01",
         "__MCP_POE_fixed-session_COMPARISON_ENDPOINT_02",
@@ -664,7 +787,8 @@ def test_service_retains_all_cleanup_failures_and_invalidates_positive_observati
 
 
 def test_service_requires_exact_final_inventory_restoration() -> None:
-    request, runtime, observer, writer, service = _service_fixture()
+    """Require the final inventory to be restored exactly."""
+    request, runtime, _observer, writer, service = _service_fixture()
     runtime.final_fingerprint = "inventory-drifted"
 
     result = service.qualify(request)
@@ -677,7 +801,8 @@ def test_service_requires_exact_final_inventory_restoration() -> None:
 
 
 def test_service_fails_closed_when_created_model_identity_drifts() -> None:
-    request, runtime, observer, writer, service = _service_fixture()
+    """Fail closed when a created device's model identity drifts."""
+    request, runtime, observer, _writer, service = _service_fixture()
     runtime.identity_drift = True
 
     result = service.qualify(request)
@@ -685,11 +810,14 @@ def test_service_fails_closed_when_created_model_identity_drifts() -> None:
     assert result.execution_status is ProbeExecutionStatus.EXECUTION_ERROR
     assert result.capability_result.status is CapabilityStatus.UNKNOWN
     assert observer.calls == 0
-    assert all(f"delete:{name}" in runtime.calls for name in result.attempted_identities)
+    assert all(
+        f"delete:{name}" in runtime.calls for name in result.attempted_identities
+    )
 
 
 def test_service_fails_closed_when_runtime_build_is_not_exact() -> None:
-    request, runtime, observer, writer, service = _service_fixture()
+    """Fail closed when the runtime build is not the exact one requested."""
+    request, runtime, observer, _writer, service = _service_fixture()
     runtime.packet_tracer_build = lambda: "Packet Tracer 8.2"
 
     result = service.qualify(request)
@@ -701,7 +829,8 @@ def test_service_fails_closed_when_runtime_build_is_not_exact() -> None:
 
 
 def test_runtime_error_remains_execution_error_when_cleanup_also_fails() -> None:
-    request, runtime, observer, writer, service = _service_fixture()
+    """Keep a runtime error an execution error when cleanup also fails."""
+    request, runtime, _observer, _writer, service = _service_fixture()
     runtime.fail_operation = "create"
     runtime.delete_failures.add("__MCP_POE_fixed-session_CANDIDATE_ENDPOINT_01")
 
@@ -712,8 +841,11 @@ def test_runtime_error_remains_execution_error_when_cleanup_also_fails() -> None
     assert result.cleanup_failed == ["__MCP_POE_fixed-session_CANDIDATE_ENDPOINT_01"]
 
 
-def test_invalid_duplicate_authorization_request_fails_closed_without_mutation() -> None:
-    request, runtime, observer, writer, service = _service_fixture()
+def test_invalid_duplicate_authorization_request_fails_closed_without_mutation() -> (
+    None
+):
+    """Fail a duplicate authorization request closed before any mutation."""
+    request, _runtime, _observer, _writer, service = _service_fixture()
     request.bindings[1].candidate_port = request.bindings[0].candidate_port
     request.bindings[1].endpoint_model = request.bindings[0].endpoint_model
     request.bindings[1].endpoint_port = request.bindings[0].endpoint_port
@@ -727,7 +859,8 @@ def test_invalid_duplicate_authorization_request_fails_closed_without_mutation()
 
 
 def test_snapshot_persistence_failure_demotes_in_memory_positive_claim() -> None:
-    request, runtime, observer, writer, service = _service_fixture()
+    """Demote an in-memory positive claim when snapshot persistence fails."""
+    request, _runtime, _observer, writer, service = _service_fixture()
     writer.raise_error = True
 
     result = service.qualify(request)
@@ -743,7 +876,10 @@ def test_snapshot_persistence_failure_demotes_in_memory_positive_claim() -> None
     assert result.runtime_snapshot_path is None
 
 
-def test_session_safety_gate_runs_after_cleanup_and_before_snapshot_persistence() -> None:
+def test_session_safety_gate_runs_after_cleanup_and_before_snapshot_persistence() -> (
+    None
+):
+    """Run the session-safety gate after cleanup and before snapshot persistence."""
     request = _request(bindings=2)
     runtime = FakeRuntime(request)
     observer = FakeObserver()
@@ -767,7 +903,7 @@ def test_session_safety_gate_runs_after_cleanup_and_before_snapshot_persistence(
         snapshots=writer,
         session_safety=safety,
         session_id_factory=lambda: "fixed-session",
-        clock=lambda: datetime(2026, 9, 4, 15, 0, tzinfo=timezone.utc),
+        clock=lambda: datetime(2026, 9, 4, 15, 0, tzinfo=UTC),
         observation_window_seconds=120,
     )
 
@@ -793,6 +929,7 @@ def test_session_safety_gate_runs_after_cleanup_and_before_snapshot_persistence(
 
 
 def test_session_safety_exception_is_fail_closed_before_snapshot_persistence() -> None:
+    """Fail closed on a session-safety exception before snapshot persistence."""
     request = _request(bindings=2)
     runtime = FakeRuntime(request)
     observer = FakeObserver()
@@ -804,7 +941,7 @@ def test_session_safety_exception_is_fail_closed_before_snapshot_persistence() -
         snapshots=writer,
         session_safety=safety,
         session_id_factory=lambda: "fixed-session",
-        clock=lambda: datetime(2026, 9, 4, 15, 0, tzinfo=timezone.utc),
+        clock=lambda: datetime(2026, 9, 4, 15, 0, tzinfo=UTC),
         observation_window_seconds=120,
     )
 
@@ -825,6 +962,7 @@ def test_session_safety_exception_is_fail_closed_before_snapshot_persistence() -
 def test_real_file_safety_evidence_is_persisted_before_positive_release(
     tmp_path: Path,
 ) -> None:
+    """Persist real file-safety evidence before releasing a positive claim."""
     request = _request(bindings=2)
     runtime = FakeRuntime(request)
     observer = FakeObserver()
@@ -847,7 +985,7 @@ def test_real_file_safety_evidence_is_persisted_before_positive_release(
         snapshots=writer,
         session_safety=safety,
         session_id_factory=lambda: "fixed-session",
-        clock=lambda: datetime(2026, 9, 4, 15, 0, tzinfo=timezone.utc),
+        clock=lambda: datetime(2026, 9, 4, 15, 0, tzinfo=UTC),
         observation_window_seconds=120,
     )
 
@@ -877,6 +1015,7 @@ def test_real_file_safety_evidence_is_persisted_before_positive_release(
 def test_real_disposable_pts_change_blocks_persisted_positive_claim(
     tmp_path: Path,
 ) -> None:
+    """Block a persisted positive claim when a real disposable PTS file changes."""
     request = _request(bindings=2)
     runtime = FakeRuntime(request)
     observer = FakeObserver()
@@ -902,7 +1041,7 @@ def test_real_disposable_pts_change_blocks_persisted_positive_claim(
         snapshots=writer,
         session_safety=safety,
         session_id_factory=lambda: "fixed-session",
-        clock=lambda: datetime(2026, 9, 4, 15, 0, tzinfo=timezone.utc),
+        clock=lambda: datetime(2026, 9, 4, 15, 0, tzinfo=UTC),
         observation_window_seconds=120,
     )
 
@@ -953,6 +1092,7 @@ def test_real_disposable_pts_change_blocks_persisted_positive_claim(
 def test_loaded_contradictory_safety_context_never_releases_evidence(
     unsafe_update: dict[str, object],
 ) -> None:
+    """Never release evidence under a loaded contradictory safety context."""
     request, _runtime, _observer, writer, service = _service_fixture()
     service.qualify(request)
     snapshot = writer.snapshots[0].model_copy(deep=True)
@@ -967,7 +1107,10 @@ def test_loaded_contradictory_safety_context_never_releases_evidence(
     assert snapshot.reusable is False
 
 
-def test_legacy_decided_poe_result_without_session_safety_cannot_release_claim() -> None:
+def test_legacy_decided_poe_result_without_session_safety_cannot_release_claim() -> (
+    None
+):
+    """Keep a legacy decided PoE result without session safety from releasing a claim."""
     request, _runtime, _observer, writer, service = _service_fixture()
     service.qualify(request)
     legacy = writer.snapshots[0].session.results[0].model_copy(deep=True)
@@ -986,6 +1129,7 @@ def test_fixture_creation_tells_the_runtime_which_arm_each_device_belongs_to() -
     # The observer reads one canvas holding both arms. Only the use case knows
     # which side a device is on, so the arm has to reach the runtime -- the
     # runtime cannot recover it from a temporary name without parsing one.
+    """Tell the runtime which arm each created device belongs to."""
     request, runtime, _observer, _writer, service = _service_fixture()
 
     service.qualify(request)

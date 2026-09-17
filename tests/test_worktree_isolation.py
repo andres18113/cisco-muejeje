@@ -42,6 +42,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 import packet_tracer_mcp as package_under_test
 from tests.namespace_preflight import (
     LEGACY_NAMESPACE,
@@ -52,6 +54,13 @@ from tests.namespace_preflight import (
 
 REPO = Path(__file__).resolve().parents[1]
 EXPECTED_PACKAGE_FILE = REPO / "src" / PRODUCTION_NAMESPACE / "__init__.py"
+LEGACY_ROOT = LEGACY_NAMESPACE.partition(".")[0]
+# Child sources receive the name to load as an argument, so no source text here
+# spells an import of the retired namespace.
+IMPORT_BY_ARGUMENT = "import importlib, sys\nimportlib.import_module(sys.argv[1])\n"
+FIND_SPEC_BY_ARGUMENT = (
+    "import importlib.util, sys\nimportlib.util.find_spec(sys.argv[1])\n"
+)
 
 
 def test_the_package_under_test_belongs_to_this_worktree():
@@ -158,6 +167,50 @@ def test_only_one_identity_of_the_package_is_loaded_in_a_process():
 
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.strip() == f"['{PRODUCTION_NAMESPACE}']"
+
+
+@pytest.mark.parametrize(
+    ("source", "name"),
+    [
+        (IMPORT_BY_ARGUMENT, LEGACY_ROOT),
+        (IMPORT_BY_ARGUMENT, LEGACY_NAMESPACE),
+        (
+            IMPORT_BY_ARGUMENT,
+            f"{LEGACY_NAMESPACE}.domain.enterprise.models.capabilities",
+        ),
+        (FIND_SPEC_BY_ARGUMENT, LEGACY_NAMESPACE),
+        (FIND_SPEC_BY_ARGUMENT, f"{LEGACY_NAMESPACE}.domain"),
+    ],
+    ids=[
+        "import-root",
+        "import-package",
+        "import-submodule",
+        "find-spec-package",
+        "find-spec-submodule",
+    ],
+)
+def test_the_retired_namespace_cannot_be_imported_from_the_repository_root(
+    source, name
+):
+    """`src.packet_tracer_mcp` is not a second importable identity at all.
+
+    The child runs from the repository root, which puts the root first on
+    `sys.path` exactly as the suite does, so `src` is found. Loading it must be
+    refused, with a diagnostic naming the canonical import, rather than loading
+    the same files a second time.
+    """
+    completed = subprocess.run(
+        [sys.executable, "-c", source, name],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+    assert completed.returncode != 0, completed.stdout
+    assert "ImportError" in completed.stderr, completed.stderr
+    assert f"import {PRODUCTION_NAMESPACE}" in completed.stderr, completed.stderr
 
 
 def test_the_retired_namespace_is_not_loaded_by_the_running_suite():

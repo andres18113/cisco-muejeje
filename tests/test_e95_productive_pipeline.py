@@ -177,8 +177,8 @@ class TestTheCompilerReachesLinkPerformance:
         """Si algo quedara sin renderer, esto ya no pasaria en silencio.
 
         Antes la cadena de referencia se importaba por `packet_tracer_mcp` y
-        este modulo por el namespace de test retirado: dos identidades del
-        mismo codigo. La migracion canonica dejo un unico namespace, asi que un
+        este modulo por `src.packet_tracer_mcp`: dos identidades del mismo
+        codigo. Los tests se normalizaron a un solo namespace, asi que un
         `isinstance` contra la cadena vuelve a significar lo que dice.
         """
         from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (

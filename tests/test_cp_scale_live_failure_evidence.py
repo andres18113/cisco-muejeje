@@ -16,14 +16,12 @@ back.
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
 from tests.subprocess_harness import run_isolated_python, subprocess_failure
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -894,6 +892,7 @@ print(json.dumps(verdict))
 
 @pytest.fixture(scope="module")
 def verdict() -> dict:
+    """Run the isolated probe once and return its JSON verdict."""
     completed = run_isolated_python(
         _PROBE.format(root=str(ROOT), src=str(ROOT / "src")),
         cwd=ROOT,
@@ -904,53 +903,64 @@ def verdict() -> dict:
 
 
 def test_runtime_checkpoint_summary_cannot_dirty_the_governed_worktree(verdict):
+    """Keep the runtime checkpoint summary from dirtying the governed worktree."""
     assert verdict["runtime_checkpoint_sits_with_ignored_evidence"]
     assert verdict["runtime_checkpoint_is_gitignored"]
     assert verdict["runtime_checkpoint_is_writer_default"]
 
 
 def test_terminal_reference_checkpoint_remains_a_tracked_artifact(verdict):
+    """Keep the terminal reference checkpoint a tracked artifact."""
     assert verdict["final_checkpoint_is_tracked"]
 
 
 def test_canonical_live_failure_without_partial_stage_is_still_a_runtime_error(verdict):
+    """Report a canonical live failure without a partial stage as a runtime error."""
     assert verdict["defaults_to_none"]
     assert verdict["still_runtime_error"]
 
 
 def test_a_failed_stage_result_keeps_the_journal_it_had_already_written(verdict):
-    assert verdict["failed_result_keeps_journal"], "the stage journal was thrown away again"
+    """Keep the journal a failed stage result had already written."""
+    assert verdict["failed_result_keeps_journal"], (
+        "the stage journal was thrown away again"
+    )
     assert verdict["stage"] == "floor1"
     assert verdict["configuration_hash"] == "config-hash"
     assert verdict["physical"] == {"status": "failed"}
 
 
 def test_governed_evidence_names_each_typed_trunk_vlan_traversal(verdict):
-    assert verdict["trunk_vlan_traversal"] == [{
-        "expectation_id": "verify-trunk",
-        "device_id": "switch-4",
-        "device_name": "Switch4",
-        "interface": "GigabitEthernet0/2",
-        "expected_vlans": [10, 20, 30],
-        "status": "verified",
-        "evidence_method": "fresh_show_interfaces_trunk",
-        "fresh_evidence": True,
-        "fields": {
-            "active_vlans": "verified",
-            "allowed_vlans": "verified",
-            "forwarding_vlans": "verified",
-            "interface": "verified",
+    """Name each typed trunk VLAN traversal in the governed evidence."""
+    assert verdict["trunk_vlan_traversal"] == [
+        {
+            "expectation_id": "verify-trunk",
+            "device_id": "switch-4",
+            "device_name": "Switch4",
+            "interface": "GigabitEthernet0/2",
+            "expected_vlans": [10, 20, 30],
             "status": "verified",
-        },
-        "message": "",
-    }]
+            "evidence_method": "fresh_show_interfaces_trunk",
+            "fresh_evidence": True,
+            "fields": {
+                "active_vlans": "verified",
+                "allowed_vlans": "verified",
+                "forwarding_vlans": "verified",
+                "interface": "verified",
+                "status": "verified",
+            },
+            "message": "",
+        }
+    ]
 
 
 def test_configuration_contradiction_keeps_named_trunk_evidence(verdict):
+    """Keep the named trunk evidence beside a configuration contradiction."""
     assert verdict["contradicted_stage_trunk"] == verdict["trunk_vlan_traversal"]
 
 
 def test_governed_binding_evidence_keeps_zero_distinct_from_unreadable(verdict):
+    """Keep a zero binding count distinct from an unreadable one."""
     evidence = verdict["dhcp_binding_evidence"]
     assert evidence is not None
     assert verdict["dhcp_binding_calls"] == [["Router4", "show_ip_dhcp_binding"]]
@@ -985,12 +995,14 @@ def test_governed_binding_evidence_keeps_zero_distinct_from_unreadable(verdict):
 
 
 def test_voice_failure_keeps_the_additive_server_binding_observation(verdict):
+    """Keep the additive server binding observation on a voice failure."""
     assert verdict["bindings_before_voice_failure"] == [
         {"sentinel": "binding evidence retained"},
     ]
 
 
 def test_voice_dhcp_statistics_are_scoped_and_classify_the_exchange_delta(verdict):
+    """Scope voice DHCP statistics and classify the exchange delta."""
     assert verdict["dhcp_statistics_target"] == {
         "device_name": "Router4",
         "interface": "FastEthernet0/0.20",
@@ -1056,6 +1068,7 @@ def test_a_voice_scope_indistinguishable_from_the_server_is_not_attributable(ver
 
 
 def test_voice_dhcp_statistics_fail_closed_when_support_or_evidence_is_unclear(verdict):
+    """Fail voice DHCP statistics closed when support or evidence is unclear."""
     unsupported = verdict["dhcp_statistics_unsupported"]
     assert unsupported["usable"] is False
     assert "Invalid input" in unsupported["ios_rejection"]
@@ -1083,6 +1096,7 @@ def test_voice_dhcp_statistics_fail_closed_when_support_or_evidence_is_unclear(v
 
 
 def test_voice_failure_keeps_the_statistics_delta_observation(verdict):
+    """Keep the statistics delta observation on a voice failure."""
     assert verdict["statistics_before_voice_failure"] == {
         "sentinel": "statistics delta retained",
     }
@@ -1128,6 +1142,7 @@ def test_the_post_failure_diagnostic_owns_and_returns_the_simulation_mode(verdic
 
 
 def test_the_diagnostic_restores_the_mode_on_every_terminal_path(verdict):
+    """Restore the mode on every terminal path of the diagnostic."""
     for key in ("sim_trace_timeout", "sim_step_failure"):
         evidence = verdict[key]
         assert evidence["restoration_verified"] is True, key
@@ -1145,6 +1160,7 @@ def test_the_diagnostic_restores_the_mode_on_every_terminal_path(verdict):
 
 
 def test_the_representative_phone_prerequisites_are_rechecked_this_run(verdict):
+    """Recheck the representative phone prerequisites in this run."""
     ok = verdict["sim_prereq_ok"]
     assert ok["prerequisites_met"] is True
     assert ok["registration"]["endpoint_interface"] == "Vlan20"
@@ -1154,8 +1170,10 @@ def test_the_representative_phone_prerequisites_are_rechecked_this_run(verdict):
     # Each prerequisite is load-bearing, and failing one produces no trace at
     # all rather than a quiet substitution of some other phone.
     for key in (
-        "sim_prereq_addressed", "sim_prereq_dhcp_off",
-        "sim_prereq_unreadable", "sim_prereq_missing_row",
+        "sim_prereq_addressed",
+        "sim_prereq_dhcp_off",
+        "sim_prereq_unreadable",
+        "sim_prereq_missing_row",
     ):
         evidence = verdict[key]
         assert evidence["captured"] is False, key
@@ -1168,6 +1186,7 @@ def test_the_representative_phone_prerequisites_are_rechecked_this_run(verdict):
 
 
 def test_an_unattributable_original_state_never_moves_the_mode(verdict):
+    """Never move the mode when its original state cannot be attributed."""
     blind = verdict["sim_blind"]
 
     assert blind["captured"] is False
@@ -1177,6 +1196,7 @@ def test_an_unattributable_original_state_never_moves_the_mode(verdict):
 
 
 def test_the_capture_retains_raw_evidence_and_classifies_nothing(verdict):
+    """Retain raw evidence in the capture without classifying it."""
     realtime = verdict["sim_realtime"]
     trace = realtime["phone_trace"]
 
@@ -1188,9 +1208,19 @@ def test_the_capture_retains_raw_evidence_and_classifies_nothing(verdict):
 
     hop = trace["hops"][0]
     for field in (
-        "index", "device", "previous_device", "in_port", "out_port", "source",
-        "destination", "traffic_type_raw", "traffic_type", "sim_time",
-        "transit_time", "status", "decisions",
+        "index",
+        "device",
+        "previous_device",
+        "in_port",
+        "out_port",
+        "source",
+        "destination",
+        "traffic_type_raw",
+        "traffic_type",
+        "sim_time",
+        "transit_time",
+        "status",
+        "decisions",
     ):
         assert field in hop, field
     # The raw integer survives beside its label, and the label stays unnamed.
@@ -1232,10 +1262,15 @@ def test_the_capture_retains_raw_evidence_and_classifies_nothing(verdict):
         "stall_batch_limit": 3,
     }
     assert progression["termination_reason"] in {
-        "TARGET_SIM_TIME_SPAN_REACHED", "HARD_MAX_STEPS_REACHED",
-        "HARD_WALL_CLOCK_REACHED", "EVENT_LIST_CEILING",
-        "SIMULATION_STATE_UNOBSERVABLE", "SIM_TIME_NON_MONOTONIC",
-        "SIM_TIME_UNOBSERVABLE", "SIM_TIME_STALLED", "STEP_FAILED",
+        "TARGET_SIM_TIME_SPAN_REACHED",
+        "HARD_MAX_STEPS_REACHED",
+        "HARD_WALL_CLOCK_REACHED",
+        "EVENT_LIST_CEILING",
+        "SIMULATION_STATE_UNOBSERVABLE",
+        "SIM_TIME_NON_MONOTONIC",
+        "SIM_TIME_UNOBSERVABLE",
+        "SIM_TIME_STALLED",
+        "STEP_FAILED",
     }
     assert progression["negative_absence_interpretable"] is False
     assert realtime["window_before"]["sim_time"] == 2.5
@@ -1253,11 +1288,15 @@ def test_the_capture_retains_raw_evidence_and_classifies_nothing(verdict):
 
 
 def test_the_diagnostic_never_mutates_the_control_endpoint(verdict):
+    """Keep the diagnostic from mutating the control endpoint."""
     assert verdict["sim_realtime_mutators"] == []
 
 
 def test_the_runner_carries_no_dhcp_trace_classifier():
-    source = (ROOT / "src/packet_tracer_mcp/infrastructure/diagnostics/cp_scale_live.py").read_text(encoding="utf-8")
+    """Keep any DHCP trace classifier out of the runner."""
+    source = (
+        ROOT / "src/packet_tracer_mcp/infrastructure/diagnostics/cp_scale_live.py"
+    ).read_text(encoding="utf-8")
     start = source.index("def _post_failure_simulation_diagnostic")
     body = source[start:]
 
@@ -1267,6 +1306,7 @@ def test_the_runner_carries_no_dhcp_trace_classifier():
 
 
 def test_voice_failure_keeps_the_post_failure_simulation_diagnostic(verdict):
+    """Keep the post-failure simulation diagnostic on a voice failure."""
     assert verdict["simulation_before_voice_failure"] == {
         "sentinel": "post failure simulation retained",
     }
@@ -1292,6 +1332,7 @@ def test_the_authoritative_voice_window_is_proven_realtime_at_both_edges(verdict
 
 
 def test_a_simulating_start_never_runs_the_authoritative_acquisition(verdict):
+    """Never run the authoritative acquisition from a simulating start."""
     for key in ("continuity_before_simulating", "continuity_before_blind"):
         outcome = verdict[key]
         continuity = outcome["continuity"]
@@ -1309,6 +1350,7 @@ def test_a_simulating_start_never_runs_the_authoritative_acquisition(verdict):
 
 
 def test_a_simulating_finish_leaves_the_voice_result_uninterpreted(verdict):
+    """Leave the voice result uninterpreted after a simulating finish."""
     for key in ("continuity_after_simulating", "continuity_after_blind"):
         outcome = verdict[key]
         continuity = outcome["continuity"]
@@ -1326,6 +1368,7 @@ def test_a_simulating_finish_leaves_the_voice_result_uninterpreted(verdict):
 
 
 def test_the_post_failure_diagnostic_refuses_an_unestablished_failure(verdict):
+    """Refuse the post-failure diagnostic for an unestablished failure."""
     gate = verdict["diagnostic_gate"]
 
     assert gate["status"] == "NOT_APPLICABLE"
@@ -1337,6 +1380,7 @@ def test_the_post_failure_diagnostic_refuses_an_unestablished_failure(verdict):
 
 
 def test_the_two_windows_stay_named_apart(verdict):
+    """Keep the two observation windows named apart."""
     normal = verdict["continuity_verified"]["continuity"]
     diagnostic = verdict["sim_realtime"]
 

@@ -41,7 +41,6 @@ from tests.cp_live_m0_harness import (
     trace_differences,
 )
 
-
 FIXTURE_DIR = ROOT / "tests" / "fixtures" / "cp_live_m0"
 FIXTURE = FIXTURE_DIR / "baseline-v3.json"
 DIGEST = FIXTURE.with_suffix(".sha256")
@@ -54,17 +53,17 @@ BASELINE_SOURCE_SHA = "b428129874f6e668e5074e1b29fa3d208c87df14"
 
 @pytest.fixture(scope="module")
 def baseline() -> dict:
+    """Load the frozen CP-LIVE M0 reference fixture once per module."""
     return json.loads(FIXTURE.read_text(encoding="utf-8"))
 
 
 def _assert_candidate_provenance(verdict: dict, *, substituted: frozenset):
-    """The child's measured provenance, asserted apart from its trace.
+    """Assert the child's measured provenance apart from its trace.
 
     One namespace per process, files inside this tree, no dispatch attempted,
     the doubles installed and the rules left real -- judged by the same
     function the recorder uses before it writes a reference.
     """
-
     issues = candidate_provenance_issues(
         verdict["provenance"],
         interpreter=sys.executable,
@@ -76,6 +75,7 @@ def _assert_candidate_provenance(verdict: dict, *, substituted: frozenset):
 
 
 def test_reference_artifact_has_pinned_source_and_external_digest(baseline):
+    """Pin the reference artifact to its source commit and an external digest."""
     assert baseline["schema"] == "cp-live-m0-equivalence-baseline-v3"
     assert baseline["fixture_version"] == FIXTURE_VERSION
     assert baseline["provenance"]["source_commit"] == BASELINE_SOURCE_SHA
@@ -99,9 +99,9 @@ def test_reference_artifact_has_pinned_source_and_external_digest(baseline):
     assert baseline["provenance"]["live_environment_contacted"] is False
     assert baseline["provenance"]["synthetic_test_capabilities"] is True
     assert baseline["comparison"]["provenance_is_not_normalized"] is True
-    assert baseline["comparison"][
-        "candidate_provenance_is_asserted_not_compared"
-    ] is True
+    assert (
+        baseline["comparison"]["candidate_provenance_is_asserted_not_compared"] is True
+    )
     # The reference names the scope it was verified against, not just its
     # source commit.
     scope = baseline["provenance"]["executed_scope"]
@@ -118,12 +118,14 @@ def test_reference_artifact_has_pinned_source_and_external_digest(baseline):
         "first_failed_boundary",
         "closure",
     } <= set(baseline["comparison"]["security_fields_never_normalized"])
-    assert hashlib.sha256(FIXTURE.read_bytes()).hexdigest() == (
-        DIGEST.read_text(encoding="ascii").strip().split()[0]
+    assert (
+        hashlib.sha256(FIXTURE.read_bytes()).hexdigest()
+        == (DIGEST.read_text(encoding="ascii").strip().split()[0])
     )
 
 
 def test_every_superseded_reference_is_retained_and_still_verifiable(baseline):
+    """Keep every superseded reference present and still verifiable."""
     chain = baseline["supersedes"]
 
     assert [item["fixture_version"] for item in chain] == list(
@@ -135,9 +137,14 @@ def test_every_superseded_reference_is_retained_and_still_verifiable(baseline):
         # digest, recorded here and in the file beside it.
         digest = hashlib.sha256(retained.read_bytes()).hexdigest()
         assert digest == superseded["sha256"], superseded["retained_as"]
-        assert digest == (
-            retained.with_suffix(".sha256")
-            .read_text(encoding="ascii").strip().split()[0]
+        assert (
+            digest
+            == (
+                retained.with_suffix(".sha256")
+                .read_text(encoding="ascii")
+                .strip()
+                .split()[0]
+            )
         ), superseded["retained_as"]
         # Every difference against it is named, not implied.
         assert superseded["justified_differences"], superseded["fixture_version"]
@@ -148,7 +155,8 @@ def test_every_superseded_reference_is_retained_and_still_verifiable(baseline):
 @pytest.mark.parametrize(
     "scenario",
     tuple(
-        item for item in SCENARIOS
+        item
+        for item in SCENARIOS
         if item not in {"cleanup-failure", "full-cleanup", "full-retain"}
     ),
 )
@@ -157,6 +165,7 @@ def test_run_coordination_matches_the_frozen_ordered_trace(
     scenario,
     tmp_path,
 ):
+    """Match the run coordination to the frozen ordered trace."""
     verdict = run_product_probe(
         coordination_source(scenario),
         tmp_path / scenario,
@@ -165,7 +174,8 @@ def test_run_coordination_matches_the_frozen_ordered_trace(
 
     assert trace_differences(expected, verdict["trace"]) == []
     _assert_candidate_provenance(
-        verdict, substituted=LEVEL_A_SUBSTITUTED_SYMBOLS,
+        verdict,
+        substituted=LEVEL_A_SUBSTITUTED_SYMBOLS,
     )
 
 
@@ -173,10 +183,12 @@ def test_cleanup_retry_correction_is_an_explicit_delta_from_the_frozen_oracle(
     baseline,
     tmp_path,
 ):
+    """State the cleanup retry correction as an explicit delta from the frozen oracle."""
     historical = baseline["coordination"]["cleanup-failure"]
     expected = copy.deepcopy(historical)
     cleanup_positions = [
-        index for index, event in enumerate(expected["events"])
+        index
+        for index, event in enumerate(expected["events"])
         if event.get("event") == "cleanup"
     ]
     assert len(cleanup_positions) == 2
@@ -194,11 +206,13 @@ def test_cleanup_retry_correction_is_an_explicit_delta_from_the_frozen_oracle(
     )
 
     assert trace_differences(expected, verdict["trace"]) == []
-    assert sum(
-        event.get("event") == "cleanup" for event in verdict["trace"]["events"]
-    ) == 1
+    assert (
+        sum(event.get("event") == "cleanup" for event in verdict["trace"]["events"])
+        == 1
+    )
     _assert_candidate_provenance(
-        verdict, substituted=LEVEL_A_SUBSTITUTED_SYMBOLS,
+        verdict,
+        substituted=LEVEL_A_SUBSTITUTED_SYMBOLS,
     )
 
 
@@ -218,7 +232,6 @@ def test_full_qualification_contract_is_an_explicit_delta_from_the_frozen_oracle
     preflight that refuses a retention request before Packet Tracer, so the
     retention scenario proves the coordinator itself never retains.
     """
-
     historical = baseline["coordination"]["full-cleanup"]
     router3_checkpoint = historical["events"].index(
         {"event": "checkpoint", "stage": "router3-branch"},
@@ -235,7 +248,8 @@ def test_full_qualification_contract_is_an_explicit_delta_from_the_frozen_oracle
         }
 
     expected = copy.deepcopy(historical)
-    expected["events"] = historical["events"][:router3_checkpoint + 1] + [
+    expected["events"] = [
+        *historical["events"][: router3_checkpoint + 1],
         {"event": "project", "stage": "remaining"},
         {"event": "transition", "previous": "router3-branch", "current": "remaining"},
         write("remaining"),
@@ -274,7 +288,8 @@ def test_full_qualification_contract_is_an_explicit_delta_from_the_frozen_oracle
 
     assert trace_differences(expected, verdict["trace"]) == []
     _assert_candidate_provenance(
-        verdict, substituted=LEVEL_A_SUBSTITUTED_SYMBOLS,
+        verdict,
+        substituted=LEVEL_A_SUBSTITUTED_SYMBOLS,
     )
 
 
@@ -282,6 +297,7 @@ def test_policy_and_authority_trace_matches_the_frozen_reference(
     baseline,
     tmp_path,
 ):
+    """Match the policy and authority trace to the frozen reference."""
     verdict = run_product_probe(POLICY_TRACE_SOURCE, tmp_path / "policy")
 
     assert trace_differences(baseline["policy_trace"], verdict["trace"]) == []
@@ -296,7 +312,6 @@ def test_the_capture_keeps_every_dispatch_its_order_and_its_multiplicity(
     tmp_path,
 ):
     """An operation the runtime added must reach the trace, not fall off a zip."""
-
     recorded = baseline["policy_trace"]
     assert recorded["cardinality"] == {
         "planned_checks": 2,
@@ -307,7 +322,8 @@ def test_the_capture_keeps_every_dispatch_its_order_and_its_multiplicity(
     }
 
     verdict = run_product_probe(
-        POLICY_TRACE_EXTRA_DISPATCH_SOURCE, tmp_path / "extra-dispatch",
+        POLICY_TRACE_EXTRA_DISPATCH_SOURCE,
+        tmp_path / "extra-dispatch",
     )
     observed = verdict["trace"]
 
@@ -329,13 +345,9 @@ def test_the_capture_keeps_every_dispatch_its_order_and_its_multiplicity(
         "planned": False,
         "attributed_evidence": False,
     }
-    assert observed["operations"][2]["operation_id"] == (
-        "forward/multilayer-to-large"
-    )
+    assert observed["operations"][2]["operation_id"] == ("forward/multilayer-to-large")
     assert observed["operations"][2]["status"] == "VERIFIED"
-    assert "198.51.100.99" in {
-        item["destination"] for item in observed["operations"]
-    }
+    assert "198.51.100.99" in {item["destination"] for item in observed["operations"]}
     # And the oracle refuses it, naming the operations rather than a count.
     differences = trace_differences(recorded, observed)
     assert any("operations" in item for item in differences), differences
@@ -346,6 +358,7 @@ def test_duplicate_dispatch_is_ambiguous_and_cannot_inherit_verified(
     baseline,
     tmp_path,
 ):
+    """Keep a duplicate dispatch ambiguous, so it cannot inherit `VERIFIED`."""
     verdict = run_product_probe(
         POLICY_TRACE_DUPLICATE_DISPATCH_SOURCE,
         tmp_path / "duplicate-dispatch",
@@ -359,9 +372,7 @@ def test_duplicate_dispatch_is_ambiguous_and_cannot_inherit_verified(
     ]
     assert observed["cardinality"]["unplanned_operations"] == [1, 2]
     assert observed["cardinality"]["aligned"] is False
-    assert all(
-        item["status"] != "VERIFIED" for item in observed["operations"][:2]
-    )
+    assert all(item["status"] != "VERIFIED" for item in observed["operations"][:2])
     assert trace_differences(baseline["policy_trace"], observed)
 
 
@@ -369,6 +380,7 @@ def test_wrong_destination_is_observed_but_gets_no_planned_identity_or_evidence(
     baseline,
     tmp_path,
 ):
+    """Observe a wrong destination without granting it planned identity or evidence."""
     verdict = run_product_probe(
         POLICY_TRACE_WRONG_DESTINATION_SOURCE,
         tmp_path / "wrong-destination",
@@ -384,9 +396,7 @@ def test_wrong_destination_is_observed_but_gets_no_planned_identity_or_evidence(
     assert wrong["attributed_evidence"] is False
     assert wrong["operation_id"] == ""
     assert wrong["status"] == ""
-    assert observed["operations"][1]["operation_id"] == (
-        "forward/multilayer-to-large"
-    )
+    assert observed["operations"][1]["operation_id"] == ("forward/multilayer-to-large")
     assert observed["cardinality"]["unplanned_operations"] == [1]
     assert observed["cardinality"]["aligned"] is False
     assert trace_differences(baseline["policy_trace"], observed)
@@ -395,6 +405,7 @@ def test_wrong_destination_is_observed_but_gets_no_planned_identity_or_evidence(
 def test_governed_acceptance_is_not_derived_from_an_absent_contradiction(
     baseline,
 ):
+    """Never derive governed acceptance from an absent contradiction."""
     configuration = baseline["policy_trace"]["configuration"]
     accepted = configuration["accepted_with_governed_ceiling"]
     rejected = configuration["rejected_promoted_ceiling"]
@@ -428,6 +439,7 @@ def test_comparator_detects_deliberate_semantic_drift(
     mutation,
     needle,
 ):
+    """Detect a deliberate semantic drift with the comparator."""
     expected = baseline["policy_trace"]
     changed = copy.deepcopy(expected)
     if mutation == "extra-operation":
@@ -435,9 +447,7 @@ def test_comparator_detects_deliberate_semantic_drift(
     elif mutation == "changed-recipient":
         changed["operations"][0]["recipient"] = "WrongRouter"
     elif mutation == "wrong-authority":
-        changed["operations"][0]["authority"] = (
-            "reverse-path-of-declared-flow"
-        )
+        changed["operations"][0]["authority"] = "reverse-path-of-declared-flow"
     elif mutation == "verified-promotion":
         promoted = changed["configuration"]["accepted_with_governed_ceiling"]
         promoted["aggregate_status"] = "verified"

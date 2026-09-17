@@ -2,7 +2,7 @@
 
 The production runner imports ``packet_tracer_mcp``.  This module deliberately
 does not: every probe that imports the runner executes in a child process, and
-only JSON crosses back into the pytest process.
+only JSON crosses back into pytest's ``src.packet_tracer_mcp`` process.
 
 Every child answers with two separate sections, and they are never mixed:
 

@@ -25,7 +25,6 @@ from .import_isolation_preflight import (
 )
 from .source_preflight import GitOutput, GitSourceReader
 
-
 CommandRunner = Callable[..., Any]
 
 
@@ -38,15 +37,15 @@ class PythonRuntimeEvidenceReader:
         executable: Callable[[], str] = lambda: sys.executable,
         modules: Callable[[], Mapping[str, object]] = lambda: sys.modules,
     ) -> None:
+        """Inject the executable and module-table readers, defaulting to this process."""
         self._executable = executable
         self._modules = modules
 
     def read(self) -> CPScaleRuntimeEvidence:
+        """Return the loaded namespaces and package file without importing anything."""
         modules = self._modules()
         loaded = tuple(
-            name
-            for name in (PRODUCTION_NAMESPACE, LEGACY_NAMESPACE)
-            if name in modules
+            name for name in (PRODUCTION_NAMESPACE, LEGACY_NAMESPACE) if name in modules
         )
         production = modules.get(PRODUCTION_NAMESPACE)
         package_file = getattr(production, "__file__", "") if production else ""
@@ -58,14 +57,18 @@ class PythonRuntimeEvidenceReader:
 
 
 class PacketTracerImportIsolationReader:
+    """Run the import-isolation preflight for a declared governed root."""
+
     def __init__(
         self,
         *,
         factory: Callable[[Path], ImportIsolationPreflight] = ImportIsolationPreflight,
     ) -> None:
+        """Inject the preflight factory, defaulting to `ImportIsolationPreflight`."""
         self._factory = factory
 
     def read(self, governed_root: Path) -> CPScaleImportIsolationObservation:
+        """Return the isolation observation for `governed_root`, rendering any refusal."""
         result = self._factory(governed_root).ensure_isolated()
         return CPScaleImportIsolationObservation(
             isolated=result.isolated,
@@ -79,9 +82,11 @@ class GitCPScaleRepositoryReader:
     """Read branch, cleanliness, pushed HEAD and source tree without mutation."""
 
     def __init__(self, *, git_output: GitOutput | None = None) -> None:
+        """Inject the Git output runner used by the source reader."""
         self._reader = GitSourceReader(git_output=git_output)
 
     def read(self, governed_root: Path) -> CPScaleRepositoryObservation:
+        """Return the repository identity and cleanliness under `governed_root`."""
         observed = self._reader.read(governed_root)
         return CPScaleRepositoryObservation(
             branch=observed.branch,
@@ -111,9 +116,11 @@ class PowerShellPacketTracerProcessReader:
     )
 
     def __init__(self, *, run_command: CommandRunner = subprocess.run) -> None:
+        """Inject the command runner, defaulting to `subprocess.run`."""
         self._run_command = run_command
 
     def read(self) -> CPScaleProcessObservation:
+        """Return every Packet Tracer process, or the error that prevented inspection."""
         try:
             completed = self._run_command(
                 ["powershell.exe", "-NoProfile", "-Command", self._COMMAND],

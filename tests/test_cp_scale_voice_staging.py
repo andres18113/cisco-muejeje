@@ -16,19 +16,16 @@ crosses back -- the same reason `test_cp_scale_live_failure_evidence` does.
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from tests.subprocess_harness import run_isolated_python, subprocess_failure
-
+from packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
 from packet_tracer_mcp.application.use_cases.compose_cp_scale_canonical import (
     CPScaleCanonicalStage,
     project_cp_scale_canonical_stage,
 )
-from packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
 from packet_tracer_mcp.application.use_cases.foundational_evidence import (
     derive_foundational_statuses,
 )
@@ -38,9 +35,6 @@ from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ConfigurationApplicationStatus,
     VerificationResult,
 )
-from tests.poe_delivery_capabilities import (
-    compose_delivery_qualified_cp_scale_canonical as compose_cp_scale_canonical,
-)
 from packet_tracer_mcp.domain.enterprise.models.roles import DeviceRole
 from packet_tracer_mcp.domain.enterprise.models.voice_plan import VoiceActionType
 from packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
@@ -49,13 +43,17 @@ from packet_tracer_mcp.infrastructure.catalog.measured_port_inventories import (
 from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store import (
     CapabilitySnapshotStore,
 )
-
+from tests.poe_delivery_capabilities import (
+    compose_delivery_qualified_cp_scale_canonical as compose_cp_scale_canonical,
+)
+from tests.subprocess_harness import run_isolated_python, subprocess_failure
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(scope="module")
 def composition():
+    """Compose the canonical CP-SCALE topology once per module."""
     composed = compose_cp_scale_canonical(
         packet_tracer_version=MEASURED_BACKEND_VERSION,
         capability_store=CapabilitySnapshotStore(),
@@ -73,29 +71,32 @@ def _stage(composition, stage: CPScaleCanonicalStage):
 
 
 def test_the_canonical_composition_compiles_a_voice_plan(composition):
+    """Compile a voice plan from the canonical composition."""
     assert composition.voice is not None
     assert len(composition.voice.phone_assignments) == 69
 
 
 def test_a_stage_with_no_phone_carries_no_voice_plan(composition):
+    """Carry no voice plan in a stage without phones."""
     for stage in (
-        CPScaleCanonicalStage.ROUTING_CORE, CPScaleCanonicalStage.ROUTER4_SWITCH10,
+        CPScaleCanonicalStage.ROUTING_CORE,
+        CPScaleCanonicalStage.ROUTER4_SWITCH10,
     ):
         assert _stage(composition, stage).voice is None
 
 
 def test_floor1_stages_voice_for_exactly_the_phones_it_deployed(composition):
+    """Stage voice on floor 1 for exactly the phones it deployed."""
     projection = _stage(composition, CPScaleCanonicalStage.FLOOR1)
     deployed = {
-        item.id for item in projection.topology.devices
+        item.id
+        for item in projection.topology.devices
         if item.enterprise_role == DeviceRole.IP_PHONE.value
     }
 
     assert projection.voice is not None
     assert len(deployed) == 21
-    assert {
-        item.phone_id for item in projection.voice.phone_assignments
-    } == deployed
+    assert {item.phone_id for item in projection.voice.phone_assignments} == deployed
 
 
 @pytest.mark.parametrize(
@@ -117,8 +118,7 @@ def test_each_floor_preserves_every_voice_foundation_through_e5_derivation(
     assert len(projection.voice.phone_assignments) == phone_count
 
     requirements = {
-        item.source_id: item.kind
-        for item in projection.voice.foundational_requirements
+        item.source_id: item.kind for item in projection.voice.foundational_requirements
     }
     observed = {
         source_id: (
@@ -151,16 +151,20 @@ def test_each_floor_preserves_every_voice_foundation_through_e5_derivation(
     )
 
     assert {source_id: statuses.get(source_id) for source_id in observed} == observed
-    assert VoiceApplicator._missing_foundations(
-        projection.voice,
-        statuses,
-        allow_pending_voice_signal=False,
-    ) == []
+    assert (
+        VoiceApplicator._missing_foundations(
+            projection.voice,
+            statuses,
+            allow_pending_voice_signal=False,
+        )
+        == []
+    )
 
 
 def test_each_active_call_control_uses_its_final_designed_site_capacity(
     composition,
 ):
+    """Size each active call control by its final designed site capacity."""
     full = {
         item.call_control_id: (item.max_phones, item.max_extensions)
         for item in composition.voice.actions_of_type(
@@ -219,12 +223,14 @@ def test_the_staged_plan_carries_the_actions_a_phone_acquires_through(compositio
     assert VoiceActionType.ENABLE_CALL_CONTROL in kinds
     assert VoiceActionType.GENERATE_PHONE_CONFIGURATION_FILES in kinds
     assert VoiceActionType.BIND_PHONE_TO_EXTENSION in kinds
-    assert len(
-        projection.voice.actions_of_type(VoiceActionType.BIND_PHONE_TO_EXTENSION)
-    ) == 21
+    assert (
+        len(projection.voice.actions_of_type(VoiceActionType.BIND_PHONE_TO_EXTENSION))
+        == 21
+    )
 
 
 def test_option_150_points_at_the_call_control_that_answers(composition):
+    """Point option 150 at the call control that answers."""
     projection = _stage(composition, CPScaleCanonicalStage.FLOOR1)
     options = projection.voice.actions_of_type(
         VoiceActionType.CONFIGURE_VOICE_DHCP_OPTION,
@@ -241,7 +247,7 @@ def test_option_150_points_at_the_call_control_that_answers(composition):
     assert {item.tftp_address for item in options} == {"172.16.20.1"}
 
 
-_PROBE = '''
+_PROBE = """
 import json, sys
 from types import SimpleNamespace
 
@@ -376,11 +382,12 @@ refused = _run(_plan(), _Applied([], refused=["voice/a"]))
 verdict["refused_action_fails"] = "refused voice actions" in refused["error"]
 
 print(json.dumps(verdict))
-'''
+"""
 
 
 @pytest.fixture(scope="module")
 def gate() -> dict:
+    """Run the isolated probe once and return its JSON gate result."""
     completed = run_isolated_python(
         _PROBE.format(root=str(ROOT), src=str(ROOT / "src")),
         cwd=ROOT,
@@ -391,29 +398,35 @@ def gate() -> dict:
 
 
 def test_a_stage_without_phones_stages_no_voice_and_does_not_fail(gate):
+    """Stage no voice, and do not fail, when a stage has no phones."""
     assert gate["no_phone_not_staged"]
 
 
 def test_two_agreeing_reads_close_the_stage_and_record_the_address(gate):
+    """Close the stage and record the address after two agreeing reads."""
     assert gate["verified_has_no_error"]
     assert gate["verified_records_address"]
 
 
 def test_an_observed_contradiction_fails_the_stage(gate):
+    """Fail the stage on an observed contradiction."""
     assert gate["contradiction_fails"]
     assert gate["contradiction_named"]
 
 
 def test_an_unobservable_registration_is_bounded_not_failed(gate):
+    """Bound an unobservable registration instead of failing it."""
     assert gate["unobservable_is_not_failure"]
     assert gate["unobservable_claims_nothing"]
 
 
 def test_an_unregistered_phone_contradicts_the_plan(gate):
+    """Treat an unregistered phone as a contradiction of the plan."""
     assert gate["unregistered_fails"]
 
 
 def test_a_refused_voice_action_stops_the_stage(gate):
+    """Stop the stage when a voice action is refused."""
     assert gate["refused_action_fails"]
 
 

@@ -99,11 +99,16 @@ jobs:
           fi
           echo "ref=$comparison" >> "$GITHUB_OUTPUT"
 
+      # The committed record authorizes CANONICAL_PYTHON_NAMESPACE only while the
+      # comparison merge base is its exact base commit; against any other base it
+      # is printed as INACTIVE and grants no exemption. See the mechanical
+      # migration quality boundary brief.
       - name: Run Ruff lint and format gate
         run: |
           .venv/bin/python scripts/quality_gate.py \
             --base "${{ steps.comparison.outputs.ref }}" \
-            --delivery-commit "$GITHUB_SHA"
+            --delivery-commit "$GITHUB_SHA" \
+            --mechanical-authorization scripts/mechanical_authorizations/canonical-python-namespace.json
 
       - name: Check whitespace
         run: git diff --check "${{ steps.comparison.outputs.ref }}...HEAD"

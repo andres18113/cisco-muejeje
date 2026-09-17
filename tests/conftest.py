@@ -12,6 +12,7 @@ being careful; it has to be redirected. The early pytest hooks below redirect
 it before test-module collection and keep a byte/metadata sentinel until pytest
 is fully unconfigured. Tests that want snapshots inject their own store.
 """
+
 from __future__ import annotations
 
 import os
@@ -29,7 +30,6 @@ from tests.cp_live_data_integrity import (
     isolated_subprocess_environment,
 )
 from tests.namespace_preflight import NamespacePreflight
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -56,8 +56,14 @@ def pytest_configure(config) -> None:
     environment = isolated_subprocess_environment(isolated)
     patcher = pytest.MonkeyPatch()
     for name in (
-        "LOCALAPPDATA", "APPDATA", "XDG_STATE_HOME", "TEMP", "TMP", "TMPDIR",
-        "PT_MCP_BRIDGE_TOKEN", "PYTHONNOUSERSITE",
+        "LOCALAPPDATA",
+        "APPDATA",
+        "XDG_STATE_HOME",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+        "PT_MCP_BRIDGE_TOKEN",
+        "PYTHONNOUSERSITE",
     ):
         patcher.setenv(name, environment[name])
     patcher.delenv("PT_MCP_GOVERNED_ROOT", raising=False)
@@ -71,6 +77,7 @@ def pytest_configure(config) -> None:
 
 
 def pytest_unconfigure(config) -> None:
+    """Verify the protected paths are unchanged, then undo the early isolation."""
     state = getattr(config, _ISOLATION_ATTRIBUTE, None)
     if state is None:
         return
