@@ -585,7 +585,7 @@ class ServiceApplicator:
     @staticmethod
     def _effect_established(
         action_id: str,
-        decisions: dict[str, object],
+        decisions: dict[str, MutationDecision],
         results: dict[str, ActionApplicationResult],
     ) -> bool:
         """Whether a dependent may proceed on this action's outcome.
@@ -604,7 +604,7 @@ class ServiceApplicator:
     @staticmethod
     def _blocked_message(
         dependency: str,
-        decisions: dict[str, object],
+        decisions: dict[str, MutationDecision],
         results: dict[str, ActionApplicationResult],
     ) -> str:
         """Name why a prerequisite did not open the frontier.
@@ -719,16 +719,18 @@ class ServiceApplicator:
                 # prerequisite, so it stays blocked.
                 effect_class = VERIFICATION_EFFECT_CLASSES.get(expectation.kind)
                 if effect_class in {"read_only", "owned_temporary"}:
-                    recovery = "recovery_read_after_unresolved_action:" + ",".join(
-                        unresolved
-                    )
-                    satisfied = True
                     blocked = [
                         item
                         for item in blocked
                         if not any(item.endswith(name) for name in unresolved)
                     ]
+                    # Only the unresolved prerequisites are lifted. Anything
+                    # else that blocked this row still blocks it.
                     satisfied = not blocked
+                    if satisfied:
+                        recovery = "recovery_read_after_unresolved_action:" + ",".join(
+                            unresolved
+                        )
                 else:
                     blocked = sorted(
                         set(blocked)
