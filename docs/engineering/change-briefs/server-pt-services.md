@@ -2667,11 +2667,11 @@ and the GREEN on the corrected tree.
 
 | Finding | Correction (requirement) | Acceptance tests | Measured RED on `ec8c8bc` | GREEN |
 | --- | --- | --- | --- | --- |
-| **R1** HTTP/HTTPS ownership is not finalized on every exit | Ownership is established before any later fallible call and recorded in a `ClientLease`; `_verify_http` finalizes exactly once on success, start-response loss, engine error, malformed reply, poll exception, deadline and cleanup failure; primary and cleanup outcomes are separate records; a missing slot after an unobserved start is `ownership_unknown`, never a release | `tests/test_service_client_ownership_harness.py`, 20 scenarios, oracle = the stub's live-client count and `deleteClient` log | **13 failed, 7 passed.** Six scenarios ended with `engine.live == 1`: a live client the row reported as released. `not_submitted` on the start produced `KeyError: 'released'` (no ownership record at all). The `manager_missing` and `create_returns_null` scenarios dispatched a release for a client that never existed | 20 passed |
+| **R1** HTTP/HTTPS ownership is not finalized on every exit | Ownership is established before any later fallible call and recorded in a `ClientLease`; `_verify_http` finalizes exactly once on success, start-response loss, engine error, malformed reply, poll exception, deadline and cleanup failure; primary and cleanup outcomes are separate records; a missing slot after an unobserved start is `ownership_unknown`, never a release | `tests/test_service_client_ownership_harness.py`, 20 scenarios, oracle = the stub's live-client count and `deleteClient` log | **13 failed, 7 passed.** Seven scenarios ended with `engine.live == 1`: a live client the row reported as released. `not_submitted` on the start produced `KeyError: 'released'` (no ownership record at all). The `manager_missing` and `create_returns_null` scenarios dispatched a release for a client that never existed | 20 passed |
 | **R2** recovery admission removes unrelated prerequisites | The recovery rule withholds exactly the ACTION_APPLIED prerequisites it admits, by typed `(kind, reference_id)` identity, and re-evaluates the rest through the unchanged `prerequisites_satisfied` | `tests/test_service_application_uncertainty.py` section 6b: positive recovery for ACTION_APPLIED alone; ACTION_APPLIED + ACTION_VERIFIED for the same id; ACTION_APPLIED + RESOURCE_READY for the same id; an unrelated missing id; `verification_verified:check-<id>` on a blocked verification. Every blocked case asserts the runtime verifier was NOT called | **3 failed.** `action_verified:<id>`, `resource_ready:<id>` and `verification_verified:check-<id>` were all erased by the suffix filter, the row ran and `runtime.verify_calls` contained it | 37 passed |
 | **R3a** HTTP/DNS payload shape and subject | Stage-appropriate exact-type validation before freshness, content or success; `found` is read, not assumed; `owned:false` is a missing subject; uncertainty, malformed payload, subject-not-found and fresh contradiction stay distinct; R1 finalization holds on every malformed path | `tests/test_service_runtime_observation.py` section 7: the audited `{"found": false, "content": {"unexpected": "AUDIT_MARKER"}}`; six malformed page shapes; six malformed start shapes; five malformed DNS start shapes; three DNS window shapes; valid positive and negative controls | the audited counterexample returned **VERIFIED/OBSERVED**; `found: 1` and `found: "true"` with a matching marker returned **OBSERVED**; a dict or list `content` returned **OBSERVED**; a DNS start missing `blocked` or reporting `blocked: "pager_active"` was read as not blocked | 120 passed in the module |
 | **R3b** DNS address equality | The resolved address is parsed from the supported complete shapes (`Pinging <address> with`, `Pinging <host> [<address>] with`, `Ping statistics for <address>:`) and compared by value; ambiguous or unreadable output is inconclusive; window completeness no longer depends on the expectation | same module, section 8: `192.0.2.10` versus `192.0.2.100`; the expected address only in the echo; only in a reply line; the exact address; the bracketed form; two disagreeing addresses; no address; an unparsable address; both negative-control directions; poll termination; an unreadable expectation | `192.0.2.100` satisfied an expectation of `192.0.2.10` and reported **VERIFIED**; the echo-only and reply-line-only windows reported **VERIFIED**; a complete wrong-address window polled to the deadline instead of terminating | 120 passed in the module |
-| **R4** unobservable publication classified as NOT_SUBMITTED | `_publish` returns a three-valued `PublicationPhase`; a rename failure whose existence probe also raises is `UNKNOWN` and maps to `ACCEPTANCE_UNKNOWN` + `NOT_OBSERVED` with both causes preserved; a correlated answer still upgrades it to ACCEPTED; the `.tmp` residue is discarded best effort and the `req_` path is never withdrawn on that branch | `tests/test_transport_dispatch_facts.py` section 4: write failure; rename failure with the request present; rename failure with the request absent; rename failure with an unobservable probe; the same, answered; the domain reading of the uncertain phase; per-call independence; the frozen `send_and_wait` behaviour | **5 failed.** The unobservable probe reported `NOT_SUBMITTED` + `NOT_APPLICABLE`, which `decide_mutation` reads as row 1 -- a definite local FAILURE that authorizes a retry -- instead of row 3, UNKNOWN and sticky | 197 passed in the module |
+| **R4** unobservable publication classified as NOT_SUBMITTED | `_publish` returns a three-valued `PublicationPhase`; a rename failure whose existence probe also raises is `UNKNOWN` and maps to `ACCEPTANCE_UNKNOWN` + `NOT_OBSERVED` with both causes preserved; a correlated answer still upgrades it to ACCEPTED; the `.tmp` residue is discarded best effort and `_publish` itself never withdraws the `req_` path, which `_await_response` still does at its deadline under a disposition that claims no non-execution | `tests/test_transport_dispatch_facts.py` section 4: write failure; rename failure with the request present; rename failure with the request absent; rename failure with an unobservable probe; the same, answered; the domain reading of the uncertain phase; per-call independence; the frozen `send_and_wait` behaviour | **5 failed**, four behavioural plus the new enum's own distinctness test, which fails there because the symbol does not exist. The unobservable probe reported `NOT_SUBMITTED` + `NOT_APPLICABLE`, which `decide_mutation` reads as row 1 -- a definite local FAILURE that authorizes a retry -- instead of row 3, UNKNOWN and sticky | 197 passed in the module |
 | **R5** the mapper drops a setter error | `RuntimeActionMutation.call_error` carries the bounded sanitized setter detail on every admitted row, beside whatever canonical reason `cause` needs; `sanitized_mutation_snapshot` bounds it; `decide_mutation` never reads it | `tests/test_service_runtime_observation.py` section 9 (adapter), `tests/test_execution_status_facts.py` (decision and snapshot), `tests/test_service_mutation_script_harness.py` section 7 (the real generated script plus the real applicator and a real JSON round trip) | **12 failed** across the three modules. `test_no_stored_record_drops_the_setter_error_it_was_given`, which names no new field, failed because the detail was absent from the whole serialized record: for a failed pre-read `cause` was set to `""`, and for an attempted DNS add it was replaced by the footprint label | 78 + 120 + 27 passed in the three modules |
 
 Two assertions in the R3a/R1 rows failed on `ec8c8bc` because the release
@@ -2715,7 +2715,7 @@ no unrelated cleanup.
 | Docs | `mkdocs build --site-dir _site` succeeds; the only warnings are the pre-existing `handoff.md` links under `docs/reference/cp-scale/` |
 | Whitespace | `git diff --check` clean |
 | Delivery gate | `scripts\quality_gate.py --base cisco/main --delivery-commit HEAD` on `cc1d8951700c102693fe1512685aa071ce3ed35a`: clean tree at the exact commit, comparison base and merge base both `6263344`, 16 changed Python files, 0 mechanical exemptions, all checks passed, 16 files already formatted. Re-run on the final documentation commit, which changes no Python file; both runs are reported in the delivery summary |
-| CI on the new delivery SHA | **pending**: the corrected commits are local and no push was authorized for them. Run `35273030571` stands for `ec8c8bc` only and is never offered in their place. The Windows/Linux x Python 3.11/3.13 matrix on the new delivery SHA is required before delivery is complete |
+| CI on the new delivery SHA | Recorded as **pending** when this table was written, because the corrected commits were then local. Superseded: `280f923` was pushed afterwards and run `35282016408` ran on it. See 9.8 for the verified result and for this round's own status |
 
 The three skipped tests are pre-existing, environmental, and unrelated to this
 correction. `pytest -q -rs` names them exactly:
@@ -2768,6 +2768,83 @@ Neither Node harness skips here: Node v24.19.0 is present, and under
 - Delivery status is `READY_FOR_REVIEW`. Self-review is not independent audit.
   This correction claims no capability promotion, no LIVE behaviour and no
   merge authorization.
+
+### 9.8 Follow-up review (V1, V2) and the corrections to this record
+
+A second independent review of `280f92363d041839166218e3485c5a2da68fbf24`
+(tree `d5e6db792b9a152b0853f01bd1eb53d0e1a6603f`) returned `REQUIRES_CHANGES`
+with two verification-boundary findings and three corrections to this chapter.
+It accepted R1-R5, the TD-12 table, the DNS partial-footprint semantics, the
+legacy compatibility boundary and the narrow ownership golden exception. The
+starting point for this round is that candidate; `HEAD` had not moved.
+
+**Exact-SHA CI is no longer pending for `280f923`.** GitHub Actions run
+`35282016408`, attempt 1, completed successfully on head SHA
+`280f92363d041839166218e3485c5a2da68fbf24`. Verified directly from this
+checkout with `gh run view 35282016408 --repo andres18113/cisco-muejeje`: six
+jobs -- `quality`, `docs` and `pytest` on
+`{ubuntu-latest, windows-latest} x {3.11, 3.13}` -- all `success`. The
+`pytest (ubuntu-latest, 3.13)` job (`105405865163`) logged `5780 passed,
+2 skipped, 3 warnings in 342.19s`. The `quality` job (`105405864961`) logged
+`Delivery validation: clean tree at exact commit 280f923...`, base and merge
+base `6263344`, `Changed Python files: 16`, `Mechanical-only exempt: 0`,
+`All checks passed!`, `16 files already formatted`. The local `5779 passed,
+3 skipped` figure in 9.6 is a different execution on a different machine and
+is retained as such; neither is relabelled as the other, and run
+`35273030571` still stands for `ec8c8bc` alone.
+
+#### The two findings
+
+| Finding | Correction (requirement) | Acceptance tests | Measured RED on `280f923` | GREEN |
+| --- | --- | --- | --- | --- |
+| **V1** ownership settled from internally inconsistent stage payloads | A denied client is granted only by a payload that is coherent about it; until then the lease stays UNKNOWN and the one bounded finalization still runs. The release payload adds `error` to its shape and is checked for cross-field contradictions before any outcome: only a tuple the script can actually produce may be read as `released` | `tests/test_service_client_ownership_harness.py` section 8, through the real runtime and the persistent Node engine, overriding only one stage's reported body after its script has really run | **10 failed.** `{"owned": false, "started": true, "content_before": ""}` produced `nothing_owned` with **zero** release dispatches while the stub still held the created client; the page-text variant left `engine.live == 1`. Four impossible release tuples and two mis-typed ones returned `released`, and `{"found": false, "present": true}` was reported as `owned_slot_absent` | 33 passed |
+| **V2** DNS ambiguity bypassed by the negative control | The window is classified ONCE, before either expectation is applied, into coherent not-found, coherent resolved, or ambiguous. Mutually conflicting signals and unreadable addresses are inconclusive in both directions | `tests/test_service_runtime_observation.py` section 8, every unreadable and mixed window parameterized over `DNS_RESOLUTION` **and** `DNS_NEGATIVE_CONTROL`, plus poll termination and the retained coherent controls | **8 failed.** The three unreadable windows were `INCONCLUSIVE` for a positive expectation and `FAILED`/CONTRADICTED -- fresh negative evidence -- for the negative control. A window carrying both a not-found line and a successful resolution was `VERIFIED` for the negative control and a fresh contradiction for the positive one, in both line orders | 131 passed in the module |
+
+#### What "contradictory" means here, and what it deliberately does not
+
+The admissible tuples are derived from what the generated builders can emit,
+never from what looks odd. Writing V1 surfaced one case where those differ:
+`{"found": false, "deleted": false, "present": true}` LOOKS self-contradictory
+and is perfectly reachable, because `found` is
+`!!(slot&&slot.manager&&slot.client)` and a slot object missing either member
+reports exactly that. It is therefore not a contradiction but unresolved
+ownership -- `release_unverified:slot_not_usable`, something owned that this
+release could not act on -- and it has its own test saying so. The four tuples
+that are refused are refused because `deleted` is only ever assigned inside
+`if(found)`, after the vendor call returned and before the `catch` that fills
+`error`, and the slot is dropped in the same synchronous evaluation.
+
+The same rule governs the start payload: `owned` is `!!(m&&p)` and `p` is
+`m&&m.createClient()`, so a denied client forces `content_before` to `''`,
+`started` to `false` and `https_mode` to `null`. A payload that denies the
+client while reporting any of those is inadmissible, and -- the point of the
+finding -- it may not be read as absence, because absence is the one answer
+that lets the reader skip cleanup entirely.
+
+Neither correction adds a transport, an engine protocol, an error subsystem or
+a LIVE requirement. A valid correlated no-client start still dispatches no
+release; a valid release still closes normally; and an unsupported ping output
+dialect stays unqualified and inconclusive rather than being guessed at.
+
+#### Corrections to this record
+
+* 9.4's R1 cell said **six** scenarios ended with a live client. The retained
+  RED log for `ec8c8bc` shows **seven** `assert engine.live == 0` failures, and
+  the delivery report and commit message said seven. The table now says seven;
+  the count is reconciled against the log, not re-measured, and no log was
+  reconstructed. Both this and the next item were reported as applied in the
+  delivery summary for `280f923` and were not in the file: the patch used a
+  `str.replace` that silently matched nothing. Every edit to this record now
+  asserts its own match count.
+* 9.4's R4 cell counted five failures without saying what they were. Four are
+  behavioural; the fifth is the new enum's own distinctness test, which fails
+  on `ec8c8bc` because the symbol does not exist there. That is now stated.
+* "the `req_` path is never withdrawn" described `_publish`, not the whole
+  `dispatch_and_wait` call: `_await_response` still withdraws the request at
+  its deadline through `_cancel`. The wording is scoped to the publication
+  phase in the table, in the `_publish` docstring and in the test comment.
+  The timeout and cancellation policy is unchanged, and no
+  `RequestDisposition` claims non-execution.
 
 ---
 

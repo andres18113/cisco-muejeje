@@ -358,8 +358,11 @@ class FileBridge:
         (R4). The `.tmp` residue is still discarded best effort -- it is
         either already gone, because the rename succeeded, or not executable,
         because the deployed engine lists only `req_*.js` -- and the `req_`
-        path is never touched, because withdrawing it would be exactly the
-        unprovable claim this branch exists to avoid.
+        path is never touched HERE, because withdrawing it in this phase would
+        be exactly the unprovable claim this branch exists to avoid. The
+        deadline in `_await_response` still withdraws it later through
+        `_cancel`, under a `RequestDisposition` that claims no non-execution;
+        that policy is unchanged and is a different statement from this one.
         """
         tmp = path.with_suffix(path.suffix + ".tmp")
         try:
