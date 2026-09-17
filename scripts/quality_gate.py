@@ -289,36 +289,52 @@ def _parse_authorization(
         raise QualityGateError(str(error)) from error
 
 
+def _require_committed_blob(
+    repository: Path,
+    commit: str,
+    path: str,
+    failure: str,
+) -> None:
+    """Fail with `failure` unless `path` is a blob, not a tree, at `commit`."""
+    try:
+        kind = _run_git(repository, "cat-file", "-t", f"{commit}:{path}")
+    except QualityGateError as error:
+        raise QualityGateError(failure) from error
+    if kind.strip() != "blob":
+        raise QualityGateError(failure)
+
+
 def _committed_authorizations(
     repository: Path,
     delivery_sha: str,
     names: Sequence[str],
 ) -> tuple[mechanical_migration.MechanicalAuthorization, ...]:
-    """Read authorization records and their cited briefs from the delivery commit."""
+    """Read authorization records and their cited briefs from the delivery commit.
+
+    Both the record and the brief it cites must be committed blobs.
+    """
     records: list[mechanical_migration.MechanicalAuthorization] = []
     for name in names:
         source = _authorization_path(name)
-        missing = (
+        _require_committed_blob(
+            repository,
+            delivery_sha,
+            source,
             f"Mechanical authorization {source!r} is not committed at delivery "
-            f"commit {delivery_sha}."
+            f"commit {delivery_sha}.",
         )
-        try:
-            kind = _run_git(repository, "cat-file", "-t", f"{delivery_sha}:{source}")
-        except QualityGateError as error:
-            raise QualityGateError(missing) from error
-        if kind.strip() != "blob":
-            raise QualityGateError(missing)
         record = _parse_authorization(
             source,
             _run_git_bytes(repository, "cat-file", "blob", f"{delivery_sha}:{source}"),
         )
-        try:
-            _run_git(repository, "cat-file", "-e", f"{delivery_sha}:{record.authority}")
-        except QualityGateError as error:
-            raise QualityGateError(
-                f"Mechanical authorization {source!r} cites authority "
-                f"{record.authority!r}, which delivery commit {delivery_sha} lacks."
-            ) from error
+        _require_committed_blob(
+            repository,
+            delivery_sha,
+            record.authority,
+            f"Mechanical authorization {source!r} cites authority "
+            f"{record.authority!r}, which delivery commit {delivery_sha} does not "
+            "hold as a file.",
+        )
         records.append(record)
     return tuple(records)
 
@@ -453,11 +469,31 @@ def select_worktree_changes(
     )
 
 
+def _hidden_index_paths(repository: Path) -> list[str]:
+    """Describe every tracked path whose index flags hide it from `git status`.
+
+    `git ls-files -v` tags a skip-worktree entry `S` and lowercases the tag of an
+    assume-unchanged entry, so `s` marks a path carrying both flags.
+    """
+    hidden: list[str] = []
+    for entry in _run_git(repository, "ls-files", "-v", "-z").split("\0"):
+        if not entry:
+            continue
+        tag, path = entry[0], entry[2:]
+        flags = []
+        if tag in "Ss":
+            flags.append("skip-worktree")
+        if tag.islower():
+            flags.append("assume-unchanged")
+        if flags:
+            hidden.append(f"{path!r} ({', '.join(flags)})")
+    return hidden
+
+
 def select_delivery_changes(
     repository: Path,
     base: str,
     delivery_commit: str,
-    transformations: Sequence[mechanical_migration.MechanicalTransformation] = (),
     *,
     authorizations: Sequence[str] = (),
 ) -> ChangeSelection:
@@ -466,7 +502,12 @@ def select_delivery_changes(
     Mechanical proofs compare the stored blobs at the merge base and at the
     delivery commit. `authorizations` are record paths read from the delivery
     commit; each contributes its transformation only while its base commit is the
-    merge base. The command line never passes `transformations` in this mode.
+    merge base. They are the only authority delivery accepts, so this function
+    takes no transformation from its caller.
+
+    Ruff reads the checkout, so delivery also refuses any tracked path flagged
+    skip-worktree or assume-unchanged, whose working bytes `git status` would not
+    compare. Raises `QualityGateError` for every refused state.
     """
     repository = repository.resolve()
     requested_sha = _resolve_commit(repository, delivery_commit, "delivery commit")
@@ -474,6 +515,12 @@ def select_delivery_changes(
     if head_sha != requested_sha:
         raise QualityGateError(
             f"HEAD {head_sha} does not match requested delivery {requested_sha}."
+        )
+    hidden = _hidden_index_paths(repository)
+    if hidden:
+        raise QualityGateError(
+            "Delivery validation refuses index flags that hide working-tree bytes "
+            f"from the clean-tree check; clear them on: {'; '.join(hidden)}."
         )
     if _run_git(repository, "status", "--porcelain=v1", "--untracked-files=all"):
         raise QualityGateError(
@@ -495,7 +542,7 @@ def select_delivery_changes(
     )
     selected = _existing_python_files(repository, names)
     records = _committed_authorizations(repository, target_sha, authorizations)
-    active = _active_transformations(transformations, records, merge_base_sha)
+    active = _active_transformations((), records, merge_base_sha)
     classified = _classify_selection(
         repository,
         merge_base_sha,

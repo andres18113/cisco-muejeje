@@ -180,8 +180,9 @@ the branch with itself. The gate re-resolves the selected reference and prints
 the base and merge-base SHAs. Worktree mode checks complete committed, staged,
 unstaged, and untracked Python paths but is provisional because it reads
 filesystem bytes. Delivery mode additionally requires `--delivery-commit`, a
-clean tree/index, and exact equality with `HEAD`, so the checked-out files are the
-requested commit's content after Git's checkout conversion. Missing paths and
+clean tree/index, no tracked path flagged `skip-worktree` or `assume-unchanged`,
+and exact equality with `HEAD`, so the checked-out files are the requested
+commit's content after Git's checkout conversion. Missing paths and
 unresolved identities fail closed. `--files` is a focused check, never delivery
 validation.
 
@@ -202,6 +203,7 @@ mode compares filesystem bytes with normalized line endings and stays
 provisional. A delivery exemption needs a committed authorization record, passed
 with `--mechanical-authorization`, whose exact base commit equals the comparison
 merge base; any other merge base leaves the record inactive and grants nothing.
+Delivery accepts no other authority, from the command line or a Python caller.
 `--mechanical-migration IDENTIFIER` authorizes provisional worktree runs only.
 Registration, a base-bound authorization, and per-file proof are all required;
 diff size, file name, branch, callee names, and in-file markers grant nothing,

@@ -8,10 +8,15 @@
   incremental Ruff gate checks, and who may authorize that decision
 - Starting point: `main` at `5330e0dd424bfa746007034ba0672e570cc4ff0f`
 - First implementation: `5acd39fd3e339259d5bc5bf6e93c3b63827844ba`
-- Audit correction: this revision closes four blockers an independent audit found
-  in the first implementation — callee names treated as authority, an ambiguous
-  import fallback, filesystem bytes deciding delivery, and an authorization with
-  no lifecycle
+- Audit correction: `33687c7c4d2c8c67fd6e39345290e9940795c9e3` closed four
+  blockers an independent audit found in the first implementation — callee names
+  treated as authority, an ambiguous import fallback, filesystem bytes deciding
+  delivery, and an authorization with no lifecycle
+- Delivery hardening: this revision closes the two blockers that remained after
+  that correction — delivery selection still accepting manual transformations
+  from direct Python callers, and index flags hiding checkout bytes from the
+  clean-tree check — and requires a record's cited authority to be a committed
+  blob
 - Quality lenses used: maintainability, verifiability, security of the control,
   and change control. This brief makes no claim of conformity to, or
   certification against, any external standard.
@@ -126,6 +131,19 @@ The five classifications are:
   computed with Python's own line terminators, so exact comparison is sound for
   any stored convention.
 
+### Delivery checkout integrity
+
+The mechanical proof reads Git blobs, but Ruff reads the checkout. Delivery
+therefore requires the checked-out files to be what the clean-tree check says
+they are. Git's `skip-worktree` and `assume-unchanged` index flags break that:
+`git status` stops comparing a flagged path, so its working bytes can differ from
+the delivery commit while the tree still reports clean. Delivery mode reads
+`git ls-files -v` for the whole checkout, whether or not a flagged path is a
+selected Python file, and refuses to run while any tracked path carries either
+flag, naming every such path and its flags. A sparse checkout sets
+`skip-worktree` on the paths it omits, so it is refused as well. Worktree mode is
+provisional and does not apply this check.
+
 ## Source of authority
 
 Authority is layered, and every layer must agree before one file is exempt:
@@ -138,9 +156,11 @@ Authority is layered, and every layer must agree before one file is exempt:
 2. **Authorization.**
    - Delivery: a committed authorization record passed with
      `--mechanical-authorization PATH`, read from the delivery commit's blob and
-     active only while its base commit equals the comparison merge base. The
-     command line refuses `--mechanical-migration` together with
-     `--delivery-commit`, so a delivery exemption cannot come from a per-run flag.
+     active only while its base commit equals the comparison merge base. It is the
+     only authority delivery accepts. `select_delivery_changes` has no parameter
+     through which a caller could pass a transformation, so a direct Python call
+     cannot supply one, and the command line refuses `--mechanical-migration`
+     together with `--delivery-commit`.
    - Worktree: either an authorization record, read from the working tree and
      bound to the merge base in the same way, or `--mechanical-migration
      IDENTIFIER` for a provisional local run.
@@ -166,8 +186,10 @@ Every path that does not end in a completed proof ends under the Ruff gate:
   under Ruff and additionally fails the gate;
 - a malformed authorization record, a missing field, an unknown field, an
   unregistered transformation, an abbreviated or symbolic base, a record absent
-  from the delivery commit, or a cited brief absent from it makes the gate exit
-  inconclusive (`2`);
+  from the delivery commit, or a cited brief that the delivery commit does not
+  hold as a blob makes the gate exit inconclusive (`2`);
+- a delivery checkout with any tracked path flagged `skip-worktree` or
+  `assume-unchanged` makes the gate exit inconclusive (`2`) and names each path;
 - a well-formed record bound to any other base is inactive and grants nothing.
 
 ## Dynamic-site authority
@@ -284,7 +306,9 @@ An authorization is a committed UTF-8 JSON object holding exactly these fields:
 ```
 
 `transformation` must be registered; `authority` must equal that
-transformation's registered brief and exist in the tree the record is read from;
+transformation's registered brief and be a file where the record is read from —
+a committed blob, not a tree, at the delivery commit, or a working-tree file in
+worktree mode;
 `base_commit` must be a full lowercase SHA, never a ref, branch, or abbreviation.
 Duplicate or additional fields are rejected, so a record cannot name a second
 transformation, paths, or sites. The recommended location is
@@ -371,8 +395,9 @@ for the first transformation in that order.
   migration is integrated, no delta remains and the record is inactive.
 - It is off unless a run passes a record or, for provisional worktree runs, a
   registered identifier; the CI quality job as configured today passes neither.
-- The command line refuses a per-run flag in delivery mode, so CI cannot hold an
-  unbound authorization.
+- Delivery selection has no input for a manual transformation and the command
+  line refuses a per-run flag in delivery mode, so neither CI nor a direct Python
+  caller can hold an unbound delivery authorization.
 - A run prints every record's state and every exempted path, so an exemption
   cannot be used invisibly.
 - The proof is per file and all or nothing, so the mechanism's blast radius is
@@ -388,13 +413,14 @@ for the first transformation in that order.
 | MB3 | Unauthorized namespace text is never rewritten by the transformation. | Rewriting a comment, a docstring, an f-string, an inert string, an unregistered call argument, or a dynamic string at an unaudited site classifies as authored. |
 | MB4 | The mechanism fails closed. | Unparseable base or candidate is authored; undecodable bytes are `UNVERIFIABLE`, stay under Ruff, and fail the gate. |
 | MB5 | No file can declare itself mechanical. | An in-file marker beside a real edit still classifies as authored. |
-| MB6 | The default gate is unchanged. | With no authorization, classification does not run and every changed file reaches Ruff; `tests/test_quality_gate.py` passes unmodified. |
+| MB6 | The default gate is unchanged, except for the strengthened delivery checkout precondition of MB13. | With no authorization, classification does not run and every changed file reaches Ruff; `tests/test_quality_gate.py` passes unmodified. |
 | MB7 | Authorization is explicit and auditable. | An unregistered identifier exits 2; a focused `--files` run refuses both authorization forms; a run prints each record's state and each exempted file. |
 | MB8 | The boundary is reusable. | The registry is keyed by identifier, and `namespace_transformation` builds a rename from a legacy/canonical pair and its audited sites, as the synthetic transformations in the dynamic-site tests do. Composition order is a design rule with only one transformation registered, so no test exercises it yet. |
 | MB9 | A callee's name never authorizes a dynamic rewrite. | Shadowed `patch`, rebound `patch`, local `import_module` and `__import__`, a method bound to `find_spec`, and objects named `monkeypatch` or `importlib` are authored at any path; the same literal in another file, another construct, scope, occurrence, argument, or base text is authored; a malformed audited site cannot be registered; registered sites match their audited blobs. |
 | MB10 | The gate loads exactly one classifier. | As a script, with and without `-P`, and as a package, the gate uses its sibling; an internal `ImportError` propagates; a decoy on the import path is never loaded. |
-| MB11 | Delivery proves equivalence over exact Git blobs. | Stored LF rename is mechanical; stored CRLF, CR, trailing whitespace, or missing final newline beside a rename is authored; a CRLF checkout does not change the decision; skip-worktree filesystem bytes can neither grant nor revoke an exemption; worktree mode stays provisional. |
-| MB12 | CI authorization is committed and bound to one exact base. | A record at the merge base exempts a proven file and keeps an unproven one under Ruff; a record at another base grants zero exemptions and leaves every file under Ruff; malformed, incomplete, extended, or unregistered records fail closed; records must be committed at the delivery commit with their brief; the branch name has no effect; the command line refuses a manual migration in delivery mode. |
+| MB11 | Delivery proves equivalence over exact Git blobs. | Stored LF rename is mechanical; stored CRLF, CR, trailing whitespace, or missing final newline beside a rename is authored; a CRLF checkout does not change the decision; working bytes rewritten by a checkout filter under a clean status can neither grant nor revoke an exemption; worktree mode stays provisional. |
+| MB12 | A committed, base-bound record is the only delivery authority. | A record at the merge base exempts a proven file and keeps an unproven one under Ruff; a record at another base grants zero exemptions and leaves every file under Ruff; malformed, incomplete, extended, or unregistered records fail closed; records must be committed at the delivery commit, and their cited brief must be a blob there, not a tree; the branch name has no effect; a direct `select_delivery_changes` call refuses a manual transformation positionally or by keyword; the command line refuses a manual migration in delivery mode. |
+| MB13 | Delivery refuses a checkout whose index hides working bytes. | A tracked Python or non-Python path flagged `skip-worktree`, `assume-unchanged`, or both is refused, with or without hidden edits; every flagged path is named, including one containing a space; the command line exits 2; clearing the flags restores delivery; worktree mode does not apply the check. |
 
 ## Architectural impact and invariants
 
@@ -413,25 +439,31 @@ Public contract changes relative to the first implementation:
 - `select_worktree_changes` and `select_delivery_changes` accept keyword
   `authorizations`, and `ChangeSelection` reports `authorizations` and
   `active_authorizations`.
+- `select_delivery_changes` no longer has a `transformations` parameter;
+  `select_worktree_changes` keeps it for provisional runs.
+- Delivery selection raises `QualityGateError` for index flags that hide
+  working-tree bytes.
 - The command line adds `--mechanical-authorization` and refuses
   `--mechanical-migration` in delivery mode.
 
 Invariants that must remain true:
 
 - Ruff rules, severities, and configuration are untouched.
-- With no authorization, the gate's behavior is unchanged.
+- With no authorization, the gate's behavior is unchanged, except that delivery
+  refuses index flags that hide working-tree bytes.
 - Exemption requires registration, a base-bound authorization, and proof
-  together; a delivery exemption requires a committed record.
+  together; a delivery exemption requires a committed record and nothing else.
 - An unproven or unverifiable comparison never yields an exemption.
-- Delivery mode keeps requiring a clean tree at the exact requested commit.
+- Delivery mode keeps requiring a clean tree at the exact requested commit, and
+  a clean status is trustworthy because no tracked path is hidden from it.
 
 ## Test design
 
 | Level | Scope | Location |
 | --- | --- | --- |
 | Unit | Classifier contracts over pure source pairs, audited-site binding, registry validation, record parsing | `test_mechanical_migration_boundary.py`, `test_mechanical_dynamic_site_authority.py`, `test_mechanical_authorization.py` |
-| Integration | Gate selection with temporary Git repositories, blob reading, record activation, branch invariance | `test_mechanical_delivery_blobs.py`, `test_mechanical_authorization.py`, `test_mechanical_migration_boundary.py` |
-| System | The command line and its exit codes, printed audit trail, and classifier loading in isolated interpreters | `test_mechanical_authorization.py`, `test_quality_gate_import_authority.py`, `test_mechanical_migration_boundary.py` |
+| Integration | Gate selection with temporary Git repositories, blob reading, checkout filters, index flags, record activation, branch invariance | `test_mechanical_delivery_blobs.py`, `test_quality_gate_delivery_checkout.py`, `test_mechanical_authorization.py`, `test_mechanical_migration_boundary.py` |
+| System | The command line and its exit codes, printed audit trail, and classifier loading in isolated interpreters | `test_mechanical_authorization.py`, `test_quality_gate_delivery_checkout.py`, `test_quality_gate_import_authority.py`, `test_mechanical_migration_boundary.py` |
 | Acceptance | The real audited blobs at `5330e0d` and the re-simulation over the real migration content | `test_mechanical_dynamic_site_authority.py`; the measurement above |
 
 Shared repositories and sources live in `tests/mechanical_migration_fixtures.py`.
@@ -458,6 +490,19 @@ delivery, the broad import fallback, stale records treated as active, unknown
 record fields accepted, a manual migration accepted in delivery, and records read
 from the filesystem in delivery.
 
+For the delivery hardening, the index-flag, manual-transformation, and
+authority-tree tests were written first and observed failing against `33687c7`
+on their assertions: delivery selection ran with `skip-worktree`,
+`assume-unchanged`, or both on Python and non-Python paths, including a hidden
+edit, and the command line exited 0 there; a direct `select_delivery_changes`
+call accepted a manual transformation; and a cited authority that is a directory
+was accepted. The earlier tests that produced divergent working bytes with
+`skip-worktree` now describe a refused state, so they create the same divergence
+with a checkout filter, which leaves no index flag, and assert the same blob
+decisions. Five more mutations were each detected: restoring a manual
+transformation parameter, removing the index-flag check, ignoring either flag,
+and accepting a tree as the cited authority.
+
 ## Residual risk and debt
 
 - An exempted file's historical debt stays unpaid and unmeasured by the gate.
@@ -476,17 +521,19 @@ from the filesystem in delivery.
   `conftest.py` fixture, a star import, or runtime patching of builtins. The
   audited sites depend on none of these at the audited base; a candidate that
   changes such a definition carries that change in its own authored, gated delta.
-- Delivery's Ruff run still reads checked-out files. The clean-tree check does
-  not detect `skip-worktree` or `assume-unchanged` index flags, which can hide
-  divergent working bytes from `git status`. The mechanical proof no longer
-  depends on filesystem bytes; the Ruff step does, as it did before this change.
+- Delivery's Ruff run still reads checked-out files. Index flags that hide them
+  from `git status` are now refused, but Git's own checkout conversion still
+  applies: line-ending conversion and any configured clean or smudge filter make
+  working bytes differ from the delivery blobs while the tree reports clean. The
+  mechanical proof does not depend on those bytes; the Ruff step does, as it did
+  before this change. Neither the repository nor CI configures such a filter.
 - Worktree mode fingerprints the normalized base, so an audited file stored with
   CRLF would miss its site provisionally and classify as authored. Every Python
   file in this repository is stored with LF.
-- `select_worktree_changes` and `select_delivery_changes` still accept manual
-  transformations for direct Python callers and tests. Only the command line,
-  which CI and the documented procedure use, enforces committed records in
-  delivery mode.
+- `select_worktree_changes` still accepts manual transformations, because
+  worktree runs are provisional and never delivery evidence.
+- A sparse checkout marks its omitted paths `skip-worktree`, so delivery refuses
+  it; delivery validation needs a complete checkout.
 - Audited sites are bound by content, not by commit. If an audited file changes at
   a future base, its sites stop matching and the file becomes authored work until
   it is re-inventoried and re-audited. New dynamic sites introduced at a later base

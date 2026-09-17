@@ -11,6 +11,7 @@ QUALITY_GATE = REPOSITORY_ROOT / "scripts" / "quality_gate.py"
 CANONICAL = "CANONICAL_PYTHON_NAMESPACE"
 CANONICAL_AUTHORITY = "docs/engineering/change-briefs/namespace-migration.md"
 AUTHORIZATION_SCHEMA = "cisco-mcp/mechanical-migration-authorization"
+AUTHORIZATION_RECORD = "authorizations/canonical-python-namespace.json"
 LEGACY = "src.packet_tracer_mcp"
 TARGET = "packet_tracer_mcp"
 

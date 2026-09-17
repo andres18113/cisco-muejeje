@@ -17,6 +17,7 @@ import pytest
 from scripts.mechanical_migration import (
     MechanicalMigrationError,
     parse_authorization,
+    resolve_transformations,
 )
 from scripts.quality_gate import (
     ChangeSelection,
@@ -27,6 +28,7 @@ from scripts.quality_gate import (
     select_worktree_changes,
 )
 from tests.mechanical_migration_fixtures import (
+    AUTHORIZATION_RECORD,
     CANONICAL,
     CANONICAL_AUTHORITY,
     HISTORICAL_MODULE,
@@ -39,7 +41,7 @@ from tests.mechanical_migration_fixtures import (
     write_authorization,
 )
 
-RECORD = "authorizations/canonical-python-namespace.json"
+RECORD = AUTHORIZATION_RECORD
 EXAMPLE_BASE = "5330e0dd424bfa746007034ba0672e570cc4ff0f"
 REQUIRED_FIELDS = ("schema", "version", "transformation", "base_commit", "authority")
 SMUGGLED_EDIT = RENAMED_MODULE + "\n\ndef smuggled():\n    return 1\n"
@@ -336,6 +338,55 @@ def test_authorization_cited_brief_must_exist_in_the_delivery_commit(
             delivery,
             authorizations=[RECORD],
         )
+
+
+def test_authorization_cited_brief_must_be_a_committed_blob(tmp_path: Path) -> None:
+    """Refuse a record whose authorizing brief path is a directory, not a file."""
+    repository = tmp_path / "checkout"
+    baseline = initialize_exact_repository(repository)
+    (repository / "historical.py").write_bytes(RENAMED_MODULE.encode("utf-8"))
+    write_authorization(repository, RECORD, baseline)
+    brief = repository / CANONICAL_AUTHORITY
+    brief.unlink()
+    brief.mkdir()
+    (brief / "README.md").write_bytes(b"# Not the brief\n")
+    delivery = commit_all(repository, "test: record citing a directory")
+    kind = git(repository, "cat-file", "-t", f"{delivery}:{CANONICAL_AUTHORITY}")
+    assert kind.stdout.strip() == "tree"
+
+    with pytest.raises(QualityGateError, match="authority"):
+        select_delivery_changes(
+            repository,
+            baseline,
+            delivery,
+            authorizations=[RECORD],
+        )
+
+
+def test_delivery_selection_accepts_no_manual_transformation(tmp_path: Path) -> None:
+    """Make a committed base-bound record the only delivery authority, in Python too.
+
+    The migration branch carries a current record, but a direct caller that does
+    not pass it cannot substitute a transformation of its own in any form.
+    """
+    repository, comparison, delivery = _migration(tmp_path, stale=False)
+    manual = resolve_transformations([CANONICAL])
+
+    with pytest.raises(TypeError):
+        select_delivery_changes(repository, comparison, delivery, manual)
+    with pytest.raises(TypeError):
+        select_delivery_changes(
+            repository,
+            comparison,
+            delivery,
+            transformations=manual,
+        )
+    unauthorized = select_delivery_changes(repository, comparison, delivery)
+
+    assert unauthorized.authorized == ()
+    assert unauthorized.classified == ()
+    assert unauthorized.exempt == ()
+    assert _names(unauthorized.files) == ["historical.py"]
 
 
 @pytest.mark.parametrize(

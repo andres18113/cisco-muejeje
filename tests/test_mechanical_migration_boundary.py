@@ -24,6 +24,7 @@ from scripts.quality_gate import (
     select_worktree_changes,
 )
 from tests.mechanical_migration_fixtures import (
+    AUTHORIZATION_RECORD,
     CANONICAL,
     HISTORICAL_MODULE,
     LEGACY,
@@ -31,6 +32,7 @@ from tests.mechanical_migration_fixtures import (
     RENAMED_MODULE,
     REPOSITORY_ROOT,
     TARGET,
+    write_authorization,
 )
 from tests.mechanical_migration_fixtures import (
     git as _git,
@@ -450,15 +452,21 @@ def test_gate_without_authorization_lints_every_changed_file(tmp_path: Path) -> 
 
 
 def test_delivery_selection_applies_the_same_boundary(tmp_path: Path) -> None:
-    """Apply the mechanical boundary to delivery validation as well."""
+    """Apply the mechanical boundary to delivery under a committed record."""
     repository = tmp_path / "checkout"
     baseline = _initialize_repository(repository)
     (repository / "historical.py").write_text(RENAMED_MODULE, encoding="utf-8")
-    _git(repository, "add", "historical.py")
+    write_authorization(repository, AUTHORIZATION_RECORD, baseline)
+    _git(repository, "add", "--all")
     _git(repository, "commit", "-m", "test: rename the namespace")
     delivery = _git(repository, "rev-parse", "HEAD").stdout.strip()
 
-    selection = select_delivery_changes(repository, baseline, delivery, AUTHORIZED)
+    selection = select_delivery_changes(
+        repository,
+        baseline,
+        delivery,
+        authorizations=[AUTHORIZATION_RECORD],
+    )
 
     assert _relative_names(selection.exempt, repository) == ["historical.py"]
     assert selection.files == ()
