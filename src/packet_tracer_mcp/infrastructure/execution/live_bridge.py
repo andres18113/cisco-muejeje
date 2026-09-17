@@ -13,6 +13,7 @@ can consume only the result registered for its own operation.
 from __future__ import annotations
 
 import hmac
+import http.client
 import http.server
 import json
 import math
@@ -28,7 +29,14 @@ from http.server import ThreadingHTTPServer
 from queue import Empty, Full, Queue
 from urllib.parse import parse_qs, urlencode, urlparse
 
+from ...domain.enterprise.models.execution import DispatchFact, ResultFact
 from .bridge_token import get_bridge_token, token_fingerprint
+from .transport_outcome import (
+    BridgeDispatchOutcome,
+    HttpPostOutcome,
+    PostPhase,
+    sanitized_detail,
+)
 
 DEFAULT_PORT = 54321
 
@@ -107,6 +115,134 @@ def report_result_js(port: int, token: str, rid: str) -> str:
     )
 
 
+#: POST /queue statuses the bridge handler returns when it refuses to queue a
+#: command. Each one is the server's own answer, so the command definitively
+#: was not accepted: 400 malformed, 401 unauthorized, 409 duplicate rid, 503
+#: queue or result table full with the registration discarded.
+_QUEUE_REFUSED = frozenset({400, 401, 409, 503})
+
+#: GET /result statuses that mean the slot existed and is gone.
+_RESULT_LOST = frozenset({404, 410})
+
+
+def correlated_http_dispatch(
+    js_code: str,
+    timeout: float,
+    *,
+    base_url: str,
+    port: int,
+    token: str,
+    http_connect_post: Callable[[str, str, float], HttpPostOutcome],
+    http_get: Callable[[str, float], tuple[int | None, str | None]],
+) -> BridgeDispatchOutcome:
+    """Queue one operation and report the two facts its channel established.
+
+    ACCEPTED here means the LOCAL bridge queue accepted the command. It does
+    not mean the Packet Tracer webview has fetched it, and it certainly does
+    not mean Packet Tracer executed anything: the webview polls `/next` on its
+    own schedule and this function never sees that happen.
+
+    The phase split is what separates a definite local failure from an
+    ambiguous one. A refused connection proves the bytes never left, so the
+    command cannot run later and FAILED is honest. A connection that was
+    established and then broke proves nothing either way, so it is
+    ACCEPTANCE_UNKNOWN and the caller must not retry a mutation on it.
+
+    An answered status the table does not list is not decided in either
+    direction: it is reported ACCEPTANCE_UNKNOWN with the status named, never
+    REJECTED, because REJECTED is a positive claim that the command was not
+    queued and an unknown code does not support it.
+    """
+    rid = next_rid()
+    wait = bounded_result_wait(timeout)
+    wrapped = report_result_js(port, token, rid) + ";" + js_code
+    queue_url = base_url + "/queue?" + urlencode({"rid": rid})
+    posted = http_connect_post(queue_url, wrapped, 3.0)
+
+    if posted.status is None:
+        if posted.phase is PostPhase.NOT_SUBMITTED:
+            return BridgeDispatchOutcome(
+                dispatch=DispatchFact.NOT_SUBMITTED,
+                result=ResultFact.NOT_APPLICABLE,
+                detail=sanitized_detail(posted.detail or "not_submitted"),
+            )
+        return BridgeDispatchOutcome(
+            dispatch=DispatchFact.ACCEPTANCE_UNKNOWN,
+            result=ResultFact.NOT_OBSERVED,
+            detail=sanitized_detail(posted.detail or "no_response_after_send"),
+        )
+    if posted.status in _QUEUE_REFUSED:
+        return BridgeDispatchOutcome(
+            dispatch=DispatchFact.REJECTED,
+            result=ResultFact.NOT_APPLICABLE,
+            detail=f"rejected:{posted.status}",
+        )
+    if posted.status != 200:
+        return BridgeDispatchOutcome(
+            dispatch=DispatchFact.ACCEPTANCE_UNKNOWN,
+            result=ResultFact.NOT_OBSERVED,
+            detail=f"status_unclassified:{posted.status}",
+        )
+
+    result_url = base_url + "/result?" + urlencode({"rid": rid, "wait": wait})
+    status_get, body = http_get(result_url, wait + RESULT_SOCKET_GRACE_SECONDS)
+    if status_get == 200:
+        return BridgeDispatchOutcome(
+            dispatch=DispatchFact.ACCEPTED,
+            result=ResultFact.CORRELATED,
+            body=body,
+        )
+    if status_get == 204:
+        # The slot is now `timed_out`, so a result posted later is refused 410
+        # and can never be attributed to this or any other operation.
+        return BridgeDispatchOutcome(
+            dispatch=DispatchFact.ACCEPTED,
+            result=ResultFact.NOT_OBSERVED,
+            detail="timed_out",
+        )
+    if status_get in _RESULT_LOST:
+        return BridgeDispatchOutcome(
+            dispatch=DispatchFact.ACCEPTED,
+            result=ResultFact.LOST,
+            detail=f"lost:{status_get}",
+        )
+    if status_get is None:
+        return BridgeDispatchOutcome(
+            dispatch=DispatchFact.ACCEPTED,
+            result=ResultFact.NOT_OBSERVED,
+            detail="socket_error",
+        )
+    return BridgeDispatchOutcome(
+        dispatch=DispatchFact.ACCEPTED,
+        result=ResultFact.NOT_OBSERVED,
+        detail=f"status_unclassified:{status_get}",
+    )
+
+
+def _undecidable_post_phase(
+    http_post: Callable[[str, str, float], tuple[int | None, str | None]],
+) -> Callable[[str, str, float], HttpPostOutcome]:
+    """Adapt a status-only POST callable to the phase-reporting contract.
+
+    A caller that reports only `(status, body)` cannot say whether a failed
+    request left the process, so every failure is UNDECIDABLE rather than
+    NOT_SUBMITTED. That is the fail-closed direction: it yields
+    ACCEPTANCE_UNKNOWN, which claims nothing, instead of a definite local
+    failure this callable cannot actually prove.
+    """
+
+    def post(url: str, body: str, timeout: float) -> HttpPostOutcome:
+        status, response = http_post(url, body, timeout)
+        return HttpPostOutcome(
+            status=status,
+            body=response,
+            phase=PostPhase.SENT if status is not None else PostPhase.UNDECIDABLE,
+            detail="" if status is not None else "post_phase_undecidable",
+        )
+
+    return post
+
+
 def correlated_http_send_and_wait(
     js_code: str,
     timeout: float,
@@ -117,20 +253,24 @@ def correlated_http_send_and_wait(
     http_post: Callable[[str, str, float], tuple[int | None, str | None]],
     http_get: Callable[[str, float], tuple[int | None, str | None]],
 ) -> str | None:
-    """Queue one HTTP operation and consume only its correlated result."""
-    rid = next_rid()
-    wait = bounded_result_wait(timeout)
-    wrapped = report_result_js(port, token, rid) + ";" + js_code
-    queue_url = base_url + "/queue?" + urlencode({"rid": rid})
-    status_post, _ = http_post(queue_url, wrapped, 3.0)
-    if status_post != 200:
-        return None
-    result_url = base_url + "/result?" + urlencode({"rid": rid, "wait": wait})
-    status_get, body = http_get(
-        result_url,
-        wait + RESULT_SOCKET_GRACE_SECONDS,
+    """Queue one HTTP operation and consume only its correlated result.
+
+    The signature and the return contract are unchanged for every existing
+    caller: a body only when a correlated result came back, `None` otherwise.
+    It is now a projection of `correlated_http_dispatch`, so the two cannot
+    drift apart, and a caller that needs to know WHY it got `None` asks for
+    the outcome instead.
+    """
+    outcome = correlated_http_dispatch(
+        js_code,
+        timeout,
+        base_url=base_url,
+        port=port,
+        token=token,
+        http_connect_post=_undecidable_post_phase(http_post),
+        http_get=http_get,
     )
-    return body if status_get == 200 else None
+    return outcome.body if outcome.result is ResultFact.CORRELATED else None
 
 
 class PacketTracerHttpTransport:
@@ -199,6 +339,92 @@ class PacketTracerHttpTransport:
             port=self.port,
             token=self.token,
             http_post=self._http_post,
+            http_get=self._http_get,
+        )
+
+    def _http_connect_post(
+        self,
+        url: str,
+        body: str,
+        timeout: float,
+    ) -> HttpPostOutcome:
+        """POST with an explicit connect, so the failure phase is knowable.
+
+        `urllib` collapses "could not connect" and "connected, then the peer
+        vanished" into one exception, and those two facts decide opposite
+        things about a mutation. Connecting first separates them:
+
+        * `connect()` raised -- no request byte left this process, so the
+          command cannot run later. NOT_SUBMITTED.
+        * `request()` raised -- headers or body were being written, so a
+          partial send is possible. UNDECIDABLE, never NOT_SUBMITTED.
+        * `getresponse()` raised -- the bytes went out and the answer did not
+          come back. SENT.
+        """
+        parsed = urlparse(self._signed_url(url))
+        target = parsed.path + (f"?{parsed.query}" if parsed.query else "")
+        connection = http.client.HTTPConnection(
+            parsed.hostname or "127.0.0.1",
+            parsed.port,
+            timeout=timeout,
+        )
+        try:
+            try:
+                connection.connect()
+            except OSError as error:
+                return HttpPostOutcome(
+                    status=None,
+                    body=None,
+                    phase=PostPhase.NOT_SUBMITTED,
+                    detail=sanitized_detail(error),
+                )
+            try:
+                connection.request(
+                    "POST",
+                    target,
+                    body=body.encode("utf-8"),
+                    headers={"Content-Type": "text/plain"},
+                )
+            except OSError as error:
+                return HttpPostOutcome(
+                    status=None,
+                    body=None,
+                    phase=PostPhase.UNDECIDABLE,
+                    detail=sanitized_detail(error),
+                )
+            try:
+                response = connection.getresponse()
+                return HttpPostOutcome(
+                    status=response.status,
+                    body=response.read().decode("utf-8", "replace"),
+                    phase=PostPhase.SENT,
+                )
+            except OSError as error:
+                return HttpPostOutcome(
+                    status=None,
+                    body=None,
+                    phase=PostPhase.SENT,
+                    detail=sanitized_detail(error),
+                )
+        finally:
+            connection.close()
+
+    def dispatch_and_wait(
+        self,
+        js_code: str,
+        timeout: float = 12.0,
+    ) -> BridgeDispatchOutcome:
+        """Queue one guarded command and report its typed dispatch outcome."""
+        guarded = (
+            "try{" + js_code + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
+        )
+        return correlated_http_dispatch(
+            guarded,
+            timeout,
+            base_url=self.base_url,
+            port=self.port,
+            token=self.token,
+            http_connect_post=self._http_connect_post,
             http_get=self._http_get,
         )
 

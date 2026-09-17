@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class OperationSemantics(str, Enum):
+class OperationSemantics(StrEnum):
     """What one action intends to do to the state it names."""
+
+    __str__ = Enum.__str__
 
     ENSURE_PRESENT = "ensure_present"
     ENSURE_ABSENT = "ensure_absent"
@@ -20,8 +22,10 @@ class OperationSemantics(str, Enum):
     EXECUTE_ONCE = "execute_once"
 
 
-class MutationDisposition(str, Enum):
+class MutationDisposition(StrEnum):
     """What an applied action turned out to do to the observed state."""
+
+    __str__ = Enum.__str__
 
     CHANGED = "changed"
     NO_OP = "no_op"
@@ -32,7 +36,7 @@ class MutationDisposition(str, Enum):
     UNKNOWN = "unknown"
 
 
-class DirtyState(str, Enum):
+class DirtyState(StrEnum):
     """Residuo que una aplicación deja en el backend.
 
     `ApplicationExecutionJournal.dirty_state` es el estado FINAL, ya compuesto
@@ -40,6 +44,8 @@ class DirtyState(str, Enum):
     cualquier limpieza, se conserva en `entries` y se lee con
     `applied_dirty_state`. Los dos son distintos y ninguno se pisa al otro.
     """
+
+    __str__ = Enum.__str__
 
     # No hubo mutación, o la que falló no llegó a mutar nada.
     CLEAN = "clean"
@@ -51,7 +57,7 @@ class DirtyState(str, Enum):
     UNKNOWN = "unknown"
 
 
-class CompensationStatus(str, Enum):
+class CompensationStatus(StrEnum):
     """Resultado de la COMPENSACIÓN, que no es lo mismo que restauración.
 
     `SUCCEEDED` dice que la operación de compensación se completó, no que todo
@@ -60,12 +66,102 @@ class CompensationStatus(str, Enum):
     CLEAN por sí sola.
     """
 
+    __str__ = Enum.__str__
+
     NOT_AVAILABLE = "not_available"
     AVAILABLE = "available"
     NOT_ATTEMPTED = "not_attempted"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     UNKNOWN = "unknown"
+
+
+class DispatchFact(StrEnum):
+    """What the execution channel established about one dispatch.
+
+    ACCEPTED names acceptance by the channel that was used, never acceptance by
+    Packet Tracer. ACCEPTANCE_UNKNOWN is the fail-closed value for a phase that
+    could not be decided: the request bytes may or may not have left this
+    process, so nothing about the effect may be claimed either way.
+    UNSPECIFIED means the producer stated no fact at all, which is how a legacy
+    row is recognized.
+    """
+
+    __str__ = Enum.__str__
+
+    NOT_SUBMITTED = "not_submitted"
+    REJECTED = "rejected"
+    ACCEPTED = "accepted"
+    ACCEPTANCE_UNKNOWN = "acceptance_unknown"
+    UNSPECIFIED = "unspecified"
+
+
+class ResultFact(StrEnum):
+    """Whether a correlated result for one dispatch was actually observed.
+
+    CORRELATED means a result registered to this operation came back and was
+    consumed by its own waiter. NOT_OBSERVED, LOST, ENGINE_ERROR and MALFORMED
+    each name a different way the read failed to decide anything, and none of
+    them is evidence that the command did not run.
+    """
+
+    __str__ = Enum.__str__
+
+    CORRELATED = "correlated"
+    ENGINE_ERROR = "engine_error"
+    MALFORMED = "malformed"
+    NOT_OBSERVED = "not_observed"
+    LOST = "lost"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class PostconditionFact(StrEnum):
+    """Whether the state the action intended was read back as satisfied.
+
+    Computed from the actual typed post value inside the same script
+    evaluation that read it; UNOBSERVED means the read did not complete, which
+    is not the same as UNSATISFIED.
+    """
+
+    __str__ = Enum.__str__
+
+    SATISFIED = "satisfied"
+    UNSATISFIED = "unsatisfied"
+    UNOBSERVED = "unobserved"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class TransitionFact(StrEnum):
+    """The transition of the state that was actually read.
+
+    CHANGED and UNCHANGED compare the actual typed values from the bracketing
+    reads. Within the observed scope only: a transition is never a claim about
+    execution count, about sole causation, or about anything the reads did not
+    cover. UNOBSERVED means at least one of the two reads did not complete.
+    """
+
+    __str__ = Enum.__str__
+
+    UNCHANGED = "unchanged"
+    CHANGED = "changed"
+    UNOBSERVED = "unobserved"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class FootprintFact(StrEnum):
+    """Whether the state that was read covers the setter's whole effect.
+
+    COVERED means the observed scope is the documented effect footprint, so a
+    satisfied postcondition with no observed change leaves no residue. PARTIAL
+    means the setter can change state the read cannot see, so the residue
+    outside that scope stays unobserved and is never reported clean.
+    """
+
+    __str__ = Enum.__str__
+
+    COVERED = "covered"
+    PARTIAL = "partial"
+    NOT_APPLICABLE = "not_applicable"
 
 
 class ExecutionJournalEntry(BaseModel):
@@ -82,6 +178,17 @@ class ExecutionJournalEntry(BaseModel):
     message: str = ""
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    #: Channel acceptance and correlated-read facts for this action, copied
+    #: from the result that produced the entry. UNSPECIFIED and NOT_APPLICABLE
+    #: are the legacy defaults, so a producer that states no fact is still
+    #: recognizable as one.
+    dispatch: DispatchFact = DispatchFact.UNSPECIFIED
+    result: ResultFact = ResultFact.NOT_APPLICABLE
+    #: An OBSERVED unintended change. `False` is only the ABSENCE of that
+    #: observation, never a claim that nothing changed: unknown residue is
+    #: carried by disposition UNKNOWN plus `cause`.
+    residual_change: bool = False
+    cause: str = ""
 
 
 class ApplicationExecutionJournal(BaseModel):
@@ -342,6 +449,13 @@ def journal_from_action_results(
                     False,
                 ),
                 message=getattr(result, "message", ""),
+                # getattr defaults, not required fields: a legacy producer that
+                # never heard of these facts still builds a valid entry, and
+                # its defaults are exactly what marks the row as legacy.
+                dispatch=getattr(result, "dispatch", DispatchFact.UNSPECIFIED),
+                result=getattr(result, "result", ResultFact.NOT_APPLICABLE),
+                residual_change=bool(getattr(result, "residual_change", False)),
+                cause=getattr(result, "cause", ""),
             )
         )
     return journal
@@ -359,6 +473,15 @@ _RESIDUE_SEVERITY = {
 
 
 def _derive_dirty_state(entries: list[ExecutionJournalEntry]) -> DirtyState:
+    """Derive the residue the entries can actually establish.
+
+    One rule is new: a FAILED entry whose `residual_change` is True counts as a
+    mutation. A setter that stored the wrong value and then reported failure
+    left an OBSERVED change behind, and calling that CLEAN because its
+    disposition is FAILED was the way a real residue disappeared from the
+    report. Every other input maps exactly as before, including an UNKNOWN
+    entry, which is how unobserved residue stays UNKNOWN instead of clean.
+    """
     if not entries:
         return DirtyState.CLEAN
     if any(item.disposition is MutationDisposition.UNKNOWN for item in entries):
@@ -369,6 +492,7 @@ def _derive_dirty_state(entries: list[ExecutionJournalEntry]) -> DirtyState:
         for item in entries
         if item.disposition
         in {MutationDisposition.CHANGED, MutationDisposition.REASSERTED}
+        or (item.disposition is MutationDisposition.FAILED and item.residual_change)
     ]
     if not failed:
         return DirtyState.CLEAN

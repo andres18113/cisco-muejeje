@@ -53,10 +53,12 @@ from __future__ import annotations
 import os
 import secrets
 import time
-from enum import Enum
+from enum import Enum, StrEnum
 from pathlib import Path
 
+from ...domain.enterprise.models.execution import DispatchFact, ResultFact
 from .bridge_token import token_dir
+from .transport_outcome import BridgeDispatchOutcome, sanitized_detail
 
 # Subdirectorio del buzón, bajo el mismo dir del token.
 _BRIDGE_SUBDIR = "bridge"
@@ -77,7 +79,7 @@ _CANCEL_OBSERVATION_S = 1.5
 _OWN_STALE_TTL_S = 120.0
 
 
-class RequestDisposition(str, Enum):
+class RequestDisposition(StrEnum):
     """Qué se OBSERVÓ de un request cuyo resultado no llegó a tiempo.
 
     Cada nombre dice exactamente lo que la evidencia sostiene, ni un paso más.
@@ -87,6 +89,8 @@ class RequestDisposition(str, Enum):
     ejecutado: sólo el retiro del archivo antes de ser leído garantizaría eso,
     y eso es precisamente lo que no se puede observar desde el filesystem.
     """
+
+    __str__ = Enum.__str__
 
     COMPLETED = "completed"
     # El archivo se retiró y no se observó ejecución durante la ventana
@@ -240,23 +244,111 @@ class FileBridge:
         """Report only whether this bridge still owns unretired sends."""
         return bool(self._pending)
 
-    def send_and_wait(self, js_code: str, timeout: float = 12.0) -> str | None:
-        """Encola un comando y espera su res_<name>.txt.
+    def dispatch_and_wait(
+        self,
+        js_code: str,
+        timeout: float = 12.0,
+    ) -> BridgeDispatchOutcome:
+        """Publish one command, wait for its response, and report both facts.
 
-        El Script Engine envuelve la ejecución y escribe el resultado; acá se
-        sondea la aparición del archivo de respuesta y se lo consume.
+        Publication is the acceptance boundary of this channel, and the phases
+        before it are not interchangeable:
+
+        * the directory could not be created, or the temporary file could not
+          be written -- nothing reached the mailbox, so NOT_SUBMITTED. The
+          `.tmp` residue is discarded best effort; the deployed Script Engine
+          lists only `req_*.js` (`EXTENSION/script-engine/main.js:179`), so a
+          `.tmp` name is not executable and its survival is untidy rather than
+          dangerous. That filter is the engine's, and this slice does not test
+          the engine;
+        * `os.replace` raised -- the rename is atomic, so the only question is
+          whether the `req_` path is there afterwards. Present means the
+          engine can see it: ACCEPTED. Absent means it cannot: NOT_SUBMITTED.
+          This is the one phase where `send_and_wait` and this method
+          deliberately differ: `send_and_wait` keeps its baseline behavior of
+          giving up on any write error, and collapsing the two would change
+          the contract the older callers were written against;
+        * the replace succeeded -- ACCEPTED, whatever happens next;
+        * the response was read -- CORRELATED;
+        * the deadline passed -- NOT_OBSERVED carrying THIS call's
+          `RequestDisposition`. No disposition proves the command did not run
+          (`proves_no_execution` is uniformly False), so the outcome never
+          claims it did not.
         """
         try:
             self._ensure()
-        except OSError:
-            return None
+        except OSError as error:
+            return BridgeDispatchOutcome(
+                dispatch=DispatchFact.NOT_SUBMITTED,
+                result=ResultFact.NOT_APPLICABLE,
+                detail=sanitized_detail(error),
+            )
         name = self._next_name()
+        req_path = self.dir / f"req_{name}.js"
         res_path = self.dir / f"res_{name}.txt"
-        try:
-            self._write_atomic(self.dir / f"req_{name}.js", js_code)
-        except OSError:
-            return None
+        published, detail = self._publish(req_path, js_code)
+        if not published:
+            return BridgeDispatchOutcome(
+                dispatch=DispatchFact.NOT_SUBMITTED,
+                result=ResultFact.NOT_APPLICABLE,
+                detail=detail,
+            )
+        body, disposition = self._await_response(req_path, res_path, timeout)
+        self.last_disposition = disposition
+        if body is not None:
+            return BridgeDispatchOutcome(
+                dispatch=DispatchFact.ACCEPTED,
+                result=ResultFact.CORRELATED,
+                body=body,
+                disposition=disposition.value,
+                detail=detail,
+            )
+        return BridgeDispatchOutcome(
+            dispatch=DispatchFact.ACCEPTED,
+            result=ResultFact.NOT_OBSERVED,
+            disposition=disposition.value,
+            detail=detail or "deadline",
+        )
 
+    def _publish(self, path: Path, text: str) -> tuple[bool, str]:
+        """Write and rename one request, reporting which phase decided.
+
+        Split out of `_write_atomic` because its two failures are different
+        facts: a failed write never reached the mailbox, while a failed rename
+        might have, and only the `req_` path can settle which.
+        """
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        try:
+            tmp.write_bytes(text.encode("utf-8"))
+        except OSError as error:
+            self._discard(tmp)
+            return False, sanitized_detail(error)
+        try:
+            os.replace(tmp, path)
+        except OSError as error:
+            try:
+                published = path.exists()
+            except OSError:
+                published = False
+            if published:
+                return True, sanitized_detail(error)
+            self._discard(tmp)
+            return False, sanitized_detail(error)
+        return True, ""
+
+    def _await_response(
+        self,
+        req_path: Path,
+        res_path: Path,
+        timeout: float,
+    ) -> tuple[str | None, RequestDisposition]:
+        """Poll for one published request's response until the deadline.
+
+        A failed read or unlink AFTER publication decides nothing: the request
+        is in the mailbox and the engine may still answer, so polling
+        continues rather than turning one transient syscall error into a
+        transport fact.
+        """
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
@@ -268,15 +360,39 @@ class FileBridge:
                     # falla, el mismo req se vuelve a ejecutar en cada tick
                     # hasta la purga de huerfanos. Retirarlo desde aca cierra
                     # esa reejecucion silenciosa.
-                    self._discard(self.dir / f"req_{name}.js")
-                    self.last_disposition = RequestDisposition.COMPLETED
-                    return body
+                    self._discard(req_path)
+                    return body, RequestDisposition.COMPLETED
             except OSError:
                 pass
             time.sleep(0.1)
+        return None, self._cancel(req_path, res_path)
 
-        self.last_disposition = self._cancel(self.dir / f"req_{name}.js", res_path)
-        return None
+    def send_and_wait(self, js_code: str, timeout: float = 12.0) -> str | None:
+        """Encola un comando y espera su res_<name>.txt.
+
+        El Script Engine envuelve la ejecución y escribe el resultado; acá se
+        sondea la aparición del archivo de respuesta y se lo consume.
+
+        Behavior is unchanged: `None` for every way the result did not arrive,
+        and `last_disposition` set exactly where it was before. A caller that
+        needs to know WHY it got `None` -- and in particular whether the
+        command could still be running -- asks `dispatch_and_wait` instead.
+        """
+        try:
+            self._ensure()
+        except OSError:
+            return None
+        name = self._next_name()
+        res_path = self.dir / f"res_{name}.txt"
+        req_path = self.dir / f"req_{name}.js"
+        try:
+            self._write_atomic(req_path, js_code)
+        except OSError:
+            return None
+
+        body, disposition = self._await_response(req_path, res_path, timeout)
+        self.last_disposition = disposition
+        return body
 
     def _cancel(self, req_path: Path, res_path: Path) -> RequestDisposition:
         """Retira un request vencido y clasifica qué alcanzó a pasar.

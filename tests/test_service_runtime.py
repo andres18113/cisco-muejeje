@@ -7,6 +7,7 @@ import json
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
 )
+from packet_tracer_mcp.domain.enterprise.models.execution import PostconditionFact
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     AddDnsRecord,
     EnableDnsService,
@@ -17,9 +18,36 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceVerificationKind,
     SetHttpContent,
 )
+from packet_tracer_mcp.domain.enterprise.models.service_runtime import (
+    ObservationFact,
+)
 from packet_tracer_mcp.infrastructure.execution.enterprise_service_runtime import (
     PacketTracerEnterpriseServiceRuntime,
 )
+
+
+def _row(identifier, *, ok=True, changed=True, call_result=None, pre="0", post="1"):
+    """Build one admissible mutation row of the item 4 contract.
+
+    The fixtures used to be `{id, applied}`, which the runtime no longer reads:
+    `applied` is not an observation, and a row missing the contract keys is
+    inadmissible rather than a success. Digests are supplied because the
+    contract requires the key, not because anything reads them -- no assertion
+    in this module derives a fact from `pre` or `post`.
+    """
+    return {
+        "id": identifier,
+        "attempted": True,
+        "skip_reason": "",
+        "call_error": "",
+        "call_result": call_result,
+        "pre_read": True,
+        "post_read": True,
+        "ok": ok,
+        "changed": changed,
+        "pre": pre,
+        "post": post,
+    }
 
 
 def _common(service_id="service/hq/dns", service_type=ServiceType.DNS):
@@ -43,8 +71,8 @@ def test_dns_actions_use_documented_process_api_and_json_escaping():
         return json.dumps(
             {
                 "results": [
-                    {"id": "enable", "applied": True},
-                    {"id": "record", "applied": True},
+                    _row("enable"),
+                    _row("record", call_result=True),
                 ]
             }
         )
@@ -67,6 +95,7 @@ def test_dns_actions_use_documented_process_api_and_json_escaping():
     ]
     result = runtime.apply_actions(actions)
 
+    assert all(item.postcondition is PostconditionFact.SATISFIED for item in result)
     assert all(item.applied for item in result)
     assert 'getProcess("DnsServer")' in captured[0]
     assert ".setEnable(true)" in captured[0]
@@ -82,7 +111,7 @@ def test_http_content_is_serialized_and_never_interpolated_as_javascript():
 
     def send_and_wait(js, timeout):
         captured.append(js)
-        return json.dumps({"results": [{"id": "content", "applied": True}]})
+        return json.dumps({"results": [_row("content", pre="00000000:0")]})
 
     runtime = PacketTracerEnterpriseServiceRuntime(lambda: [], send_and_wait)
     action = SetHttpContent(
@@ -94,6 +123,7 @@ def test_http_content_is_serialized_and_never_interpolated_as_javascript():
     )
     result = runtime.apply_actions([action])
 
+    assert result[0].postcondition is PostconditionFact.SATISFIED
     assert result[0].applied
     assert json.dumps(marker) in captured[0]
     assert '.setPageContents("index.html",' in captured[0]
@@ -224,7 +254,14 @@ def test_dns_negative_control_requires_fresh_not_found_output():
 
 
 def test_dns_behavior_rejects_a_fresh_but_wrong_address():
-    """A fresh window carrying the wrong address is fresh negative evidence."""
+    """A fresh window carrying the wrong address is fresh negative evidence.
+
+    The baseline asserted `not fresh_evidence` here. That was the known
+    incorrect expectation: the window is complete, it was opened by this
+    command, and it carries an address. The read observed something real and
+    it contradicts the expectation, so the evidence is fresh and NEGATIVE --
+    calling it stale discarded a genuine measurement (authorized change (b)).
+    """
     responses = [
         json.dumps({"started": True, "before": "C:\\>"}),
         json.dumps(
@@ -260,7 +297,8 @@ def test_dns_behavior_rejects_a_fresh_but_wrong_address():
     result = runtime.verify(expectation)
 
     assert result.status is ActionExecutionStatus.FAILED
-    assert not result.fresh_evidence
+    assert result.fresh_evidence
+    assert result.observation is ObservationFact.CONTRADICTED
 
 
 def test_http_behavior_uses_a_fresh_background_client_and_releases_it():
@@ -299,7 +337,23 @@ def test_http_behavior_uses_a_fresh_background_client_and_releases_it():
 
 
 def test_http_behavior_rejects_stale_marker_and_accepts_fresh_fetch():
-    """A marker present before the request decides nothing; a fresh one does."""
+    """A marker present before the request decides nothing; a fresh one does.
+
+    The stale half asserted FAILED at the baseline. A marker that was already
+    on the page before this request means the output cannot be attributed to
+    this request at all, which is not a demonstrated failure of the service:
+    it is a read that cannot decide. UNKNOWN with INCONCLUSIVE (authorized
+    change (d)). The fresh half is unchanged.
+
+    Measured while making that change: this fixture never reached the marker
+    path. Its dispatcher answers any script containing "deleteClient" with the
+    release payload, and the start script contains that call to retire a
+    previous client, so the start read returns no `started` flag and the row is
+    INCONCLUSIVE for `client_go_false` instead. Both are the same authorized
+    outcome, so the assertion stands as item 7 specifies; the real
+    marker-before-request path is covered in
+    `tests/test_service_runtime_observation.py`, where new tests belong.
+    """
     marker = "MCP_E6_HTTP_OK_FRESH"
     responses = [
         json.dumps({"started": True, "content_before": ""}),
@@ -339,12 +393,19 @@ def test_http_behavior_rejects_stale_marker_and_accepts_fresh_fetch():
             else json.dumps({"started": True, "content_before": marker})
         ),
     ).verify(expectation)
-    assert stale.status is ActionExecutionStatus.FAILED
+    assert stale.status is ActionExecutionStatus.UNKNOWN
+    assert stale.observation is ObservationFact.INCONCLUSIVE
     assert not stale.fresh_evidence
 
 
 def test_http_behavior_rejects_fresh_content_without_expected_marker():
-    """Fresh content without the marker is fresh negative evidence."""
+    """Fresh content without the marker is fresh negative evidence.
+
+    Same correction as (b), on the HTTP reader: the content changed, so the
+    page WAS retrieved by this request, and it does not carry the marker. That
+    is a fresh contradiction, not an absence of evidence (authorized change
+    (c)).
+    """
     responses = [
         json.dumps({"started": True, "content_before": ""}),
         json.dumps({"found": True, "content": "WRONG_PAGE"}),
@@ -372,7 +433,8 @@ def test_http_behavior_rejects_fresh_content_without_expected_marker():
     result = runtime.verify(expectation)
 
     assert result.status is ActionExecutionStatus.FAILED
-    assert not result.fresh_evidence
+    assert result.fresh_evidence
+    assert result.observation is ObservationFact.CONTRADICTED
 
 
 def test_ntp_and_tftp_behavior_remain_unobservable_without_client_evidence():
@@ -400,10 +462,19 @@ def test_ntp_and_tftp_behavior_remain_unobservable_without_client_evidence():
 
 
 def test_https_behavior_uses_https_url_and_never_substitutes_http():
-    """The HTTPS read uses the https URL and confirms the mode it claims."""
+    """The HTTPS read uses the https URL and confirms the mode it claims.
+
+    Two corrections, both R-HTTPS-03 (authorized change (e)). The start
+    payload now reports `https_mode` from `isHttps()` after `setHttps(true)`,
+    so "this client was in HTTPS mode" is an observation rather than an
+    inference from the URL. And with an EMPTY marker the fetched page cannot
+    be attributed to the HTTPS listener rather than to any other reachable
+    page, so the row is PARTIAL with `no_https_marker` instead of VERIFIED.
+    The URL assertions are unchanged: they are the real invariant here.
+    """
     calls = []
     responses = [
-        json.dumps({"started": True, "content_before": ""}),
+        json.dumps({"started": True, "content_before": "", "https_mode": True}),
         json.dumps({"found": True, "content": "Packet Tracer secure page"}),
         json.dumps({"released": True}),
     ]
@@ -428,7 +499,11 @@ def test_https_behavior_uses_https_url_and_never_substitutes_http():
 
     result = runtime.verify(expectation)
 
-    assert result.status is ActionExecutionStatus.VERIFIED
+    assert result.status is ActionExecutionStatus.PARTIAL
+    assert result.observation is ObservationFact.OBSERVED
+    assert result.limitations == ["no_https_marker"]
     assert result.evidence_method == "https_client_fresh_content"
+    assert "p.setHttps(true)" in calls[0]
+    assert "p.isHttps()" in calls[0]
     assert json.dumps("https://198.18.160.10/") in calls[0]
     assert "http://198.18.160.10/" not in calls[0]

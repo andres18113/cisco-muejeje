@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from enum import Enum, StrEnum
+
 from pydantic import BaseModel, Field
 
 from .configuration_runtime import (
@@ -11,9 +13,50 @@ from .configuration_runtime import (
     ConfigurationFailureCode,
     ConfigurationRuntimeContext,
 )
-from .evidence import EvidenceRecord
+from .evidence import (
+    EvidenceRecord,
+    ObservationStatus,
+    VerificationStatus,
+    evidence_from_legacy_result,
+)
 from .execution import ApplicationExecutionJournal, DirtyState
 from .service_plan import ServiceEvidenceKind, ServiceType
+
+
+class ObservationFact(StrEnum):
+    """What one verification read established, separately from its status.
+
+    Status answers "may the product claim this expectation holds"; the
+    observation answers "what did the read actually see". They are different
+    questions, and collapsing them is how a read that never happened became
+    indistinguishable from one that contradicted the expectation.
+
+    CONTRADICTED is deliberately fresh NEGATIVE evidence: a completed read
+    that saw the wrong value observed something real, and calling it stale
+    discarded a genuine measurement. INCONCLUSIVE is a completed read that
+    cannot decide -- output that predates the request, an incomplete window, a
+    refused or unstarted command, no response by the deadline. The transport
+    facts name a read that never arrived, and none of them is evidence that
+    the subject is in any particular state. UNSPECIFIED is the default and
+    means the producer stated no fact, which is how a legacy producer is
+    recognized and routed to the legacy evidence mapping.
+    """
+
+    __str__ = Enum.__str__
+
+    OBSERVED = "observed"
+    CONTRADICTED = "contradicted"
+    INCONCLUSIVE = "inconclusive"
+    SUBJECT_NOT_FOUND = "subject_not_found"
+    MALFORMED = "malformed"
+    ENGINE_ERROR = "engine_error"
+    NOT_OBSERVED = "not_observed"
+    LOST = "lost"
+    ACCEPTANCE_UNKNOWN = "acceptance_unknown"
+    NOT_SUBMITTED = "not_submitted"
+    REJECTED = "rejected"
+    NOT_ATTEMPTED = "not_attempted"
+    UNSPECIFIED = "unspecified"
 
 
 class RuntimeServiceVerification(BaseModel):
@@ -26,6 +69,16 @@ class RuntimeServiceVerification(BaseModel):
     fresh_evidence: bool = False
     observed: dict[str, str | int | bool] = Field(default_factory=dict)
     message: str = ""
+    #: What the read established. UNSPECIFIED is the default and means the
+    #: producer stated no fact; it never means OBSERVED.
+    observation: ObservationFact = ObservationFact.UNSPECIFIED
+    #: Why the observation is what it is, sanitized and bounded.
+    cause: str = ""
+    #: How strong a claim this row supports, when the runtime can say.
+    claim_level: str = ""
+    #: What this read could not establish. A limitation is part of the record,
+    #: not a footnote: an empty-marker HTTPS fetch is PARTIAL because of one.
+    limitations: list[str] = Field(default_factory=list)
 
 
 class ServiceVerificationResult(RuntimeServiceVerification):
@@ -66,6 +119,11 @@ class ServiceApplicationResult(BaseModel):
     execution_journal: ApplicationExecutionJournal | None = None
     dirty_state: DirtyState = DirtyState.CLEAN
     evidence_records: list[EvidenceRecord] = Field(default_factory=list)
+    #: What this run could not establish, one entry per unresolved item. A
+    #: `residue_unknown:<id>:<cause>` entry names an action whose residue the
+    #: observation could not settle; the run may still be VERIFIED, because a
+    #: satisfied postcondition and an unobserved residue are different claims.
+    limitations: list[str] = Field(default_factory=list)
     duration_ms: int = 0
 
     def compact_summary(self) -> dict[str, object]:
@@ -104,3 +162,111 @@ class ServiceApplicationResult(BaseModel):
             ],
             "duration_ms": self.duration_ms,
         }
+
+
+#: Observation facts that name a transport that never delivered a correlated
+#: read, plus the completed-but-undecided read. Each becomes a probe failure
+#: with the fact named in `limitations`, never an absence of evidence that
+#: could be mistaken for "not attempted".
+_TRANSPORT_FACTS = {
+    ObservationFact.NOT_OBSERVED,
+    ObservationFact.LOST,
+    ObservationFact.ACCEPTANCE_UNKNOWN,
+    ObservationFact.INCONCLUSIVE,
+}
+
+#: The read could not observe its subject at all.
+_UNOBSERVABLE_FACTS = {
+    ObservationFact.ENGINE_ERROR,
+    ObservationFact.MALFORMED,
+    ObservationFact.SUBJECT_NOT_FOUND,
+}
+
+#: Explicitly nothing was attempted for this subject.
+_NOT_ATTEMPTED_FACTS = {
+    ObservationFact.NOT_ATTEMPTED,
+    ObservationFact.NOT_SUBMITTED,
+    ObservationFact.REJECTED,
+}
+
+
+def evidence_from_service_verification(
+    result: RuntimeServiceVerification,
+    *,
+    identifier: str,
+    subject: str,
+    claim: str,
+    backend: str = "",
+    backend_version: str = "",
+    environment_fingerprint: str = "",
+    capability_snapshot_hash: str = "",
+) -> EvidenceRecord:
+    """Build one evidence record from a verification that stated its fact.
+
+    A producer that stated no fact (observation UNSPECIFIED) is delegated to
+    `evidence_from_legacy_result` verbatim, so an existing producer's records
+    stay exactly what they were. Only an explicit fact takes this path, and it
+    maps the fact rather than re-inferring it from the status: a status can be
+    UNKNOWN for a lost result and for an undecidable window alike, and the
+    evidence has to say which.
+    """
+    limitations = list(result.limitations)
+    if result.message:
+        limitations.append(result.message)
+    if result.observation is ObservationFact.UNSPECIFIED:
+        return evidence_from_legacy_result(
+            identifier=identifier,
+            subject=subject,
+            claim=claim,
+            status=result.status,
+            evidence_method=result.evidence_method,
+            fresh_evidence=result.fresh_evidence,
+            observed_value=result.observed,
+            backend=backend,
+            backend_version=backend_version,
+            environment_fingerprint=environment_fingerprint,
+            capability_snapshot_hash=capability_snapshot_hash,
+            limitations=limitations,
+        )
+    if result.cause:
+        limitations.append(f"cause:{result.cause}")
+    if result.observation in _TRANSPORT_FACTS:
+        limitations.append(f"transport:{result.observation.value}")
+    record = evidence_from_legacy_result(
+        identifier=identifier,
+        subject=subject,
+        claim=claim,
+        status=result.status,
+        evidence_method=result.evidence_method,
+        fresh_evidence=result.fresh_evidence,
+        observed_value=result.observed,
+        backend=backend,
+        backend_version=backend_version,
+        environment_fingerprint=environment_fingerprint,
+        capability_snapshot_hash=capability_snapshot_hash,
+        limitations=limitations,
+    )
+    if result.observation in {ObservationFact.OBSERVED, ObservationFact.CONTRADICTED}:
+        observation_status = ObservationStatus.OBSERVED
+    elif (
+        result.observation in _UNOBSERVABLE_FACTS
+        or result.observation in _TRANSPORT_FACTS
+    ):
+        observation_status = ObservationStatus.PROBE_FAILED
+    elif result.observation in _NOT_ATTEMPTED_FACTS:
+        observation_status = ObservationStatus.NOT_ATTEMPTED
+    else:
+        observation_status = record.observation_status
+    verification_status = (
+        VerificationStatus.VERIFIED
+        if result.status is ActionExecutionStatus.VERIFIED and result.fresh_evidence
+        else VerificationStatus.FAILED
+        if result.observation is ObservationFact.CONTRADICTED
+        else VerificationStatus.UNVERIFIED
+    )
+    return record.model_copy(
+        update={
+            "observation_status": observation_status,
+            "verification_status": verification_status,
+        },
+    )
