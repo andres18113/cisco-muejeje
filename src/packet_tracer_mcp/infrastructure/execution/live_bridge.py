@@ -184,8 +184,7 @@ class PacketTracerHttpTransport:
 
     def send_and_wait(self, js_code: str, timeout: float = 12.0) -> str | None:
         guarded = (
-            "try{" + js_code
-            + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
+            "try{" + js_code + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
         )
         return correlated_http_send_and_wait(
             guarded,
@@ -202,18 +201,24 @@ class PacketTracerHttpTransport:
         return url + separator + urlencode({"t": self.token})
 
     def _http_get(
-        self, url: str, timeout: float,
+        self,
+        url: str,
+        timeout: float,
     ) -> tuple[int | None, str | None]:
         try:
             with urllib.request.urlopen(
-                self._signed_url(url), timeout=timeout,
+                self._signed_url(url),
+                timeout=timeout,
             ) as response:
                 return response.status, response.read().decode("utf-8")
         except (OSError, urllib.error.URLError):
             return None, None
 
     def _http_post(
-        self, url: str, body: str, timeout: float,
+        self,
+        url: str,
+        body: str,
+        timeout: float,
     ) -> tuple[int | None, str | None]:
         request = urllib.request.Request(
             self._signed_url(url),
@@ -391,10 +396,7 @@ class PTCommandBridge:
                 )
 
             def _token_from(self, query: dict) -> str:
-                return (
-                    query.get("t", [""])[0]
-                    or self.headers.get("X-PT-Token", "")
-                )
+                return query.get("t", [""])[0] or self.headers.get("X-PT-Token", "")
 
             def _authorized(self, query: dict) -> bool:
                 if not self._host_ok():

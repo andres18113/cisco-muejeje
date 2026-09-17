@@ -194,7 +194,9 @@ class ApplicationExecutionJournal(BaseModel):
         else:
             floor = DirtyState.CLEAN
         self.residue_floor = max(
-            self.residue_floor, floor, key=_RESIDUE_SEVERITY.__getitem__,
+            self.residue_floor,
+            floor,
+            key=_RESIDUE_SEVERITY.__getitem__,
         )
         self._recompose()
 
@@ -212,17 +214,18 @@ class ApplicationExecutionJournal(BaseModel):
         nuevo es que se vuelve a aplicar en vez de recordarse.
         """
         covered = (
-            self.entries if self.cleanup_ordinal < 0
-            else self.entries[:self.cleanup_ordinal]
+            self.entries
+            if self.cleanup_ordinal < 0
+            else self.entries[: self.cleanup_ordinal]
         )
         uncovered = (
-            [] if self.cleanup_ordinal < 0
-            else self.entries[self.cleanup_ordinal:]
+            [] if self.cleanup_ordinal < 0 else self.entries[self.cleanup_ordinal :]
         )
         state = _derive_dirty_state(covered)
         if self.cleanup_status is CompensationStatus.SUCCEEDED:
             if self.cleanup_undid_mutations and state in {
-                DirtyState.CLEAN, DirtyState.DIRTY_RECOVERABLE,
+                DirtyState.CLEAN,
+                DirtyState.DIRTY_RECOVERABLE,
             }:
                 state = DirtyState.CLEAN
         elif self.cleanup_status is CompensationStatus.FAILED:
@@ -285,7 +288,11 @@ def disposition_from_status(status: Any) -> MutationDisposition:
 
 
 def journal_from_action_results(
-    *, plan_id: str, deployment_id: str, actions: list[Any], results: list[Any],
+    *,
+    plan_id: str,
+    deployment_id: str,
+    actions: list[Any],
+    results: list[Any],
 ) -> ApplicationExecutionJournal:
     actions_by_id = {item.id: item for item in actions}
     operations = {
@@ -295,26 +302,36 @@ def journal_from_action_results(
     journal = ApplicationExecutionJournal(plan_id=plan_id, deployment_id=deployment_id)
     for ordinal, result in enumerate(results, start=1):
         explicit_disposition = getattr(
-            result, "disposition", MutationDisposition.UNKNOWN,
+            result,
+            "disposition",
+            MutationDisposition.UNKNOWN,
         )
-        journal.append(ExecutionJournalEntry(
-            ordinal=ordinal,
-            action_id=result.action_id,
-            operation=operations.get(result.action_id, OperationSemantics.SET_VALUE),
-            disposition=(
-                explicit_disposition
-                if explicit_disposition is not MutationDisposition.UNKNOWN
-                else disposition_from_status(result.status)
-            ),
-            batch_id=getattr(result, "batch_id", ""),
-            inverse_action_id=getattr(
-                actions_by_id.get(result.action_id), "inverse_action_id", "",
-            ),
-            inverse_available=getattr(
-                actions_by_id.get(result.action_id), "compensation_available", False,
-            ),
-            message=getattr(result, "message", ""),
-        ))
+        journal.append(
+            ExecutionJournalEntry(
+                ordinal=ordinal,
+                action_id=result.action_id,
+                operation=operations.get(
+                    result.action_id, OperationSemantics.SET_VALUE
+                ),
+                disposition=(
+                    explicit_disposition
+                    if explicit_disposition is not MutationDisposition.UNKNOWN
+                    else disposition_from_status(result.status)
+                ),
+                batch_id=getattr(result, "batch_id", ""),
+                inverse_action_id=getattr(
+                    actions_by_id.get(result.action_id),
+                    "inverse_action_id",
+                    "",
+                ),
+                inverse_available=getattr(
+                    actions_by_id.get(result.action_id),
+                    "compensation_available",
+                    False,
+                ),
+                message=getattr(result, "message", ""),
+            )
+        )
     return journal
 
 
@@ -336,8 +353,10 @@ def _derive_dirty_state(entries: list[ExecutionJournalEntry]) -> DirtyState:
         return DirtyState.UNKNOWN
     failed = any(item.disposition is MutationDisposition.FAILED for item in entries)
     mutations = [
-        item for item in entries
-        if item.disposition in {MutationDisposition.CHANGED, MutationDisposition.REASSERTED}
+        item
+        for item in entries
+        if item.disposition
+        in {MutationDisposition.CHANGED, MutationDisposition.REASSERTED}
     ]
     if not failed:
         return DirtyState.CLEAN

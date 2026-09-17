@@ -291,8 +291,7 @@ class VoiceSignalBarrierResult(BaseModel):
             "deferred_action_ids": self.deferred_action_ids,
             "foundation_expectation_ids": self.foundation_expectation_ids,
             "preparation_statuses": {
-                item.action_id: item.status.value
-                for item in self.preparation_results
+                item.action_id: item.status.value for item in self.preparation_results
             },
             "foundation_status": self.foundation_status.value,
             "signal_status": self.signal_status.value,
@@ -324,10 +323,14 @@ class ConfigurationApplicationResult(BaseModel):
     def compact_summary(self) -> dict[str, object]:
         action_counts: dict[str, int] = {}
         for item in self.action_results:
-            action_counts[item.status.value] = action_counts.get(item.status.value, 0) + 1
+            action_counts[item.status.value] = (
+                action_counts.get(item.status.value, 0) + 1
+            )
         verification_counts: dict[str, int] = {}
         for item in self.verification_results:
-            verification_counts[item.status.value] = verification_counts.get(item.status.value, 0) + 1
+            verification_counts[item.status.value] = (
+                verification_counts.get(item.status.value, 0) + 1
+            )
         return {
             "config_plan_id": self.config_plan_id,
             "config_semantic_hash": self.config_semantic_hash,
@@ -344,12 +347,16 @@ class ConfigurationApplicationResult(BaseModel):
             "dirty_state": self.dirty_state.value,
             "execution_journal": (
                 self.execution_journal.compact_summary()
-                if self.execution_journal else None
+                if self.execution_journal
+                else None
             ),
-            "evidence_records": [item.compact_summary() for item in self.evidence_records],
+            "evidence_records": [
+                item.compact_summary() for item in self.evidence_records
+            ],
             "voice_signal_barrier": (
                 self.voice_signal_barrier.compact_summary()
-                if self.voice_signal_barrier is not None else None
+                if self.voice_signal_barrier is not None
+                else None
             ),
             "duration_ms": self.duration_ms,
         }

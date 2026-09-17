@@ -45,7 +45,9 @@ class ServiceApplicationResult(BaseModel):
     service_semantic_hash: str
     source_topology_hash: str
     source_configuration_hash: str
-    runtime_context: ConfigurationRuntimeContext = Field(default_factory=ConfigurationRuntimeContext)
+    runtime_context: ConfigurationRuntimeContext = Field(
+        default_factory=ConfigurationRuntimeContext
+    )
     status: ConfigurationApplicationStatus
     failure_code: ConfigurationFailureCode = ConfigurationFailureCode.NONE
     action_results: list[ActionApplicationResult] = Field(default_factory=list)
@@ -61,10 +63,14 @@ class ServiceApplicationResult(BaseModel):
     def compact_summary(self) -> dict[str, object]:
         action_counts: dict[str, int] = {}
         for item in self.action_results:
-            action_counts[item.status.value] = action_counts.get(item.status.value, 0) + 1
+            action_counts[item.status.value] = (
+                action_counts.get(item.status.value, 0) + 1
+            )
         verification_counts: dict[str, int] = {}
         for item in self.verification_results:
-            verification_counts[item.status.value] = verification_counts.get(item.status.value, 0) + 1
+            verification_counts[item.status.value] = (
+                verification_counts.get(item.status.value, 0) + 1
+            )
         return {
             "service_plan_id": self.service_plan_id,
             "service_semantic_hash": self.service_semantic_hash,
@@ -81,8 +87,11 @@ class ServiceApplicationResult(BaseModel):
             "dirty_state": self.dirty_state.value,
             "execution_journal": (
                 self.execution_journal.compact_summary()
-                if self.execution_journal else None
+                if self.execution_journal
+                else None
             ),
-            "evidence_records": [item.compact_summary() for item in self.evidence_records],
+            "evidence_records": [
+                item.compact_summary() for item in self.evidence_records
+            ],
             "duration_ms": self.duration_ms,
         }

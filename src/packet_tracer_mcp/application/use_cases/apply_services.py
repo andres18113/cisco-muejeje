@@ -60,11 +60,13 @@ class ServiceRuntime(Protocol):
     def inventory(self) -> list[RuntimeConfigurationTarget]: ...
 
     def apply_actions(
-        self, actions: Sequence[ServiceAction],
+        self,
+        actions: Sequence[ServiceAction],
     ) -> list[RuntimeActionMutation]: ...
 
     def verify(
-        self, expectation: ServiceVerificationExpectation,
+        self,
+        expectation: ServiceVerificationExpectation,
     ) -> RuntimeServiceVerification: ...
 
 
@@ -90,28 +92,36 @@ class ServiceApplicator:
         deployment_id = deployment_manifest.deployment_id if deployment_manifest else ""
         if actual_source_topology_hash != plan.source_topology_hash:
             return self._failure(
-                plan, ConfigurationFailureCode.SOURCE_TOPOLOGY_MISMATCH,
+                plan,
+                ConfigurationFailureCode.SOURCE_TOPOLOGY_MISMATCH,
                 "ServicePlan source hash does not match the deployed E4 topology.",
-                context=runtime_context, deployment_id=deployment_id, started=started,
+                context=runtime_context,
+                deployment_id=deployment_id,
+                started=started,
             )
         if (
             deployment_manifest is not None
             and deployment_manifest.physical_topology_hash != plan.source_topology_hash
         ):
             return self._failure(
-                plan, ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH,
+                plan,
+                ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH,
                 "DeploymentManifest physical topology hash does not match ServicePlan.",
-                context=runtime_context, deployment_id=deployment_id, started=started,
+                context=runtime_context,
+                deployment_id=deployment_id,
+                started=started,
             )
-        if (
-            deployment_manifest is None
-            and requires_deployment_manifest(plan.source_topology_hash_schema)
+        if deployment_manifest is None and requires_deployment_manifest(
+            plan.source_topology_hash_schema
         ):
             return self._failure(
-                plan, ConfigurationFailureCode.DEPLOYMENT_MANIFEST_REQUIRED,
+                plan,
+                ConfigurationFailureCode.DEPLOYMENT_MANIFEST_REQUIRED,
                 "ServicePlan uses physical-topology-v2 identity and requires a "
                 "DeploymentManifest; name-only runtime fallback is legacy-only.",
-                context=runtime_context, deployment_id=deployment_id, started=started,
+                context=runtime_context,
+                deployment_id=deployment_id,
+                started=started,
             )
         if deployment_manifest is not None:
             try:
@@ -121,28 +131,41 @@ class ServiceApplicator:
                 )
             except DeploymentIdentityError as exc:
                 return self._failure(
-                    plan, ConfigurationFailureCode.ENVIRONMENT_FINGERPRINT_MISMATCH,
-                    str(exc), context=runtime_context,
-                    deployment_id=deployment_id, started=started,
+                    plan,
+                    ConfigurationFailureCode.ENVIRONMENT_FINGERPRINT_MISMATCH,
+                    str(exc),
+                    context=runtime_context,
+                    deployment_id=deployment_id,
+                    started=started,
                 )
         if actual_source_configuration_hash != plan.source_configuration_hash:
             return self._failure(
-                plan, ConfigurationFailureCode.SOURCE_CONFIGURATION_MISMATCH,
+                plan,
+                ConfigurationFailureCode.SOURCE_CONFIGURATION_MISMATCH,
                 "ServicePlan source hash does not match the applied E5 configuration.",
-                context=runtime_context, deployment_id=deployment_id, started=started,
+                context=runtime_context,
+                deployment_id=deployment_id,
+                started=started,
             )
         try:
             ordered = order_dependency_actions(plan.actions)
         except ConfigurationDependencyError as exc:
             return self._failure(
-                plan, ConfigurationFailureCode.DEPENDENCY_BLOCKED, str(exc),
-                context=runtime_context, deployment_id=deployment_id, started=started,
+                plan,
+                ConfigurationFailureCode.DEPENDENCY_BLOCKED,
+                str(exc),
+                context=runtime_context,
+                deployment_id=deployment_id,
+                started=started,
             )
         if [item.id for item in ordered] != [item.id for item in plan.actions]:
             return self._failure(
-                plan, ConfigurationFailureCode.DEPENDENCY_BLOCKED,
+                plan,
+                ConfigurationFailureCode.DEPENDENCY_BLOCKED,
                 "ServicePlan actions are not in deterministic dependency order.",
-                context=runtime_context, deployment_id=deployment_id, started=started,
+                context=runtime_context,
+                deployment_id=deployment_id,
+                started=started,
             )
         missing_foundation = sorted(
             item.configuration_action_id
@@ -152,30 +175,37 @@ class ServiceApplicator:
         )
         if missing_foundation:
             return self._failure(
-                plan, ConfigurationFailureCode.FOUNDATIONAL_CONFIGURATION_MISSING,
-                "Foundational E5 actions are not VERIFIED: " + ", ".join(missing_foundation),
-                context=runtime_context, deployment_id=deployment_id, started=started,
+                plan,
+                ConfigurationFailureCode.FOUNDATIONAL_CONFIGURATION_MISSING,
+                "Foundational E5 actions are not VERIFIED: "
+                + ", ".join(missing_foundation),
+                context=runtime_context,
+                deployment_id=deployment_id,
+                started=started,
             )
         try:
             runtime_inventory = self._runtime.inventory()
         except Exception as exc:
             return self._failure(
-                plan, ConfigurationFailureCode.SESSION_FAILED,
-                f"Runtime inventory failed: {exc}", context=runtime_context,
-                deployment_id=deployment_id, started=started,
+                plan,
+                ConfigurationFailureCode.SESSION_FAILED,
+                f"Runtime inventory failed: {exc}",
+                context=runtime_context,
+                deployment_id=deployment_id,
+                started=started,
             )
         deployed_names: dict[str, str] = {}
         if deployment_manifest is not None:
-            semantic_device_ids = [
-                item.device_id for item in plan.foundational_requirements
-            ] + [
-                item.host_device_id for item in plan.actions
-            ] + [
-                identifier
-                for item in plan.verification_expectations
-                for identifier in (item.host_device_id, item.client_device_id)
-                if identifier
-            ]
+            semantic_device_ids = (
+                [item.device_id for item in plan.foundational_requirements]
+                + [item.host_device_id for item in plan.actions]
+                + [
+                    identifier
+                    for item in plan.verification_expectations
+                    for identifier in (item.host_device_id, item.client_device_id)
+                    if identifier
+                ]
+            )
             try:
                 semantic_targets = resolve_manifest_targets(
                     deployment_manifest,
@@ -185,8 +215,12 @@ class ServiceApplicator:
                 )
             except DeploymentIdentityError as exc:
                 return self._failure(
-                    plan, ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH, str(exc),
-                    context=runtime_context, deployment_id=deployment_id, started=started,
+                    plan,
+                    ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH,
+                    str(exc),
+                    context=runtime_context,
+                    deployment_id=deployment_id,
+                    started=started,
                 )
             deployed_names = {
                 identifier: target.device_name
@@ -199,19 +233,20 @@ class ServiceApplicator:
                 item.device_id: item.device_name
                 for item in plan.foundational_requirements
             }
-            deployed_names.update({
-                item.host_device_id: item.host_device_name
-                for item in plan.actions
-            })
-            deployed_names.update({
-                identifier: name
-                for item in plan.verification_expectations
-                for identifier, name in (
-                    (item.host_device_id, item.host_device_name),
-                    (item.client_device_id, item.client_device_name),
-                )
-                if identifier
-            })
+            deployed_names.update(
+                {item.host_device_id: item.host_device_name for item in plan.actions}
+            )
+            deployed_names.update(
+                {
+                    identifier: name
+                    for item in plan.verification_expectations
+                    for identifier, name in (
+                        (item.host_device_id, item.host_device_name),
+                        (item.client_device_id, item.client_device_name),
+                    )
+                    if identifier
+                }
+            )
             targets = {
                 item.device_id: inventory_by_name[item.device_name]
                 for item in plan.foundational_requirements
@@ -234,19 +269,27 @@ class ServiceApplicator:
                 else ConfigurationFailureCode.TARGET_NOT_FOUND
             )
             return self._failure(
-                plan, code, *sorted(target_errors), context=runtime_context, started=started,
+                plan,
+                code,
+                *sorted(target_errors),
+                context=runtime_context,
+                started=started,
                 deployment_id=deployment_id,
             )
 
         capabilities = capabilities or {}
         results: dict[str, ActionApplicationResult] = {}
         for action in plan.actions:
-            profile = capabilities.get(f"{action.host_model}:{action.service_type.value}")
+            profile = capabilities.get(
+                f"{action.host_model}:{action.service_type.value}"
+            )
             support = (
                 profile.action_application_support.get(
-                    action.action_type.value, profile.application_support,
+                    action.action_type.value,
+                    profile.application_support,
                 )
-                if profile else CapabilityStatus.UNKNOWN
+                if profile
+                else CapabilityStatus.UNKNOWN
             )
             if support is CapabilityStatus.SUPPORTED:
                 continue
@@ -270,7 +313,8 @@ class ServiceApplicator:
             progress = False
             for action in list(pending):
                 failed_dependencies = [
-                    dependency for dependency in action.depends_on
+                    dependency
+                    for dependency in action.depends_on
                     if dependency in results
                     and not satisfies_apply_dependency(results[dependency].status)
                 ]
@@ -284,7 +328,8 @@ class ServiceApplicator:
                     pending.remove(action)
                     progress = True
             ready = [
-                item for item in pending
+                item
+                for item in pending
                 if all(
                     dependency in results
                     and satisfies_apply_dependency(results[dependency].status)
@@ -294,14 +339,18 @@ class ServiceApplicator:
             if ready:
                 first = ready[0]
                 batch = [
-                    item for item in ready
-                    if item.phase == first.phase and item.host_device_id == first.host_device_id
+                    item
+                    for item in ready
+                    if item.phase == first.phase
+                    and item.host_device_id == first.host_device_id
                 ]
                 try:
                     runtime_batch = [
-                        item.model_copy(update={
-                            "host_device_name": deployed_names[item.host_device_id],
-                        })
+                        item.model_copy(
+                            update={
+                                "host_device_name": deployed_names[item.host_device_id],
+                            }
+                        )
                         for item in batch
                     ]
                     mutations = {
@@ -325,19 +374,26 @@ class ServiceApplicator:
                         action_id=item.id,
                         status=(
                             self._mutation_status(mutation)
-                            if mutation else ActionExecutionStatus.FAILED
+                            if mutation
+                            else ActionExecutionStatus.FAILED
                         ),
                         failure_code=(
-                            ConfigurationFailureCode.NONE if applied
-                            else mutation.failure_code if mutation
-                            and mutation.failure_code is not ConfigurationFailureCode.NONE
+                            ConfigurationFailureCode.NONE
+                            if applied
+                            else mutation.failure_code
+                            if mutation
+                            and mutation.failure_code
+                            is not ConfigurationFailureCode.NONE
                             else ConfigurationFailureCode.APPLICATION_FAILED
                         ),
-                        message=mutation.message if mutation else "Runtime returned no mutation result.",
+                        message=mutation.message
+                        if mutation
+                        else "Runtime returned no mutation result.",
                         batch_id=mutation.batch_id if mutation else "",
                         operation=item.operation,
                         disposition=(
-                            mutation.disposition if mutation
+                            mutation.disposition
+                            if mutation
                             else MutationDisposition.FAILED
                         ),
                     )
@@ -363,9 +419,7 @@ class ServiceApplicator:
             actions=list(plan.actions),
             results=action_results,
         )
-        expectations_by_id = {
-            item.id: item for item in plan.verification_expectations
-        }
+        expectations_by_id = {item.id: item for item in plan.verification_expectations}
         evidence_records = [
             evidence_from_legacy_result(
                 identifier=f"evidence/{item.expectation_id}",
@@ -415,34 +469,39 @@ class ServiceApplicator:
         dag_expectations = [
             expectation
             if expectation.verification_prerequisites
-            else expectation.model_copy(update={
-                "verification_prerequisites": [
-                    VerificationPrerequisite(
-                        kind=PrerequisiteKind.ACTION_APPLIED,
-                        reference_id=expectation.action_id,
-                    ),
-                    *[
+            else expectation.model_copy(
+                update={
+                    "verification_prerequisites": [
                         VerificationPrerequisite(
-                            kind=PrerequisiteKind.VERIFICATION_VERIFIED,
-                            reference_id=identifier,
-                        )
-                        for identifier in expectation.depends_on
+                            kind=PrerequisiteKind.ACTION_APPLIED,
+                            reference_id=expectation.action_id,
+                        ),
+                        *[
+                            VerificationPrerequisite(
+                                kind=PrerequisiteKind.VERIFICATION_VERIFIED,
+                                reference_id=identifier,
+                            )
+                            for identifier in expectation.depends_on
+                        ],
                     ],
-                ],
-            })
+                }
+            )
             for expectation in plan.verification_expectations
         ]
         try:
             ordered = order_verification_expectations(dag_expectations)
         except Exception as exc:
-            return [ServiceVerificationResult(
-                expectation_id=expectation.id,
-                service_id=expectation.service_id,
-                status=ActionExecutionStatus.DEPENDENCY_BLOCKED,
-                evidence_kind=expectation.evidence_kind,
-                failure_code=ConfigurationFailureCode.DEPENDENCY_BLOCKED,
-                message=str(exc),
-            ) for expectation in plan.verification_expectations]
+            return [
+                ServiceVerificationResult(
+                    expectation_id=expectation.id,
+                    service_id=expectation.service_id,
+                    status=ActionExecutionStatus.DEPENDENCY_BLOCKED,
+                    evidence_kind=expectation.evidence_kind,
+                    failure_code=ConfigurationFailureCode.DEPENDENCY_BLOCKED,
+                    message=str(exc),
+                )
+                for expectation in plan.verification_expectations
+            ]
         for expectation in ordered:
             prerequisites = expectation.verification_prerequisites or [
                 VerificationPrerequisite(
@@ -476,7 +535,9 @@ class ServiceApplicator:
                 )
                 continue
             service = services[expectation.service_id]
-            profile = capabilities.get(f"{service.host_model}:{service.service_type.value}")
+            profile = capabilities.get(
+                f"{service.host_model}:{service.service_type.value}"
+            )
             support = CapabilityStatus.UNKNOWN
             if profile is not None:
                 support = (
@@ -490,7 +551,10 @@ class ServiceApplicator:
                 and expectation.evidence_kind is not ServiceEvidenceKind.DIRECT_STATE
                 else None
             )
-            if readiness is not None and readiness.verify is ReadinessStatus.UNOBSERVABLE:
+            if (
+                readiness is not None
+                and readiness.verify is ReadinessStatus.UNOBSERVABLE
+            ):
                 reasons = readiness.reasons.get("verify", [])
                 results[expectation.id] = ServiceVerificationResult(
                     expectation_id=expectation.id,
@@ -520,13 +584,16 @@ class ServiceApplicator:
                 )
                 continue
             try:
-                runtime_expectation = expectation.model_copy(update={
-                    "host_device_name": deployed_names[expectation.host_device_id],
-                    "client_device_name": (
-                        deployed_names[expectation.client_device_id]
-                        if expectation.client_device_id else expectation.client_device_name
-                    ),
-                })
+                runtime_expectation = expectation.model_copy(
+                    update={
+                        "host_device_name": deployed_names[expectation.host_device_id],
+                        "client_device_name": (
+                            deployed_names[expectation.client_device_id]
+                            if expectation.client_device_id
+                            else expectation.client_device_name
+                        ),
+                    }
+                )
                 observed = self._runtime.verify(runtime_expectation)
                 failure = (
                     ConfigurationFailureCode.NONE
@@ -558,16 +625,28 @@ class ServiceApplicator:
             service_actions = [actions[item] for item in service.action_ids]
             application = (
                 ActionExecutionStatus.APPLIED
-                if service_actions and all(
+                if service_actions
+                and all(
                     satisfies_apply_dependency(item.status) for item in service_actions
                 )
                 else ActionExecutionStatus.FAILED
-                if any(item.status is ActionExecutionStatus.FAILED for item in service_actions)
+                if any(
+                    item.status is ActionExecutionStatus.FAILED
+                    for item in service_actions
+                )
                 else ActionExecutionStatus.PARTIAL
             )
             observed = [item for item in verification if item.service_id == service.id]
-            direct = [item for item in observed if item.evidence_kind is ServiceEvidenceKind.DIRECT_STATE]
-            behavior = [item for item in observed if item.evidence_kind is not ServiceEvidenceKind.DIRECT_STATE]
+            direct = [
+                item
+                for item in observed
+                if item.evidence_kind is ServiceEvidenceKind.DIRECT_STATE
+            ]
+            behavior = [
+                item
+                for item in observed
+                if item.evidence_kind is not ServiceEvidenceKind.DIRECT_STATE
+            ]
             direct_status = ServiceApplicator._aggregate(direct)
             behavior_status = ServiceApplicator._aggregate(behavior)
             usability = (
@@ -579,14 +658,16 @@ class ServiceApplicator:
                 if behavior
                 else application
             )
-            outcomes.append(ServiceOutcome(
-                service_id=service.id,
-                service_type=service.service_type,
-                application_status=application,
-                direct_readback_status=direct_status,
-                behavioral_status=behavior_status,
-                usability_status=usability,
-            ))
+            outcomes.append(
+                ServiceOutcome(
+                    service_id=service.id,
+                    service_type=service.service_type,
+                    application_status=application,
+                    direct_readback_status=direct_status,
+                    behavioral_status=behavior_status,
+                    usability_status=usability,
+                )
+            )
         return outcomes
 
     @staticmethod
@@ -595,7 +676,9 @@ class ServiceApplicator:
             return ActionExecutionStatus.UNKNOWN
         if any(item.status is ActionExecutionStatus.FAILED for item in items):
             return ActionExecutionStatus.FAILED
-        if any(item.status is ActionExecutionStatus.DEPENDENCY_BLOCKED for item in items):
+        if any(
+            item.status is ActionExecutionStatus.DEPENDENCY_BLOCKED for item in items
+        ):
             return ActionExecutionStatus.PARTIAL
         if all(item.status is ActionExecutionStatus.VERIFIED for item in items):
             return ActionExecutionStatus.VERIFIED
@@ -604,16 +687,29 @@ class ServiceApplicator:
     @staticmethod
     def _overall(actions, outcomes):
         if any(item.status is ActionExecutionStatus.FAILED for item in actions):
-            return ConfigurationApplicationStatus.FAILED, ConfigurationFailureCode.APPLICATION_FAILED
-        if any(item.status in {
-            ActionExecutionStatus.SKIPPED, ActionExecutionStatus.DEPENDENCY_BLOCKED,
-        } for item in actions):
+            return (
+                ConfigurationApplicationStatus.FAILED,
+                ConfigurationFailureCode.APPLICATION_FAILED,
+            )
+        if any(
+            item.status
+            in {
+                ActionExecutionStatus.SKIPPED,
+                ActionExecutionStatus.DEPENDENCY_BLOCKED,
+            }
+            for item in actions
+        ):
             return ConfigurationApplicationStatus.PARTIAL, ConfigurationFailureCode.NONE
         if outcomes and all(
             item.usability_status is ActionExecutionStatus.VERIFIED for item in outcomes
         ):
-            return ConfigurationApplicationStatus.VERIFIED, ConfigurationFailureCode.NONE
-        if any(item.usability_status is ActionExecutionStatus.FAILED for item in outcomes):
+            return (
+                ConfigurationApplicationStatus.VERIFIED,
+                ConfigurationFailureCode.NONE,
+            )
+        if any(
+            item.usability_status is ActionExecutionStatus.FAILED for item in outcomes
+        ):
             return (
                 ConfigurationApplicationStatus.PARTIAL,
                 ConfigurationFailureCode.BEHAVIORAL_VERIFICATION_FAILED,
@@ -625,8 +721,10 @@ class ServiceApplicator:
     @staticmethod
     def _failure(plan, code, *messages, context, deployment_id="", started):
         journal = journal_from_action_results(
-            plan_id=plan.id, deployment_id=deployment_id,
-            actions=list(plan.actions), results=[],
+            plan_id=plan.id,
+            deployment_id=deployment_id,
+            actions=list(plan.actions),
+            results=[],
         )
         for message in messages:
             journal.mark_preflight_failure(message)

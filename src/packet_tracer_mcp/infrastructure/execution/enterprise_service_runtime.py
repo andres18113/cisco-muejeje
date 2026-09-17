@@ -65,18 +65,22 @@ class PacketTracerEnterpriseServiceRuntime:
         return normalize_runtime_inventory(self._query_inventory())
 
     def apply_actions(
-        self, actions: Sequence[ServiceAction],
+        self,
+        actions: Sequence[ServiceAction],
     ) -> list[RuntimeActionMutation]:
         if not actions:
             return []
         host_names = {item.host_device_name for item in actions}
         if len(host_names) != 1:
-            return [RuntimeActionMutation(
-                action_id=item.id,
-                applied=False,
-                failure_code=ConfigurationFailureCode.APPLICATION_FAILED,
-                message="A service runtime batch must target exactly one host.",
-            ) for item in actions]
+            return [
+                RuntimeActionMutation(
+                    action_id=item.id,
+                    applied=False,
+                    failure_code=ConfigurationFailureCode.APPLICATION_FAILED,
+                    message="A service runtime batch must target exactly one host.",
+                )
+                for item in actions
+            ]
         host = json.dumps(next(iter(host_names)))
         lines = [
             f"var d=ipc.network().getDevice({host});var results=[];",
@@ -87,7 +91,8 @@ class PacketTracerEnterpriseServiceRuntime:
         lines.append("reportResult(JSON.stringify({results:results}));}")
         payload = self._json_result("".join(lines), 10.0)
         observed = {
-            str(item.get("id")): item for item in payload.get("results", [])
+            str(item.get("id")): item
+            for item in payload.get("results", [])
             if isinstance(item, dict)
         }
         return [
@@ -121,17 +126,28 @@ class PacketTracerEnterpriseServiceRuntime:
         elif isinstance(action, AddDnsRecord):
             lines.append(
                 "if(p){ok=!!p.addARecordToNameServerDb("
-                + json.dumps(action.hostname) + "," + json.dumps(action.address)
-                + ")||!!p.getARecordWithAddress(" + json.dumps(action.hostname)
-                + "," + json.dumps(action.address) + ");}"
+                + json.dumps(action.hostname)
+                + ","
+                + json.dumps(action.address)
+                + ")||!!p.getARecordWithAddress("
+                + json.dumps(action.hostname)
+                + ","
+                + json.dumps(action.address)
+                + ");}"
             )
         elif isinstance(action, EnableHttpService):
             lines.append("if(p){p.setEnable(true);ok=!!p.isEnabled();}")
         elif isinstance(action, SetHttpContent):
             lines.append(
-                "if(p){p.setPageContents(" + json.dumps(action.path) + ","
-                + json.dumps(action.content) + ");ok=String(p.getPage("
-                + json.dumps(action.path) + "))===" + json.dumps(action.content) + ";}"
+                "if(p){p.setPageContents("
+                + json.dumps(action.path)
+                + ","
+                + json.dumps(action.content)
+                + ");ok=String(p.getPage("
+                + json.dumps(action.path)
+                + "))==="
+                + json.dumps(action.content)
+                + ";}"
             )
         elif isinstance(action, EnableHttpsService):
             lines.append("if(p){p.setHttpsEnable(true);ok=!!p.isHttpsEnabled();}")
@@ -142,13 +158,15 @@ class PacketTracerEnterpriseServiceRuntime:
         elif isinstance(action, PublishTftpFile):
             lines.append("ok=false;")
         lines.append(
-            "results.push({id:" + action_id
+            "results.push({id:"
+            + action_id
             + ",applied:ok,message:ok?'applied':'service API mutation/readback failed'});"
         )
         return lines
 
     def verify(
-        self, expectation: ServiceVerificationExpectation,
+        self,
+        expectation: ServiceVerificationExpectation,
     ) -> RuntimeServiceVerification:
         if expectation.evidence_kind is ServiceEvidenceKind.DIRECT_STATE:
             return self._verify_direct(expectation)
@@ -204,25 +222,37 @@ class PacketTracerEnterpriseServiceRuntime:
         enabled = bool(observed.get("found") and observed.get("enabled"))
         matches = enabled
         if service_type is ServiceType.DNS:
-            expected_records = json.loads(str(expectation.expected.get("records_json") or "{}"))
+            expected_records = json.loads(
+                str(expectation.expected.get("records_json") or "{}")
+            )
             matches = matches and observed.get("records") == expected_records
         elif service_type in {ServiceType.HTTP, ServiceType.HTTPS}:
             marker = str(expectation.expected.get("marker") or "")
-            matches = matches and (not marker or marker in str(observed.get("content") or ""))
+            matches = matches and (
+                not marker or marker in str(observed.get("content") or "")
+            )
         return RuntimeServiceVerification(
             expectation_id=expectation.id,
-            status=(ActionExecutionStatus.VERIFIED if matches else ActionExecutionStatus.FAILED),
+            status=(
+                ActionExecutionStatus.VERIFIED
+                if matches
+                else ActionExecutionStatus.FAILED
+            ),
             evidence_kind=expectation.evidence_kind,
             evidence_method="structured_service_getters",
             fresh_evidence=bool(observed),
             observed={"enabled": enabled},
-            message="Structured service state matched." if matches else "Structured service state differed.",
+            message="Structured service state matched."
+            if matches
+            else "Structured service state differed.",
         )
 
     def _verify_dns(self, expectation):
         hostname = str(expectation.expected.get("hostname") or "")
         if not _HOSTNAME.fullmatch(hostname):
-            return self._behavior_failure(expectation, "DNS verification hostname is invalid.")
+            return self._behavior_failure(
+                expectation, "DNS verification hostname is invalid."
+            )
         client = json.dumps(expectation.client_device_name)
         command = "ping " + hostname
         command_json = json.dumps(command)
@@ -230,7 +260,8 @@ class PacketTracerEnterpriseServiceRuntime:
             f"var d=ipc.network().getDevice({client});"
             "var cp=d&&typeof d.getCommandPrompt==='function'?d.getCommandPrompt():null;"
             "var before=cp&&typeof cp.getOutput==='function'?String(cp.getOutput()):'';"
-            + PAGER_GUARD_JS +
+            + PAGER_GUARD_JS
+            +
             # Misma frontera que el resto: tipear sobre un pager activo se come
             # el primer caracter del comando.
             "var started=false;var blocked=false;"
@@ -242,7 +273,8 @@ class PacketTracerEnterpriseServiceRuntime:
         )
         if start.get("blocked"):
             return self._behavior_failure(
-                expectation, "Typed DNS ping was refused: the terminal pager was active.",
+                expectation,
+                "Typed DNS ping was refused: the terminal pager was active.",
             )
         if not start.get("started"):
             return self._behavior_failure(expectation, "Typed DNS ping did not start.")
@@ -255,13 +287,16 @@ class PacketTracerEnterpriseServiceRuntime:
                 "reportResult(JSON.stringify({found:!!cp,output:cp?String(cp.getOutput()):''}));",
                 3.0,
             )
+
         negative = expectation.kind is ServiceVerificationKind.DNS_NEGATIVE_CONTROL
         expected = str(expectation.expected.get("address") or "")
         observed = self._poll(
             inspect,
             lambda item: self._dns_window_complete(
                 self._fresh_command_window(
-                    before, str(item.get("output") or ""), command,
+                    before,
+                    str(item.get("output") or ""),
+                    command,
                 ),
                 expected,
                 negative,
@@ -269,7 +304,9 @@ class PacketTracerEnterpriseServiceRuntime:
             self._dns_timeout,
         )
         window = self._fresh_command_window(
-            before, str(observed.get("output") or ""), command,
+            before,
+            str(observed.get("output") or ""),
+            command,
         )
         not_found = bool(re.search(r"could not find host|unknown host", window, re.I))
         if negative:
@@ -277,25 +314,34 @@ class PacketTracerEnterpriseServiceRuntime:
             method = "typed_pc_ping_hostname_negative_control"
         else:
             matched = bool(
-                window and not not_found and expected in window
+                window
+                and not not_found
+                and expected in window
                 and "packets: sent" in window.casefold()
             )
             method = "typed_pc_ping_hostname_fresh_output"
         return RuntimeServiceVerification(
             expectation_id=expectation.id,
-            status=(ActionExecutionStatus.VERIFIED if matched else ActionExecutionStatus.FAILED),
+            status=(
+                ActionExecutionStatus.VERIFIED
+                if matched
+                else ActionExecutionStatus.FAILED
+            ),
             evidence_kind=expectation.evidence_kind,
             evidence_method=method,
             fresh_evidence=matched,
             observed=(
                 {"hostname": hostname, "resolved": False}
                 if matched and negative
-                else {"hostname": hostname, "address": expected} if matched else {}
+                else {"hostname": hostname, "address": expected}
+                if matched
+                else {}
             ),
             message=(
                 "DNS negative control did not resolve."
                 if matched and negative
-                else "DNS resolved expected address." if matched
+                else "DNS resolved expected address."
+                if matched
                 else "Fresh DNS command output did not match the expectation."
             ),
         )
@@ -303,7 +349,7 @@ class PacketTracerEnterpriseServiceRuntime:
     @staticmethod
     def _fresh_command_window(before: str, after: str, command: str) -> str:
         if after.startswith(before) and len(after) > len(before):
-            return after[len(before):]
+            return after[len(before) :]
         index = after.casefold().rfind(command.casefold())
         return after[index:] if index >= 0 and after[index:] != before[index:] else ""
 
@@ -319,12 +365,14 @@ class PacketTracerEnterpriseServiceRuntime:
         marker = str(expectation.expected.get("marker") or "")
         target = str(
             expectation.expected.get("hostname")
-            or expectation.expected.get("address") or ""
+            or expectation.expected.get("address")
+            or ""
         )
         scheme = str(expectation.expected.get("scheme") or "http").casefold()
         if scheme not in {"http", "https"}:
             return self._behavior_failure(
-                expectation, "Web verification scheme is not registered.",
+                expectation,
+                "Web verification scheme is not registered.",
             )
         client = json.dumps(expectation.client_device_name)
         url = json.dumps(scheme + "://" + target + "/")
@@ -337,11 +385,14 @@ class PacketTracerEnterpriseServiceRuntime:
         )
         before = str(start.get("content_before") or "")
         if not start.get("started"):
-            return self._behavior_failure(expectation, "HTTP client request did not start.")
+            return self._behavior_failure(
+                expectation, "HTTP client request did not start."
+            )
         if marker and marker in before:
             self._release_background_http(expectation.id, client)
             return self._behavior_failure(
-                expectation, "Expected marker already existed before the current request.",
+                expectation,
+                "Expected marker already existed before the current request.",
             )
 
         def inspect():
@@ -349,6 +400,7 @@ class PacketTracerEnterpriseServiceRuntime:
                 self._background_http_inspect(expectation.id),
                 3.0,
             )
+
         observed = self._poll(
             inspect,
             lambda item: bool(
@@ -365,14 +417,21 @@ class PacketTracerEnterpriseServiceRuntime:
         self._release_background_http(expectation.id, client)
         return RuntimeServiceVerification(
             expectation_id=expectation.id,
-            status=(ActionExecutionStatus.VERIFIED if matched else ActionExecutionStatus.FAILED),
+            status=(
+                ActionExecutionStatus.VERIFIED
+                if matched
+                else ActionExecutionStatus.FAILED
+            ),
             evidence_kind=expectation.evidence_kind,
             evidence_method=f"{scheme}_client_fresh_content",
             fresh_evidence=matched,
-            observed={"marker": marker, "target": target, "scheme": scheme} if matched else {},
+            observed={"marker": marker, "target": target, "scheme": scheme}
+            if matched
+            else {},
             message=(
                 f"Fresh {scheme.upper()} content matched the expectation."
-                if matched else f"Fresh {scheme.upper()} content was not observed."
+                if matched
+                else f"Fresh {scheme.upper()} content was not observed."
             ),
         )
 
@@ -380,7 +439,7 @@ class PacketTracerEnterpriseServiceRuntime:
     def _background_http_start(expectation_id: str, url_json: str) -> str:
         key = json.dumps(expectation_id)
         return (
-            "var m=d&&d.getProcess(\"HttpBackgroundClientManager\");"
+            'var m=d&&d.getProcess("HttpBackgroundClientManager");'
             "this.__mcpE6HttpClients=this.__mcpE6HttpClients||{};"
             f"var old=this.__mcpE6HttpClients[{key}];"
             "if(old&&old.manager&&old.client){old.manager.deleteClient(old.client);}"
@@ -407,8 +466,7 @@ class PacketTracerEnterpriseServiceRuntime:
             f"var slot=bag[{key}];if(slot&&slot.manager&&slot.client){{"
             "slot.manager.deleteClient(slot.client);"
             f"delete bag[{key}];}}"
-            "reportResult(JSON.stringify({released:!slot||!bag["
-            + key + "]}));",
+            "reportResult(JSON.stringify({released:!slot||!bag[" + key + "]}));",
             3.0,
         )
 
