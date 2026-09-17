@@ -42,7 +42,7 @@ import os
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum, StrEnum
 from pathlib import Path
 from typing import TypeVar
 
@@ -61,6 +61,8 @@ GOVERNED_ROOT_ENV_VAR = "PT_MCP_GOVERNED_ROOT"
 
 class ImportIsolationState(StrEnum):
     """Name the outcome of one import-isolation evaluation."""
+
+    __str__ = Enum.__str__
 
     ISOLATED = "ISOLATED"
     GOVERNED_ROOT_NOT_DECLARED = "GOVERNED_ROOT_NOT_DECLARED"

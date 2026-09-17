@@ -19,6 +19,28 @@
 - NM9: **met** through the mechanical migration quality boundary; see
   [Ruff boundary (NM9)](#ruff-boundary-nm9).
 
+## NM10 final closure design
+
+- Risk: **L** because this fix-forward restores an observable public enum
+  contract and changes the evidence emitted by an executable quality control.
+- Authorized base: `main@c36ca2bee1b9a36e3bac681e6c3a770eb8940e0b`.
+- Delivery branch: `fix/nm10-namespace-final-closure`.
+- Intended outcome: restore the pre-migration string presentation of
+  `ImportIsolationState` while retaining `StrEnum`; report the complete changed,
+  mechanically exempt, and Ruff-gated Python counts; and remove the consumed
+  namespace-specific authorization from the tree and CI invocation.
+- Scope exclusions: no preflight state, value, decision, serialization, Ruff
+  selection, generic mechanical-boundary, LIVE, IoT, or `EXTENSION/` behavior
+  changes.
+
+Acceptance requires regressions derived from the measured `502c14b` enum
+behavior, including `str`, `format`, f-string, JSON, and rendered diagnostics;
+quality-report regressions for active, absent, stale, and `UNVERIFIABLE`
+authorization outcomes with `changed == exempt + Ruff-gated`; unchanged generic
+authorization and classifier tests; focused-to-full offline verification; and
+exact-SHA CI. LIVE remains **UNVERIFIED / UNCLAIMED** because no LIVE work is in
+scope.
+
 ## Problem, scope, and exclusions
 
 The same source tree can be loaded as both `packet_tracer_mcp` and
@@ -351,11 +373,11 @@ attributed about 3845 historical violations to the migration. The mechanical
 migration quality boundary, integrated from `main@502c14b`, removes exactly that
 false debt and nothing else.
 
-The authorization is the committed record
+For that delivery, the authorization was the committed record
 `scripts/mechanical_authorizations/canonical-python-namespace.json`, which binds
 `CANONICAL_PYTHON_NAMESPACE` to base commit
 `502c14ba2b586e46045b1a2bfeedbb944a355af0` under this brief. The CI quality job
-passes it with `--mechanical-authorization`; it is active only while the
+passed it with `--mechanical-authorization`; it was active only while the
 comparison merge base is that commit.
 
 Measured in delivery mode at `31772fe`, with a clean tree, over exact Git blobs:
@@ -392,12 +414,28 @@ CP-LIVE-adjacent harness.
 Bringing the authored files to the gate took formatting, 119 docstrings, and
 Ruff's fixes for import order, an unused import, `datetime.UTC`, unpacking, 27
 unused unpacked names, and an `Optional` ordering. No rule was changed, and no
-ignore, exclusion, or `noqa` was added. One fix reaches production behavior:
-`ImportIsolationState` is now a `StrEnum` instead of `(str, Enum)`. That changes
-only `str()` and `format()` of a member, which no consumer uses: the LIVE runners
-and CP-SCALE evidence record `state.value`, the rendered diagnostic starts with it,
-and JSON writes the value either way. A test pins those recorded forms for every
-state.
+ignore, exclusion, or `noqa` was added. The Ruff correction also converted
+`ImportIsolationState` from `(str, Enum)` to `StrEnum`. That conversion was not
+contract-preserving: at `502c14b`, `str()`, `format()`, and an f-string produced
+`ImportIsolationState.ISOLATED`, while the initial `StrEnum` implementation
+produced `ISOLATED`. The NM10 final closure keeps `StrEnum` but restores
+`Enum.__str__`, so those forms match the measured pre-migration contract without
+changing values, string equality, JSON, rendered diagnostics, states, or
+preflight decisions.
+
+### Consumed authorization cleanup
+
+The namespace-specific authorization completed its lifecycle and is removed by
+the NM10 final closure together with its sole workflow argument. The quality job
+therefore runs the ordinary delivery gate with no namespace authorization. The
+generic registry, parser, exact-base activation, per-file proof, and reusable
+mechanical-boundary tests remain intact for future migrations.
+
+Quality evidence now reports three disjoint counts: all changed Python files,
+files exempted as proven mechanical-only work, and files sent to Ruff. The first
+count is always the sum of the latter two. Active, absent, stale, and
+`UNVERIFIABLE` authorization regressions prove that `UNVERIFIABLE` remains in the
+Ruff-gated count and still fails closed.
 
 ### Worktree ownership (NM1)
 
@@ -485,10 +523,10 @@ stated.
   started in another still imports that other checkout's package silently, as
   measured for NM1; the environment rule and the LIVE gate, not the suite, own
   that boundary.
-- **The authorization record goes stale on purpose.** Once the migration is
-  integrated and `main` moves past `502c14b`, the quality job prints the record as
-  INACTIVE and grants nothing. Removing the record and its workflow argument is a
-  cleanup for a later change.
+- **The namespace authorization has been consumed and retired.** It is no longer
+  present in the tree or passed by CI. The generic mechanical migration boundary
+  remains available, and any future migration must commit and explicitly pass its
+  own exact-base record.
 - **LIVE behaviour is unverified and unclaimed.** Everything above is offline.
   The `TEST_PROCESS` refusal was measured in ordinary processes; no authorized
   LIVE Packet Tracer run was performed or is implied.

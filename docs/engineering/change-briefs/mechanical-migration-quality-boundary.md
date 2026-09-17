@@ -17,6 +17,9 @@
   from direct Python callers, and index flags hiding checkout bytes from the
   clean-tree check — and requires a record's cited authority to be a committed
   blob
+- Namespace cleanup: the canonical namespace record completed this lifecycle and
+  was removed with its workflow argument by the NM10 final closure; the generic
+  mechanism and registry remain unchanged
 - Quality lenses used: maintainability, verifiability, security of the control,
   and change control. This brief makes no claim of conformity to, or
   certification against, any external standard.
@@ -349,7 +352,9 @@ variables, pull request identity, and event type never participate.
    which is reviewed again.
 
 A stale record is harmless and visible, never a bypass. Removing it, and the
-workflow argument, belongs to the migration's own cleanup.
+workflow argument, belongs to the migration's own cleanup. The canonical Python
+namespace migration has now performed that cleanup; this lifecycle remains the
+rule for future records.
 
 ## Deterministic classifier loading
 
@@ -538,8 +543,9 @@ and accepting a tree as the cited authority.
   a future base, its sites stop matching and the file becomes authored work until
   it is re-inventoried and re-audited. New dynamic sites introduced at a later base
   are likewise authored until audited. Both failures are closed, not open.
-- A stale record stays in the tree, printed as **INACTIVE**, until the migration's
-  cleanup removes it.
+- A future stale record stays in the tree, printed as **INACTIVE**, until its
+  migration's cleanup removes it. The consumed canonical namespace record has
+  been removed; no namespace-specific exception remains configured in CI.
 - `run_ruff` passes every selected path on one command line. A migration-sized
   selection of several hundred absolute paths exceeds the Windows command-line
   limit and raises `WinError 206`. This is pre-existing behavior, unchanged here

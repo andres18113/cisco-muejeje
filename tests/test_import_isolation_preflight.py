@@ -272,6 +272,23 @@ class TestARealGovernedProcessPasses:
 class TestTheStateEvidenceContract:
     """Keep every recorded form of an isolation state equal to its value."""
 
+    def test_isolated_preserves_the_pre_migration_observable_contract(self):
+        """Keep every form measured at the pre-migration commit unchanged."""
+        state = ImportIsolationState.ISOLATED
+
+        assert state.value == "ISOLATED"
+        assert state.name == "ISOLATED"
+        assert state == "ISOLATED"
+        assert isinstance(state, str)
+        assert str(state) == "ImportIsolationState.ISOLATED"
+        assert format(state) == "ImportIsolationState.ISOLATED"
+        assert f"{state}" == "ImportIsolationState.ISOLATED"
+        assert json.dumps(state) == '"ISOLATED"'
+        assert (
+            ImportIsolationResult(state).render()
+            == "ISOLATED: Aislamiento de import verificado."
+        )
+
     def test_each_state_is_recorded_as_its_value(self):
         """Record a state identically through `.value`, JSON, and string equality.
 

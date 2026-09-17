@@ -1,7 +1,0 @@
-{
-  "schema": "cisco-mcp/mechanical-migration-authorization",
-  "version": 1,
-  "transformation": "CANONICAL_PYTHON_NAMESPACE",
-  "base_commit": "502c14ba2b586e46045b1a2bfeedbb944a355af0",
-  "authority": "docs/engineering/change-briefs/namespace-migration.md"
-}

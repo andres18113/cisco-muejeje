@@ -92,6 +92,20 @@ def _outcome(selection: ChangeSelection) -> tuple[object, ...]:
     )
 
 
+def _assert_report_counts(
+    output: str,
+    *,
+    changed: int,
+    exempt: int,
+    ruff_gated: int,
+) -> None:
+    """Assert the three disjoint quality-evidence counts and their identity."""
+    assert changed == exempt + ruff_gated
+    assert f"Changed Python files: {changed}" in output
+    assert f"Mechanical-only exempt: {exempt}" in output
+    assert f"Ruff-gated Python files: {ruff_gated}" in output
+
+
 def test_well_formed_authorization_names_a_registered_transformation() -> None:
     """Parse a complete record into its registered transformation and exact base."""
     authorization = parse_authorization(
@@ -491,10 +505,68 @@ def test_gate_prints_active_and_inactive_authorizations(
     assert "INACTIVE" not in active_output
     assert "exact Git blobs" in active_output
     assert "MECHANICAL_ONLY historical.py" in active_output
+    _assert_report_counts(active_output, changed=1, exempt=1, ruff_gated=0)
     assert stale_status == 1
     assert "INACTIVE" in stale_output
     assert stale_base in stale_output
     assert "MECHANICAL_ONLY" not in stale_output
+    _assert_report_counts(stale_output, changed=1, exempt=0, ruff_gated=1)
+
+
+def test_gate_reports_every_changed_file_without_authorization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report ordinary changed files as Ruff-gated when no authority is passed."""
+    repository, comparison, delivery = _migration(tmp_path, stale=False)
+    monkeypatch.setattr("scripts.quality_gate.REPOSITORY_ROOT", repository)
+    monkeypatch.setattr("scripts.quality_gate.run_ruff", lambda _: 0)
+
+    status = main(["--base", comparison, "--delivery-commit", delivery])
+    output = capsys.readouterr().out
+
+    assert status == 0
+    _assert_report_counts(output, changed=1, exempt=0, ruff_gated=1)
+
+
+def test_unverifiable_file_is_reported_as_ruff_gated_not_exempt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Keep an undecodable candidate in Ruff's count and fail the gate closed."""
+    repository = tmp_path / "checkout"
+    baseline = initialize_exact_repository(repository)
+    (repository / "historical.py").write_bytes(b"\xff")
+    write_authorization(repository, RECORD, baseline)
+    delivery = commit_all(repository, "test: commit undecodable Python")
+    selection = select_delivery_changes(
+        repository,
+        baseline,
+        delivery,
+        authorizations=[RECORD],
+    )
+    monkeypatch.setattr("scripts.quality_gate.REPOSITORY_ROOT", repository)
+    monkeypatch.setattr("scripts.quality_gate.run_ruff", lambda _: 0)
+
+    status = main(
+        [
+            "--base",
+            baseline,
+            "--delivery-commit",
+            delivery,
+            "--mechanical-authorization",
+            RECORD,
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert selection.exempt == ()
+    assert _names(selection.files) == ["historical.py"]
+    assert status == 1
+    assert "Unverifiable mechanical comparison" in captured.err
+    _assert_report_counts(captured.out, changed=1, exempt=0, ruff_gated=1)
 
 
 def test_cli_refuses_a_manual_migration_in_delivery_mode(

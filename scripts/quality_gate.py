@@ -615,7 +615,11 @@ def _print_selection(selection: ChangeSelection) -> None:
         flush=True,
     )
     print(f"Merge base: {selection.merge_base_sha}", flush=True)
-    print(f"Selected Python files: {len(selection.files)}", flush=True)
+    exempt = len(selection.exempt)
+    ruff_gated = len(selection.files)
+    print(f"Changed Python files: {exempt + ruff_gated}", flush=True)
+    print(f"Mechanical-only exempt: {exempt}", flush=True)
+    print(f"Ruff-gated Python files: {ruff_gated}", flush=True)
     _print_mechanical_boundary(selection)
 
 
@@ -661,11 +665,6 @@ def _print_mechanical_boundary(selection: ChangeSelection) -> None:
             f"({item.verdict.applied_sites} authorized sites)",
             flush=True,
         )
-    print(
-        f"Files exempted from Ruff by a proven mechanical migration: "
-        f"{len(selection.exempt)}",
-        flush=True,
-    )
 
 
 def _report_unverifiable(selection: ChangeSelection) -> int:
