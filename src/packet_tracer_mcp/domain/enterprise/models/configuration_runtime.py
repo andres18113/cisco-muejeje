@@ -254,6 +254,14 @@ class RuntimeActionMutation(BaseModel):
     #: whose whole batch was never observed.
     attempted: bool | None = None
     cause: str = ""
+    #: The bounded, sanitized detail the setter itself produced, kept apart
+    #: from `cause` because they are different meanings: `cause` carries the
+    #: canonical reason the row is what it is -- `pre_read_failed`,
+    #: `footprint_partial:<scope>` -- and this field carries what the vendor
+    #: call reported while that reason was being established. A row that has
+    #: both used to lose this one. `decide_mutation` never reads it: a
+    #: producer's diagnostic classifies nothing and authorizes nothing.
+    call_error: str = ""
 
 
 class MutationResidue(StrEnum):
@@ -344,6 +352,7 @@ def sanitized_mutation_snapshot(
         update={
             "message": _bounded(snapshot.message),
             "cause": _bounded(snapshot.cause),
+            "call_error": _bounded(snapshot.call_error),
         },
     )
 

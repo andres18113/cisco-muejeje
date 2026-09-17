@@ -173,7 +173,7 @@ def test_dns_behavior_starts_typed_ping_and_reads_only_fresh_command_output():
     def send_and_wait(js, timeout):
         calls.append(js)
         if "enterCommand" in js:
-            return json.dumps({"started": True, "before": "C:\\>"})
+            return json.dumps({"started": True, "blocked": False, "before": "C:\\>"})
         return json.dumps(
             {
                 "found": True,
@@ -215,7 +215,7 @@ def test_dns_behavior_starts_typed_ping_and_reads_only_fresh_command_output():
 def test_dns_negative_control_requires_fresh_not_found_output():
     """The negative control needs a fresh not-found window, not silence."""
     responses = [
-        json.dumps({"started": True, "before": "C:\\>old\n"}),
+        json.dumps({"started": True, "blocked": False, "before": "C:\\>old\n"}),
         json.dumps(
             {
                 "found": True,
@@ -263,7 +263,7 @@ def test_dns_behavior_rejects_a_fresh_but_wrong_address():
     calling it stale discarded a genuine measurement (authorized change (b)).
     """
     responses = [
-        json.dumps({"started": True, "before": "C:\\>"}),
+        json.dumps({"started": True, "blocked": False, "before": "C:\\>"}),
         json.dumps(
             {
                 "found": True,
@@ -305,9 +305,9 @@ def test_http_behavior_uses_a_fresh_background_client_and_releases_it():
     """The owned HTTP client is created for this read and released after it."""
     calls = []
     responses = [
-        json.dumps({"started": True, "content_before": ""}),
+        json.dumps({"started": True, "content_before": "", "owned": True}),
         json.dumps({"found": True, "content": "MCP_E6_FRESH"}),
-        json.dumps({"released": True}),
+        json.dumps({"found": True, "deleted": True, "present": False, "error": ""}),
     ]
     runtime = PacketTracerEnterpriseServiceRuntime(
         lambda: [],
@@ -345,20 +345,21 @@ def test_http_behavior_rejects_stale_marker_and_accepts_fresh_fetch():
     it is a read that cannot decide. UNKNOWN with INCONCLUSIVE (authorized
     change (d)). The fresh half is unchanged.
 
-    Measured while making that change: this fixture never reached the marker
-    path. Its dispatcher answers any script containing "deleteClient" with the
-    release payload, and the start script contains that call to retire a
-    previous client, so the start read returns no `started` flag and the row is
-    INCONCLUSIVE for `client_go_false` instead. Both are the same authorized
-    outcome, so the assertion stands as item 7 specifies; the real
-    marker-before-request path is covered in
-    `tests/test_service_runtime_observation.py`, where new tests belong.
+    The stale half's dispatcher is now bound by `createClient()` rather than
+    by `deleteClient`. It used to answer the release payload to any script
+    containing "deleteClient", and the START script contains that call to
+    retire a previous client, so the start read consumed the release payload
+    and the row was INCONCLUSIVE for `client_go_false` without ever reaching
+    the marker path. With the start payload validated as a shape, the same
+    mis-binding now reports MALFORMED, which is the correct reading of that
+    payload and the wrong subject for this test. Binding the answer to its
+    own script makes the assertion measure what it claims.
     """
     marker = "MCP_E6_HTTP_OK_FRESH"
     responses = [
-        json.dumps({"started": True, "content_before": ""}),
+        json.dumps({"started": True, "content_before": "", "owned": True}),
         json.dumps({"found": True, "content": marker}),
-        json.dumps({"released": True}),
+        json.dumps({"found": True, "deleted": True, "present": False, "error": ""}),
     ]
     runtime = PacketTracerEnterpriseServiceRuntime(
         lambda: [],
@@ -388,13 +389,16 @@ def test_http_behavior_rejects_stale_marker_and_accepts_fresh_fetch():
     stale = PacketTracerEnterpriseServiceRuntime(
         lambda: [],
         lambda js, timeout: (
-            json.dumps({"released": True})
-            if "deleteClient" in js
-            else json.dumps({"started": True, "content_before": marker})
+            json.dumps({"started": True, "content_before": marker, "owned": True})
+            if "createClient()" in js
+            else json.dumps(
+                {"found": True, "deleted": True, "present": False, "error": ""}
+            )
         ),
     ).verify(expectation)
     assert stale.status is ActionExecutionStatus.UNKNOWN
     assert stale.observation is ObservationFact.INCONCLUSIVE
+    assert stale.cause == "marker_present_before_request"
     assert not stale.fresh_evidence
 
 
@@ -407,9 +411,9 @@ def test_http_behavior_rejects_fresh_content_without_expected_marker():
     (c)).
     """
     responses = [
-        json.dumps({"started": True, "content_before": ""}),
+        json.dumps({"started": True, "content_before": "", "owned": True}),
         json.dumps({"found": True, "content": "WRONG_PAGE"}),
-        json.dumps({"released": True}),
+        json.dumps({"found": True, "deleted": True, "present": False, "error": ""}),
     ]
     runtime = PacketTracerEnterpriseServiceRuntime(
         lambda: [],
@@ -474,9 +478,11 @@ def test_https_behavior_uses_https_url_and_never_substitutes_http():
     """
     calls = []
     responses = [
-        json.dumps({"started": True, "content_before": "", "https_mode": True}),
+        json.dumps(
+            {"started": True, "content_before": "", "https_mode": True, "owned": True}
+        ),
         json.dumps({"found": True, "content": "Packet Tracer secure page"}),
-        json.dumps({"released": True}),
+        json.dumps({"found": True, "deleted": True, "present": False, "error": ""}),
     ]
     runtime = PacketTracerEnterpriseServiceRuntime(
         lambda: [],

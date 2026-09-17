@@ -22,6 +22,7 @@ import shutil
 import subprocess
 
 import pytest
+from test_service_application import FakeServiceRuntime
 
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
@@ -45,6 +46,9 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServicePhase,
     ServiceType,
     SetHttpContent,
+)
+from packet_tracer_mcp.domain.enterprise.models.service_runtime import (
+    ServiceApplicationResult,
 )
 from packet_tracer_mcp.infrastructure.execution.enterprise_service_runtime import (
     PacketTracerEnterpriseServiceRuntime,
@@ -70,11 +74,15 @@ const __calls = {};
 const __fail = (name) => {
   __calls[name] = (__calls[name] || 0) + 1;
   if (__hState.failing.indexOf(name) >= 0) { return true; }
+  const before = __hState.fail_before[name];
+  if (before !== undefined && __calls[name] <= before) { return true; }
   const after = __hState.fail_after[name];
   return after !== undefined && __calls[name] > after;
 };
 const __throwIf = (name) => {
-  if (__fail(name)) { throw new Error('stub failure: ' + name); }
+  if (__fail(name)) {
+    throw new Error('stub failure: ' + name + __hState.failure_detail);
+  }
 };
 const __process = (kind) => {
   const state = __hState.process;
@@ -85,7 +93,9 @@ const __process = (kind) => {
       __log.push('setEnable:' + value);
       __throwIf('setEnable');
       state.enabled = __hState.setter_noop ? state.enabled : value;
-      if (__hState.throw_after_effect) { throw new Error('stub failure after effect'); }
+      if (__hState.throw_after_effect) {
+        throw new Error('stub failure after effect' + __hState.failure_detail);
+      }
     },
     setEnabled: (value) => {
       __log.push('setEnabled:' + value);
@@ -107,7 +117,9 @@ const __process = (kind) => {
       const stored = __hState.stores_instead === null
         ? content : __hState.stores_instead;
       if (!__hState.setter_noop) { state.pages[path] = stored; }
-      if (__hState.throw_after_effect) { throw new Error('stub failure after effect'); }
+      if (__hState.throw_after_effect) {
+        throw new Error('stub failure after effect' + __hState.failure_detail);
+      }
     },
     getARecordWithAddress: (host, address) => {
       __log.push('getARecordWithAddress:' + host + ':' + address);
@@ -155,6 +167,12 @@ class _StubPacketTracer:
             # that the row contract must not paper over.
             "failing": [],
             "fail_after": {},
+            # Fail a named call only for its first N invocations, so a pre-read
+            # can throw while the post-read that follows it completes.
+            "fail_before": {},
+            # Appended to every stub failure message, to exercise the bound on
+            # a vendor diagnostic that reaches a stored record.
+            "failure_detail": "",
             "setter_noop": False,
             "throw_after_effect": False,
             "stores_instead": None,
@@ -798,3 +816,177 @@ def test_the_harness_rows_reach_a_verdict_through_the_real_applicator():
         DirtyState.DIRTY_RECOVERABLE,
         DirtyState.DIRTY_UNRECOVERABLE,
     }
+
+
+# -- 7. the setter's own error survives the row's canonical reason -------
+
+
+def _round_tripped(mutation):
+    """Apply one harvested mutation through the real applicator and JSON.
+
+    The mutation comes from the ACTUAL generated script, the decision from the
+    real domain table, and the payload from the real serializer, so what the
+    assertion reads is what a stored record would carry.
+    """
+    from test_service_application_uncertainty import _apply
+
+    class _ReplayRuntime(FakeServiceRuntime):
+        """Replay the harness's observed facts for every planned action."""
+
+        def apply_actions(self, actions):
+            """Report the harvested facts under each action's own id."""
+            self.apply_calls.append([item.id for item in actions])
+            return [
+                mutation.model_copy(
+                    update={"action_id": item.id, "operation": item.operation},
+                )
+                for item in actions
+            ]
+
+    result, _ = _apply(_ReplayRuntime())
+    restored = ServiceApplicationResult.model_validate_json(result.model_dump_json())
+    return result, restored
+
+
+def test_a_failed_pre_read_and_a_throwing_setter_keep_both_diagnostics():
+    """The pre-read threw, the setter threw, and the post-read completed.
+
+    `cause` has to be the table's `pre_read_failed`, because that is what
+    makes the transition unobserved, and the setter's own error is a separate
+    fact about a separate call. The adapter used to keep neither: it set
+    `cause` to the empty string and the detail was gone for good (R5).
+    """
+    _needs_node()
+    # The getter throws on the pre-read and succeeds from the post-read on.
+    stub = _StubPacketTracer(fail_before={"isEnabled": 1}, failing=["setEnable"])
+
+    mutation = _run(stub, [_enable_dns()])[0]
+    decision, _ = _decided(mutation)
+
+    # Oracle: the stub saw the setter call and never changed its state.
+    assert "setEnable:true" in stub.log
+    assert stub.state["process"]["enabled"] is False
+    assert mutation.transition is TransitionFact.UNOBSERVED
+    assert mutation.postcondition is PostconditionFact.UNSATISFIED
+    assert mutation.cause == ""
+    assert "setEnable" in mutation.call_error
+    assert decision.row == "10"
+    assert decision.cause == "pre_read_failed"
+
+
+def test_a_failed_pre_read_with_a_setter_that_threw_after_its_effect():
+    """The post-read shows the intended state and the setter still threw."""
+    _needs_node()
+    stub = _StubPacketTracer(
+        fail_before={"isEnabled": 1},
+        throw_after_effect=True,
+    )
+
+    mutation = _run(stub, [_enable_dns()])[0]
+    decision, _ = _decided(mutation)
+
+    # Oracle: the flag moved, and the pre-read that would have framed it threw.
+    assert stub.state["process"]["enabled"] is True
+    assert mutation.postcondition is PostconditionFact.SATISFIED
+    assert mutation.transition is TransitionFact.UNOBSERVED
+    assert mutation.cause == ""
+    assert "after effect" in mutation.call_error
+    assert decision.row == "9"
+    assert decision.cause == "pre_read_failed"
+
+
+def test_a_throwing_dns_add_keeps_the_footprint_label_and_the_error():
+    """The partial footprint is the row's reason; the add's error is its own."""
+    _needs_node()
+    stub = _StubPacketTracer(failing=["addARecordToNameServerDb"])
+
+    mutation = _run(stub, [_add_record()])[0]
+    decision, _ = _decided(mutation)
+
+    # Oracle: the add was attempted and the table is untouched.
+    assert any(item.startswith("addARecordToNameServerDb:") for item in stub.log)
+    assert stub.state["process"]["records"] == {}
+    assert mutation.footprint is FootprintFact.PARTIAL
+    assert mutation.cause == "footprint_partial:dns_a_record_table"
+    assert "addARecordToNameServerDb" in mutation.call_error
+    assert decision.cause == "footprint_partial:dns_a_record_table"
+
+
+def test_a_failed_post_read_with_a_throwing_setter_keeps_the_detail():
+    """Row 8 composes the detail into its cause and also retains it apart."""
+    _needs_node()
+    stub = _StubPacketTracer(fail_after={"isEnabled": 1}, failing=["setEnable"])
+
+    mutation = _run(stub, [_enable_dns()])[0]
+    decision, _ = _decided(mutation)
+
+    assert mutation.postcondition is PostconditionFact.UNOBSERVED
+    assert "setEnable" in mutation.call_error
+    assert decision.cause.startswith("post_read_failed")
+    assert "setEnable" in decision.cause
+
+
+def test_the_setter_error_is_still_readable_after_a_real_json_round_trip():
+    """The detail reaches a stored record through the retained snapshot."""
+    _needs_node()
+    stub = _StubPacketTracer(fail_before={"isEnabled": 1}, failing=["setEnable"])
+    mutation = _run(stub, [_enable_dns()])[0]
+
+    result, restored = _round_tripped(mutation)
+
+    rows = [
+        item for item in restored.action_results if item.received_mutation is not None
+    ]
+    assert rows
+    for row in rows:
+        # The canonical classification is intact...
+        assert row.cause == "pre_read_failed"
+        # ...and the setter's own diagnostic is still reachable.
+        assert "setEnable" in row.received_mutation.call_error
+        assert row.received_mutation.cause == ""
+    assert result.action_results
+
+
+def test_the_stored_setter_error_is_bounded_and_carries_no_payload():
+    """A vendor string reaching a stored record stays a bounded diagnostic."""
+    _needs_node()
+    stub = _StubPacketTracer(
+        fail_before={"isEnabled": 1},
+        failing=["setEnable"],
+        failure_detail="P" * 4000,
+    )
+    mutation = _run(stub, [_enable_dns()])[0]
+
+    _, restored = _round_tripped(mutation)
+
+    assert len(mutation.call_error) <= 200
+    for row in restored.action_results:
+        if row.received_mutation is not None:
+            assert len(row.received_mutation.call_error) <= 200
+
+
+def test_no_stored_record_drops_the_setter_error_it_was_given():
+    """Stated without naming the field, so absence is the only way to fail.
+
+    On the reviewed candidate the pre-read branch set `cause` to the empty
+    string and there was nowhere else for the detail to go, so the setter's
+    error was absent from the whole stored record. The same holds for an
+    attempted DNS add, whose canonical reason is its partial footprint.
+    """
+    _needs_node()
+    for stub, action, marker in (
+        (
+            _StubPacketTracer(fail_before={"isEnabled": 1}, failing=["setEnable"]),
+            _enable_dns(),
+            "setEnable",
+        ),
+        (
+            _StubPacketTracer(failing=["addARecordToNameServerDb"]),
+            _add_record(),
+            "addARecordToNameServerDb",
+        ),
+    ):
+        mutation = _run(stub, [action])[0]
+        _, restored = _round_tripped(mutation)
+
+        assert marker in restored.model_dump_json()

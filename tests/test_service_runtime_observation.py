@@ -706,7 +706,7 @@ def test_a_direct_read_that_never_arrived_is_unknown_not_failed():
 def test_an_incomplete_dns_window_is_inconclusive_not_a_contradiction():
     """Output with no terminal line decides neither direction."""
     responses = [
-        json.dumps({"started": True, "before": "C:\\>"}),
+        json.dumps({"started": True, "blocked": False, "before": "C:\\>"}),
         json.dumps({"found": True, "output": "C:\\>ping web.e6.example.local\n"}),
     ]
     runtime = PacketTracerEnterpriseServiceRuntime(
@@ -766,8 +766,12 @@ def test_a_marker_present_before_the_request_is_inconclusive():
     def send_and_wait(js, timeout):
         calls.append(js)
         if "createClient()" in js:
-            return json.dumps({"started": True, "content_before": marker})
-        return json.dumps({"released": True})
+            return json.dumps(
+                {"started": True, "content_before": marker, "owned": True}
+            )
+        return json.dumps(
+            {"found": True, "deleted": True, "present": False, "error": ""}
+        )
 
     runtime = PacketTracerEnterpriseServiceRuntime(
         lambda: [],
@@ -795,9 +799,9 @@ def test_a_marker_present_before_the_request_is_inconclusive():
 def test_no_content_change_by_the_deadline_is_inconclusive():
     """Nothing was retrieved, so nothing about the server was observed."""
     responses = [
-        json.dumps({"started": True, "content_before": ""}),
+        json.dumps({"started": True, "content_before": "", "owned": True}),
         json.dumps({"found": True, "content": ""}),
-        json.dumps({"released": True}),
+        json.dumps({"found": True, "deleted": True, "present": False, "error": ""}),
     ]
     runtime = PacketTracerEnterpriseServiceRuntime(
         lambda: [],
@@ -827,8 +831,10 @@ def test_a_client_that_did_not_start_is_inconclusive_and_is_released():
     def send_and_wait(js, timeout):
         calls.append(js)
         if "createClient()" in js:
-            return json.dumps({"started": False, "content_before": ""})
-        return json.dumps({"released": True})
+            return json.dumps({"started": False, "content_before": "", "owned": True})
+        return json.dumps(
+            {"found": True, "deleted": True, "present": False, "error": ""}
+        )
 
     runtime = PacketTracerEnterpriseServiceRuntime(
         lambda: [],
@@ -859,9 +865,16 @@ def test_an_https_mode_the_client_denies_is_a_contradiction():
         calls.append(js)
         if "createClient()" in js:
             return json.dumps(
-                {"started": True, "content_before": "", "https_mode": False}
+                {
+                    "started": True,
+                    "content_before": "",
+                    "https_mode": False,
+                    "owned": True,
+                }
             )
-        return json.dumps({"released": True})
+        return json.dumps(
+            {"found": True, "deleted": True, "present": False, "error": ""}
+        )
 
     runtime = PacketTracerEnterpriseServiceRuntime(
         lambda: [],
@@ -892,8 +905,10 @@ def test_an_absent_https_mode_is_malformed_because_missing_is_not_false():
     def send_and_wait(js, timeout):
         calls.append(js)
         if "createClient()" in js:
-            return json.dumps({"started": True, "content_before": ""})
-        return json.dumps({"released": True})
+            return json.dumps({"started": True, "content_before": "", "owned": True})
+        return json.dumps(
+            {"found": True, "deleted": True, "present": False, "error": ""}
+        )
 
     runtime = PacketTracerEnterpriseServiceRuntime(
         lambda: [],
@@ -923,7 +938,7 @@ def test_a_release_that_did_not_come_back_is_recorded_as_failed():
     def send_and_wait(js, timeout):
         state["calls"] += 1
         if "createClient()" in js:
-            return json.dumps({"started": True, "content_before": ""})
+            return json.dumps({"started": True, "content_before": "", "owned": True})
         if "getLastPageContent" in js:
             return json.dumps({"found": True, "content": "PAGE"})
         return None
@@ -1059,3 +1074,550 @@ def test_a_bridge_observation_kind_is_never_silently_a_payload():
     assert len({member.value for member in BridgeObservationKind}) == len(
         BridgeObservationKind
     )
+
+
+# -- 7. payload shape is validated before anything is decided (R3a) -------
+
+
+def _web(responses, **kwargs):
+    """Build a runtime whose answers are given in dispatch order."""
+    queue = list(responses)
+    calls: list[str] = []
+
+    def send_and_wait(js, timeout):
+        calls.append(js)
+        return queue.pop(0) if queue else None
+
+    runtime = PacketTracerEnterpriseServiceRuntime(
+        lambda: [],
+        send_and_wait,
+        http_timeout_seconds=0.0,
+        convergence_interval_seconds=0.0,
+        **kwargs,
+    )
+    return runtime, calls
+
+
+_RELEASED = json.dumps({"found": True, "deleted": True, "present": False, "error": ""})
+_STARTED = json.dumps({"started": True, "content_before": "", "owned": True})
+
+
+def _http(marker="AUDIT_MARKER", identifier="verify-http"):
+    return _expectation(
+        ServiceVerificationKind.HTTP_FETCH,
+        ServiceEvidenceKind.BEHAVIORAL,
+        {"address": "198.18.160.10", "marker": marker},
+        identifier=identifier,
+    )
+
+
+def test_an_inspection_that_says_the_client_is_gone_is_not_a_page():
+    """The audited counterexample: `found:false` with matching-looking content.
+
+    `str({"unexpected": "AUDIT_MARKER"})` contains the marker, so coercing the
+    content and ignoring `found` made a payload that reports NO CLIENT into
+    fresh matching content and a VERIFIED row (R3a).
+    """
+    runtime, _ = _web(
+        [
+            _STARTED,
+            json.dumps({"found": False, "content": {"unexpected": "AUDIT_MARKER"}}),
+            _RELEASED,
+        ]
+    )
+
+    row = runtime.verify(_http())
+
+    assert row.status is not ActionExecutionStatus.VERIFIED
+    assert row.status is ActionExecutionStatus.UNOBSERVABLE
+    assert row.observation is ObservationFact.SUBJECT_NOT_FOUND
+    assert row.cause == "owned_client_absent"
+    assert row.fresh_evidence is False
+    assert row.observed["released"] == "released"
+
+
+@pytest.mark.parametrize(
+    ("payload", "cause"),
+    [
+        ({"content": "AUDIT_MARKER"}, "inspect_shape:missing:found"),
+        ({"found": 1, "content": "AUDIT_MARKER"}, "inspect_shape:not_a_boolean:found"),
+        (
+            {"found": "true", "content": "AUDIT_MARKER"},
+            "inspect_shape:not_a_boolean:found",
+        ),
+        (
+            {"found": True, "content": ["AUDIT_MARKER"]},
+            "inspect_shape:not_a_string:content",
+        ),
+        (
+            {"found": True, "content": {"k": "AUDIT_MARKER"}},
+            "inspect_shape:not_a_string:content",
+        ),
+        ({"found": True}, "inspect_shape:missing:content"),
+    ],
+)
+def test_a_malformed_page_read_is_never_fresh_evidence(payload, cause):
+    """A field the payload never carried establishes nothing about the page."""
+    runtime, _ = _web([_STARTED, json.dumps(payload), _RELEASED])
+
+    row = runtime.verify(_http())
+
+    assert row.observation is ObservationFact.MALFORMED
+    assert row.status is ActionExecutionStatus.UNOBSERVABLE
+    assert row.fresh_evidence is False
+    assert row.cause == cause
+    # R1 holds on every malformed path.
+    assert row.observed["released"] == "released"
+
+
+@pytest.mark.parametrize(
+    ("payload", "cause"),
+    [
+        (
+            {"started": True, "content_before": ""},
+            "start_shape:missing:owned",
+        ),
+        (
+            {"started": True, "content_before": "", "owned": 1},
+            "start_shape:not_a_boolean:owned",
+        ),
+        (
+            {"started": 1, "content_before": "", "owned": True},
+            "start_shape:not_a_boolean:started",
+        ),
+        (
+            {"started": "yes", "content_before": "", "owned": True},
+            "start_shape:not_a_boolean:started",
+        ),
+        (
+            {"started": True, "content_before": {"page": ""}, "owned": True},
+            "start_shape:not_a_string:content_before",
+        ),
+        (
+            {"started": True, "owned": True},
+            "start_shape:missing:content_before",
+        ),
+    ],
+)
+def test_a_malformed_start_payload_is_never_a_started_request(payload, cause):
+    """`started` must be an actual boolean, and the page text actual text."""
+    runtime, _ = _web([json.dumps(payload), _RELEASED])
+
+    row = runtime.verify(_http())
+
+    assert row.observation is ObservationFact.MALFORMED
+    assert row.status is ActionExecutionStatus.UNOBSERVABLE
+    assert row.fresh_evidence is False
+    assert row.cause == cause
+
+
+def test_a_valid_negative_page_read_is_still_a_fresh_contradiction():
+    """The negative control of the shape validation: real text, wrong page."""
+    runtime, _ = _web(
+        [
+            _STARTED,
+            json.dumps({"found": True, "content": "WRONG PAGE"}),
+            _RELEASED,
+        ]
+    )
+
+    row = runtime.verify(_http())
+
+    assert row.observation is ObservationFact.CONTRADICTED
+    assert row.status is ActionExecutionStatus.FAILED
+    assert row.fresh_evidence is True
+
+
+def test_a_valid_positive_page_read_is_still_verified():
+    """The positive control: the validation admits the real shape."""
+    runtime, _ = _web(
+        [
+            _STARTED,
+            json.dumps({"found": True, "content": "page with AUDIT_MARKER"}),
+            _RELEASED,
+        ]
+    )
+
+    row = runtime.verify(_http())
+
+    assert row.observation is ObservationFact.OBSERVED
+    assert row.status is ActionExecutionStatus.VERIFIED
+    assert row.fresh_evidence is True
+    assert row.observed["released"] == "released"
+
+
+@pytest.mark.parametrize(
+    ("payload", "cause"),
+    [
+        ({"started": True, "before": "C:\\>"}, "start_shape:missing:blocked"),
+        (
+            {"started": True, "blocked": "pager_active", "before": "C:\\>"},
+            "start_shape:not_a_boolean:blocked",
+        ),
+        (
+            {"started": 1, "blocked": False, "before": "C:\\>"},
+            "start_shape:not_a_boolean:started",
+        ),
+        (
+            {"started": True, "blocked": False, "before": ["C:\\>"]},
+            "start_shape:not_a_string:before",
+        ),
+        ({"blocked": False, "before": "C:\\>"}, "start_shape:missing:started"),
+    ],
+)
+def test_a_malformed_dns_start_payload_is_malformed_not_a_default(payload, cause):
+    """A missing DNS flag is not `false`, and a truthy string is not `true`."""
+    runtime, _ = _web([json.dumps(payload)], dns_timeout_seconds=0.0)
+
+    row = runtime.verify(
+        _expectation(
+            ServiceVerificationKind.DNS_RESOLUTION,
+            ServiceEvidenceKind.BEHAVIORAL,
+            {"hostname": "web.e6.example.local", "address": "198.18.160.10"},
+        )
+    )
+
+    assert row.observation is ObservationFact.MALFORMED
+    assert row.status is ActionExecutionStatus.UNOBSERVABLE
+    assert row.fresh_evidence is False
+    assert row.cause == cause
+
+
+@pytest.mark.parametrize(
+    ("payload", "fact", "cause"),
+    [
+        (
+            {"found": False, "output": ""},
+            ObservationFact.SUBJECT_NOT_FOUND,
+            "command_prompt_absent",
+        ),
+        (
+            {"output": "Packets: Sent = 4"},
+            ObservationFact.MALFORMED,
+            "inspect_shape:missing:found",
+        ),
+        (
+            {"found": True, "output": ["Packets: Sent = 4"]},
+            ObservationFact.MALFORMED,
+            "inspect_shape:not_a_string:output",
+        ),
+    ],
+)
+def test_a_malformed_dns_window_read_observes_nothing(payload, fact, cause):
+    """The command prompt is a subject, and a missing subject is not a window."""
+    runtime, _ = _web(
+        [
+            json.dumps({"started": True, "blocked": False, "before": ""}),
+            json.dumps(payload),
+        ],
+        dns_timeout_seconds=0.0,
+    )
+
+    row = runtime.verify(
+        _expectation(
+            ServiceVerificationKind.DNS_RESOLUTION,
+            ServiceEvidenceKind.BEHAVIORAL,
+            {"hostname": "web.e6.example.local", "address": "198.18.160.10"},
+        )
+    )
+
+    assert row.observation is fact
+    assert row.status is ActionExecutionStatus.UNOBSERVABLE
+    assert row.fresh_evidence is False
+    assert row.cause == cause
+
+
+# -- 8. DNS resolution is an exact parsed address (R3b) -------------------
+
+
+def _dns(output, *, address="192.0.2.10", negative=False, **kwargs):
+    """Run one DNS read over a window the test supplies verbatim."""
+    kind = (
+        ServiceVerificationKind.DNS_NEGATIVE_CONTROL
+        if negative
+        else ServiceVerificationKind.DNS_RESOLUTION
+    )
+    expected = {"hostname": "web.e6.example.local"}
+    if not negative:
+        expected["address"] = address
+    runtime, calls = _web(
+        [
+            json.dumps({"started": True, "blocked": False, "before": ""}),
+            *[json.dumps({"found": True, "output": output})] * 6,
+        ],
+        dns_timeout_seconds=kwargs.pop("dns_timeout_seconds", 0.0),
+        **kwargs,
+    )
+    row = runtime.verify(_expectation(kind, ServiceEvidenceKind.BEHAVIORAL, expected))
+    return row, calls
+
+
+_WINDOW = (
+    "ping web.e6.example.local\n"
+    "Pinging {address} with 32 bytes of data:\n"
+    "Reply from {address}: bytes=32 time=1ms TTL=128\n"
+    "Ping statistics for {address}:\n"
+    "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n"
+)
+
+
+def test_a_longer_address_with_the_expected_prefix_is_a_contradiction():
+    """`192.0.2.10` is a substring of `192.0.2.100`, and not the same address.
+
+    `expected in window` accepted it and reported VERIFIED. The resolved
+    address is now parsed and compared by value (R3b).
+    """
+    row, _ = _dns(_WINDOW.format(address="192.0.2.100"))
+
+    assert row.status is ActionExecutionStatus.FAILED
+    assert row.observation is ObservationFact.CONTRADICTED
+    assert row.fresh_evidence is True
+    assert row.observed["address"] == "192.0.2.100"
+
+
+def test_the_command_echo_is_never_resolution_evidence():
+    """The expected address appears only in the line the user typed."""
+    row, _ = _dns(
+        "ping 192.0.2.10\n"
+        "Pinging 192.0.2.99 with 32 bytes of data:\n"
+        "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n"
+    )
+
+    assert row.observation is ObservationFact.CONTRADICTED
+    assert row.observed["address"] == "192.0.2.99"
+
+
+def test_an_unrelated_line_is_never_resolution_evidence():
+    """A reply line that mentions the expected address decides nothing."""
+    row, _ = _dns(
+        "ping web.e6.example.local\n"
+        "Pinging 192.0.2.99 with 32 bytes of data:\n"
+        "Reply from 192.0.2.10: bytes=32 time=1ms TTL=128\n"
+        "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n"
+    )
+
+    assert row.observation is ObservationFact.CONTRADICTED
+    assert row.observed["address"] == "192.0.2.99"
+
+
+def test_the_exact_resolved_address_is_observed():
+    """The positive control: the parsed address equals the expectation."""
+    row, _ = _dns(_WINDOW.format(address="192.0.2.10"))
+
+    assert row.status is ActionExecutionStatus.VERIFIED
+    assert row.observation is ObservationFact.OBSERVED
+    assert row.fresh_evidence is True
+    assert row.observed["address"] == "192.0.2.10"
+
+
+def test_the_bracketed_hostname_form_reports_the_same_address():
+    """`Pinging <host> [<address>] with ...` is the other supported shape."""
+    row, _ = _dns(
+        "ping web.e6.example.local\n"
+        "Pinging web.e6.example.local [192.0.2.10] with 32 bytes of data:\n"
+        "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n"
+    )
+
+    assert row.observation is ObservationFact.OBSERVED
+    assert row.observed["address"] == "192.0.2.10"
+
+
+@pytest.mark.parametrize(
+    ("output", "cause"),
+    [
+        (
+            "ping web.e6.example.local\n"
+            "Pinging 192.0.2.10 with 32 bytes of data:\n"
+            "Ping statistics for 192.0.2.99:\n"
+            "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n",
+            "address_ambiguous",
+        ),
+        (
+            "ping web.e6.example.local\n"
+            "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n",
+            "address_not_reported",
+        ),
+        (
+            "ping web.e6.example.local\n"
+            "Pinging not-an-address with 32 bytes of data:\n"
+            "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n",
+            "address_not_parsable",
+        ),
+    ],
+)
+def test_an_unreadable_address_is_inconclusive_in_both_directions(output, cause):
+    """An ambiguous window supports neither the expectation nor its negation."""
+    row, _ = _dns(output)
+
+    assert row.status is ActionExecutionStatus.UNKNOWN
+    assert row.observation is ObservationFact.INCONCLUSIVE
+    assert row.fresh_evidence is False
+    assert row.cause == cause
+
+
+def test_a_host_not_found_window_contradicts_a_positive_expectation():
+    """A fresh not-found is a real negative measurement, not an absence."""
+    row, _ = _dns(
+        "ping web.e6.example.local\n"
+        "Ping request could not find host web.e6.example.local.\n"
+    )
+
+    assert row.status is ActionExecutionStatus.FAILED
+    assert row.observation is ObservationFact.CONTRADICTED
+    assert row.cause == "host_not_found"
+
+
+def test_the_negative_control_keeps_its_two_directions():
+    """Not found is the positive control; a resolved window contradicts it."""
+    found_nothing, _ = _dns(
+        "ping missing.example.local\n"
+        "Ping request could not find host missing.example.local.\n",
+        negative=True,
+    )
+    resolved, _ = _dns(_WINDOW.format(address="192.0.2.10"), negative=True)
+
+    assert found_nothing.observation is ObservationFact.OBSERVED
+    assert found_nothing.observed["resolved"] is False
+    assert resolved.observation is ObservationFact.CONTRADICTED
+    assert resolved.fresh_evidence is True
+
+
+def test_a_complete_wrong_address_window_stops_the_poll_at_once():
+    """Poll termination is decided by the output, not by the expectation.
+
+    The predicate used to require the expected address as a substring, so a
+    complete window resolving a different address polled to the deadline and
+    was then read as an incomplete window instead of a contradiction.
+    """
+    ticks = iter([0.0, 0.0, 10.0, 20.0, 30.0, 40.0, 50.0])
+    row, calls = _dns(
+        _WINDOW.format(address="192.0.2.100"),
+        dns_timeout_seconds=30.0,
+        clock=lambda: next(ticks),
+    )
+
+    # One start plus exactly one inspection: the first complete window ended it.
+    assert len(calls) == 2
+    assert row.observation is ObservationFact.CONTRADICTED
+
+
+def test_an_incomplete_window_still_polls_and_stays_inconclusive():
+    """The negative control for termination: no terminal line, no decision."""
+    row, _ = _dns("ping web.e6.example.local\n")
+
+    assert row.observation is ObservationFact.INCONCLUSIVE
+    assert row.cause == "incomplete_window"
+
+
+def test_an_expectation_without_a_readable_address_is_never_attempted():
+    """An expectation that cannot be compared is an admission error.
+
+    An empty expected address was contained in every window, so the
+    substring test reported VERIFIED for an expectation that stated nothing.
+    """
+    runtime, calls = _web([], dns_timeout_seconds=0.0)
+
+    row = runtime.verify(
+        _expectation(
+            ServiceVerificationKind.DNS_RESOLUTION,
+            ServiceEvidenceKind.BEHAVIORAL,
+            {"hostname": "web.e6.example.local"},
+        )
+    )
+
+    assert row.status is ActionExecutionStatus.FAILED
+    assert row.observation is ObservationFact.NOT_ATTEMPTED
+    assert row.cause == "invalid_expected_address"
+    assert calls == []
+
+
+# -- 9. the setter error survives the canonical reason (R5) ---------------
+
+
+def _mutation(**overrides):
+    """One admitted row through the real adapter, as one typed mutation."""
+    runtime = PacketTracerEnterpriseServiceRuntime(
+        lambda: [],
+        lambda js, timeout: json.dumps({"results": [_row(**overrides)]}),
+    )
+    return runtime.apply_actions([_enable()])[0]
+
+
+def test_a_failed_pre_read_keeps_the_setter_error_beside_its_canonical_reason():
+    """`cause` is the table's reason; the vendor detail has its own field.
+
+    With the detail in `cause` a producer diagnostic would stand where the
+    classification belongs, and with the detail dropped -- which is what
+    happened -- the snapshot had nothing left to preserve (R5).
+    """
+    mutation = _mutation(
+        pre_read=False,
+        call_error="TypeError: setEnable is not a function",
+        ok=True,
+        changed=None,
+    )
+
+    assert mutation.transition is TransitionFact.UNOBSERVED
+    assert mutation.cause == ""
+    assert mutation.call_error == "TypeError: setEnable is not a function"
+
+
+def test_a_partial_footprint_keeps_both_the_scope_and_the_setter_error():
+    """The footprint label and the setter error are different meanings."""
+    runtime = PacketTracerEnterpriseServiceRuntime(
+        lambda: [],
+        lambda js, timeout: json.dumps(
+            {
+                "results": [
+                    _row(
+                        identifier="record",
+                        attempted=True,
+                        call_error="stub failure: addARecordToNameServerDb",
+                        pre_read=True,
+                        post_read=True,
+                        ok=False,
+                        changed=False,
+                    )
+                ]
+            }
+        ),
+    )
+
+    mutation = runtime.apply_actions([_add_record()])[0]
+
+    assert mutation.footprint is FootprintFact.PARTIAL
+    assert mutation.cause == "footprint_partial:dns_a_record_table"
+    assert mutation.call_error == "stub failure: addARecordToNameServerDb"
+
+
+def test_a_failed_post_read_keeps_the_setter_error_in_both_places():
+    """Row 8 composes the detail into its cause AND retains it separately."""
+    mutation = _mutation(
+        post_read=False,
+        call_error="stub failure: setEnable",
+        ok=None,
+        changed=None,
+    )
+
+    assert mutation.cause == "stub failure: setEnable"
+    assert mutation.call_error == "stub failure: setEnable"
+
+
+def test_a_row_that_reported_no_setter_error_carries_none():
+    """The field states what the row said, and silence stays silence."""
+    mutation = _mutation()
+
+    assert mutation.call_error == ""
+
+
+def test_the_setter_error_reaching_a_mutation_is_bounded_and_single_line():
+    """A vendor string is a diagnostic, not a channel for a payload."""
+    mutation = _mutation(
+        pre_read=False,
+        call_error="x" * 5000 + "\nsecond line",
+        ok=True,
+        changed=None,
+    )
+
+    assert len(mutation.call_error) <= 200
+    assert "\n" not in mutation.call_error

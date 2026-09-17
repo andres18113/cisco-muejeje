@@ -17,6 +17,7 @@ import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import Enum, StrEnum
+from ipaddress import ip_address
 from time import monotonic, sleep
 
 from ...domain.enterprise.models.configuration_runtime import (
@@ -61,6 +62,35 @@ _HOSTNAME = re.compile(
 )
 
 _NOT_FOUND = re.compile(r"could not find host|unknown host", re.I)
+
+#: The two shapes in which a typed `ping` reports the address it resolved:
+#: `Pinging <address> with ...` and `Ping statistics for <address>:`, plus the
+#: bracketed hostname form `Pinging <host> [<address>] with ...`. These lines
+#: are the ONLY resolution evidence. `expected in window` accepted any IP-like
+#: occurrence anywhere -- the echoed command, a reply line, an unrelated line
+#: -- and, being a substring test, accepted `192.0.2.10` inside a window that
+#: resolved `192.0.2.100` (R3b).
+_PING_TARGET = re.compile(
+    r"^[ \t]*pinging[ \t]+(?:\S+[ \t]+\[(?P<bracketed>[^\]\s]+)\]|(?P<plain>[^\s\[]+))",
+    re.I | re.M,
+)
+_PING_STATISTICS = re.compile(
+    r"^[ \t]*ping statistics for[ \t]+(?P<address>[^\s:]+)[ \t]*:",
+    re.I | re.M,
+)
+
+#: What the bounded finalization established about the background client a web
+#: read may own. `released` is the only value that proves the owned client is
+#: gone, and `nothing_owned` the only other resolved one -- it needs a
+#: correlated start payload that reported no client was ever created. The rest
+#: are unresolved ownership and are named in the row's limitations, because an
+#: absent slot after an unobserved start is not evidence of a release (R1).
+_RELEASE_RELEASED = "released"
+_RELEASE_NOTHING_OWNED = "nothing_owned"
+_RELEASE_UNVERIFIED = "release_unverified"
+_RELEASE_FAILED = "release_failed"
+_RELEASE_OWNERSHIP_UNKNOWN = "ownership_unknown"
+_RESOLVED_RELEASE = frozenset({_RELEASE_RELEASED, _RELEASE_NOTHING_OWNED})
 
 #: The process each service type is reached through.
 _PROCESS = {
@@ -158,6 +188,150 @@ class BridgeObservation:
     payload: dict | None
     message: str
     outcome: BridgeDispatchOutcome
+
+
+class ClientOwnership(StrEnum):
+    """What one web read knows about the background client it may own.
+
+    NONE is before any dispatch, so nothing can exist to release. UNKNOWN is
+    the fail-closed value from the moment the start command is handed to the
+    channel: the script may have created and tracked a client whatever came
+    back, so the finalization must still look. OWNED and ABSENT are the two
+    answers a correlated start payload gives, and only they make a missing
+    slot mean something.
+    """
+
+    __str__ = Enum.__str__
+
+    NONE = "none"
+    UNKNOWN = "unknown"
+    OWNED = "owned"
+    ABSENT = "absent"
+
+
+@dataclass
+class ClientLease:
+    """The mutable ownership a web read carries to its own finalization.
+
+    It exists so that the reader's result path and its cleanup path are not
+    the same return statement: whatever the reader returns, raises or times
+    out, the lease still says what has to be released.
+    """
+
+    state: ClientOwnership = ClientOwnership.NONE
+
+
+@dataclass(frozen=True)
+class ReleaseOutcome:
+    """What one bounded finalization attempt established, and why."""
+
+    outcome: str
+    cause: str = ""
+
+    @property
+    def resolved(self) -> bool:
+        """Whether ownership is settled; `False` is a reportable residue."""
+        return self.outcome in _RESOLVED_RELEASE
+
+
+@dataclass(frozen=True)
+class TextReading:
+    """One reader payload validated before any part of it is used.
+
+    `admissible` is the whole point: until the declared fields are present
+    and exactly typed, `content` is not a reading of anything, and `fact`
+    names which non-observation the payload actually is.
+    """
+
+    admissible: bool
+    content: str = ""
+    fact: ObservationFact = ObservationFact.MALFORMED
+    cause: str = ""
+
+
+def _typed_payload(payload: dict, spec: dict[str, type]) -> str:
+    """Name the first declared field the payload does not actually carry.
+
+    `spec` declares `bool` or `str` and they are checked as exact types. A
+    permissive check is what let `{"found": false, "content": {...}}` become
+    a page: truthiness accepted a numeric or non-empty-string flag as a
+    boolean, and `str(...)` turned a JSON object into text that contained the
+    expected marker (R3a). An absent key is reported as absent rather than
+    defaulted, because a field the payload never carried establishes nothing
+    about its subject.
+
+    Returns the empty string when every declared field is present and typed.
+    """
+    for name, kind in spec.items():
+        if name not in payload:
+            return f"missing:{name}"
+        value = payload[name]
+        if kind is bool:
+            if not isinstance(value, bool):
+                return f"not_a_boolean:{name}"
+        elif not isinstance(value, str):
+            return f"not_a_string:{name}"
+    return ""
+
+
+def _text_reading(payload: dict, field_name: str, absent_cause: str) -> TextReading:
+    """Validate one `{found, <field_name>}` reader payload, in stage order.
+
+    `found` is READ, not assumed. A payload that reports its subject was not
+    there says nothing about the subject's text, so it is a missing subject
+    rather than an empty reading, and the text is only typed once the subject
+    is known to exist.
+    """
+    shape = _typed_payload(payload, {"found": bool})
+    if shape:
+        return TextReading(
+            False,
+            fact=ObservationFact.MALFORMED,
+            cause=f"inspect_shape:{shape}",
+        )
+    if not payload["found"]:
+        return TextReading(
+            False,
+            fact=ObservationFact.SUBJECT_NOT_FOUND,
+            cause=absent_cause,
+        )
+    shape = _typed_payload(payload, {field_name: str})
+    if shape:
+        return TextReading(
+            False,
+            fact=ObservationFact.MALFORMED,
+            cause=f"inspect_shape:{shape}",
+        )
+    return TextReading(True, content=payload[field_name])
+
+
+def _dns_resolution(window: str) -> tuple[str, str]:
+    """Return the address the window reported, or why it cannot be read.
+
+    Only the supported shapes are read, every candidate must parse as an
+    address, and all candidates must agree. A window that reports no address,
+    one that reports something unparsable, and one that reports two different
+    addresses each decide nothing; the caller reports that as inconclusive
+    instead of comparing substrings.
+    """
+    candidates = [
+        match.group("bracketed") or match.group("plain")
+        for match in _PING_TARGET.finditer(window)
+    ]
+    candidates.extend(
+        match.group("address") for match in _PING_STATISTICS.finditer(window)
+    )
+    if not candidates:
+        return "", "address_not_reported"
+    parsed: set[str] = set()
+    for candidate in candidates:
+        try:
+            parsed.add(str(ip_address(candidate)))
+        except ValueError:
+            return "", "address_not_parsable"
+    if len(parsed) != 1:
+        return "", "address_ambiguous"
+    return parsed.pop(), ""
 
 
 class PacketTracerEnterpriseServiceRuntime:
@@ -355,6 +529,10 @@ class PacketTracerEnterpriseServiceRuntime:
         acceptance IS proven for this batch and only the action's own outcome
         is unknown. The applicator, which holds no envelope, must not reach
         the same conclusion from a missing item.
+
+        The row's `call_error` reaches `RuntimeActionMutation.call_error` on
+        every admitted row, whatever `cause` the row needs for its canonical
+        reason. The two fields are not alternatives.
         """
         if row is None:
             return self._invalid_row_mutation(action, batch_id, "row_missing", note)
@@ -398,6 +576,7 @@ class PacketTracerEnterpriseServiceRuntime:
                 footprint=footprint,
                 attempted=attempted,
                 cause=call_error,
+                call_error=call_error,
                 message="The post-read did not complete." + note,
             )
 
@@ -405,6 +584,11 @@ class PacketTracerEnterpriseServiceRuntime:
             PostconditionFact.SATISFIED if row["ok"] else PostconditionFact.UNSATISFIED
         )
         if not row["pre_read"]:
+            # The canonical reason is the table's `pre_read_failed`, so this
+            # row states none of its own. The setter's own diagnostic is a
+            # different meaning and travels in `call_error`; assigning it here
+            # would have let a vendor message stand where the classification
+            # belongs, and leaving it out entirely dropped it (R5).
             transition = TransitionFact.UNOBSERVED
             cause = ""
         else:
@@ -427,6 +611,7 @@ class PacketTracerEnterpriseServiceRuntime:
             footprint=footprint,
             attempted=attempted,
             cause=cause,
+            call_error=call_error,
             message=self._row_message(row, attempted=attempted) + note,
         )
 
@@ -860,6 +1045,28 @@ class PacketTracerEnterpriseServiceRuntime:
                 claim_level=claim,
                 message="DNS verification hostname is invalid.",
             )
+        expected = ""
+        if not negative:
+            # The positive expectation is compared to a parsed address, so an
+            # expectation that is not an address cannot be compared at all.
+            # The substring test hid this: an empty expected address was
+            # contained in every window and passed (R3b).
+            try:
+                expected = str(
+                    ip_address(str(expectation.expected.get("address") or ""))
+                )
+            except ValueError:
+                return RuntimeServiceVerification(
+                    expectation_id=expectation.id,
+                    status=ActionExecutionStatus.FAILED,
+                    evidence_kind=expectation.evidence_kind,
+                    evidence_method="typed_client_operation",
+                    fresh_evidence=False,
+                    observation=ObservationFact.NOT_ATTEMPTED,
+                    cause="invalid_expected_address",
+                    claim_level=claim,
+                    message="DNS verification expected address is invalid.",
+                )
         client = json.dumps(expectation.client_device_name)
         command = "ping " + hostname
         command_json = json.dumps(command)
@@ -888,7 +1095,20 @@ class PacketTracerEnterpriseServiceRuntime:
                 message="The typed DNS ping did not deliver a correlated answer.",
             )
         payload = start.payload or {}
-        if payload.get("blocked"):
+        shape = _typed_payload(
+            payload,
+            {"started": bool, "blocked": bool, "before": str},
+        )
+        if shape:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method=method,
+                claim_level=claim,
+                cause=f"start_shape:{shape}",
+                message="The typed DNS ping start payload is not the typed shape.",
+            )
+        if payload["blocked"]:
             return self._observed(
                 expectation,
                 observation=ObservationFact.INCONCLUSIVE,
@@ -897,7 +1117,7 @@ class PacketTracerEnterpriseServiceRuntime:
                 cause="pager_active",
                 message="Typed DNS ping was refused: the terminal pager was active.",
             )
-        if not payload.get("started"):
+        if not payload["started"]:
             return self._observed(
                 expectation,
                 observation=ObservationFact.INCONCLUSIVE,
@@ -906,7 +1126,7 @@ class PacketTracerEnterpriseServiceRuntime:
                 cause="command_not_started",
                 message="Typed DNS ping did not start.",
             )
-        before = str(payload.get("before") or "")
+        before = payload["before"]
 
         def inspect():
             return self._observe(
@@ -916,23 +1136,20 @@ class PacketTracerEnterpriseServiceRuntime:
                 3.0,
             )
 
-        expected = str(expectation.expected.get("address") or "")
-        observed = self._poll(
-            inspect,
-            lambda item: (
-                item.kind is BridgeObservationKind.PAYLOAD
-                and self._dns_window_complete(
-                    self._fresh_command_window(
-                        before,
-                        str((item.payload or {}).get("output") or ""),
-                        command,
-                    ),
-                    expected,
-                    negative,
-                )
-            ),
-            self._dns_timeout,
-        )
+        def complete(item: BridgeObservation) -> bool:
+            """Whether this reading already carries a terminal window."""
+            if item.kind is not BridgeObservationKind.PAYLOAD:
+                return False
+            reading = _text_reading(
+                item.payload or {}, "output", "command_prompt_absent"
+            )
+            if not reading.admissible:
+                return False
+            return self._dns_window_complete(
+                self._fresh_command_window(before, reading.content, command)
+            )
+
+        observed = self._poll(inspect, complete, self._dns_timeout)
         if observed.kind is not BridgeObservationKind.PAYLOAD:
             return self._observed(
                 expectation,
@@ -942,14 +1159,20 @@ class PacketTracerEnterpriseServiceRuntime:
                 cause=observed.outcome.detail,
                 message="The DNS command window could not be read.",
             )
-        window = self._fresh_command_window(
-            before,
-            str((observed.payload or {}).get("output") or ""),
-            command,
+        reading = _text_reading(
+            observed.payload or {}, "output", "command_prompt_absent"
         )
-        not_found = bool(_NOT_FOUND.search(window))
-        resolved = "packets: sent" in window.casefold()
-        if not window or not (not_found or resolved):
+        if not reading.admissible:
+            return self._observed(
+                expectation,
+                observation=reading.fact,
+                method=method,
+                claim_level=claim,
+                cause=reading.cause,
+                message="The DNS command window read did not observe its subject.",
+            )
+        window = self._fresh_command_window(before, reading.content, command)
+        if not self._dns_window_complete(window):
             # Nothing terminal arrived in this command's own window. An
             # incomplete window decides neither direction.
             return self._observed(
@@ -960,7 +1183,46 @@ class PacketTracerEnterpriseServiceRuntime:
                 cause="incomplete_window",
                 message="The DNS command window was still incomplete at the deadline.",
             )
-        matched = not_found if negative else (not not_found and expected in window)
+        not_found = bool(_NOT_FOUND.search(window))
+        if negative:
+            return self._observed(
+                expectation,
+                observation=(
+                    ObservationFact.OBSERVED
+                    if not_found
+                    else ObservationFact.CONTRADICTED
+                ),
+                method=method,
+                claim_level=claim,
+                observed={"hostname": hostname, "resolved": False} if not_found else {},
+                message=(
+                    "DNS negative control did not resolve."
+                    if not_found
+                    else "Fresh DNS command output contradicted the expectation."
+                ),
+            )
+        if not_found:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.CONTRADICTED,
+                method=method,
+                claim_level=claim,
+                cause="host_not_found",
+                message="Fresh DNS command output contradicted the expectation.",
+            )
+        resolved, reason = _dns_resolution(window)
+        if not resolved:
+            # The window is terminal but does not report a single parsed
+            # address, so it supports no comparison in either direction.
+            return self._observed(
+                expectation,
+                observation=ObservationFact.INCONCLUSIVE,
+                method=method,
+                claim_level=claim,
+                cause=reason,
+                message="The DNS command window reported no readable address.",
+            )
+        matched = resolved == expected
         return self._observed(
             expectation,
             observation=(
@@ -968,17 +1230,9 @@ class PacketTracerEnterpriseServiceRuntime:
             ),
             method=method,
             claim_level=claim,
-            observed=(
-                {"hostname": hostname, "resolved": False}
-                if matched and negative
-                else {"hostname": hostname, "address": expected}
-                if matched
-                else {}
-            ),
+            observed={"hostname": hostname, "address": resolved},
             message=(
-                "DNS negative control did not resolve."
-                if matched and negative
-                else "DNS resolved expected address."
+                "DNS resolved expected address."
                 if matched
                 else "Fresh DNS command output contradicted the expectation."
             ),
@@ -993,25 +1247,37 @@ class PacketTracerEnterpriseServiceRuntime:
         return after[index:] if index >= 0 and after[index:] != before[index:] else ""
 
     @staticmethod
-    def _dns_window_complete(window: str, expected: str, negative: bool) -> bool:
-        """Whether the window already carries a terminal line to read."""
-        if _NOT_FOUND.search(window):
-            return True
-        if negative:
-            return "packets: sent" in window.casefold()
-        return expected in window and "packets: sent" in window.casefold()
+    def _dns_window_complete(window: str) -> bool:
+        """Whether the window already carries a terminal line to read.
+
+        Completeness is a property of the OUTPUT, not of the expectation. The
+        positive case used to require the expected address as a substring
+        before it would stop polling, so a complete window that resolved a
+        DIFFERENT address never satisfied the predicate and was then read at
+        the deadline as an incomplete window instead of as the fresh
+        contradiction it is (R3b).
+        """
+        if not window:
+            return False
+        return bool(_NOT_FOUND.search(window) or "packets: sent" in window.casefold())
 
     def _verify_http(self, expectation):
-        """Fetch with an owned client and read only content it retrieved."""
-        marker = str(expectation.expected.get("marker") or "")
-        target = str(
-            expectation.expected.get("hostname")
-            or expectation.expected.get("address")
-            or ""
-        )
+        """Fetch with an owned client and finalize that client on every exit.
+
+        The reader and the finalization are deliberately separate paths. The
+        fetch decides one primary fact and records in the lease what it may
+        own; this method then releases that ownership exactly once, whatever
+        the fetch returned or raised, and attaches the cleanup outcome
+        without touching the primary fact. Before that split, five of the
+        reader's exits released nothing at all -- a start that delivered no
+        correlated answer returned immediately, and an exception anywhere in
+        the polling escaped to `verify` -- so a client that had already been
+        created stayed alive and untracked (R1).
+        """
         scheme = str(expectation.expected.get("scheme") or "http").casefold()
         claim = "independent_client_observation"
         if scheme not in {"http", "https"}:
+            # An admission error: nothing is dispatched, so nothing is owned.
             return RuntimeServiceVerification(
                 expectation_id=expectation.id,
                 status=ActionExecutionStatus.FAILED,
@@ -1023,6 +1289,39 @@ class PacketTracerEnterpriseServiceRuntime:
                 claim_level=claim,
                 message="Web verification scheme is not registered.",
             )
+        lease = ClientLease()
+        try:
+            row = self._web_fetch(expectation, scheme, lease)
+        except Exception as error:
+            # Caught HERE, not in `verify`: a reader that raised observed
+            # nothing, and the client it may already own still has to be
+            # released before this row leaves the reader.
+            row = self._observed(
+                expectation,
+                observation=ObservationFact.INCONCLUSIVE,
+                method=f"{scheme}_client_fresh_content",
+                claim_level=claim,
+                cause=f"exception:{type(error).__name__}",
+                message="The web reader raised before completing its observation.",
+            )
+        return self._with_release(row, self._finalize_client(expectation, lease))
+
+    def _web_fetch(self, expectation, scheme: str, lease: ClientLease):
+        """Observe one web fetch, recording ownership in `lease` as it moves.
+
+        Every stage validates the shape it is about to read before it reads
+        it. `started` must be an actual boolean, page text must be actual
+        text, and the inspection's own `found` flag decides whether there is
+        a page at all: coercing those made `{"found": false, "content":
+        {"unexpected": "AUDIT_MARKER"}}` a matching page (R3a).
+        """
+        marker = str(expectation.expected.get("marker") or "")
+        target = str(
+            expectation.expected.get("hostname")
+            or expectation.expected.get("address")
+            or ""
+        )
+        claim = "independent_client_observation"
         method = f"{scheme}_client_fresh_content"
         secure = scheme == "https"
         client = json.dumps(expectation.client_device_name)
@@ -1033,15 +1332,20 @@ class PacketTracerEnterpriseServiceRuntime:
                 + self._background_https_start(expectation.id, url)
                 + "var before=content_before;"
                 "reportResult(JSON.stringify({started:started,"
-                "content_before:before,https_mode:https_mode}));"
+                "content_before:before,https_mode:https_mode,owned:owned}));"
             )
         else:
             start_js = (
                 f"var d=ipc.network().getDevice({client});"
                 + self._background_http_start(expectation.id, url)
                 + "var before=content_before;"
-                "reportResult(JSON.stringify({started:started,content_before:before}));"
+                "reportResult(JSON.stringify({started:started,"
+                "content_before:before,owned:owned}));"
             )
+        # Set BEFORE the dispatch: from here on the script may have created
+        # and tracked a client whatever the channel reports back, so the
+        # finalization must look rather than assume.
+        lease.state = ClientOwnership.UNKNOWN
         start = self._observe(start_js, 5.0)
         if start.kind is not BridgeObservationKind.PAYLOAD:
             return self._observed(
@@ -1053,53 +1357,80 @@ class PacketTracerEnterpriseServiceRuntime:
                 message="The client request did not deliver a correlated answer.",
             )
         payload = start.payload or {}
-        before = str(payload.get("content_before") or "")
+        owned = payload.get("owned")
+        if isinstance(owned, bool):
+            # The one field that reports ownership decides the lease, even if
+            # the rest of the payload turns out to be inadmissible.
+            lease.state = ClientOwnership.OWNED if owned else ClientOwnership.ABSENT
+        else:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method=method,
+                claim_level=claim,
+                cause=f"start_shape:{_typed_payload(payload, {'owned': bool})}",
+                message="The start payload did not report client ownership.",
+            )
+        if not owned:
+            # No client exists, so nothing about the server was observed and
+            # there is no page to attribute anything to.
+            return self._observed(
+                expectation,
+                observation=ObservationFact.SUBJECT_NOT_FOUND,
+                method=method,
+                claim_level=claim,
+                cause="client_not_created",
+                message="The device did not provide a background HTTP client.",
+            )
+        shape = _typed_payload(payload, {"content_before": str, "started": bool})
+        if shape:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method=method,
+                claim_level=claim,
+                cause=f"start_shape:{shape}",
+                message="The start payload is not the typed shape.",
+            )
         if secure:
             mode = payload.get("https_mode")
             if not isinstance(mode, bool):
                 # Absent is neither false nor true: the payload did not report
                 # the mode, so nothing about the listener was observed.
-                release = self._release_background_http(expectation.id, client)
                 return self._observed(
                     expectation,
                     observation=ObservationFact.MALFORMED,
                     method=method,
                     claim_level=claim,
                     cause="https_mode_absent",
-                    observed={"released": release},
                     message="The start payload did not report the client HTTPS mode.",
                 )
             if not mode:
-                release = self._release_background_http(expectation.id, client)
                 return self._observed(
                     expectation,
                     observation=ObservationFact.CONTRADICTED,
                     method=method,
                     claim_level=claim,
                     cause="https_mode_not_confirmed",
-                    observed={"released": release},
                     message="The client did not confirm HTTPS mode after setHttps.",
                 )
-        if not payload.get("started"):
-            release = self._release_background_http(expectation.id, client)
+        before = payload["content_before"]
+        if not payload["started"]:
             return self._observed(
                 expectation,
                 observation=ObservationFact.INCONCLUSIVE,
                 method=method,
                 claim_level=claim,
                 cause="client_go_false",
-                observed={"released": release},
                 message="The client did not start the request.",
             )
         if marker and marker in before:
-            release = self._release_background_http(expectation.id, client)
             return self._observed(
                 expectation,
                 observation=ObservationFact.INCONCLUSIVE,
                 method=method,
                 claim_level=claim,
                 cause="marker_present_before_request",
-                observed={"released": release},
                 message=(
                     "The expected marker already existed before this request, so "
                     "no content can be attributed to it."
@@ -1109,31 +1440,43 @@ class PacketTracerEnterpriseServiceRuntime:
         def inspect():
             return self._observe(self._background_http_inspect(expectation.id), 3.0)
 
-        observed = self._poll(
-            inspect,
-            lambda item: (
-                item.kind is BridgeObservationKind.PAYLOAD
-                and bool(
-                    (content := str((item.payload or {}).get("content") or ""))
-                    and content != before
-                    and (not marker or marker in content)
-                )
-            ),
-            self._http_timeout,
-        )
+        def fresh(item: BridgeObservation) -> bool:
+            """Whether this reading is an admissible, fresh, matching page."""
+            if item.kind is not BridgeObservationKind.PAYLOAD:
+                return False
+            reading = _text_reading(
+                item.payload or {}, "content", "owned_client_absent"
+            )
+            return bool(
+                reading.admissible
+                and reading.content
+                and reading.content != before
+                and (not marker or marker in reading.content)
+            )
+
+        observed = self._poll(inspect, fresh, self._http_timeout)
         if observed.kind is not BridgeObservationKind.PAYLOAD:
-            release = self._release_background_http(expectation.id, client)
             return self._observed(
                 expectation,
                 observation=self._transport_fact(observed),
                 method=method,
                 claim_level=claim,
                 cause=observed.outcome.detail,
-                observed={"released": release},
                 message="The client page content could not be read.",
             )
-        content = str((observed.payload or {}).get("content") or "")
-        release = self._release_background_http(expectation.id, client)
+        reading = _text_reading(
+            observed.payload or {}, "content", "owned_client_absent"
+        )
+        if not reading.admissible:
+            return self._observed(
+                expectation,
+                observation=reading.fact,
+                method=method,
+                claim_level=claim,
+                cause=reading.cause,
+                message="The client page read did not observe its subject.",
+            )
+        content = reading.content
         if not content or content == before:
             return self._observed(
                 expectation,
@@ -1141,7 +1484,6 @@ class PacketTracerEnterpriseServiceRuntime:
                 method=method,
                 claim_level=claim,
                 cause="no_response_within_deadline",
-                observed={"released": release},
                 message="No content change was observed before the deadline.",
             )
         if marker and marker not in content:
@@ -1150,7 +1492,6 @@ class PacketTracerEnterpriseServiceRuntime:
                 observation=ObservationFact.CONTRADICTED,
                 method=method,
                 claim_level=claim,
-                observed={"released": release},
                 message=f"Fresh {scheme.upper()} content contradicted the expectation.",
             )
         row = self._observed(
@@ -1162,7 +1503,6 @@ class PacketTracerEnterpriseServiceRuntime:
                 "marker": marker,
                 "target": target,
                 "scheme": scheme,
-                "released": release,
             },
             message=f"Fresh {scheme.upper()} content matched the expectation.",
             limitations=["no_https_marker"] if secure and not marker else [],
@@ -1185,17 +1525,30 @@ class PacketTracerEnterpriseServiceRuntime:
 
     @staticmethod
     def _background_http_start(expectation_id: str, url_json: str) -> str:
-        """Create one owned client, record its page, and start the request."""
+        """Create one owned client, track it at once, and start the request.
+
+        The tracking assignment is the FIRST thing after `createClient()`,
+        before the initial page read and before `go()`. It used to happen
+        only after `go()` returned true, so any throw in between -- and a
+        `go()` that returned false -- left a live client that no slot named.
+        A later release then found no slot and reported success while the
+        client was still there, which is the ownership hole R1 names. The
+        stale slot is dropped only once the previous client has actually been
+        deleted, so a client that could not be deleted stays named by its
+        slot instead of being forgotten.
+        """
         key = json.dumps(expectation_id)
         return (
             'var m=d&&d.getProcess("HttpBackgroundClientManager");'
             "this.__mcpE6HttpClients=this.__mcpE6HttpClients||{};"
             f"var old=this.__mcpE6HttpClients[{key}];"
             "if(old&&old.manager&&old.client){old.manager.deleteClient(old.client);}"
-            "var p=m&&m.createClient();var content_before=p?String(p.getLastPageContent()):'';"
+            f"delete this.__mcpE6HttpClients[{key}];"
+            "var p=m&&m.createClient();"
+            f"if(m&&p){{this.__mcpE6HttpClients[{key}]={{manager:m,client:p}};}}"
+            "var owned=!!(m&&p);"
+            "var content_before=p?String(p.getLastPageContent()):'';"
             f"var started=!!(p&&p.go({url_json}));"
-            f"if(started){{this.__mcpE6HttpClients[{key}]={{manager:m,client:p}};}}"
-            "else if(m&&p){m.deleteClient(p);}"
         )
 
     @staticmethod
@@ -1215,11 +1568,13 @@ class PacketTracerEnterpriseServiceRuntime:
             "this.__mcpE6HttpClients=this.__mcpE6HttpClients||{};"
             f"var old=this.__mcpE6HttpClients[{key}];"
             "if(old&&old.manager&&old.client){old.manager.deleteClient(old.client);}"
-            "var p=m&&m.createClient();var content_before=p?String(p.getLastPageContent()):'';"
+            f"delete this.__mcpE6HttpClients[{key}];"
+            "var p=m&&m.createClient();"
+            f"if(m&&p){{this.__mcpE6HttpClients[{key}]={{manager:m,client:p}};}}"
+            "var owned=!!(m&&p);"
+            "var content_before=p?String(p.getLastPageContent()):'';"
             "if(p){p.setHttps(true);}var https_mode=p?!!p.isHttps():null;"
             f"var started=!!(p&&p.go({url_json}));"
-            f"if(started){{this.__mcpE6HttpClients[{key}]={{manager:m,client:p}};}}"
-            "else if(m&&p){m.deleteClient(p);}"
         )
 
     @staticmethod
@@ -1232,30 +1587,107 @@ class PacketTracerEnterpriseServiceRuntime:
             "reportResult(JSON.stringify({found:!!p,content:p?String(p.getLastPageContent()):''}));"
         )
 
-    def _release_background_http(self, expectation_id: str, client_json: str) -> str:
-        """Release the owned client and report what the release established.
+    @staticmethod
+    def _background_http_release(expectation_id: str, client_json: str) -> str:
+        """Delete the client this expectation owns and report what it saw.
 
-        Three outcomes, kept apart: `released` means the release ran and
-        confirmed the slot is gone, `release_unverified` means it ran and did
-        not confirm, `release_failed` means the release call itself did not
-        come back. Reporting the last two as success is how an owned client
-        would be leaked silently.
+        It reports what it FOUND and what it DID, not whether a slot happens
+        to be absent. `released:!slot||!bag[key]` was true whenever the slot
+        was missing, so an untracked live client and a successful deletion
+        produced the same answer. The deletion is guarded so a throwing
+        `deleteClient` still reports, and the slot is dropped only when the
+        deletion actually completed: a client that could not be deleted must
+        stay named.
         """
         key = json.dumps(expectation_id)
-        observation = self._observe(
+        return (
             f"var d=ipc.network().getDevice({client_json});"
             "var bag=this.__mcpE6HttpClients||{};"
-            f"var slot=bag[{key}];if(slot&&slot.manager&&slot.client){{"
-            "slot.manager.deleteClient(slot.client);"
-            f"delete bag[{key}];}}"
-            "reportResult(JSON.stringify({released:!slot||!bag[" + key + "]}));",
-            3.0,
+            f"var slot=bag[{key}];"
+            "var found=!!(slot&&slot.manager&&slot.client);"
+            "var deleted=false;var error='';"
+            "if(found){try{slot.manager.deleteClient(slot.client);deleted=true;}"
+            "catch(e){try{error=String(e&&e.message?e.message:e).substring(0,200);}"
+            "catch(x){error='release_error';}}}"
+            f"if(deleted){{delete bag[{key}];}}"
+            "reportResult(JSON.stringify({found:found,deleted:deleted,"
+            f"present:!!bag[{key}],error:error}}));"
         )
+
+    def _finalize_client(self, expectation, lease: ClientLease) -> ReleaseOutcome:
+        """Release whatever this read owns, exactly once, and say what held.
+
+        Bounded on purpose: one dispatch, no redispatch of the start, no
+        channel switch and no second attempt. What it cannot establish it
+        reports as unresolved ownership rather than as a release, because a
+        command that may still execute late can leave a client this process
+        will never see.
+        """
+        if lease.state is ClientOwnership.NONE:
+            return ReleaseOutcome(_RELEASE_NOTHING_OWNED, "no_client_requested")
+        if lease.state is ClientOwnership.ABSENT:
+            return ReleaseOutcome(_RELEASE_NOTHING_OWNED, "client_not_created")
+        client = json.dumps(expectation.client_device_name)
+        try:
+            observation = self._observe(
+                self._background_http_release(expectation.id, client),
+                3.0,
+            )
+        except Exception as error:
+            # A cleanup that raised replaces no primary fact: it is recorded
+            # as its own failed cleanup.
+            return ReleaseOutcome(
+                _RELEASE_FAILED,
+                f"exception:{type(error).__name__}",
+            )
         if observation.kind is not BridgeObservationKind.PAYLOAD:
-            return "release_failed"
-        if (observation.payload or {}).get("released") is True:
-            return "released"
-        return "release_unverified"
+            return ReleaseOutcome(
+                _RELEASE_FAILED,
+                sanitized_detail(observation.outcome.detail)
+                or "release_not_correlated",
+            )
+        payload = observation.payload or {}
+        shape = _typed_payload(
+            payload,
+            {"found": bool, "deleted": bool, "present": bool},
+        )
+        if shape:
+            return ReleaseOutcome(_RELEASE_UNVERIFIED, f"release_shape:{shape}")
+        if payload["deleted"] and not payload["present"]:
+            return ReleaseOutcome(_RELEASE_RELEASED)
+        if payload["found"]:
+            return ReleaseOutcome(
+                _RELEASE_UNVERIFIED,
+                sanitized_detail(payload.get("error")) or "delete_not_confirmed",
+            )
+        if lease.state is ClientOwnership.OWNED:
+            # The start reported a tracked client and the slot is gone
+            # without this release removing it. Something else took it, and
+            # that is not proof the client was deleted.
+            return ReleaseOutcome(_RELEASE_UNVERIFIED, "owned_slot_absent")
+        return ReleaseOutcome(
+            _RELEASE_OWNERSHIP_UNKNOWN,
+            "start_outcome_unobserved",
+        )
+
+    @staticmethod
+    def _with_release(row: RuntimeServiceVerification, release: ReleaseOutcome):
+        """Attach the finalization outcome without touching the primary fact.
+
+        The two are separate records. A failed cleanup never overwrites the
+        observation, its status, its cause or its freshness, and an
+        unresolved ownership never disappears just because the read itself
+        succeeded.
+        """
+        observed = dict(row.observed)
+        observed["released"] = release.outcome
+        limitations = list(row.limitations)
+        if not release.resolved:
+            detail = f":{release.cause}" if release.cause else ""
+            limitations.append(f"client_ownership_unresolved:{release.outcome}{detail}")
+        return row.model_copy(
+            update={"observed": observed, "limitations": limitations},
+        )
 
     def _poll(self, inspect, predicate, timeout):
         """Poll one reader until its predicate holds or the deadline passes."""

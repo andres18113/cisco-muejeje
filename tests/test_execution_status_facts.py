@@ -788,3 +788,84 @@ def test_a_row_cause_composes_the_canonical_token_with_the_producer_detail():
     assert already_detailed.cause == "rejected:409"
     assert post_read.row == "8"
     assert post_read.cause == "post_read_failed:TypeError: not a function"
+
+
+def test_the_snapshot_retains_the_setter_error_beside_the_canonical_cause():
+    """Two different meanings, both preserved, neither standing for the other.
+
+    A row can have a canonical reason of its own -- `pre_read_failed`,
+    `footprint_partial:<scope>` -- and a setter diagnostic at the same time.
+    The adapter had to choose, so it dropped the diagnostic, and the snapshot
+    could not recover what the adapter had already removed (R5).
+    """
+    mutation = RuntimeActionMutation(
+        action_id="a",
+        applied=True,
+        dispatch=DispatchFact.ACCEPTED,
+        result=ResultFact.CORRELATED,
+        postcondition=PostconditionFact.SATISFIED,
+        transition=TransitionFact.UNOBSERVED,
+        footprint=FootprintFact.COVERED,
+        attempted=True,
+        call_error="TypeError: setEnable is not a function",
+    )
+    decision = decide_mutation(mutation)
+    snapshot = sanitized_mutation_snapshot(mutation)
+
+    assert decision.cause == "pre_read_failed"
+    assert snapshot.call_error == "TypeError: setEnable is not a function"
+    assert decide_mutation(snapshot) == decision
+
+
+def test_the_setter_error_never_classifies_and_never_authorizes():
+    """A producer diagnostic must not reach the decision at all."""
+    facts = dict(
+        action_id="a",
+        applied=False,
+        dispatch=DispatchFact.ACCEPTED,
+        result=ResultFact.CORRELATED,
+        postcondition=PostconditionFact.SATISFIED,
+        transition=TransitionFact.CHANGED,
+        footprint=FootprintFact.COVERED,
+        attempted=True,
+    )
+    silent = decide_mutation(RuntimeActionMutation(**facts))
+    noisy = decide_mutation(
+        RuntimeActionMutation(**facts, call_error="stub failure: setEnable")
+    )
+
+    assert silent == noisy
+    assert noisy.cause == "inconsistent_facts"
+    assert noisy.frontier is False
+
+
+def test_the_snapshot_bounds_the_setter_error_too():
+    """Every free-text field that reaches a stored record is bounded."""
+    mutation = RuntimeActionMutation(
+        action_id="a",
+        applied=True,
+        call_error="z" * 5000,
+        dispatch=DispatchFact.ACCEPTED,
+        result=ResultFact.CORRELATED,
+        postcondition=PostconditionFact.SATISFIED,
+        transition=TransitionFact.CHANGED,
+        footprint=FootprintFact.COVERED,
+        attempted=True,
+    )
+    snapshot = sanitized_mutation_snapshot(mutation)
+
+    assert len(snapshot.call_error) < 5000
+    assert set(snapshot.model_dump()) == set(mutation.model_dump())
+
+
+def test_a_mutation_that_states_only_a_setter_error_is_still_legacy():
+    """The legacy fact tuple decides row 16; a new field does not disturb it."""
+    decision = decide_mutation(
+        RuntimeActionMutation(
+            action_id="a",
+            applied=True,
+            call_error="stub failure: setEnable",
+        )
+    )
+
+    assert decision.row == "16"
