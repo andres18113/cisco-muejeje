@@ -2826,6 +2826,31 @@ a LIVE requirement. A valid correlated no-client start still dispatches no
 release; a valid release still closes normally; and an unsupported ping output
 dialect stays unqualified and inconclusive rather than being guessed at.
 
+#### Verification of this round
+
+| Level | Result |
+| --- | --- |
+| Focused RED then GREEN | measured per module on `280f923` by checking out `src/` at that commit with the corrected tests in place: 10 failures for V1, 8 for V2, all behavioural. GREEN on the corrected tree |
+| Client-ownership harness | 33 scenarios on **Node v24.19.0**, running the actual generated start, inspect and release scripts |
+| Generated mutation-script harness | 27 scenarios, same engine, both harnesses failing rather than skipping under `GITHUB_ACTIONS` |
+| Affected modules | `test_service_runtime.py`, `test_service_runtime_observation.py`, `test_service_client_ownership_harness.py`, `test_service_mutation_script_harness.py`, `test_service_application_uncertainty.py`, `test_transport_dispatch_facts.py`, `test_execution_status_facts.py`, `test_fire_and_forget_surface.py`, `test_service_application.py`: 560 passed |
+| Full offline suite | `pytest -q -rs` on the delivery tree at `7fb5917e0482647e6787b78582aed0f72c625307`: **5803 passed, 3 skipped, 3 warnings in 344.47s** |
+| Ruff | `ruff check` and `ruff format --check` clean on every changed Python file, `ruff 0.16.7` |
+| Docs | `mkdocs build --site-dir _site` succeeds with the two pre-existing `handoff.md` warnings only |
+| Whitespace | `git diff --check` clean |
+| Namespace | `scripts/namespace_inventory.py`: 0 active legacy imports, 0 active legacy string references, 0 unreviewed inert mentions |
+| Delivery gate | `scripts\quality_gate.py --base cisco/main --delivery-commit HEAD` on `7fb5917e0482647e6787b78582aed0f72c625307`: clean tree at the exact commit, base and merge base `6263344`, 16 changed Python files, 0 mechanical exemptions, all checks passed |
+| CI on this round's delivery SHA | **pending**: `7fb5917e0482647e6787b78582aed0f72c625307` is local. Run `35282016408` stands for `280f923` alone and is not offered in its place |
+
+Residual limits are unchanged from 9.7 and none of them is narrowed here. Both
+corrections are still offline: the ownership scenarios come from a Node stub
+answering the documented call surface, and the DNS window shapes come from the
+fixtures, not from a measured LIVE run. A Packet Tracer build whose ping output
+uses a shape neither `Pinging` nor `Ping statistics for` covers now reads as
+ambiguous in **both** directions, which is fail-closed rather than wrong, and
+remains a real gap to close with measured output. Delivery status stays
+`READY_FOR_REVIEW`.
+
 #### Corrections to this record
 
 * 9.4's R1 cell said **six** scenarios ended with a live client. The retained
