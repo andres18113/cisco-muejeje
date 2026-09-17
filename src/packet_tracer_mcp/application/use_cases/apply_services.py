@@ -963,6 +963,15 @@ class ServiceApplicator:
                 ConfigurationApplicationStatus.FAILED,
                 ConfigurationFailureCode.POSTCONDITION_UNSATISFIED,
             )
+        if transport_unknown:
+            # Checked BEFORE the skipped and blocked rows. Both produce
+            # PARTIAL, but only this one names the reason an operator has to
+            # act on: a mutation whose outcome nobody knows. Reporting NONE
+            # because something was also skipped would bury it.
+            return (
+                ConfigurationApplicationStatus.PARTIAL,
+                ConfigurationFailureCode.OUTCOME_UNKNOWN,
+            )
         if any(
             item.status
             in {
@@ -972,11 +981,6 @@ class ServiceApplicator:
             for item in actions
         ):
             return ConfigurationApplicationStatus.PARTIAL, ConfigurationFailureCode.NONE
-        if transport_unknown:
-            return (
-                ConfigurationApplicationStatus.PARTIAL,
-                ConfigurationFailureCode.OUTCOME_UNKNOWN,
-            )
         if outcomes and all(
             item.usability_status is ActionExecutionStatus.VERIFIED for item in outcomes
         ):
