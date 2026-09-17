@@ -12,6 +12,7 @@ import pytest
 from test_enterprise_services import _fixture
 from test_service_application import FakeServiceRuntime
 
+from packet_tracer_mcp.application.use_cases import apply_services
 from packet_tracer_mcp.application.use_cases.apply_services import (
     VERIFICATION_EFFECT_CLASSES,
     ServiceApplicator,
@@ -49,6 +50,10 @@ from packet_tracer_mcp.domain.enterprise.models.service_runtime import (
     ObservationFact,
     RuntimeServiceVerification,
     ServiceApplicationResult,
+)
+from packet_tracer_mcp.domain.enterprise.models.verification import (
+    PrerequisiteKind,
+    VerificationPrerequisite,
 )
 
 
@@ -153,12 +158,20 @@ _INCONSISTENT = {
 }
 
 
-def _apply(runtime, *, direct_readback=None):
+def _apply(runtime, *, direct_readback=None, transform=None):
+    """Apply the compiled fixture, optionally rewriting the plan first.
+
+    `transform` exists so a test can state the exact typed prerequisites it
+    wants to exercise. The hashes are taken from the plan the applicator is
+    actually given, so a rewritten plan is still self-consistent.
+    """
     plan, capabilities = _compiled()
     if direct_readback is not None:
         for profile in capabilities.values():
             if hasattr(profile, "direct_readback_support"):
                 profile.direct_readback_support = direct_readback
+    if transform is not None:
+        plan = transform(plan)
     return (
         ServiceApplicator(runtime).apply(
             plan,
@@ -298,6 +311,37 @@ def test_an_inconsistent_tuple_is_unknown_and_the_received_value_grants_nothing(
     by_id = {item.action_id: item for item in result.action_results}
     for item in dependents:
         assert by_id[item.id].status is ActionExecutionStatus.DEPENDENCY_BLOCKED
+
+
+def test_the_applicator_routes_every_row_through_the_domain_decision(monkeypatch):
+    """A behaviour test beside the substring check, over the real consumer.
+
+    `tests/test_fire_and_forget_surface.py` asserts that no applicator's
+    source omits the canonical entry point, which cannot prove that a second,
+    local classifier is not ALSO present. This observes the actual call: the
+    real `ServiceApplicator` is run, `decide_mutation` is wrapped
+    pass-through, and every action row must have gone through it with exactly
+    the mutation the runtime reported.
+    """
+    seen: list[RuntimeActionMutation] = []
+    original = apply_services.decide_mutation
+
+    def spy(mutation):
+        seen.append(mutation)
+        return original(mutation)
+
+    monkeypatch.setattr(apply_services, "decide_mutation", spy)
+    runtime = _FactRuntime(_ACCEPTED_SATISFIED_CHANGED)
+    result, _ = _apply(runtime)
+
+    assert [item.action_id for item in seen] == [
+        item.action_id for item in runtime.sent
+    ]
+    assert len(seen) == len(result.action_results)
+    for observed, reported in zip(seen, runtime.sent, strict=True):
+        assert observed == reported
+    for row, reported in zip(result.action_results, runtime.sent, strict=True):
+        assert row.status is original(reported).status
 
 
 # -- 2. residue and the frontier -----------------------------------------
@@ -756,6 +800,194 @@ def test_a_recovery_read_never_lifts_the_bundle_to_verified():
     assert result.status is ConfigurationApplicationStatus.PARTIAL
     assert result.failure_code is ConfigurationFailureCode.OUTCOME_UNKNOWN
     assert any(item.startswith("transport_unknown:") for item in result.limitations)
+
+
+# -- 6b. the recovery admission is by typed identity, not by suffix -------
+
+
+def _direct_expectation(plan):
+    """Return the first read-only direct-state expectation in the plan."""
+    for item in plan.verification_expectations:
+        if item.kind is ServiceVerificationKind.DIRECT_SERVICE_STATE:
+            return item
+    raise AssertionError("The fixture has no direct-state expectation.")
+
+
+def _with_prerequisites(*prerequisites):
+    """Give the first direct-state expectation exactly these prerequisites."""
+
+    def transform(plan):
+        target = _direct_expectation(plan)
+        rewritten = [
+            item.model_copy(
+                update={
+                    "verification_prerequisites": [
+                        prerequisite(target) for prerequisite in prerequisites
+                    ]
+                }
+            )
+            if item.id == target.id
+            else item
+            for item in plan.verification_expectations
+        ]
+        return plan.model_copy(update={"verification_expectations": rewritten})
+
+    return transform
+
+
+def _applied(target):
+    return VerificationPrerequisite(
+        kind=PrerequisiteKind.ACTION_APPLIED,
+        reference_id=target.action_id,
+    )
+
+
+def _verified(target):
+    return VerificationPrerequisite(
+        kind=PrerequisiteKind.ACTION_VERIFIED,
+        reference_id=target.action_id,
+    )
+
+
+def _resource(target):
+    return VerificationPrerequisite(
+        kind=PrerequisiteKind.RESOURCE_READY,
+        reference_id=target.action_id,
+    )
+
+
+def _unrelated(target):
+    return VerificationPrerequisite(
+        kind=PrerequisiteKind.ACTION_VERIFIED,
+        reference_id="no-such-action",
+    )
+
+
+def _row(result, expectation_id):
+    """Return the verification row for one expectation id."""
+    for item in result.verification_results:
+        if item.expectation_id == expectation_id:
+            return item
+    raise AssertionError(f"No verification row for {expectation_id!r}.")
+
+
+def test_a_recovery_read_runs_when_only_the_applied_prerequisite_is_unresolved():
+    """The positive control: one ACTION_APPLIED, admitted, and read."""
+    runtime = _FactRuntime(_ACCEPTED_ENGINE_ERROR)
+    result, plan = _apply(
+        runtime,
+        direct_readback=CapabilityStatus.SUPPORTED,
+        transform=_with_prerequisites(_applied),
+    )
+    target = _direct_expectation(plan)
+    row = _row(result, target.id)
+
+    assert target.id in runtime.verify_calls
+    assert row.status is not ActionExecutionStatus.DEPENDENCY_BLOCKED
+    assert any(
+        note.startswith("recovery_read_after_unresolved_action:")
+        for note in row.limitations
+    )
+
+
+@pytest.mark.parametrize(
+    ("extra", "blocked_token"),
+    [
+        (_verified, "action_verified:"),
+        (_resource, "resource_ready:"),
+        (_unrelated, "action_verified:no-such-action"),
+    ],
+)
+def test_a_recovery_read_lifts_only_the_exact_applied_prerequisite(
+    extra, blocked_token
+):
+    """Every other prerequisite is evaluated normally, by typed identity.
+
+    The suffix filter dropped any diagnostic ENDING in the unresolved action
+    id, so an unresolved `a` also lifted `action_verified:a` and
+    `resource_ready:a` -- different prerequisite kinds about different
+    subjects. An APPLIED action with an unknown effect already passes the
+    status-only ACTION_APPLIED check while ACTION_VERIFIED stays blocked, and
+    erasing that remaining constraint is what let a read run with no
+    prerequisite left standing (R2).
+    """
+    runtime = _FactRuntime(_ACCEPTED_ENGINE_ERROR)
+    result, plan = _apply(
+        runtime,
+        direct_readback=CapabilityStatus.SUPPORTED,
+        transform=_with_prerequisites(_applied, extra),
+    )
+    target = _direct_expectation(plan)
+    row = _row(result, target.id)
+
+    assert row.status is ActionExecutionStatus.DEPENDENCY_BLOCKED
+    assert row.failure_code is ConfigurationFailureCode.DEPENDENCY_BLOCKED
+    assert blocked_token in row.message
+    # The runtime verifier was never reached for a blocked row.
+    assert target.id not in runtime.verify_calls
+    assert not any(
+        note.startswith("recovery_read_after_unresolved_action:")
+        for note in row.limitations
+    )
+
+
+def test_a_verification_whose_id_ends_in_the_action_id_stays_blocked():
+    """`verification_verified:check-a` is not `action_applied:a`.
+
+    The dependency is a different expectation's outcome, and that
+    expectation is itself blocked, so the dependent read must stay blocked.
+    """
+    runtime = _FactRuntime(_ACCEPTED_ENGINE_ERROR)
+
+    def transform(plan):
+        target = _direct_expectation(plan)
+        # A copy of the same read under an id that ENDS with the action id,
+        # blocked by a prerequisite nothing can satisfy.
+        blocked_id = f"check-{target.action_id}"
+        dependency = target.model_copy(
+            update={
+                "id": blocked_id,
+                "verification_prerequisites": [
+                    VerificationPrerequisite(
+                        kind=PrerequisiteKind.RESOURCE_READY,
+                        reference_id="no-such-resource",
+                    )
+                ],
+            }
+        )
+        dependent = target.model_copy(
+            update={
+                "verification_prerequisites": [
+                    VerificationPrerequisite(
+                        kind=PrerequisiteKind.ACTION_APPLIED,
+                        reference_id=target.action_id,
+                    ),
+                    VerificationPrerequisite(
+                        kind=PrerequisiteKind.VERIFICATION_VERIFIED,
+                        reference_id=blocked_id,
+                    ),
+                ]
+            }
+        )
+        rewritten = [
+            dependent if item.id == target.id else item
+            for item in plan.verification_expectations
+        ]
+        return plan.model_copy(
+            update={"verification_expectations": [*rewritten, dependency]}
+        )
+
+    result, plan = _apply(
+        runtime,
+        direct_readback=CapabilityStatus.SUPPORTED,
+        transform=transform,
+    )
+    target = _direct_expectation(plan)
+    row = _row(result, target.id)
+
+    assert row.status is ActionExecutionStatus.DEPENDENCY_BLOCKED
+    assert f"verification_verified:check-{target.action_id}" in row.message
+    assert target.id not in runtime.verify_calls
 
 
 # -- 7. aggregation --------------------------------------------------------

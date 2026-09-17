@@ -719,14 +719,31 @@ class ServiceApplicator:
                 # prerequisite, so it stays blocked.
                 effect_class = VERIFICATION_EFFECT_CLASSES.get(expectation.kind)
                 if effect_class in {"read_only", "owned_temporary"}:
-                    blocked = [
-                        item
-                        for item in blocked
-                        if not any(item.endswith(name) for name in unresolved)
-                    ]
-                    # Only the unresolved prerequisites are lifted. Anything
-                    # else that blocked this row still blocks it.
-                    satisfied = not blocked
+                    # Exactly the ACTION_APPLIED prerequisites the recovery
+                    # rule admits are withheld, by typed `(kind,
+                    # reference_id)` identity; every other prerequisite is
+                    # then evaluated by the unchanged domain contract.
+                    # Filtering the rendered diagnostics by suffix instead
+                    # made an unresolved action `a` also lift
+                    # `action_verified:a`, `resource_ready:a` and
+                    # `verification_verified:check-a`, which are different
+                    # prerequisites about different subjects (R2).
+                    admitted = {
+                        (PrerequisiteKind.ACTION_APPLIED, name) for name in unresolved
+                    }
+                    satisfied, blocked = prerequisites_satisfied(
+                        [
+                            item
+                            for item in prerequisites
+                            if (item.kind, item.reference_id) not in admitted
+                        ],
+                        action_statuses=action_statuses,
+                        verification_statuses={
+                            identifier: result.status
+                            for identifier, result in results.items()
+                        },
+                        resource_statuses={},
+                    )
                     if satisfied:
                         recovery = "recovery_read_after_unresolved_action:" + ",".join(
                             unresolved
