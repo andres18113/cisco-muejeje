@@ -2360,6 +2360,7 @@ produces no change here.
 | (b) | `test_dns_behavior_rejects_a_fresh_but_wrong_address` | FAILED, `not fresh_evidence` | FAILED, `fresh_evidence` True, observation CONTRADICTED | a complete fresh window with the wrong address is fresh negative evidence; calling it stale hid a real observation |
 | (c) | `test_http_behavior_rejects_fresh_content_without_expected_marker` | FAILED, `not fresh_evidence` | FAILED, `fresh_evidence` True, observation CONTRADICTED | same reason as (b) |
 | (d) | stale half of `test_http_behavior_rejects_stale_marker_and_accepts_fresh_fetch` | FAILED, `not fresh_evidence` | UNKNOWN, observation INCONCLUSIVE, `fresh_evidence` False | output that cannot be attributed to this request is not a demonstrated failure; the fresh half is unchanged |
+| (d, measured) | the same test's stale fixture | assumed to exercise the marker-before-request path | assertions unchanged; a docstring records what it actually exercises | While making (d) the fixture was found never to reach the marker path at all: its dispatcher answers any script containing `deleteClient` with the release payload, and the start script contains that call to retire a previous client, so the start read returns no `started` flag and the row is INCONCLUSIVE for `client_go_false`. Same authorized outcome, so the assertion stands as item 7 specifies. The real marker path is covered by a new test in `tests/test_service_runtime_observation.py`, where new tests belong. |
 | (e) | `test_https_behavior_uses_https_url_and_never_substitutes_http` | VERIFIED with an empty marker | start fixture carries `https_mode: true`; asserts `setHttps` and `isHttps`; PARTIAL with limitation `no_https_marker` | R-HTTPS-03: without a marker the fetched page cannot be attributed to the HTTPS listener, and the mode must be read affirmatively; the URL assertions stay |
 | (f) | `tests/test_fire_and_forget_surface.py::test_every_applicator_uses_the_single_domain_definition` | the source of each of the five applicators must contain the literal `mutation_execution_status(mutation)` | the source must contain that literal **or** `decide_mutation(mutation)` | **Disclosed addition beyond item 7's five changes.** The invariant is "no applicator re-implements the status rule locally". S0 makes `decide_mutation` the single domain decision and defines `mutation_execution_status(mutation)` as `decide_mutation(mutation).status`, so `apply_services.py` satisfies the invariant through the stronger entry point while the literal name changes. Accepting either symbol preserves the invariant for all five applicators and still fails on a local copy. No assertion is removed or relaxed to a weaker predicate. |
 
@@ -2406,24 +2407,153 @@ anywhere in the slice.
 | `enterprise_service_runtime.py` | 5 | D102×3, D107×1, I001×1 | would reformat | 0, formatted |
 | `apply_services.py` | 7 | D101×1, D102×4, D107×1, I001×1 | would reformat | 0, formatted |
 | `tests/test_service_runtime.py` | 12 | D103×11, F401×1 | **would reformat** | 0, formatted |
+| `tests/test_fire_and_forget_surface.py` | 13 | D103×12, I001×1 | would reformat | 0, formatted |
 
 Correction required by TD-12 section 5: revision 2.2 item 8 recorded
 `tests/test_service_runtime.py 12, formatted`. The measured state at the
 baseline is 12 findings **and** `ruff format --check` reports it would be
 reformatted. The measured value is recorded; the plan's value is not asserted.
 
-The debt is owned only in the files this slice touches. Each file set is split
-into two commits: first `ruff format` alone, proven by `ast.dump` equality
-before and after plus the unchanged suite; then the lint fixes (docstrings and
-import order), proven by the suite with no AST-equality claim.
+`tests/test_fire_and_forget_surface.py` is in this table because authorized
+change (f) touches it, and touching a file means owning its Ruff state. It was
+not in revision 2.2's measurement, so its before-column is measured here.
+
+The eight files of the planned set are split into two commits: first `ruff
+format` alone, proven by `ast.dump` equality before and after plus the
+unchanged suite (5300 passed, 3 skipped, identical); then the lint fixes
+(docstrings and import order), proven by the suite with no AST-equality claim.
+The UP042 findings are deliberately excluded from both: converting the ten
+`(str, Enum)` classes to `StrEnum` is a presentation change that the contract
+requires to carry its own per-enum equivalence proof, so it belongs with that
+proof rather than in a mechanical lint commit.
+
+A directory-wide `ruff check --fix` briefly reached seventeen model files
+outside this slice during the lint commit; they were reverted before it was
+made, and the commit changes only authorized files.
+
+After the slice: **every touched file reports 0 Ruff findings and is already
+formatted**, and there is no `# noqa` anywhere in the slice. The five new test
+modules and `transport_outcome.py` are clean from their first commit.
+
+| New file | Findings | Format |
+| --- | ---: | --- |
+| `infrastructure/execution/transport_outcome.py` | 0 | formatted |
+| `tests/test_execution_status_facts.py` | 0 | formatted |
+| `tests/test_transport_dispatch_facts.py` | 0 | formatted |
+| `tests/test_service_runtime_observation.py` | 0 | formatted |
+| `tests/test_service_application_uncertainty.py` | 0 | formatted |
+| `tests/test_service_mutation_script_harness.py` | 0 | formatted |
 
 ### 8.5 Results
 
-Completed at delivery.
+#### Measured baseline (RED), before implementation
+
+Measured by checking `src/` out at `6263344` and driving the **baseline**
+runtime and the baseline status and journal rules over the same Node stub the
+harness uses. This is the measurement TD-12 section 5 requires, and it
+corrects revision 2.2 in two places.
+
+| Case | Measured baseline | Stub's own state | Target |
+| --- | --- | --- | --- |
+| changed-to-wrong (`setPageContents` stores a different value) | `applied=False`, FAILED, `APPLICATION_FAILED`, `dirty_state` CLEAN | the page **did** change to the wrong value | PARTIAL, `POSTCONDITION_UNSATISFIED`, `residual_change` True, DIRTY_UNRECOVERABLE |
+| digest-collision pair (`yI76Uj5ZfPNL` to `qx51K0WT5Lj1`) | `applied=False`, FAILED, CLEAN; both digests `1bb90b62:12` | the page changed | transition CHANGED from the typed comparison, residue CHANGED, DIRTY_UNRECOVERABLE |
+| setter effect then a thrown exception | `applied=False`, FAILED, CLEAN | the flag **was** set to true | the post-read is still reported; row 12 from the reading |
+| post-read getter failure (pre-read succeeded) | `applied=True`, APPLIED, `dirty_state` UNKNOWN | the flag was set | row 8, `changed` null, never a transition claim |
+| DNS add returns true, membership reports missing | `applied=True`, APPLIED, UNKNOWN | the table is untouched | row 19: UNSATISFIED, PARTIAL, UNKNOWN, sticky, `residue_unknown` |
+| incorrect add writes a different record | `applied=True`, APPLIED, **UNKNOWN** | a *different* record appeared | `dirty_state` UNKNOWN with `residue_unknown`, never CLEAN |
+| add replaces an existing record | `applied=True`, APPLIED, **UNKNOWN** | the old address is gone | row 18: SATISFIED, PARTIAL, frontier open, `residue_unknown` |
+| add whose record is already present | `applied=True`, APPLIED, UNKNOWN, **and the add WAS called** | the table is unchanged | row 17 NO_OP, no add call in the stub log, frontier open, CLEAN |
+| three COVERED families, fully successful | `applied=True`, APPLIED, `dirty_state` UNKNOWN | every intended state present | CLEAN with CHANGED or REASSERTED |
+| the same run plus `AddDnsRecord` on an empty table | UNKNOWN | record written | usability unchanged, `dirty_state` UNKNOWN, limitation `residue_unknown:<id>:footprint_partial:dns_a_record_table` |
+| `send_and_wait` returns None during apply | `applied=False`, FAILED, `APPLICATION_FAILED`, CLEAN | -- | UNKNOWN with ACCEPTANCE_UNKNOWN under the legacy wrapper; transport uncertainty set |
+| accepted plus `PT_ERROR:` body | `applied=False`, FAILED, CLEAN | -- | APPLIED, postcondition UNOBSERVED, dependents blocked, sticky, never VERIFIED |
+| missing row in a correlated batch | `applied=False`, FAILED, CLEAN | -- | adapter: row 7 APPLIED/UNKNOWN/`RESPONSE_MALFORMED`; applicator: row 15 (TD-12.2) |
+| direct read `found=false` | FAILED, `fresh_evidence` True | -- | UNOBSERVABLE, SUBJECT_NOT_FOUND |
+| direct read, malformed payload | FAILED, `fresh_evidence` False | -- | UNOBSERVABLE, MALFORMED |
+| direct read, timeout | FAILED, `fresh_evidence` False | -- | UNKNOWN, transport fact, not FAILED |
+
+**Two corrections to revision 2.2, both predicted by TD-12 section 5.** The
+plan asserted baseline CLEAN for the incorrect add and for the replacing add.
+The measurement says **UNKNOWN** for both, and the mechanism is exactly the one
+TD-12 named: at the baseline the generated `add(...)||getter(...)` returns
+true, so the row is `applied=True` with the default UNKNOWN disposition;
+`journal_from_action_results` falls back to `disposition_from_status`, which
+has no entry for `applied`, so the entry stays UNKNOWN and `_derive_dirty_state`
+returns UNKNOWN. No fabricated CLEAN assertion was written for either case.
+The same mechanism makes the fully successful COVERED run UNKNOWN at the
+baseline, which revision 2.2 did record correctly.
+
+A third measured fact the plan did not state: at the baseline an
+`AddDnsRecord` whose record is **already present** still calls
+`addARecordToNameServerDb`. There is no pre-read and therefore no skip, so the
+"already present" case was not a no-op at all.
+
+The five new test modules were also run against the baseline `src/` and fail
+at collection, because the fact vocabulary does not exist there. That is a
+true RED but a trivial one, which is why the behavioural baseline above was
+measured separately in baseline vocabulary rather than inferred from it.
+
+#### Verification results
+
+| Level | Result |
+| --- | --- |
+| Unit and integration (offline, this checkout) | `pytest -q`: **5693 passed, 3 skipped**, up from 5300 passed, 3 skipped at the baseline. 393 new tests, no test removed or weakened |
+| Generated-script harness | 20 scenarios executed by **Node v24.19.0** against the stub network, running the actual generated batch script. Skips only when Node is absent locally; fails under `GITHUB_ACTIONS` |
+| Real-socket transport | closed port, read-then-close server, real `PTCommandBridge` with no webview, duplicate rid, late result refused 410 -- all on ephemeral ports with `PT_MCP_BRIDGE_TOKEN` supplied by the test |
+| Golden-script equality | direct read-back (DNS, HTTP, HTTPS), DNS verification start and inspect, HTTP start, inspect and release: **byte-identical** to the baseline module, compared by loading both modules in one process |
+| Quality gate | `scripts/quality_gate.py --base cisco/main`: 15 changed Python files, 0 mechanical exemptions, all checks passed, 15 files already formatted |
+| Docs | `mkdocs build --site-dir _site` succeeds; the only warnings are the pre-existing `handoff.md` links in `docs/reference/cp-scale/` |
+| Whitespace | `git diff --check` clean |
+| Delivery gate | `scripts/quality_gate.py --base cisco/main --delivery-commit HEAD` on the final commit; see below |
+| CI on the exact delivery SHA | **pending**: nothing was pushed by this work, so no authorized remote commit exists to run it on. No other SHA's status is offered in its place |
+
+#### Positive controls, all green and unchanged
+
+`tests/test_file_bridge.py`, `tests/test_file_bridge_lifecycle.py`,
+`tests/test_bridge_results.py`, `tests/test_bridge_security.py`,
+`tests/test_product_mutation_replay_registry.py`,
+`tests/test_e95_execution_semantics.py` and every other `tests/test_e95_*`
+module, plus every assertion this brief classified as a valid invariant in the
+three named modules.
 
 ### 8.6 Limitations
 
-Completed at delivery.
+- **Nothing here is evidence of Packet Tracer behaviour.** Every observation in
+  this slice comes from a stub, a fake or a local socket. The Node harness
+  proves what the generated script does against an in-memory object graph, not
+  what `DnsServerProcess` or `HttpBackgroundClient` do in a running instance.
+  No Packet Tracer instance was contacted, no bridge was started for product
+  use, and `EXTENSION/` is unchanged.
+- The HTTPS mode read (`setHttps(true)` then `isHttps()`) is built on the
+  documented `HttpClient` members in the local vendor reference
+  (`help/default/IpcAPI/class_http_client.html`, labelled 8.1.0 on a 9.0.1.0858
+  install). `DOCUMENTED` is not `SUPPORTED`: whether the call actually switches
+  the listener is gate M-HTTPS-2 and stays unqualified.
+- The `AddDnsRecord` footprint stays PARTIAL because gate M-DNS-4 is unmeasured.
+  Widening the observation to the A-record table is not an S0 change, so an
+  attempted add's residue outside the wanted record remains unobserved by
+  construction, not by omission.
+- The enum presentation equivalence was measured locally on **CPython 3.12.10**
+  and cross-checked on 3.14.6. The CI matrix runs 3.11 and 3.13, which are not
+  installed on this machine; the per-enum test runs there and is the check that
+  settles them. Until that CI run exists, 3.11 and 3.13 presentation is
+  **unverified**, not assumed.
+- The `os.replace` phase of `FileBridge._publish` -- a rename that fails with
+  the `req_` path nonetheless present -- is covered by reasoning and by the
+  `_publish` contract, not by a test that provokes a real partial rename.
+  `send_and_wait` deliberately keeps its baseline behaviour in that one phase.
+- `ServiceApplicationResult.compact_summary()` does not carry the new
+  `limitations` key, and `ApplicationExecutionJournal.compact_summary()` is
+  byte-identical to the baseline. The facts are reachable through the full
+  `model_dump`; the compact shapes are frozen because consumers were written
+  against those exact keys.
+- One change reaches outside the three modules item 7 names:
+  `tests/test_fire_and_forget_surface.py`, change (f) in section 8.2. Touching
+  it meant owning its Ruff state, so it also gained twelve docstrings and a
+  reformat. Both are disclosed rather than folded into the mechanical commits.
+- Delivery status is `READY_FOR_REVIEW`. Self-review is not independent audit,
+  and this slice claims no capability promotion and no Packet Tracer
+  functionality.
 
 ---
 
