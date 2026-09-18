@@ -238,13 +238,13 @@ class _Run:
             AdmissionRefusal(step=step, code=code, detail=detail)
         )
 
-    def transition(self, stage: ServiceStage, outcome: str = "") -> bool:
+    def transition(self, stage: ServiceStage, outcome: str = "") -> None:
         """Write the stage boundary before the next effectful stage begins.
 
-        Returns whether the record is still durable. A failure after the first
-        effect closes the mutation gate instead of raising: the primary error
-        must survive, and the run still has cleanup and bounded observation to
-        do.
+        A failure closes the mutation gate rather than raising: the primary
+        error has to survive, and the run still has owned cleanup and bounded
+        observation left to do. The stage sequencer reads the gate, which is
+        why this reports nothing of its own.
         """
         moment = self.now()
         self.record.stages.append(
@@ -262,9 +262,8 @@ class _Run:
                 f"{self.persisted_stage.value if self.persisted_stage else 'admission'}."
             )
             self.limitations.append(f"persist_error:{stage.value}")
-            return False
+            return
         self.persisted_stage = stage
-        return True
 
 
 def _refused(

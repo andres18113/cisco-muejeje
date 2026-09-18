@@ -8,6 +8,7 @@ from time import perf_counter
 from packet_tracer_mcp.application.use_cases.compile_services import (
     compile_enterprise_services,
 )
+from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
 from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationIssueCode,
     ConfigurationPhase,
@@ -38,11 +39,12 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceVerificationKind,
     SetHttpContent,
 )
-from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
 from packet_tracer_mcp.domain.models.plans import DevicePlan, TopologyPlan
 
 
-def _foundation_action(device_id: str, name: str, address: str, segment: str = "hq-servers"):
+def _foundation_action(
+    device_id: str, name: str, address: str, segment: str = "hq-servers"
+):
     return SetEndpointStaticAddress(
         id=f"cfg/static/{device_id}",
         phase=ConfigurationPhase.ENDPOINT_ADDRESSING,
@@ -66,10 +68,13 @@ def _fixture(services: list[ServiceRequirement] | None = None):
             service_type=ServiceType.DNS,
             host_device_id="srv-1",
             client_device_ids=["pc-1"],
-            dns_records=[DnsRecordRequirement(
-                hostname="web.e6.example.local", address="198.18.160.10",
-                target_device_id="srv-1",
-            )],
+            dns_records=[
+                DnsRecordRequirement(
+                    hostname="web.e6.example.local",
+                    address="198.18.160.10",
+                    target_device_id="srv-1",
+                )
+            ],
         ),
         ServiceRequirement(
             name="intranet",
@@ -83,21 +88,34 @@ def _fixture(services: list[ServiceRequirement] | None = None):
     enterprise = EnterprisePlan(
         id="enterprise-e6",
         name="E6",
-        sites=[SitePlan(
-            name="HQ", site_id="hq", type=SiteType.HQ, services=services,
-        )],
+        sites=[
+            SitePlan(
+                name="HQ",
+                site_id="hq",
+                type=SiteType.HQ,
+                services=services,
+            )
+        ],
     )
     topology = TopologyPlan(
         id="topology-e6",
         semantic_hash="e4-semantic-hash",
         devices=[
             DevicePlan(
-                id="srv-1", name="HQ-SERVER-01", model="Server-PT", category="server",
-                enterprise_role="dns_server", site_id="hq",
+                id="srv-1",
+                name="HQ-SERVER-01",
+                model="Server-PT",
+                category="server",
+                enterprise_role="dns_server",
+                site_id="hq",
             ),
             DevicePlan(
-                id="pc-1", name="HQ-PC-01", model="PC-PT", category="pc",
-                enterprise_role="user_pc", site_id="hq",
+                id="pc-1",
+                name="HQ-PC-01",
+                model="PC-PT",
+                category="pc",
+                enterprise_role="user_pc",
+                site_id="hq",
             ),
         ],
     )
@@ -152,15 +170,21 @@ def _fixture(services: list[ServiceRequirement] | None = None):
 def _compile(services: list[ServiceRequirement] | None = None):
     enterprise, topology, configuration, capabilities = _fixture(services)
     return compile_enterprise_services(
-        enterprise, topology, configuration, capabilities=capabilities,
+        enterprise,
+        topology,
+        configuration,
+        capabilities=capabilities,
     )
 
 
 def test_service_plan_is_deterministic_10_of_10_and_input_order_independent():
+    """The same inputs compile to the same plan, whatever order they arrive in."""
     enterprise, topology, configuration, capabilities = _fixture()
     hashes = {
         compile_enterprise_services(
-            deepcopy(enterprise), deepcopy(topology), deepcopy(configuration),
+            deepcopy(enterprise),
+            deepcopy(topology),
+            deepcopy(configuration),
             capabilities=deepcopy(capabilities),
         ).semantic_hash
         for _ in range(10)
@@ -171,7 +195,10 @@ def test_service_plan_is_deterministic_10_of_10_and_input_order_independent():
         service.client_device_ids.reverse()
         service.dns_records.reverse()
     other = compile_enterprise_services(
-        reordered, topology, configuration, capabilities=capabilities,
+        reordered,
+        topology,
+        configuration,
+        capabilities=capabilities,
     )
 
     assert len(hashes) == 1
@@ -179,6 +206,7 @@ def test_service_plan_is_deterministic_10_of_10_and_input_order_independent():
 
 
 def test_plan_binds_e4_and_e5_hashes_and_emits_compact_summary():
+    """A service plan names the exact topology and configuration it was built on."""
     result = _compile()
 
     assert result.is_valid
@@ -192,8 +220,11 @@ def test_plan_binds_e4_and_e5_hashes_and_emits_compact_summary():
 
 
 def test_dns_compiles_closed_actions_deduplicates_identical_records_and_stable_order():
+    """Identical records collapse to one action, in a deterministic order."""
     dns = ServiceRequirement(
-        name="dns", service_type=ServiceType.DNS, host_device_id="srv-1",
+        name="dns",
+        service_type=ServiceType.DNS,
+        host_device_id="srv-1",
         client_device_ids=["pc-1"],
         dns_records=[
             DnsRecordRequirement(hostname="b.example.local", address="198.18.160.10"),
@@ -202,36 +233,59 @@ def test_dns_compiles_closed_actions_deduplicates_identical_records_and_stable_o
         ],
     )
     result = _compile([dns])
-    records = [action for action in result.plan.actions if isinstance(action, AddDnsRecord)]
+    records = [
+        action for action in result.plan.actions if isinstance(action, AddDnsRecord)
+    ]
 
     assert result.is_valid
     assert len(result.plan.actions_of_type(ServiceActionType.ENABLE_DNS)) == 1
-    assert [record.hostname for record in records] == ["a.example.local", "b.example.local"]
-    assert all(isinstance(action, (EnableDnsService, AddDnsRecord)) for action in result.plan.actions)
+    assert [record.hostname for record in records] == [
+        "a.example.local",
+        "b.example.local",
+    ]
+    assert all(
+        isinstance(action, (EnableDnsService, AddDnsRecord))
+        for action in result.plan.actions
+    )
 
 
 def test_conflicting_dns_record_is_a_structured_compile_error():
+    """One hostname mapping to two addresses is refused, not silently resolved."""
     dns = ServiceRequirement(
-        name="dns", service_type=ServiceType.DNS, host_device_id="srv-1",
+        name="dns",
+        service_type=ServiceType.DNS,
+        host_device_id="srv-1",
         dns_records=[
-            DnsRecordRequirement(hostname="same.example.local", address="198.18.160.10"),
-            DnsRecordRequirement(hostname="same.example.local", address="198.18.160.11"),
+            DnsRecordRequirement(
+                hostname="same.example.local", address="198.18.160.10"
+            ),
+            DnsRecordRequirement(
+                hostname="same.example.local", address="198.18.160.11"
+            ),
         ],
     )
     result = _compile([dns])
 
     assert not result.is_valid
     assert result.plan is None
-    assert ConfigurationIssueCode.DNS_RECORD_CONFLICT in {item.code for item in result.issues}
+    assert ConfigurationIssueCode.DNS_RECORD_CONFLICT in {
+        item.code for item in result.issues
+    }
 
 
 def test_invalid_hostname_and_unknown_target_are_rejected():
+    """A malformed hostname or an absent target device never becomes an action."""
     dns = ServiceRequirement(
-        name="dns", service_type=ServiceType.DNS, host_device_id="srv-1",
-        dns_records=[DnsRecordRequirement(
-            hostname="bad name;reload", address="198.18.160.10",
-            target_device_id="missing-device",
-        )],
+        name="dns",
+        service_type=ServiceType.DNS,
+        host_device_id="srv-1",
+        dns_records=[
+            DnsRecordRequirement(
+                hostname="bad name;reload",
+                address="198.18.160.10",
+                target_device_id="missing-device",
+            )
+        ],
     )
     result = _compile([dns])
     codes = {item.code for item in result.issues}
@@ -242,9 +296,13 @@ def test_invalid_hostname_and_unknown_target_are_rejected():
 
 
 def test_service_host_uses_existing_e4_role_deterministically_without_model_reselection():
+    """The host comes from the deployed topology, never from a fresh choice."""
     requirement = ServiceRequirement(
-        name="dns", service_type=ServiceType.DNS,
-        dns_records=[DnsRecordRequirement(hostname="x.example.local", address="198.18.160.10")],
+        name="dns",
+        service_type=ServiceType.DNS,
+        dns_records=[
+            DnsRecordRequirement(hostname="x.example.local", address="198.18.160.10")
+        ],
     )
     result = _compile([requirement])
 
@@ -255,10 +313,16 @@ def test_service_host_uses_existing_e4_role_deterministically_without_model_rese
 
 
 def test_missing_or_mismatched_foundational_configuration_never_invokes_e5():
+    """A service without its E5 foundation compiles to nothing at all."""
     enterprise, topology, configuration, capabilities = _fixture()
-    configuration.actions = [action for action in configuration.actions if action.device_id != "srv-1"]
+    configuration.actions = [
+        action for action in configuration.actions if action.device_id != "srv-1"
+    ]
     result = compile_enterprise_services(
-        enterprise, topology, configuration, capabilities=capabilities,
+        enterprise,
+        topology,
+        configuration,
+        capabilities=capabilities,
     )
 
     assert not result.is_valid
@@ -268,34 +332,60 @@ def test_missing_or_mismatched_foundational_configuration_never_invokes_e5():
 
 
 def test_cross_segment_service_requires_and_binds_e5_l3_foundation():
+    """A cross-segment path binds the L3 action that would carry it."""
     enterprise, topology, configuration, capabilities = _fixture()
-    client = next(action for action in configuration.actions if action.device_id == "pc-1")
+    client = next(
+        action for action in configuration.actions if action.device_id == "pc-1"
+    )
     client.segment_id = "hq-data"
     client.ipv4 = "198.18.161.20"
     client.gateway = "198.18.161.1"
-    topology.devices.append(DevicePlan(
-        id="r1", name="HQ-R1", model="2911", category="router",
-        enterprise_role="wan_router", site_id="hq",
-    ))
-    configuration.actions.extend([
-        ConfigureRoutedInterface(
-            id="cfg/l3/r1/data", phase=ConfigurationPhase.L3_INTERFACES,
-            device_id="r1", device_name="HQ-R1", site_id="hq",
-            interface="GigabitEthernet0/0", ipv4="198.18.161.1", prefix=24,
-            netmask="255.255.255.0", segment_id="hq-data",
-            required_capability="layer3",
-        ),
-        ConfigureRoutedInterface(
-            id="cfg/l3/r1/servers", phase=ConfigurationPhase.L3_INTERFACES,
-            device_id="r1", device_name="HQ-R1", site_id="hq",
-            interface="GigabitEthernet0/1", ipv4="198.18.160.1", prefix=24,
-            netmask="255.255.255.0", segment_id="hq-servers",
-            required_capability="layer3",
-        ),
-    ])
+    topology.devices.append(
+        DevicePlan(
+            id="r1",
+            name="HQ-R1",
+            model="2911",
+            category="router",
+            enterprise_role="wan_router",
+            site_id="hq",
+        )
+    )
+    configuration.actions.extend(
+        [
+            ConfigureRoutedInterface(
+                id="cfg/l3/r1/data",
+                phase=ConfigurationPhase.L3_INTERFACES,
+                device_id="r1",
+                device_name="HQ-R1",
+                site_id="hq",
+                interface="GigabitEthernet0/0",
+                ipv4="198.18.161.1",
+                prefix=24,
+                netmask="255.255.255.0",
+                segment_id="hq-data",
+                required_capability="layer3",
+            ),
+            ConfigureRoutedInterface(
+                id="cfg/l3/r1/servers",
+                phase=ConfigurationPhase.L3_INTERFACES,
+                device_id="r1",
+                device_name="HQ-R1",
+                site_id="hq",
+                interface="GigabitEthernet0/1",
+                ipv4="198.18.160.1",
+                prefix=24,
+                netmask="255.255.255.0",
+                segment_id="hq-servers",
+                required_capability="layer3",
+            ),
+        ]
+    )
 
     result = compile_enterprise_services(
-        enterprise, topology, configuration, capabilities=capabilities,
+        enterprise,
+        topology,
+        configuration,
+        capabilities=capabilities,
     )
     foundation_ids = {
         item.configuration_action_id for item in result.plan.foundational_requirements
@@ -306,12 +396,18 @@ def test_cross_segment_service_requires_and_binds_e5_l3_foundation():
 
 
 def test_cross_segment_service_without_e5_l3_foundation_is_rejected():
+    """Without that action there is no path, and saying so is the answer."""
     enterprise, topology, configuration, capabilities = _fixture()
-    client = next(action for action in configuration.actions if action.device_id == "pc-1")
+    client = next(
+        action for action in configuration.actions if action.device_id == "pc-1"
+    )
     client.segment_id = "hq-data"
 
     result = compile_enterprise_services(
-        enterprise, topology, configuration, capabilities=capabilities,
+        enterprise,
+        topology,
+        configuration,
+        capabilities=capabilities,
     )
 
     assert not result.is_valid
@@ -321,10 +417,14 @@ def test_cross_segment_service_without_e5_l3_foundation_is_rejected():
 
 
 def test_stale_e5_topology_binding_is_rejected():
+    """A configuration compiled for another topology is not this one."""
     enterprise, topology, configuration, capabilities = _fixture()
     configuration.source_topology_hash = "other-topology"
     result = compile_enterprise_services(
-        enterprise, topology, configuration, capabilities=capabilities,
+        enterprise,
+        topology,
+        configuration,
+        capabilities=capabilities,
     )
 
     assert not result.is_valid
@@ -334,84 +434,114 @@ def test_stale_e5_topology_binding_is_rejected():
 
 
 def test_http_actions_are_typed_and_hostname_verification_depends_on_dns_and_ip_fetch():
+    """HTTP by hostname is composed on resolution AND fetch, never on one."""
     result = _compile()
-    http = next(item for item in result.plan.services if item.service_type is ServiceType.HTTP)
+    http = next(
+        item for item in result.plan.services if item.service_type is ServiceType.HTTP
+    )
     http_actions = [
         action for action in result.plan.actions if action.service_id == http.id
     ]
     composed = next(
-        item for item in result.plan.verification_expectations
+        item
+        for item in result.plan.verification_expectations
         if item.kind.value == "http_by_hostname"
     )
 
     assert any(isinstance(action, EnableHttpService) for action in http_actions)
     assert any(isinstance(action, SetHttpContent) for action in http_actions)
     dependency_kinds = {
-        item.kind.value for item in result.plan.verification_expectations
+        item.kind.value
+        for item in result.plan.verification_expectations
         if item.id in composed.depends_on
     }
     assert dependency_kinds == {"dns_resolution", "http_fetch"}
 
 
 def test_tftp_rejects_paths_and_hashes_safe_content_without_host_file_access():
+    """A TFTP filename is a server-local name; a path is refused."""
     unsafe = ServiceRequirement(
-        name="tftp", service_type=ServiceType.TFTP, host_device_id="srv-1",
+        name="tftp",
+        service_type=ServiceType.TFTP,
+        host_device_id="srv-1",
         tftp_files=[TftpFileRequirement(filename="../running-config", content="x")],
     )
     result = _compile([unsafe])
     assert not result.is_valid
-    assert ConfigurationIssueCode.TFTP_FILENAME_UNSAFE in {item.code for item in result.issues}
+    assert ConfigurationIssueCode.TFTP_FILENAME_UNSAFE in {
+        item.code for item in result.issues
+    }
 
     safe = deepcopy(unsafe)
-    safe.tftp_files = [TftpFileRequirement(filename="e6-test.txt", content="MCP_E6_TFTP_OK")]
+    safe.tftp_files = [
+        TftpFileRequirement(filename="e6-test.txt", content="MCP_E6_TFTP_OK")
+    ]
     result = _compile([safe])
-    publish = next(action for action in result.plan.actions if isinstance(action, PublishTftpFile))
+    publish = next(
+        action for action in result.plan.actions if isinstance(action, PublishTftpFile)
+    )
     assert publish.filename == "e6-test.txt"
     assert publish.content_sha256
     assert not hasattr(publish, "source_path")
 
 
 def test_reference_enterprise_services_compile_dns_http_ntp_and_tftp_together():
+    """The four families compile in one plan without interfering."""
     services = [
         *_fixture()[0].sites[0].services,
         ServiceRequirement(
-            name="central-ntp", service_type=ServiceType.NTP,
-            host_device_id="srv-1", client_device_ids=["pc-1"],
+            name="central-ntp",
+            service_type=ServiceType.NTP,
+            host_device_id="srv-1",
+            client_device_ids=["pc-1"],
         ),
         ServiceRequirement(
-            name="config-backup", service_type=ServiceType.TFTP,
-            host_device_id="srv-1", client_device_ids=["pc-1"],
-            tftp_files=[TftpFileRequirement(
-                filename="e6-reference.txt", content="MCP_E6_TFTP_REFERENCE",
-            )],
+            name="config-backup",
+            service_type=ServiceType.TFTP,
+            host_device_id="srv-1",
+            client_device_ids=["pc-1"],
+            tftp_files=[
+                TftpFileRequirement(
+                    filename="e6-reference.txt",
+                    content="MCP_E6_TFTP_REFERENCE",
+                )
+            ],
         ),
     ]
     enterprise, topology, configuration, capabilities = _fixture(services)
-    capabilities.update({
-        "Server-PT:ntp": ServiceCapabilityProfile(
-            service_type=ServiceType.NTP,
-            application_support=CapabilityStatus.SUPPORTED,
-            direct_readback_support=CapabilityStatus.SUPPORTED,
-            behavioral_verification_support=CapabilityStatus.UNKNOWN,
-        ),
-        "Server-PT:tftp": ServiceCapabilityProfile(
-            service_type=ServiceType.TFTP,
-            application_support=CapabilityStatus.SUPPORTED,
-            action_application_support={
-                ServiceActionType.PUBLISH_TFTP_FILE.value: CapabilityStatus.UNKNOWN,
-            },
-            direct_readback_support=CapabilityStatus.SUPPORTED,
-            behavioral_verification_support=CapabilityStatus.UNKNOWN,
-        ),
-    })
+    capabilities.update(
+        {
+            "Server-PT:ntp": ServiceCapabilityProfile(
+                service_type=ServiceType.NTP,
+                application_support=CapabilityStatus.SUPPORTED,
+                direct_readback_support=CapabilityStatus.SUPPORTED,
+                behavioral_verification_support=CapabilityStatus.UNKNOWN,
+            ),
+            "Server-PT:tftp": ServiceCapabilityProfile(
+                service_type=ServiceType.TFTP,
+                application_support=CapabilityStatus.SUPPORTED,
+                action_application_support={
+                    ServiceActionType.PUBLISH_TFTP_FILE.value: CapabilityStatus.UNKNOWN,
+                },
+                direct_readback_support=CapabilityStatus.SUPPORTED,
+                behavioral_verification_support=CapabilityStatus.UNKNOWN,
+            ),
+        }
+    )
 
     result = compile_enterprise_services(
-        enterprise, topology, configuration, capabilities=capabilities,
+        enterprise,
+        topology,
+        configuration,
+        capabilities=capabilities,
     )
 
     assert result.is_valid
     assert {item.service_type for item in result.plan.services} == {
-        ServiceType.DNS, ServiceType.HTTP, ServiceType.NTP, ServiceType.TFTP,
+        ServiceType.DNS,
+        ServiceType.HTTP,
+        ServiceType.NTP,
+        ServiceType.TFTP,
     }
     assert result.summary.actions_by_type == {
         "add_dns_record": 1,
@@ -429,74 +559,114 @@ def test_reference_enterprise_services_compile_dns_http_ntp_and_tftp_together():
 
 
 def test_service_dependency_cycle_is_reported_without_a_plan():
+    """A cycle produces a named error rather than an arbitrary order."""
     services = [
         ServiceRequirement(
-            name="dns", service_type=ServiceType.DNS, host_device_id="srv-1",
+            name="dns",
+            service_type=ServiceType.DNS,
+            host_device_id="srv-1",
             depends_on=["http"],
         ),
         ServiceRequirement(
-            name="http", service_type=ServiceType.HTTP, host_device_id="srv-1",
-            depends_on=["dns"], http_content="MCP_E6_HTTP_OK",
+            name="http",
+            service_type=ServiceType.HTTP,
+            host_device_id="srv-1",
+            depends_on=["dns"],
+            http_content="MCP_E6_HTTP_OK",
         ),
     ]
     result = _compile(services)
 
     assert not result.is_valid
-    assert ConfigurationIssueCode.DEPENDENCY_CYCLE in {item.code for item in result.issues}
+    assert ConfigurationIssueCode.DEPENDENCY_CYCLE in {
+        item.code for item in result.issues
+    }
 
 
 def test_unknown_application_capability_is_warning_not_fabricated_support():
+    """An unknown capability is disclosed, never assumed supported."""
     enterprise, topology, configuration, capabilities = _fixture()
     capabilities["Server-PT:dns"].application_support = CapabilityStatus.UNKNOWN
     result = compile_enterprise_services(
-        enterprise, topology, configuration, capabilities=capabilities,
+        enterprise,
+        topology,
+        configuration,
+        capabilities=capabilities,
     )
 
     assert result.is_valid
-    assert ConfigurationIssueCode.CAPABILITY_UNVERIFIED in {item.code for item in result.issues}
+    assert ConfigurationIssueCode.CAPABILITY_UNVERIFIED in {
+        item.code for item in result.issues
+    }
 
 
 def test_compilation_stays_interactive_for_137_devices():
+    """Compilation is offline and deterministic, so it must also stay fast."""
     enterprise, topology, configuration, capabilities = _fixture()
-    enterprise.sites[0].services.extend([
-        ServiceRequirement(
-            name="central-ntp", service_type=ServiceType.NTP,
-            host_device_id="srv-1", client_device_ids=["pc-1"],
-        ),
-        ServiceRequirement(
-            name="config-backup", service_type=ServiceType.TFTP,
-            host_device_id="srv-1", client_device_ids=["pc-1"],
-            tftp_files=[TftpFileRequirement(
-                filename="e6-large.txt", content="MCP_E6_TFTP_LARGE",
-            )],
-        ),
-    ])
-    capabilities.update({
-        "Server-PT:ntp": ServiceCapabilityProfile(
-            service_type=ServiceType.NTP,
-            application_support=CapabilityStatus.SUPPORTED,
-        ),
-        "Server-PT:tftp": ServiceCapabilityProfile(
-            service_type=ServiceType.TFTP,
-            application_support=CapabilityStatus.SUPPORTED,
-        ),
-    })
+    enterprise.sites[0].services.extend(
+        [
+            ServiceRequirement(
+                name="central-ntp",
+                service_type=ServiceType.NTP,
+                host_device_id="srv-1",
+                client_device_ids=["pc-1"],
+            ),
+            ServiceRequirement(
+                name="config-backup",
+                service_type=ServiceType.TFTP,
+                host_device_id="srv-1",
+                client_device_ids=["pc-1"],
+                tftp_files=[
+                    TftpFileRequirement(
+                        filename="e6-large.txt",
+                        content="MCP_E6_TFTP_LARGE",
+                    )
+                ],
+            ),
+        ]
+    )
+    capabilities.update(
+        {
+            "Server-PT:ntp": ServiceCapabilityProfile(
+                service_type=ServiceType.NTP,
+                application_support=CapabilityStatus.SUPPORTED,
+            ),
+            "Server-PT:tftp": ServiceCapabilityProfile(
+                service_type=ServiceType.TFTP,
+                application_support=CapabilityStatus.SUPPORTED,
+            ),
+        }
+    )
     for index in range(2, 137):
         device_id = f"pc-{index}"
         name = f"HQ-PC-{index:03d}"
-        topology.devices.append(DevicePlan(
-            id=device_id, name=name, model="PC-PT", category="pc",
-            enterprise_role="user_pc", site_id="hq",
-        ))
-        configuration.actions.append(_foundation_action(
-            device_id, name, f"198.19.{index // 250}.{index % 250 + 1}", "hq-servers",
-        ))
+        topology.devices.append(
+            DevicePlan(
+                id=device_id,
+                name=name,
+                model="PC-PT",
+                category="pc",
+                enterprise_role="user_pc",
+                site_id="hq",
+            )
+        )
+        configuration.actions.append(
+            _foundation_action(
+                device_id,
+                name,
+                f"198.19.{index // 250}.{index % 250 + 1}",
+                "hq-servers",
+            )
+        )
     enterprise.sites[0].services[0].client_device_ids = [
         device.id for device in topology.devices if device.id.startswith("pc-")
     ]
     started = perf_counter()
     result = compile_enterprise_services(
-        enterprise, topology, configuration, capabilities=capabilities,
+        enterprise,
+        topology,
+        configuration,
+        capabilities=capabilities,
     )
     elapsed = perf_counter() - started
 

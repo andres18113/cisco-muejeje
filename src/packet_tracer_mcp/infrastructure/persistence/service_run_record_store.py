@@ -24,7 +24,6 @@ from pathlib import Path
 from uuid import uuid4
 
 from ...application.ports.service_run_record import RunRecordPersistenceError
-from ...domain.enterprise.models.service_entry import ServiceStage
 from ...domain.enterprise.models.service_run_record import ServiceRunRecord
 from ...shared.utils import resolve_within, safe_name_component
 
@@ -185,8 +184,3 @@ class ServiceRunRecordStore:
             raise RunRecordPersistenceError(
                 f"Stored service run record is unreadable: {resolved}"
             ) from exc
-
-    @staticmethod
-    def stage_is_durable(record: ServiceRunRecord, stage: ServiceStage) -> bool:
-        """Whether that stage boundary was written before the process stopped."""
-        return any(item.stage is stage for item in record.stages)

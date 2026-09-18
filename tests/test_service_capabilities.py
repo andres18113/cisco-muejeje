@@ -1,6 +1,7 @@
 """Catálogo E6 medido para Packet Tracer 9.0.1.0858."""
 
 from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
+from packet_tracer_mcp.domain.enterprise.models.evidence import ReadinessStatus
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceActionType,
     ServiceCapabilityProfile,
@@ -9,7 +10,6 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
 from packet_tracer_mcp.infrastructure.catalog import (
     packet_tracer_service_capabilities,
 )
-from packet_tracer_mcp.domain.enterprise.models.evidence import ReadinessStatus
 
 
 def test_packet_tracer_service_matrix_keeps_four_capability_dimensions():
@@ -36,6 +36,7 @@ def test_packet_tracer_service_matrix_keeps_four_capability_dimensions():
 
 
 def test_tftp_file_publication_is_not_inferred_from_tftp_enable_support():
+    """Enabling a process and publishing through it are separate channels."""
     profile = packet_tracer_service_capabilities("9.0.1.0858")["Server-PT:tftp"]
 
     assert profile.application_support is CapabilityStatus.SUPPORTED
@@ -50,6 +51,7 @@ def test_tftp_file_publication_is_not_inferred_from_tftp_enable_support():
 
 
 def test_only_live_behaviorally_proven_services_are_promoted():
+    """Behavioural support exists only where evidence for it exists."""
     profiles = packet_tracer_service_capabilities("9.0.1.0858")
 
     assert (
@@ -66,12 +68,15 @@ def test_only_live_behaviorally_proven_services_are_promoted():
             is CapabilityStatus.UNKNOWN
         )
     assert (
-        profiles["Server-PT:https"].capability_readiness["behavioral_verification"].verify
+        profiles["Server-PT:https"]
+        .capability_readiness["behavioral_verification"]
+        .verify
         is ReadinessStatus.UNKNOWN
     )
     for service_type in (ServiceType.NTP, ServiceType.TFTP):
         assert (
             profiles[f"Server-PT:{service_type.value}"]
-            .capability_readiness["behavioral_verification"].verify
+            .capability_readiness["behavioral_verification"]
+            .verify
             is ReadinessStatus.UNOBSERVABLE
         )

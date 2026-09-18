@@ -631,3 +631,31 @@ def test_every_refusal_code_is_typed_and_distinct(refusal):
     """A refusal a caller cannot branch on is a message, not a contract."""
     assert refusal is not ServiceEntryRefusal.NONE
     assert refusal.value == refusal.value.lower()
+
+
+def test_the_product_path_contains_no_destructive_vendor_call():
+    """R-ENTRY-07: the product removes nothing of the operator.
+
+    A corpus check rather than a behavioural one, because the guarantee is
+    about what CANNOT be reached: a destructive call that is never written
+    cannot be dispatched by any branch. The owned-client release lives in the
+    S0 runtime and is unaffected; what may not appear here is the removal of a
+    device, a pool, a user or a message.
+    """
+    from packet_tracer_mcp.adapters.mcp import service_tools
+    from packet_tracer_mcp.application.use_cases import (
+        apply_enterprise_services as entry,
+    )
+
+    corpus = "\n".join(
+        Path(module.__file__).read_text(encoding="utf-8")
+        for module in (service_tools, entry)
+    )
+    for forbidden in (
+        "removeDevice",
+        "removePool",
+        "deleteUser",
+        "deleteMailAt",
+        "removeLink",
+    ):
+        assert forbidden not in corpus, forbidden

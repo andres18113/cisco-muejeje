@@ -25,12 +25,15 @@ JPG_HEAD = "-1,-40,-1"
 
 
 class TestDecodePtImage:
+    """PT returns image bytes as signed decimals; decoding must restore them."""
+
     def test_signed_bytes_become_the_png_signature(self):
         """El 0x89 inicial de un PNG llega como -119 porque el byte de Qt tiene signo."""
         blob = decode_pt_image(PNG_HEAD, "PNG")
         assert blob == bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
 
     def test_jpg_signature(self):
+        """The JPG magic survives the same signed-byte decoding."""
         assert decode_pt_image(JPG_HEAD, "JPG") == bytes([0xFF, 0xD8, 0xFF])
 
     def test_unsigned_values_pass_through(self):
@@ -38,19 +41,23 @@ class TestDecodePtImage:
         assert decode_pt_image("137,80,78,71,13,10,26,10", "PNG")[0] == 0x89
 
     def test_whitespace_and_trailing_comma_tolerated(self):
+        """PT pads its list, so the parser accepts padding."""
         assert (
             decode_pt_image(" -119, 80,78, 71,13,10,26,10, ", "PNG")[:4] == b"\x89PNG"
         )
 
     def test_empty_response_is_an_error(self):
+        """No bytes is a failure, not an empty image."""
         with pytest.raises(CanvasImageError):
             decode_pt_image("   ", "PNG")
 
     def test_non_numeric_is_an_error(self):
+        """An error string inside the list is not a pixel."""
         with pytest.raises(CanvasImageError):
             decode_pt_image("-119,80,ERROR:algo,71", "PNG")
 
     def test_out_of_range_is_an_error(self):
+        """A value no octet can hold means the response is not image bytes."""
         with pytest.raises(CanvasImageError):
             decode_pt_image("-119,80,999,71", "PNG")
 
@@ -60,56 +67,74 @@ class TestDecodePtImage:
             decode_pt_image("1,2,3,4,5", "PNG")
 
     def test_decoded_bytes_are_writable_and_round_trip(self, tmp_path: Path):
+        """What is decoded must be what lands on disk."""
         target = tmp_path / "cap.png"
         target.write_bytes(decode_pt_image(PNG_HEAD, "PNG"))
         assert target.read_bytes()[:4] == b"\x89PNG"
 
 
 class TestNormalizeFormat:
+    """The requested image format is normalized before it reaches PT."""
+
     @pytest.mark.parametrize("raw", ["png", "PNG", " Png "])
     def test_case_and_spaces(self, raw):
+        """Case and padding do not change which format was asked for."""
         assert normalize_format(raw) == "PNG"
 
     def test_default_when_empty(self):
+        """No format requested means PNG."""
         assert normalize_format("") == "PNG"
 
     def test_unsupported_is_rejected(self):
+        """A format PT cannot produce is refused up front."""
         with pytest.raises(CanvasImageError):
             normalize_format("GIF")
 
     def test_every_declared_format_normalizes(self):
+        """Every declared format is accepted by its own name."""
         for fmt in IMAGE_FORMATS:
             assert normalize_format(fmt) == fmt
 
 
 class TestValidateColor:
+    """Note colours are bounded before they are sent."""
+
     def test_valid_range(self):
+        """A full in-range colour is accepted."""
         validate_color(0, 150, 255, 255)
 
     @pytest.mark.parametrize("bad", [(-1, 0, 0, 0), (0, 256, 0, 0), (0, 0, 0, 300)])
     def test_out_of_range_rejected(self, bad):
+        """Any channel outside 0-255 is refused."""
         with pytest.raises(ValueError):
             validate_color(*bad)
 
 
 class TestParseUuidList:
+    """PT uuid lists arrive as a list or as one comma-separated string."""
+
     def test_none_is_empty(self):
+        """No selection is an empty list, not an error."""
         assert parse_uuid_list(None) == []
 
     def test_list_passes_through(self):
+        """A list is already the shape the caller wanted."""
         assert parse_uuid_list(["{a}", "{b}"]) == ["{a}", "{b}"]
 
     def test_comma_string_is_split(self):
+        """One string of uuids becomes the list it represents."""
         assert parse_uuid_list("{a},{b}") == ["{a}", "{b}"]
 
     def test_blanks_dropped(self):
+        """Empty fragments are padding, not uuids."""
         assert parse_uuid_list("{a}, ,{b},") == ["{a}", "{b}"]
 
 
 class TestCanvasTools:
-    """Guards sobre el JS. Son closures en register_tools, así que se verifican
+    """Guards sobre el JS generado por las tools de canvas.
 
-    por texto igual que TestReconcileWiring en test_live_reconcile.py.
+    Son closures en register_tools, así que se verifican por texto igual
+    que TestReconcileWiring en test_live_reconcile.py.
     """
 
     def _src(self) -> str:
@@ -118,9 +143,10 @@ class TestCanvasTools:
         )
 
     def test_no_draw_tool_is_shipped(self):
-        """drawCircle/drawLine no se exponen: el tercer argumento resulto ser el
+        """DrawCircle y drawLine no se exponen.
 
-        z-order, no radio ni grosor, y los colores no se aplican como se pasan.
+        El tercer argumento resulto ser el z-order, no radio ni grosor, y los
+        colores no se aplican como se pasan.
 
         Medido en PT 9.0.0.0810: tres circulos con tercer argumento 60, 60 y 300
         salieron del MISMO tamano diminuto, y una linea pedida en rojo salio azul.
@@ -131,9 +157,9 @@ class TestCanvasTools:
         assert "drawCircle" not in src
 
     def test_note_uses_the_z_order_getter_not_a_font_size(self):
-        """El tercer argumento de addNote es el z-order. Verificado pasando 12 y
+        """El tercer argumento de addNote es el z-order.
 
-        14: las notas salen identicas.
+        Verificado pasando 12 y 14: las notas salen identicas.
         """
         src = self._src()
         assert "getIncNoteZOrder" in src
@@ -170,14 +196,16 @@ class TestCanvasTools:
         assert "removeCanvasItem(__ids[__i])" in src
 
     def test_clear_counts_what_is_left_across_both_sets(self):
+        """Remaining items are counted across notes AND canvas items."""
         src = self._src()
         assert "__rest = __lw[__gs[__m]]() || []" in src
 
     def test_stale_ids_are_not_reported_as_failures(self):
-        """PT deja ids de nota huerfanos: sin texto y que removeCanvasItem
+        """PT deja ids de nota huerfanos que removeCanvasItem rechaza.
 
-        rechaza. Contarlos como restantes hacia creer que la limpieza fallo
-        cuando el canvas quedaba vacio (medido: 14 huerfanos, canvas limpio).
+        No tienen texto. Contarlos como restantes hacia creer que la limpieza
+        fallo cuando el canvas quedaba vacio (medido: 14 huerfanos, canvas
+        limpio).
         """
         src = self._src()
         assert "stale_ids: __stale" in src

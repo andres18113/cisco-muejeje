@@ -3494,8 +3494,123 @@ production path.
 
 ### 10.9 Verification results
 
-Recorded after implementation; see the entries added in this section by the
-implementing commits.
+All results below were measured in this checkout with
+`.\.venv\Scripts\python.exe` (CPython 3.12.10) and Ruff 0.16.7, on branch
+`feature/server-pt-s1-product-entry`. Every one of them is offline. None of
+them is evidence about Packet Tracer.
+
+#### What was implemented, in the order it was committed
+
+| Commit | Content |
+| --- | --- |
+| `908d1c2` | Section 10 of this brief: the definition side of the V, before any behaviour change |
+| `294eb76` | One existing assertion restated so it survives reformatting, verified against the pre-format source as well |
+| `92d3d27` | Formatting only on the nine files S1 touches, proven AST-equal per file |
+| `33c561a` | The 107 lint violations on those files, including eight contract-preserving `StrEnum` conversions |
+| `66e12e0` | Capability resolved per target model; the explicit catalog with provenance; `derive_service_policy` |
+| `dde91a4` | `excluded_action_ids` (P-E5-2) and `derive_service_foundational_statuses` over the shared core predicate |
+| `7f4a579` | `ServiceRunRecord`, its ports and the contained atomic store |
+| `1aebd7d` | The `apply_enterprise_services` use case: admission, containment and per-client assembly |
+| `b2bd28b` | `pt_apply_enterprise_services` registration and `docs/tools.md` |
+
+#### Measured RED, where a behaviour actually changed
+
+RED was established by measurement, not by an import error or a missing enum
+member.
+
+| Change | Measured RED | GREEN |
+| --- | --- | --- |
+| Client capability resolves the client model | `test_the_applicator_never_verifies_a_client_on_the_servers_profile` run against the previous `apply_services.py`: **no client row was refused** (`assert refused` failed), because every client was verified on the Server-PT profile | the client rows are UNKNOWN, name the `PC-PT:` key, and no unauthorized client operation reaches the runtime |
+| The four existing service-application tests | `test_applied_service_is_not_verified_when_behavior_fails` and three others failed the moment resolution moved to the client model, because the shared fixture authorized only the server | the fixture gained the four PC-PT records the real catalog carries, and all four pass |
+| The catalog is an explicit record table | `test_packet_tracer_service_matrix_keeps_four_capability_dimensions` failed on the added client keys | the authorized restatement in 10.8, asserting the five server profiles are present rather than that nothing else is |
+
+Changes with no prior behaviour - the new store, the new use case, the new
+tool - were not given a manufactured RED. Their controls are the negative ones
+listed in 10.8, each of which fails if the guarantee is removed.
+
+#### Verification commands and their outcomes
+
+| Command | Result |
+| --- | --- |
+| `python -m pytest -q -rs` | **5922 passed, 3 skipped, 3 warnings** |
+| `python -m pytest -q tests/test_service_mutation_script_harness.py tests/test_service_client_ownership_harness.py` | **60 passed** (both S0 Node harnesses, executed against Node v24.19.0) |
+| `python -m mkdocs build --site-dir _site` | built; the only warnings are the two pre-existing `handoff.md` link warnings that predate this branch |
+| `python scripts/namespace_inventory.py` | active legacy imports **0**, active legacy string references **0**, unreviewed inert mentions **0** |
+| `git diff --check` and `git diff --check cisco/main...HEAD` | clean |
+| `python scripts/quality_gate.py --base cisco/main` | **All checks passed**; base and merge base `6263344`; 44 changed Python files; 0 mechanical exemptions; 44 already formatted |
+
+The three skips are environment-dependent and predate this branch: symlink
+creation is unavailable to this account, and two retained qualification
+artefacts are absent from this checkout. None is a skipped S1 test.
+
+Suite growth across the slice, each figure measured after its own commit:
+5803 at the S0 baseline, 5811 after the enum semantics parametrizations, 5834
+after the capability unit, 5856 after the E5 scope and foundations, 5877 after
+the store, 5912 after the use case, 5921 after the MCP surface, 5922 after the
+destructive-call corpus control. Every increment is new tests; no existing test
+was deleted and none was weakened.
+
+#### Ruff debt paid, and the boundary it moved
+
+The slice touches nine files that carried debt, so it owns them (R-REG-03).
+Measured before, and zero after:
+
+| File | Lint | Format |
+| --- | --- | --- |
+| `tool_registry.py` | 23 | reformatted |
+| `configuration.py` | 33 (4 UP042) | reformatted |
+| `service_plan.py` | 32 (4 UP042) | reformatted |
+| `apply_configuration.py` | 11 | reformatted |
+| `compose_enterprise_reference.py` | 3 | reformatted |
+| `service_compiler.py` | 2 | reformatted |
+| `service_capabilities.py` | 2 | reformatted |
+| `compile_services.py` | 1 | reformatted |
+| `tests/test_canvas.py` | 29 | reformatted |
+
+Three further test modules entered the gate when S1 edited them and were
+brought clean in the same way: `tests/test_enterprise_services.py` (17),
+`tests/test_service_capabilities.py` (3) and
+`tests/test_execution_status_facts.py` (already clean). No `noqa` was added, no
+rule was disabled, and no unrelated file was reformatted.
+
+`application/use_cases/__init__.py` was deliberately NOT touched. A convenience
+re-export of the two new foundation symbols would have dragged its 67
+pre-existing violations into the gate for no benefit; the use case imports them
+from their own module, which is what it would do anyway.
+
+#### Deviations from the assignment, each stated rather than absorbed
+
+1. **Workspace.** Implemented in the maintainer checkout rather than a sibling
+   worktree, for the reasons in 10.1. The S0 branch ref is preserved at
+   `ba45d14`.
+2. **The use case takes `intent_json`, not a parsed intent.** Section 4.4
+   sketched `apply_enterprise_services(intent, ...)`. A1 is an admission step
+   with its own typed refusal and its own record consequence, so parsing
+   belongs to the same code the tool calls. This is strictly stronger: the
+   adapter becomes translation only, and the offline test proves invalid JSON
+   reaches no bridge through the production path rather than through a helper.
+3. **`ServiceStageRuntimes` carries exactly the two runtimes named.** The
+   directed endpoint drift observer is a separate injected port rather than a
+   third field, because it is an admission-time read and not a stage runtime.
+4. **One authorized existing-test change**, recorded with its rationale in
+   10.8, plus the shared capability fixture gaining the four PC-PT client
+   records. The fixture change is the contract change, not a relaxation: a
+   fixture that authorizes only the server no longer describes a runnable
+   catalog.
+5. **`/context` instruction loading remains pending**, as recorded in 10.1.
+
+#### What is NOT verified
+
+Exact-SHA CI is **pending**: no push has been authorized for this branch, so no
+GitHub Actions run exists for the S1 delivery commit. S0's run `35286895624`
+belongs to `ba45d14` and is not a substitute for it.
+
+No LIVE Packet Tracer contact of any kind occurred. Webview CORS, the
+`this-sm:` origin, Script Engine API reachability and every DNS/HTTP capability
+this slice uses remain unverified against a running Packet Tracer, and every
+response the tool produces says so through
+`provenance:documentary_baseline`. Product usability is **offline verified
+only** until the separately authorized LIVE acceptance of 10.10 exists.
 
 ### 10.10 LIVE boundary and rollback
 
