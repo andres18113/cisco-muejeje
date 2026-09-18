@@ -122,19 +122,27 @@ class ConfigurationIssueCode(str, Enum):
     CONTROL_PLANE_MST_MAPPING_INVALID = "CONTROL_PLANE_MST_MAPPING_INVALID"
     CONTROL_PLANE_PORTFAST_TRUNK_CONFLICT = "CONTROL_PLANE_PORTFAST_TRUNK_CONFLICT"
     CONTROL_PLANE_LINK_MISSING = "CONTROL_PLANE_LINK_MISSING"
-    CONTROL_PLANE_ETHERCHANNEL_MEMBER_INVALID = "CONTROL_PLANE_ETHERCHANNEL_MEMBER_INVALID"
-    CONTROL_PLANE_ETHERCHANNEL_TRUNK_MISSING = "CONTROL_PLANE_ETHERCHANNEL_TRUNK_MISSING"
+    CONTROL_PLANE_ETHERCHANNEL_MEMBER_INVALID = (
+        "CONTROL_PLANE_ETHERCHANNEL_MEMBER_INVALID"
+    )
+    CONTROL_PLANE_ETHERCHANNEL_TRUNK_MISSING = (
+        "CONTROL_PLANE_ETHERCHANNEL_TRUNK_MISSING"
+    )
     CONTROL_PLANE_ETHERCHANNEL_CONFLICT = "CONTROL_PLANE_ETHERCHANNEL_CONFLICT"
     CONTROL_PLANE_HSRP_FOUNDATION_MISSING = "CONTROL_PLANE_HSRP_FOUNDATION_MISSING"
     CONTROL_PLANE_HSRP_VIP_COLLISION = "CONTROL_PLANE_HSRP_VIP_COLLISION"
     CONTROL_PLANE_HSRP_VIP_INVALID = "CONTROL_PLANE_HSRP_VIP_INVALID"
-    CONTROL_PLANE_ROUTING_FOUNDATION_MISSING = "CONTROL_PLANE_ROUTING_FOUNDATION_MISSING"
+    CONTROL_PLANE_ROUTING_FOUNDATION_MISSING = (
+        "CONTROL_PLANE_ROUTING_FOUNDATION_MISSING"
+    )
     CONTROL_PLANE_TRANSIT_L3_MISSING = "CONTROL_PLANE_TRANSIT_L3_MISSING"
     CONTROL_PLANE_TRANSIT_SUBNET_MISMATCH = "CONTROL_PLANE_TRANSIT_SUBNET_MISMATCH"
     CONTROL_PLANE_ROUTER_ID_COLLISION = "CONTROL_PLANE_ROUTER_ID_COLLISION"
     CONTROL_PLANE_FAILURE_RESTORE_REQUIRED = "CONTROL_PLANE_FAILURE_RESTORE_REQUIRED"
     CONTROL_PLANE_FAILURE_PROBE_MISSING = "CONTROL_PLANE_FAILURE_PROBE_MISSING"
-    CONTROL_PLANE_FAILURE_DOMAIN_NOT_INDEPENDENT = "CONTROL_PLANE_FAILURE_DOMAIN_NOT_INDEPENDENT"
+    CONTROL_PLANE_FAILURE_DOMAIN_NOT_INDEPENDENT = (
+        "CONTROL_PLANE_FAILURE_DOMAIN_NOT_INDEPENDENT"
+    )
     CONTROL_PLANE_FAILURE_DOMAIN_UNKNOWN = "CONTROL_PLANE_FAILURE_DOMAIN_UNKNOWN"
 
 
@@ -149,16 +157,18 @@ class ConfigurationIssue(BaseModel):
 class ConfigurationPolicy(BaseModel):
     """Política explícita; completa intención sin depender de Packet Tracer."""
 
-    vlan_ids_by_role: dict[SegmentRole, int] = Field(default_factory=lambda: {
-        SegmentRole.DATA: 10,
-        SegmentRole.VOICE: 20,
-        SegmentRole.CCTV: 30,
-        SegmentRole.PRINTERS: 40,
-        SegmentRole.SERVERS: 50,
-        SegmentRole.GUEST: 60,
-        SegmentRole.WIRELESS_CORPORATE: 70,
-        SegmentRole.MANAGEMENT: 99,
-    })
+    vlan_ids_by_role: dict[SegmentRole, int] = Field(
+        default_factory=lambda: {
+            SegmentRole.DATA: 10,
+            SegmentRole.VOICE: 20,
+            SegmentRole.CCTV: 30,
+            SegmentRole.PRINTERS: 40,
+            SegmentRole.SERVERS: 50,
+            SegmentRole.GUEST: 60,
+            SegmentRole.WIRELESS_CORPORATE: 70,
+            SegmentRole.MANAGEMENT: 99,
+        }
+    )
     gateway_device_ids: dict[str, str] = Field(default_factory=dict)
     dhcp_server_device_ids: dict[str, str] = Field(default_factory=dict)
     native_vlan_id: int | None = None
@@ -187,26 +197,28 @@ class BaseConfigurationAction(BaseModel):
 
 
 class ConfigureHostname(BaseConfigurationAction):
-    action_type: Literal[
+    action_type: Literal[ConfigurationActionType.CONFIGURE_HOSTNAME] = (
         ConfigurationActionType.CONFIGURE_HOSTNAME
-    ] = ConfigurationActionType.CONFIGURE_HOSTNAME
+    )
     hostname: str
 
 
 class CreateVlan(BaseConfigurationAction):
-    action_type: Literal[ConfigurationActionType.CREATE_VLAN] = ConfigurationActionType.CREATE_VLAN
-    operation: Literal[
+    action_type: Literal[ConfigurationActionType.CREATE_VLAN] = (
+        ConfigurationActionType.CREATE_VLAN
+    )
+    operation: Literal[OperationSemantics.ENSURE_PRESENT] = (
         OperationSemantics.ENSURE_PRESENT
-    ] = OperationSemantics.ENSURE_PRESENT
+    )
     vlan_id: int
     name: str = ""
     segment_id: str = ""
 
 
 class ConfigureAccessPort(BaseConfigurationAction):
-    action_type: Literal[
+    action_type: Literal[ConfigurationActionType.CONFIGURE_ACCESS_PORT] = (
         ConfigurationActionType.CONFIGURE_ACCESS_PORT
-    ] = ConfigurationActionType.CONFIGURE_ACCESS_PORT
+    )
     interface: str
     data_vlan_id: int
     voice_vlan_id: int | None = None
@@ -214,9 +226,9 @@ class ConfigureAccessPort(BaseConfigurationAction):
 
 
 class ConfigureTrunk(BaseConfigurationAction):
-    action_type: Literal[
+    action_type: Literal[ConfigurationActionType.CONFIGURE_TRUNK] = (
         ConfigurationActionType.CONFIGURE_TRUNK
-    ] = ConfigurationActionType.CONFIGURE_TRUNK
+    )
     interface: str
     allowed_vlans: list[int] = Field(default_factory=list)
     native_vlan_id: int | None = None
@@ -225,9 +237,9 @@ class ConfigureTrunk(BaseConfigurationAction):
 
 
 class ConfigureRoutedInterface(BaseConfigurationAction):
-    action_type: Literal[
+    action_type: Literal[ConfigurationActionType.CONFIGURE_ROUTED_INTERFACE] = (
         ConfigurationActionType.CONFIGURE_ROUTED_INTERFACE
-    ] = ConfigurationActionType.CONFIGURE_ROUTED_INTERFACE
+    )
     interface: str
     ipv4: str
     prefix: int
@@ -237,9 +249,9 @@ class ConfigureRoutedInterface(BaseConfigurationAction):
 
 
 class ConfigureSvi(BaseConfigurationAction):
-    action_type: Literal[
+    action_type: Literal[ConfigurationActionType.CONFIGURE_SVI] = (
         ConfigurationActionType.CONFIGURE_SVI
-    ] = ConfigurationActionType.CONFIGURE_SVI
+    )
     vlan_id: int
     ipv4: str
     prefix: int
@@ -249,9 +261,9 @@ class ConfigureSvi(BaseConfigurationAction):
 
 
 class ConfigureSubinterface(BaseConfigurationAction):
-    action_type: Literal[
+    action_type: Literal[ConfigurationActionType.CONFIGURE_SUBINTERFACE] = (
         ConfigurationActionType.CONFIGURE_SUBINTERFACE
-    ] = ConfigurationActionType.CONFIGURE_SUBINTERFACE
+    )
     parent_interface: str
     vlan_id: int
     ipv4: str
@@ -267,9 +279,9 @@ class AddressRange(BaseModel):
 
 
 class ConfigureDhcpPool(BaseConfigurationAction):
-    action_type: Literal[
+    action_type: Literal[ConfigurationActionType.CONFIGURE_DHCP_POOL] = (
         ConfigurationActionType.CONFIGURE_DHCP_POOL
-    ] = ConfigurationActionType.CONFIGURE_DHCP_POOL
+    )
     pool_name: str
     segment_id: str
     network: str
@@ -283,9 +295,9 @@ class ConfigureDhcpPool(BaseConfigurationAction):
 
 
 class SetEndpointStaticAddress(BaseConfigurationAction):
-    action_type: Literal[
+    action_type: Literal[ConfigurationActionType.SET_ENDPOINT_STATIC] = (
         ConfigurationActionType.SET_ENDPOINT_STATIC
-    ] = ConfigurationActionType.SET_ENDPOINT_STATIC
+    )
     interface: str
     ipv4: str
     netmask: str
@@ -295,9 +307,9 @@ class SetEndpointStaticAddress(BaseConfigurationAction):
 
 
 class SetEndpointDhcp(BaseConfigurationAction):
-    action_type: Literal[
+    action_type: Literal[ConfigurationActionType.SET_ENDPOINT_DHCP] = (
         ConfigurationActionType.SET_ENDPOINT_DHCP
-    ] = ConfigurationActionType.SET_ENDPOINT_DHCP
+    )
     interface: str
     segment_id: str
     network: str
@@ -310,9 +322,9 @@ class SetEndpointDhcp(BaseConfigurationAction):
 class ConfigureSerialClock(BaseConfigurationAction):
     """Reloj fisico del extremo DCE. Nunca se emite en ambos extremos."""
 
-    action_type: Literal[
+    action_type: Literal[ConfigurationActionType.CONFIGURE_SERIAL_CLOCK] = (
         ConfigurationActionType.CONFIGURE_SERIAL_CLOCK
-    ] = ConfigurationActionType.CONFIGURE_SERIAL_CLOCK
+    )
     interface: str
     clock_rate_bps: int
     serial_endpoint_role: Literal["dce"] = "dce"
@@ -322,9 +334,9 @@ class ConfigureSerialClock(BaseConfigurationAction):
 class ConfigureInterfaceBandwidth(BaseConfigurationAction):
     """Ancho de banda logico para metricas de routing, no el reloj del enlace."""
 
-    action_type: Literal[
+    action_type: Literal[ConfigurationActionType.CONFIGURE_INTERFACE_BANDWIDTH] = (
         ConfigurationActionType.CONFIGURE_INTERFACE_BANDWIDTH
-    ] = ConfigurationActionType.CONFIGURE_INTERFACE_BANDWIDTH
+    )
     interface: str
     bandwidth_kbps: int
 
@@ -332,9 +344,9 @@ class ConfigureInterfaceBandwidth(BaseConfigurationAction):
 class ConfigureEthernetLinkMode(BaseConfigurationAction):
     """Velocidad y duplex explicitos; AUTO deja negociar al enlace."""
 
-    action_type: Literal[
+    action_type: Literal[ConfigurationActionType.CONFIGURE_ETHERNET_LINK_MODE] = (
         ConfigurationActionType.CONFIGURE_ETHERNET_LINK_MODE
-    ] = ConfigurationActionType.CONFIGURE_ETHERNET_LINK_MODE
+    )
     interface: str
     speed: str = "auto"
     duplex: str = "auto"
@@ -377,7 +389,9 @@ class VerificationExpectation(BaseModel):
     device_name: str
     expected: dict[str, str | int | bool | list[int]] = Field(default_factory=dict)
     required_query: str = ""
-    verification_prerequisites: list[VerificationPrerequisite] = Field(default_factory=list)
+    verification_prerequisites: list[VerificationPrerequisite] = Field(
+        default_factory=list
+    )
 
 
 class DeviceConfigurationPlan(BaseModel):
@@ -397,13 +411,16 @@ class ConfigurationPlan(BaseModel):
     semantic_hash: str = ""
     actions: list[ConfigurationAction] = Field(default_factory=list)
     devices: list[DeviceConfigurationPlan] = Field(default_factory=list)
-    verification_expectations: list[VerificationExpectation] = Field(default_factory=list)
+    verification_expectations: list[VerificationExpectation] = Field(
+        default_factory=list
+    )
 
     def actions_for_device(self, device_id: str) -> list[ConfigurationAction]:
         return [action for action in self.actions if action.device_id == device_id]
 
     def actions_of_type(
-        self, action_type: ConfigurationActionType,
+        self,
+        action_type: ConfigurationActionType,
     ) -> list[ConfigurationAction]:
         return [action for action in self.actions if action.action_type is action_type]
 
@@ -425,7 +442,9 @@ class ConfigurationCompileSummary(BaseModel):
 class ConfigurationCompileResult(BaseModel):
     plan: ConfigurationPlan | None = None
     semantic_hash: str = ""
-    summary: ConfigurationCompileSummary = Field(default_factory=ConfigurationCompileSummary)
+    summary: ConfigurationCompileSummary = Field(
+        default_factory=ConfigurationCompileSummary
+    )
     issues: list[ConfigurationIssue] = Field(default_factory=list)
 
     @property

@@ -20,5 +20,8 @@ def compile_enterprise_services(
     capabilities: dict[str, ServiceCapabilityProfile] | None = None,
 ) -> ServiceCompileResult:
     return ServiceCompiler().compile(
-        enterprise, topology, configuration, capabilities=capabilities,
+        enterprise,
+        topology,
+        configuration,
+        capabilities=capabilities,
     )

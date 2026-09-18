@@ -74,7 +74,9 @@ class ServiceCapabilityProfile(BaseModel):
     service_type: ServiceType
     compile_support: CapabilityStatus = CapabilityStatus.SUPPORTED
     application_support: CapabilityStatus = CapabilityStatus.UNKNOWN
-    action_application_support: dict[str, CapabilityStatus] = Field(default_factory=dict)
+    action_application_support: dict[str, CapabilityStatus] = Field(
+        default_factory=dict
+    )
     direct_readback_support: CapabilityStatus = CapabilityStatus.UNKNOWN
     behavioral_verification_support: CapabilityStatus = CapabilityStatus.UNKNOWN
     source: str = ""
@@ -106,10 +108,12 @@ class EnableDnsService(BaseServiceAction):
 
 
 class AddDnsRecord(BaseServiceAction):
-    action_type: Literal[ServiceActionType.ADD_DNS_RECORD] = ServiceActionType.ADD_DNS_RECORD
-    operation: Literal[
+    action_type: Literal[ServiceActionType.ADD_DNS_RECORD] = (
+        ServiceActionType.ADD_DNS_RECORD
+    )
+    operation: Literal[OperationSemantics.ENSURE_PRESENT] = (
         OperationSemantics.ENSURE_PRESENT
-    ] = OperationSemantics.ENSURE_PRESENT
+    )
     hostname: str
     address: str
     record_type: Literal["A"] = "A"
@@ -120,18 +124,24 @@ class EnableHttpService(BaseServiceAction):
 
 
 class SetHttpContent(BaseServiceAction):
-    action_type: Literal[ServiceActionType.SET_HTTP_CONTENT] = ServiceActionType.SET_HTTP_CONTENT
+    action_type: Literal[ServiceActionType.SET_HTTP_CONTENT] = (
+        ServiceActionType.SET_HTTP_CONTENT
+    )
     path: Literal["index.html"] = "index.html"
     content: str
     content_sha256: str
 
 
 class EnableHttpsService(BaseServiceAction):
-    action_type: Literal[ServiceActionType.ENABLE_HTTPS] = ServiceActionType.ENABLE_HTTPS
+    action_type: Literal[ServiceActionType.ENABLE_HTTPS] = (
+        ServiceActionType.ENABLE_HTTPS
+    )
 
 
 class ConfigureNtpService(BaseServiceAction):
-    action_type: Literal[ServiceActionType.CONFIGURE_NTP] = ServiceActionType.CONFIGURE_NTP
+    action_type: Literal[ServiceActionType.CONFIGURE_NTP] = (
+        ServiceActionType.CONFIGURE_NTP
+    )
     authoritative: bool = True
 
 
@@ -140,12 +150,12 @@ class EnableTftpService(BaseServiceAction):
 
 
 class PublishTftpFile(BaseServiceAction):
-    action_type: Literal[
+    action_type: Literal[ServiceActionType.PUBLISH_TFTP_FILE] = (
         ServiceActionType.PUBLISH_TFTP_FILE
-    ] = ServiceActionType.PUBLISH_TFTP_FILE
-    operation: Literal[
+    )
+    operation: Literal[OperationSemantics.ENSURE_PRESENT] = (
         OperationSemantics.ENSURE_PRESENT
-    ] = OperationSemantics.ENSURE_PRESENT
+    )
     filename: str
     content: str
     content_sha256: str
@@ -202,7 +212,9 @@ class ServiceVerificationExpectation(BaseModel):
     client_device_id: str = ""
     client_device_name: str = ""
     depends_on: list[str] = Field(default_factory=list)
-    verification_prerequisites: list[VerificationPrerequisite] = Field(default_factory=list)
+    verification_prerequisites: list[VerificationPrerequisite] = Field(
+        default_factory=list
+    )
     expected: dict[str, str | int | bool] = Field(default_factory=dict)
 
 
@@ -216,8 +228,12 @@ class ServicePlan(BaseModel):
     semantic_hash: str = ""
     services: list[ServiceDefinition] = Field(default_factory=list)
     actions: list[ServiceAction] = Field(default_factory=list)
-    foundational_requirements: list[FoundationalServiceRequirement] = Field(default_factory=list)
-    verification_expectations: list[ServiceVerificationExpectation] = Field(default_factory=list)
+    foundational_requirements: list[FoundationalServiceRequirement] = Field(
+        default_factory=list
+    )
+    verification_expectations: list[ServiceVerificationExpectation] = Field(
+        default_factory=list
+    )
 
     def actions_of_type(self, action_type: ServiceActionType) -> list[ServiceAction]:
         return [item for item in self.actions if item.action_type is action_type]

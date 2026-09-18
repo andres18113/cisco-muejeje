@@ -7,7 +7,10 @@ from collections.abc import Callable, Collection, Sequence
 from time import monotonic
 from typing import Protocol
 
-from ...domain.enterprise.models.capabilities import CapabilityStatus, DeviceCapabilities
+from ...domain.enterprise.models.capabilities import (
+    CapabilityStatus,
+    DeviceCapabilities,
+)
 from ...domain.enterprise.models.configuration import (
     ConfigurationAction,
     ConfigurationPlan,
@@ -63,15 +66,18 @@ class ConfigurationRuntime(Protocol):
     def inventory(self) -> list[RuntimeConfigurationTarget]: ...
 
     def apply_actions(
-        self, actions: Sequence[ConfigurationAction],
+        self,
+        actions: Sequence[ConfigurationAction],
     ) -> list[RuntimeActionMutation]: ...
 
     def verify(
-        self, expectations: Sequence[VerificationExpectation],
+        self,
+        expectations: Sequence[VerificationExpectation],
     ) -> list[RuntimeVerification]: ...
 
     def wait_for_voice_access_forwarding(
-        self, expectations: Sequence[VerificationExpectation],
+        self,
+        expectations: Sequence[VerificationExpectation],
     ) -> list[RuntimeVerification]: ...
 
 
@@ -81,12 +87,14 @@ class ConfigurationApplicator:
     def __init__(self, runtime: ConfigurationRuntime) -> None:
         self._runtime = runtime
 
-    _VOICE_FOUNDATION_KINDS = frozenset({
-        VerificationKind.VLAN,
-        VerificationKind.TRUNK,
-        VerificationKind.L3_INTERFACE,
-        VerificationKind.DHCP_POOL,
-    })
+    _VOICE_FOUNDATION_KINDS = frozenset(
+        {
+            VerificationKind.VLAN,
+            VerificationKind.TRUNK,
+            VerificationKind.L3_INTERFACE,
+            VerificationKind.DHCP_POOL,
+        }
+    )
 
     def apply(
         self,
@@ -100,9 +108,7 @@ class ConfigurationApplicator:
         mutation_action_ids: Collection[str] | None = None,
         retained_action_results: Sequence[ActionApplicationResult] = (),
         retained_deferred_voice_action_ids: Collection[str] = (),
-        phase_observer: (
-            Callable[[int, tuple[str, ...]], None] | None
-        ) = None,
+        phase_observer: (Callable[[int, tuple[str, ...]], None] | None) = None,
     ) -> ConfigurationApplicationResult:
         started = monotonic()
         runtime_context = runtime_context or ConfigurationRuntimeContext()
@@ -112,7 +118,9 @@ class ConfigurationApplicator:
                 ConfigurationFailureCode.SOURCE_TOPOLOGY_MISMATCH,
                 "ConfigurationPlan source hash does not match the deployed E4 topology.",
                 runtime_context=runtime_context,
-                deployment_id=deployment_manifest.deployment_id if deployment_manifest else "",
+                deployment_id=deployment_manifest.deployment_id
+                if deployment_manifest
+                else "",
                 started=started,
             )
         if (
@@ -127,9 +135,8 @@ class ConfigurationApplicator:
                 deployment_id=deployment_manifest.deployment_id,
                 started=started,
             )
-        if (
-            deployment_manifest is None
-            and requires_deployment_manifest(plan.source_topology_hash_schema)
+        if deployment_manifest is None and requires_deployment_manifest(
+            plan.source_topology_hash_schema
         ):
             return self._preflight_failure(
                 plan,
@@ -163,7 +170,9 @@ class ConfigurationApplicator:
                 ConfigurationFailureCode.DEPENDENCY_BLOCKED,
                 str(exc),
                 runtime_context=runtime_context,
-                deployment_id=deployment_manifest.deployment_id if deployment_manifest else "",
+                deployment_id=deployment_manifest.deployment_id
+                if deployment_manifest
+                else "",
                 started=started,
             )
         if [action.id for action in ordered] != [action.id for action in plan.actions]:
@@ -172,7 +181,9 @@ class ConfigurationApplicator:
                 ConfigurationFailureCode.DEPENDENCY_BLOCKED,
                 "ConfigurationPlan actions are not in deterministic dependency order.",
                 runtime_context=runtime_context,
-                deployment_id=deployment_manifest.deployment_id if deployment_manifest else "",
+                deployment_id=deployment_manifest.deployment_id
+                if deployment_manifest
+                else "",
                 started=started,
             )
 
@@ -185,12 +196,11 @@ class ConfigurationApplicator:
             mutation_action_ids=mutation_action_ids,
             retained_action_results=retained_action_results,
         )
-        retained_deferred_voice_ids = frozenset(
-            retained_deferred_voice_action_ids
-        )
+        retained_deferred_voice_ids = frozenset(retained_deferred_voice_action_ids)
         actions_by_id = {item.id: item for item in plan.actions}
         invalid_retained_deferred = sorted(
-            identifier for identifier in retained_deferred_voice_ids
+            identifier
+            for identifier in retained_deferred_voice_ids
             if (
                 identifier in mutation_ids
                 or identifier not in retained_results
@@ -214,8 +224,7 @@ class ConfigurationApplicator:
                 *mutation_scope_errors,
                 runtime_context=runtime_context,
                 deployment_id=(
-                    deployment_manifest.deployment_id
-                    if deployment_manifest else ""
+                    deployment_manifest.deployment_id if deployment_manifest else ""
                 ),
                 started=started,
             )
@@ -224,9 +233,13 @@ class ConfigurationApplicator:
             inventory = self._runtime.inventory()
         except Exception as exc:
             return self._preflight_failure(
-                plan, ConfigurationFailureCode.SESSION_FAILED,
-                f"Runtime inventory failed: {exc}", runtime_context=runtime_context,
-                deployment_id=deployment_manifest.deployment_id if deployment_manifest else "",
+                plan,
+                ConfigurationFailureCode.SESSION_FAILED,
+                f"Runtime inventory failed: {exc}",
+                runtime_context=runtime_context,
+                deployment_id=deployment_manifest.deployment_id
+                if deployment_manifest
+                else "",
                 started=started,
             )
         if deployment_manifest is not None:
@@ -239,7 +252,9 @@ class ConfigurationApplicator:
                 )
             except DeploymentIdentityError as exc:
                 return self._preflight_failure(
-                    plan, ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH, str(exc),
+                    plan,
+                    ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH,
+                    str(exc),
                     runtime_context=runtime_context,
                     deployment_id=deployment_manifest.deployment_id,
                     started=started,
@@ -288,9 +303,14 @@ class ConfigurationApplicator:
             if any("interface" in message.casefold() for message in preflight_errors):
                 code = ConfigurationFailureCode.INTERFACE_NOT_FOUND
             return self._preflight_failure(
-                plan, code, *preflight_errors,
-                runtime_context=runtime_context, started=started,
-                deployment_id=deployment_manifest.deployment_id if deployment_manifest else "",
+                plan,
+                code,
+                *preflight_errors,
+                runtime_context=runtime_context,
+                started=started,
+                deployment_id=deployment_manifest.deployment_id
+                if deployment_manifest
+                else "",
             )
 
         # El conjunto REQUERIDO del plan es UNA unidad de preflight. Si alguna
@@ -308,7 +328,11 @@ class ConfigurationApplicator:
         )
         blocked = self._unexecutable_closure(plan, refusals)
         required_blocked = sorted(
-            (action for action in plan.actions if action.critical and action.id in blocked),
+            (
+                action
+                for action in plan.actions
+                if action.critical and action.id in blocked
+            ),
             key=lambda item: item.id,
         )
         if required_blocked:
@@ -324,20 +348,25 @@ class ConfigurationApplicator:
                     )
                     else ConfigurationFailureCode.CAPABILITY_UNKNOWN
                 ),
-                *sorted({
-                    (
-                        f"{action.id} ({action.device_name}): required capability "
-                        f"{action.required_capability} is "
-                        f"{refused_status[action.id].value} for {refused_model[action.id]}."
-                    )
-                    if action.id in refused_status else (
-                        f"{action.id} ({action.device_name}): required action depends on "
-                        "a refused action and can never execute."
-                    )
-                    for action in required_blocked
-                }),
+                *sorted(
+                    {
+                        (
+                            f"{action.id} ({action.device_name}): required capability "
+                            f"{action.required_capability} is "
+                            f"{refused_status[action.id].value} for {refused_model[action.id]}."
+                        )
+                        if action.id in refused_status
+                        else (
+                            f"{action.id} ({action.device_name}): required action depends on "
+                            "a refused action and can never execute."
+                        )
+                        for action in required_blocked
+                    }
+                ),
                 runtime_context=runtime_context,
-                deployment_id=deployment_manifest.deployment_id if deployment_manifest else "",
+                deployment_id=deployment_manifest.deployment_id
+                if deployment_manifest
+                else "",
                 started=started,
             )
 
@@ -360,7 +389,8 @@ class ConfigurationApplicator:
                 if action.id in results:
                     continue
                 blocked = [
-                    dependency for dependency in action.depends_on
+                    dependency
+                    for dependency in action.depends_on
                     if dependency not in results
                     or not satisfies_apply_dependency(results[dependency].status)
                 ]
@@ -375,11 +405,13 @@ class ConfigurationApplicator:
                 ready.append(action)
             if not ready:
                 continue
-            results.update(self._apply_ready_actions(
-                ready,
-                deployed_names,
-                data_only_action_ids=deferred_voice_ids,
-            ))
+            results.update(
+                self._apply_ready_actions(
+                    ready,
+                    deployed_names,
+                    data_only_action_ids=deferred_voice_ids,
+                )
+            )
             if phase_observer is not None:
                 phase_observer(
                     int(phase),
@@ -395,11 +427,11 @@ class ConfigurationApplicator:
             results,
             deferred_voice_actions,
             deployed_names,
-            defer_voice_signal_until_bootstrap=(
-                defer_voice_signal_until_bootstrap
-            ),
+            defer_voice_signal_until_bootstrap=(defer_voice_signal_until_bootstrap),
         )
-        status, failure_code = self._overall_status(action_results, verification_results)
+        status, failure_code = self._overall_status(
+            action_results, verification_results
+        )
         if (
             voice_signal_barrier is not None
             and voice_signal_barrier.signal_status
@@ -416,14 +448,9 @@ class ConfigurationApplicator:
             plan_id=plan.id,
             deployment_id=deployment_id,
             actions=list(plan.actions),
-            results=[
-                item for item in action_results
-                if item.action_id in mutation_ids
-            ],
+            results=[item for item in action_results if item.action_id in mutation_ids],
         )
-        expectations_by_id = {
-            item.id: item for item in plan.verification_expectations
-        }
+        expectations_by_id = {item.id: item for item in plan.verification_expectations}
         evidence_records = [
             evidence_from_legacy_result(
                 identifier=f"evidence/{item.expectation_id}",
@@ -479,10 +506,10 @@ class ConfigurationApplicator:
         started = monotonic()
         barrier = application.voice_signal_barrier
         voice_action_ids = {
-            item.id for item in plan.actions
+            item.id
+            for item in plan.actions
             if (
-                isinstance(item, ConfigureAccessPort)
-                and item.voice_vlan_id is not None
+                isinstance(item, ConfigureAccessPort) and item.voice_vlan_id is not None
             )
         }
         if retained_state_only:
@@ -496,8 +523,7 @@ class ConfigurationApplicator:
                 item.id for item in plan.verification_expectations
             )
             observed_expectation_ids = Counter(
-                item.expectation_id
-                for item in application.verification_results
+                item.expectation_id for item in application.verification_results
             )
             if (
                 application.config_plan_id != plan.id
@@ -515,12 +541,9 @@ class ConfigurationApplicator:
                     "Voice qualification.",
                     started,
                 )
-            action_by_id = {
-                item.action_id: item for item in application.action_results
-            }
+            action_by_id = {item.action_id: item for item in application.action_results}
             verification_by_id = {
-                item.expectation_id: item
-                for item in application.verification_results
+                item.expectation_id: item for item in application.verification_results
             }
             preparation_results = [
                 action_by_id[item.id]
@@ -528,15 +551,15 @@ class ConfigurationApplicator:
                 if item.id in voice_action_ids
             ]
             foundation_expectations = [
-                item for item in plan.verification_expectations
+                item
+                for item in plan.verification_expectations
                 if (
                     item.action_id not in voice_action_ids
                     and item.kind in self._VOICE_FOUNDATION_KINDS
                 )
             ]
             foundation_results = [
-                verification_by_id[item.id]
-                for item in foundation_expectations
+                verification_by_id[item.id] for item in foundation_expectations
             ]
             foundation_status = self._voice_signal_foundation_status(
                 preparation_results,
@@ -574,16 +597,10 @@ class ConfigurationApplicator:
                     started,
                 )
             deferred_ids = frozenset(barrier.deferred_action_ids)
-        deferred_actions = [
-            item for item in plan.actions if item.id in deferred_ids
-        ]
-        if (
-            len(deferred_actions) != len(deferred_ids)
-            or any(
-                not isinstance(item, ConfigureAccessPort)
-                or item.voice_vlan_id is None
-                for item in deferred_actions
-            )
+        deferred_actions = [item for item in plan.actions if item.id in deferred_ids]
+        if len(deferred_actions) != len(deferred_ids) or any(
+            not isinstance(item, ConfigureAccessPort) or item.voice_vlan_id is None
+            for item in deferred_actions
         ):
             return self._voice_signal_completion_failure(
                 application,
@@ -601,9 +618,7 @@ class ConfigurationApplicator:
                 semantic_targets = resolve_manifest_targets(
                     deployment_manifest,
                     physical_topology_hash=plan.source_topology_hash,
-                    semantic_device_ids=[
-                        item.device_id for item in plan.devices
-                    ],
+                    semantic_device_ids=[item.device_id for item in plan.devices],
                     inventory=inventory,
                 )
                 deployed_names = {
@@ -613,7 +628,8 @@ class ConfigurationApplicator:
             else:
                 targets = {item.device_name: item for item in inventory}
                 missing = [
-                    item.device_name for item in plan.devices
+                    item.device_name
+                    for item in plan.devices
                     if item.device_name not in targets
                 ]
                 if missing:
@@ -632,34 +648,31 @@ class ConfigurationApplicator:
                 started,
             )
 
-        action_by_id = {
-            item.action_id: item for item in application.action_results
-        }
+        action_by_id = {item.action_id: item for item in application.action_results}
         signal_by_id = (
-            {
-                identifier: action_by_id[identifier]
-                for identifier in voice_action_ids
-            }
-            if retained_state_only else
-            self._apply_ready_actions(
+            {identifier: action_by_id[identifier] for identifier in voice_action_ids}
+            if retained_state_only
+            else self._apply_ready_actions(
                 deferred_actions,
                 deployed_names,
             )
         )
         action_by_id.update(signal_by_id)
-        action_results = [
-            action_by_id[item.id] for item in plan.actions
-        ]
+        action_results = [action_by_id[item.id] for item in plan.actions]
         expectations = [
-            item for item in plan.verification_expectations
+            item
+            for item in plan.verification_expectations
             if item.action_id in voice_action_ids
         ]
         runtime_expectations = [
-            item.model_copy(update={
-                "device_name": deployed_names.get(
-                    item.device_id, item.device_name,
-                ),
-            })
+            item.model_copy(
+                update={
+                    "device_name": deployed_names.get(
+                        item.device_id,
+                        item.device_name,
+                    ),
+                }
+            )
             for item in expectations
         ]
         direct_by_id = {
@@ -682,7 +695,8 @@ class ConfigurationApplicator:
             lifecycle_observer("VOICE_SIGNAL_VERIFIED")
         try:
             wait_for_forwarding = getattr(
-                self._runtime, "wait_for_voice_access_forwarding",
+                self._runtime,
+                "wait_for_voice_access_forwarding",
             )
             forwarding_raw = {
                 item.expectation_id: item
@@ -693,10 +707,7 @@ class ConfigurationApplicator:
                 item.id: RuntimeVerification(
                     expectation_id=item.id,
                     status=ActionExecutionStatus.UNOBSERVABLE,
-                    message=(
-                        "Voice access forwarding could not be observed: "
-                        f"{exc}"
-                    ),
+                    message=(f"Voice access forwarding could not be observed: {exc}"),
                 )
                 for item in runtime_expectations
             }
@@ -708,9 +719,7 @@ class ConfigurationApplicator:
                 observed = RuntimeVerification(
                     expectation_id=expectation.id,
                     status=ActionExecutionStatus.UNOBSERVABLE,
-                    message=(
-                        "Runtime returned no Voice access forwarding result."
-                    ),
+                    message=("Runtime returned no Voice access forwarding result."),
                 )
             forwarding = VerificationResult(
                 expectation_id=expectation.id,
@@ -723,19 +732,16 @@ class ConfigurationApplicator:
                 convergence=observed.convergence,
             )
             forwarding_results.append(forwarding)
-            verified_by_id[expectation.id] = (
-                self._merge_voice_signal_verification(
-                    direct_by_id[expectation.id],
-                    forwarding,
-                )
+            verified_by_id[expectation.id] = self._merge_voice_signal_verification(
+                direct_by_id[expectation.id],
+                forwarding,
             )
         if (
             lifecycle_observer is not None
             and forwarding_results
             and len(forwarding_results) == len(runtime_expectations)
-            and len({
-                item.expectation_id for item in forwarding_results
-            }) == len(runtime_expectations)
+            and len({item.expectation_id for item in forwarding_results})
+            == len(runtime_expectations)
             and all(
                 item.status is ActionExecutionStatus.VERIFIED
                 and item.fields.get("voice_forwarding")
@@ -745,37 +751,36 @@ class ConfigurationApplicator:
         ):
             lifecycle_observer("PHONE_ACCESS_FWD_VERIFIED")
         verification_by_id = {
-            item.expectation_id: item
-            for item in application.verification_results
+            item.expectation_id: item for item in application.verification_results
         }
         verification_by_id.update(verified_by_id)
         verification_results = [
-            verification_by_id[item.id]
-            for item in plan.verification_expectations
+            verification_by_id[item.id] for item in plan.verification_expectations
         ]
         signal_status = self._voice_signal_status(
             list(signal_by_id.values()),
             list(verified_by_id.values()),
             barrier.foundation_status,
         )
-        completed_barrier = barrier.model_copy(update={
-            "signal_results": list(signal_by_id.values()),
-            "post_signal_convergence_results": forwarding_results,
-            "signal_status": signal_status,
-            "message": (
-                "Retained Voice signal state was independently verified; no "
-                "access action was dispatched."
-                if (
-                    retained_state_only
-                    and signal_status is ActionExecutionStatus.VERIFIED
-                )
-                else
-                "Voice bootstrap completed; the original typed access actions "
-                "were dispatched and independently verified."
-                if signal_status is ActionExecutionStatus.VERIFIED
-                else "Deferred Voice signalling or verification failed."
-            ),
-        })
+        completed_barrier = barrier.model_copy(
+            update={
+                "signal_results": list(signal_by_id.values()),
+                "post_signal_convergence_results": forwarding_results,
+                "signal_status": signal_status,
+                "message": (
+                    "Retained Voice signal state was independently verified; no "
+                    "access action was dispatched."
+                    if (
+                        retained_state_only
+                        and signal_status is ActionExecutionStatus.VERIFIED
+                    )
+                    else "Voice bootstrap completed; the original typed access actions "
+                    "were dispatched and independently verified."
+                    if signal_status is ActionExecutionStatus.VERIFIED
+                    else "Deferred Voice signalling or verification failed."
+                ),
+            }
+        )
         status, failure_code = self._overall_status(
             action_results,
             verification_results,
@@ -786,13 +791,12 @@ class ConfigurationApplicator:
             deployment_id=deployment_id,
             actions=list(plan.actions),
             results=[
-                item for item in action_results
+                item
+                for item in action_results
                 if item.action_id in set(application.mutation_action_ids)
             ],
         )
-        expectations_by_id = {
-            item.id: item for item in plan.verification_expectations
-        }
+        expectations_by_id = {item.id: item for item in plan.verification_expectations}
         evidence_records = [
             evidence_from_legacy_result(
                 identifier=f"evidence/{item.expectation_id}",
@@ -802,13 +806,10 @@ class ConfigurationApplicator:
                 evidence_method=item.evidence_method,
                 fresh_evidence=item.fresh_evidence,
                 observed_value={
-                    name: value.value
-                    for name, value in sorted(item.fields.items())
+                    name: value.value for name, value in sorted(item.fields.items())
                 },
                 backend=application.runtime_context.evidence_backend,
-                backend_version=(
-                    application.runtime_context.evidence_backend_version
-                ),
+                backend_version=(application.runtime_context.evidence_backend_version),
                 environment_fingerprint=(
                     application.runtime_context.environment_semantic_hash
                 ),
@@ -819,20 +820,21 @@ class ConfigurationApplicator:
             )
             for item in verification_results
         ]
-        return application.model_copy(update={
-            "status": status,
-            "failure_code": failure_code,
-            "action_results": action_results,
-            "verification_results": verification_results,
-            "execution_journal": journal,
-            "dirty_state": journal.dirty_state,
-            "evidence_records": evidence_records,
-            "voice_signal_barrier": completed_barrier,
-            "duration_ms": (
-                application.duration_ms
-                + int((monotonic() - started) * 1000)
-            ),
-        })
+        return application.model_copy(
+            update={
+                "status": status,
+                "failure_code": failure_code,
+                "action_results": action_results,
+                "verification_results": verification_results,
+                "execution_journal": journal,
+                "dirty_state": journal.dirty_state,
+                "evidence_records": evidence_records,
+                "voice_signal_barrier": completed_barrier,
+                "duration_ms": (
+                    application.duration_ms + int((monotonic() - started) * 1000)
+                ),
+            }
+        )
 
     @staticmethod
     def _voice_signal_completion_failure(
@@ -842,20 +844,23 @@ class ConfigurationApplicator:
     ) -> ConfigurationApplicationResult:
         barrier = application.voice_signal_barrier
         if barrier is not None:
-            barrier = barrier.model_copy(update={
-                "signal_status": ActionExecutionStatus.FAILED,
-                "message": message,
-            })
-        return application.model_copy(update={
-            "status": ConfigurationApplicationStatus.FAILED,
-            "failure_code": ConfigurationFailureCode.APPLICATION_FAILED,
-            "preflight_errors": [*application.preflight_errors, message],
-            "voice_signal_barrier": barrier,
-            "duration_ms": (
-                application.duration_ms
-                + int((monotonic() - started) * 1000)
-            ),
-        })
+            barrier = barrier.model_copy(
+                update={
+                    "signal_status": ActionExecutionStatus.FAILED,
+                    "message": message,
+                }
+            )
+        return application.model_copy(
+            update={
+                "status": ConfigurationApplicationStatus.FAILED,
+                "failure_code": ConfigurationFailureCode.APPLICATION_FAILED,
+                "preflight_errors": [*application.preflight_errors, message],
+                "voice_signal_barrier": barrier,
+                "duration_ms": (
+                    application.duration_ms + int((monotonic() - started) * 1000)
+                ),
+            }
+        )
 
     @staticmethod
     def _merge_voice_signal_verification(
@@ -885,22 +890,32 @@ class ConfigurationApplicator:
             status = ActionExecutionStatus.VERIFIED
         else:
             status = ActionExecutionStatus.PARTIAL
-        return direct.model_copy(update={
-            "status": status,
-            "evidence_method": "+".join(filter(None, (
-                direct.evidence_method,
-                forwarding.evidence_method,
-            ))),
-            "fresh_evidence": (
-                direct.fresh_evidence and forwarding.fresh_evidence
-            ),
-            "fields": {**direct.fields, **forwarding_fields},
-            "message": " ".join(filter(None, (
-                direct.message,
-                forwarding.message,
-            ))),
-            "convergence": forwarding.convergence,
-        })
+        return direct.model_copy(
+            update={
+                "status": status,
+                "evidence_method": "+".join(
+                    filter(
+                        None,
+                        (
+                            direct.evidence_method,
+                            forwarding.evidence_method,
+                        ),
+                    )
+                ),
+                "fresh_evidence": (direct.fresh_evidence and forwarding.fresh_evidence),
+                "fields": {**direct.fields, **forwarding_fields},
+                "message": " ".join(
+                    filter(
+                        None,
+                        (
+                            direct.message,
+                            forwarding.message,
+                        ),
+                    )
+                ),
+                "convergence": forwarding.convergence,
+            }
+        )
 
     def _verify_with_voice_signal_barrier(
         self,
@@ -944,22 +959,25 @@ class ConfigurationApplicator:
                     message="Blocked by: " + ", ".join(blocked),
                 )
             runtime_expectations = [
-                item.model_copy(update={
-                    "device_name": deployed_names.get(
-                        item.device_id, item.device_name,
-                    ),
-                })
+                item.model_copy(
+                    update={
+                        "device_name": deployed_names.get(
+                            item.device_id,
+                            item.device_name,
+                        ),
+                    }
+                )
                 for item in ready
             ]
-            settled.update({
-                item.expectation_id: item
-                for item in self._verify(plan, runtime_expectations)
-            })
+            settled.update(
+                {
+                    item.expectation_id: item
+                    for item in self._verify(plan, runtime_expectations)
+                }
+            )
             return settled
 
-        initial_action_results = [
-            results[action.id] for action in plan.actions
-        ]
+        initial_action_results = [results[action.id] for action in plan.actions]
         initial_statuses = {
             item.action_id: item.status for item in initial_action_results
         }
@@ -975,11 +993,11 @@ class ConfigurationApplicator:
             )
 
         preparation_results = [
-            results[action.id] for action in plan.actions
-            if action.id in deferred_ids
+            results[action.id] for action in plan.actions if action.id in deferred_ids
         ]
         pre_signal_expectations = [
-            item for item in plan.verification_expectations
+            item
+            for item in plan.verification_expectations
             if item.action_id not in deferred_ids
         ]
         pre_signal_results = verify_subset(
@@ -987,7 +1005,8 @@ class ConfigurationApplicator:
             initial_statuses,
         )
         foundation_expectations = [
-            item for item in pre_signal_expectations
+            item
+            for item in pre_signal_expectations
             if item.kind in self._VOICE_FOUNDATION_KINDS
         ]
         foundation_results = [
@@ -1022,9 +1041,7 @@ class ConfigurationApplicator:
                 deployed_names,
             )
         else:
-            preparation_by_id = {
-                item.action_id: item for item in preparation_results
-            }
+            preparation_by_id = {item.action_id: item for item in preparation_results}
             signal_results = {
                 action_id: (
                     ActionApplicationResult(
@@ -1038,23 +1055,18 @@ class ConfigurationApplicator:
                             "only admitted measured ceiling."
                         ),
                     )
-                    if satisfies_apply_dependency(
-                        preparation_by_id[action_id].status
-                    )
+                    if satisfies_apply_dependency(preparation_by_id[action_id].status)
                     else preparation_by_id[action_id]
                 )
                 for action_id in deferred_voice_actions
             }
         results.update(signal_results)
 
-        final_action_results = [
-            results[action.id] for action in plan.actions
-        ]
-        final_statuses = {
-            item.action_id: item.status for item in final_action_results
-        }
+        final_action_results = [results[action.id] for action in plan.actions]
+        final_statuses = {item.action_id: item.status for item in final_action_results}
         post_signal_expectations = [
-            item for item in plan.verification_expectations
+            item
+            for item in plan.verification_expectations
             if item.action_id in deferred_ids
         ]
         if signal_deferred:
@@ -1091,9 +1103,7 @@ class ConfigurationApplicator:
         barrier = VoiceSignalBarrierResult(
             required=True,
             deferred_action_ids=sorted(deferred_ids),
-            foundation_expectation_ids=[
-                item.id for item in foundation_expectations
-            ],
+            foundation_expectation_ids=[item.id for item in foundation_expectations],
             preparation_results=preparation_results,
             foundation_verification_results=foundation_results,
             signal_results=list(signal_results.values()),
@@ -1121,8 +1131,7 @@ class ConfigurationApplicator:
         all_pre_signal: list[VerificationResult],
     ) -> ActionExecutionStatus:
         if not preparation or any(
-            not satisfies_apply_dependency(item.status)
-            for item in preparation
+            not satisfies_apply_dependency(item.status) for item in preparation
         ):
             return ActionExecutionStatus.FAILED
         if not expectations or len(expectations) != len(foundation):
@@ -1131,18 +1140,16 @@ class ConfigurationApplicator:
         unresolved: list[ActionExecutionStatus] = []
         for expectation in expectations:
             status = by_id[expectation.id].status
-            if (
-                expectation.kind is VerificationKind.DHCP_POOL
-                and status in {
-                    ActionExecutionStatus.VERIFIED,
-                    ActionExecutionStatus.UNOBSERVABLE,
-                }
-            ):
+            if expectation.kind is VerificationKind.DHCP_POOL and status in {
+                ActionExecutionStatus.VERIFIED,
+                ActionExecutionStatus.UNOBSERVABLE,
+            }:
                 continue
             if status is not ActionExecutionStatus.VERIFIED:
                 unresolved.append(status)
         if any(
-            item.status in {
+            item.status
+            in {
                 ActionExecutionStatus.FAILED,
                 ActionExecutionStatus.UNKNOWN,
                 ActionExecutionStatus.DEPENDENCY_BLOCKED,
@@ -1175,8 +1182,7 @@ class ConfigurationApplicator:
         if foundation_status is not ActionExecutionStatus.VERIFIED:
             return ActionExecutionStatus.DEPENDENCY_BLOCKED
         if not signal_results or any(
-            not satisfies_apply_dependency(item.status)
-            for item in signal_results
+            not satisfies_apply_dependency(item.status) for item in signal_results
         ):
             return ActionExecutionStatus.FAILED
         if not verification_results:
@@ -1187,8 +1193,7 @@ class ConfigurationApplicator:
         ):
             return ActionExecutionStatus.VERIFIED
         if any(
-            item.status is ActionExecutionStatus.FAILED
-            for item in verification_results
+            item.status is ActionExecutionStatus.FAILED for item in verification_results
         ):
             return ActionExecutionStatus.FAILED
         return ActionExecutionStatus.UNOBSERVABLE
@@ -1204,7 +1209,8 @@ class ConfigurationApplicator:
         for item in actions:
             updates: dict[str, object] = {
                 "device_name": deployed_names.get(
-                    item.device_id, item.device_name,
+                    item.device_id,
+                    item.device_name,
                 ),
             }
             if item.id in data_only_action_ids:
@@ -1242,9 +1248,9 @@ class ConfigurationApplicator:
                 status=self._mutation_status(mutation),
                 failure_code=(
                     ConfigurationFailureCode.NONE
-                    if mutation.applied else mutation.failure_code
-                    if mutation.failure_code
-                    is not ConfigurationFailureCode.NONE
+                    if mutation.applied
+                    else mutation.failure_code
+                    if mutation.failure_code is not ConfigurationFailureCode.NONE
                     else ConfigurationFailureCode.APPLICATION_FAILED
                 ),
                 message=mutation.message,
@@ -1348,8 +1354,7 @@ class ConfigurationApplicator:
         )
         if invalid:
             errors.append(
-                "Retained actions were not previously applied: "
-                + ", ".join(invalid)
+                "Retained actions were not previously applied: " + ", ".join(invalid)
             )
         reverse_dependencies = sorted(
             item.id
@@ -1369,8 +1374,16 @@ class ConfigurationApplicator:
 
     @staticmethod
     def _physical_interface(action: ConfigurationAction) -> str:
-        if isinstance(action, (ConfigureAccessPort, ConfigureTrunk, ConfigureRoutedInterface,
-                               SetEndpointStaticAddress, SetEndpointDhcp)):
+        if isinstance(
+            action,
+            (
+                ConfigureAccessPort,
+                ConfigureTrunk,
+                ConfigureRoutedInterface,
+                SetEndpointStaticAddress,
+                SetEndpointDhcp,
+            ),
+        ):
             return action.interface
         if isinstance(action, ConfigureSubinterface):
             return action.parent_interface
@@ -1399,13 +1412,16 @@ class ConfigurationApplicator:
         for action in plan.actions:
             if selected is not None and action.id not in selected:
                 continue
-            if not action.required_capability or action.required_capability.startswith("endpoint_"):
+            if not action.required_capability or action.required_capability.startswith(
+                "endpoint_"
+            ):
                 continue
             target = targets[action.device_name]
             profile = capabilities.get(target.model)
             status = (
                 getattr(profile, action.required_capability, CapabilityStatus.UNKNOWN)
-                if profile else CapabilityStatus.UNKNOWN
+                if profile
+                else CapabilityStatus.UNKNOWN
             )
             if status is CapabilityStatus.SUPPORTED:
                 continue
@@ -1460,7 +1476,9 @@ class ConfigurationApplicator:
         if not expectations:
             return []
         try:
-            observed = {item.expectation_id: item for item in self._runtime.verify(expectations)}
+            observed = {
+                item.expectation_id: item for item in self._runtime.verify(expectations)
+            }
         except Exception as exc:
             observed = {
                 expectation.id: RuntimeVerification(
@@ -1474,23 +1492,27 @@ class ConfigurationApplicator:
         for expectation in expectations:
             item = observed.get(expectation.id)
             if item is None:
-                results.append(VerificationResult(
+                results.append(
+                    VerificationResult(
+                        expectation_id=expectation.id,
+                        action_id=expectation.action_id,
+                        status=ActionExecutionStatus.UNKNOWN,
+                        message="Runtime returned no verification result.",
+                    )
+                )
+                continue
+            results.append(
+                VerificationResult(
                     expectation_id=expectation.id,
                     action_id=expectation.action_id,
-                    status=ActionExecutionStatus.UNKNOWN,
-                    message="Runtime returned no verification result.",
-                ))
-                continue
-            results.append(VerificationResult(
-                expectation_id=expectation.id,
-                action_id=expectation.action_id,
-                status=item.status,
-                evidence_method=item.evidence_method,
-                fresh_evidence=item.fresh_evidence,
-                fields=item.fields,
-                message=item.message,
-                convergence=item.convergence,
-            ))
+                    status=item.status,
+                    evidence_method=item.evidence_method,
+                    fresh_evidence=item.fresh_evidence,
+                    fields=item.fields,
+                    message=item.message,
+                    convergence=item.convergence,
+                )
+            )
         return results
 
     @staticmethod
@@ -1499,26 +1521,40 @@ class ConfigurationApplicator:
         verification: list[VerificationResult],
     ) -> tuple[ConfigurationApplicationStatus, ConfigurationFailureCode]:
         if any(item.status is ActionExecutionStatus.FAILED for item in actions):
-            return ConfigurationApplicationStatus.FAILED, ConfigurationFailureCode.APPLICATION_FAILED
-        if any(item.status in {
-            ActionExecutionStatus.SKIPPED, ActionExecutionStatus.DEPENDENCY_BLOCKED,
-        } for item in actions):
+            return (
+                ConfigurationApplicationStatus.FAILED,
+                ConfigurationFailureCode.APPLICATION_FAILED,
+            )
+        if any(
+            item.status
+            in {
+                ActionExecutionStatus.SKIPPED,
+                ActionExecutionStatus.DEPENDENCY_BLOCKED,
+            }
+            for item in actions
+        ):
             return ConfigurationApplicationStatus.PARTIAL, ConfigurationFailureCode.NONE
         if any(
-            item.status is ActionExecutionStatus.UNOBSERVABLE
-            for item in verification
+            item.status is ActionExecutionStatus.UNOBSERVABLE for item in verification
         ) and not any(
-            item.status is ActionExecutionStatus.FAILED
-            for item in verification
+            item.status is ActionExecutionStatus.FAILED for item in verification
         ):
             return (
                 ConfigurationApplicationStatus.PARTIAL,
                 ConfigurationFailureCode.OBSERVABILITY_LIMITATION,
             )
-        if any(item.status is not ActionExecutionStatus.VERIFIED for item in verification):
-            return ConfigurationApplicationStatus.PARTIAL, ConfigurationFailureCode.VERIFICATION_FAILED
+        if any(
+            item.status is not ActionExecutionStatus.VERIFIED for item in verification
+        ):
+            return (
+                ConfigurationApplicationStatus.PARTIAL,
+                ConfigurationFailureCode.VERIFICATION_FAILED,
+            )
         if verification:
-            return ConfigurationApplicationStatus.VERIFIED, ConfigurationFailureCode.NONE
+            return (
+                ConfigurationApplicationStatus.VERIFIED,
+                ConfigurationFailureCode.NONE,
+            )
         if actions:
             return ConfigurationApplicationStatus.APPLIED, ConfigurationFailureCode.NONE
         return ConfigurationApplicationStatus.SKIPPED, ConfigurationFailureCode.NONE
@@ -1533,8 +1569,10 @@ class ConfigurationApplicator:
         started: float,
     ) -> ConfigurationApplicationResult:
         journal = journal_from_action_results(
-            plan_id=plan.id, deployment_id=deployment_id,
-            actions=list(plan.actions), results=[],
+            plan_id=plan.id,
+            deployment_id=deployment_id,
+            actions=list(plan.actions),
+            results=[],
         )
         for message in messages:
             journal.mark_preflight_failure(message)

@@ -38,7 +38,9 @@ class TestDecodePtImage:
         assert decode_pt_image("137,80,78,71,13,10,26,10", "PNG")[0] == 0x89
 
     def test_whitespace_and_trailing_comma_tolerated(self):
-        assert decode_pt_image(" -119, 80,78, 71,13,10,26,10, ", "PNG")[:4] == b"\x89PNG"
+        assert (
+            decode_pt_image(" -119, 80,78, 71,13,10,26,10, ", "PNG")[:4] == b"\x89PNG"
+        )
 
     def test_empty_response_is_an_error(self):
         with pytest.raises(CanvasImageError):
@@ -146,7 +148,7 @@ class TestCanvasTools:
         """Regla 2 de AGENTS.md: nunca construir rutas por concatenacion."""
         src = self._src()
         assert 'safe_name_component(filename, fallback="topology")' in src
-        assert "resolve_within(base, f\"{safe}.{ext}\")" in src
+        assert 'resolve_within(base, f"{safe}.{ext}")' in src
 
     def test_clear_sweeps_notes_AND_items(self):
         """getCanvasItemIds NO incluye las notas: son conjuntos distintos.

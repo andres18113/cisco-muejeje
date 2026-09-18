@@ -54,7 +54,8 @@ from ...domain.services.packet_trace import summarize_trace, traffic_type_label
 from ...domain.models.netflow import NetflowExporter
 from ...domain.models.errors import ErrorCode, PlanError
 from ...domain.rules.netflow_rules import (
-    validate_netflow, validate_netflow_against_topology,
+    validate_netflow,
+    validate_netflow_against_topology,
 )
 from ...infrastructure.generator.ptbuilder_generator import (
     generate_ptbuilder_script,
@@ -69,11 +70,16 @@ from ...infrastructure.generator.acl_cli_generator import generate_acl_cli
 from ...infrastructure.execution.manual_executor import ManualExecutor
 from ...infrastructure.execution.deploy_executor import DeployExecutor
 from ...infrastructure.execution.live_bridge import (
-    PTCommandBridge, DEFAULT_PORT, correlated_http_send_and_wait,
+    PTCommandBridge,
+    DEFAULT_PORT,
+    correlated_http_send_and_wait,
 )
 from ...infrastructure.execution.bridge_token import (
-    get_bridge_token, has_persisted_bridge_token, token_fingerprint,
-    token_was_rotated, token_is_ephemeral,
+    get_bridge_token,
+    has_persisted_bridge_token,
+    token_fingerprint,
+    token_was_rotated,
+    token_is_ephemeral,
 )
 from ...infrastructure.execution.file_bridge import FileBridge
 from ...infrastructure.execution.bridge_preflight import BridgeReadinessPreflight
@@ -107,9 +113,13 @@ from ...infrastructure.catalog.cables import CABLE_TYPES, CABLE_RULES, infer_cab
 from ...infrastructure.catalog.aliases import MODEL_ALIASES
 from ...infrastructure.catalog.templates import list_templates
 from ...infrastructure.catalog.modules import ALL_MODULES, resolve_module
-from ...infrastructure.catalog.enterprise_capabilities import EnterpriseCapabilityAdapter
+from ...infrastructure.catalog.enterprise_capabilities import (
+    EnterpriseCapabilityAdapter,
+)
 from ...infrastructure.execution.probe_runtime import PacketTracerBridgeProbeRuntime
-from ...infrastructure.persistence.capability_snapshot_store import CapabilitySnapshotStore
+from ...infrastructure.persistence.capability_snapshot_store import (
+    CapabilitySnapshotStore,
+)
 from ...application.use_cases.capability_discovery import CapabilityDiscoveryService
 from ...application.use_cases.deploy_enterprise_topology import (
     EnterprisePhysicalTopologyDeployer,
@@ -122,11 +132,16 @@ from ...infrastructure.execution.packet_tracer_physical_runtime import (
 from ...shared.enums import RoutingProtocol, TopologyTemplate
 from ...infrastructure.execution.typed_ping import TypedPingExecutor
 from ...shared.utils import (
-    js_escape, safe_name_component, resolve_within,
+    js_escape,
+    safe_name_component,
+    resolve_within,
     normalize_ip,
 )
 from ...domain.services.canvas import (
-    CanvasImageError, decode_pt_image, normalize_format, validate_color,
+    CanvasImageError,
+    decode_pt_image,
+    normalize_format,
+    validate_color,
 )
 from .public_surface import PublicMcpSurface
 
@@ -139,7 +154,7 @@ def register_tools(
     """Registra todas las tools en el servidor MCP."""
 
     if not isinstance(public_surface, PublicMcpSurface):
-        raise TypeError('public_surface must be a PublicMcpSurface')
+        raise TypeError("public_surface must be a PublicMcpSurface")
 
     capability_discovery_service = None
 
@@ -155,7 +170,9 @@ def register_tools(
         lines = []
         for name, model in ALL_MODELS.items():
             ports = ", ".join(p.full_name for p in model.ports)
-            lines.append(f"**{model.display_name}** (type: `{name}`, category: {model.category})")
+            lines.append(
+                f"**{model.display_name}** (type: `{name}`, category: {model.category})"
+            )
             lines.append(f"  Puertos: {ports}")
             lines.append("")
         lines.append("**Alias disponibles:**")
@@ -173,8 +190,12 @@ def register_tools(
         for t in templates:
             lines.append(f"**{t.name}** (key: `{t.key.value}`)")
             lines.append(f"  {t.description}")
-            lines.append(f"  Routers: {t.min_routers}-{t.max_routers} (default: {t.default_routers})")
-            lines.append(f"  PCs/LAN: {t.default_pcs_per_lan}  |  WAN: {'sí' if t.requires_wan else 'no'}")
+            lines.append(
+                f"  Routers: {t.min_routers}-{t.max_routers} (default: {t.default_routers})"
+            )
+            lines.append(
+                f"  PCs/LAN: {t.default_pcs_per_lan}  |  WAN: {'sí' if t.requires_wan else 'no'}"
+            )
             lines.append(f"  Routing: {t.default_routing.value}")
             lines.append(f"  Tags: {', '.join(t.tags)}")
             lines.append("")
@@ -380,27 +401,39 @@ def register_tools(
         try:
             raw = json.loads(plan_json)
         except json.JSONDecodeError as exc:
-            return json.dumps({
-                "valid": False,
-                "error_count": 1,
-                "warning_count": 0,
-                "errors": [{"code": "INVALID_JSON", "message": f"JSON inválido: {exc.msg}"}],
-                "warnings": [],
-                "summary": "[ERROR] JSON inválido — no se pudo parsear el plan.",
-            }, indent=2, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "valid": False,
+                    "error_count": 1,
+                    "warning_count": 0,
+                    "errors": [
+                        {"code": "INVALID_JSON", "message": f"JSON inválido: {exc.msg}"}
+                    ],
+                    "warnings": [],
+                    "summary": "[ERROR] JSON inválido — no se pudo parsear el plan.",
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
 
         if not isinstance(raw, dict) or "devices" not in raw or not raw.get("devices"):
-            return json.dumps({
-                "valid": False,
-                "error_count": 1,
-                "warning_count": 0,
-                "errors": [{
-                    "code": "EMPTY_PLAN",
-                    "message": "El JSON no contiene un plan válido (falta 'devices' o está vacío). Genera el plan con pt_plan_topology primero.",
-                }],
-                "warnings": [],
-                "summary": "[ERROR] Plan vacío o sin estructura — debe incluir al menos un dispositivo.",
-            }, indent=2, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "valid": False,
+                    "error_count": 1,
+                    "warning_count": 0,
+                    "errors": [
+                        {
+                            "code": "EMPTY_PLAN",
+                            "message": "El JSON no contiene un plan válido (falta 'devices' o está vacío). Genera el plan con pt_plan_topology primero.",
+                        }
+                    ],
+                    "warnings": [],
+                    "summary": "[ERROR] Plan vacío o sin estructura — debe incluir al menos un dispositivo.",
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
 
         plan = TopologyPlan.model_validate_json(plan_json)
         result = validate_plan(plan)
@@ -427,12 +460,16 @@ def register_tools(
         plan = TopologyPlan.model_validate_json(plan_json)
         fixed_plan, fixes = fix_plan(plan)
 
-        return json.dumps({
-            "fixes_applied": fixes,
-            "fixes_count": len(fixes),
-            "is_valid": fixed_plan.is_valid,
-            "plan": json.loads(fixed_plan.model_dump_json()),
-        }, indent=2, ensure_ascii=False)
+        return json.dumps(
+            {
+                "fixes_applied": fixes,
+                "fixes_count": len(fixes),
+                "is_valid": fixed_plan.is_valid,
+                "plan": json.loads(fixed_plan.model_dump_json()),
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
 
     # ------------------------------------------------------------------
     # EXPLICACIÓN
@@ -658,7 +695,9 @@ def register_tools(
             parts.append("VERIFICACIONES SUGERIDAS")
             parts.append("=" * 60)
             for v in plan.validations:
-                parts.append(f"  {v.check_type}: {v.from_device} → {v.to_target} (esperado: {v.expected})")
+                parts.append(
+                    f"  {v.check_type}: {v.from_device} → {v.to_target} (esperado: {v.expected})"
+                )
 
         # --- Deploy ---
         if deploy:
@@ -691,11 +730,17 @@ def register_tools(
                     parts.append("  2. Ve a Extensions > Scripting")
                     parts.append("  3. Pega (Ctrl+V) y ejecuta")
                     parts.append("")
-                    parts.append(f"Archivos exportados en: {deploy_result['project_dir']}")
+                    parts.append(
+                        f"Archivos exportados en: {deploy_result['project_dir']}"
+                    )
                     parts.append("  Configs CLI en archivos *_config.txt")
                 else:
-                    parts.append(f"Archivos exportados en: {deploy_result['project_dir']}")
-                    parts.append("  Copia topology.js y pegalo en PT > Extensions > Scripting")
+                    parts.append(
+                        f"Archivos exportados en: {deploy_result['project_dir']}"
+                    )
+                    parts.append(
+                        "  Copia topology.js y pegalo en PT > Extensions > Scripting"
+                    )
                 parts.append("")
                 parts.append(deploy_result["instructions"])
 
@@ -769,7 +814,9 @@ def register_tools(
             parts.append("Pega directamente en Packet Tracer > Extensions > Scripting")
         else:
             parts.append("ARCHIVOS EXPORTADOS (no se pudo copiar al portapapeles)")
-            parts.append(f"Abre {result['project_dir']}/topology.js y copia su contenido")
+            parts.append(
+                f"Abre {result['project_dir']}/topology.js y copia su contenido"
+            )
 
         parts.append("")
         parts.append(f"Proyecto: {result['project_dir']}")
@@ -942,12 +989,18 @@ def register_tools(
             return False
         marker = "__PT_MCP_HEALTH_" + channel.upper() + "_" + str(time.time_ns())
         js = "reportResult(" + json.dumps(marker) + ");"
-        return _bridge_send_and_wait(
-            js, timeout=2.0, channel=channel,
-        ) == marker
+        return (
+            _bridge_send_and_wait(
+                js,
+                timeout=2.0,
+                channel=channel,
+            )
+            == marker
+        )
 
     def _transport_health_snapshot(
-        *, probe_command_path: bool,
+        *,
+        probe_command_path: bool,
     ) -> tuple[TransportHealth, TransportHealth]:
         http_up = _bridge_is_up()
         http_polling = http_up and _bridge_pt_connected()
@@ -959,7 +1012,8 @@ def register_tools(
                 polling=http_polling,
                 command_path_responsive=(
                     _command_path_probe("http", http_polling)
-                    if probe_command_path else False
+                    if probe_command_path
+                    else False
                 ),
                 command_probe_attempted=probe_command_path and http_polling,
             ),
@@ -969,14 +1023,16 @@ def register_tools(
                 polling=file_polling,
                 command_path_responsive=(
                     _command_path_probe("file", file_polling)
-                    if probe_command_path else False
+                    if probe_command_path
+                    else False
                 ),
                 command_probe_attempted=probe_command_path and file_polling,
             ),
         )
 
     def _operation_transport_selection(
-        *, require_command_path: bool = False,
+        *,
+        require_command_path: bool = False,
     ):
         """Selecciona una vez desde evidencia explícita del transporte.
 
@@ -1121,7 +1177,8 @@ def register_tools(
         # and must not be treated as the authoritative enterprise v2 path.
         script = generate_executable_script(plan)
         commands = [
-            line.strip() for line in script.splitlines()
+            line.strip()
+            for line in script.splitlines()
             if line.strip() and not line.strip().startswith("//")
         ]
 
@@ -1130,7 +1187,7 @@ def register_tools(
         # técnica. Cada comando conserva su propio guard dentro del lote.
         sent = 0
         for i in range(0, len(commands), _DEPLOY_BATCH):
-            chunk = commands[i:i + _DEPLOY_BATCH]
+            chunk = commands[i : i + _DEPLOY_BATCH]
             payload = "\n".join(_js_guard(c) for c in chunk)
             if not _channel_send(payload, channel=operation_channel):
                 return (
@@ -1153,7 +1210,9 @@ def register_tools(
                 "} catch(e) { reportResult('MISSING'); }"
             )
             r = _bridge_send_and_wait(
-                js, timeout=5.0, channel=operation_channel,
+                js,
+                timeout=5.0,
+                channel=operation_channel,
             )
             if r == "OK":
                 dev_ok += 1
@@ -1167,7 +1226,9 @@ def register_tools(
             )
             return verify_exact_link_convergence(
                 lambda script, timeout: _bridge_send_and_wait(
-                    script, timeout=timeout, channel=operation_channel,
+                    script,
+                    timeout=timeout,
+                    channel=operation_channel,
                 ),
                 expectation,
                 timeout_seconds=4.0,
@@ -1202,7 +1263,8 @@ def register_tools(
             retry_cmds = [c for c in commands if any(f'"{n}"' in c for n in names)]
             for cmd in retry_cmds:
                 if not _channel_send(
-                    _js_guard(cmd), channel=operation_channel,
+                    _js_guard(cmd),
+                    channel=operation_channel,
                 ):
                     return (
                         "[ERROR] Falló el reconcile por el transporte fijado "
@@ -1220,9 +1282,14 @@ def register_tools(
                     "  reportResult(d ? 'OK' : 'MISSING');"
                     "} catch(e) { reportResult('MISSING'); }"
                 )
-                if _bridge_send_and_wait(
-                    js, timeout=5.0, channel=operation_channel,
-                ) == "OK":
+                if (
+                    _bridge_send_and_wait(
+                        js,
+                        timeout=5.0,
+                        channel=operation_channel,
+                    )
+                    == "OK"
+                ):
                     dev_ok += 1
                     reconciled["devices"].append(name)
                 else:
@@ -1338,17 +1405,19 @@ def register_tools(
 
         selected = selection.selected.value if selection.selected else "none"
         fallback = selection.fallback.value if selection.fallback else "none"
-        lines.extend([
-            "SELECTION",
-            "  selected=" + selected,
-            "  fallback=" + fallback,
-            "  reason=" + selection.reason,
-            "  operation_transport_pinned=true",
-            "  silent_replay_allowed=false",
-            "TOKEN",
-            "  persisted=" + str(has_persisted_bridge_token()).lower(),
-            "  ephemeral=" + str(token_is_ephemeral()).lower(),
-        ])
+        lines.extend(
+            [
+                "SELECTION",
+                "  selected=" + selected,
+                "  fallback=" + fallback,
+                "  reason=" + selection.reason,
+                "  operation_transport_pinned=true",
+                "  silent_replay_allowed=false",
+                "TOKEN",
+                "  persisted=" + str(has_persisted_bridge_token()).lower(),
+                "  ephemeral=" + str(token_is_ephemeral()).lower(),
+            ]
+        )
 
         # Cabeceras reales del webview de PT (incluye Origin: pt-sm:), sin
         # exponer token ni objetos internos completos.
@@ -1758,7 +1827,10 @@ def register_tools(
         dev_count = header_parts[1] if len(header_parts) > 1 else "?"
         link_count = header_parts[2] if len(header_parts) > 2 else "?"
 
-        output = [f"=== Topology Export: {dev_count} devices, {link_count} links ===", ""]
+        output = [
+            f"=== Topology Export: {dev_count} devices, {link_count} links ===",
+            "",
+        ]
         in_links = False
         for line in lines[1:]:
             if not line.strip():
@@ -1909,17 +1981,20 @@ def register_tools(
             "} catch(e) { reportResult('ERROR:' + e); }"
         )
         result = _bridge_send_and_wait(
-            js, timeout=8.0, channel=operation_channel,
+            js,
+            timeout=8.0,
+            channel=operation_channel,
         )
         if result is None:
             evidence = assess_layout_application(
-                requested, acknowledged=False, observed=None, tolerance=tolerance,
+                requested,
+                acknowledged=False,
+                observed=None,
+                tolerance=tolerance,
             )
             payload = evidence.as_dict()
             payload["transport"] = operation_channel
-            payload["summary"] = (
-                "[ERROR] No hubo ACK; no se intentó otro transporte."
-            )
+            payload["summary"] = "[ERROR] No hubo ACK; no se intentó otro transporte."
             return json.dumps(payload, indent=2, ensure_ascii=False)
         if result.startswith("ERROR:"):
             return f"Error: {result[6:]}"
@@ -2046,7 +2121,9 @@ def register_tools(
             "  var n = net.getDeviceCount();"
             "  for (var i = 0; i < n; i++) {"
             "    if (net.getDeviceAt(i).getName() === '" + safe_name + "') {"
-            "      reportResult('ERROR:DUPLICATE:Device \\'" + safe_name + "\\' already exists');"
+            "      reportResult('ERROR:DUPLICATE:Device \\'"
+            + safe_name
+            + "\\' already exists');"
             "      throw 'dup';"
             "    }"
             "  }"
@@ -2136,7 +2213,9 @@ def register_tools(
             "} catch(e) { if (e !== 'stop') reportResult('ERROR:' + e); }"
         )
         pre_result = _bridge_send_and_wait(
-            js, timeout=10.0, channel=operation_channel,
+            js,
+            timeout=10.0,
+            channel=operation_channel,
         )
         if pre_result is None:
             return _TIMEOUT_MSG
@@ -2154,14 +2233,22 @@ def register_tools(
         cable_literal = json.dumps(resolved_cable)
         js_link = (
             "try {addLink("
-            + device1_literal + "," + port1_literal + ","
-            + device2_literal + "," + port2_literal + ","
+            + device1_literal
+            + ","
+            + port1_literal
+            + ","
+            + device2_literal
+            + ","
+            + port2_literal
+            + ","
             + cable_literal
             + ");reportResult('ACK');}"
             "catch(e){reportResult('ERROR:'+e);}"
         )
         link_result = _bridge_send_and_wait(
-            js_link, timeout=10.0, channel=operation_channel,
+            js_link,
+            timeout=10.0,
+            channel=operation_channel,
         )
         if link_result is None:
             return (
@@ -2179,7 +2266,9 @@ def register_tools(
         )
         verification = verify_exact_link_convergence(
             lambda script, timeout: _bridge_send_and_wait(
-                script, timeout=timeout, channel=operation_channel,
+                script,
+                timeout=timeout,
+                channel=operation_channel,
             ),
             expectation,
             timeout_seconds=4.0,
@@ -2250,11 +2339,15 @@ def register_tools(
             return err
 
         parts = [
-            'var d=ipc.network().getDevice(' + json.dumps(device) + ');',
-            'if(!d){reportResult(JSON.stringify({success:false,error:"device not found: ' + _js_escape(device) + '"}));return;}',
-            'var p=d.getPort(' + json.dumps(interface) + ');',
-            'if(!p){reportResult(JSON.stringify({success:false,error:"port not found: ' + _js_escape(interface) + '"}));return;}',
-            'var applied=[];',
+            "var d=ipc.network().getDevice(" + json.dumps(device) + ");",
+            'if(!d){reportResult(JSON.stringify({success:false,error:"device not found: '
+            + _js_escape(device)
+            + '"}));return;}',
+            "var p=d.getPort(" + json.dumps(interface) + ");",
+            'if(!p){reportResult(JSON.stringify({success:false,error:"port not found: '
+            + _js_escape(interface)
+            + '"}));return;}',
+            "var applied=[];",
         ]
 
         if bandwidth and bandwidth > 0:
@@ -2308,10 +2401,10 @@ def register_tools(
                 f'if(typeof p.setIkeEnabled==="function"){{p.setIkeEnabled({v});applied.push("ike={v}");}}'
             )
 
-        parts.append('reportResult(JSON.stringify({success:true,applied:applied}));')
+        parts.append("reportResult(JSON.stringify({success:true,applied:applied}));")
 
         # IIFE para que los `return` tempranos funcionen en el Script Engine de PT.
-        js = '(function(){' + ''.join(parts) + '})()'
+        js = "(function(){" + "".join(parts) + "})()"
 
         result = _bridge_send_and_wait(js, timeout=8.0)
         if result is None:
@@ -2366,11 +2459,11 @@ def register_tools(
     if public_surface is PublicMcpSurface.DEVELOPER_CAPABILITY_INVESTIGATION:
         mcp.add_tool(
             pt_send_raw,
-            title='Developer capability investigation: raw Packet Tracer JS',
+            title="Developer capability investigation: raw Packet Tracer JS",
             description=(
-                'Compatibility-only developer/capability-investigation tool. '
-                'Executes arbitrary JavaScript and is not a normal enterprise '
-                'operation or a typed mutation contract.'
+                "Compatibility-only developer/capability-investigation tool. "
+                "Executes arbitrary JavaScript and is not a normal enterprise "
+                "operation or a typed mutation contract."
             ),
         )
 
@@ -2404,21 +2497,29 @@ def register_tools(
                 continue
             if rm and mod.compatible_with and rm not in mod.compatible_with:
                 continue
-            items.append({
-                "name": mod.name,
-                "description": mod.description,
-                "category": mod.category,
-                "module_type": mod.module_type,
-                "ports_added": list(mod.ports_added),
-                "compatible_with": list(mod.compatible_with) if mod.compatible_with else "any",
-            })
+            items.append(
+                {
+                    "name": mod.name,
+                    "description": mod.description,
+                    "category": mod.category,
+                    "module_type": mod.module_type,
+                    "ports_added": list(mod.ports_added),
+                    "compatible_with": list(mod.compatible_with)
+                    if mod.compatible_with
+                    else "any",
+                }
+            )
 
         items.sort(key=lambda x: (x["category"], x["name"]))
-        return json.dumps({
-            "count": len(items),
-            "filter": {"router_model": rm or None, "category": cat or None},
-            "modules": items,
-        }, indent=2, ensure_ascii=False)
+        return json.dumps(
+            {
+                "count": len(items),
+                "filter": {"router_model": rm or None, "category": cat or None},
+                "modules": items,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
 
     @mcp.tool()
     def pt_add_module(
@@ -2470,21 +2571,29 @@ def register_tools(
         safe_name = _js_escape(device_name)
         safe_module = _js_escape(spec.name)
         safe_slot = _js_escape(slot_s)
-        ports_added = ", ".join(spec.ports_added) if spec.ports_added else "(sin puertos)"
+        ports_added = (
+            ", ".join(spec.ports_added) if spec.ports_added else "(sin puertos)"
+        )
 
         if dry_run:
-            return json.dumps({
-                "summary": f"[dry_run] Payload generado para instalar {spec.name} en {device_name} slot {slot_s}.",
-                "device": device_name,
-                "slot": slot_s,
-                "module": spec.name,
-                "description": spec.description,
-                "ports_added": list(spec.ports_added),
-                "compatible_with": list(spec.compatible_with) if spec.compatible_with else "any",
-                "js_payload": f'addModule("{safe_name}", "{safe_slot}", "{safe_module}")',
-                "sent": False,
-                "dry_run": True,
-            }, indent=2, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "summary": f"[dry_run] Payload generado para instalar {spec.name} en {device_name} slot {slot_s}.",
+                    "device": device_name,
+                    "slot": slot_s,
+                    "module": spec.name,
+                    "description": spec.description,
+                    "ports_added": list(spec.ports_added),
+                    "compatible_with": list(spec.compatible_with)
+                    if spec.compatible_with
+                    else "any",
+                    "js_payload": f'addModule("{safe_name}", "{safe_slot}", "{safe_module}")',
+                    "sent": False,
+                    "dry_run": True,
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
 
         # Verificar bridge + PT
         err = _check_bridge()
@@ -2513,7 +2622,7 @@ def register_tools(
         # Esperamos respuesta para confirmar éxito (la instalación toma unos segundos).
         js = (
             f'var __ok = addModule("{safe_name}", "{safe_slot}", "{safe_module}"); '
-            f'return JSON.stringify({{success: __ok === true, returned: __ok}});'
+            f"return JSON.stringify({{success: __ok === true, returned: __ok}});"
         )
         result = _bridge_send_and_wait(js, timeout=15.0)
 
@@ -2580,7 +2689,9 @@ def register_tools(
         Retorna JSON con summary, status por módulo y js_payload.
         """
         if not isinstance(modules, list) or not modules:
-            return json.dumps({"error": "modules debe ser lista no vacía de {device, slot, module}."})
+            return json.dumps(
+                {"error": "modules debe ser lista no vacía de {device, slot, module}."}
+            )
 
         # Validar cada entry contra el catálogo
         validated = []
@@ -2609,18 +2720,27 @@ def register_tools(
             if not spec:
                 errors.append(f"[{idx}] módulo '{mod}' no existe (usa pt_list_modules)")
                 continue
-            validated.append({
-                "device": dev, "slot": slot_s,
-                "module": spec.name,
-                "ports_added": list(spec.ports_added),
-                "compatible_with": list(spec.compatible_with) if spec.compatible_with else None,
-            })
+            validated.append(
+                {
+                    "device": dev,
+                    "slot": slot_s,
+                    "module": spec.name,
+                    "ports_added": list(spec.ports_added),
+                    "compatible_with": list(spec.compatible_with)
+                    if spec.compatible_with
+                    else None,
+                }
+            )
 
         if errors:
-            return json.dumps({
-                "error": "Validación falló",
-                "details": errors,
-            }, indent=2, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "error": "Validación falló",
+                    "details": errors,
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
 
         # Construir un único JS one-liner: power-off de devices únicos → addModule × N → power-on
         unique_devs = []
@@ -2632,10 +2752,14 @@ def register_tools(
 
         # JS literal arrays para devices y módulos
         devs_js = "[" + ",".join(f'"{_js_escape(d)}"' for d in unique_devs) + "]"
-        mods_js = "[" + ",".join(
-            f'["{_js_escape(v["device"])}","{_js_escape(v["slot"])}","{_js_escape(v["module"])}"]'
-            for v in validated
-        ) + "]"
+        mods_js = (
+            "["
+            + ",".join(
+                f'["{_js_escape(v["device"])}","{_js_escape(v["slot"])}","{_js_escape(v["module"])}"]'
+                for v in validated
+            )
+            + "]"
+        )
 
         js = (
             f"var DEVS={devs_js};var MODS={mods_js};"
@@ -2643,7 +2767,7 @@ def register_tools(
             "for(var i=0;i<DEVS.length;i++){"
             "var d=ipc.network().getDevice(DEVS[i]);"
             "if(!d)continue;"
-            "var hp=typeof d.getPower===\"function\";"
+            'var hp=typeof d.getPower==="function";'
             "var was=hp?d.getPower():false;"
             "if(hp&&was)d.setPower(false);"
             "saved.push({n:DEVS[i],hp:hp,was:was});"
@@ -2657,7 +2781,7 @@ def register_tools(
             "var s=saved[k];if(!s.hp||!s.was)continue;"
             "var dx=ipc.network().getDevice(s.n);if(!dx)continue;"
             "dx.setPower(true);"
-            "if(typeof dx.skipBoot===\"function\")dx.skipBoot();"
+            'if(typeof dx.skipBoot==="function")dx.skipBoot();'
             "}"
         )
 
@@ -2671,7 +2795,9 @@ def register_tools(
         }
 
         if dry_run:
-            summary["summary"] = f"[dry_run] {len(validated)} módulo(s) en {len(unique_devs)} dispositivo(s)."
+            summary["summary"] = (
+                f"[dry_run] {len(validated)} módulo(s) en {len(unique_devs)} dispositivo(s)."
+            )
             return json.dumps(summary, indent=2, ensure_ascii=False)
 
         err = _check_bridge()
@@ -2846,31 +2972,45 @@ def register_tools(
         # Resumen amigable
         summary_lines = []
         if result["valid"]:
-            summary_lines.append(f"[OK] ACL '{plan.name_or_number}' válida ({len(plan.entries)} reglas).")
+            summary_lines.append(
+                f"[OK] ACL '{plan.name_or_number}' válida ({len(plan.entries)} reglas)."
+            )
         else:
-            summary_lines.append(f"[ERROR] ACL '{plan.name_or_number}' tiene {len(result['errors'])} error(es).")
+            summary_lines.append(
+                f"[ERROR] ACL '{plan.name_or_number}' tiene {len(result['errors'])} error(es)."
+            )
 
         if dry_run:
             summary_lines.append("Modo dry_run — NO se envió al bridge.")
         elif result["sent"]:
-            summary_lines.append(f"[OK] Aplicada en '{router}' vía bridge (configureIosDevice).")
+            summary_lines.append(
+                f"[OK] Aplicada en '{router}' vía bridge (configureIosDevice)."
+            )
             if binding:
-                summary_lines.append(f"   Binding: {binding.interface} {binding.direction}")
+                summary_lines.append(
+                    f"   Binding: {binding.interface} {binding.direction}"
+                )
         elif result["valid"] and not bridge_ok:
-            summary_lines.append("[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado.")
+            summary_lines.append(
+                "[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado."
+            )
         elif result["valid"] and not result["sent"]:
             summary_lines.append("[ADVERTENCIA] Bridge OK pero envío falló.")
 
-        return json.dumps({
-            "summary": "\n".join(summary_lines),
-            "valid": result["valid"],
-            "errors": result["errors"],
-            "warnings": result["warnings"],
-            "cli_lines": result["cli_lines"],
-            "js_payload": result["js_payload"],
-            "sent": result["sent"],
-            "dry_run": result["dry_run"],
-        }, indent=2, ensure_ascii=False)
+        return json.dumps(
+            {
+                "summary": "\n".join(summary_lines),
+                "valid": result["valid"],
+                "errors": result["errors"],
+                "warnings": result["warnings"],
+                "cli_lines": result["cli_lines"],
+                "js_payload": result["js_payload"],
+                "sent": result["sent"],
+                "dry_run": result["dry_run"],
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
 
     @mcp.tool()
     def pt_apply_acl_object(
@@ -2915,25 +3055,29 @@ def register_tools(
             plan=plan,
             binding=binding,
             query_pt_topology=query_fn,
-            bridge_send=None,        # no enviamos por CLI — armamos JS propio
-            dry_run=True,            # validar sin enviar
+            bridge_send=None,  # no enviamos por CLI — armamos JS propio
+            dry_run=True,  # validar sin enviar
         )
 
         if not result["valid"]:
-            return json.dumps({
-                "summary": f"[ERROR] ACL '{plan.name_or_number}' tiene {len(result['errors'])} error(es).",
-                "valid": False,
-                "errors": result["errors"],
-                "warnings": result["warnings"],
-                "sent": False,
-                "dry_run": dry_run,
-                "backend": "objects",
-            }, indent=2, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "summary": f"[ERROR] ACL '{plan.name_or_number}' tiene {len(result['errors'])} error(es).",
+                    "valid": False,
+                    "errors": result["errors"],
+                    "warnings": result["warnings"],
+                    "sent": False,
+                    "dry_run": dry_run,
+                    "backend": "objects",
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
 
         # Convertir líneas CLI a statements (sin el prefijo "access-list NAME ")
         cli_lines = generate_acl_cli(plan)
         prefix = f"access-list {plan.name_or_number} "
-        statements = [ln[len(prefix):] for ln in cli_lines if ln.startswith(prefix)]
+        statements = [ln[len(prefix) :] for ln in cli_lines if ln.startswith(prefix)]
 
         # Construir JS para AclProcess.addAcl + addStatement
         name_js = json.dumps(str(plan.name_or_number))
@@ -2948,26 +3092,30 @@ def register_tools(
         ]
         if replace_existing:
             js_lines.append(f"try{{ap.removeAcl({name_js});}}catch(e){{}}")
-        js_lines.extend([
-            f"ap.addAcl({name_js});",
-            f"var acl=ap.getAcl({name_js});",
-            'if(!acl){reportResult(JSON.stringify({success:false,error:"addAcl failed"}));return;}',
-            f"var stmts={stmts_js};",
-            'var added=0;for(var i=0;i<stmts.length;i++){if(acl.addStatement(stmts[i]))added++;}',
-        ])
+        js_lines.extend(
+            [
+                f"ap.addAcl({name_js});",
+                f"var acl=ap.getAcl({name_js});",
+                'if(!acl){reportResult(JSON.stringify({success:false,error:"addAcl failed"}));return;}',
+                f"var stmts={stmts_js};",
+                "var added=0;for(var i=0;i<stmts.length;i++){if(acl.addStatement(stmts[i]))added++;}",
+            ]
+        )
 
         bound = "none"
         if binding:
             iface_js = json.dumps(binding.interface)
             setter = "setAclInID" if binding.direction == "in" else "setAclOutID"
-            js_lines.extend([
-                f"var p=d.getPort({iface_js});",
-                f'if(p){{p.{setter}({name_js});}}',
-            ])
+            js_lines.extend(
+                [
+                    f"var p=d.getPort({iface_js});",
+                    f"if(p){{p.{setter}({name_js});}}",
+                ]
+            )
             bound = f"{binding.interface} {binding.direction}"
 
         js_lines.append(
-            'reportResult(JSON.stringify({success:true,added:added,cmdCount:acl.getCommandCount()}));'
+            "reportResult(JSON.stringify({success:true,added:added,cmdCount:acl.getCommandCount()}));"
         )
 
         js = "(function(){" + "".join(js_lines) + "})()"
@@ -2994,7 +3142,9 @@ def register_tools(
             return json.dumps(payload, indent=2, ensure_ascii=False)
 
         if not bridge_ok:
-            payload["summary"] = "[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado."
+            payload["summary"] = (
+                "[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado."
+            )
             return json.dumps(payload, indent=2, ensure_ascii=False)
 
         response = _bridge_send_and_wait(js, timeout=10.0)
@@ -3056,16 +3206,20 @@ def register_tools(
         if binding_interface:
             iface_js = json.dumps(binding_interface)
             setter = "setAclInID" if binding_direction == "in" else "setAclOutID"
-            js_lines.extend([
-                f"var p=d.getPort({iface_js});",
-                f'if(p){{p.{setter}("");}}',
-            ])
+            js_lines.extend(
+                [
+                    f"var p=d.getPort({iface_js});",
+                    f'if(p){{p.{setter}("");}}',
+                ]
+            )
             bound_label = f"{binding_interface} {binding_direction}"
 
-        js_lines.extend([
-            f"var removed=ap.removeAcl({name_js});",
-            'reportResult(JSON.stringify({success:true,removed:removed}));',
-        ])
+        js_lines.extend(
+            [
+                f"var removed=ap.removeAcl({name_js});",
+                "reportResult(JSON.stringify({success:true,removed:removed}));",
+            ]
+        )
 
         js = "(function(){" + "".join(js_lines) + "})()"
 
@@ -3088,7 +3242,9 @@ def register_tools(
             return json.dumps(payload, indent=2, ensure_ascii=False)
 
         if not bridge_ok:
-            payload["summary"] = "[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado."
+            payload["summary"] = (
+                "[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado."
+            )
             return json.dumps(payload, indent=2, ensure_ascii=False)
 
         response = _bridge_send_and_wait(js, timeout=10.0)
@@ -3148,22 +3304,32 @@ def register_tools(
 
         summary = []
         if dry_run:
-            summary.append(f"Modo dry_run — payload generado para eliminar ACL '{name_or_number}' en '{router}'.")
+            summary.append(
+                f"Modo dry_run — payload generado para eliminar ACL '{name_or_number}' en '{router}'."
+            )
         elif result["sent"]:
-            summary.append(f"[OK] ACL '{name_or_number}' eliminada en '{router}' vía bridge.")
+            summary.append(
+                f"[OK] ACL '{name_or_number}' eliminada en '{router}' vía bridge."
+            )
         elif not bridge_ok:
-            summary.append("[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado.")
+            summary.append(
+                "[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado."
+            )
         else:
             summary.append("[ADVERTENCIA] Envío falló.")
 
-        return json.dumps({
-            "summary": "\n".join(summary),
-            "router": result["router"],
-            "acl_id": result["acl_id"],
-            "js_payload": result["js_payload"],
-            "sent": result["sent"],
-            "dry_run": result["dry_run"],
-        }, indent=2, ensure_ascii=False)
+        return json.dumps(
+            {
+                "summary": "\n".join(summary),
+                "router": result["router"],
+                "acl_id": result["acl_id"],
+                "js_payload": result["js_payload"],
+                "sent": result["sent"],
+                "dry_run": result["dry_run"],
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
 
     # ------------------------------------------------------------------
     # NAT / PAT — aplicar y eliminar traducción de direcciones vía bridge
@@ -3270,32 +3436,46 @@ def register_tools(
         )
 
         summary_lines = []
-        mode_label = {"static": "NAT Estático", "dynamic": "NAT Dinámico", "pat": "PAT/Overload"}.get(mode, mode)
+        mode_label = {
+            "static": "NAT Estático",
+            "dynamic": "NAT Dinámico",
+            "pat": "PAT/Overload",
+        }.get(mode, mode)
         if result["valid"]:
             summary_lines.append(f"[OK] {mode_label} válido para router '{router}'.")
         else:
-            summary_lines.append(f"[ERROR] {mode_label}: {len(result['errors'])} error(es).")
+            summary_lines.append(
+                f"[ERROR] {mode_label}: {len(result['errors'])} error(es)."
+            )
 
         if dry_run:
             summary_lines.append("Modo dry_run — NO se envió al bridge.")
         elif result["sent"]:
-            summary_lines.append(f"[OK] Aplicado en '{router}' vía bridge (configureIosDevice).")
+            summary_lines.append(
+                f"[OK] Aplicado en '{router}' vía bridge (configureIosDevice)."
+            )
         elif result["valid"] and not bridge_ok:
-            summary_lines.append("[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado.")
+            summary_lines.append(
+                "[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado."
+            )
         elif result["valid"] and not result["sent"]:
             summary_lines.append("[ADVERTENCIA] Bridge OK pero envío falló.")
 
-        return json.dumps({
-            "summary": "\n".join(summary_lines),
-            "mode": mode,
-            "valid": result["valid"],
-            "errors": result["errors"],
-            "warnings": result["warnings"],
-            "cli_lines": result["cli_lines"],
-            "js_payload": result["js_payload"],
-            "sent": result["sent"],
-            "dry_run": result["dry_run"],
-        }, indent=2, ensure_ascii=False)
+        return json.dumps(
+            {
+                "summary": "\n".join(summary_lines),
+                "mode": mode,
+                "valid": result["valid"],
+                "errors": result["errors"],
+                "warnings": result["warnings"],
+                "cli_lines": result["cli_lines"],
+                "js_payload": result["js_payload"],
+                "sent": result["sent"],
+                "dry_run": result["dry_run"],
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
 
     @mcp.tool()
     def pt_remove_nat(
@@ -3342,22 +3522,30 @@ def register_tools(
 
         summary = []
         if dry_run:
-            summary.append(f"Modo dry_run — payload generado para eliminar NAT '{mode}' en '{router}'.")
+            summary.append(
+                f"Modo dry_run — payload generado para eliminar NAT '{mode}' en '{router}'."
+            )
         elif result["sent"]:
             summary.append(f"[OK] NAT '{mode}' eliminado en '{router}' vía bridge.")
         elif not bridge_ok:
-            summary.append("[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado.")
+            summary.append(
+                "[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado."
+            )
         else:
             summary.append("[ADVERTENCIA] Envío falló.")
 
-        return json.dumps({
-            "summary": "\n".join(summary),
-            "router": result["router"],
-            "mode": result["mode"],
-            "js_payload": result["js_payload"],
-            "sent": result["sent"],
-            "dry_run": result["dry_run"],
-        }, indent=2, ensure_ascii=False)
+        return json.dumps(
+            {
+                "summary": "\n".join(summary),
+                "router": result["router"],
+                "mode": result["mode"],
+                "js_payload": result["js_payload"],
+                "sent": result["sent"],
+                "dry_run": result["dry_run"],
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
 
     @mcp.tool()
     def pt_apply_vlan(
@@ -3400,8 +3588,12 @@ def register_tools(
             dry_run=True)
         """
         plan = build_vlan_plan(
-            switch=switch, router=router, vlans=vlans,
-            access_ports=access_ports, trunks=trunks, subinterfaces=subinterfaces,
+            switch=switch,
+            router=router,
+            vlans=vlans,
+            access_ports=access_ports,
+            trunks=trunks,
+            subinterfaces=subinterfaces,
         )
 
         bridge_ok = _pick_channel() != ""
@@ -3425,39 +3617,56 @@ def register_tools(
         elif result["sent"]:
             summary.append("[OK] Aplicado vía bridge (configureIosDevice).")
         elif result["valid"] and not bridge_ok:
-            summary.append("[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado.")
+            summary.append(
+                "[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado."
+            )
 
-        return json.dumps({
-            "summary": "\n".join(summary),
-            "valid": result["valid"],
-            "errors": result["errors"],
-            "warnings": result["warnings"],
-            "cli_lines": result["cli_lines"],
-            "js_payload": result["js_payload"],
-            "sent": result["sent"],
-            "dry_run": result["dry_run"],
-        }, indent=2, ensure_ascii=False)
+        return json.dumps(
+            {
+                "summary": "\n".join(summary),
+                "valid": result["valid"],
+                "errors": result["errors"],
+                "warnings": result["warnings"],
+                "cli_lines": result["cli_lines"],
+                "js_payload": result["js_payload"],
+                "sent": result["sent"],
+                "dry_run": result["dry_run"],
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
 
-    def _switch_security_response(result: dict, label: str, bridge_ok: bool, dry_run: bool) -> str:
+    def _switch_security_response(
+        result: dict, label: str, bridge_ok: bool, dry_run: bool
+    ) -> str:
         summary = []
-        summary.append(f"[OK] {label} válida." if result["valid"]
-                       else f"[ERROR] {label}: {len(result['errors'])} error(es).")
+        summary.append(
+            f"[OK] {label} válida."
+            if result["valid"]
+            else f"[ERROR] {label}: {len(result['errors'])} error(es)."
+        )
         if dry_run:
             summary.append("Modo dry_run — NO se envió al bridge.")
         elif result["sent"]:
             summary.append("[OK] Aplicado vía bridge (configureIosDevice).")
         elif result["valid"] and not bridge_ok:
-            summary.append("[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado.")
-        return json.dumps({
-            "summary": "\n".join(summary),
-            "valid": result["valid"],
-            "errors": result["errors"],
-            "warnings": result["warnings"],
-            "cli_lines": result["cli_lines"],
-            "js_payload": result["js_payload"],
-            "sent": result["sent"],
-            "dry_run": result["dry_run"],
-        }, indent=2, ensure_ascii=False)
+            summary.append(
+                "[ADVERTENCIA] Bridge no conectado — payload generado pero NO enviado."
+            )
+        return json.dumps(
+            {
+                "summary": "\n".join(summary),
+                "valid": result["valid"],
+                "errors": result["errors"],
+                "warnings": result["warnings"],
+                "cli_lines": result["cli_lines"],
+                "js_payload": result["js_payload"],
+                "sent": result["sent"],
+                "dry_run": result["dry_run"],
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
 
     @mcp.tool()
     def pt_apply_stp(
@@ -3487,7 +3696,8 @@ def register_tools(
                        portfast_ports=["FastEthernet0/1"], dry_run=True)
         """
         cfg = STPConfig(
-            switch=switch, mode=mode,
+            switch=switch,
+            mode=mode,
             root_primary_vlans=root_primary_vlans or [],
             priority={int(k): int(v) for k, v in (priority or {}).items()},
             portfast_ports=portfast_ports or [],
@@ -3528,8 +3738,12 @@ def register_tools(
           pt_apply_port_security(switch="SW1", port="FastEthernet0/1", max_mac=2, dry_run=True)
         """
         cfg = PortSecurityConfig(
-            switch=switch, port=port, max_mac=max_mac,
-            violation=violation, sticky=sticky, static_macs=static_macs or [],
+            switch=switch,
+            port=port,
+            max_mac=max_mac,
+            violation=violation,
+            sticky=sticky,
+            static_macs=static_macs or [],
         )
         bridge_ok = _pick_channel() != ""
         result = apply_port_security_uc(
@@ -3575,8 +3789,12 @@ def register_tools(
             ssh={"domain":"lab.local","modulus":1024}, dry_run=True)
         """
         cfg = build_hardening_config(
-            device=device, hostname=hostname, banner_motd=banner_motd,
-            enable_secret=enable_secret, users=users, ssh=ssh,
+            device=device,
+            hostname=hostname,
+            banner_motd=banner_motd,
+            enable_secret=enable_secret,
+            users=users,
+            ssh=ssh,
             service_password_encryption=service_password_encryption,
         )
         bridge_ok = _pick_channel() != ""
@@ -3629,11 +3847,17 @@ def register_tools(
                                     ospf_md5_key_id=1, ospf_md5_key="s3cr3t")
         """
         cfg = InterfaceTuning(
-            router=router, interface=interface, clock_rate=clock_rate,
-            bandwidth=bandwidth, ospf_cost=ospf_cost, ospf_priority=ospf_priority,
+            router=router,
+            interface=interface,
+            clock_rate=clock_rate,
+            bandwidth=bandwidth,
+            ospf_cost=ospf_cost,
+            ospf_priority=ospf_priority,
             ospf_hello_interval=ospf_hello_interval,
-            ospf_dead_interval=ospf_dead_interval, ospf_auth_key=ospf_auth_key,
-            ospf_md5_key_id=ospf_md5_key_id, ospf_md5_key=ospf_md5_key,
+            ospf_dead_interval=ospf_dead_interval,
+            ospf_auth_key=ospf_auth_key,
+            ospf_md5_key_id=ospf_md5_key_id,
+            ospf_md5_key=ospf_md5_key,
             delay=delay,
         )
         bridge_ok = _pick_channel() != ""
@@ -3657,7 +3881,9 @@ def register_tools(
         try:
             plan = TopologyPlan.model_validate_json(plan_json)
         except Exception as exc:
-            return json.dumps({"error": f"plan_json inválido: {exc}"}, ensure_ascii=False)
+            return json.dumps(
+                {"error": f"plan_json inválido: {exc}"}, ensure_ascii=False
+            )
         err = _check_bridge()
         if err:
             return err
@@ -3667,8 +3893,8 @@ def register_tools(
             "[OK] Plan y PT en sincronía."
             if result["in_sync"]
             else f"[ADVERTENCIA] {len(result['missing_devices'])} faltante(s), "
-                 f"{len(result['extra_devices'])} extra(s), "
-                 f"{len(result['ip_mismatches'])} IP mismatch(es)."
+            f"{len(result['extra_devices'])} extra(s), "
+            f"{len(result['ip_mismatches'])} IP mismatch(es)."
         )
         return json.dumps(result, indent=2, ensure_ascii=False)
 
@@ -3689,7 +3915,7 @@ def register_tools(
             "[OK] Topología saludable."
             if result["healthy"]
             else f"[ADVERTENCIA] {len(result['down_links'])} link(s) caído(s), "
-                 f"{len(result['duplicate_ips'])} IP(s) duplicada(s)."
+            f"{len(result['duplicate_ips'])} IP(s) duplicada(s)."
         )
         return json.dumps(result, indent=2, ensure_ascii=False)
 
@@ -3716,9 +3942,7 @@ def register_tools(
     )
 
     _SECURITY_AUDIT_JS = (
-        "try {"
-        + _AUDIT_ALGO_JS +
-        "  var __net = ipc.network();"
+        "try {" + _AUDIT_ALGO_JS + "  var __net = ipc.network();"
         "  var __out = [];"
         "  var __n = __net.getDeviceCount();"
         "  for (var __i = 0; __i < __n; __i++) {"
@@ -3813,7 +4037,9 @@ def register_tools(
         result = audit_security(devices)
         counts = result["counts"]
         if not devices:
-            result["summary"] = "No hay dispositivos con configuración IOS en el canvas."
+            result["summary"] = (
+                "No hay dispositivos con configuración IOS en el canvas."
+            )
         elif result["secure"]:
             result["summary"] = (
                 f"[OK] {result['devices_audited']} dispositivo(s) auditado(s), "
@@ -4063,8 +4289,13 @@ def register_tools(
         if categories and not selected_models:
             categories_normalized = {category.casefold() for category in categories}
             selected_models = [
-                model for model in ("PC-PT", "2911", "2960-24TT", "3560-24PS")
-                if (resolve_model(model) and resolve_model(model).category.casefold() in categories_normalized)
+                model
+                for model in ("PC-PT", "2911", "2960-24TT", "3560-24PS")
+                if (
+                    resolve_model(model)
+                    and resolve_model(model).category.casefold()
+                    in categories_normalized
+                )
             ]
         unknown = set(capabilities or []) - set(service.known_capabilities)
         if unknown:
@@ -4078,6 +4309,7 @@ def register_tools(
             force=force,
             packet_tracer_version=packet_tracer_version.strip() or None,
         )
+
         def _run_on_pinned_transport():
             selection = _operation_transport_selection(require_command_path=True)
             if selection.selected is None:
@@ -4098,13 +4330,18 @@ def register_tools(
         except RuntimeError as exc:
             return f"[ERROR] Probe no iniciado: {exc}"
         if not readiness.ready:
-            if _bridge_instance is not None and _bridge_instance.saw_recent_unauthorized:
+            if (
+                _bridge_instance is not None
+                and _bridge_instance.saw_recent_unauthorized
+            ):
                 return _stale_client_message()
             return readiness.render()
         snapshot, cached = executed
         payload = {"cached": cached, "summary": snapshot.compact_summary()}
         if detail is DetailLevel.NORMAL:
-            payload["models"] = [item.model_dump(mode="json") for item in snapshot.session.devices]
+            payload["models"] = [
+                item.model_dump(mode="json") for item in snapshot.session.devices
+            ]
             payload["blocking_unknowns"] = snapshot.blocking_unknowns()
         elif detail is DetailLevel.DEBUG:
             payload["snapshot"] = snapshot.model_dump(mode="json")
@@ -4129,25 +4366,53 @@ def register_tools(
         store = CapabilitySnapshotStore()
         snapshot = store.latest_runtime(packet_tracer_version.strip() or None)
         if snapshot is None:
-            return json.dumps({"summary": "No hay snapshots runtime para ese scope de versión."}, ensure_ascii=False)
+            return json.dumps(
+                {"summary": "No hay snapshots runtime para ese scope de versión."},
+                ensure_ascii=False,
+            )
         report_name = report.casefold()
         if report_name == "summary":
-            payload = {"summary": snapshot.compact_summary(), "blocking_unknowns": snapshot.blocking_unknowns()}
+            payload = {
+                "summary": snapshot.compact_summary(),
+                "blocking_unknowns": snapshot.blocking_unknowns(),
+            }
         elif report_name == "unknown":
             payload = {"blocking_unknowns": snapshot.blocking_unknowns()}
         elif report_name == "model":
             wanted = model.strip()
             payload = {
-                "models": [item.model_dump(mode="json") for item in snapshot.session.devices
-                           if not wanted or wanted in {item.identity.canonical_id, item.identity.runtime_id, item.identity.display_name}],
-                "results": [item.model_dump(mode="json") for item in snapshot.session.results if not wanted or item.model == wanted],
+                "models": [
+                    item.model_dump(mode="json")
+                    for item in snapshot.session.devices
+                    if not wanted
+                    or wanted
+                    in {
+                        item.identity.canonical_id,
+                        item.identity.runtime_id,
+                        item.identity.display_name,
+                    }
+                ],
+                "results": [
+                    item.model_dump(mode="json")
+                    for item in snapshot.session.results
+                    if not wanted or item.model == wanted
+                ],
             }
         elif report_name == "readiness":
-            payload = _capability_discovery().readiness_report(snapshot).model_dump(mode="json")
+            payload = (
+                _capability_discovery()
+                .readiness_report(snapshot)
+                .model_dump(mode="json")
+            )
         elif report_name == "catalog_gaps":
-            payload = _capability_discovery().catalog_gap_report(
-                snapshot, ALL_MODELS.keys(),
-            ).model_dump(mode="json")
+            payload = (
+                _capability_discovery()
+                .catalog_gap_report(
+                    snapshot,
+                    ALL_MODELS.keys(),
+                )
+                .model_dump(mode="json")
+            )
         else:
             return "ERROR: report debe ser summary, model, unknown, readiness o catalog_gaps."
         if detail is DetailLevel.DEBUG:
@@ -4378,7 +4643,9 @@ def register_tools(
 
         frames = data.get("frames", [])
         for frame in frames:
-            frame["traffic_type"] = traffic_type_label(frame.pop("traffic_type_raw", None))
+            frame["traffic_type"] = traffic_type_label(
+                frame.pop("traffic_type_raw", None)
+            )
 
         result = summarize_trace(frames)
         result["total_in_event_list"] = data.get("total", 0)
@@ -4400,7 +4667,9 @@ def register_tools(
                 f"{result['frames']} frame(s) leídos, ninguno descartado."
             )
         else:
-            reasons = "; ".join(f["reason"] for f in result["failures"][:3] if f["reason"])
+            reasons = "; ".join(
+                f["reason"] for f in result["failures"][:3] if f["reason"]
+            )
             result["summary"] = (
                 f"[ADVERTENCIA] {len(result['failures'])} frame(s) no llegaron a destino. {reasons}"
             )
@@ -4473,12 +4742,16 @@ def register_tools(
         except (OSError, ValueError) as exc:
             return f"No se pudo escribir la imagen: {exc}"
 
-        return json.dumps({
-            "path": str(target),
-            "format": image_fmt,
-            "bytes": len(blob),
-            "summary": f"[OK] Captura guardada en {target} ({len(blob):,} bytes).",
-        }, indent=2, ensure_ascii=False)
+        return json.dumps(
+            {
+                "path": str(target),
+                "format": image_fmt,
+                "bytes": len(blob),
+                "summary": f"[OK] Captura guardada en {target} ({len(blob):,} bytes).",
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
 
     @mcp.tool()
     def pt_add_note(x: int, y: int, text: str) -> str:
@@ -4524,10 +4797,14 @@ def register_tools(
             return _TIMEOUT_MSG
         if raw.startswith("ERROR:"):
             return f"PT error: {raw}"
-        return json.dumps({
-            "id": raw.strip(),
-            "summary": f"[OK] Nota agregada en ({x},{y}).",
-        }, indent=2, ensure_ascii=False)
+        return json.dumps(
+            {
+                "id": raw.strip(),
+                "summary": f"[OK] Nota agregada en ({x},{y}).",
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
 
     @mcp.tool()
     def pt_clear_annotations(kind: str = "all") -> str:
@@ -4558,9 +4835,14 @@ def register_tools(
         # getCanvasItemIds NO incluye las notas: son conjuntos distintos. Barrer
         # solo uno dejaba notas en pantalla y encima reportaba remaining=0, que
         # es peor que no borrar — el usuario cree que quedó limpio.
-        getters = ["getCanvasNoteIds"] if what == "notes" else [
-            "getCanvasNoteIds", "getCanvasItemIds",
-        ]
+        getters = (
+            ["getCanvasNoteIds"]
+            if what == "notes"
+            else [
+                "getCanvasNoteIds",
+                "getCanvasItemIds",
+            ]
+        )
         js_getters = ", ".join(json.dumps(g) for g in getters)
         js = (
             "try {"
@@ -4731,15 +5013,16 @@ def register_tools(
         setter = (
             f"  if (typeof __f.setNetworkDescription === 'function') "
             f"{{ __f.setNetworkDescription({json.dumps(new_desc)}); }}"
-            if new_desc else ""
+            if new_desc
+            else ""
         )
         js = (
             "try {"
             "  var __a = ipc.appWindow();"
             "  var __f = __a.getActiveFile();"
             "  if (!__f) { reportResult(JSON.stringify({ found: false })); } else {"
-            + setter +
-            "    var __n = ipc.network();"
+            + setter
+            + "    var __n = ipc.network();"
             "    reportResult(JSON.stringify({"
             "      found: true,"
             "      saved_filename: String(__f.getSavedFilename() || ''),"
@@ -4768,8 +5051,11 @@ def register_tools(
         saved = data.get("saved_filename") or ""
         data["summary"] = (
             f"{data['devices']} dispositivo(s), {data['links']} enlace(s). "
-            + (f"Archivo: {saved}." if saved
-               else "Proyecto SIN guardar — usá pt_save_project para persistirlo.")
+            + (
+                f"Archivo: {saved}."
+                if saved
+                else "Proyecto SIN guardar — usá pt_save_project para persistirlo."
+            )
             + (" Descripción actualizada." if new_desc else "")
         )
         return json.dumps(data, indent=2, ensure_ascii=False)
@@ -4837,8 +5123,8 @@ def register_tools(
         js = (
             "try {"
             "  var __o = ipc.options();"
-            + "".join(sets) +
-            "  reportResult(JSON.stringify({"
+            + "".join(sets)
+            + "  reportResult(JSON.stringify({"
             "    auto_cabling: !__o.isAutoCablingDisabled(),"
             "    external_network_access: !!__o.isExternalNetworkAccessEnabled(),"
             "    show_port_labels: !!__o.isPortShown(),"
@@ -4910,8 +5196,12 @@ def register_tools(
           pt_apply_netflow(device="R1", name="COLLECTOR-1", destination_ip="192.168.0.50")
         """
         cfg = NetflowExporter(
-            device=device, name=name, destination_ip=destination_ip.strip(),
-            udp_port=udp_port, version=version, source_port=source_port.strip(),
+            device=device,
+            name=name,
+            destination_ip=destination_ip.strip(),
+            udp_port=udp_port,
+            version=version,
+            source_port=source_port.strip(),
             monitors=monitors or [],
         )
 
@@ -4926,11 +5216,14 @@ def register_tools(
                 errors.extend(topo.errors)
                 warnings.extend(topo.warnings)
             except Exception as exc:  # pragma: no cover
-                warnings.append(PlanError(
-                    code=ErrorCode.VALIDATION_ERROR, device=cfg.device,
-                    message=f"No se pudo validar contra PT: {exc}",
-                    suggestion="Verificá el bridge con pt_bridge_status.",
-                ))
+                warnings.append(
+                    PlanError(
+                        code=ErrorCode.VALIDATION_ERROR,
+                        device=cfg.device,
+                        message=f"No se pudo validar contra PT: {exc}",
+                        suggestion="Verificá el bridge con pt_bridge_status.",
+                    )
+                )
 
         dev = json.dumps(cfg.device)
         exporter = json.dumps(cfg.name)
@@ -4943,7 +5236,9 @@ def register_tools(
         else:
             sets = [f"      __e.setExporterVersion({int(cfg.version)});"]
             if cfg.destination_ip:
-                sets.append(f"      __e.setDestinationAddr({json.dumps(cfg.destination_ip)});")
+                sets.append(
+                    f"      __e.setDestinationAddr({json.dumps(cfg.destination_ip)});"
+                )
             sets.append(f"      __e.setDestinationUdpPort({int(cfg.udp_port)});")
             if cfg.source_port:
                 sets.append(f"      __e.setSrcPort({json.dumps(cfg.source_port)});")
@@ -4955,8 +5250,8 @@ def register_tools(
                 f"    if (!__e) {{ __e = __m.createNFExporter({exporter}); __created = true; }}"
                 f"    if (!__e) {{ reportResult(JSON.stringify({{ found: true, supported: true,"
                 "      error: 'no se pudo crear el exportador' })); } else {"
-                + "".join(sets) +
-                "      reportResult(JSON.stringify({ found: true, supported: true,"
+                + "".join(sets)
+                + "      reportResult(JSON.stringify({ found: true, supported: true,"
                 "        created: __created, name: __e.getExporterName(),"
                 "        version: __e.getExporterVersion(),"
                 "        destination: String(__e.getDestinationAddr()),"
@@ -4973,9 +5268,7 @@ def register_tools(
             "  else if (typeof __d.getNetflowExporterManager !== 'function') {"
             "    reportResult(JSON.stringify({ found: true, supported: false }));"
             "  } else {"
-            "    var __m = __d.getNetflowExporterManager();"
-            + body +
-            "  }"
+            "    var __m = __d.getNetflowExporterManager();" + body + "  }"
             "} catch (__e2) { reportResult('ERROR:' + __e2); }"
         )
 
@@ -4989,10 +5282,14 @@ def register_tools(
         }
 
         if errors:
-            payload["summary"] = f"[ERROR] NetFlow: {len(errors)} error(es); no se envió nada."
+            payload["summary"] = (
+                f"[ERROR] NetFlow: {len(errors)} error(es); no se envió nada."
+            )
             return json.dumps(payload, indent=2, ensure_ascii=False)
         if dry_run:
-            payload["summary"] = "[OK] NetFlow válido. Modo dry_run — NO se envió al bridge."
+            payload["summary"] = (
+                "[OK] NetFlow válido. Modo dry_run — NO se envió al bridge."
+            )
             return json.dumps(payload, indent=2, ensure_ascii=False)
 
         err = _check_bridge()

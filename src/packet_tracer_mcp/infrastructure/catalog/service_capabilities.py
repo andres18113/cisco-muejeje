@@ -37,8 +37,12 @@ def packet_tracer_service_capabilities(
         ServiceActionType.ENABLE_TFTP.value: CapabilityStatus.SUPPORTED,
         ServiceActionType.PUBLISH_TFTP_FILE.value: CapabilityStatus.UNKNOWN,
     }
-    profiles[ServiceType.DNS].behavioral_verification_support = CapabilityStatus.SUPPORTED
-    profiles[ServiceType.HTTP].behavioral_verification_support = CapabilityStatus.SUPPORTED
+    profiles[
+        ServiceType.DNS
+    ].behavioral_verification_support = CapabilityStatus.SUPPORTED
+    profiles[
+        ServiceType.HTTP
+    ].behavioral_verification_support = CapabilityStatus.SUPPORTED
     profiles[ServiceType.DNS].capability_readiness["behavioral_verification"] = (
         CapabilityReadiness(
             capability="dns_behavioral_verification",
@@ -69,8 +73,14 @@ def packet_tracer_service_capabilities(
         )
     )
     for service_type, reason in (
-        (ServiceType.NTP, "Packet Tracer exposes activation but no independent registered synchronization observation."),
-        (ServiceType.TFTP, "Packet Tracer exposes service activation but no safe registered publication/retrieval observation."),
+        (
+            ServiceType.NTP,
+            "Packet Tracer exposes activation but no independent registered synchronization observation.",
+        ),
+        (
+            ServiceType.TFTP,
+            "Packet Tracer exposes service activation but no safe registered publication/retrieval observation.",
+        ),
     ):
         profiles[service_type].capability_readiness["behavioral_verification"] = (
             CapabilityReadiness(
