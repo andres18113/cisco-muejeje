@@ -3848,6 +3848,26 @@ Deviations and remaining limits:
    staged archive blob proof, clean exact-commit delivery gate, and both
    requested diffs are reported in the delivery handoff.
 
+### 11.9 Windows Python 3.13 CI portability correction
+
+Risk is **S**: the correction changes only the native-UI test provider, not the
+driver, product behavior, public contracts, or Packet Tracer integration. Exact
+SHA `3034a95bfc60d585b7dd25c5c053fd9dd87430dc` produced five successful jobs
+and one failure in GitHub Actions run `35337219802`. Windows/Python 3.13 read an
+empty `*.receipt.json` in
+`test_native_ui_driver_returns_exact_fresh_typed_call_lifecycle`; Pydantic
+therefore correctly returned invalid JSON and the fail-closed driver reported
+`UNOBSERVABLE`.
+
+The test controller had created the observable final receipt path before
+writing its payload with `Path.write_text`. The driver could therefore observe
+the path between file creation and content publication. The fake now writes a
+temporary sibling and replaces the final path only after the complete JSON is
+written, matching the mailbox's immutable-receipt contract. Receipt validation
+and malformed-receipt refusal are unchanged. Acceptance is the focused native
+UI module, repeated race-sensitive execution, affected/full offline suites,
+clean exact-commit delivery validation, and exact-SHA GitHub Actions 4/4.
+
 ---
 
 ## Appendix A — Source index

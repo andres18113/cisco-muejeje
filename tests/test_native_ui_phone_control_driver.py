@@ -1,7 +1,9 @@
+"""Contract tests for correlated native-UI phone-control receipts."""
+
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import threading
 import time
 from pathlib import Path
@@ -27,15 +29,28 @@ from packet_tracer_mcp.infrastructure.execution.phone_control import (
 )
 
 
+def _write_receipt_atomic(path: Path, payload: dict[str, object]) -> None:
+    """Publish a complete fake-provider receipt at the observable path."""
+    temporary = path.with_name(f".{path.name}.tmp")
+    try:
+        temporary.write_text(json.dumps(payload), encoding="utf-8")
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def _expectation(expected_result=CallExpectationResult.ESTABLISHED):
     return CallExpectation(
         id="call/qualification/established",
         source_phone_id="phone/qualification/1",
         source_extension="3001",
-        dialed_extension=("3002" if expected_result is CallExpectationResult.ESTABLISHED else "3999"),
+        dialed_extension=(
+            "3002" if expected_result is CallExpectationResult.ESTABLISHED else "3999"
+        ),
         expected_target_phone_id=(
             "phone/qualification/2"
-            if expected_result is CallExpectationResult.ESTABLISHED else ""
+            if expected_result is CallExpectationResult.ESTABLISHED
+            else ""
         ),
         expected_result=expected_result,
         site_id="call-observability-qualification",
@@ -57,7 +72,8 @@ def _serve_one_receipt(root: Path, *, mutate=None):
         positive = bool(request["destination_phone_id"])
         source_states = (
             ["idle", "dialing", "ringing", "connected", "disconnected", "idle"]
-            if positive else ["idle", "dialing", "failed", "idle"]
+            if positive
+            else ["idle", "dialing", "failed", "idle"]
         )
         samples = [
             {
@@ -105,7 +121,7 @@ def _serve_one_receipt(root: Path, *, mutate=None):
         if mutate is not None:
             mutate(receipt, request)
         receipt_path = Path(str(request_path).replace(".request.json", ".receipt.json"))
-        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        _write_receipt_atomic(receipt_path, receipt)
 
     thread = threading.Thread(target=worker)
     thread.start()
@@ -136,10 +152,13 @@ def _serve_readiness(root: Path, *, mutate=None):
         }
         if mutate is not None:
             mutate(receipt, request)
-        receipt_path = Path(str(request_path).replace(
-            ".readiness.request.json", ".readiness.receipt.json",
-        ))
-        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        receipt_path = Path(
+            str(request_path).replace(
+                ".readiness.request.json",
+                ".readiness.receipt.json",
+            )
+        )
+        _write_receipt_atomic(receipt_path, receipt)
 
     thread = threading.Thread(target=worker)
     thread.start()
@@ -174,6 +193,7 @@ def test_native_ui_driver_returns_exact_fresh_typed_call_lifecycle(
     connected,
     source_states,
 ):
+    """A complete correlated receipt produces the exact typed lifecycle."""
     expectation = _expectation(expected_result)
     thread = _serve_one_receipt(tmp_path)
     driver = PacketTracerNativeUiCallDriver(
@@ -228,6 +248,7 @@ def test_native_ui_driver_rejects_foreign_stale_or_incomplete_receipts(
     tmp_path,
     defect,
 ):
+    """Identity, freshness, artifact, and teardown defects fail closed."""
     expectation = _expectation()
 
     def mutate(receipt, request):
@@ -245,7 +266,8 @@ def test_native_ui_driver_rejects_foreign_stale_or_incomplete_receipts(
             receipt["evidence_sha256"] = "not-a-sha"
         else:
             receipt["states"] = [
-                item for item in receipt["states"]
+                item
+                for item in receipt["states"]
                 if item["state"] not in {"disconnected", "idle"}
             ]
 
@@ -285,6 +307,8 @@ def test_native_ui_driver_readiness_is_a_fresh_correlated_handshake(
     tmp_path,
     defect,
 ):
+    """Readiness requires the exact current provider receipt."""
+
     def mutate(receipt, request):
         if defect == "foreign":
             receipt["request_id"] = "readiness/foreign"
