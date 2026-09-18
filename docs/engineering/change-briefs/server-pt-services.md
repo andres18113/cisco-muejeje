@@ -68,14 +68,14 @@ were already superseded, rejected or not yet activated there.
 | R-OBS-02, 06, 07, 08; RD-10 — mutation decision, script contract, effect footprint | `domain/enterprise/models/execution.py` (`decide_mutation` and its fact enums), `enterprise_configuration_runtime.py`, `enterprise_service_runtime.py`; [E6 architecture](../../architecture/enterprise-services.md#mutation-and-observation-vocabulary); `tests/test_execution_status_facts.py`, `tests/test_service_mutation_script_harness.py`, `tests/test_service_application_uncertainty.py` |
 | R-OBS-03, R-HTTPS-02/03, R-ENTRY-08, R-CAP-05 — observation limits | `enterprise_service_runtime.py`; `tests/test_service_runtime_observation.py`, `tests/test_service_runtime.py` |
 | R-EVD-01 — evidence separated from status | `domain/enterprise/models/service_runtime.py` (`ObservationFact`); `tests/test_service_application_uncertainty.py` |
-| R-ENTRY-01..11, R-NET-01/02, R-RET-01/02 — product entry, admission, run records | `adapters/mcp/service_tools.py`, [apply_enterprise_services.py](../../../src/packet_tracer_mcp/application/use_cases/apply_enterprise_services.py), `infrastructure/persistence/service_run_record_store.py`, `docs/tools.md`; [test_apply_enterprise_services.py](../../../tests/test_apply_enterprise_services.py), `tests/test_service_tools_surface.py`, `tests/test_service_run_record_store.py`. R-ENTRY-07 is active for S1: the product path removes no user topology, service, account or message; future S2 coverage is an extension, not activation of the existing S1 obligation |
+| R-ENTRY-01..11, R-NET-01/02, R-RET-01/02 — product entry, admission, run records | `adapters/mcp/service_tools.py`, [apply_enterprise_services.py](https://github.com/andres18113/cisco-muejeje/blob/cb2b1fb12978d5050546f31ee51d0918dc5ee38c/src/packet_tracer_mcp/application/use_cases/apply_enterprise_services.py), `infrastructure/persistence/service_run_record_store.py`, `docs/tools.md`; [test_apply_enterprise_services.py](https://github.com/andres18113/cisco-muejeje/blob/cb2b1fb12978d5050546f31ee51d0918dc5ee38c/tests/test_apply_enterprise_services.py), `tests/test_service_tools_surface.py`, `tests/test_service_run_record_store.py`. R-ENTRY-07 is active for S1: the product path removes no user topology, service, account or message; future S2 coverage is an extension, not activation of the existing S1 obligation |
 | R-ENTRY-04 — foundational evidence | `application/use_cases/foundational_evidence.py`; `tests/test_service_foundational_evidence.py` |
 | R-CAP-01..07 — capability authority and provenance | `infrastructure/catalog/service_capabilities.py`, `domain/enterprise/services/service_capability_resolution.py`; [E6 architecture](../../architecture/enterprise-services.md#packet-tracer-9010858-baseline); `tests/test_service_capabilities.py`, `tests/test_service_client_capabilities.py` |
 | R-QUAL-01..04 — the governed qualification runner | `domain/enterprise/models/service_qualification.py`, `application/use_cases/qualify_server_services.py`, `adapters/cli/service_qualification.py`, `docs/qa/server-services-qualification.md`; the S4a tests below |
 | R-SEC-02/04, R-REG-01/03 — secret handling, registry hygiene, enum presentation | `docs/engineering/standards.md`, the Ruff configuration in `pyproject.toml`, `scripts/quality_gate.py`; `tests/test_execution_status_facts.py` |
 | R-TEST-01 — test-inventory discipline | `docs/engineering/standards.md`, *Architecture and test design*. It is a general rule, not an S0-only one |
 | R-HTTP-01..03, R-DNS-01..03 — DNS and HTTP service contracts | [E6 architecture](../../architecture/enterprise-services.md); `domain/enterprise/services/service_compiler.py`; `tests/test_enterprise_services.py` |
-| R-COV-01/02 — complete, honestly labelled per-client product results | [apply_enterprise_services.py](../../../src/packet_tracer_mcp/application/use_cases/apply_enterprise_services.py), [service_compiler.py](../../../src/packet_tracer_mcp/domain/enterprise/services/service_compiler.py); [test_apply_enterprise_services.py](../../../tests/test_apply_enterprise_services.py), including skipped, blocked, recovery and unsampled-result assertions. These obligations are active in S1; later slices extend their service coverage |
+| R-COV-01/02 — complete, honestly labelled per-client product results | [apply_enterprise_services.py](https://github.com/andres18113/cisco-muejeje/blob/cb2b1fb12978d5050546f31ee51d0918dc5ee38c/src/packet_tracer_mcp/application/use_cases/apply_enterprise_services.py), [service_compiler.py](https://github.com/andres18113/cisco-muejeje/blob/cb2b1fb12978d5050546f31ee51d0918dc5ee38c/src/packet_tracer_mcp/domain/enterprise/services/service_compiler.py); [test_apply_enterprise_services.py](https://github.com/andres18113/cisco-muejeje/blob/cb2b1fb12978d5050546f31ee51d0918dc5ee38c/tests/test_apply_enterprise_services.py), including skipped, blocked, recovery and unsampled-result assertions. These obligations are active in S1; later slices extend their service coverage |
 | R-QUAL-05/06 — re-qualification after a content or protocol change | this brief, **Open decisions**; unimplemented until S1b, S2 or S3 is authorized |
 | R-HTTPS-01/04, R-DNS-04, R-MAIL-01..07, R-DHCP-01..08, R-EVT-01..07, R-SEC-01/03/05/06, R-OBS-04/05 | **not active.** Their text stays in the [archived brief](../../reference/server-pt/server-pt-services-brief-9973f66.md); each becomes active only when its slice (S1b, S2, S3, S5) is authorized, and must be restated here at that point |
 
@@ -263,25 +263,27 @@ consumer list as its input.
 
 ## Verification evidence
 
-Every figure below was observed in the sibling worktree `Cisco-MCP-s4a` on
+The prior-delivery figures through **Measured result of the corrections** were
+observed in the sibling worktree `Cisco-MCP-s4a` on
 branch `feature/server-pt-s4a-qualification-runner`, with its own `.venv`
 (CPython 3.12.10) and `packet_tracer_mcp` resolving inside that worktree.
 Instruction loading: this session loaded `CLAUDE.md`, `AGENTS.md` and
 `docs/engineering/standards.md` from the primary checkout, and the three files
 in this worktree are byte-identical to them (same Git blob identities). A fresh
 session started inside this worktree was not observed, so its effective loading
-remains **pending**, not passed. Nothing in this delivery contacted Packet
-Tracer, and the two commits below are unpushed.
+remains **pending**, not passed. Nothing in that delivery contacted Packet
+Tracer. This block is historical evidence preserved from `405f293`; the
+focused-correction evidence follows it and does not relabel these earlier runs.
 
 | Commit | Tree | Scope |
 | --- | --- | --- |
 | `b311657` | `0e16fdd` | Part A: documentation projection, no runtime or test behavior |
 | `78fdb91` | `dfe8858` | Part B: the S4A-C1..C4 corrections and their regressions |
 
-A third, documentation-only commit adds this section and is the branch tip. It
-changes no Python file, so the Ruff gate, the namespace inventory and the suite
-below are unaffected by it; the exact-commit delivery gate, the MkDocs build and
-the whitespace check were re-run on it.
+The documentation-only commit `405f293` added this historical section. It
+changed no Python file, so the Ruff gate, the namespace inventory and the suite
+below were unaffected by it; the exact-commit delivery gate, the MkDocs build
+and the whitespace check were re-run on it.
 
 Checks, against `78fdb91` unless stated:
 
@@ -313,13 +315,40 @@ operations and its worst case, with the positive fetch's first inspection lost,
 spends exactly the planned 46 with no refused call and the 10-operation reserve
 untouched. The full Q1 stage now passes its gate and completes through the CLI.
 
+### Focused correction evidence
+
+The focused correction is local commit
+`cb2b1fb12978d5050546f31ee51d0918dc5ee38c`, tree
+`a6b2e9fdb182f31e78ec57bda0537d4a376ee06d`, based directly on reviewed
+`405f29334a514f9323b693f7f5340a62b761bf3a`. It changes no budget, transport,
+protocol, `.pts`, `EXTENSION/` file or capability state and contacted no Packet
+Tracer process.
+
+| Check | Result |
+| --- | --- |
+| causal RED regressions before production edits | 11 failed for the expected ownership, effect-ordering and evaluation-scope causes |
+| focused regressions after the owning-layer fixes | 11 passed |
+| complete S4a domain, Node harness and coordinator files | 156 passed |
+| affected S4a/S1 and coexistence modules | 401 passed |
+| full offline suite | 6174 passed, 3 skipped, 3 pre-existing Pytest deprecation warnings |
+| exact-SHA delivery gate | clean tree at `cb2b1fb`; 63 changed Python files gated, 0 mechanical exemptions, Ruff lint and format clean |
+| namespace inventory | 0 active imports, 0 active strings, 0 unreviewed inert mentions |
+| documentation build | built; only the two pre-existing `handoff.md` link warnings, none introduced |
+| whitespace | `git diff --check` clean |
+
+The repository's pytest-isolation wrapper refused this sibling because
+`worktrees.json` has no S4a assignment. The tests above therefore used this
+checkout's own `.venv` directly, as the active `AGENTS.md` permits; no other
+checkout's interpreter or test artifacts were used.
+
 ### Residual limitations
 
 - **Not LIVE-ready, and not accepted.** S4a stays `READY_FOR_REVIEW`. Only an
   independent reviewer can accept it, and no Q0 or Q1 LIVE authorization exists.
-- **Exact-SHA CI is pending.** `78fdb91` has never been pushed, so no CI run has
-  ever seen it. The earlier green run belongs to `9973f66` and is not
-  relabelled.
+- **Exact-SHA CI is pending.** Runs for `9973f66` and `405f293` remain historical
+  evidence at those SHAs; run 35396445227 succeeded at `405f293`. Neither
+  `cb2b1fb` nor its documentation-only successor has been pushed, so no CI run
+  has seen this focused correction and no earlier run is relabelled.
 - **Offline only.** Every probe result above comes from the Node stub engine.
   Whether Packet Tracer behaves the way that stub does is exactly what Q0 and Q1
   would measure, and no offline run is promotion evidence.
