@@ -238,6 +238,16 @@ class ConfigurationApplicator:
                 ),
                 started=started,
             )
+        governed_action_ids = mutation_ids | frozenset(retained_results)
+        governed_device_ids = (
+            {item.device_id for item in plan.devices}
+            if mutation_action_ids is None
+            else {
+                item.device_id
+                for item in plan.actions
+                if item.id in governed_action_ids
+            }
+        )
 
         try:
             inventory = self._runtime.inventory()
@@ -257,7 +267,7 @@ class ConfigurationApplicator:
                 semantic_targets = resolve_manifest_targets(
                     deployment_manifest,
                     physical_topology_hash=plan.source_topology_hash,
-                    semantic_device_ids=[item.device_id for item in plan.devices],
+                    semantic_device_ids=sorted(governed_device_ids),
                     inventory=inventory,
                 )
             except DeploymentIdentityError as exc:
@@ -272,10 +282,13 @@ class ConfigurationApplicator:
             targets = {
                 item.device_name: semantic_targets[item.device_id]
                 for item in plan.devices
+                if item.device_id in governed_device_ids
             }
             try:
                 for action in plan.actions:
-                    if not isinstance(action, ConfigureSerialClock):
+                    if action.id not in mutation_ids or not isinstance(
+                        action, ConfigureSerialClock
+                    ):
                         continue
                     if not action.source_link_id:
                         raise DeploymentIdentityError(
@@ -301,9 +314,14 @@ class ConfigurationApplicator:
         deployed_names = {
             item.device_id: targets[item.device_name].device_name
             for item in plan.devices
+            if item.device_id in governed_device_ids
             if item.device_name in targets
         }
-        preflight_errors = self._validate_targets(plan, targets)
+        preflight_errors = self._validate_targets(
+            plan,
+            targets,
+            action_ids=(None if mutation_action_ids is None else governed_action_ids),
+        )
         if preflight_errors:
             code = (
                 ConfigurationFailureCode.TARGET_IDENTITY_MISMATCH
@@ -1311,10 +1329,20 @@ class ConfigurationApplicator:
     def _validate_targets(
         plan: ConfigurationPlan,
         targets: dict[str, RuntimeConfigurationTarget],
+        *,
+        action_ids: Collection[str] | None = None,
     ) -> list[str]:
         errors: list[str] = []
         device_plans = {item.device_id: item for item in plan.devices}
+        selected = set(action_ids) if action_ids is not None else None
+        selected_devices = {
+            action.device_id
+            for action in plan.actions
+            if selected is None or action.id in selected
+        }
         for device in plan.devices:
+            if device.device_id not in selected_devices:
+                continue
             target = targets.get(device.device_name)
             if target is None:
                 errors.append(f"Target {device.device_name} was not found.")
@@ -1323,6 +1351,8 @@ class ConfigurationApplicator:
                     f"Target {device.device_name} model {target.model} does not match {device.model}."
                 )
         for action in plan.actions:
+            if selected is not None and action.id not in selected:
+                continue
             target = targets.get(action.device_name)
             if target is None or not target.interfaces:
                 continue

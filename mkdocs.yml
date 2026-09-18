@@ -82,6 +82,7 @@ nav:
       - Namespace Migration Brief: engineering/change-briefs/namespace-migration.md
       - Mechanical Migration Boundary Brief: engineering/change-briefs/mechanical-migration-quality-boundary.md
       - Server-PT Services Brief: engineering/change-briefs/server-pt-services.md
+      - Server-PT Historical Inputs: reference/server-pt/README.md
       - Enterprise Planning: architecture/enterprise-planning.md
       - Enterprise Hardware Planner: architecture/enterprise-hardware.md
       - Packet Tracer Capability Discovery: architecture/packet-tracer-capability-discovery.md

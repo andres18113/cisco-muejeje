@@ -41,6 +41,7 @@ from packet_tracer_mcp.domain.enterprise.models.service_entry import (
 from packet_tracer_mcp.domain.enterprise.models.service_run_record import (
     ServiceRunRecord,
 )
+from packet_tracer_mcp.infrastructure.persistence import service_run_record_store
 from packet_tracer_mcp.infrastructure.persistence.service_run_record_store import (
     UNBOUND_DIRECTORY,
     ServiceRunRecordStore,
@@ -140,6 +141,129 @@ def test_a_record_is_created_under_its_deployment_and_read_back(tmp_path: Path):
     assert store.load(_DEPLOYMENT, "run-1") == record
 
 
+def test_store_construction_is_side_effect_free(tmp_path: Path):
+    """A public adapter may construct a store only after process admission."""
+    base = tmp_path / "not-created"
+
+    ServiceRunRecordStore(base)
+
+    assert not base.exists()
+
+
+def test_deployment_directory_creation_failure_is_typed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A real mkdir failure cannot escape as a bare filesystem exception."""
+    store = ServiceRunRecordStore(tmp_path)
+    real_mkdir = Path.mkdir
+
+    def fail_deployment(path: Path, *args, **kwargs) -> None:
+        if path.name == _DEPLOYMENT:
+            raise OSError("denied secret path")
+        real_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", fail_deployment)
+
+    with pytest.raises(RunRecordPersistenceError, match="persist"):
+        store.begin(_record())
+
+
+def test_base_directory_creation_failure_is_typed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The first filesystem touch is inside the same typed boundary."""
+    base = tmp_path / "new-base"
+    store = ServiceRunRecordStore(base)
+    real_mkdir = Path.mkdir
+
+    def fail_base(path: Path, *args, **kwargs) -> None:
+        if path == base:
+            raise OSError("base denied")
+        real_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", fail_base)
+
+    with pytest.raises(RunRecordPersistenceError, match="persist"):
+        store.begin(_record())
+
+
+def test_temporary_file_creation_failure_is_typed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Failure before the temporary payload exists remains a typed refusal."""
+    store = ServiceRunRecordStore(tmp_path)
+    real_open = Path.open
+
+    def fail_temporary(path: Path, *args, **kwargs):
+        if path.suffix == ".tmp":
+            raise OSError("temporary denied")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", fail_temporary)
+
+    with pytest.raises(RunRecordPersistenceError, match="persist"):
+        store.begin(_record())
+
+
+def test_temporary_write_failure_is_typed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A write failure cannot escape or leave an executable record."""
+    store = ServiceRunRecordStore(tmp_path)
+    real_open = Path.open
+
+    class FailingWriter:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+        def write(self, _payload: str) -> None:
+            raise OSError("write failed")
+
+        def flush(self) -> None:
+            return None
+
+        def fileno(self) -> int:
+            return 0
+
+    def fail_write(path: Path, *args, **kwargs):
+        if path.suffix == ".tmp":
+            return FailingWriter()
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", fail_write)
+
+    with pytest.raises(RunRecordPersistenceError, match="persist"):
+        store.begin(_record())
+    assert not list(tmp_path.rglob("*.json"))
+
+
+def test_begin_refuses_an_existing_run_identity(tmp_path: Path):
+    """A generated-id collision cannot overwrite the first run."""
+    store = ServiceRunRecordStore(tmp_path)
+    first = _record(run_label="first")
+    store.begin(first)
+
+    with pytest.raises(RunRecordPersistenceError, match="already exists"):
+        store.begin(_record(run_label="second"))
+
+    assert store.load(_DEPLOYMENT, "run-1").run_label == "first"
+
+
+def test_load_refuses_a_record_whose_internal_identity_mismatches_its_path(
+    tmp_path: Path,
+):
+    """A file cannot masquerade as the run requested by the caller."""
+    store = ServiceRunRecordStore(tmp_path)
+    path = Path(store.begin(_record()))
+    path.write_text(_record(run_id="another-run").model_dump_json(), encoding="utf-8")
+
+    with pytest.raises(RunRecordPersistenceError, match="identity"):
+        store.load(_DEPLOYMENT, "run-1")
+
+
 def test_an_unbound_admission_record_is_filed_apart(tmp_path: Path):
     """A3 to A5 refuse before any deployment identity exists.
 
@@ -194,6 +318,25 @@ def test_a_malformed_record_is_refused_rather_than_skipped(tmp_path: Path):
     store = ServiceRunRecordStore(tmp_path)
     path = Path(store.begin(_record()))
     path.write_text("{not json", encoding="utf-8")
+
+    with pytest.raises(RunRecordPersistenceError, match="unreadable"):
+        store.load(_DEPLOYMENT, "run-1")
+
+
+def test_a_real_record_read_failure_is_typed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """An OS read failure is not mistaken for a missing reusable record."""
+    store = ServiceRunRecordStore(tmp_path)
+    path = Path(store.begin(_record()))
+    real_read_text = Path.read_text
+
+    def fail_read(target: Path, *args, **kwargs):
+        if target == path:
+            raise OSError("read failed")
+        return real_read_text(target, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fail_read)
 
     with pytest.raises(RunRecordPersistenceError, match="unreadable"):
         store.load(_DEPLOYMENT, "run-1")
@@ -300,7 +443,8 @@ def test_an_interrupted_run_is_never_reused(tmp_path: Path):
     store = ServiceRunRecordStore(tmp_path)
     store.begin(_record(stage=ServiceStage.SERVICE_APPLY))
 
-    assert _retained(store) is None
+    with pytest.raises(RunRecordPersistenceError, match="interrupted or uncertain"):
+        _retained(store)
 
 
 def test_a_run_with_effect_uncertainty_is_never_reused(tmp_path: Path):
@@ -308,7 +452,8 @@ def test_a_run_with_effect_uncertainty_is_never_reused(tmp_path: Path):
     store = ServiceRunRecordStore(tmp_path)
     store.begin(_record(e5_effect_uncertain=True))
 
-    assert _retained(store) is None
+    with pytest.raises(RunRecordPersistenceError, match="interrupted or uncertain"):
+        _retained(store)
 
 
 def test_a_record_without_configuration_rows_is_not_reusable(tmp_path: Path):
@@ -329,6 +474,19 @@ def test_a_record_without_configuration_rows_is_not_reusable(tmp_path: Path):
     assert _retained(store) is None
 
 
+def test_a_completed_run_with_a_failed_configuration_row_is_not_reusable(
+    tmp_path: Path,
+):
+    """Completion does not turn a failed row into retained permission."""
+    store = ServiceRunRecordStore(tmp_path)
+    result = _configuration_result()
+    result.action_results[0].status = ActionExecutionStatus.FAILED
+    result.action_results[0].failure_code = ConfigurationFailureCode.APPLICATION_FAILED
+    store.begin(_record(configuration_result=result))
+
+    assert _retained(store) is None
+
+
 def test_the_newest_matching_record_wins(tmp_path: Path):
     """The most recent completed run describes the current state."""
     store = ServiceRunRecordStore(tmp_path)
@@ -340,6 +498,72 @@ def test_the_newest_matching_record_wins(tmp_path: Path):
 
     assert retained is not None
     assert retained.run_id == "run-new"
+
+
+def test_a_newer_uncertain_attempt_blocks_older_success_reuse(tmp_path: Path):
+    """An ambiguous latest attempt is not absence that revives old evidence."""
+    store = ServiceRunRecordStore(tmp_path)
+    base = datetime(2026, 9, 17, 10, 0, tzinfo=UTC)
+    store.begin(_record(run_id="run-old", created_at=base))
+    store.begin(
+        _record(
+            run_id="run-new",
+            created_at=base + timedelta(hours=1),
+            e5_effect_uncertain=True,
+        )
+    )
+
+    with pytest.raises(RunRecordPersistenceError, match=r"newer.*uncertain"):
+        _retained(store)
+
+
+def test_a_newer_uncertain_environment_blocks_the_same_configuration(
+    tmp_path: Path,
+):
+    """An environment mismatch does not make a newer ambiguous effect vanish."""
+    store = ServiceRunRecordStore(tmp_path)
+    base = datetime(2026, 9, 17, 10, 0, tzinfo=UTC)
+    store.begin(_record(run_id="run-old", created_at=base))
+    store.begin(
+        _record(
+            run_id="run-new",
+            created_at=base + timedelta(hours=1),
+            environment_fingerprint_hash="changed-environment",
+            e5_effect_uncertain=True,
+        )
+    )
+
+    with pytest.raises(RunRecordPersistenceError, match=r"newer.*uncertain"):
+        _retained(store)
+
+
+def test_an_uncertain_foreign_environment_is_not_treated_as_absence(tmp_path: Path):
+    """No exact reusable row is not permission to replay ambiguous state."""
+    store = ServiceRunRecordStore(tmp_path)
+    store.begin(
+        _record(
+            run_id="run-uncertain",
+            environment_fingerprint_hash="changed-environment",
+            e5_effect_uncertain=True,
+        )
+    )
+
+    with pytest.raises(RunRecordPersistenceError, match=r"newer.*uncertain"):
+        _retained(store)
+
+
+def test_retention_history_lookup_refuses_above_its_path_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Lookup reads a bounded history rather than materializing every record."""
+    store = ServiceRunRecordStore(tmp_path)
+    for index in range(3):
+        store.begin(_record(run_id=f"run-{index}"))
+    monkeypatch.setattr(service_run_record_store, "MAX_RETENTION_RECORDS", 2)
+
+    with pytest.raises(RunRecordPersistenceError, match="lookup budget"):
+        _retained(store)
 
 
 def test_a_missing_identity_value_never_matches(tmp_path: Path):

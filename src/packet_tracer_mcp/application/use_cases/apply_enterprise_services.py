@@ -47,11 +47,15 @@ from typing import Any
 from ...domain.enterprise.models.configuration import (
     ConfigurationIssueCode,
     ConfigurationIssueSeverity,
+    ConfigureAccessPort,
+    SetEndpointDhcp,
     SetEndpointStaticAddress,
 )
 from ...domain.enterprise.models.configuration_runtime import (
+    ActionApplicationResult,
     ActionExecutionStatus,
     ConfigurationApplicationResult,
+    ConfigurationApplicationStatus,
     ConfigurationFailureCode,
     ConfigurationRuntimeContext,
     RuntimeActionMutation,
@@ -64,7 +68,7 @@ from ...domain.enterprise.models.deployment import (
     resolve_manifest_targets,
     validate_manifest_environment,
 )
-from ...domain.enterprise.models.execution import DirtyState
+from ...domain.enterprise.models.execution import DirtyState, satisfies_apply_dependency
 from ...domain.enterprise.models.intent import EnterpriseIntent
 from ...domain.enterprise.models.service_entry import (
     AdmissionRead,
@@ -91,6 +95,7 @@ from ...domain.enterprise.models.service_plan import (
 from ...domain.enterprise.models.service_run_record import (
     ServiceRunRecord,
     SourceTreeIdentity,
+    generate_run_id,
 )
 from ...domain.enterprise.models.service_runtime import ServiceApplicationResult
 from ...domain.enterprise.services.service_capability_resolution import (
@@ -119,6 +124,14 @@ from .foundational_evidence import derive_service_foundational_statuses
 #: missing runtime result into a FAILED row with that message, which is not
 #: evidence of non-execution and not evidence of a clean run.
 _MISSING_RESULT_MESSAGE = "Runtime returned no mutation result."
+# Match the authenticated bridge's existing 1 MiB body ceiling so the product
+# never presents a larger intent as a workload the runtime path can support.
+MAX_INTENT_JSON_BYTES = 1 << 20
+# Offline scale acceptance exercises the largest requested reporting workload:
+# 1000 clients and the current bounded DNS+HTTP schema's five client checks.
+# These are response-composition budgets, not Packet Tracer capacity claims.
+MAX_REPORTING_CLIENTS = 1000
+MAX_CLIENT_CHECK_ROWS = MAX_REPORTING_CLIENTS * 5
 
 
 class ServiceEffectHalted(RuntimeError):
@@ -141,6 +154,37 @@ class TransportSelection:
     fixed_at: datetime | None = None
     ready: bool = True
     detail: str = ""
+
+
+@dataclass(frozen=True)
+class ServiceInvocationBinding:
+    """Collaborators observed and bound only after process admission.
+
+    Production constructs this value lazily at A5. That keeps transport health
+    checks, bridge selection, runtime construction, and record-store
+    initialization behind A1 parsing and A4 process isolation while giving the
+    rest of the use case one immutable session contract.
+    """
+
+    runtimes: ServiceStageRuntimes
+    record_store: ServiceRunRecordPort
+    environment_fingerprint: EnvironmentFingerprint
+    transport_selection: TransportSelection
+    source_tree: SourceTreeIdentity
+    endpoint_observer: EndpointDriftObserver | None = None
+    inventory_reader: (
+        Callable[[Sequence[str]], list[RuntimeConfigurationTarget]] | None
+    ) = None
+
+
+@dataclass
+class ClientRowAssemblyMetrics:
+    """Deterministic operation counts for the linear reporting boundary."""
+
+    expectations_indexed: int = 0
+    memberships_indexed: int = 0
+    pairs_assembled: int = 0
+    check_lookups: int = 0
 
 
 @dataclass
@@ -256,6 +300,7 @@ class _Run:
         try:
             self.record_path = self.record_store.advance(self.record)
         except RunRecordPersistenceError as exc:
+            self.record.persisted_stage = self.persisted_stage
             self.persist_error = str(exc)
             self.gate.close(
                 f"The run record could not advance past "
@@ -321,8 +366,13 @@ def _unbound_result(
     packet_tracer_version: str,
     transport: str,
     started: float,
+    admission: AdmissionTrace | None = None,
 ) -> ServiceStageResult:
     """A1 and A2 refuse with no record: no valid bound identity exists yet."""
+    trace = (
+        admission.model_copy(deep=True) if admission is not None else AdmissionTrace()
+    )
+    trace.refusals.append(AdmissionRefusal(step=step, code=code, detail=detail))
     return ServiceStageResult(
         run_id=run_id,
         run_label=run_label,
@@ -332,9 +382,7 @@ def _unbound_result(
         blocked_reason=detail,
         transport=transport,
         packet_tracer_version=packet_tracer_version,
-        admission=AdmissionTrace(
-            refusals=[AdmissionRefusal(step=step, code=code, detail=detail)]
-        ),
+        admission=trace,
         duration_ms=int((monotonic() - started) * 1000),
     )
 
@@ -393,6 +441,15 @@ def _service_eligibility(
     return eligible, unknown_operations
 
 
+def _reporting_budget_exceeded(plan: ServicePlan) -> bool:
+    """Whether the selected public response exceeds measured offline bounds."""
+    clients = _selected_clients(plan, plan.services)
+    client_rows = sum(
+        bool(item.client_device_id) for item in plan.verification_expectations
+    )
+    return len(clients) > MAX_REPORTING_CLIENTS or client_rows > MAX_CLIENT_CHECK_ROWS
+
+
 def _e5_closure(
     configuration_plan: Any,
     plan: ServicePlan,
@@ -401,18 +458,43 @@ def _e5_closure(
     """Close the eligible services' foundations over the E5 dependency graph."""
     devices = {service.host_device_id for service in services}
     devices |= _selected_clients(plan, services)
+    requirements_by_device: dict[str, list[Any]] = {}
+    for requirement in plan.foundational_requirements:
+        if requirement.device_id in devices:
+            requirements_by_device.setdefault(requirement.device_id, []).append(
+                requirement
+            )
+    invalid_devices = sorted(
+        device_id
+        for device_id in devices
+        if len(requirements_by_device.get(device_id, [])) != 1
+    )
+    if invalid_devices:
+        raise ValueError(
+            "Selected foundation identity is missing or ambiguous: "
+            + ", ".join(invalid_devices)
+        )
     seeds = {
-        requirement.configuration_action_id
-        for requirement in plan.foundational_requirements
-        if requirement.device_id in devices and requirement.configuration_action_id
+        requirements_by_device[device_id][0].configuration_action_id
+        for device_id in devices
     }
     by_id = {item.id: item for item in configuration_plan.actions}
+    missing = sorted(identifier for identifier in seeds if identifier not in by_id)
+    if missing:
+        raise ValueError(
+            "Selected foundation actions are absent from the configuration plan: "
+            + ", ".join(missing)
+        )
     closed: set[str] = set()
     frontier = set(seeds)
     while frontier:
         identifier = frontier.pop()
-        if identifier in closed or identifier not in by_id:
+        if identifier in closed:
             continue
+        if identifier not in by_id:
+            raise ValueError(
+                f"Required configuration dependency {identifier!r} is missing."
+            )
         closed.add(identifier)
         action = by_id[identifier]
         frontier |= {*action.depends_on, *action.apply_dependencies}
@@ -448,7 +530,7 @@ def _drift_conflicts(
     deployed_names: dict[str, str],
     observer: EndpointDriftObserver | None,
     run: _Run,
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], set[str]]:
     """Pre-read every in-scope endpoint and name conflicts and blind spots.
 
     An endpoint that already carries a DIFFERENT non-empty address holds
@@ -460,6 +542,7 @@ def _drift_conflicts(
     """
     conflicts: list[str] = []
     unreadable: list[str] = []
+    confirmed: set[str] = set()
     for action in configuration_plan.actions:
         if action.id not in scope or not isinstance(action, SetEndpointStaticAddress):
             continue
@@ -482,7 +565,80 @@ def _drift_conflicts(
         current = (observation.ipv4 or "").strip()
         if current and current != action.ipv4:
             conflicts.append(f"{action.id}:{current}!={action.ipv4}")
-    return conflicts, unreadable
+        elif current == action.ipv4:
+            confirmed.add(action.id)
+    return conflicts, unreadable, confirmed
+
+
+def _fresh_retained_results(
+    prior: ServiceRunRecord | None,
+    configuration_plan: Any,
+    scope: set[str],
+    endpoint_confirmed: set[str],
+    runtime: ConfigurationRuntime,
+    run: _Run,
+) -> list[ActionApplicationResult]:
+    """Return only prior rows whose prerequisites were freshly re-observed."""
+    if prior is None or prior.configuration_result is None:
+        return []
+    prior_rows = {
+        item.action_id: item
+        for item in prior.configuration_result.action_results
+        if item.action_id in scope and satisfies_apply_dependency(item.status)
+    }
+    actions = {item.id: item for item in configuration_plan.actions}
+    expectations_by_action: dict[str, list[Any]] = {}
+    for expectation in configuration_plan.verification_expectations:
+        if expectation.action_id in prior_rows:
+            expectations_by_action.setdefault(expectation.action_id, []).append(
+                expectation
+            )
+    non_endpoint_expectations = [
+        expectation
+        for action_id, expectations in expectations_by_action.items()
+        if not isinstance(actions.get(action_id), SetEndpointStaticAddress)
+        for expectation in expectations
+    ]
+    observed_by_id: dict[str, Any] = {}
+    if non_endpoint_expectations:
+        try:
+            observed_by_id = {
+                item.expectation_id: item
+                for item in runtime.verify(non_endpoint_expectations)
+            }
+        except Exception as exc:
+            run.read("A10", "retained_prerequisites", _external_cause(exc))
+            return []
+    preliminarily_valid: set[str] = set()
+    for action_id in prior_rows:
+        action = actions.get(action_id)
+        if isinstance(action, SetEndpointStaticAddress):
+            if action_id in endpoint_confirmed:
+                preliminarily_valid.add(action_id)
+            continue
+        expectations = expectations_by_action.get(action_id, [])
+        if expectations and all(
+            (observed := observed_by_id.get(expectation.id)) is not None
+            and observed.fresh_evidence
+            and observed.status is ActionExecutionStatus.VERIFIED
+            for expectation in expectations
+        ):
+            preliminarily_valid.add(action_id)
+
+    retained: set[str] = set()
+    for action in configuration_plan.actions:
+        if action.id not in preliminarily_valid:
+            continue
+        dependencies = {*action.depends_on, *action.apply_dependencies} & scope
+        if dependencies <= retained:
+            retained.add(action.id)
+    if retained:
+        run.read("A10", "retained_prerequisites", str(len(retained)))
+    return [
+        prior_rows[item.id].model_copy(deep=True)
+        for item in configuration_plan.actions
+        if item.id in retained
+    ]
 
 
 def _aggregate_required(checks: Sequence[ClientCheckRow]) -> ActionExecutionStatus:
@@ -514,6 +670,8 @@ def _client_rows(
     services: Sequence[ServiceDefinition],
     deployed_names: dict[str, str],
     models: dict[str, str],
+    ineligible: dict[str, list[str]] | None = None,
+    metrics: ClientRowAssemblyMetrics | None = None,
 ) -> list[ClientServiceOutcome]:
     """Assemble one row per selected client per service it was selected for.
 
@@ -526,22 +684,34 @@ def _client_rows(
         item.expectation_id: item
         for item in (service_result.verification_results if service_result else [])
     }
-    expectations_by_service: dict[str, list[Any]] = {}
+    ineligible = ineligible or {}
+    expectations_by_pair: dict[tuple[str, str], list[Any]] = {}
     for expectation in plan.verification_expectations:
-        expectations_by_service.setdefault(expectation.service_id, []).append(
-            expectation
-        )
+        if metrics is not None:
+            metrics.expectations_indexed += 1
+        expectations_by_pair.setdefault(
+            (expectation.service_id, expectation.client_device_id), []
+        ).append(expectation)
+    services_by_client: dict[str, list[ServiceDefinition]] = {}
+    for service in services:
+        for client_id in service.client_device_ids:
+            if metrics is not None:
+                metrics.memberships_indexed += 1
+            services_by_client.setdefault(client_id, []).append(service)
 
     outcomes: list[ClientServiceOutcome] = []
-    for client_id in sorted(_selected_clients(plan, services)):
+    for client_id in sorted(services_by_client):
         results: dict[str, ClientCheckOutcome] = {}
-        for service in services:
-            if client_id not in service.client_device_ids:
-                continue
+        for service in services_by_client[client_id]:
+            if metrics is not None:
+                metrics.pairs_assembled += 1
             checks: list[ClientCheckRow] = []
-            for expectation in expectations_by_service.get(service.id, ()):
-                if expectation.client_device_id != client_id:
-                    continue
+            service_limitations = [
+                f"service_ineligible:{item}" for item in ineligible.get(service.id, [])
+            ]
+            for expectation in expectations_by_pair.get((service.id, client_id), ()):
+                if metrics is not None:
+                    metrics.check_lookups += 1
                 row = rows_by_expectation.get(expectation.id)
                 if row is None:
                     checks.append(
@@ -550,8 +720,16 @@ def _client_rows(
                             kind=expectation.kind,
                             required=expectation.required,
                             status=ActionExecutionStatus.SKIPPED,
-                            cause="not_executed",
-                            limitations=["service_not_applied"],
+                            cause=(
+                                "service_ineligible"
+                                if service.id in ineligible
+                                else "not_executed"
+                            ),
+                            limitations=(
+                                service_limitations
+                                if service.id in ineligible
+                                else ["service_not_applied"]
+                            ),
                         )
                     )
                     continue
@@ -572,11 +750,18 @@ def _client_rows(
             results[service.id] = ClientCheckOutcome(
                 service_id=service.id,
                 service_type=service.service_type,
-                status=_aggregate_required(checks),
+                status=(
+                    ActionExecutionStatus.SKIPPED
+                    if service.id in ineligible
+                    else _aggregate_required(checks)
+                ),
                 required=service.required,
                 checks=checks,
                 limitations=sorted(
-                    {item for check in checks for item in check.limitations}
+                    {
+                        *service_limitations,
+                        *(item for check in checks for item in check.limitations),
+                    }
                 ),
             )
         outcomes.append(
@@ -652,6 +837,17 @@ def _overall_status(
         return ServiceRunStatus.UNKNOWN
     if service_result is None:
         return ServiceRunStatus.FAILED
+    if (
+        service_result.status is ConfigurationApplicationStatus.FAILED
+        or service_result.failure_code
+        is ConfigurationFailureCode.POSTCONDITION_UNSATISFIED
+    ):
+        return ServiceRunStatus.FAILED
+    if service_result.failure_code in {
+        ConfigurationFailureCode.OUTCOME_UNKNOWN,
+        ConfigurationFailureCode.SESSION_FAILED,
+    }:
+        return ServiceRunStatus.UNKNOWN
     statuses = [
         outcome.status
         for client in clients
@@ -660,6 +856,11 @@ def _overall_status(
     ]
     if any(item is ActionExecutionStatus.FAILED for item in statuses):
         return ServiceRunStatus.FAILED
+    if service_result.status in {
+        ConfigurationApplicationStatus.PARTIAL,
+        ConfigurationApplicationStatus.SKIPPED,
+    }:
+        return ServiceRunStatus.PARTIAL
     if statuses and all(item is ActionExecutionStatus.VERIFIED for item in statuses):
         return ServiceRunStatus.VERIFIED
     if statuses and all(item is ActionExecutionStatus.UNKNOWN for item in statuses):
@@ -672,13 +873,16 @@ def apply_enterprise_services(
     *,
     deployment_id: str,
     packet_tracer_version: str,
-    runtimes: ServiceStageRuntimes,
-    manifest_store: DeploymentManifestPort,
-    record_store: ServiceRunRecordPort,
     import_preflight: Any,
-    environment_fingerprint: EnvironmentFingerprint,
-    transport_selection: TransportSelection,
+    manifest_store: DeploymentManifestPort | None = None,
+    manifest_store_factory: Callable[[], DeploymentManifestPort] | None = None,
+    runtimes: ServiceStageRuntimes | None = None,
+    record_store: ServiceRunRecordPort | None = None,
+    record_store_factory: Callable[[], ServiceRunRecordPort] | None = None,
+    environment_fingerprint: EnvironmentFingerprint | None = None,
+    transport_selection: TransportSelection | None = None,
     endpoint_observer: EndpointDriftObserver | None = None,
+    session_factory: Callable[[], ServiceInvocationBinding] | None = None,
     capability_catalog: Callable[[str], ServiceCapabilityRecords] = (
         packet_tracer_service_capabilities
     ),
@@ -700,28 +904,12 @@ def apply_enterprise_services(
     clock = now or (lambda: datetime.now(UTC))
     resolved_run_id = run_id or _generated_run_id(clock())
     gate = _MutationGate()
-
-    run = _Run(
-        run_id=resolved_run_id,
-        run_label=run_label,
-        started=started,
-        now=clock,
-        record_store=record_store,
-        gate=gate,
-        record=ServiceRunRecord(
-            run_id=resolved_run_id,
-            run_label=run_label,
-            created_at=clock(),
-            source_tree=source_tree or SourceTreeIdentity(),
-            packet_tracer_version=packet_tracer_version,
-            transport=transport_selection.channel,
-            channel_fixed_at=transport_selection.fixed_at,
-            environment_fingerprint_hash=environment_fingerprint.semantic_hash,
-        ),
-    )
+    early_trace = AdmissionTrace()
 
     # -- A1: parse. No identity yet, so no record and no bridge. ----------
     try:
+        if len(intent_json.encode("utf-8")) > MAX_INTENT_JSON_BYTES:
+            raise ValueError("The service intent exceeds the input budget.")
         intent = EnterpriseIntent.model_validate_json(intent_json)
     except ValueError as exc:
         return _unbound_result(
@@ -731,12 +919,16 @@ def apply_enterprise_services(
             detail=_external_cause(exc),
             step="A1",
             packet_tracer_version=packet_tracer_version,
-            transport=transport_selection.channel,
+            transport="",
             started=started,
         )
 
     # -- A2: resolve the deployment. Still no bound identity. -------------
     try:
+        if manifest_store is None:
+            if manifest_store_factory is None:
+                raise TypeError("A manifest store or factory is required.")
+            manifest_store = manifest_store_factory()
         manifest = manifest_store.latest_by_deployment_id(deployment_id)
     except Exception as exc:
         return _unbound_result(
@@ -746,8 +938,9 @@ def apply_enterprise_services(
             detail=_external_cause(exc),
             step="A2",
             packet_tracer_version=packet_tracer_version,
-            transport=transport_selection.channel,
+            transport="",
             started=started,
+            admission=early_trace,
         )
     if manifest is None:
         return _unbound_result(
@@ -757,43 +950,180 @@ def apply_enterprise_services(
             detail=f"No deployment manifest is stored for {deployment_id!r}.",
             step="A2",
             packet_tracer_version=packet_tracer_version,
-            transport=transport_selection.channel,
+            transport="",
             started=started,
+            admission=early_trace,
         )
-    run.read("A2", deployment_id, manifest.semantic_hash)
+    early_trace.reads.append(
+        AdmissionRead(step="A2", subject=deployment_id, outcome=manifest.semantic_hash)
+    )
 
+    def early_refusal(
+        step: str,
+        code: ServiceEntryRefusal,
+        detail: str,
+    ) -> ServiceStageResult:
+        """Persist A3/A4 refusal facts without claiming execution provenance."""
+        nonlocal record_store
+        if record_store is None:
+            try:
+                if record_store_factory is None:
+                    raise TypeError("An early record store factory is required.")
+                record_store = record_store_factory()
+            except Exception as exc:
+                result = _unbound_result(
+                    run_id=resolved_run_id,
+                    run_label=run_label,
+                    code=code,
+                    detail=detail,
+                    step=step,
+                    packet_tracer_version=packet_tracer_version,
+                    transport="",
+                    started=started,
+                    admission=early_trace,
+                )
+                result.persist_error = _external_cause(exc)
+                result.limitations = ["persist_error:early_refusal"]
+                return result
+        early_run = _Run(
+            run_id=resolved_run_id,
+            run_label=run_label,
+            started=started,
+            now=clock,
+            record_store=record_store,
+            gate=gate,
+            trace=early_trace,
+            record=ServiceRunRecord(
+                run_id=resolved_run_id,
+                run_label=run_label,
+                created_at=clock(),
+                packet_tracer_version=packet_tracer_version,
+            ),
+        )
+        return _refused(
+            early_run,
+            step=step,
+            code=code,
+            detail=detail,
+            packet_tracer_version=packet_tracer_version,
+            transport="",
+            deployment_id=deployment_id,
+        )
+
+    # -- A3: the caller and the manifest must agree about the build -------
+    if packet_tracer_version != manifest.backend_version:
+        return early_refusal(
+            "A3",
+            ServiceEntryRefusal.VERSION_MISMATCH,
+            (
+                f"Caller version {packet_tracer_version!r} does not match the "
+                f"deployment manifest version {manifest.backend_version!r}."
+            ),
+        )
+
+    # -- A4: this process must be the isolated live one -------------------
+    isolation = import_preflight.ensure_isolated()
+    early_trace.reads.append(
+        AdmissionRead(
+            step="A4", subject="import_isolation", outcome=isolation.state.value
+        )
+    )
+    if not isolation.isolated:
+        return early_refusal(
+            "A4",
+            ServiceEntryRefusal.IMPORT_ISOLATION_REFUSED,
+            isolation.render(),
+        )
+
+    # -- A5: lazily bind one observed session for both stages -------------
+    if session_factory is not None:
+        try:
+            binding = session_factory()
+        except Exception as exc:
+            return _unbound_result(
+                run_id=resolved_run_id,
+                run_label=run_label,
+                code=ServiceEntryRefusal.TRANSPORT_UNAVAILABLE,
+                detail=_external_cause(exc),
+                step="A5",
+                packet_tracer_version=packet_tracer_version,
+                transport="",
+                started=started,
+                admission=early_trace,
+            )
+        runtimes = binding.runtimes
+        record_store = binding.record_store
+        environment_fingerprint = binding.environment_fingerprint
+        transport_selection = binding.transport_selection
+        endpoint_observer = binding.endpoint_observer
+        source_tree = binding.source_tree
+        inventory_reader = binding.inventory_reader
+    else:
+        inventory_reader = None
+
+    if (
+        runtimes is None
+        or record_store is None
+        or environment_fingerprint is None
+        or transport_selection is None
+    ):
+        raise TypeError("A complete eager binding or session_factory is required.")
+    source_tree = source_tree or SourceTreeIdentity()
+    observed_environment = bool(
+        environment_fingerprint.backend.strip()
+        and environment_fingerprint.backend_version.strip()
+    )
+    run = _Run(
+        run_id=resolved_run_id,
+        run_label=run_label,
+        started=started,
+        now=clock,
+        record_store=record_store,
+        gate=gate,
+        trace=early_trace,
+        record=ServiceRunRecord(
+            run_id=resolved_run_id,
+            run_label=run_label,
+            created_at=clock(),
+            source_tree=source_tree,
+            packet_tracer_version=packet_tracer_version,
+            transport=transport_selection.channel,
+            channel_fixed_at=transport_selection.fixed_at,
+            environment_fingerprint_hash=(
+                environment_fingerprint.semantic_hash if observed_environment else ""
+            ),
+        ),
+    )
     refuse = _refusal_builder(
         run,
         packet_tracer_version=packet_tracer_version,
         transport=transport_selection.channel,
         deployment_id=deployment_id,
     )
-
-    # -- A3: the caller and the manifest must agree about the build -------
-    if packet_tracer_version != manifest.backend_version:
-        return refuse(
-            "A3",
-            ServiceEntryRefusal.VERSION_MISMATCH,
-            f"Caller version {packet_tracer_version!r} does not match the "
-            f"deployment manifest version {manifest.backend_version!r}.",
-        )
-
-    # -- A4: this process must be the isolated live one -------------------
-    isolation = import_preflight.ensure_isolated()
-    run.read("A4", "import_isolation", isolation.state.value)
-    if not isolation.isolated:
-        return refuse(
-            "A4",
-            ServiceEntryRefusal.IMPORT_ISOLATION_REFUSED,
-            isolation.render(),
-        )
-
-    # -- A5: one channel, fixed, for both stages --------------------------
     if not transport_selection.ready or not transport_selection.channel:
         return refuse(
             "A5",
             ServiceEntryRefusal.TRANSPORT_UNAVAILABLE,
             transport_selection.detail or "No transport channel is available.",
+        )
+    if not source_tree.sha.strip():
+        return refuse(
+            "A5",
+            ServiceEntryRefusal.SOURCE_TREE_UNAVAILABLE,
+            "The executing source-tree SHA could not be observed.",
+        )
+    if (
+        not environment_fingerprint.backend.strip()
+        or not environment_fingerprint.backend_version.strip()
+        or (
+            manifest.environment_fingerprint.extension_version.strip()
+            and not environment_fingerprint.extension_version.strip()
+        )
+    ):
+        return refuse(
+            "A5",
+            ServiceEntryRefusal.RUNTIME_PROVENANCE_UNAVAILABLE,
+            "Required current runtime provenance could not be observed.",
         )
 
     # -- A6: the write-ahead record, before anything can have an effect ---
@@ -852,6 +1182,13 @@ def apply_enterprise_services(
         )
     service_plan = composition.services
     configuration_plan = composition.configuration
+    if _reporting_budget_exceeded(service_plan):
+        return refuse(
+            "A7",
+            ServiceEntryRefusal.COMPOSITION_FAILED,
+            "The selected service response exceeds the offline-measured "
+            "reporting budget.",
+        )
     run.record.configuration_plan_id = configuration_plan.id
     run.record.configuration_semantic_hash = configuration_plan.semantic_hash
     run.record.service_semantic_hash = service_plan.semantic_hash
@@ -873,47 +1210,10 @@ def apply_enterprise_services(
         )
     run.read("A8", "environment_fingerprint", environment_fingerprint.semantic_hash)
 
-    try:
-        inventory = runtimes.configuration.inventory()
-    except Exception as exc:
-        return refuse(
-            "A8",
-            ServiceEntryRefusal.TARGET_IDENTITY_MISMATCH,
-            f"Runtime inventory failed: {_external_cause(exc)}",
-        )
-    run.read("A8", "runtime_inventory", str(len(inventory)))
-
-    semantic_ids = sorted(
-        {item.device_id for item in service_plan.foundational_requirements}
-        | {item.host_device_id for item in service_plan.services}
-        | {
-            client_id
-            for item in service_plan.services
-            for client_id in item.client_device_ids
-        }
-    )
-    try:
-        targets = resolve_manifest_targets(
-            manifest,
-            physical_topology_hash=service_plan.source_topology_hash,
-            semantic_device_ids=semantic_ids,
-            inventory=inventory,
-        )
-    except DeploymentIdentityError as exc:
-        return refuse("A8", ServiceEntryRefusal.TARGET_IDENTITY_MISMATCH, str(exc))
-    deployed_names = {key: value.device_name for key, value in targets.items()}
-    models = {key: value.model for key, value in targets.items()}
-
-    unsupported = _unsupported_paths(service_plan)
-    if unsupported:
-        return refuse(
-            "A8",
-            ServiceEntryRefusal.SERVICE_PATH_UNSUPPORTED,
-            "Service clients outside the host segment need routed support that "
-            "this slice does not provide: " + ", ".join(unsupported),
-        )
-
     # -- A9: eligibility, per operation, on its own target ----------------
+    # Resolve this before inventory/path admission so an optional excluded
+    # service cannot add identities to the governed runtime read or block the
+    # closure that is actually authorized to execute.
     eligible, ineligible = _service_eligibility(service_plan, capabilities)
     required_ineligible = sorted(
         service.id
@@ -942,10 +1242,69 @@ def apply_enterprise_services(
             "No requested service is eligible on this build.",
         )
 
+    semantic_ids = sorted(
+        {
+            device_id
+            for service in eligible
+            for device_id in [
+                service.host_device_id,
+                *service.client_device_ids,
+            ]
+        }
+    )
+    try:
+        runtime_names = [
+            manifest.binding_for(identifier).deployed_name
+            for identifier in semantic_ids
+        ]
+        inventory = (
+            inventory_reader(runtime_names)
+            if inventory_reader is not None
+            else runtimes.configuration.inventory()
+        )
+    except Exception as exc:
+        return refuse(
+            "A8",
+            ServiceEntryRefusal.TARGET_IDENTITY_MISMATCH,
+            f"Runtime inventory failed: {_external_cause(exc)}",
+        )
+    run.read("A8", "runtime_inventory", str(len(inventory)))
+    try:
+        targets = resolve_manifest_targets(
+            manifest,
+            physical_topology_hash=service_plan.source_topology_hash,
+            semantic_device_ids=semantic_ids,
+            inventory=inventory,
+        )
+    except DeploymentIdentityError as exc:
+        return refuse("A8", ServiceEntryRefusal.TARGET_IDENTITY_MISMATCH, str(exc))
+    deployed_names = {key: value.device_name for key, value in targets.items()}
+    models = {key: value.model for key, value in targets.items()}
+
+    unsupported = _unsupported_paths(
+        configuration_plan,
+        service_plan,
+        eligible,
+    )
+    if unsupported:
+        return refuse(
+            "A8",
+            ServiceEntryRefusal.SERVICE_PATH_UNSUPPORTED,
+            "The selected path is outside the static, same-site, same-segment, "
+            "single-access-switch S1 contract: " + ", ".join(unsupported),
+        )
+
     # -- A10: the E5 scope, its drift, and any retained result ------------
-    scope = _e5_closure(configuration_plan, service_plan, eligible)
+    try:
+        scope = _e5_closure(configuration_plan, service_plan, eligible)
+    except ValueError as exc:
+        return refuse(
+            "A10",
+            ServiceEntryRefusal.SERVICE_PATH_UNSUPPORTED,
+            _sanitized(str(exc)),
+        )
     excluded = {item.id for item in configuration_plan.actions} - scope
-    conflicts, unreadable = _drift_conflicts(
+    conflicts, unreadable, endpoint_confirmed = _drift_conflicts(
         configuration_plan, scope, deployed_names, endpoint_observer, run
     )
     run.record.e5_effect_scope = E5EffectScope(
@@ -972,6 +1331,41 @@ def apply_enterprise_services(
             "Endpoint drift could not be observed, which is unknown and not "
             "empty: " + ", ".join(unreadable),
         )
+    try:
+        prior = record_store.retained_result_for(
+            deployment_id,
+            manifest_hash=manifest.semantic_hash,
+            configuration_semantic_hash=configuration_plan.semantic_hash,
+            environment_fingerprint_hash=environment_fingerprint.semantic_hash,
+        )
+    except RunRecordPersistenceError as exc:
+        return refuse(
+            "A10",
+            ServiceEntryRefusal.RETAINED_RESULT_INVALID,
+            _external_cause(exc),
+        )
+    retained_results = _fresh_retained_results(
+        prior,
+        configuration_plan,
+        scope,
+        endpoint_confirmed,
+        runtimes.configuration,
+        run,
+    )
+    retained_ids = {item.action_id for item in retained_results}
+    mutation_scope = scope - retained_ids
+    run.record.e5_effect_scope = E5EffectScope(
+        mutated=sorted(mutation_scope),
+        retained=sorted(retained_ids),
+        excluded=sorted(excluded),
+        conflicts=conflicts,
+        declarative_only=sorted(
+            action.id
+            for action in configuration_plan.actions
+            if action.id in mutation_scope
+            and not isinstance(action, SetEndpointStaticAddress)
+        ),
+    )
     run.record.selected_clients = sorted(_selected_clients(service_plan, eligible))
 
     return _execute(
@@ -985,7 +1379,8 @@ def apply_enterprise_services(
         capabilities=capabilities,
         eligible=eligible,
         ineligible=ineligible,
-        scope=scope,
+        scope=mutation_scope,
+        retained_action_results=retained_results,
         excluded=excluded,
         deployed_names=deployed_names,
         models=models,
@@ -1008,6 +1403,7 @@ def _execute(
     eligible: Sequence[ServiceDefinition],
     ineligible: dict[str, list[str]],
     scope: set[str],
+    retained_action_results: Sequence[ActionApplicationResult],
     excluded: set[str],
     deployed_names: dict[str, str],
     models: dict[str, str],
@@ -1042,6 +1438,7 @@ def _execute(
             deployment_manifest=manifest,
             mutation_action_ids=sorted(scope),
             excluded_action_ids=sorted(excluded),
+            retained_action_results=retained_action_results,
         )
     except ServiceEffectHalted as exc:
         return _halted(
@@ -1051,6 +1448,11 @@ def _execute(
             packet_tracer_version=packet_tracer_version,
             transport=transport,
             deployment_id=deployment_id,
+            service_plan=service_plan,
+            eligible=eligible,
+            ineligible=ineligible,
+            deployed_names=deployed_names,
+            models=models,
         )
     run.record.configuration_result = configuration_result
     run.record.e5_effect_scope = E5EffectScope(
@@ -1107,6 +1509,11 @@ def _execute(
             transport=transport,
             deployment_id=deployment_id,
             configuration_result=configuration_result,
+            service_plan=service_plan,
+            eligible=eligible,
+            ineligible=ineligible,
+            deployed_names=deployed_names,
+            models=models,
         )
     eligible_plan = _plan_for(service_plan, eligible)
     run.transition(ServiceStage.SERVICE_APPLY, outcome="started")
@@ -1144,6 +1551,11 @@ def _execute(
             transport=transport,
             deployment_id=deployment_id,
             configuration_result=configuration_result,
+            service_plan=service_plan,
+            eligible=eligible,
+            ineligible=ineligible,
+            deployed_names=deployed_names,
+            models=models,
         )
     return _finish(
         run,
@@ -1180,7 +1592,12 @@ def _finish(
 ) -> ServiceStageResult:
     """Assemble the response and write the terminal record."""
     clients = _client_rows(
-        service_plan, service_result, eligible, deployed_names, models
+        service_plan,
+        service_result,
+        service_plan.services,
+        deployed_names,
+        models,
+        ineligible,
     )
     services = _service_outcomes(service_plan, service_result, eligible, ineligible)
     status = (
@@ -1258,6 +1675,11 @@ def _halted(
     packet_tracer_version: str,
     transport: str,
     deployment_id: str,
+    service_plan: ServicePlan,
+    eligible: Sequence[ServiceDefinition],
+    ineligible: dict[str, list[str]],
+    deployed_names: dict[str, str],
+    models: dict[str, str],
     configuration_result: ConfigurationApplicationResult | None = None,
 ) -> ServiceStageResult:
     """Report a run whose effects were stopped by the mutation gate.
@@ -1274,6 +1696,17 @@ def _halted(
     run.record.admission = run.trace
     run.record.completed_at = run.now()
     limitations = sorted({*run.limitations, "effect_halted"})
+    clients = _client_rows(
+        service_plan,
+        None,
+        service_plan.services,
+        deployed_names,
+        models,
+        ineligible,
+    )
+    services = _service_outcomes(service_plan, None, eligible, ineligible)
+    run.record.clients = clients
+    run.record.services = services
     run.record.limitations = limitations
     try:
         run.record_path = run.record_store.complete(run.record)
@@ -1294,6 +1727,8 @@ def _halted(
         e5_effect_uncertain=run.record.e5_effect_uncertain,
         configuration_result=configuration_result,
         foundational_statuses=dict(run.record.foundational_statuses),
+        services=services,
+        clients=clients,
         releases=list(run.record.releases),
         capability_snapshot=run.record.capability_snapshot,
         dirty_state=DirtyState.UNKNOWN,
@@ -1319,15 +1754,34 @@ def _releases(
         return []
     releases: list[OwnedResourceRelease] = []
     for row in service_result.verification_results:
-        for limitation in row.limitations:
-            if not limitation.startswith("release"):
-                continue
-            outcome, _, detail = limitation.partition(":")
-            releases.append(
-                OwnedResourceRelease(
-                    resource=row.expectation_id, outcome=outcome, detail=detail
-                )
+        marker = row.observed.get("released")
+        unresolved = next(
+            (
+                item
+                for item in row.limitations
+                if item.startswith("client_ownership_unresolved:")
+            ),
+            "",
+        )
+        if marker is None and not unresolved:
+            continue
+        outcome = str(marker).strip() if isinstance(marker, str) else "malformed"
+        detail = ""
+        if unresolved:
+            _, _, remainder = unresolved.partition(":")
+            recorded_outcome, _, recorded_detail = remainder.partition(":")
+            if not outcome:
+                outcome = recorded_outcome or "unknown"
+            detail = recorded_detail
+        if not outcome:
+            outcome = "unknown"
+        releases.append(
+            OwnedResourceRelease(
+                resource=row.expectation_id,
+                outcome=outcome,
+                detail=detail,
             )
+        )
     return releases
 
 
@@ -1364,8 +1818,12 @@ def _plan_for(plan: ServicePlan, services: Sequence[ServiceDefinition]) -> Servi
     )
 
 
-def _unsupported_paths(plan: ServicePlan) -> list[str]:
-    """Name every selected client that is not on its service host segment.
+def _unsupported_paths(
+    configuration_plan: Any,
+    plan: ServicePlan,
+    services: Sequence[ServiceDefinition],
+) -> list[str]:
+    """Name selected paths outside the bounded static single-switch contract.
 
     R-NET-01. Same-subnet addressing is what this slice supports, and saying
     so is different from claiming that a routed client would work. A routed
@@ -1373,15 +1831,64 @@ def _unsupported_paths(plan: ServicePlan) -> list[str]:
     routing feature so a fixture passes would be building the wrong product to
     satisfy a test.
     """
-    segments = {
-        item.device_id: item.segment_id for item in plan.foundational_requirements
-    }
+    requirements: dict[str, list[Any]] = {}
+    for item in plan.foundational_requirements:
+        requirements.setdefault(item.device_id, []).append(item)
+    actions = {item.id: item for item in configuration_plan.actions}
+
+    def access_switches(action_id: str) -> set[str]:
+        switches: set[str] = set()
+        pending = [action_id]
+        visited: set[str] = set()
+        while pending:
+            identifier = pending.pop()
+            if identifier in visited:
+                continue
+            visited.add(identifier)
+            action = actions.get(identifier)
+            if action is None:
+                continue
+            if isinstance(action, ConfigureAccessPort):
+                switches.add(action.device_id)
+            pending.extend([*action.depends_on, *action.apply_dependencies])
+        return switches
+
     unsupported: list[str] = []
-    for service in plan.services:
-        for client_id in service.client_device_ids:
-            client_segment = segments.get(client_id)
-            if client_segment is not None and client_segment != service.segment_id:
-                unsupported.append(f"{service.id}:{client_id}")
+    for service in services:
+        path_switches: set[str] = set()
+        for device_id in [service.host_device_id, *service.client_device_ids]:
+            matches = requirements.get(device_id, [])
+            if len(matches) != 1:
+                unsupported.append(f"{service.id}:{device_id}:foundation_identity")
+                continue
+            requirement = matches[0]
+            expected_model = (
+                "Server-PT" if device_id == service.host_device_id else "PC-PT"
+            )
+            if requirement.model.casefold() != expected_model.casefold():
+                unsupported.append(
+                    f"{service.id}:{device_id}:model_{requirement.model}"
+                )
+            action = actions.get(requirement.configuration_action_id)
+            if action is None:
+                unsupported.append(f"{service.id}:{device_id}:foundation_missing")
+                continue
+            if isinstance(action, SetEndpointDhcp):
+                unsupported.append(f"{service.id}:{device_id}:dhcp")
+                continue
+            if not isinstance(action, SetEndpointStaticAddress):
+                unsupported.append(f"{service.id}:{device_id}:not_static")
+                continue
+            if action.site_id != service.site_id:
+                unsupported.append(f"{service.id}:{device_id}:foreign_site")
+            if requirement.segment_id != service.segment_id:
+                unsupported.append(f"{service.id}:{device_id}:routed")
+            switches = access_switches(action.id)
+            if len(switches) != 1:
+                unsupported.append(f"{service.id}:{device_id}:switching_prerequisite")
+            path_switches.update(switches)
+        if len(path_switches) > 1:
+            unsupported.append(f"{service.id}:inter_switch")
     return sorted(unsupported)
 
 
@@ -1404,10 +1911,6 @@ def _external_cause(error: Exception) -> str:
 
 def _generated_run_id(moment: datetime) -> str:
     """Generate a run id here so the use case never depends on the store."""
-    from ...infrastructure.persistence.service_run_record_store import (
-        generate_run_id,
-    )
-
     return generate_run_id(moment)
 
 

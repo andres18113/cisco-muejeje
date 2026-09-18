@@ -26,6 +26,7 @@ from packet_tracer_mcp.application.use_cases.apply_configuration import (
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration import (
     ConfigurationActionType,
+    DeviceConfigurationPlan,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
@@ -254,3 +255,33 @@ def test_an_excluded_action_is_never_rendered_for_the_runtime():
 
     rendered = {action.id for batch in runtime.action_batches for action in batch}
     assert not rendered & excluded
+
+
+def test_an_unrelated_missing_device_does_not_block_a_bounded_scope():
+    """Target admission follows the governed action partition, not all devices."""
+    topology, plan = _compiled()
+    scope = _endpoint_closure(plan)
+    excluded = {item.id for item in plan.actions} - scope
+    plan = plan.model_copy(
+        update={
+            "devices": [
+                *plan.devices,
+                DeviceConfigurationPlan(
+                    device_id="foreign-device",
+                    device_name="MISSING-FOREIGN",
+                    model="2911",
+                    site_id="foreign",
+                ),
+            ]
+        }
+    )
+
+    runtime, result = _apply(
+        plan,
+        topology,
+        mutation_action_ids=scope,
+        excluded_action_ids=excluded,
+    )
+
+    assert result.status is not ConfigurationApplicationStatus.FAILED
+    assert {item for batch in runtime.apply_calls for item in batch} == scope

@@ -15,6 +15,7 @@ from typing import Any
 from packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
     compose_enterprise_reference,
 )
+from packet_tracer_mcp.domain.enterprise.models.configuration import VerificationKind
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConvergenceReport,
@@ -27,6 +28,13 @@ from packet_tracer_mcp.domain.enterprise.models.deployment import (
     DeploymentManifest,
     EnvironmentFingerprint,
     build_deployment_manifest,
+)
+from packet_tracer_mcp.domain.enterprise.models.execution import (
+    DispatchFact,
+    FootprintFact,
+    PostconditionFact,
+    ResultFact,
+    TransitionFact,
 )
 from packet_tracer_mcp.domain.enterprise.models.forwarding import (
     ForwardingAddressObservation,
@@ -229,7 +237,11 @@ class RecordingConfigurationRuntime:
         return [
             RuntimeVerification(
                 expectation_id=item.id,
-                status=ActionExecutionStatus.PARTIAL,
+                status=(
+                    ActionExecutionStatus.PARTIAL
+                    if item.kind is VerificationKind.ENDPOINT_ADDRESSING
+                    else ActionExecutionStatus.VERIFIED
+                ),
                 evidence_method="structured_endpoint_getters",
                 fresh_evidence=True,
                 fields={
@@ -241,7 +253,11 @@ class RecordingConfigurationRuntime:
                 },
                 convergence=ConvergenceReport(
                     attempts=1,
-                    final_status=ActionExecutionStatus.PARTIAL,
+                    final_status=(
+                        ActionExecutionStatus.PARTIAL
+                        if item.kind is VerificationKind.ENDPOINT_ADDRESSING
+                        else ActionExecutionStatus.VERIFIED
+                    ),
                     details={
                         "kind": "endpoint_addressing",
                         "device_name": item.device_name,
@@ -278,6 +294,13 @@ class RecordingServiceRuntime:
     behavior_observation: ObservationFact = ObservationFact.OBSERVED
     failing_clients: frozenset[str] = frozenset()
     release_outcome: str = ""
+    release_cause: str = ""
+    dispatch: DispatchFact = DispatchFact.UNSPECIFIED
+    result: ResultFact = ResultFact.NOT_APPLICABLE
+    postcondition: PostconditionFact = PostconditionFact.NOT_APPLICABLE
+    transition: TransitionFact = TransitionFact.NOT_APPLICABLE
+    footprint: FootprintFact = FootprintFact.NOT_APPLICABLE
+    attempted: bool | None = None
 
     def inventory(self) -> list[RuntimeConfigurationTarget]:
         """Return the deployed targets."""
@@ -287,7 +310,17 @@ class RecordingServiceRuntime:
         """Record the batch and report it applied."""
         self.applied.append([item.id for item in actions])
         return [
-            RuntimeActionMutation(action_id=item.id, applied=True, message="applied")
+            RuntimeActionMutation(
+                action_id=item.id,
+                applied=True,
+                message="applied",
+                dispatch=self.dispatch,
+                result=self.result,
+                postcondition=self.postcondition,
+                transition=self.transition,
+                footprint=self.footprint,
+                attempted=self.attempted,
+            )
             for item in actions
         ]
 
@@ -311,8 +344,15 @@ class RecordingServiceRuntime:
             else self.behavior_observation
         )
         limitations = []
+        observed: dict[str, str | int | bool] = {}
         if self.release_outcome and not direct:
-            limitations.append(self.release_outcome)
+            observed["released"] = self.release_outcome
+            if self.release_outcome != "released":
+                limitations.append(
+                    "client_ownership_unresolved:"
+                    + self.release_outcome
+                    + (f":{self.release_cause}" if self.release_cause else "")
+                )
         return RuntimeServiceVerification(
             expectation_id=expectation.id,
             status=status,
@@ -322,6 +362,7 @@ class RecordingServiceRuntime:
             in {ActionExecutionStatus.VERIFIED, ActionExecutionStatus.FAILED},
             observation=observation,
             claim_level="read_back" if direct else "behavioral",
+            observed=observed,
             limitations=limitations,
         )
 
@@ -331,6 +372,7 @@ class EndpointObserver:
     """A directed endpoint reader with a configurable answer."""
 
     address: str = ""
+    addresses: dict[str, str] = field(default_factory=dict)
     readable: bool = True
     reads: list[tuple[str, str]] = field(default_factory=list)
 
@@ -349,13 +391,14 @@ class EndpointObserver:
                 fresh_evidence=False,
                 failure_reason="timeout",
             )
+        address = self.addresses.get(runtime_device_name, self.address)
         return ForwardingAddressObservation(
             runtime_device_name=runtime_device_name,
             interface=interface,
             device_found=True,
             port_found=True,
             address_channel=True,
-            ipv4=self.address,
-            netmask="255.255.255.248" if self.address else "",
+            ipv4=address,
+            netmask="255.255.255.248" if address else "",
             fresh_evidence=True,
         )

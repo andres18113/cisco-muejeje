@@ -35,6 +35,7 @@ from packet_tracer_mcp.application.ports.service_run_record import (
     RunRecordPersistenceError,
 )
 from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
+    MAX_INTENT_JSON_BYTES,
     ServiceStageRuntimes,
     TransportSelection,
     apply_enterprise_services,
@@ -45,8 +46,16 @@ from packet_tracer_mcp.domain.enterprise.models.configuration import (
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationFailureCode,
+    RuntimeConfigurationTarget,
 )
-from packet_tracer_mcp.domain.enterprise.models.execution import DirtyState
+from packet_tracer_mcp.domain.enterprise.models.execution import (
+    DirtyState,
+    DispatchFact,
+    FootprintFact,
+    PostconditionFact,
+    ResultFact,
+    TransitionFact,
+)
 from packet_tracer_mcp.domain.enterprise.models.service_entry import (
     ServiceEntryRefusal,
     ServiceRunStatus,
@@ -54,6 +63,9 @@ from packet_tracer_mcp.domain.enterprise.models.service_entry import (
 )
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceVerificationKind,
+)
+from packet_tracer_mcp.domain.enterprise.models.service_run_record import (
+    SourceTreeIdentity,
 )
 from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
     ImportIsolationState,
@@ -102,6 +114,9 @@ class _Harness:
             ),
             transport_selection=overrides.pop("transport_selection", self.transport),
             endpoint_observer=overrides.pop("endpoint_observer", self.observer),
+            source_tree=overrides.pop(
+                "source_tree", SourceTreeIdentity(sha="test-source", dirty=True)
+            ),
             **overrides,
         )
 
@@ -141,6 +156,19 @@ def test_invalid_json_refuses_without_touching_a_runtime(tmp_path: Path):
     assert not list(tmp_path.rglob("*.json"))
 
 
+def test_oversized_intent_refuses_before_manifest_or_process_reads(tmp_path: Path):
+    """The MCP input budget is enforced before parsing collaborators exist."""
+    harness = _harness(tmp_path)
+
+    result = harness.run(intent_json="x" * (MAX_INTENT_JSON_BYTES + 1))
+
+    assert result.refusal_code is ServiceEntryRefusal.INTENT_INVALID
+    assert harness.manifest_store.reads == []
+    assert harness.preflight.calls == 0
+    assert harness.mutating_calls == []
+    assert not list(tmp_path.rglob("*.json"))
+
+
 def test_a_missing_manifest_refuses_with_no_record(tmp_path: Path):
     """A1 and A2 bind no identity, so there is nothing to file a record under."""
     harness = _harness(tmp_path)
@@ -165,14 +193,18 @@ def test_an_unreadable_manifest_store_is_a_typed_refusal(tmp_path: Path):
 
 
 def test_a_version_mismatch_refuses_and_leaves_an_unbound_record(tmp_path: Path):
-    """R-CAP-02: a caller string agreeing with itself is not an observation."""
+    """R-CAP-02: the refusal record claims no executed source or transport."""
     harness = _harness(tmp_path)
 
     result = harness.run(packet_tracer_version="9.9.9.9999")
 
     assert result.refusal_code is ServiceEntryRefusal.VERSION_MISMATCH
     assert harness.mutating_calls == []
-    assert list((tmp_path / "_admission").glob("*.json"))
+    paths = list((tmp_path / "_admission").glob("*.json"))
+    assert len(paths) == 1
+    stored = ServiceRunRecordStore(tmp_path).load("", result.run_id)
+    assert stored.source_tree.sha == ""
+    assert stored.transport == ""
 
 
 def test_a_test_process_is_refused_before_any_effect(tmp_path: Path):
@@ -341,6 +373,10 @@ def test_an_optional_ineligible_service_is_excluded_and_reported(tmp_path: Path)
     assert skipped[0].usability_status is ActionExecutionStatus.SKIPPED
     assert any("service_ineligible" in item for item in skipped[0].limitations)
     assert any("https_fetch" in item for item in skipped[0].limitations)
+    for client in result.clients:
+        optional = client.results[skipped[0].service_id]
+        assert optional.status is ActionExecutionStatus.SKIPPED
+        assert optional.required is False
     dispatched = {item for batch in harness.services.applied for item in batch}
     assert not any("https" in item for item in dispatched)
 
@@ -391,6 +427,72 @@ def test_one_client_contradiction_does_not_promote_the_other(tmp_path: Path):
         ActionExecutionStatus.VERIFIED
     )
     assert result.status is ServiceRunStatus.FAILED
+
+
+def test_e6_uncertain_dispatch_caps_successful_client_reads_at_unknown(
+    tmp_path: Path,
+):
+    """Typed E6 effect uncertainty is sticky at the public aggregate."""
+    harness = _harness(tmp_path)
+    harness.services.dispatch = DispatchFact.ACCEPTANCE_UNKNOWN
+    harness.services.result = ResultFact.NOT_OBSERVED
+    harness.services.postcondition = PostconditionFact.UNOBSERVED
+    harness.services.transition = TransitionFact.UNOBSERVED
+    harness.services.footprint = FootprintFact.PARTIAL
+
+    result = harness.run()
+
+    assert result.service_result is not None
+    assert (
+        result.service_result.failure_code is ConfigurationFailureCode.OUTCOME_UNKNOWN
+    )
+    assert all(
+        outcome.status is ActionExecutionStatus.VERIFIED
+        for client in result.clients
+        for outcome in client.results.values()
+        if outcome.required
+    )
+    assert result.status is ServiceRunStatus.UNKNOWN
+
+
+def test_e6_critical_unsatisfied_state_cannot_be_promoted_by_behavior(
+    tmp_path: Path,
+):
+    """A fresh required-state contradiction remains FAILED product-wide."""
+    harness = _harness(tmp_path)
+    harness.services.dispatch = DispatchFact.ACCEPTED
+    harness.services.result = ResultFact.CORRELATED
+    harness.services.postcondition = PostconditionFact.UNSATISFIED
+    harness.services.transition = TransitionFact.UNCHANGED
+    harness.services.footprint = FootprintFact.COVERED
+    harness.services.attempted = True
+
+    result = harness.run()
+
+    assert result.service_result is not None
+    assert result.service_result.failure_code is (
+        ConfigurationFailureCode.POSTCONDITION_UNSATISFIED
+    )
+    assert result.status is ServiceRunStatus.FAILED
+
+
+def test_dns_success_with_residue_only_unknown_remains_verified(tmp_path: Path):
+    """Residue uncertainty is disclosed without becoming effect uncertainty."""
+    harness = _harness(tmp_path)
+    harness.services.dispatch = DispatchFact.ACCEPTED
+    harness.services.result = ResultFact.CORRELATED
+    harness.services.postcondition = PostconditionFact.SATISFIED
+    harness.services.transition = TransitionFact.CHANGED
+    harness.services.footprint = FootprintFact.PARTIAL
+    harness.services.attempted = True
+
+    result = harness.run()
+
+    assert result.service_result is not None
+    assert result.service_result.status.value == "verified"
+    assert result.status is ServiceRunStatus.VERIFIED
+    assert result.dirty_state is DirtyState.UNKNOWN
+    assert any("residue_unknown" in item for item in result.limitations)
 
 
 def test_the_advisory_client_dns_reader_never_gates_a_service(tmp_path: Path):
@@ -457,6 +559,48 @@ def test_the_derived_dns_address_reaches_the_runtime_call_arguments(
     assert all(item.dns_server == SERVER_ADDRESS for item in endpoints)
 
 
+def test_a_second_identical_product_run_freshly_verifies_and_retains_e5(
+    tmp_path: Path,
+):
+    """R-RET-01 is connected to the coordinator, not only to store units."""
+    harness = _harness(tmp_path)
+    first = harness.run(run_id="run-first")
+    first_batches = [list(batch) for batch in harness.configuration.applied]
+    first_reads = len(harness.observer.reads)
+    harness.observer.addresses = {
+        action.device_name: action.ipv4
+        for action in harness.configuration.rendered
+        if isinstance(action, SetEndpointStaticAddress)
+    }
+
+    second = harness.run(run_id="run-second")
+
+    assert first.status is ServiceRunStatus.VERIFIED
+    assert second.status is ServiceRunStatus.VERIFIED
+    assert second.e5_effect_scope.retained
+    assert second.e5_effect_scope.mutated == []
+    assert harness.configuration.applied == first_batches
+    assert len(harness.observer.reads) > first_reads
+    stored = ServiceRunRecordStore(tmp_path).load(DEPLOYMENT_ID, "run-second")
+    assert stored.e5_effect_scope == second.e5_effect_scope
+
+
+def test_a_newer_uncertain_product_run_blocks_automatic_replay(tmp_path: Path):
+    """An uncertain attempt cannot be hidden by an older reusable success."""
+    harness = _harness(tmp_path)
+    harness.run(run_id="run-success")
+    harness.configuration.raise_after_dispatch = True
+    uncertain = harness.run(run_id="run-uncertain")
+    calls_after_uncertain = len(harness.configuration.applied)
+    harness.configuration.raise_after_dispatch = False
+
+    blocked = harness.run(run_id="run-blocked")
+
+    assert uncertain.e5_effect_uncertain is True
+    assert blocked.refusal_code is ServiceEntryRefusal.RETAINED_RESULT_INVALID
+    assert len(harness.configuration.applied) == calls_after_uncertain
+
+
 def test_a_routed_client_is_refused_rather_than_routed_for(tmp_path: Path):
     """R-NET-01: same-subnet is what this slice supports, and it says so."""
     payload = intent_payload()
@@ -470,6 +614,81 @@ def test_a_routed_client_is_refused_rather_than_routed_for(tmp_path: Path):
         ServiceEntryRefusal.COMPOSITION_FAILED,
     }
     assert harness.mutating_calls == []
+
+
+def test_an_unobservable_required_extension_version_is_distinct(
+    tmp_path: Path,
+):
+    """A stored extension version is not copied into the current observation."""
+    harness = _harness(tmp_path)
+    manifest = harness.manifest_store.manifest
+    harness.manifest_store.manifest = manifest.model_copy(
+        update={
+            "environment_fingerprint": manifest.environment_fingerprint.model_copy(
+                update={"extension_version": "control-center-5"}
+            )
+        }
+    )
+
+    result = harness.run()
+
+    assert result.refusal_code is (ServiceEntryRefusal.RUNTIME_PROVENANCE_UNAVAILABLE)
+    assert harness.mutating_calls == []
+
+
+def test_an_unobservable_source_tree_refuses_before_session_effects(
+    tmp_path: Path,
+):
+    """An attempted execution needs an observed source SHA."""
+    harness = _harness(tmp_path)
+
+    result = harness.run(source_tree=SourceTreeIdentity())
+
+    assert result.refusal_code is ServiceEntryRefusal.SOURCE_TREE_UNAVAILABLE
+    assert harness.mutating_calls == []
+
+
+def test_a_dhcp_selected_client_is_refused_before_e5(tmp_path: Path):
+    """S1 supports static clients only; DHCP is a later slice."""
+    payload = intent_payload()
+    payload["sites"][0]["endpoints"][0]["addressing_preference"] = "dhcp"
+    harness = _harness(tmp_path, payload)
+
+    result = harness.run()
+
+    assert result.refusal_code in {
+        ServiceEntryRefusal.SERVICE_PATH_UNSUPPORTED,
+        ServiceEntryRefusal.COMPOSITION_FAILED,
+    }
+    assert harness.mutating_calls == []
+
+
+@pytest.mark.parametrize("unrelated_count", [2, 20, 200, 1000])
+def test_large_unrelated_inventory_does_not_expand_the_service_effect_scope(
+    tmp_path: Path,
+    unrelated_count: int,
+):
+    """Synthetic inventory scale proves bounded noninterference, not LIVE size."""
+    harness = _harness(tmp_path)
+    unrelated = [
+        RuntimeConfigurationTarget(
+            device_name=f"UNRELATED-{index:04d}",
+            model="PC-PT",
+            interfaces=["FastEthernet0"],
+        )
+        for index in range(unrelated_count)
+    ]
+    harness.configuration.targets.extend(unrelated)
+    harness.services.targets.extend(unrelated)
+
+    result = harness.run()
+
+    dispatched = {item for batch in harness.configuration.applied for item in batch}
+    assert result.status is ServiceRunStatus.VERIFIED
+    assert dispatched == set(result.e5_effect_scope.mutated)
+    assert len(dispatched) == 7
+    rendered = {item.device_name for item in harness.configuration.rendered}
+    assert not any(name.startswith("UNRELATED-") for name in rendered)
 
 
 # -- containment -----------------------------------------------------------
@@ -528,6 +747,60 @@ def test_a_store_failure_after_the_first_effect_dispatches_nothing_more(
     assert result.refusal_code is ServiceEntryRefusal.EFFECT_HALTED
     assert result.status is ServiceRunStatus.UNKNOWN
     assert result.persisted_stage is not ServiceStage.COMPLETED
+    assert len(result.clients) == 2
+    assert all(
+        set(client.results) == {"service/hq/lab-dns", "service/hq/lab-web"}
+        for client in result.clients
+    )
+    assert result.services
+    stored = ServiceRunRecordStore(tmp_path).load(DEPLOYMENT_ID, result.run_id)
+    assert stored.clients == result.clients
+    assert stored.persisted_stage is result.persisted_stage
+
+
+def test_terminal_persistence_failure_preserves_the_observed_runtime_facts(
+    tmp_path: Path,
+):
+    """The terminal write may fail without erasing the last durable stage."""
+
+    class FailCompletion(ServiceRunRecordStore):
+        def complete(self, record):
+            raise RunRecordPersistenceError("terminal volume failure")
+
+    harness = _harness(tmp_path)
+    harness.record_store = FailCompletion(tmp_path)
+
+    result = harness.run()
+
+    assert result.configuration_result is not None
+    assert result.service_result is not None
+    assert result.persist_error
+    assert "persist_error:complete" in result.limitations
+    durable = ServiceRunRecordStore(tmp_path).load(DEPLOYMENT_ID, result.run_id)
+    assert durable.service_result is not None
+    assert durable.persisted_stage is ServiceStage.RELEASE
+
+
+def test_primary_effect_uncertainty_survives_a_secondary_completion_failure(
+    tmp_path: Path,
+):
+    """Persistence failure is secondary; it cannot rename the primary fact."""
+
+    class FailCompletion(ServiceRunRecordStore):
+        def complete(self, record):
+            raise RunRecordPersistenceError("terminal volume failure")
+
+    harness = _harness(tmp_path)
+    harness.record_store = FailCompletion(tmp_path)
+    harness.configuration.raise_after_dispatch = True
+
+    result = harness.run()
+
+    assert result.refusal_code is ServiceEntryRefusal.E5_EFFECT_UNCERTAIN
+    assert result.e5_effect_uncertain is True
+    assert result.status is ServiceRunStatus.UNKNOWN
+    assert result.persist_error
+    assert "persist_error:complete" in result.limitations
 
 
 # -- evidence --------------------------------------------------------------
@@ -548,6 +821,8 @@ def test_the_response_and_the_record_agree_and_survive_json(tmp_path: Path):
     assert stored.configuration_result is not None
     assert stored.service_result is not None
     assert stored.capability_snapshot.catalog_hash
+    assert stored.source_tree.sha == "test-source"
+    assert stored.source_tree.dirty is True
     round_trip = json.loads(result.model_dump_json())
     assert round_trip["run_id"] == result.run_id
 
@@ -567,14 +842,28 @@ def test_documentary_provenance_is_disclosed_in_every_response(tmp_path: Path):
 def test_an_unresolved_client_release_stays_visible(tmp_path: Path):
     """No topology cleanup never meant skipping the owned-client release."""
     harness = _harness(tmp_path)
-    harness.services.release_outcome = "release_failed:client_still_registered"
+    harness.services.release_outcome = "client_still_registered"
+    harness.services.release_cause = "release_failed"
 
     result = harness.run()
 
     assert result.releases
-    assert any(item.outcome == "release_failed" for item in result.releases)
+    assert any(item.outcome == "client_still_registered" for item in result.releases)
     stored = ServiceRunRecordStore(tmp_path).load(DEPLOYMENT_ID, result.run_id)
     assert stored.releases
+
+
+def test_a_successful_s0_release_is_first_class(tmp_path: Path):
+    """The real `observed.released` field survives response and storage."""
+    harness = _harness(tmp_path)
+    harness.services.release_outcome = "released"
+
+    result = harness.run()
+
+    assert result.releases
+    assert all(item.outcome == "released" for item in result.releases)
+    stored = ServiceRunRecordStore(tmp_path).load(DEPLOYMENT_ID, result.run_id)
+    assert stored.releases == result.releases
 
 
 def test_no_secret_or_script_reaches_the_public_response(tmp_path: Path):

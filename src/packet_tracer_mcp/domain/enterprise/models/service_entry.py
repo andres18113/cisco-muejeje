@@ -82,6 +82,8 @@ class ServiceEntryRefusal(StrEnum):
     VERSION_MISMATCH = "version_mismatch"
     IMPORT_ISOLATION_REFUSED = "import_isolation_refused"
     TRANSPORT_UNAVAILABLE = "transport_unavailable"
+    SOURCE_TREE_UNAVAILABLE = "source_tree_unavailable"
+    RUNTIME_PROVENANCE_UNAVAILABLE = "runtime_provenance_unavailable"
     RECORD_STORE_UNWRITABLE = "record_store_unwritable"
     COMPOSITION_FAILED = "composition_failed"
     DNS_SERVER_ADDRESS_REQUIRED = "dns_server_address_required"

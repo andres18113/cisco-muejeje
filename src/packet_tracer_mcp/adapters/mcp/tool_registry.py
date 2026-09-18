@@ -10,6 +10,7 @@ import json
 import time
 import urllib.parse
 import urllib.request
+from collections.abc import Sequence
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -44,6 +45,7 @@ from ...application.use_cases.deploy_enterprise_topology import (
 )
 from ...domain.enterprise.models.deployment import EnvironmentFingerprint
 from ...domain.enterprise.models.discovery import DetailLevel, ProbeLevel, ProbeRequest
+from ...domain.enterprise.models.execution import DispatchFact, ResultFact
 from ...domain.enterprise.models.intent import EnterpriseIntent
 from ...domain.models.acls import ACLBinding
 from ...domain.models.errors import ErrorCode, PlanError
@@ -92,6 +94,7 @@ from ...infrastructure.execution.file_bridge import FileBridge
 from ...infrastructure.execution.live_bridge import (
     DEFAULT_PORT,
     PTCommandBridge,
+    correlated_http_dispatch,
     correlated_http_send_and_wait,
 )
 from ...infrastructure.execution.manual_executor import ManualExecutor
@@ -118,6 +121,11 @@ from ...infrastructure.execution.transport_health import (
     TransportName,
     format_transport_health,
     select_transport,
+)
+from ...infrastructure.execution.transport_outcome import (
+    BridgeDispatchOutcome,
+    HttpPostOutcome,
+    PostPhase,
 )
 from ...infrastructure.execution.typed_ping import TypedPingExecutor
 from ...infrastructure.generator.acl_cli_generator import generate_acl_cli
@@ -1625,6 +1633,47 @@ def register_tools(
             return _file_bridge.send_and_wait(guarded, timeout=timeout)
         return None
 
+    def _bridge_dispatch_and_wait(
+        js_call: str,
+        timeout: float = 10.0,
+        channel: str | None = None,
+    ) -> BridgeDispatchOutcome:
+        """Dispatch on one fixed channel without collapsing transport facts."""
+        ch = channel if channel is not None else _pick_channel()
+        guarded = (
+            "try{" + js_call + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
+        )
+        if ch == "http":
+
+            def status_only_post(
+                url: str, body: str, post_timeout: float
+            ) -> HttpPostOutcome:
+                status, response = _http_post(url, body, post_timeout)
+                return HttpPostOutcome(
+                    status=status,
+                    body=response,
+                    phase=(
+                        PostPhase.SENT if status is not None else PostPhase.UNDECIDABLE
+                    ),
+                )
+
+            return correlated_http_dispatch(
+                guarded,
+                timeout,
+                base_url=_BRIDGE_URL,
+                port=_BRIDGE_PORT,
+                token=get_bridge_token(),
+                http_connect_post=status_only_post,
+                http_get=_http_get,
+            )
+        if ch == "file":
+            return _file_bridge.dispatch_and_wait(guarded, timeout=timeout)
+        return BridgeDispatchOutcome(
+            dispatch=DispatchFact.NOT_SUBMITTED,
+            result=ResultFact.NOT_APPLICABLE,
+            detail="transport_unavailable",
+        )
+
     def _check_bridge() -> str | None:
         """Verifica que haya un canal a PT (HTTP o archivo). Mensaje de error o None.
 
@@ -2872,14 +2921,42 @@ def register_tools(
         "reportResult(JSON.stringify({devices:arr,links:net.getLinkCount()}));"
     )
 
-    def _live_devices() -> list[dict]:
+    def _targeted_live_devices_js(device_names: Sequence[str]) -> str:
+        """Build one target-filtered inventory read that detects ambiguity."""
+        names = json.dumps(list(dict.fromkeys(device_names)))
+        return (
+            "var net=ipc.network();var names="
+            + names
+            + ",wanted={},arr=[];for(var w=0;w<names.length;w++){wanted[names[w]]=true;}"
+            "for(var i=0;i<net.getDeviceCount();i++){var d=net.getDeviceAt(i);"
+            "if(!d||!wanted[String(d.getName())]){continue;}"
+            "var pc=d.getPortCount(),ports=[];for(var j=0;j<pc;j++){"
+            "var p=d.getPortAt(j),ip='',mask='',up=false,linked=false;"
+            "try{ip=p.getIpAddress()||'';}catch(pe){}"
+            "try{mask=p.getSubnetMask()||'';}catch(pe){}"
+            "try{up=(typeof p.isPortUp==='function')?p.isPortUp():false;}catch(pe){}"
+            "try{linked=(p.getLink()!=null);}catch(pe){}"
+            "ports.push({name:p.getName(),ip:ip,mask:mask,up:up,linked:linked});}"
+            "arr.push({name:d.getName(),model:d.getModel(),ports:ports});}"
+            "reportResult(JSON.stringify({devices:arr,links:null}));"
+        )
+
+    def _live_devices(
+        device_names: Sequence[str] = (),
+        channel: str | None = None,
+    ) -> list[dict]:
         """Lee la topología activa de PT como lista estructurada de dispositivos.
 
         Cada elemento: {name, model, ports:[{name, ip, mask, up, linked}]}.
         Fuente única de verdad para las pre-checks (compat módulos, ACL/NAT),
         pt_diff y pt_health_check. Devuelve [] si el bridge no responde o PT falla.
         """
-        result = _bridge_send_and_wait(_LIVE_DEVICES_JS, timeout=10.0)
+        script = (
+            _targeted_live_devices_js(device_names)
+            if device_names
+            else _LIVE_DEVICES_JS
+        )
+        result = _bridge_send_and_wait(script, timeout=10.0, channel=channel)
         if not result or result.startswith("PT_ERROR") or result.startswith("ERROR"):
             return []
         try:
@@ -2892,9 +2969,36 @@ def register_tools(
         """Alias compat de _live_devices (nombre usado por las pre-checks de módulos/ACL/NAT)."""
         return _live_devices()
 
-    def _bridge_send_payload(js_call: str) -> bool:
+    def _bridge_send_payload(js_call: str, channel: str | None = None) -> bool:
         """Envía un JS payload fire-and-forget por el canal disponible (HTTP o archivo)."""
-        return _channel_send(_js_guard(js_call))
+        return _channel_send(_js_guard(js_call), channel)
+
+    def _observe_service_environment(channel: str) -> EnvironmentFingerprint:
+        """Read current backend provenance; never copy it from the manifest."""
+        script = (
+            "try{var f=ipc.appWindow().getActiveFile();"
+            "if(!f){reportResult(JSON.stringify({found:false}));}else{"
+            "reportResult(JSON.stringify({found:true,backend:'packet_tracer',"
+            "backend_version:String(f.getVersion()||''),"
+            "extension_version:'',runtime_mode:'logical-workspace'}));}}"
+            "catch(e){reportResult('PT_ERROR:'+e);}"
+        )
+        raw = _bridge_send_and_wait(script, timeout=10.0, channel=channel)
+        if not raw or raw.startswith(("PT_ERROR", "ERROR")):
+            return EnvironmentFingerprint()
+        try:
+            observed = json.loads(raw)
+        except (TypeError, ValueError):
+            return EnvironmentFingerprint()
+        if not observed.get("found"):
+            return EnvironmentFingerprint()
+        return EnvironmentFingerprint(
+            backend=str(observed.get("backend") or ""),
+            backend_version=str(observed.get("backend_version") or ""),
+            bridge_transport=channel,
+            extension_version=str(observed.get("extension_version") or ""),
+            runtime_mode=str(observed.get("runtime_mode") or ""),
+        )
 
     # D-8 stays deferred: extracting the bridge session out of this closure
     # is a registry refactor of its own. S1 pays one import and one call,
@@ -2903,9 +3007,11 @@ def register_tools(
     register_service_tools(
         mcp,
         send_and_wait=_bridge_send_and_wait,
+        dispatch_and_wait=_bridge_dispatch_and_wait,
         send_payload=_bridge_send_payload,
         query_inventory=_live_devices,
         pick_channel=_pick_channel,
+        observe_environment=_observe_service_environment,
     )
 
     @mcp.tool()

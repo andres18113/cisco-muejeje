@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "copied_on": "2026-09-17",
+  "copy_mode": "byte-for-byte",
+  "source_root": "maintainer Downloads directory",
+  "overlay_zip_present": false,
+  "files": [
+    {
+      "source_name": "Server-PT-Services-Plan-rev2.2.md",
+      "archive_path": "planning/rev2.2/Server-PT-Services-Plan-rev2.2.md",
+      "bytes": 194615,
+      "sha256": "1332e4a9a7387c498821ccf09c3c5d9ba39f7e10b0a141f113412650e2309478"
+    },
+    {
+      "source_name": "Server-PT-Services-Review-Resolution-rev2.2.md",
+      "archive_path": "planning/rev2.2/Server-PT-Services-Review-Resolution-rev2.2.md",
+      "bytes": 86820,
+      "sha256": "27fc567980d121c3d2bf2b50eb762c3b6791e3a31727d175c38109b7d3bf983e"
+    },
+    {
+      "source_name": "Server-PT-Services-Implementer-Prompt-S0-rev2.2.md",
+      "archive_path": "planning/rev2.2/Server-PT-Services-Implementer-Prompt-S0-rev2.2.md",
+      "bytes": 34781,
+      "sha256": "d689d1812349a2ce0063c5c41fdab431cc3f1c6b554043f3cf5e0ddfba26312e"
+    },
+    {
+      "source_name": "Server_PT_S0_Rev22_Approval_TD12.md",
+      "archive_path": "decisions/Server_PT_S0_Rev22_Approval_TD12.md",
+      "bytes": 13829,
+      "sha256": "3f4c366276e8d7540e7c07bf0f33c0e02bd5585109b9c941decbe1fe767d8688"
+    },
+    {
+      "source_name": "S0_BA45_Acceptance.md",
+      "archive_path": "decisions/S0_BA45_Acceptance.md",
+      "bytes": 4301,
+      "sha256": "a75da3e90df6708bdeb5f1a8911060cc768c762e15aa951cbd472be4c3e9262d"
+    },
+    {
+      "source_name": "S1_Implementer_Prompt.md",
+      "archive_path": "assignments/S1_Implementer_Prompt.md",
+      "bytes": 28088,
+      "sha256": "570cdf605c99bbf139f5f63e08c77660117125d205424a6c1cde7e528ac9a3e8"
+    },
+    {
+      "source_name": "S1_Correction_and_Coexistence_Prompt (1).md",
+      "archive_path": "reviews/S1_0bddc9a_Review.md",
+      "bytes": 25540,
+      "sha256": "17a0e6f2392f365e7b039080fddd70da2d8590c1dc571618aedeef72162244b2"
+    }
+  ]
+}

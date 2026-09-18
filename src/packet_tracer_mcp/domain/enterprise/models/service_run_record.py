@@ -22,7 +22,8 @@ never proof that work did not execute, and it is never auto-resumed.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
@@ -44,6 +45,12 @@ from .service_entry import (
     StageTransition,
 )
 from .service_runtime import ServiceApplicationResult
+
+
+def generate_run_id(now: datetime | None = None) -> str:
+    """Generate one sortable, collision-resistant product run identity."""
+    moment = (now or datetime.now(UTC)).astimezone(UTC)
+    return f"{moment.strftime('%Y-%m-%dT%H-%M-%SZ')}-{uuid4().hex[:8]}"
 
 
 class SourceTreeIdentity(BaseModel):

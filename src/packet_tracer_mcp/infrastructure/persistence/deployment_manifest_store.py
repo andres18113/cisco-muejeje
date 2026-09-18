@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -31,8 +31,8 @@ class DeploymentManifestStore:
         self,
         base_dir: str | Path = Path("data") / "deployments",
     ) -> None:
-        self.base_dir = Path(base_dir).resolve()
-        self.base_dir.mkdir(parents=True, exist_ok=True)
+        """Bind the store path without touching the filesystem."""
+        self.base_dir = Path(base_dir).absolute()
 
     def save_verified(self, manifest: DeploymentManifest) -> Path:
         """Atomically persist one manifest emitted by a verified deployment.
@@ -41,7 +41,6 @@ class DeploymentManifestStore:
         contents do not match its content address is treated as corruption and
         is never silently replaced.
         """
-
         self._validate_identity(manifest)
         canonical = _canonical_payload(manifest)
         record_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -49,18 +48,17 @@ class DeploymentManifestStore:
             manifest.deployment_id,
             manifest.semantic_hash,
         )
-        target_dir.mkdir(parents=True, exist_ok=True)
         target = resolve_within(target_dir, f"{record_hash}.json")
-        if target.exists():
-            self._assert_existing_record(target, canonical)
-            return target
-
         temporary = resolve_within(
             target_dir,
             f".{record_hash}.{uuid4().hex}.tmp",
         )
         payload = manifest.model_dump_json(indent=2) + "\n"
         try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                self._assert_existing_record(target, canonical)
+                return target
             with temporary.open("x", encoding="utf-8", newline="\n") as handle:
                 handle.write(payload)
                 handle.flush()
@@ -89,7 +87,6 @@ class DeploymentManifestStore:
         deployment_id: str,
     ) -> DeploymentManifest | None:
         """Return the newest exact deployment ID, never a sanitized alias."""
-
         records = self._records_for_deployment(deployment_id)
         return records[-1] if records else None
 
@@ -98,7 +95,6 @@ class DeploymentManifestStore:
         semantic_hash: str,
     ) -> list[DeploymentManifest]:
         """Return every immutable runtime observation for one semantic hash."""
-
         if not semantic_hash.strip():
             return []
         semantic_component = safe_name_component(semantic_hash, "semantic")
@@ -190,7 +186,7 @@ def _canonical_payload(manifest: DeploymentManifest) -> str:
 def _manifest_sort_key(manifest: DeploymentManifest) -> tuple[datetime, str]:
     created_at = manifest.created_at
     if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=timezone.utc)
+        created_at = created_at.replace(tzinfo=UTC)
     return created_at, hashlib.sha256(
         _canonical_payload(manifest).encode("utf-8")
     ).hexdigest()

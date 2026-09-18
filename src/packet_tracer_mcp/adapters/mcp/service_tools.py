@@ -16,17 +16,21 @@ invocation.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+import subprocess
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from ...application.use_cases.apply_enterprise_services import (
+    ServiceInvocationBinding,
     ServiceStageRuntimes,
     TransportSelection,
     apply_enterprise_services,
 )
+from ...domain.enterprise.models.configuration_runtime import RuntimeConfigurationTarget
 from ...domain.enterprise.models.deployment import EnvironmentFingerprint
+from ...domain.enterprise.models.service_run_record import SourceTreeIdentity
 from ...infrastructure.execution.endpoint_address_observer import (
     PacketTracerEndpointAddressObserver,
 )
@@ -39,6 +43,7 @@ from ...infrastructure.execution.enterprise_service_runtime import (
 from ...infrastructure.execution.import_isolation_preflight import (
     ImportIsolationPreflight,
 )
+from ...infrastructure.execution.transport_outcome import BridgeDispatchOutcome
 from ...infrastructure.persistence.deployment_manifest_store import (
     DeploymentManifestStore,
 )
@@ -56,10 +61,11 @@ def register_service_tools(
     mcp: Any,
     *,
     send_and_wait: Callable[[str, float, str | None], str | None],
-    send_payload: Callable[[str], bool],
-    query_inventory: Callable[[], list[dict] | dict],
+    dispatch_and_wait: Callable[[str, float, str | None], BridgeDispatchOutcome],
+    send_payload: Callable[[str, str | None], bool],
+    query_inventory: Callable[[Sequence[str], str | None], list[dict] | dict],
     pick_channel: Callable[[], str],
-    extension_version: Callable[[], str] = lambda: "",
+    observe_environment: Callable[[str], EnvironmentFingerprint],
     governed_root: Path = GOVERNED_ROOT,
 ) -> None:
     """Register `pt_apply_enterprise_services` on the enterprise surface.
@@ -103,55 +109,126 @@ def register_service_tools(
         DNS/HTTP usada se declara como documentary_baseline: todavía no existe
         una corrida LIVE registrada que la promueva.
         """
-        channel = pick_channel()
-        fixed_at = datetime.now(UTC)
-        transport = TransportSelection(
-            channel=channel,
-            fixed_at=fixed_at,
-            ready=channel in {"http", "file"},
-            detail=(
-                ""
-                if channel in {"http", "file"}
-                else "Packet Tracer is not connected on any channel."
-            ),
-        )
 
-        def bound_send_and_wait(script: str, timeout: float) -> str | None:
-            """One channel, fixed at admission, for every dispatch in this run."""
-            return send_and_wait(script, timeout, channel)
+        def bind_session() -> ServiceInvocationBinding:
+            """Select and bind every collaborator after A1/A4 admission."""
+            channel = pick_channel()
+            fixed_at = datetime.now(UTC)
+            transport = TransportSelection(
+                channel=channel,
+                fixed_at=fixed_at,
+                ready=channel in {"http", "file"},
+                detail=(
+                    ""
+                    if channel in {"http", "file"}
+                    else "Packet Tracer is not connected on any channel."
+                ),
+            )
+
+            def bound_send_and_wait(script: str, timeout: float) -> str | None:
+                """Read on the one admitted channel, without fallback."""
+                return send_and_wait(script, timeout, channel)
+
+            def bound_dispatch_and_wait(
+                script: str, timeout: float
+            ) -> BridgeDispatchOutcome:
+                """Preserve typed dispatch facts on the admitted channel."""
+                return dispatch_and_wait(script, timeout, channel)
+
+            def bound_send_payload(script: str) -> bool:
+                """Legacy E5 dispatch on the admitted channel, without fallback."""
+                return send_payload(script, channel)
+
+            selected_names: tuple[str, ...] | None = None
+            raw_inventory: list[dict] | dict | None = None
+
+            def cached_inventory() -> list[dict] | dict:
+                """Return the one target-directed inventory snapshot for this run."""
+                nonlocal raw_inventory
+                if selected_names is None:
+                    raise RuntimeError("Runtime inventory targets were not selected.")
+                if raw_inventory is None:
+                    raw_inventory = query_inventory(selected_names, channel)
+                return raw_inventory
+
+            endpoint_reader = PacketTracerEndpointAddressObserver(
+                bound_send_and_wait,
+            )
+            configuration_runtime = PacketTracerEnterpriseConfigurationRuntime(
+                cached_inventory,
+                bound_send_payload,
+                bound_send_and_wait,
+                endpoint_address_observer=endpoint_reader,
+            )
+            service_runtime = PacketTracerEnterpriseServiceRuntime(
+                cached_inventory,
+                bound_send_and_wait,
+                dispatch_and_wait=bound_dispatch_and_wait,
+            )
+
+            def inventory_reader(
+                names: Sequence[str],
+            ) -> list[RuntimeConfigurationTarget]:
+                """Select exact manifest names once, then normalize the snapshot."""
+                nonlocal selected_names
+                normalized = tuple(dict.fromkeys(str(item) for item in names))
+                if selected_names is not None and normalized != selected_names:
+                    raise RuntimeError(
+                        "Runtime inventory scope changed within one run."
+                    )
+                selected_names = normalized
+                return configuration_runtime.inventory()
+
+            environment = (
+                observe_environment(channel)
+                if transport.ready
+                else EnvironmentFingerprint()
+            )
+            return ServiceInvocationBinding(
+                runtimes=ServiceStageRuntimes(
+                    configuration=configuration_runtime,
+                    services=service_runtime,
+                ),
+                record_store=ServiceRunRecordStore(),
+                environment_fingerprint=environment,
+                transport_selection=transport,
+                source_tree=_observe_source_tree(governed_root),
+                endpoint_observer=endpoint_reader,
+                inventory_reader=inventory_reader,
+            )
 
         result = apply_enterprise_services(
             intent_json,
             deployment_id=deployment_id,
             packet_tracer_version=packet_tracer_version.strip(),
-            runtimes=ServiceStageRuntimes(
-                configuration=PacketTracerEnterpriseConfigurationRuntime(
-                    query_inventory,
-                    send_payload,
-                    bound_send_and_wait,
-                    endpoint_address_observer=PacketTracerEndpointAddressObserver(
-                        bound_send_and_wait,
-                    ),
-                ),
-                services=PacketTracerEnterpriseServiceRuntime(
-                    query_inventory,
-                    bound_send_and_wait,
-                ),
-            ),
-            manifest_store=DeploymentManifestStore(),
-            record_store=ServiceRunRecordStore(),
+            manifest_store_factory=DeploymentManifestStore,
             import_preflight=ImportIsolationPreflight(governed_root),
-            environment_fingerprint=EnvironmentFingerprint(
-                backend="packet_tracer",
-                backend_version=packet_tracer_version.strip(),
-                bridge_transport=channel,
-                extension_version=extension_version().strip(),
-                runtime_mode="logical-workspace",
-            ),
-            transport_selection=transport,
-            endpoint_observer=PacketTracerEndpointAddressObserver(
-                bound_send_and_wait,
-            ),
+            record_store_factory=ServiceRunRecordStore,
+            session_factory=bind_session,
             run_label=run_label,
         )
         return json.dumps(result.compact_summary(), indent=2, ensure_ascii=False)
+
+
+def _observe_source_tree(governed_root: Path) -> SourceTreeIdentity:
+    """Observe the executing checkout identity without trusting caller input."""
+    try:
+        sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=governed_root,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=normal"],
+            cwd=governed_root,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return SourceTreeIdentity()
+    return SourceTreeIdentity(sha=sha, dirty=bool(status.strip()))

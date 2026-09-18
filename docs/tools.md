@@ -151,10 +151,10 @@ does not clean up when it finishes: the only thing it releases is the temporary
 background clients its own verification created, and it reports the outcome of
 every one of those releases, including the ones that did not resolve.
 
-**Supported path.** One site, one segment, a static Server-PT and the static
-PC-PT clients on that same segment. A client outside the host's segment is
-refused rather than assumed to work: reaching it needs routed support that this
-entry point does not provide, and same-subnet addressing alone is not a path.
+**Supported path.** One site, one segment, a static Server-PT and static PC-PT
+clients whose required access-port foundations terminate on one access switch.
+DHCP, routed, foreign-site and ungoverned inter-switch paths are refused before
+the first service-related configuration effect; they are not part of S1.
 
 **Inputs.**
 
