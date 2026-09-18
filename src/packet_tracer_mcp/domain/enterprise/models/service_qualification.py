@@ -180,7 +180,14 @@ class StageDefinition:
 
     @property
     def planned_minimum_operations(self) -> int:
-        """Return the smallest operation count a complete run can use."""
+        """Return the smallest ceiling the whole planned path is proven to fit in.
+
+        Each planned figure is its step's bounded worst case, so this sum is
+        the worst case of the complete trace: admission reads, fixture setup,
+        every required measurement and the untouchable finalization reserve.
+        It is not the luckiest trace, and a stage whose ceiling is below it is
+        refused before contact.
+        """
         return (
             self.setup_operations
             + self.required_experiment_operations
@@ -206,10 +213,14 @@ class StageDefinition:
         raise KeyError(experiment_id)
 
 
-#: Plan 5.8 ceilings. Q0 and Q1 are the ones S4a can execute.
+#: Plan 5.8 ceilings, with the reviewed Q1 design ceiling. Q0 and Q1 are the
+#: ones S4a can execute. Q1's 60/600 was approved for the offline correction
+#: against the proven worst case of 46 operations with its 10-operation
+#: finalization reserve intact; it authorizes no LIVE run, and it changes
+#: neither Q0 nor the declarative Q2/Q3.
 STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.Q0: (20, 300),
-    QualificationStage.Q1: (30, 600),
+    QualificationStage.Q1: (60, 600),
     QualificationStage.Q2: (60, 900),
     QualificationStage.Q3: (60, 1200),
 }
@@ -373,12 +384,16 @@ def _q1() -> StageDefinition:
                 ),
                 required=True,
                 procedure="HTTPS2",
-                # Two listener toggles; the positive fetch is 3 operations
-                # (start, one inspection, release). Each negative fetch is 4,
-                # because the production reader keeps polling for its marker
-                # until the deadline, so a negative always spends the second
-                # inspection.
-                planned_operations=13,
+                # Two listener toggles and three production fetches, each
+                # budgeted at its worst case of 4 operations: the start, both
+                # inspections and the release of the owned client. A negative
+                # always spends the second inspection, because freshness
+                # requires the marker and the reader polls to its deadline; a
+                # positive can spend it too, whenever the first inspection is
+                # lost or the page has not changed yet. Budgeting the positive
+                # at 3 made the stage total the luckiest trace rather than the
+                # bounded one.
+                planned_operations=14,
                 capabilities=("https.listener_toggle", "https.client_mode"),
             ),
             ExperimentSpec(

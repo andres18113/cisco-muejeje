@@ -40,6 +40,16 @@ UNDOCUMENTED_UNREGISTER = (
     "undocumented_existing_usage:_ScriptModule.unregisterIpcEventByID"
 )
 
+#: What a declared negative control would need in order to *establish* the
+#: listener-isolation model: an observation that this request was refused. The
+#: production web reader has none. A refused request and a slow or lost one
+#: both surface as `no_response_within_deadline`, and fresh non-marker content
+#: proves a marker mismatch rather than a refusal. Until such an observable
+#: exists, a negative control can only contradict the model, never support it,
+#: and no HTTP code, `onDone` semantic or timeout may be invented to stand in
+#: for one.
+NO_QUALIFIED_NEGATIVE_OBSERVABLE = "no_qualified_listener_refusal_observable"
+
 
 @dataclass(frozen=True)
 class ProbeReading:
@@ -92,12 +102,21 @@ def assess_bag_persistence(
     facts: dict[str, Any] = {"channel": channel}
     if write.observed:
         facts["receiver_is_global_at_write"] = write.payload["receiver_is_global"]
+        facts["run_key_written"] = write.payload["written"]
+        facts["run_key_owned"] = write.payload["owned"]
         if write.payload["run_bag_preexisting"]:
+            # The claim proved the key already existed and reported that it
+            # wrote nothing, so this refusal has nothing to undo. The outcome
+            # is unknown only if the probe contradicts itself by claiming both.
             return Assessment(
                 CONTRADICTED,
                 facts,
-                ["run_key_collision: the run bag existed before this run wrote it"],
-                outcome_unknown=True,
+                [
+                    "run_key_collision: the run bag existed before this run "
+                    "claimed it, and nothing was written"
+                ],
+                ["no_measurement_is_possible_under_a_foreign_run_key"],
+                outcome_unknown=bool(write.payload["written"]),
             )
     if read is None or not read.observed:
         cause = _unobserved(read) if read is not None else "read_not_dispatched"
@@ -109,6 +128,7 @@ def assess_bag_persistence(
             outcome_unknown=not write.observed,
         )
     facts["receiver_is_global_at_read"] = read.payload["receiver_is_global"]
+    facts["owned_at_read"] = read.payload["owned"]
     facts["found"] = read.payload["found"]
     facts["nonce_matches"] = read.payload["nonce_matches"]
     facts["sentinel_released"] = read.payload["released"]
@@ -473,6 +493,29 @@ def assess_page_tables(write: ProbeReading, read: ProbeReading | None) -> Assess
         return Assessment(INCONCLUSIVE, facts, [cause], limitations)
     cross = {key: read.payload[key] for key in ("hh", "hs", "sh", "ss")}
     facts["visibility"] = cross
+    facts["cross_read_errors"] = read.payload["read_errors"]
+    causes = [
+        f"cross_read_failed:{key}:{str(value)[:120]}"
+        for key, value in sorted(read.payload["errors"].items())
+    ]
+    # A cell nobody could read is unobserved, never an observed absence. Two
+    # such cells would otherwise be indistinguishable from two separate page
+    # tables, and one would manufacture an asymmetry that nobody measured.
+    unobserved = sorted(key for key, value in cross.items() if value is None)
+    if len(unobserved) != read.payload["read_errors"]:
+        return Assessment(
+            INCONCLUSIVE,
+            facts,
+            ["cross_read_count_contradicts_cells", *causes],
+            limitations,
+        )
+    if unobserved:
+        return Assessment(
+            INCONCLUSIVE,
+            facts,
+            ["cross_read_unobserved:" + ",".join(unobserved), *causes],
+            limitations,
+        )
     if not (cross["hh"] and cross["ss"]):
         return Assessment(INCONCLUSIVE, facts, ["own_marker_not_readable"], limitations)
     if cross["hs"] and cross["sh"]:
@@ -488,12 +531,14 @@ def assess_page_tables(write: ProbeReading, read: ProbeReading | None) -> Assess
 
 
 def fetch_outcome(row: RuntimeServiceVerification | None) -> str:
-    """Name what one production fetch row established.
+    """Name what one production fetch row established, and nothing beyond it.
 
     Only the production reader decides freshness and mode. A contradicted row
-    with no cause is its "fresh content without the marker" exit, which is the
-    one observation that can establish an expected negative; the mode exit has
-    its own cause and establishes nothing about the listener.
+    with no cause is its "fresh content without the marker" exit: a completed
+    read that returned other content. On a page this run marked, that
+    contradicts the expectation; it is not, by itself, evidence that a
+    disabled listener refused the request. The mode exit carries its own cause
+    and establishes nothing about the listener either.
     """
     if row is None:
         return "not_run"
@@ -506,9 +551,15 @@ def fetch_outcome(row: RuntimeServiceVerification | None) -> str:
     return f"unestablished:{row.observation.value}:{row.cause}"
 
 
-def _toggle_established(
+def listener_toggle_established(
     reading: ProbeReading | None, *, http: bool, https: bool
 ) -> bool:
+    """Return whether one toggle was read back, in its own evaluation, as asked.
+
+    The coordinator calls this before admitting the effect that would follow a
+    toggle: an unestablished setup is an effect whose outcome nobody observed,
+    and it authorizes no further experimental mutation.
+    """
     return bool(
         reading is not None
         and reading.observed
@@ -518,22 +569,41 @@ def _toggle_established(
     )
 
 
-def _negative_control(
-    outcome: str, *, disabled_confirmed: bool, positive: bool
-) -> MeasurementConclusion:
-    """Classify one declared negative control.
+def _positive_control(
+    outcome: str, *, setup_established: bool
+) -> tuple[MeasurementConclusion, list[str]]:
+    """Classify the declared positive condition of the listener model."""
+    if not setup_established:
+        return INCONCLUSIVE, ["listener_state_not_read_back"]
+    if outcome == "marker_retrieved":
+        return SUPPORTED, []
+    if outcome == "fresh_without_marker":
+        # A completed read of the page this run marked returned other
+        # content. That contradicts this expectation whatever the listener is
+        # doing, and it stops the stage.
+        return CONTRADICTED, ["marked_page_returned_other_content"]
+    return INCONCLUSIVE, [f"observed:{outcome}"]
 
-    A retrieval contradicts the model only when the listener was read back as
-    disabled; a negative is established only by fresh non-marker content and
-    only after the positive control proved the same path can succeed.
+
+def _negative_control(
+    outcome: str, *, disabled_confirmed: bool, same_mode_positive: bool
+) -> tuple[MeasurementConclusion, list[str]]:
+    """Classify one declared negative control, and say what it could not settle.
+
+    A retrieval contradicts the model when the listener was read back as
+    disabled. Nothing here establishes the model: see
+    `NO_QUALIFIED_NEGATIVE_OBSERVABLE`. The same-mode positive control is
+    recorded because a negative in one mode is not qualified by a positive in
+    another.
     """
     if not disabled_confirmed:
-        return INCONCLUSIVE
+        return INCONCLUSIVE, ["listener_state_not_read_back"]
     if outcome == "marker_retrieved":
-        return CONTRADICTED
-    if outcome == "fresh_without_marker" and positive:
-        return NEGATIVE
-    return INCONCLUSIVE
+        return CONTRADICTED, ["listener_served_while_read_back_as_disabled"]
+    causes = [f"observed:{outcome}", NO_QUALIFIED_NEGATIVE_OBSERVABLE]
+    if not same_mode_positive:
+        causes.insert(0, "no_same_mode_positive_control")
+    return INCONCLUSIVE, causes
 
 
 def assess_https_listener(
@@ -543,51 +613,77 @@ def assess_https_listener(
     https_setup: ProbeReading | None,
     https_negative: RuntimeServiceVerification | None,
 ) -> Assessment:
-    """Judge the positive condition and both declared negative controls."""
-    p_setup = _toggle_established(positive_setup, http=False, https=True)
-    n1_setup = _toggle_established(https_setup, http=False, https=False)
+    """Judge the positive condition and both declared negative controls.
+
+    The model claims that a listener *fails* when it is disabled, and this
+    reader has no observation that establishes a refusal, so a supported
+    conclusion is unreachable here by construction. The measurement records
+    every descriptive observation, contradicts the model when a listener that
+    was read back as disabled still served the marker or when the marked
+    positive page returned other content, and is otherwise INCONCLUSIVE.
+    """
+    p_setup = listener_toggle_established(positive_setup, http=False, https=True)
+    n1_setup = listener_toggle_established(https_setup, http=False, https=False)
     p_outcome = fetch_outcome(positive)
-    positive_ok = p_setup and p_outcome == "marker_retrieved"
-    n2 = _negative_control(
-        fetch_outcome(http_negative), disabled_confirmed=p_setup, positive=positive_ok
+    n2_outcome = fetch_outcome(http_negative)
+    n1_outcome = fetch_outcome(https_negative)
+    positive_conclusion, p_causes = _positive_control(
+        p_outcome, setup_established=p_setup
     )
-    n1 = _negative_control(
-        fetch_outcome(https_negative),
-        disabled_confirmed=n1_setup,
-        positive=positive_ok,
+    positive_ok = positive_conclusion is SUPPORTED
+    # The HTTP-mode negative has no HTTP-mode positive control in this stage:
+    # the positive condition is measured in HTTPS mode only.
+    n2, n2_causes = _negative_control(
+        n2_outcome, disabled_confirmed=p_setup, same_mode_positive=False
+    )
+    n1, n1_causes = _negative_control(
+        n1_outcome, disabled_confirmed=n1_setup, same_mode_positive=positive_ok
     )
     facts: dict[str, Any] = {
         "positive_https_only": {
             "setup_established": p_setup,
             "fetch": p_outcome,
-            "conclusion": (SUPPORTED if positive_ok else INCONCLUSIVE).value,
+            "conclusion": positive_conclusion.value,
         },
         "negative_http_mode_http_disabled": {
-            "fetch": fetch_outcome(http_negative),
+            "same_mode_positive_control": False,
+            "fetch": n2_outcome,
             "conclusion": n2.value,
         },
         "negative_https_mode_https_disabled": {
             "setup_established": n1_setup,
-            "fetch": fetch_outcome(https_negative),
+            "same_mode_positive_control": positive_ok,
+            "fetch": n1_outcome,
             "conclusion": n1.value,
         },
     }
     limitations = [
         "no_http_mode_positive_control_in_run",
         "fresh_content_not_retained",
+        NO_QUALIFIED_NEGATIVE_OBSERVABLE,
     ]
-    causes = []
-    if n1 is CONTRADICTED:
-        causes.append("https_mode_fetch_succeeded_with_https_disabled")
-    if n2 is CONTRADICTED:
-        causes.append("http_mode_fetch_succeeded_with_http_disabled")
-    if causes:
-        return Assessment(CONTRADICTED, facts, causes, limitations)
-    if positive_ok and n1 is NEGATIVE and n2 is NEGATIVE:
-        return Assessment(SUPPORTED, facts, [], limitations)
-    if not positive_ok:
-        causes.append("positive_control_not_established")
-    return Assessment(INCONCLUSIVE, facts, causes, limitations)
+    causes = (
+        [f"positive:{item}" for item in p_causes]
+        + [f"negative_http:{item}" for item in n2_causes]
+        + [f"negative_https:{item}" for item in n1_causes]
+    )
+    # A setup toggle that was dispatched and never read back is an effect with
+    # an unknown outcome, which the coordinator must treat as a stop signal.
+    unknown_setup = [
+        name
+        for name, reading in (
+            ("positive_setup", positive_setup),
+            ("https_negative_setup", https_setup),
+        )
+        if reading is not None and not reading.observed
+    ]
+    causes += [f"setup_unobserved:{name}" for name in unknown_setup]
+    conclusion = (
+        CONTRADICTED if CONTRADICTED in (positive_conclusion, n1, n2) else INCONCLUSIVE
+    )
+    return Assessment(
+        conclusion, facts, causes, limitations, outcome_unknown=bool(unknown_setup)
+    )
 
 
 # -- M-DNS-3 -------------------------------------------------------------------

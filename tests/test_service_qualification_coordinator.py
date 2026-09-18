@@ -43,7 +43,11 @@ from packet_tracer_mcp.application.use_cases.qualify_server_services import (
     IsolationObservation,
     qualify_server_services,
 )
-from packet_tracer_mcp.domain.enterprise.models.execution import DirtyState
+from packet_tracer_mcp.domain.enterprise.models.execution import (
+    DirtyState,
+    DispatchFact,
+    ResultFact,
+)
 from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     STAGE_DEFINITIONS,
     MeasurementConclusion,
@@ -56,6 +60,9 @@ from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     RefusalKind,
     RefusalSubject,
     RepositoryIdentity,
+)
+from packet_tracer_mcp.domain.enterprise.services.service_qualification_evidence import (
+    ProbeReading,
 )
 from packet_tracer_mcp.infrastructure.catalog.service_capabilities import (
     capability_snapshot_hash,
@@ -149,6 +156,59 @@ def harness(tmp_path):
     yield make
     for item in started:
         item.engine.close()
+
+
+FIXED_RUN = "2026-09-18T00-00-00Z-fixedrun"
+
+
+def _fixed_run_id(_moment) -> str:
+    return FIXED_RUN
+
+
+def _plant_foreign_run_key(harness, run: str = FIXED_RUN) -> dict:
+    """Place a run key another invocation owns, and return its exact content."""
+    planted = {
+        "owner": "another-invocations-nonce",
+        "sentinel": {"nonce": "another-invocations-nonce"},
+        "unrelated": ["keep", "me"],
+    }
+    harness.engine.evaluate(
+        "var q=this.__mcpE6Q=this.__mcpE6Q||{};"
+        f"q[{json.dumps(run)}]={json.dumps(planted)};reportResult('planted');"
+    )
+    return planted
+
+
+def _engine_bag(harness) -> dict:
+    """Read the whole run-bag container straight out of the stub engine."""
+    return json.loads(
+        harness.engine.evaluate("reportResult(JSON.stringify(this.__mcpE6Q||{}));")
+    )
+
+
+def _q1_request():
+    return replace(
+        _request(),
+        stage="Q1",
+        targets=Q1.fixture_names,
+        authorization=replace(
+            _request().authorization,
+            stage="Q1",
+            targets=Q1.fixture_names,
+            max_operations=Q1.budget.max_operations,
+            max_seconds=Q1.budget.max_seconds,
+        ),
+    )
+
+
+class _Wrapped:
+    """A boundary object with one method replaced, and the rest untouched."""
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
 
 
 def _status(record: QualificationRecord) -> dict[str, tuple[str, str]]:
@@ -283,6 +343,54 @@ def test_nominal_q0_uses_one_channel_and_exactly_the_planned_operations(harness)
     assert record.source.executed_sha == SIM_SHA
     snapshot = h.engine.snapshot()
     assert snapshot["devices"] == [] and snapshot["run_bags"] == {}
+
+
+def test_a_foreign_run_key_stops_the_run_and_is_neither_written_nor_deleted(
+    harness,
+):
+    """A collision is a refusal with nothing to undo, and nothing to clean up."""
+    h = harness()
+    planted = _plant_foreign_run_key(h)
+    result = h.run(new_run_id=_fixed_run_id)
+    record = result.record
+    assert _status(record)["M-ENG-1"] == ("ran", "contradicted")
+    assert record.primary_failure == "contradiction:M-ENG-1"
+    # No claim, so no release: the finalizer never dispatches over a foreign key.
+    assert h.scripts("bag_release") == []
+    assert "bag:run_key_not_exclusively_owned" in record.engine_residue
+    bag = next(item for item in record.releases if item.kind == "bag")
+    assert bag.outcome == "not_attempted"
+    assert _engine_bag(h) == {FIXED_RUN: planted}
+
+
+def test_a_lost_claim_over_a_foreign_key_finalizes_without_deleting_it(harness):
+    """Call 3 is the claim. Its answer is lost, so ownership is undecided here.
+
+    The finalizer must still look, because the claim may have executed. The
+    engine-side proof -- this invocation's nonce, not the key's name -- is what
+    refuses the delete, and the record reports the key as residue.
+    """
+    h = harness(lose={3})
+    planted = _plant_foreign_run_key(h)
+    record = h.run(new_run_id=_fixed_run_id).record
+    assert len(h.scripts("bag_release")) == 1
+    bag = next(item for item in record.releases if item.kind == "bag")
+    assert bag.outcome == "not_attempted"
+    assert "bag:run_key_not_owned" in record.engine_residue
+    assert "bag:sentinel:release_unverified" in record.engine_residue
+    assert _engine_bag(h) == {FIXED_RUN: planted}
+
+
+def test_an_uncertain_first_contender_never_queues_the_second(harness):
+    """Call 5 is contender A. An unknown dispatch admits no second contender."""
+    h = harness(not_submitted={5})
+    record = h.run().record
+    assert len(h.scripts('c:"A"')) == 1
+    assert h.scripts('c:"B"') == []
+    atom = next(item for item in record.measurements if item.experiment_id == "ATOM-1")
+    assert atom.conclusion is MeasurementConclusion.INCONCLUSIVE
+    assert "contender_acceptance_unknown" in atom.causes
+    assert atom.outcome_unknown is True
 
 
 def test_observer_residue_keeps_the_state_unknown_despite_an_empty_workspace(harness):
@@ -519,27 +627,16 @@ def test_a_foreign_device_appearing_mid_run_is_neither_removed_nor_ignored(harne
 # -- Q1 below its stage gate -------------------------------------------------------
 
 
-def _q1_below_the_gate(h: _Harness, max_operations: int = 60):
-    """Drive the Q1 executor directly: the stage itself is refused as infeasible.
+def _q1_executor(h: _Harness, max_operations: int = 60, **overrides):
+    """Drive the Q1 executor directly, with an explicit test ceiling.
 
-    The ledger is deliberately built with a test ceiling. The production stage
-    ceiling stays 30 and the stage refuses before contact; this exercises the
-    executable definition that a reviewed budget decision would unlock.
+    The stage is admitted at its real gate now; this helper exists to put the
+    ledger at a chosen ceiling, so a test can stand exactly on the budget
+    boundary instead of inside the production slack.
     """
-    boundaries = h.boundaries()
+    boundaries = h.boundaries(**overrides)
     devices, links = fixture_plans(Q1)
-    request = replace(
-        _request(),
-        stage="Q1",
-        targets=Q1.fixture_names,
-        authorization=replace(
-            _request().authorization,
-            stage="Q1",
-            targets=Q1.fixture_names,
-            max_operations=30,
-            max_seconds=600,
-        ),
-    )
+    request = _q1_request()
     record = coordinator._initial_record(
         request,
         Q1,
@@ -580,14 +677,27 @@ def _q1_below_the_gate(h: _Harness, max_operations: int = 60):
     return record, ledger
 
 
-def test_q1_executor_measures_all_three_and_spends_exactly_its_planned_minimum(harness):
-    """The executable Q1 definition costs 45 operations, which is why it refuses."""
+def test_q1_measures_all_three_and_stays_inside_its_planned_worst_case(harness):
+    """The nominal trace is cheaper than the plan, because the plan is the worst case.
+
+    M-HTTPS-2 runs and concludes INCONCLUSIVE against a stub that behaves
+    exactly as the model predicts: the reader has no observation that
+    establishes a refusal, so the negative half of the model stays open however
+    well the engine behaves. That is the measurement, not a defect.
+    """
     h = harness()
-    record, ledger = _q1_below_the_gate(h)
+    record, ledger = _q1_executor(h)
     statuses = _status(record)
-    for identifier in ("M-HTTPS-1", "M-HTTPS-2", "M-DNS-3"):
-        assert statuses[identifier] == ("ran", "supported_in_sample")
-    assert ledger.used == Q1.planned_minimum_operations == 45
+    assert statuses["M-HTTPS-1"] == ("ran", "supported_in_sample")
+    assert statuses["M-DNS-3"] == ("ran", "supported_in_sample")
+    assert statuses["M-HTTPS-2"] == ("ran", "inconclusive")
+    listener = next(
+        item for item in record.measurements if item.experiment_id == "M-HTTPS-2"
+    )
+    assert listener.facts["positive_https_only"]["conclusion"] == "supported_in_sample"
+    assert json.dumps(listener.facts).count("negative_observed") == 0
+    assert ledger.used == 45 < Q1.planned_minimum_operations == 46
+    assert ledger.refused_calls == 0
     clients = [item for item in record.releases if item.kind == "client"]
     assert [item.outcome for item in clients] == ["released"] * 3
     snapshot = h.engine.snapshot()
@@ -595,10 +705,83 @@ def test_q1_executor_measures_all_three_and_spends_exactly_its_planned_minimum(h
     assert record.restoration_proven is True and record.dirty_state is DirtyState.CLEAN
 
 
+@pytest.mark.parametrize(
+    ("label", "transform"),
+    [
+        ("empty", lambda rows: []),
+        ("short", lambda rows: rows[:-1]),
+        (
+            "unknown",
+            lambda rows: [item.model_copy(update={"applied": False}) for item in rows],
+        ),
+    ],
+)
+def test_an_unaccepted_e5_batch_dispatches_no_e6_enable(harness, label, transform):
+    """E5 is classified before the E6 batch is built, so a refusal prevents it."""
+    h = harness()
+    base = h.boundaries()
+
+    class _Truncated(_Wrapped):
+        def apply_actions(self, actions):
+            return transform(self.inner.apply_actions(actions))
+
+    record, _ledger = _q1_executor(
+        h,
+        configuration_runtime=lambda bound: _Truncated(
+            base.configuration_runtime(bound)
+        ),
+    )
+    assert record.primary_failure.startswith("outcome_unknown:e5_endpoints")
+    assert h.scripts("setEnable(true)") == []
+    assert h.scripts("createClient") == []
+    limitation = next(
+        item for item in record.limitations if item.startswith("e5_endpoint_dispatch:")
+    )
+    assert limitation != "e5_endpoint_dispatch:accepted"
+    if label == "short":
+        assert "incomplete_result_set:2_of_3" in limitation
+    assert h.engine.snapshot()["devices"] == []
+
+
+def test_an_unread_listener_toggle_admits_no_fetch_and_no_second_toggle(harness):
+    """The toggle's effect may have happened; nobody read it back, so it stops there."""
+    h = harness()
+    base = h.boundaries()
+
+    class _LostToggle(_Wrapped):
+        def prepare_https_only(self, server, marker):
+            # The effect still reaches the engine; only the answer is lost.
+            self.inner.prepare_https_only(server, marker)
+            return ProbeReading(
+                "https_only",
+                DispatchFact.ACCEPTED,
+                ResultFact.NOT_OBSERVED,
+                False,
+                cause="stub_response_lost",
+            )
+
+    record, _ledger = _q1_executor(
+        h,
+        probes=lambda bound, run_id, nonce: _LostToggle(
+            base.probes(bound, run_id, nonce)
+        ),
+    )
+    listener = next(
+        item for item in record.measurements if item.experiment_id == "M-HTTPS-2"
+    )
+    assert listener.conclusion is MeasurementConclusion.INCONCLUSIVE
+    assert listener.outcome_unknown is True
+    assert "setup_unobserved:positive_setup" in listener.causes
+    assert h.scripts("createClient") == []
+    assert h.scripts("setHttpsEnable(false)") == []
+    assert record.primary_failure == "outcome_unknown:M-HTTPS-2"
+    assert h.engine.snapshot()["devices"] == []
+
+
 def test_q1_https_success_with_https_disabled_stops_the_stage(harness):
     """The declared contradiction: M-DNS-3 does not run afterwards."""
     h = harness({"serve_https_when_disabled": True})
-    record, _ledger = _q1_below_the_gate(h)
+    record, _ledger = _q1_executor(h)
     assert _status(record)["M-HTTPS-2"] == ("ran", "contradicted")
     dns = next(item for item in record.measurements if item.experiment_id == "M-DNS-3")
     assert dns.reason == "stopped:contradiction:M-HTTPS-2"
@@ -608,7 +791,7 @@ def test_q1_https_success_with_https_disabled_stops_the_stage(harness):
 def test_q1_timeouts_are_never_negative_controls(harness):
     """A refused fetch that leaves the page unchanged is inconclusive."""
     h = harness({"fetch_failure": "unchanged"})
-    record, _ledger = _q1_below_the_gate(h)
+    record, _ledger = _q1_executor(h)
     https2 = next(
         item for item in record.measurements if item.experiment_id == "M-HTTPS-2"
     )
@@ -618,24 +801,33 @@ def test_q1_timeouts_are_never_negative_controls(harness):
     assert json.dumps(controls).count("negative_observed") == 0
 
 
-def test_q1_is_refused_at_the_real_stage_gate(harness):
-    """Through the coordinator, Q1 never reaches a channel."""
+def test_q1_passes_the_real_stage_gate_and_finalizes_inside_its_ceiling(harness):
+    """Through the whole coordinator, at the reviewed ceiling, with cleanup proven."""
+    h = harness()
+    result = h.run(_q1_request(), capabilities=frozenset(Q1.experimental_capabilities))
+    record = result.record
+    assert result.refusals == []
+    assert h.opened == ["file"]
+    assert record.budget.max_operations == 60
+    assert record.budget.planned_minimum_operations == 46
+    assert record.budget.used_operations <= Q1.planned_minimum_operations
+    assert record.budget.refused_calls == 0
+    assert record.restoration_proven is True
+    snapshot = h.engine.snapshot()
+    assert snapshot["devices"] == [] and snapshot["live_clients"] == 0
+    assert snapshot["run_bags"] == {}
+
+
+def test_a_budget_below_the_worst_case_refuses_before_any_channel(harness):
+    """An authorization that does not reach the planned worst case never contacts."""
     h = harness()
     request = replace(
-        _request(),
-        stage="Q1",
-        targets=Q1.fixture_names,
-        authorization=replace(
-            _request().authorization,
-            stage="Q1",
-            targets=Q1.fixture_names,
-            max_operations=30,
-            max_seconds=600,
-        ),
+        _q1_request(),
+        authorization=replace(_q1_request().authorization, max_operations=45),
     )
     result = h.run(request, capabilities=frozenset(Q1.experimental_capabilities))
     assert [(item.kind, item.subject) for item in result.refusals] == [
-        (RefusalKind.INFEASIBLE, RefusalSubject.BUDGET)
+        (RefusalKind.MISMATCH, RefusalSubject.BUDGET)
     ]
     assert h.opened == [] and h.transport.calls == []
 
@@ -664,18 +856,19 @@ def test_a_secondary_cleanup_failure_never_replaces_the_primary(harness):
     assert h.durable().primary_failure == record.primary_failure
 
 
-def test_q1_executor_at_exactly_its_planned_minimum_completes(harness):
-    """With a ceiling equal to 45 the executable definition fits exactly."""
+def test_q1_executor_at_exactly_its_planned_worst_case_completes(harness):
+    """A ceiling equal to the planned 46 admits the stage and is never exceeded."""
     h = harness()
-    record, ledger = _q1_below_the_gate(h, max_operations=45)
-    assert ledger.used == 45 and ledger.refused_calls == 0
+    record, ledger = _q1_executor(h, max_operations=46)
+    assert ledger.used <= 46 and ledger.refused_calls == 0
     assert record.primary_failure == ""
+    assert record.restoration_proven is True
 
 
-def test_q1_executor_one_below_its_minimum_creates_nothing(harness):
+def test_q1_executor_one_below_its_worst_case_creates_nothing(harness):
     """The pre-check refuses the stage work; finalization still reads twice."""
     h = harness()
-    record, ledger = _q1_below_the_gate(h, max_operations=44)
+    record, ledger = _q1_executor(h, max_operations=45)
     assert record.primary_failure == "budget:Q1"
     assert h.scripts("lwAddDevice") == []
     assert [item.purpose for item in ledger.entries][-2:] == [
@@ -684,26 +877,25 @@ def test_q1_executor_one_below_its_minimum_creates_nothing(harness):
     ]
 
 
-def test_a_lost_inspection_spends_slack_and_stops_before_a_release_is_refused(
-    harness,
-):
-    """The positive fetch polls twice, so M-DNS-3 no longer fits the budget.
+def test_a_lost_inspection_is_exactly_what_the_worst_case_budget_pays_for(harness):
+    """Call 24 is the positive fetch's first inspection; losing it costs a fourth.
 
-    Call 24 is the positive fetch's first inspection. Losing it costs one more
-    inspection. The listener measurement still completes, and the budget stop
-    lands before M-DNS-3 rather than inside a fetch, so no owned client
-    release is ever the call that the budget refuses.
+    That fetch used to be budgeted at three operations, so this trace exceeded
+    the stage total and the run stopped before M-DNS-3 -- on the luckiest
+    trace, the plan simply did not cover it. Budgeted at its worst case the
+    same trace fits exactly, nothing is refused, every owned client is still
+    released, and the finalization reserve is untouched.
     """
     h = harness(lose={24})
-    record, ledger = _q1_below_the_gate(h, max_operations=45)
-    assert record.primary_failure == "budget:DNS3"
+    record, ledger = _q1_executor(h, max_operations=46)
+    assert record.primary_failure == ""
+    assert ledger.used == 46 == Q1.planned_minimum_operations
+    assert ledger.refused_calls == 0
     statuses = _status(record)
-    assert statuses["M-HTTPS-2"] == ("ran", "supported_in_sample")
-    dns = next(item for item in record.measurements if item.experiment_id == "M-DNS-3")
-    assert dns.reason == "budget_insufficient_for:DNS3"
+    assert statuses["M-DNS-3"] == ("ran", "supported_in_sample")
     clients = [item for item in record.releases if item.kind == "client"]
     assert [item.outcome for item in clients] == ["released"] * 3
-    assert ledger.refused_calls == 0 and ledger.used == 45
+    assert record.restoration_proven is True
     snapshot = h.engine.snapshot()
     assert snapshot["live_clients"] == 0 and snapshot["devices"] == []
 

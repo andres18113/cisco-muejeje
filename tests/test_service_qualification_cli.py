@@ -157,13 +157,39 @@ def test_declarative_and_unknown_stages_refuse_before_contact(
     assert sim.opened == []
 
 
-def test_q1_is_refused_as_infeasible_with_its_numbers(simulation, capsys):
-    """The ceiling is not raised; the reason carries the planned minimum."""
+def test_q1_is_admitted_at_its_reviewed_ceiling_and_finalizes(simulation, capsys):
+    """Q1's 60/600 design ceiling covers its planned worst case of 46 operations.
+
+    The stage used to refuse before contact because its executable definition
+    exceeded a 30-operation ceiling. It now runs end to end through the
+    operator entry point, spends no more than the planned worst case, refuses
+    no call, and leaves the workspace and the engine bag empty.
+    """
     sim = simulation()
     code, summary = sim.main(request_args("Q1") + authorization_args("Q1"), capsys)
+    assert code == 0
+    assert summary["refusals"] == []
+    assert sim.opened == ["file"]
+    assert summary["operations_used"] <= 46
+    (record,) = sim.records()
+    assert record.budget.max_operations == 60
+    assert record.budget.planned_minimum_operations == 46
+    assert record.budget.refused_calls == 0
+    assert record.restoration_proven is True
+    snapshot = sim.engine.snapshot()
+    assert snapshot["devices"] == [] and snapshot["run_bags"] == {}
+
+
+def test_a_budget_below_the_planned_worst_case_never_reaches_a_channel(
+    simulation, capsys
+):
+    """An authorization under the stage ceiling is a mismatch, refused before contact."""
+    sim = simulation()
+    code, summary = sim.main(
+        request_args("Q1") + authorization_args("Q1", operations="45"), capsys
+    )
     assert code == 2
-    assert _subjects(summary) == {("infeasible", "budget")}
-    assert "45" in summary["refusals"][0]["detail"]
+    assert _subjects(summary) == {("mismatch", "budget")}
     assert sim.opened == []
 
 

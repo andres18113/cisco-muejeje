@@ -11,6 +11,14 @@ Scope of what is written: all run state lives under the run-namespaced bag
 (`__mcpE6Claims`, `__mcpE6Inert`, `__mcpE6HttpClients`), and the Q1 probes
 touch only the owned fixture devices they are handed.
 
+Ownership of that bag is a fact established inside the engine, never inferred
+from the run key's name. The claim writes only when the key is absent, and it
+stamps `owner` with this invocation's nonce; every later write under the key,
+and the release of the key itself, proves `owner` in the same evaluation that
+would mutate. A pre-existing key is therefore rejected without writing
+anything, so the refusal that follows has nothing to undo, and a lost claim
+acknowledgement can never make the finalizer adopt or delete a foreign key.
+
 Vendor surface, checked against Cisco's local reference
 (`help/default/IpcAPI`, labelled 8.1.0) unless marked otherwise:
 
@@ -72,9 +80,11 @@ _SPECS: dict[str, dict[str, tuple[type, ...]]] = {
         "receiver_is_global": _BOOL,
         "run_bag_preexisting": _BOOL,
         "written": _BOOL,
+        "owned": _BOOL,
     },
     "eng_read": {
         "receiver_is_global": _BOOL,
+        "owned": _BOOL,
         "found": _BOOL,
         "nonce_matches": _BOOL,
         "released": _BOOL,
@@ -127,8 +137,10 @@ _SPECS: dict[str, dict[str, tuple[type, ...]]] = {
     },
     "bag_release": {
         "had_run_bag": _BOOL,
+        "owned": _BOOL,
         "keys": _LIST,
         "observers_marked_inert": _INT,
+        "deleted": _BOOL,
         "present_after": _BOOL,
     },
     "page_write": {
@@ -139,11 +151,12 @@ _SPECS: dict[str, dict[str, tuple[type, ...]]] = {
         "https_write_error": _STR,
     },
     "page_read": {
-        "hh": _BOOL,
-        "hs": _BOOL,
-        "sh": _BOOL,
-        "ss": _BOOL,
+        "hh": _OPTIONAL_BOOL,
+        "hs": _OPTIONAL_BOOL,
+        "sh": _OPTIONAL_BOOL,
+        "ss": _OPTIONAL_BOOL,
         "read_errors": _INT,
+        "errors": _DICT,
     },
     "https_only": {
         "error": _STR,
@@ -262,11 +275,19 @@ class PacketTracerQualificationProbes:
             step, self._dispatch_and_wait(_wrap(step, script), self._timeout)
         )
 
-    def _run_bag(self) -> str:
-        run = self._run
+    def _owned_bag(self) -> str:
+        """Bind `__r` to this run's bag and `__own` to proven ownership.
+
+        It creates nothing. The run key's name proves nothing either: another
+        invocation can hold it, so ownership is the `owner` field the claim
+        wrote, compared with this invocation's nonce in the same evaluation
+        that is about to write or delete.
+        """
+        run, nonce = self._run, self._nonce
         return (
-            "var __q=this.__mcpE6Q=this.__mcpE6Q||{};"
-            f"var __r=__q[{run}]=__q[{run}]||{{}};"
+            "var __q=this.__mcpE6Q;var __r=(__q&&Object.prototype"
+            f".hasOwnProperty.call(__q,{run}))?__q[{run}]:null;"
+            f"var __own=!!(__r&&__r.owner==={nonce});"
         )
 
     def _observer_bag(self) -> str:
@@ -302,30 +323,46 @@ class PacketTracerQualificationProbes:
     # -- M-ENG-1 -----------------------------------------------------------
 
     def write_bag_sentinel(self) -> ProbeReading:
-        """Write the run nonce under the evaluation receiver."""
-        run = self._run
+        """Claim the run key, or reject a pre-existing one without writing.
+
+        The existence check and the write are one decision in one evaluation.
+        When the key already exists nothing at all is written -- not the
+        sentinel, not the container -- so the collision the reading reports is
+        a refusal with nothing to undo. A successful claim stamps `owner` with
+        this invocation's nonce, which is what every later write and the
+        release prove.
+        """
+        run, nonce = self._run, self._nonce
         return self._read(
             "eng_write",
-            "var __g=(function(){return this;})();"
-            "var __q=this.__mcpE6Q=this.__mcpE6Q||{};"
-            f"var __pre=__has(__q,{run});var __r=__q[{run}]=__q[{run}]||{{}};"
-            f"__r.sentinel={{nonce:{self._nonce}}};"
+            "var __g=(function(){return this;})();var __q=this.__mcpE6Q;"
+            f"var __pre=!!(__q&&__has(__q,{run}));var __w=false,__own=false;"
+            "if(!__pre){__q=this.__mcpE6Q=__q||{};"
+            f"var __r=__q[{run}]={{owner:{nonce}}};"
+            f"__r.sentinel={{nonce:{nonce}}};__w=true;__own=true;}}"
             "reportResult(JSON.stringify({step:'eng_write',"
-            "receiver_is_global:this===__g,run_bag_preexisting:__pre,written:true}));",
+            "receiver_is_global:this===__g,run_bag_preexisting:__pre,"
+            "written:__w,owned:__own}));",
         )
 
     def read_and_release_bag_sentinel(self) -> ProbeReading:
-        """Read the nonce in a separate evaluation; release it only if it matches."""
-        run = self._run
+        """Read the nonce in a separate evaluation; release only what this run owns.
+
+        A value under the run key is reported whoever wrote it, because a
+        foreign one is exactly what the rules need to see. Only an owned,
+        nonce-matching sentinel is deleted.
+        """
+        nonce = self._nonce
         return self._read(
             "eng_read",
-            "var __g=(function(){return this;})();var __q=this.__mcpE6Q;"
-            f"var __r=__q&&__q[{run}];var __s=__r&&__r.sentinel;"
-            f"var __m=!!(__s&&__s.nonce==={self._nonce});var __rel=false;"
-            "if(__m){delete __r.sentinel;__rel=!__has(__r,'sentinel');}"
+            "var __g=(function(){return this;})();"
+            + self._owned_bag()
+            + "var __s=__r&&__r.sentinel;"
+            f"var __m=!!(__s&&__s.nonce==={nonce});var __rel=false;"
+            "if(__own&&__m){delete __r.sentinel;__rel=!__has(__r,'sentinel');}"
             "reportResult(JSON.stringify({step:'eng_read',"
-            "receiver_is_global:this===__g,found:!!__s,nonce_matches:__m,"
-            "released:__rel}));",
+            "receiver_is_global:this===__g,owned:__own,found:!!__s,"
+            "nonce_matches:__m,released:__rel}));",
         )
 
     # -- ATOM-1 ------------------------------------------------------------
@@ -335,14 +372,14 @@ class PacketTracerQualificationProbes:
         name = json.dumps(contender)
         script = (
             "try{"
-            + self._run_bag()
-            + "var __a=__r.atom=__r.atom||{log:[],claim:'',seq:0};"
+            + self._owned_bag()
+            + "if(__own){var __a=__r.atom=__r.atom||{log:[],claim:'',seq:0};"
             f"__a.log.push({{c:{name},s:'check',n:++__a.seq}});"
             "var __free=(__a.claim==='');var __w=0;"
             f"for(var __i=0;__i<{ATOMICITY_SPIN};__i++){{__w=(__w+__i)%9973;}}"
             f"__a.spin=__w;if(__free){{__a.claim={name};}}"
             f"__a.log.push({{c:{name},s:(__free?'claimed':'refused'),n:++__a.seq}});"
-            "}catch(__e){}"
+            "}}catch(__e){}"
         )
         accepted = bool(self._send(script))
         return QueueReceipt(
@@ -382,7 +419,11 @@ class PacketTracerQualificationProbes:
             f"event:{event},registered1:false,"
             "register1_error:'source_port_absent',trigger_x:0,trigger_error:'',"
             "cb1_calls:0}));}"
-            "else{" + self._run_bag() + "var __B=__r.unreg={seq:0};"
+            "else{" + self._owned_bag() + "if(!__own){reportResult("
+            f"JSON.stringify({{found:true,event:{event},registered1:false,"
+            "register1_error:'run_bag_not_owned',trigger_x:0,"
+            "trigger_error:'',cb1_calls:0}));}else{"
+            "var __B=__r.unreg={seq:0};"
             "__B.mk=function(e){return function(src,args){e.calls++;"
             "try{if(!e.ident&&src){e.ident={className:String(src.className||''),"
             "uuid:String(src.objectUuid||'')};}}catch(__x){}"
@@ -398,7 +439,7 @@ class PacketTracerQualificationProbes:
             + self._trigger(TRIGGER_ADDRESSES[0], "__ok")
             + f"reportResult(JSON.stringify({{found:true,event:{event},"
             "registered1:__ok,register1_error:__err,trigger_x:__x0,"
-            "trigger_error:__te,cb1_calls:__e1.calls}));}",
+            "trigger_error:__te,cb1_calls:__e1.calls}));}}",
         )
 
     def read_observer_and_register_zero_event(self, device: str) -> ProbeReading:
@@ -481,24 +522,27 @@ class PacketTracerQualificationProbes:
         )
 
     def release_run_bag(self) -> ProbeReading:
-        """Mark remaining observers inert and delete the run bag (finalizer).
+        """Release this run's own key, and never another invocation's (finalizer).
 
-        Only this run's key is touched. Marking an observer inert bounds what
-        it records; it does not detach it, so the coordinator keeps reporting
-        every observer it could not prove released.
+        Ownership is proven in the same evaluation that would delete, so a
+        lost claim acknowledgement cannot make this adopt a foreign key: an
+        unowned key is read and reported, never marked and never deleted.
+        Marking an observer inert bounds what it records; it does not detach
+        it, so the coordinator keeps reporting every observer it could not
+        prove released.
         """
         run = self._run
         return self._read(
             "bag_release",
-            f"var __q=this.__mcpE6Q;var __had=!!(__q&&__has(__q,{run}));"
-            f"var __keys=[],__inert=0;if(__had){{var __r=__q[{run}];"
+            self._owned_bag() + f"var __had=!!(__q&&__has(__q,{run}));"
+            "var __keys=[],__inert=0,__del=false;if(__had&&__own){"
             "for(var __k in __r){if(__keys.length<16){__keys.push(String(__k));}}"
             "var __B=__r.unreg;if(__B){var __n=['cb1','cb2','cb3'];"
             "for(var __i=0;__i<3;__i++){if(__B[__n[__i]]){"
             "__B[__n[__i]].released=true;__inert++;}}}"
-            f"delete __q[{run}];}}"
-            "reportResult(JSON.stringify({had_run_bag:__had,keys:__keys,"
-            "observers_marked_inert:__inert,"
+            f"delete __q[{run}];__del=!__has(__q,{run});}}"
+            "reportResult(JSON.stringify({had_run_bag:__had,owned:__own,"
+            "keys:__keys,observers_marked_inert:__inert,deleted:__del,"
             f"present_after:!!(__q&&__has(__q,{run}))}}));",
         )
 
@@ -545,7 +589,13 @@ class PacketTracerQualificationProbes:
         )
 
     def cross_read_page_markers(self, server: str) -> ProbeReading:
-        """Read every handle/page combination in a separate evaluation."""
+        """Read every handle/page combination in a separate evaluation.
+
+        A getter that throws yields `null` for that cell and keeps its cause:
+        a cell nobody could read is unobserved, not an observed absence. It
+        used to report `false`, which made two failed cross reads look exactly
+        like two separate page tables.
+        """
         names = self.page_marker_names()
         page_h, page_s = json.dumps(names["http_page"]), json.dumps(names["https_page"])
         mark_h, mark_s = (
@@ -556,12 +606,16 @@ class PacketTracerQualificationProbes:
             "page_read",
             self._server(server)
             + "if(!__h||!__s){reportResult(JSON.stringify({step:'page_read',"
-            "probe_error:'process_absent'}));}else{var __n=0;"
-            "var __f=function(p,u,m){try{return String(p.getPage(u)).indexOf(m)>=0;}"
-            "catch(__x){__n++;return false;}};"
-            f"var __o={{hh:__f(__h,{page_h},{mark_h}),hs:__f(__h,{page_s},{mark_s}),"
-            f"sh:__f(__s,{page_h},{mark_h}),ss:__f(__s,{page_s},{mark_s})}};"
-            "__o.read_errors=__n;reportResult(JSON.stringify(__o));}",
+            "probe_error:'process_absent'}));}else{var __n=0,__c={};"
+            "var __f=function(k,p,u,m){try{"
+            "return String(p.getPage(u)).indexOf(m)>=0;}"
+            "catch(__x){__n++;__c[k]=__er(__x);return null;}};"
+            f"var __o={{hh:__f('hh',__h,{page_h},{mark_h}),"
+            f"hs:__f('hs',__h,{page_s},{mark_s}),"
+            f"sh:__f('sh',__s,{page_h},{mark_h}),"
+            f"ss:__f('ss',__s,{page_s},{mark_s})}};"
+            "__o.read_errors=__n;__o.errors=__c;"
+            "reportResult(JSON.stringify(__o));}",
         )
 
     @staticmethod

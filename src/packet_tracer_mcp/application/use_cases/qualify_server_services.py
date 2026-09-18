@@ -17,7 +17,9 @@ The order of the work is the contract:
    ceiling. The executable build and the empty workspace are read before any
    effect.
 3. **Effects.** Fixtures and experiments run under the ledger reserve and the
-   effect gate. New experiments stop at the first contradiction, at an
+   effect gate. The outcome of the preceding effect is evaluated before the
+   next one is admitted, so no setup whose result nobody read authorizes a
+   further mutation. New experiments stop at the first contradiction, at an
    outcome-unknown effect, when the budget runs out, or when the record cannot
    advance.
 4. **Finalization** always runs once any effect was admitted. It releases
@@ -105,6 +107,7 @@ from ...domain.enterprise.services.service_qualification_evidence import (
     assess_https_listener,
     assess_observer_release,
     assess_page_tables,
+    listener_toggle_established,
 )
 from ...domain.models.plans import DevicePlan, LinkPlan
 from ..ports.service_qualification import (
@@ -1202,13 +1205,16 @@ def _run_q0(execution: _Execution) -> None:
     ids = ("M-ENG-1",)
     if execution.begin(ids, "ENG"):
         with execution.procedure(ids):
+            # The claim may have executed whatever the channel reported back,
+            # so the finalizer has to look. Only a reported collision proves
+            # that nothing was written, and then there is nothing to look for.
             execution.bag_touched = True
-            execution.bag_unreleased.add("sentinel")
             write = probes.write_bag_sentinel()
+            read: ProbeReading | None = None
             if write.observed and write.payload["run_bag_preexisting"]:
                 execution.bag_collision = True
-                read: ProbeReading | None = None
             else:
+                execution.bag_unreleased.add("sentinel")
                 read = probes.read_and_release_bag_sentinel()
                 if read.observed and read.payload["released"]:
                     execution.bag_unreleased.discard("sentinel")
@@ -1221,10 +1227,12 @@ def _run_q0(execution: _Execution) -> None:
     if execution.begin(ids, "ATOM"):
         with execution.procedure(ids):
             execution.bag_unreleased.add("atom")
-            receipts = [
-                probes.queue_atomicity_contender("A"),
-                probes.queue_atomicity_contender("B"),
-            ]
+            # The second contender is queued only once the first receipt has
+            # been interpreted. A dispatch whose acceptance is unknown is not
+            # permission to add another contender to the same claim.
+            receipts = [probes.queue_atomicity_contender("A")]
+            if receipts[0].accepted:
+                receipts.append(probes.queue_atomicity_contender("B"))
             execution.settle()
             collect = probes.collect_atomicity()
             if collect.observed and collect.payload["released"]:
@@ -1431,7 +1439,26 @@ def _configure_q1(execution: _Execution) -> bool:
             e5 = execution.run.boundaries.configuration_runtime(
                 execution.bound
             ).apply_actions(endpoints)
-        execution.e5_accepted = bool(e5) and all(item.applied for item in e5)
+    except OperationRefused as exc:
+        execution.stop(f"operation_refused:{exc.reason}")
+        return False
+    # E5 is classified before the E6 batch is built. The enables used to be
+    # dispatched first and the flag read afterwards, so a refusal could not
+    # prevent the effects it was refusing.
+    e5_error = _incomplete_batch(
+        [item.id for item in endpoints], [item.action_id for item in e5]
+    )
+    execution.e5_accepted = (
+        bool(endpoints) and not e5_error and all(item.applied for item in e5)
+    )
+    execution.record.limitations.append(
+        "e5_endpoint_dispatch:"
+        + ("accepted" if execution.e5_accepted else e5_error or "unknown")
+    )
+    if not execution.e5_accepted:
+        execution.stop(f"outcome_unknown:e5_endpoints{e5_error and ':' + e5_error}")
+        return False
+    try:
         with ledger.purpose_of("apply:e6_enable_http_https"):
             e6 = execution.run.boundaries.service_runtime(
                 execution.bound
@@ -1439,20 +1466,29 @@ def _configure_q1(execution: _Execution) -> bool:
     except OperationRefused as exc:
         execution.stop(f"operation_refused:{exc.reason}")
         return False
-    execution.record.limitations.append(
-        "e5_endpoint_dispatch:" + ("accepted" if execution.e5_accepted else "unknown")
+    e6_error = _incomplete_batch(
+        [item.id for item in services], [item.action_id for item in e6]
     )
-    if not execution.e5_accepted:
-        execution.stop("outcome_unknown:e5_endpoints")
-        return False
-    enabled = bool(e6) and all(
+    enabled = not e6_error and all(
         item.applied and item.postcondition is PostconditionFact.SATISFIED
         for item in e6
     )
     if not enabled:
-        execution.stop("fixture_services_not_enabled")
+        execution.stop(f"fixture_services_not_enabled{e6_error and ':' + e6_error}")
         return False
     return execution.run.transition("fixtures:configured")
+
+
+def _incomplete_batch(requested: Sequence[str], reported: Sequence[str]) -> str:
+    """Name why a runtime batch cannot be read as complete, or return `""`.
+
+    A short result set is an unknown outcome, not a success for the rows that
+    did come back: `all()` over two rows says nothing about a third action
+    nobody reported on.
+    """
+    if len(reported) != len(requested) or sorted(reported) != sorted(requested):
+        return f"incomplete_result_set:{len(reported)}_of_{len(requested)}"
+    return ""
 
 
 def _fetch(
@@ -1504,13 +1540,25 @@ def _fetch(
         execution.record.engine_residue.append(
             f"client:{label}:{released or 'unknown'}"
         )
+        # An owned client whose release nobody observed is an effect with an
+        # unknown outcome. It authorizes no further experimental mutation.
+        execution.stop(f"outcome_unknown:fetch_client:{label}")
     return row
 
 
 def _https_listener(execution: _Execution) -> Assessment:
+    """Run the listener procedure, admitting each effect only after the last one.
+
+    Every fetch creates an owned client on a fixture and every toggle changes a
+    listener, so each is an effect. A toggle whose read-back nobody obtained
+    leaves the listener in an unknown state, and an experiment that starts from
+    an unknown state measures nothing while adding more unknown state.
+    """
     probes = execution.probes
     marker = f"MCPQ-{execution.nonce[:16]}-INDEX"
     positive_setup = probes.prepare_https_only(Q1_SERVER, marker)
+    if not listener_toggle_established(positive_setup, http=False, https=True):
+        return assess_https_listener(positive_setup, None, None, None, None)
     positive = _fetch(execution, "https-positive", "https", marker)
     http_negative = _fetch(execution, "http-negative", "http", marker)
     partial = assess_https_listener(positive_setup, positive, http_negative, None, None)
@@ -1523,7 +1571,9 @@ def _https_listener(execution: _Execution) -> Assessment:
         else:
             execution.stop("budget:https_negative")
     https_negative = (
-        _fetch(execution, "https-negative", "https", marker) if https_setup else None
+        _fetch(execution, "https-negative", "https", marker)
+        if listener_toggle_established(https_setup, http=False, https=False)
+        else None
     )
     return assess_https_listener(
         positive_setup, positive, http_negative, https_setup, https_negative
@@ -1611,10 +1661,16 @@ def _finalize(execution: _Execution) -> None:
 
 
 def _release_engine_state(execution: _Execution) -> None:
-    """Delete the run's own bag once; never touch a key it does not own."""
+    """Delete the run's own bag once; never touch a key it cannot prove it owns.
+
+    Two gates stand in front of the delete and they are not the same one. Here,
+    a reported collision means the claim wrote nothing, so there is nothing to
+    release and nothing is dispatched. Inside the engine, the release proves
+    this invocation's nonce in the evaluation that would delete, so a claim
+    whose acknowledgement was lost still cannot make this adopt a key that
+    belongs to someone else.
+    """
     record = execution.record
-    if not execution.bag_touched:
-        return
     if execution.bag_collision:
         record.engine_residue.append("bag:run_key_not_exclusively_owned")
         record.releases.append(
@@ -1622,9 +1678,11 @@ def _release_engine_state(execution: _Execution) -> None:
                 resource="bag:run",
                 kind="bag",
                 outcome="not_attempted",
-                detail="run key collision; nothing under it is deleted",
+                detail="run key collision; nothing was written and nothing is deleted",
             )
         )
+        return
+    if not execution.bag_touched:
         return
     # Even when every step released its own entry, the run key itself is
     # still present in the engine, so the finalizer always removes it.
@@ -1639,29 +1697,9 @@ def _release_engine_state(execution: _Execution) -> None:
             f"release:run_bag:exception:{type(exc).__name__}"
         )
         reading = None
-    if (
-        reading is not None
-        and reading.observed
-        and not reading.payload["present_after"]
-    ):
-        record.releases.append(
-            ReleaseRecord(
-                resource="bag:run",
-                kind="bag",
-                outcome=(
-                    "released"
-                    if reading.payload["had_run_bag"]
-                    else "absent_at_release"
-                ),
-                detail="keys=" + ",".join(str(k) for k in reading.payload["keys"]),
-            )
-        )
-        pending = execution.bag_unreleased & {"atom"}
-        if pending:
-            # A contender that has not run yet can recreate its entry later.
-            record.engine_residue.append("bag:atom:contender_may_still_run")
-        execution.bag_unreleased.clear()
-        return
+    if reading is not None and reading.observed:
+        if _bag_released(execution, reading):
+            return
     record.releases.append(
         ReleaseRecord(
             resource="bag:run",
@@ -1673,8 +1711,56 @@ def _release_engine_state(execution: _Execution) -> None:
     # The run key itself is residue even when every step released its own
     # entry: nothing observed its deletion.
     record.engine_residue.append("bag:run_key:release_unverified")
+    _unreleased_residue(execution)
+
+
+def _bag_released(execution: _Execution, reading: ProbeReading) -> bool:
+    """Record what one observed release reading settled, or return False."""
+    record = execution.record
+    keys = "keys=" + ",".join(str(item) for item in reading.payload["keys"])
+    if not reading.payload["had_run_bag"]:
+        record.releases.append(
+            ReleaseRecord(
+                resource="bag:run",
+                kind="bag",
+                outcome="absent_at_release",
+                detail=keys,
+            )
+        )
+        execution.bag_unreleased.clear()
+        return True
+    if not reading.payload["owned"]:
+        # A key exists under this run's name that this invocation cannot prove
+        # it wrote. It is reported as residue, never adopted and never deleted.
+        record.releases.append(
+            ReleaseRecord(
+                resource="bag:run",
+                kind="bag",
+                outcome="not_attempted",
+                detail="run key present but not owned by this invocation",
+            )
+        )
+        record.engine_residue.append("bag:run_key_not_owned")
+        _unreleased_residue(execution)
+        return True
+    if reading.payload["deleted"] and not reading.payload["present_after"]:
+        record.releases.append(
+            ReleaseRecord(
+                resource="bag:run", kind="bag", outcome="released", detail=keys
+            )
+        )
+        if execution.bag_unreleased & {"atom"}:
+            # A contender that has not run yet can recreate its entry later.
+            record.engine_residue.append("bag:atom:contender_may_still_run")
+        execution.bag_unreleased.clear()
+        return True
+    return False
+
+
+def _unreleased_residue(execution: _Execution) -> None:
+    """Report every run-bag entry whose release this run could not observe."""
     for name in sorted(execution.bag_unreleased):
-        record.engine_residue.append(f"bag:{name}:release_unverified")
+        execution.record.engine_residue.append(f"bag:{name}:release_unverified")
 
 
 def _dirty_state(

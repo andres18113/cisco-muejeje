@@ -25,6 +25,9 @@ Behaviour switches (`config`) select the engine facts under test:
   `register_throws` and `readdress_throws` (the port setter that triggers
   `ipChanged`);
 - `https_identity` (`distinct`/`same`) and `page_tables` (`separate`/`shared`);
+- `getpage_throws_http` / `getpage_throws_https`: URL substrings whose
+  `getPage` the HTTP or HTTPS handle refuses, so a cross read can fail on one
+  cell without failing the others;
 - `fetch_failure`: `error_page` renders fresh non-marker content for a refused
   fetch; `unchanged` leaves the client page as it was (a timeout);
 - `serve_https_when_disabled` / `serve_http_when_disabled`: contradict the
@@ -62,7 +65,16 @@ const config = Object.assign({
   serve_https_when_disabled: false, serve_http_when_disabled: false,
   unset_dns: '0.0.0.0', reset_claim_between_queued: false, go_returns: true,
   create_throws: false, remove_throws: false, readdress_throws: false,
+  getpage_throws_http: [], getpage_throws_https: [],
 }, JSON.parse(process.argv[2] || '{}'));
+
+const guardPage = (patterns, url) => {
+  for (const pattern of (patterns || [])) {
+    if (String(url).indexOf(pattern) >= 0) {
+      throw new Error('page read refused: ' + pattern);
+    }
+  }
+};
 
 let uuidSeq = 0;
 const newUuid = () => '{stub-' + (++uuidSeq) + '}';
@@ -122,7 +134,10 @@ const httpServer = (dev) => {
       setEnable: (v) => { web.httpEnabled = !!v; },
       isEnabled: () => web.httpEnabled,
       setPageContents: (url, contents) => { web.tables.http[String(url)] = String(contents); },
-      getPage: (url) => web.tables.http[String(url)] || '',
+      getPage: (url) => {
+        guardPage(config.getpage_throws_http, url);
+        return web.tables.http[String(url)] || '';
+      },
     };
     if (config.https_identity === 'same') {
       web.httpApi.setHttpsEnable = (v) => { web.httpsEnabled = !!v; };
@@ -143,7 +158,10 @@ const httpsServer = (dev) => {
       setHttpsEnable: (v) => { web.httpsEnabled = !!v; },
       isHttpsEnabled: () => web.httpsEnabled,
       setPageContents: (url, contents) => { web.tables.https[String(url)] = String(contents); },
-      getPage: (url) => web.tables.https[String(url)] || '',
+      getPage: (url) => {
+        guardPage(config.getpage_throws_https, url);
+        return web.tables.https[String(url)] || '';
+      },
     };
   }
   return web.httpsApi;

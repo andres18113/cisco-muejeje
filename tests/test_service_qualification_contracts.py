@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from datetime import UTC, datetime
+from unittest import mock
 
 import pytest
 
@@ -55,6 +56,7 @@ from packet_tracer_mcp.domain.enterprise.models.service_runtime import (
     RuntimeServiceVerification,
 )
 from packet_tracer_mcp.domain.enterprise.services.service_qualification_evidence import (
+    NO_QUALIFIED_NEGATIVE_OBSERVABLE,
     ProbeReading,
     QueueReceipt,
     assess_atomicity,
@@ -119,9 +121,11 @@ def _pairs(refusals) -> set[tuple[RefusalKind, RefusalSubject]]:
 
 
 def test_hard_ceilings_are_the_plan_values():
-    """Plan 5.8: Q0 20 ops / 5 min and Q1 30 ops / 10 min, never widened."""
+    """Plan 5.8 ceilings, with Q1's reviewed design ceiling of 60 / 10 min."""
     assert STAGE_CEILINGS[QualificationStage.Q0] == (20, 300)
-    assert STAGE_CEILINGS[QualificationStage.Q1] == (30, 600)
+    assert STAGE_CEILINGS[QualificationStage.Q1] == (60, 600)
+    assert STAGE_CEILINGS[QualificationStage.Q2] == (60, 900)
+    assert STAGE_CEILINGS[QualificationStage.Q3] == (60, 1200)
     for stage, definition in STAGE_DEFINITIONS.items():
         assert (
             definition.budget.max_operations,
@@ -138,8 +142,13 @@ def test_q0_fits_its_ceiling_with_the_reserve_counted():
     assert q0.fixture_names == ("__MCP_E6Q_PC1",)
 
 
-def test_q1_is_infeasible_at_its_ceiling_and_says_why():
-    """Q1 needs 45 transport operations; its ceiling of 30 is not raised."""
+def test_q1_fits_its_reviewed_ceiling_on_its_bounded_worst_case():
+    """19 setup + 17 required + 10 reserve = 46 worst-case operations <= 60.
+
+    Every planned figure is its step's worst case, including three production
+    fetches at four operations each. The luckiest trace is cheaper; the stage
+    is admitted on the expensive one, and the reserve is not part of the slack.
+    """
     q1 = STAGE_DEFINITIONS[QualificationStage.Q1]
     assert q1.fixture_names == (
         "__MCP_E6Q_SRV",
@@ -147,10 +156,24 @@ def test_q1_is_infeasible_at_its_ceiling_and_says_why():
         "__MCP_E6Q_PC2",
         "__MCP_E6Q_SW",
     )
-    assert q1.planned_minimum_operations == 45
-    refusals = request_refusals(_request("Q1"))
+    assert q1.experiment("M-HTTPS-2").planned_operations == 14
+    assert (q1.setup_operations, q1.required_experiment_operations) == (19, 17)
+    assert q1.reserve_operations == 10
+    assert q1.planned_minimum_operations == 46
+    assert q1.planned_minimum_operations <= q1.budget.max_operations == 60
+    assert request_refusals(_request("Q1")) == ()
+
+
+def test_a_stage_whose_worst_case_exceeds_its_ceiling_is_refused_before_contact():
+    """The infeasibility gate survives the raised ceiling, with its arithmetic."""
+    q1 = STAGE_DEFINITIONS[QualificationStage.Q1]
+    narrow = replace(q1, budget=replace(q1.budget, max_operations=45))
+    with mock.patch.dict(
+        STAGE_DEFINITIONS, {QualificationStage.Q1: narrow}, clear=False
+    ):
+        refusals = request_refusals(_request("Q1"))
     assert _pairs(refusals) == {(RefusalKind.INFEASIBLE, RefusalSubject.BUDGET)}
-    assert "45" in refusals[0].detail and "30" in refusals[0].detail
+    assert "46" in refusals[0].detail and "45" in refusals[0].detail
 
 
 @pytest.mark.parametrize("stage", ["Q2", "Q3"])
@@ -428,6 +451,7 @@ def test_probe_parser_requires_every_promised_key_with_its_exact_type():
         "receiver_is_global": True,
         "run_bag_preexisting": False,
         "written": True,
+        "owned": True,
     }
     assert parse_probe_reading("eng_write", _outcome(json.dumps(good))).observed
     missing = dict(good)
@@ -486,19 +510,21 @@ def _write(preexisting: bool = False) -> ProbeReading:
         {
             "receiver_is_global": True,
             "run_bag_preexisting": preexisting,
-            "written": True,
+            "written": not preexisting,
+            "owned": not preexisting,
         },
     )
 
 
-def _read(found: bool, matches: bool) -> ProbeReading:
+def _read(found: bool, matches: bool, owned: bool = True) -> ProbeReading:
     return _reading(
         "eng_read",
         {
             "receiver_is_global": True,
+            "owned": owned,
             "found": found,
             "nonce_matches": matches,
-            "released": found and matches,
+            "released": found and matches and owned,
         },
     )
 
@@ -517,6 +543,10 @@ def test_bag_persistence_distinguishes_supported_negative_and_contradicted():
     assert foreign.conclusion is CONTRADICTED and foreign.outcome_unknown
     collision = assess_bag_persistence(_write(True), None, channel="file")
     assert collision.conclusion is CONTRADICTED
+    # The claim proved it wrote nothing, so the outcome is known, not unknown.
+    assert collision.outcome_unknown is False
+    assert collision.facts["run_key_written"] is False
+    assert "nothing was written" in collision.causes[0]
 
 
 def test_bag_persistence_never_reads_a_lost_answer_as_absence():
@@ -737,7 +767,14 @@ def _pages(**cross) -> tuple[ProbeReading, ProbeReading]:
             "https_write_error": "",
         },
     )
-    values = {"hh": True, "hs": False, "sh": False, "ss": True, "read_errors": 0}
+    values = {
+        "hh": True,
+        "hs": False,
+        "sh": False,
+        "ss": True,
+        "read_errors": 0,
+        "errors": {},
+    }
     values.update(cross)
     return write, _reading("page_read", values)
 
@@ -751,6 +788,39 @@ def test_page_tables_are_decided_by_cross_reads_not_reference_equality():
     assert "reference_equality_is_not_page_ownership" in shared.limitations
     assert assess_page_tables(*_pages(hs=True)).conclusion is CONTRADICTED
     assert assess_page_tables(*_pages(ss=False)).conclusion is INCONCLUSIVE
+
+
+def test_an_unreadable_cross_cell_decides_nothing_in_either_direction():
+    """A cell nobody could read is unobserved: not an absence, not an asymmetry."""
+    both = assess_page_tables(
+        *_pages(
+            hs=None,
+            sh=None,
+            read_errors=2,
+            errors={"hs": "page read refused", "sh": "page read refused"},
+        )
+    )
+    assert both.conclusion is INCONCLUSIVE
+    assert "page_table_model" not in both.facts
+    assert "cross_read_unobserved:hs,sh" in both.causes
+    assert "cross_read_failed:hs:page read refused" in both.causes
+    one = assess_page_tables(
+        *_pages(hs=None, sh=True, read_errors=1, errors={"hs": "refused"})
+    )
+    assert one.conclusion is INCONCLUSIVE
+    assert "cross_read_unobserved:hs" in one.causes
+    own = assess_page_tables(*_pages(hh=None, read_errors=1, errors={"hh": "refused"}))
+    assert own.conclusion is INCONCLUSIVE
+
+
+def test_a_cross_read_that_contradicts_its_own_error_count_decides_nothing():
+    """`read_errors` and the unobserved cells must agree, or the reading is unusable."""
+    inflated = assess_page_tables(*_pages(read_errors=2))
+    assert inflated.conclusion is INCONCLUSIVE
+    assert "cross_read_count_contradicts_cells" in inflated.causes
+    silent = assess_page_tables(*_pages(hs=None, read_errors=0))
+    assert silent.conclusion is INCONCLUSIVE
+    assert "cross_read_count_contradicts_cells" in silent.causes
 
 
 def _row(observation: ObservationFact, cause: str = "") -> RuntimeServiceVerification:
@@ -778,8 +848,14 @@ def _toggle(http: bool | None, https: bool | None, error: str = "") -> ProbeRead
     )
 
 
-def test_https_listener_positive_and_both_expected_negatives():
-    """Fresh non-marker content after a proven positive is an observed negative."""
+def test_a_coherent_positive_with_fresh_negatives_still_cannot_support_the_model():
+    """The reader has no refusal observable, so the isolation model stays open.
+
+    Fresh content without the marker proves a marker mismatch. It is not an
+    observation that a disabled listener refused the request, and this reader
+    reports an actual refusal as a deadline, so no run of this shape can
+    establish the negative half of the model.
+    """
     result = assess_https_listener(
         _toggle(False, True),
         _row(ObservationFact.OBSERVED),
@@ -787,7 +863,50 @@ def test_https_listener_positive_and_both_expected_negatives():
         _toggle(False, False),
         _row(ObservationFact.CONTRADICTED),
     )
-    assert result.conclusion is SUPPORTED
+    assert result.conclusion is INCONCLUSIVE
+    assert result.outcome_unknown is False
+    positive = result.facts["positive_https_only"]
+    assert positive["conclusion"] == "supported_in_sample"
+    for key in (
+        "negative_http_mode_http_disabled",
+        "negative_https_mode_https_disabled",
+    ):
+        assert result.facts[key]["conclusion"] == "inconclusive"
+        assert result.facts[key]["fetch"] == "fresh_without_marker"
+    assert NO_QUALIFIED_NEGATIVE_OBSERVABLE in result.limitations
+    assert f"negative_https:{NO_QUALIFIED_NEGATIVE_OBSERVABLE}" in result.causes
+    # The HTTP-mode negative has no HTTP-mode positive; the HTTPS one does.
+    assert "negative_http:no_same_mode_positive_control" in result.causes
+    assert "negative_https:no_same_mode_positive_control" not in result.causes
+    assert (
+        result.facts["negative_http_mode_http_disabled"]["same_mode_positive_control"]
+        is False
+    )
+
+
+def test_wrong_content_on_the_marked_positive_page_contradicts_the_expectation():
+    """A completed read of this run's marked page that returns other content."""
+    result = assess_https_listener(
+        _toggle(False, True),
+        _row(ObservationFact.CONTRADICTED),
+        None,
+        None,
+        None,
+    )
+    assert result.conclusion is CONTRADICTED
+    assert "positive:marked_page_returned_other_content" in result.causes
+
+
+def test_an_unread_listener_toggle_is_an_unknown_outcome_not_a_negative():
+    """A setup that was dispatched and never read back stops the procedure."""
+    lost = _reading("https_only", observed=False)
+    result = assess_https_listener(lost, None, None, None, None)
+    assert result.conclusion is INCONCLUSIVE
+    assert result.outcome_unknown is True
+    assert "setup_unobserved:positive_setup" in result.causes
+    assert result.facts["positive_https_only"]["setup_established"] is False
+    not_dispatched = assess_https_listener(_toggle(False, True), None, None, None, None)
+    assert not_dispatched.outcome_unknown is False
 
 
 def test_https_retrieval_with_https_disabled_contradicts_the_model():
@@ -800,7 +919,7 @@ def test_https_retrieval_with_https_disabled_contradicts_the_model():
         _row(ObservationFact.OBSERVED),
     )
     assert result.conclusion is CONTRADICTED
-    assert result.causes == ["https_mode_fetch_succeeded_with_https_disabled"]
+    assert "negative_https:listener_served_while_read_back_as_disabled" in result.causes
 
 
 def test_timeouts_and_unconfirmed_states_are_never_negatives():
@@ -839,8 +958,8 @@ def test_negatives_without_a_positive_control_have_no_discriminating_power():
         _toggle(False, False),
         _row(ObservationFact.CONTRADICTED),
     )
-    assert result.conclusion is INCONCLUSIVE
-    assert "positive_control_not_established" in result.causes
+    assert result.conclusion is CONTRADICTED
+    assert "positive:marked_page_returned_other_content" in result.causes
 
 
 def _resolvers(value, unset="0.0.0.0") -> ProbeReading:

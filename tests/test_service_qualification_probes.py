@@ -78,6 +78,40 @@ def _probes(engine: NodeEngine, run: str = RUN, nonce: str = "9" * 32):
     return probes, transport
 
 
+def _claim(probes) -> None:
+    """Claim the run key, as M-ENG-1 does before any other Q0 procedure.
+
+    Every Q0 procedure declares M-ENG-1 as its prerequisite, so in a stage the
+    run bag is always owned before a contender or an observer touches it. A
+    test that drives a probe directly has to establish the same fact, because
+    ownership is what the probe now proves before it writes.
+    """
+    write = probes.write_bag_sentinel()
+    assert write.observed
+    assert (write.payload["written"], write.payload["owned"]) == (True, True)
+
+
+def _bag(engine: NodeEngine) -> dict:
+    """Read the whole run-bag container straight out of the stub engine."""
+    raw = engine.evaluate("reportResult(JSON.stringify(this.__mcpE6Q||{}));")
+    return json.loads(raw)
+
+
+def _plant_foreign_run_key(engine: NodeEngine, run: str = RUN) -> dict:
+    """Place a run key this invocation did not write, and return its content."""
+    planted = {
+        "owner": "another-invocations-nonce",
+        "sentinel": {"nonce": "another-invocations-nonce"},
+        "unrelated": ["keep", "me"],
+    }
+    engine.evaluate(
+        "var q=this.__mcpE6Q=this.__mcpE6Q||{};"
+        f"q[{json.dumps(run)}]={json.dumps(planted)};reportResult('planted');"
+    )
+    assert _bag(engine)[run] == planted
+    return planted
+
+
 def _unregister(probes, *, device: str = PC):
     register = probes.register_observer_and_trigger(device)
     evidence = probes.read_observer_and_register_zero_event(device)
@@ -125,12 +159,66 @@ def test_bag_sentinel_persists_on_a_global_receiver_and_is_released(engine_facto
     engine = engine_factory()
     probes, _transport = _probes(engine)
     write = probes.write_bag_sentinel()
-    assert engine.snapshot()["run_bags"] == {RUN: ["sentinel"]}
+    assert (write.payload["written"], write.payload["owned"]) == (True, True)
+    assert engine.snapshot()["run_bags"] == {RUN: ["owner", "sentinel"]}
     read = probes.read_and_release_bag_sentinel()
-    assert engine.snapshot()["run_bags"] == {RUN: []}
+    # The owner stamp outlives the sentinel: it is what every later write and
+    # the finalizer's delete prove before they touch this key.
+    assert engine.snapshot()["run_bags"] == {RUN: ["owner"]}
     result = assess_bag_persistence(write, read, channel="file")
     assert result.conclusion is SUPPORTED
     assert result.facts["receiver_is_global_at_read"] is True
+    assert result.facts["owned_at_read"] is True
+
+
+def test_a_pre_existing_run_key_is_refused_without_a_single_write(engine_factory):
+    """The check and the write are one decision, so a collision writes nothing."""
+    engine = engine_factory()
+    planted = _plant_foreign_run_key(engine)
+    probes, _transport = _probes(engine)
+    write = probes.write_bag_sentinel()
+    assert write.observed
+    assert write.payload["run_bag_preexisting"] is True
+    assert (write.payload["written"], write.payload["owned"]) == (False, False)
+    # Every field of the foreign key, related or not, is exactly as planted.
+    assert _bag(engine) == {RUN: planted}
+    result = assess_bag_persistence(write, None, channel="file")
+    assert result.conclusion is CONTRADICTED and result.outcome_unknown is False
+
+
+def test_the_finalizer_never_deletes_a_run_key_it_cannot_prove_it_owns(
+    engine_factory,
+):
+    """A lost claim acknowledgement must not let the release adopt a foreign key."""
+    engine = engine_factory()
+    planted = _plant_foreign_run_key(engine)
+    probes, _transport = _probes(engine)
+    released = probes.release_run_bag()
+    assert released.observed
+    assert released.payload["had_run_bag"] is True
+    assert released.payload["owned"] is False
+    assert released.payload["deleted"] is False
+    assert released.payload["present_after"] is True
+    assert released.payload["observers_marked_inert"] == 0
+    assert _bag(engine) == {RUN: planted}
+
+
+def test_an_unowned_run_key_takes_no_contender_and_no_observer(engine_factory):
+    """Ownership gates every write under the key, not only the claim."""
+    engine = engine_factory()
+    engine.seed_device(PC, "PC-PT")
+    planted = _plant_foreign_run_key(engine)
+    probes, _transport = _probes(engine)
+    probes.queue_atomicity_contender("A")
+    collect = probes.collect_atomicity()
+    register = probes.register_observer_and_trigger(PC)
+    assert collect.observed and collect.payload["present"] is False
+    assert register.observed and register.payload["registered1"] is False
+    assert register.payload["register1_error"] == "run_bag_not_owned"
+    snapshot = engine.snapshot()
+    assert snapshot["registrations"] == []
+    assert snapshot["devices"][0]["ports"] == []
+    assert _bag(engine) == {RUN: planted}
 
 
 def test_a_fresh_receiver_per_evaluation_is_an_observed_negative(engine_factory):
@@ -141,6 +229,7 @@ def test_a_fresh_receiver_per_evaluation_is_an_observed_negative(engine_factory)
     read = probes.read_and_release_bag_sentinel()
     result = assess_bag_persistence(write, read, channel="http")
     assert result.conclusion is NEGATIVE
+    assert result.facts["run_key_written"] is True
     assert result.facts["receiver_is_global_at_write"] is False
     assert engine.snapshot()["run_bags"] == {}
 
@@ -153,17 +242,19 @@ def test_queued_contenders_leave_one_ordered_claim(engine_factory, queue, channe
     """Sequential or batched evaluations produce one claim and no interleaving."""
     engine = engine_factory(queue=queue)
     probes, _transport = _probes(engine)
+    _claim(probes)
     receipts = [probes.queue_atomicity_contender(name) for name in ("A", "B")]
     collect = probes.collect_atomicity()
     result = assess_atomicity(receipts, collect, channel=channel)
     assert result.conclusion is SUPPORTED
-    assert engine.snapshot()["run_bags"] == {RUN: []}
+    assert engine.snapshot()["run_bags"] == {RUN: ["owner", "sentinel"]}
 
 
 def test_a_lost_claim_write_shows_up_as_a_double_claim(engine_factory):
     """A stub that forgets the claim between contenders yields a counterexample."""
     engine = engine_factory(reset_claim_between_queued=True)
     probes, _transport = _probes(engine)
+    _claim(probes)
     receipts = [probes.queue_atomicity_contender(name) for name in ("A", "B")]
     result = assess_atomicity(receipts, probes.collect_atomicity(), channel="file")
     assert result.conclusion is CONTRADICTED and result.causes == ["double_claim"]
@@ -173,6 +264,7 @@ def test_contenders_that_never_run_are_an_unknown_outcome(engine_factory):
     """Absent execution is not evidence; the record is left for finalization."""
     engine = engine_factory(queue="drop")
     probes, _transport = _probes(engine)
+    _claim(probes)
     receipts = [probes.queue_atomicity_contender(name) for name in ("A", "B")]
     result = assess_atomicity(receipts, probes.collect_atomicity(), channel="http")
     assert result.conclusion is INCONCLUSIVE and result.outcome_unknown
@@ -188,13 +280,14 @@ def test_identity_release_detaches_and_the_inert_observer_stays_bounded(
     engine = engine_factory()
     engine.seed_device(PC, "PC-PT")
     probes, _transport = _probes(engine)
+    _claim(probes)
     first, second = _unregister(probes)
     assert first.conclusion is SUPPORTED and second.conclusion is SUPPORTED
     snapshot = engine.snapshot()
     assert [call["uuid"] for call in snapshot["unregister_calls"]] == ["{stub-1}"] * 3
     assert [item["active"] for item in snapshot["registrations"]] == [False] * 3
     assert snapshot["devices"][0]["ports"][0]["ip"] == "192.0.2.202"
-    assert snapshot["run_bags"] == {RUN: []}
+    assert snapshot["run_bags"] == {RUN: ["owner", "sentinel"]}
 
 
 def test_an_unregister_that_does_not_detach_is_a_contradiction(engine_factory):
@@ -202,6 +295,7 @@ def test_an_unregister_that_does_not_detach_is_a_contradiction(engine_factory):
     engine = engine_factory(unregister_effective=False)
     engine.seed_device(PC, "PC-PT")
     probes, _transport = _probes(engine)
+    _claim(probes)
     first, _second = _unregister(probes)
     assert first.conclusion is CONTRADICTED
     assert all(item["active"] for item in engine.snapshot()["registrations"])
@@ -212,6 +306,7 @@ def test_without_the_extension_call_no_release_is_attempted(engine_factory):
     engine = engine_factory(unregister_available=False)
     engine.seed_device(PC, "PC-PT")
     probes, _transport = _probes(engine)
+    _claim(probes)
     first, second = _unregister(probes)
     assert first.conclusion is INCONCLUSIVE
     assert "release_not_attempted:unregister_unavailable" in first.causes
@@ -224,6 +319,7 @@ def test_no_event_means_no_identity_and_no_invented_uuid(engine_factory):
     engine = engine_factory(deliver_events="never")
     engine.seed_device(PC, "PC-PT")
     probes, _transport = _probes(engine)
+    _claim(probes)
     first, second = _unregister(probes)
     assert first.conclusion is INCONCLUSIVE
     assert "no_event_observed_after_trigger" in first.causes
@@ -236,6 +332,7 @@ def test_synchronous_delivery_is_still_attributed_after_the_trigger(engine_facto
     engine = engine_factory(deliver_events="sync")
     engine.seed_device(PC, "PC-PT")
     probes, _transport = _probes(engine)
+    _claim(probes)
     first, _second = _unregister(probes)
     assert first.facts["callback_evidence"]["delivered"] is True
 
@@ -245,6 +342,7 @@ def test_a_refused_registration_is_not_an_observer(engine_factory):
     engine = engine_factory(register_throws=True)
     engine.seed_device(PC, "PC-PT")
     probes, _transport = _probes(engine)
+    _claim(probes)
     register = probes.register_observer_and_trigger(PC)
     assert register.observed and register.payload["registered1"] is False
     assert register.payload["register1_error"] == "registration refused"
@@ -256,6 +354,7 @@ def test_a_failed_trigger_is_a_cause_never_a_negative(engine_factory):
     engine = engine_factory(readdress_throws=True)
     engine.seed_device(PC, "PC-PT")
     probes, _transport = _probes(engine)
+    _claim(probes)
     first, second = _unregister(probes)
     assert first.conclusion is INCONCLUSIVE and second.conclusion is INCONCLUSIVE
     assert "trigger_x_failed:setter refused" in first.causes
@@ -268,6 +367,7 @@ def test_the_observer_source_is_the_owned_port_not_a_terminal(engine_factory):
     engine = engine_factory()
     engine.seed_device(PC, "PC-PT")
     probes, transport = _probes(engine)
+    _claim(probes)
     first, _second = _unregister(probes)
     source = first.facts["callback_evidence"]["source"]
     assert (source["className"], source["eventName"]) == ("HostPort", "ipChanged")
@@ -297,6 +397,7 @@ def test_the_finalizer_removes_only_its_own_run_key(engine_factory):
     theirs.write_bag_sentinel()
     released = ours.release_run_bag()
     assert released.observed and released.payload["present_after"] is False
+    assert (released.payload["owned"], released.payload["deleted"]) == (True, True)
     assert list(engine.snapshot()["run_bags"]) == ["run-theirs"]
 
 
@@ -326,6 +427,41 @@ def test_cross_reads_decide_the_page_table_model(
     pages = engine.snapshot()["servers"][SERVER]
     names = probes.page_marker_names()
     assert names["http_page"] in pages["http_pages"]
+
+
+def test_two_failed_cross_reads_never_look_like_two_separate_tables(
+    engine_factory,
+):
+    """Shared tables whose cross getters throw must not read as separate ones."""
+    engine = engine_factory(
+        page_tables="shared",
+        getpage_throws_http=["-s.html"],
+        getpage_throws_https=["-h.html"],
+    )
+    engine.seed_device(SERVER, "Server-PT")
+    probes, _transport = _probes(engine)
+    write = probes.write_page_markers(SERVER)
+    read = probes.cross_read_page_markers(SERVER)
+    assert (read.payload["hs"], read.payload["sh"]) == (None, None)
+    assert read.payload["read_errors"] == 2
+    result = assess_page_tables(write, read)
+    assert result.conclusion is INCONCLUSIVE
+    assert "page_table_model" not in result.facts
+    assert "cross_read_unobserved:hs,sh" in result.causes
+    assert any("page read refused" in cause for cause in result.causes)
+
+
+def test_one_failed_cross_read_is_not_an_asymmetry_anybody_measured(engine_factory):
+    """An unreadable cell is unobserved; it never manufactures a contradiction."""
+    engine = engine_factory(page_tables="shared", getpage_throws_http=["-s.html"])
+    engine.seed_device(SERVER, "Server-PT")
+    probes, _transport = _probes(engine)
+    write = probes.write_page_markers(SERVER)
+    read = probes.cross_read_page_markers(SERVER)
+    assert (read.payload["hs"], read.payload["sh"]) == (None, True)
+    result = assess_page_tables(write, read)
+    assert result.conclusion is INCONCLUSIVE
+    assert "cross_read_unobserved:hs" in result.causes
 
 
 def test_listener_toggles_are_read_back_in_the_same_evaluation(engine_factory):
