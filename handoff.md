@@ -1,5 +1,31 @@
 # CP-SCALE continuation handoff
 
+## Route
+
+Start here, not in the narrative below.
+
+| Looking for | Read |
+| --- | --- |
+| Repository authority, risk classification, verification order | `AGENTS.md` and `docs/engineering/standards.md` |
+| Compact CP-SCALE cross-document state | `docs/reference/cp-scale/current_state.json` |
+| CP-SCALE navigation, PoE gates and authorizations | `docs/reference/cp-scale/README.md` |
+| Server-PT services: accepted baselines, active scope, open decisions | `docs/engineering/change-briefs/server-pt-services.md` |
+| How a Packet Tracer qualification stage is authorized and recorded | `docs/qa/server-services-qualification.md` |
+| Open technical debt and its closure links | `docs/architecture/technical-debt.md` |
+
+Live-work restrictions, unchanged by this route block:
+
+- No Packet Tracer LIVE work happens without explicit authorization for that
+  exact scope. A permission recorded in this file belongs to the run it was
+  granted for and confers nothing on a new one.
+- Historical evidence here is immutable. Offline CI never proves LIVE Packet
+  Tracer behavior, and an earlier green run is never relabelled onto a new
+  commit.
+- Everything below this block is the CP-SCALE investigation history, kept
+  because its statements are pinned by the CP-SCALE evidence tests. It is a
+  compatibility projection, not current authority; reducing it is a separate,
+  reviewed change.
+
 ## Canonical current state
 
 The compact cross-document authority is

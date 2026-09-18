@@ -85,6 +85,73 @@ If DNS resolution fails, HTTP-by-hostname is `DEPENDENCY_BLOCKED`; it is not
 misreported as an HTTP server failure. An accepted configuration request never
 promotes a service to verified without fresh independent evidence.
 
+## Mutation and observation vocabulary
+
+These terms are the shared meaning of every E5/E6 runtime row. They are
+implemented by the fact enums and the single `decide_mutation` rule in
+`domain/enterprise/models/execution.py`, and no producer may collapse two of
+them into one field.
+
+- **Channel acceptance** (`dispatch`): the transport proved the request entered
+  the channel — the local bridge answered 200 on `/queue`, or the request file
+  was published. It never means Packet Tracer executed anything.
+- **Attempt knowledge** (`result`): whether a correlated result came back and
+  parsed (`CORRELATED`), the engine reported an error (`ENGINE_ERROR`), the body
+  was not a valid response (`MALFORMED`), none arrived (`NOT_OBSERVED`), or the
+  result slot was lost (`LOST`).
+- **Observed transition** (`transition`): whether the bracketing reads around
+  the setter differ (`CHANGED`), are equal (`UNCHANGED`), or could not both be
+  read (`UNOBSERVED`). A transition is observed between two reads of one
+  dispatch; it is never proof of an execution count or of sole causation.
+- **Postcondition** (`postcondition`): whether the post-read equals the intended
+  value (`SATISFIED`), differs (`UNSATISFIED`), or was not obtained
+  (`UNOBSERVED`).
+- **Effect footprint** (`footprint`): whether the observed scope covers
+  everything the setter is documented to change. A partial footprint can never
+  be reported CLEAN.
+- **Residual change**: `transition is CHANGED and postcondition is UNSATISFIED`.
+- **Fresh read**: a correlated result of a read dispatched in this run for this
+  expectation, which parsed to its typed shape and located its subject.
+  Freshness does not require a changed value, and a fresh read that contradicts
+  the expectation is fresh *negative* evidence.
+- **Inconclusive read**: a completed read whose predicate cannot decide — the
+  marker was present before the request, the window was incomplete, the command
+  was refused. It is evidence neither for nor against the service.
+
+Two supersessions bind every family: the classifier reads the original runtime
+input rather than a repaired copy (TD-12.1), and a missing list item never
+synthesizes channel acceptance (TD-12.2). Digests of a read value are bounded
+diagnostics only: equal digests, equal lengths and a truthy native return value
+are never authority for `UNCHANGED`, `SATISFIED` or a clean footprint (RD-11).
+
+Operations are classified by the effect they may leave behind, and that class —
+not the caller — decides whether a repeat is admissible:
+
+| Class | Examples | Repeat after an ambiguous outcome | Release obligation |
+| --- | --- | --- | --- |
+| read-only | getters, `getOutput`, `getLastPageContent`, mailbox listing, lease table | bounded polling inside the deadline | none |
+| declarative setter | `setEnable`, `setPageContents`, `setServerDomainName`, pool setters | none after dispatch; the postcondition decides | none |
+| ensure-present | `addARecordToNameServerDb`, `addUser`, `addPool` | none; pre-read, act, post-read | none |
+| owned temporary | `createClient`/`deleteClient`, `registerEvent` | none | released on every exit path |
+| user-state, execute-once | `sendMail`, `dhcpRelease`/`dhcpRun` | never after ambiguity; one claim per subject per session | none |
+| disposable qualification fixture | device creation and removal in a Q stage | none | owned devices removed, then two fresh restoration observations |
+
+## Qualification boundary
+
+Support for a Packet Tracer behavior that the bundled reference only documents
+is established by a **Q stage**, never by this repository's offline tests. A Q
+stage runs one authorized stage per invocation from a clean, published checkout,
+counts every engine operation against a hard ceiling, keeps a finalization
+reserve that experiments cannot borrow, writes its record ahead of each step,
+and always finalizes what it created. Its contracts live in
+`domain/enterprise/models/service_qualification.py` and its operator surface in
+[`docs/qa/server-services-qualification.md`](../qa/server-services-qualification.md).
+
+A stage record is promotion evidence only when it is a LIVE record completed at
+the exact SHA, build, channel and stage it was authorized for. An offline
+simulation is marked as one and can never promote a capability, and a completed
+stage supports its bounded sample rather than universal behavior.
+
 ## Packet Tracer runtime boundary
 
 The domain and compiler import no Packet Tracer bridge, MCP adapter,

@@ -18,6 +18,7 @@ docs/reference/server-pt/planning/rev2.2/*.md -text -diff
 docs/reference/server-pt/decisions/*.md -text -diff
 docs/reference/server-pt/assignments/*.md -text -diff
 docs/reference/server-pt/reviews/*.md -text -diff
+docs/reference/server-pt/server-pt-services-brief-*.md -text -diff
 docs/reference/server-pt/README.md text eol=lf diff
 docs/reference/server-pt/source-manifest.json text eol=lf diff
 
