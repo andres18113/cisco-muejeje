@@ -52,6 +52,7 @@ from .configuration_dependencies import (
     ConfigurationDependencyError,
     order_dependency_actions,
 )
+from .service_capability_resolution import resolve_action_capability
 
 _HOSTNAME_RE = re.compile(
     r"(?=^.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*"
@@ -326,10 +327,11 @@ class ServiceCompiler:
             )
             if profile is not None:
                 for action in service_actions:
-                    action_support = profile.action_application_support.get(
-                        action.action_type.value,
-                        profile.application_support,
-                    )
+                    # One resolution, the same one admission and execution use:
+                    # the operation on the model that actually hosts it.
+                    action_support = resolve_action_capability(
+                        capabilities, action
+                    ).support
                     if action_support is CapabilityStatus.UNKNOWN:
                         issues.append(
                             _warning(
@@ -578,6 +580,16 @@ class ServiceCompiler:
             ipv4=getattr(action, "ipv4", ""),
             segment_id=action.segment_id,
             configuration_action_id=action.id,
+            # Which E5 family this points at, recorded here because the
+            # evidence derivation is given the E6 plan and the E5 RESULT, and
+            # the result carries rows, not actions. Guessing the family from a
+            # row is how an L3 interface could be promoted by the endpoint core
+            # predicate, which only describes an endpoint.
+            kind=(
+                "endpoint_address"
+                if isinstance(action, (SetEndpointStaticAddress, SetEndpointDhcp))
+                else "l3_interface"
+            ),
         )
 
     def _actions(
@@ -796,8 +808,10 @@ class ServiceCompiler:
                 )
             expectations.append(direct)
             requirement = requirements[service.id]
-            if not requirement.verification_required:
-                continue
+            # `verification_required=False` makes the expectations OPTIONAL, it
+            # does not delete them. Compiling nothing would leave the selected
+            # clients with no row at all, and R-COV-01 requires a row per
+            # selected client per service, including the ones that never gate.
             for client_id in service.client_device_ids:
                 client = devices[client_id]
                 if service.service_type is ServiceType.DNS:
@@ -839,6 +853,28 @@ class ServiceCompiler:
                             client_device_id=client_id,
                             client_device_name=client.name,
                             expected={"hostname": negative_name, "must_resolve": False},
+                        )
+                    )
+                    # Advisory only (R-CAP-06). It reads the client's own
+                    # resolver setting back, which is a different claim from
+                    # resolving a name, and it has no evidence at all until
+                    # M-DNS-3 records one. It is compiled so the operator can
+                    # see it was not attempted; it never gates anything.
+                    expectations.append(
+                        ServiceVerificationExpectation(
+                            id=_stable_id(
+                                "verify-client-dns-server", service.id, client_id
+                            ),
+                            service_id=service.id,
+                            action_id=terminal.id,
+                            kind=ServiceVerificationKind.CLIENT_DNS_SERVER,
+                            evidence_kind=ServiceEvidenceKind.BEHAVIORAL,
+                            host_device_id=service.host_device_id,
+                            host_device_name=service.host_device_name,
+                            client_device_id=client_id,
+                            client_device_name=client.name,
+                            required=False,
+                            expected={"server_address": service.address},
                         )
                     )
                 elif service.service_type in {ServiceType.HTTP, ServiceType.HTTPS}:
@@ -956,6 +992,7 @@ class ServiceCompiler:
                         },
                     )
                 )
+        self._bind_expectation_targets(expectations, services, requirements, devices)
         return sorted(
             expectations,
             key=lambda item: (
@@ -968,6 +1005,32 @@ class ServiceCompiler:
                 item.id,
             ),
         )
+
+    @staticmethod
+    def _bind_expectation_targets(
+        expectations, services, requirements, devices
+    ) -> None:
+        """Record the model each expectation is observed on, and whether it gates.
+
+        Capability is resolved on the model that performs the operation, so the
+        model has to be part of the compiled expectation rather than something
+        the applicator infers later from whichever device it happens to have.
+        An expectation already marked optional at its construction site stays
+        optional: a service whose verification is required cannot promote an
+        advisory reader that has no evidence.
+        """
+        by_id = {item.id: item for item in services}
+        for expectation in expectations:
+            service = by_id.get(expectation.service_id)
+            if service is None:
+                continue
+            expectation.host_model = service.host_model
+            if expectation.client_device_id:
+                client = devices.get(expectation.client_device_id)
+                expectation.client_model = client.model if client is not None else ""
+            requirement = requirements.get(expectation.service_id)
+            if requirement is not None and not requirement.verification_required:
+                expectation.required = False
 
     @staticmethod
     def _semantic_hash(plan: ServicePlan) -> str:

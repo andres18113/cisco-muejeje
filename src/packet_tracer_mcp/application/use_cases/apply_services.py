@@ -65,6 +65,10 @@ from ...domain.enterprise.services.configuration_dependencies import (
     ConfigurationDependencyError,
     order_dependency_actions,
 )
+from ...domain.enterprise.services.service_capability_resolution import (
+    resolve_action_capability,
+    resolve_verification_capability,
+)
 
 #: How a verification expectation touches the environment it reads. It decides
 #: what may still run after the action it depends on left its outcome
@@ -78,6 +82,9 @@ VERIFICATION_EFFECT_CLASSES: dict[ServiceVerificationKind, str] = {
     ServiceVerificationKind.HTTP_FETCH: "owned_temporary",
     ServiceVerificationKind.HTTPS_FETCH: "owned_temporary",
     ServiceVerificationKind.HTTP_BY_HOSTNAME: "owned_temporary",
+    # A direct getter read on the client. It creates nothing and releases
+    # nothing, which is why it may still run as a recovery read.
+    ServiceVerificationKind.CLIENT_DNS_SERVER: "read_only",
     ServiceVerificationKind.NTP_SYNC: "read_only",
     ServiceVerificationKind.TFTP_RETRIEVE: "read_only",
 }
@@ -344,32 +351,21 @@ class ServiceApplicator:
         # re-evaluation must run on the retained input snapshot instead.
         decisions: dict[str, MutationDecision] = {}
         for action in plan.actions:
-            profile = capabilities.get(
-                f"{action.host_model}:{action.service_type.value}"
-            )
-            support = (
-                profile.action_application_support.get(
-                    action.action_type.value,
-                    profile.application_support,
-                )
-                if profile
-                else CapabilityStatus.UNKNOWN
-            )
-            if support is CapabilityStatus.SUPPORTED:
+            # Resolved on the model that actually hosts the action, through the
+            # one resolution compilation and admission also use.
+            resolution = resolve_action_capability(capabilities, action)
+            if resolution.is_supported:
                 continue
             failure = (
                 ConfigurationFailureCode.CAPABILITY_UNSUPPORTED
-                if support is CapabilityStatus.UNSUPPORTED
+                if resolution.support is CapabilityStatus.UNSUPPORTED
                 else ConfigurationFailureCode.CAPABILITY_UNKNOWN
             )
             results[action.id] = ActionApplicationResult(
                 action_id=action.id,
                 status=ActionExecutionStatus.SKIPPED,
                 failure_code=failure,
-                message=(
-                    f"{action.host_model}:{action.service_type.value}:"
-                    f"{action.action_type.value} is {support.value}."
-                ),
+                message=f"{resolution.key} is {resolution.support.value}.",
             )
 
         pending = [item for item in plan.actions if item.id not in results]
@@ -768,22 +764,14 @@ class ServiceApplicator:
                 )
                 continue
             service = services[expectation.service_id]
-            profile = capabilities.get(
-                f"{service.host_model}:{service.service_type.value}"
+            # The model that PERFORMS the observation decides, so a client
+            # expectation resolves the client. Reading the server's profile
+            # here is how a PC-PT was credited with the Server-PT's evidence.
+            resolution = resolve_verification_capability(
+                capabilities, expectation, service
             )
-            support = CapabilityStatus.UNKNOWN
-            if profile is not None:
-                support = (
-                    profile.direct_readback_support
-                    if expectation.evidence_kind is ServiceEvidenceKind.DIRECT_STATE
-                    else profile.behavioral_verification_support
-                )
-            readiness = (
-                profile.capability_readiness.get("behavioral_verification")
-                if profile is not None
-                and expectation.evidence_kind is not ServiceEvidenceKind.DIRECT_STATE
-                else None
-            )
+            support = resolution.support
+            readiness = resolution.readiness
             if (
                 readiness is not None
                 and readiness.verify is ReadinessStatus.UNOBSERVABLE
@@ -813,7 +801,9 @@ class ServiceApplicator:
                         if expectation.evidence_kind is ServiceEvidenceKind.DIRECT_STATE
                         else ConfigurationFailureCode.CAPABILITY_UNKNOWN
                     ),
-                    message=f"Verification capability is {support.value}.",
+                    message=(
+                        f"Verification capability {resolution.key} is {support.value}."
+                    ),
                 )
                 continue
             try:
@@ -897,7 +887,17 @@ class ServiceApplicator:
                 )
                 else ActionExecutionStatus.PARTIAL
             )
-            observed = [item for item in verification if item.service_id == service.id]
+            # Every row is reported; only the REQUIRED ones aggregate. An
+            # advisory reader with no evidence would otherwise drag a verified
+            # service down to PARTIAL, which is the opposite of "optional".
+            required_ids = {
+                item.id for item in plan.verification_expectations if item.required
+            }
+            observed = [
+                item
+                for item in verification
+                if item.service_id == service.id and item.expectation_id in required_ids
+            ]
             direct = [
                 item
                 for item in observed

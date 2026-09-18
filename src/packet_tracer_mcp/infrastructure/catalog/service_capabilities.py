@@ -2,95 +2,352 @@
 
 La matriz describe canales independientes. En particular, que TftpServer pueda
 habilitarse no demuestra que la Extensions API permita publicar un archivo.
+
+The table is written out record by record, on purpose. The previous form built
+every profile with a comprehension over `ServiceType` and then demoted the few
+dimensions that were not supported, which meant a service family added later
+arrived SUPPORTED by default and a build nobody had ever measured inherited the
+one measured build's answers. Evidence does not work that way: a record exists
+because something was read or observed, so every record here names what it is
+and where it came from, and a version with no evidence produces UNKNOWN for
+every dimension rather than the baseline's table under a different label.
+
+Provenance is part of each record. Everything below is `documentary_baseline`:
+Cisco's local `IpcAPI` reference plus the controlled process probes that
+preceded this project's evidence rules. Under RD-8 the first DNS/HTTP product
+slice may use it, and every response that does says so. Nothing here is
+`recorded_run`, and no refactoring promotes it: a promotion needs a committed
+record naming the build, the executed tree SHA, the transport, the target model
+and the run identity.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
+from collections.abc import Mapping
+
 from ...domain.enterprise.models.capabilities import CapabilityStatus
 from ...domain.enterprise.models.evidence import CapabilityReadiness, ReadinessStatus
 from ...domain.enterprise.models.service_plan import (
+    CapabilityProvenance,
+    ClientOperationCapability,
     ServiceActionType,
     ServiceCapabilityProfile,
+    ServiceCapabilityRecords,
     ServiceType,
+    ServiceVerificationKind,
 )
+
+#: The one build any dimension below was measured or documented against.
+BASELINE_PACKET_TRACER_VERSION = "9.0.1.0858"
+
+_BASELINE_SOURCE = "PT 9.0.1 local IpcAPI reference and controlled process probes"
+_SERVER_MODEL = "Server-PT"
+_CLIENT_MODEL = "PC-PT"
+
+
+class ServiceCapabilityCatalogError(ValueError):
+    """Raised when the capability records contradict each other."""
+
+
+def _readiness(
+    capability: str,
+    *,
+    verify: ReadinessStatus,
+    apply_status: ReadinessStatus = ReadinessStatus.READY,
+    reason: str = "",
+) -> CapabilityReadiness:
+    return CapabilityReadiness(
+        capability=capability,
+        compile=ReadinessStatus.READY,
+        apply=apply_status,
+        verify=verify,
+        reasons={"verify": [reason]} if reason else {},
+    )
+
+
+def _profile(
+    service_type: ServiceType,
+    *,
+    version: str,
+    application: CapabilityStatus,
+    direct_readback: CapabilityStatus,
+    behavioral: CapabilityStatus,
+    actions: dict[str, CapabilityStatus] | None = None,
+    readiness: CapabilityReadiness | None = None,
+) -> ServiceCapabilityProfile:
+    return ServiceCapabilityProfile(
+        service_type=service_type,
+        compile_support=CapabilityStatus.SUPPORTED,
+        application_support=application,
+        action_application_support=dict(actions or {}),
+        direct_readback_support=direct_readback,
+        behavioral_verification_support=behavioral,
+        source=_BASELINE_SOURCE,
+        packet_tracer_version=version,
+        capability_readiness=(
+            {"behavioral_verification": readiness} if readiness is not None else {}
+        ),
+        provenance=CapabilityProvenance.DOCUMENTARY_BASELINE,
+    )
+
+
+def _operation(
+    model: str,
+    operation: str,
+    support: CapabilityStatus,
+    *,
+    version: str,
+    source: str = _BASELINE_SOURCE,
+) -> ClientOperationCapability:
+    return ClientOperationCapability(
+        key=f"{model}:{operation}",
+        model=model,
+        operation=operation,
+        support=support,
+        provenance=CapabilityProvenance.DOCUMENTARY_BASELINE,
+        source=source,
+        packet_tracer_version=version,
+    )
+
+
+def _baseline_profiles(version: str) -> list[ServiceCapabilityProfile]:
+    """Return the five server families with every dimension stated."""
+    return [
+        _profile(
+            ServiceType.DNS,
+            version=version,
+            application=CapabilityStatus.SUPPORTED,
+            direct_readback=CapabilityStatus.SUPPORTED,
+            behavioral=CapabilityStatus.SUPPORTED,
+            readiness=_readiness(
+                "dns_behavioral_verification", verify=ReadinessStatus.READY
+            ),
+        ),
+        _profile(
+            ServiceType.HTTP,
+            version=version,
+            application=CapabilityStatus.SUPPORTED,
+            direct_readback=CapabilityStatus.SUPPORTED,
+            behavioral=CapabilityStatus.SUPPORTED,
+            readiness=_readiness(
+                "http_behavioral_verification", verify=ReadinessStatus.READY
+            ),
+        ),
+        _profile(
+            ServiceType.HTTPS,
+            version=version,
+            application=CapabilityStatus.SUPPORTED,
+            direct_readback=CapabilityStatus.SUPPORTED,
+            behavioral=CapabilityStatus.UNKNOWN,
+            readiness=_readiness(
+                "https_behavioral_verification",
+                verify=ReadinessStatus.UNKNOWN,
+                apply_status=ReadinessStatus.PARTIAL,
+                reason=(
+                    "A typed HTTPS URL is compiled, but PT 9.0.1 client behavior "
+                    "has not been live verified."
+                ),
+            ),
+        ),
+        _profile(
+            ServiceType.NTP,
+            version=version,
+            application=CapabilityStatus.SUPPORTED,
+            direct_readback=CapabilityStatus.SUPPORTED,
+            behavioral=CapabilityStatus.UNKNOWN,
+            readiness=_readiness(
+                "ntp_behavioral_verification",
+                verify=ReadinessStatus.UNOBSERVABLE,
+                apply_status=ReadinessStatus.PARTIAL,
+                reason=(
+                    "Packet Tracer exposes activation but no independent "
+                    "registered synchronization observation."
+                ),
+            ),
+        ),
+        _profile(
+            ServiceType.TFTP,
+            version=version,
+            application=CapabilityStatus.SUPPORTED,
+            direct_readback=CapabilityStatus.SUPPORTED,
+            behavioral=CapabilityStatus.UNKNOWN,
+            actions={
+                ServiceActionType.ENABLE_TFTP.value: CapabilityStatus.SUPPORTED,
+                ServiceActionType.PUBLISH_TFTP_FILE.value: CapabilityStatus.UNKNOWN,
+            },
+            readiness=_readiness(
+                "tftp_behavioral_verification",
+                verify=ReadinessStatus.UNOBSERVABLE,
+                apply_status=ReadinessStatus.PARTIAL,
+                reason=(
+                    "Packet Tracer exposes service activation but no safe "
+                    "registered publication/retrieval observation."
+                ),
+            ),
+        ),
+    ]
+
+
+def _baseline_client_operations(version: str) -> list[ClientOperationCapability]:
+    """Client-side verification, keyed by the model that performs it."""
+    supported = (
+        ServiceVerificationKind.DNS_RESOLUTION,
+        ServiceVerificationKind.DNS_NEGATIVE_CONTROL,
+        ServiceVerificationKind.HTTP_FETCH,
+        ServiceVerificationKind.HTTP_BY_HOSTNAME,
+    )
+    unknown = (
+        # No live evidence for a PC-PT HTTPS fetch; HTTPS ownership is Q1.
+        ServiceVerificationKind.HTTPS_FETCH,
+        # A new reader with no evidence at all. It must not inherit support
+        # from another getter on the same client, and it stays advisory until
+        # M-DNS-3 records it.
+        ServiceVerificationKind.CLIENT_DNS_SERVER,
+        ServiceVerificationKind.NTP_SYNC,
+        ServiceVerificationKind.TFTP_RETRIEVE,
+    )
+    return [
+        *(
+            _operation(
+                _CLIENT_MODEL, kind.value, CapabilityStatus.SUPPORTED, version=version
+            )
+            for kind in supported
+        ),
+        *(
+            _operation(
+                _CLIENT_MODEL,
+                kind.value,
+                CapabilityStatus.UNKNOWN,
+                version=version,
+                source=f"no recorded client evidence for {_CLIENT_MODEL}:{kind.value}",
+            )
+            for kind in unknown
+        ),
+    ]
+
+
+def _unknown_records(version: str) -> list[object]:
+    """Every dimension UNKNOWN, for a build nothing was measured against."""
+    source = f"no recorded evidence for {version}"
+    profiles = [
+        ServiceCapabilityProfile(
+            service_type=service_type,
+            compile_support=CapabilityStatus.UNKNOWN,
+            application_support=CapabilityStatus.UNKNOWN,
+            action_application_support={
+                action_type.value: CapabilityStatus.UNKNOWN
+                for action_type in ServiceActionType
+            },
+            direct_readback_support=CapabilityStatus.UNKNOWN,
+            behavioral_verification_support=CapabilityStatus.UNKNOWN,
+            source=source,
+            packet_tracer_version=version,
+            provenance=CapabilityProvenance.DOCUMENTARY_BASELINE,
+        )
+        for service_type in ServiceType
+    ]
+    operations = [
+        ClientOperationCapability(
+            key=f"{_CLIENT_MODEL}:{kind.value}",
+            model=_CLIENT_MODEL,
+            operation=kind.value,
+            support=CapabilityStatus.UNKNOWN,
+            provenance=CapabilityProvenance.DOCUMENTARY_BASELINE,
+            source=source,
+            packet_tracer_version=version,
+        )
+        for kind in ServiceVerificationKind
+    ]
+    return [*profiles, *operations]
+
+
+def _validate(records: list[object], version: str) -> None:
+    """Fail closed on duplicate, contradictory or mis-versioned records.
+
+    Validation runs over the LIST, before it becomes a dictionary, because a
+    dictionary silently keeps the last of two records that disagree. That is
+    the one failure mode a catalog must not have.
+    """
+    seen: dict[str, object] = {}
+    for record in records:
+        key = (
+            record.key
+            if isinstance(record, ClientOperationCapability)
+            else f"{_SERVER_MODEL}:{record.service_type.value}"
+        )
+        if key in seen:
+            raise ServiceCapabilityCatalogError(
+                f"Duplicate capability record for {key!r}; a catalog may not "
+                "hold two answers for one operation."
+            )
+        seen[key] = record
+        declared = record.packet_tracer_version
+        if declared != version:
+            raise ServiceCapabilityCatalogError(
+                f"Capability record {key!r} declares version {declared!r}, not "
+                f"{version!r}; one snapshot describes one build."
+            )
+        if isinstance(record, ServiceCapabilityProfile):
+            readiness = record.capability_readiness.get("behavioral_verification")
+            behavioral_supported = (
+                record.behavioral_verification_support is CapabilityStatus.SUPPORTED
+            )
+            if behavioral_supported and (
+                readiness is None or readiness.verify is not ReadinessStatus.READY
+            ):
+                raise ServiceCapabilityCatalogError(
+                    f"Capability record {key!r} claims behavioural support while "
+                    "its readiness does not say the verification is ready."
+                )
+        elif record.provenance is CapabilityProvenance.RECORDED_RUN and not (
+            record.build and record.executed_sha and record.run_id
+        ):
+            raise ServiceCapabilityCatalogError(
+                f"Capability record {key!r} claims a recorded run without the "
+                "build, executed SHA and run identity that attribute it."
+            )
 
 
 def packet_tracer_service_capabilities(
-    packet_tracer_version: str = "9.0.1.0858",
-) -> dict[str, ServiceCapabilityProfile]:
-    """Devuelve evidencia conservadora para el runtime local medido."""
-    source = "PT 9.0.1 local IpcAPI reference and controlled process probes"
-    profiles = {
-        service_type: ServiceCapabilityProfile(
-            service_type=service_type,
-            compile_support=CapabilityStatus.SUPPORTED,
-            application_support=CapabilityStatus.SUPPORTED,
-            direct_readback_support=CapabilityStatus.SUPPORTED,
-            behavioral_verification_support=CapabilityStatus.UNKNOWN,
-            source=source,
-            packet_tracer_version=packet_tracer_version,
+    packet_tracer_version: str = BASELINE_PACKET_TRACER_VERSION,
+) -> ServiceCapabilityRecords:
+    """Return the capability records for one exact Packet Tracer build.
+
+    Only `BASELINE_PACKET_TRACER_VERSION` has evidence. Every other build gets
+    a complete table in which every dimension is UNKNOWN and every source says
+    so, because "we have no record of this build" is an answer and an absence
+    that a caller could read as permission is not.
+    """
+    version = packet_tracer_version or BASELINE_PACKET_TRACER_VERSION
+    if version == BASELINE_PACKET_TRACER_VERSION:
+        records: list[object] = [
+            *_baseline_profiles(version),
+            *_baseline_client_operations(version),
+        ]
+    else:
+        records = _unknown_records(version)
+    _validate(records, version)
+    resolved: ServiceCapabilityRecords = {}
+    for record in records:
+        key = (
+            record.key
+            if isinstance(record, ClientOperationCapability)
+            else f"{_SERVER_MODEL}:{record.service_type.value}"
         )
-        for service_type in ServiceType
+        resolved[key] = record
+    return resolved
+
+
+def capability_snapshot_hash(records: Mapping[str, object]) -> str:
+    """Digest the exact records a run resolved, so a record can name them."""
+    payload = {
+        key: record.model_dump(mode="json")
+        for key, record in sorted(records.items())
+        if hasattr(record, "model_dump")
     }
-    profiles[ServiceType.TFTP].action_application_support = {
-        ServiceActionType.ENABLE_TFTP.value: CapabilityStatus.SUPPORTED,
-        ServiceActionType.PUBLISH_TFTP_FILE.value: CapabilityStatus.UNKNOWN,
-    }
-    profiles[
-        ServiceType.DNS
-    ].behavioral_verification_support = CapabilityStatus.SUPPORTED
-    profiles[
-        ServiceType.HTTP
-    ].behavioral_verification_support = CapabilityStatus.SUPPORTED
-    profiles[ServiceType.DNS].capability_readiness["behavioral_verification"] = (
-        CapabilityReadiness(
-            capability="dns_behavioral_verification",
-            compile=ReadinessStatus.READY,
-            apply=ReadinessStatus.READY,
-            verify=ReadinessStatus.READY,
-        )
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     )
-    profiles[ServiceType.HTTP].capability_readiness["behavioral_verification"] = (
-        CapabilityReadiness(
-            capability="http_behavioral_verification",
-            compile=ReadinessStatus.READY,
-            apply=ReadinessStatus.READY,
-            verify=ReadinessStatus.READY,
-        )
-    )
-    profiles[ServiceType.HTTPS].capability_readiness["behavioral_verification"] = (
-        CapabilityReadiness(
-            capability="https_behavioral_verification",
-            compile=ReadinessStatus.READY,
-            apply=ReadinessStatus.PARTIAL,
-            verify=ReadinessStatus.UNKNOWN,
-            reasons={
-                "verify": [
-                    "A typed HTTPS URL is compiled, but PT 9.0.1 client behavior has not been live verified."
-                ],
-            },
-        )
-    )
-    for service_type, reason in (
-        (
-            ServiceType.NTP,
-            "Packet Tracer exposes activation but no independent registered synchronization observation.",
-        ),
-        (
-            ServiceType.TFTP,
-            "Packet Tracer exposes service activation but no safe registered publication/retrieval observation.",
-        ),
-    ):
-        profiles[service_type].capability_readiness["behavioral_verification"] = (
-            CapabilityReadiness(
-                capability=f"{service_type.value}_behavioral_verification",
-                compile=ReadinessStatus.READY,
-                apply=ReadinessStatus.PARTIAL,
-                verify=ReadinessStatus.UNOBSERVABLE,
-                reasons={"verify": [reason]},
-            )
-        )
-    return {
-        f"Server-PT:{service_type.value}": profiles[service_type]
-        for service_type in ServiceType
-    }
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

@@ -70,6 +70,7 @@ class ServiceVerificationKind(StrEnum):
     HTTP_FETCH = "http_fetch"
     HTTPS_FETCH = "https_fetch"
     HTTP_BY_HOSTNAME = "http_by_hostname"
+    CLIENT_DNS_SERVER = "client_dns_server"
     NTP_SYNC = "ntp_sync"
     TFTP_RETRIEVE = "tftp_retrieve"
 
@@ -90,6 +91,26 @@ class TftpFileRequirement(BaseModel):
     content: str
 
 
+class CapabilityProvenance(StrEnum):
+    """Where a capability record's authority comes from.
+
+    `documentary_baseline` is a claim read from Cisco's reference and from the
+    controlled process probes that preceded this project's evidence rules. It
+    is usable, and it is never upgraded by later refactoring: a golden-script
+    identity test proves a reader's call surface did not change, which is a
+    different statement from having observed the capability.
+
+    `recorded_run` is the only level that may be produced by a measurement, and
+    it requires the build, the executed tree SHA, the transport, the target
+    model and the run identity to be carried with it.
+    """
+
+    __str__ = Enum.__str__
+
+    DOCUMENTARY_BASELINE = "documentary_baseline"
+    RECORDED_RUN = "recorded_run"
+
+
 class ServiceCapabilityProfile(BaseModel):
     """Matriz por servicio; no colapsa aplicación y observabilidad."""
 
@@ -104,6 +125,40 @@ class ServiceCapabilityProfile(BaseModel):
     source: str = ""
     packet_tracer_version: str | None = None
     capability_readiness: dict[str, CapabilityReadiness] = Field(default_factory=dict)
+    provenance: CapabilityProvenance = CapabilityProvenance.DOCUMENTARY_BASELINE
+
+
+class ClientOperationCapability(BaseModel):
+    """One operation authorized on one target model, with its provenance.
+
+    The profile above answers "what can this service family do on its server".
+    This answers the question the profile cannot: whether a given operation is
+    authorized on the model that actually performs it. A server whose DNS
+    service is behaviourally supported says nothing about whether a PC-PT can
+    be driven to resolve a name, and reading the server's profile for a client
+    expectation is exactly how a client got credit for the server's evidence.
+
+    `build`, `executed_sha`, `transport` and `run_id` stay empty for a
+    documentary record and are required for a recorded one.
+    """
+
+    key: str
+    model: str
+    operation: str
+    support: CapabilityStatus = CapabilityStatus.UNKNOWN
+    provenance: CapabilityProvenance = CapabilityProvenance.DOCUMENTARY_BASELINE
+    source: str = ""
+    packet_tracer_version: str = ""
+    build: str = ""
+    executed_sha: str = ""
+    transport: str = ""
+    run_id: str = ""
+
+
+#: One resolution for compilation, admission and execution. Profiles are keyed
+#: `"<model>:<service_type>"` and operations `"<model>:<action_type|kind>"`.
+ServiceCapabilityRecord = ServiceCapabilityProfile | ClientOperationCapability
+ServiceCapabilityRecords = dict[str, ServiceCapabilityRecord]
 
 
 class BaseServiceAction(BaseModel):
@@ -243,6 +298,11 @@ class FoundationalServiceRequirement(BaseModel):
     ipv4: str
     segment_id: str
     configuration_action_id: str
+    #: Which E5 family the referenced action belongs to. Only an
+    #: `endpoint_address` foundation may be satisfied by the attributable
+    #: IPv4/netmask core of a PARTIAL row; every other kind copies its
+    #: verification status, because no core predicate exists for it.
+    kind: Literal["endpoint_address", "l3_interface"] = "endpoint_address"
 
 
 class ServiceVerificationExpectation(BaseModel):
@@ -262,6 +322,21 @@ class ServiceVerificationExpectation(BaseModel):
         default_factory=list
     )
     expected: dict[str, str | int | bool] = Field(default_factory=dict)
+    #: Whether this expectation gates its service. An advisory reader, and any
+    #: expectation of a service whose `verification_required` is False, is
+    #: compiled optional: it is still observed and still reported, but it can
+    #: neither block eligibility nor report VERIFIED for a capability it lacks.
+    required: bool = True
+    #: The models the expectation is resolved against. Verification capability
+    #: is resolved on the model that performs the operation, which for a client
+    #: expectation is the client and never the server profile.
+    host_model: str = ""
+    client_model: str = ""
+
+    @property
+    def target_model(self) -> str:
+        """The model that performs this observation."""
+        return self.client_model if self.client_device_id else self.host_model
 
 
 class ServicePlan(BaseModel):

@@ -3,6 +3,7 @@
 from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceActionType,
+    ServiceCapabilityProfile,
     ServiceType,
 )
 from packet_tracer_mcp.infrastructure.catalog import (
@@ -12,15 +13,26 @@ from packet_tracer_mcp.domain.enterprise.models.evidence import ReadinessStatus
 
 
 def test_packet_tracer_service_matrix_keeps_four_capability_dimensions():
-    profiles = packet_tracer_service_capabilities("9.0.1.0858")
+    """Every server family is still a four-dimension profile of one build.
 
-    assert set(profiles) == {
-        f"Server-PT:{service.value}" for service in ServiceType
+    S1 added client operation records to the SAME mapping, because a client
+    expectation must resolve its own model rather than the server's profile.
+    The assertion therefore names the server profiles instead of claiming the
+    mapping holds nothing else; what it protects is unchanged.
+    """
+    records = packet_tracer_service_capabilities("9.0.1.0858")
+
+    profiles = {
+        key: record
+        for key, record in records.items()
+        if isinstance(record, ServiceCapabilityProfile)
     }
+    assert set(profiles) == {f"Server-PT:{service.value}" for service in ServiceType}
     for profile in profiles.values():
         assert profile.compile_support is CapabilityStatus.SUPPORTED
         assert profile.packet_tracer_version == "9.0.1.0858"
         assert profile.source
+    assert set(records) > set(profiles)
 
 
 def test_tftp_file_publication_is_not_inferred_from_tftp_enable_support():

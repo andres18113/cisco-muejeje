@@ -27,12 +27,15 @@ from packet_tracer_mcp.domain.enterprise.models.requirements import (
 )
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     AddDnsRecord,
+    CapabilityProvenance,
+    ClientOperationCapability,
     EnableDnsService,
     EnableHttpService,
     PublishTftpFile,
     ServiceActionType,
     ServiceCapabilityProfile,
     ServiceType,
+    ServiceVerificationKind,
     SetHttpContent,
 )
 from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
@@ -123,6 +126,25 @@ def _fixture(services: list[ServiceRequirement] | None = None):
             direct_readback_support=CapabilityStatus.UNKNOWN,
             behavioral_verification_support=CapabilityStatus.SUPPORTED,
         ),
+        # A client expectation resolves the CLIENT's model, so the fixture has
+        # to authorize the client operations the same way the real catalog
+        # does. Before S1 these rows did not exist anywhere and a PC-PT
+        # inherited the Server-PT profile, which is the defect R-CAP-03 names.
+        **{
+            f"PC-PT:{kind.value}": ClientOperationCapability(
+                key=f"PC-PT:{kind.value}",
+                model="PC-PT",
+                operation=kind.value,
+                support=CapabilityStatus.SUPPORTED,
+                provenance=CapabilityProvenance.DOCUMENTARY_BASELINE,
+            )
+            for kind in (
+                ServiceVerificationKind.DNS_RESOLUTION,
+                ServiceVerificationKind.DNS_NEGATIVE_CONTROL,
+                ServiceVerificationKind.HTTP_FETCH,
+                ServiceVerificationKind.HTTP_BY_HOSTNAME,
+            )
+        },
     }
     return enterprise, topology, configuration, capabilities
 
