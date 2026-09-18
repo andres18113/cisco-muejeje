@@ -10,8 +10,12 @@ Status of S0: implemented offline on branch
 its offline scope** at `ba45d14`; see section 8 for the implementation record,
 section 9 for the correction record and section 10.2 for the acceptance and
 its exact-SHA CI. Status of S1: implemented offline on branch
-`feature/server-pt-s1-product-entry`, **READY_FOR_REVIEW**; see section 10 for
-its design and acceptance record. Status of every later slice: not approved
+`feature/server-pt-s1-product-entry`, independently **accepted within its
+offline scope** at `1f08afa` with exact-SHA CI run `35374589931`; see section
+10 for its design record and 11.11 for the acceptance. Status of S4a: assigned
+for offline implementation on branch
+`feature/server-pt-s4a-qualification-runner`; see section 12. Status of every
+other later slice: not approved
 and not implementation-ready without its own independent approval and the
 gates named in sections 4.6, 5.8 and 7.3. Risk class **L**.
 
@@ -3985,6 +3989,434 @@ from the reviewed `cdd3c354` tree. No Packet Tracer, product bridge, CP-LIVE,
 GUI automation, push, merge, or capability promotion occurred. Executable
 version output and the corrected product route remain unqualified in LIVE
 Packet Tracer; exact-SHA CI and independent acceptance remain pending.
+
+### 11.11 Independent offline acceptance of `1f08afa` (appended 2026-09-18)
+
+This subsection appends later facts; it does not edit 11.10. The statement in
+11.10 that exact-SHA CI was pending is historical and stays as written.
+
+The independent technical review accepted S1 **within the reviewed offline S1
+scope** at commit `1f08afa17fd203d7b2165ca10323f82d69835dd5` (tree
+`d1b1dbf5cef57292b51e6e12032ed5ea36d238a9`, branch
+`feature/server-pt-s1-product-entry`, reviewed parent `cdd3c354`). That decision
+closed S1-C1, S1-C2 and S1-C3 and made S1 eligible as the dependency of S4a.
+
+| Observation | Accepted value |
+| --- | --- |
+| Exact-SHA CI | GitHub Actions run `35374589931`, attempt 1, on `1f08afa`: six jobs succeeded |
+| Pytest matrix | Windows and Ubuntu with Python 3.11 and 3.13: four successful jobs |
+| Quality job | `105696171255`: clean exact-commit delivery; main and merge base `6263344`; 48 Python files; zero mechanical exemptions |
+| Ubuntu / Python 3.13 | job `105696171542`: 5995 passed, 2 skipped, 3 warnings |
+| Earlier run | `35339390096` belongs to the earlier S1 commit and is not attributed to `1f08afa` |
+
+The acceptance does not authorize Packet Tracer contact, LIVE qualification,
+capability promotion, push, merge, or changes to another worktree, and it is
+not a LIVE product-acceptance record. Documentary DNS/HTTP provenance, the
+unmeasured engine facts, and the S0 residue and client-release rules still
+apply unchanged.
+
+---
+
+## 12. S4a design record: offline qualification runner and Q0/Q1 probes
+
+Risk **L**: the slice adds a governed runner that controls authorization,
+effects on Packet Tracer, execution provenance, cleanup and evidence. This
+section is the proportional design recorded before implementation; 12.9 records
+the measured results after it.
+
+### 12.1 Identity, authorization and instruction loading
+
+| Field | Value |
+| --- | --- |
+| Checkout | sibling worktree `Cisco-MCP-s4a`, with its own `.venv` and editable install |
+| Branch | `feature/server-pt-s4a-qualification-runner` |
+| Starting commit / tree | `1f08afa17fd203d7b2165ca10323f82d69835dd5` / `d1b1dbf5cef57292b51e6e12032ed5ea36d238a9` |
+| Authoritative main | `cisco/main`, re-resolved to `6263344e31ba3b0de6539d652f2cd06fc73a3562` (it does not contain S0/S1) |
+| Interpreter / package | the worktree's `.venv\Scripts\python.exe` (CPython 3.12.10); `packet_tracer_mcp` resolves to the worktree's `src` |
+| Authorization | offline design, implementation, tests and local commits only |
+| Not authorized | any Packet Tracer contact, bridge startup, Q0/Q1 LIVE execution, capability promotion, push, merge, subagents |
+
+Instruction loading: this session loaded `CLAUDE.md`, `AGENTS.md` and
+`docs/engineering/standards.md` as project instructions from the primary
+checkout at the same starting commit, and the three files in this worktree are
+byte-identical to those (SHA-256 compared). A fresh session started inside the
+S4a worktree was not observed, so its effective loading remains pending.
+
+### 12.2 Problem, outcome, scope and exclusions
+
+S2, S1b and S3 depend on engine and HTTPS facts that are still unmeasured (Q0,
+Q1). Nothing in the repository can execute those measurements under the
+controls that the plan requires. S4a delivers a governed runner that is
+executable offline: typed stage and authorization contracts, an operation and
+time ledger, write-ahead records, Q0 and Q1 experiment definitions with probes,
+guaranteed finalization, and an operator CLI. This assignment does not contact
+Packet Tracer through that runner.
+
+In scope: `application/use_cases/qualify_server_services.py` (coordinator,
+ledger, executors); `adapters/cli/service_qualification.py` (composition and
+translation only); `domain/enterprise/models/service_qualification.py` (pure
+stage, authorization, measurement and record contracts);
+`application/ports/service_qualification.py` (transport and record-store
+ports); `infrastructure/execution/service_qualification_probes.py` (the
+generated Q0/Q1 JavaScript and its parsers);
+`infrastructure/persistence/service_qualification_store.py` (contained atomic
+records); `infrastructure/execution/service_environment.py` (the S1
+executable-version reader, moved so that the product tool and the runner share
+one reader); `docs/qa/server-services-qualification.md` (the future
+authorization and record template); and the tests named in 12.8.
+
+Excluded: SMTP, POP3, DHCP, S1b content handling, a new MCP tool, `muejeje.pts`,
+Runtime V6, a dispatcher or protocol, a replacement transport, extension
+changes, IoT/voice/PoE/CP-LIVE changes, registry extraction for file size, any
+catalog change or capability promotion, and claim reset (not granted). Q2/Q3
+have declarative metadata only.
+
+The version-reader move from `tool_registry.py` is not a size extraction. A
+second consumer (the runner) must use the same corrected
+`AppWindow.getVersion()` reader. Importing a private name from the MCP adapter
+into the CLI would load the whole registry. The bytes of the generated script
+and the parse rules move unchanged, and the registry imports them.
+
+### 12.3 Requirements and acceptance criteria
+
+| ID | Requirement | Acceptance |
+| --- | --- | --- |
+| S4A-R1 | No execution without explicit `--execute` and a complete stage-scoped authorization; no all-stages run; no implicit LIVE default | CLI system tests: no flag, missing authorization and each partial authorization refuse before any reader or contact |
+| S4A-R2 | Authorization compares the stage, the 40-hex `--expected-head`, the authorized SHA, observed HEAD, tree and clean state, a published upstream holding HEAD, the exact fixture targets, the channel, the exact build and the operation/time budget; each failure has a typed kind (missing, mismatch, malformed, unobservable, not permitted, infeasible) and a subject | unit table over every field and kind; system tests for target, SHA, build and channel mismatch |
+| S4A-R3 | Production wiring refuses under pytest as `TEST_PROCESS` before transport construction | system test through the real CLI composition with transport factories that fail if called |
+| S4A-R4 | One transport, selected by the authorized channel, is fixed after local gates for every read, effect and finalization; no fallback | coordinator test: every runtime receives only the ledger-bound callables of that transport |
+| S4A-R5 | Before any fixture effect, the executable build is observed through the shared `AppWindow.getVersion()` reader and must equal the authorized build; the reader identity and a bounded excerpt are recorded; missing or incomplete output stops | unit and Node tests; system tests for mismatch and unavailable build |
+| S4A-R6 | An empty governed workspace is observed before creation through the existing semantic inventory contract; engine-managed objects are reported; unobservable is unknown, not empty; foreign devices or links refuse | coordinator tests for empty, foreign, backend-managed and unobservable workspaces |
+| S4A-R7 | Exact stage fixtures (Q0: `__MCP_E6Q_PC1`; Q1: `__MCP_E6Q_SRV`, `__MCP_E6Q_PC1`, `__MCP_E6Q_PC2`, `__MCP_E6Q_SW`), resolved through the catalog; only resources created by this invocation are owned; a same-name object is a collision | coordinator tests for collision and unknown creation |
+| S4A-R8 | Hard ceilings Q0 20 operations / 300 s and Q1 30 / 600, an explicit ledger with an injectable monotonic clock, a cleanup reserve set before the first effect, waits capped by the remaining phase deadline, and a pre-contact infeasibility refusal | ledger tests for exact limit, over limit and deadline capping; stage feasibility tests |
+| S4A-R9 | Write-ahead record before effects; a failed advance stops new effects while preserving the primary error and allowing bounded observation and owned finalization | coordinator tests for persistence loss before and after the first effect |
+| S4A-R10 | Q0 experiments M-ENG-1, ATOM-1, M-UNREG-1, M-UNREG-2 (M-HTTP-1 declared optional and omitted with its reason); Q1 experiments M-HTTPS-1, M-HTTPS-2, M-DNS-3 (M-DNS-1/2 optional, omitted) | Node harness executes every generated probe against a stateful stub; classification tests per outcome |
+| S4A-R11 | Guaranteed finalization after admitted effects (budget, exception, contradiction, cancellation, persistence failure); stop at the first contradiction or outcome-unknown effect; the primary outcome survives secondary failures | coordinator tests for each trigger |
+| S4A-R12 | Only positively owned devices are removed, owned engine state is released under its own contract, ambiguous cleanup is not repeated, there is no claim reset, and two consecutive fresh restoration reads use the existing restoration predicate; observer and engine residue is carried separately from workspace emptiness | coordinator tests: failing cleanup, foreign device at restoration, observer residue with an empty workspace |
+| S4A-R13 | The record carries the fields listed in 12.5; offline simulations are marked `offline_simulation`; the promotion predicate refuses offline records and a mismatched SHA, build, channel or stage | store and predicate tests |
+| S4A-R14 | Experimental capabilities are an injected runner-only scope; no catalog mutation; the product composition has no such parameter | catalog-hash and signature tests |
+
+### 12.4 Architecture and contracts
+
+```text
+CLI (adapters/cli/service_qualification.py)
+  parse argv -> QualificationRequest; compose QualificationBoundaries
+  -> qualify_server_services(request, boundaries)  [application]
+       request_refusals (pure, domain)            no reader, no record
+       isolation -> repository                     local readers only
+       record.begin (write-ahead)                  before any contact
+       open transport(channel) -> OperationLedger -> bound callables
+       build reader -> workspace inventory         counted operations
+       stage executor (Q0 | Q1) under the effect gate
+       finally: finalization (engine release, owned devices, 2 restoration reads)
+       record.complete; close transport
+```
+
+Layer responsibilities:
+
+- **Domain** (`service_qualification.py`): stage ids, fixture and link
+  specifications, experiment specifications with their hypotheses and planned
+  operation costs, hard ceilings, authorization and request values, typed
+  refusals, the request-admission rule, measurement and record models, and the
+  promotion-evidence predicate. It holds no I/O, no vendor JavaScript and no
+  filesystem policy.
+- **Application**: the coordinator, `OperationLedger` and bound transport, the
+  effect gate, the executors and finalization. It reaches Packet Tracer only
+  through the injected transport and through the production runtimes, which are
+  constructed with the ledger-bound callables.
+- **Infrastructure**: the probes (single-line JavaScript with every datum
+  serialized through `json.dumps`, and parsers into typed readings), the moved
+  environment reader, and the record store (`safe_name_component` plus
+  `resolve_within`, tmp plus `os.replace`, create-only begin, no rewrite after
+  completion).
+- **Adapter**: argument parsing, composition of the production boundaries, and
+  JSON output. It contains no orchestration.
+
+Reuse (R-QUAL-03): fixtures are created and removed by
+`PacketTracerPhysicalTopologyRuntime` (typed `DevicePlan`/`LinkPlan` rendered by
+PTBuilder, with the model category and ports taken from the device catalog).
+The workspace gate is `disposable_workspace_error`. Restoration uses
+`physical_workspace_restoration_matches`. The build is read by the shared S1
+reader. Q1 endpoint addressing uses `PacketTracerEnterpriseConfigurationRuntime`
+with `SetEndpointStaticAddress`. Q1 server enablement uses
+`PacketTracerEnterpriseServiceRuntime.apply_actions` with `EnableHttpService`
+and `EnableHttpsService`. Q1 fetches use the production `verify` path, with its
+owned-client lifecycle and release. The runner calls runtimes, not the E5/E6
+applicators: a Q stage measures per-step vendor facts, while integrated product
+acceptance remains a separate run through `apply_enterprise_services`
+(R-QUAL-06). The private probes exercise documented calls on owned fixtures
+only, and they are not product actions.
+
+Records reuse `RunRecordPersistenceError` and the S1 store pattern. A separate
+`QualificationRecord` and store are justified because a stage record has no
+deployment or manifest identity, and it carries an authorization, a ledger and
+measurements that `ServiceRunRecord` does not model.
+
+### 12.5 Failure semantics, ledger and record
+
+**Counting unit.** One operation is one command dispatched to the engine through
+the fixed transport: one `send`, `send_and_wait` or `dispatch_and_wait` call,
+whatever its result. Admission reads, fixture setup, experiment dispatch and
+polling, and finalization are all counted, including calls made inside the
+production runtimes, because those runtimes receive only the ledger-bound
+callables. Local liveness checks (webview poll recency, file heartbeat age)
+execute nothing in the engine. They are recorded but not counted.
+
+**Ledger.** It has four phases (admission, setup, experiment, finalization).
+Before the first effect it sets a reserve of operations and seconds that covers
+owned finalization. Outside finalization, a call is admitted only while
+`used + 1 <= max_operations - reserve_operations` and while time remains before
+`deadline - reserve_seconds`. Each call's timeout is capped by that remaining
+allowance, and waits between polls are capped the same way. Finalization may use
+the whole remaining budget. A refused call is recorded with its reason and never
+dispatched. The refusal proves only that this one call did not run; it is never
+evidence about an earlier effect. After a write-ahead failure the ledger's
+effect gate closes, and only finalization calls are admitted.
+
+**Planned minimum.** Each stage declares its setup, required-experiment and
+reserve costs at that unit. The admission rule refuses a stage whose planned
+minimum exceeds its hard ceiling (`INFEASIBLE`), before any reader or contact.
+
+| Stage | Setup | Required experiments | Reserve | Planned minimum | Ceiling |
+| --- | --- | --- | --- | --- | --- |
+| Q0 | build 1, workspace 1, PC1 create 2, identity read-back 1 = 5 | M-ENG-1 2, ATOM-1 3, M-UNREG-1/2 4 = 9 | run-bag release 1, PC1 removal 2, restoration 2 = 5 | **19** | 20 |
+| Q1 | build 1, workspace 1, 4 devices x 2, 3 links x 2, workspace read-back 1, E5 endpoint batch 1, E6 enable batch 1 = 19 | M-HTTPS-1 2, M-HTTPS-2 11, M-DNS-3 1 = 14 | 4 removals x 2, restoration 2 = 10 | **43** | 30 |
+
+Q1 is therefore **infeasible at its ceiling** under the transport-boundary
+counting unit, even with the minimum of one inspection per fetch and no endpoint
+read-back. The runner refuses Q1 before contact and reports the numbers. The
+limit is not raised, and Q1 is not shortened by dropping controls. This is an
+open review decision (12.10): a reviewed ceiling, a split of Q1 into separately
+authorized stages, or a smaller fixture. Q0 fits with one operation of slack.
+
+**Record** (`schema_version` 1, `record_kind` `server_services_qualification`):
+- run and stage identity, and the execution mode (`live` or
+  `offline_simulation`);
+- the authorization identity and full scope;
+- the expected head, executed SHA and tree, clean state, branch and upstream
+  head;
+- interpreter, package origin and isolation state;
+- the observed build, the reader id and SHA-256, and a bounded excerpt;
+- the fixed channel and when it was fixed;
+- fixture models, interfaces, links and addresses;
+- budgets, reserve and planned minimum, and the operation sequence (phase,
+  kind, purpose, capped timeout, elapsed time, dispatch/result facts, refusal
+  reason);
+- write-ahead stage transitions and the last durable stage;
+- admission reads and refusals;
+- every measurement, with its hypothesis, status (`ran`, `omitted`, `not_run`,
+  `interrupted`), conclusion, typed facts, causes and limitations;
+- the primary and secondary failures, releases and ownership outcomes, the two
+  restoration observations, engine residue, dirty state, `persist_error`, and
+  the outcome (`refused`, `completed`, `stopped`).
+
+Conclusions are `supported_in_sample`, `negative_observed`, `contradicted`,
+`inconclusive` and `not_evaluated`. A conclusion never generalizes beyond its
+sample, channel, build or SHA.
+
+**Stop rules.** New experiments stop at the first `contradicted` conclusion, at
+an outcome-unknown effect (creation `UNKNOWN`, a queued contender whose
+execution is unobserved, a lost mutating probe response), at budget exhaustion,
+and at a write-ahead failure. Finalization always runs after the first admitted
+effect, also for exceptions and `KeyboardInterrupt`, and a finalization failure
+is recorded as secondary.
+
+**Dirty state.** `clean` only when both restoration reads match the baseline,
+every owned release resolved and no engine residue remains. `dirty_recoverable`
+when known owned residue remains. Otherwise `unknown`. An observer that stays
+attached, an unreleased bag entry or a pending contender keeps the state
+`unknown` even when the workspace reads empty.
+
+### 12.6 Experiment definitions and oracles
+
+Every probe is a single-line script. All state lives under the run-namespaced
+bag `this.__mcpE6Q[<run_id>]`, and no production global (`__mcpE6Claims`,
+`__mcpE6Inert`, `__mcpE6HttpClients`) is written by a Q0 probe. Expected values
+in tests come from the stub's independent state, never from the reported row.
+
+**M-ENG-1 (Q0, required, 2 operations).** Hypothesis: a value written under the
+evaluation receiver `this` persists to a later, separate evaluation on the same
+fixed channel. Step 1 writes a run nonce and reports whether the receiver is the
+engine global and whether the run key already existed (a collision contradicts
+fresh ownership). Step 2, a separate evaluation, reads the value and releases it
+only when the nonce matches. Found and matching gives `supported_in_sample`. A
+completed read that reports absence gives `negative_observed`. A different value
+under the run key gives `contradicted`. An uncorrelated read gives
+`inconclusive`, and the release stays unresolved. The result is per channel and
+authorizes nothing about the other channel.
+
+**ATOM-1 (Q0, required, 3 operations; prerequisite M-ENG-1 supported).**
+Candidate invariant (3.7 inference): one evaluation is not interleaved with
+another. Two contenders are queued with `send`. Each logs `check` with a shared
+sequence, runs a fixed bounded widening loop, claims only when the run-owned
+claim is free, and logs its terminal step. A third evaluation collects the log
+and releases the run-owned record only when both contenders reached a terminal
+step. A double claim or another contender's entry between a contender's `check`
+and its terminal step is a counterexample (`contradicted`). A complete,
+well-formed log without a counterexample is `supported_in_sample`, and only as
+limited evidence: one bounded pair on one channel. It establishes neither
+universal atomicity, nor cross-channel mutual exclusion, nor exactly-once
+delivery. On the HTTP channel the bridge may join queued commands into one
+`runCode` batch (`interface.js` `runBatch`, `live_bridge.py`
+`MAX_BATCH_COMMANDS`), so that limitation is recorded there. An incomplete or
+absent log, or a contender whose `send` was not accepted, is `inconclusive` and
+an outcome-unknown effect: the record is not released. The claim is run-owned
+and is not the production claim map, so no claim reset is involved.
+
+**M-UNREG-1 and M-UNREG-2 (Q0, required, 4 shared operations on
+`__MCP_E6Q_PC1`; prerequisite M-ENG-1 supported).**
+- Source: `Pc::getCommandPrompt()` gives a `TerminalLine` with event
+  `commandEnded(string, CommandStatus)`.
+- Registration: `obj.registerEvent(name, null, cb)`, whose callback `src`
+  carries `className`, `objectUuid` and `eventName`.
+- Trigger: `enterCommand("ipconfig")`.
+- Release: `_ScriptModule.unregisterIpcEventByID(className, uuid, event, null,
+  cb)` is used by the maintained extension (`main.js:16`), but no Cisco page
+  documents it, so it is labelled undocumented existing usage. Its return value
+  is recorded by type only and never interpreted.
+- All other calls are documented in the local Cisco reference.
+
+The steps:
+
+- A: register cb1 and trigger X.
+- B: read cb1's evidence, then register cb2, which has received zero events.
+- C: release cb1 with the source identity that cb1's own event supplied. Mark
+  cb2 inert (no identity was ever observed for it, so no uuid is invented and
+  no unregister is attempted). Register the control observer cb3, then trigger
+  Y.
+- D: read the invocation counters of the three callbacks, attempt release of
+  cb2 and cb3 with the identities that their own events supplied (outcome
+  unverified), and drop the run's bookkeeping.
+
+Callbacks count every invocation separately from the bounded event list, so an
+inert callback still reveals that it remains attached. The conclusions are:
+
+- Delivery (M-UNREG-1): a cb1 event after X is `supported_in_sample`. No event
+  is `inconclusive`: it proves neither delivery nor non-delivery.
+- Release (M-UNREG-1): the release call did not throw, cb3 was invoked after Y
+  and cb1 was not, which is `supported_in_sample`. cb1 invoked after Y is
+  `contradicted`. cb3 not invoked is `inconclusive`. A release not attempted or
+  one that threw is `inconclusive`.
+- Zero-event release (M-UNREG-2): no identity-free release exists in the
+  documented or observed surface, so `safe_zero_event_release_established` is
+  always false and the fallback set of R-EVT-05 applies. The measured part is
+  the inert fallback. With the zero-event precondition held (cb2 not invoked
+  before C) and cb3 invoked after Y, cb2 invoked while recording nothing is
+  `supported_in_sample`, which means the observer remains attached and inertness
+  bounds it. cb2 not invoked while cb3 was is `contradicted`, because something
+  unexplained detached it. A violated precondition or an uninvoked control is
+  `inconclusive`.
+
+Observer cleanup is not effect ownership: the remaining observers are engine
+residue, and the dirty state stays `unknown`.
+
+**M-HTTP-1 (Q0, optional).** Omitted: its prerequisite, an HTTP server in the
+fixture, is absent from the one-PC Q0 fixture, and no dependency is added to
+run it.
+
+**Q1 fixture (19 operations).**
+- Server-PT `__MCP_E6Q_SRV`, PC-PT `__MCP_E6Q_PC1` and `__MCP_E6Q_PC2`, and
+  2960-24TT `__MCP_E6Q_SW`, with straight links to `FastEthernet0/1..3`.
+- Addresses from TEST-NET-1: SRV `192.0.2.10/24`, PC1 `.11` with resolver
+  `.10`, PC2 `.12` with no resolver.
+- E5 `SetEndpointStaticAddress` batch, then E6 `EnableHttpService` and
+  `EnableHttpsService`.
+
+**M-HTTPS-1 (Q1, 2 operations).** The hypotheses are kept separate: object
+identity (`getProcess("HttpsServer") === getProcess("HttpServer")`, recorded as
+a fact that does not establish ownership) and page-table visibility. Step 1
+writes distinct run-specific markers to distinct run-specific pages through each
+handle. Step 2, a separate evaluation, reads all four combinations. Both
+self-reads must contain their own marker, otherwise the result is
+`inconclusive`. Symmetric cross-visibility gives `supported_in_sample` with
+`page_table_model=shared`. Symmetric absence gives the same conclusion with
+`separate`. Asymmetric visibility contradicts both candidate models
+(`contradicted`). This does not choose `SetHttpsContent` or `shared_content`;
+S1b does.
+
+**M-HTTPS-2 (Q1, 11 operations).**
+- Setup: the positive setup writes an `index.html` that carries a run marker
+  through both handles (so that the result does not presuppose M-HTTPS-1),
+  disables HTTP, and reads back `isEnabled`/`isHttpsEnabled`.
+- P: an HTTPS-mode fetch by PC1 through the production reader.
+- N2: an HTTP-mode fetch with HTTP disabled.
+- N1: `setHttpsEnable(false)` with read-back, then an HTTPS-mode fetch.
+
+A negative is established only by a fresh, completed response that lacks the
+marker (the production row `contradicted` with an empty cause) from a client
+whose mode was confirmed, and only after P observed the marker. The oracle for
+each outcome:
+
+- A marker observed under N1 or N2 is `contradicted` (N1 is the plan's stop
+  condition).
+- A deadline without fresh content, `client_go_false`, a transport fact, an
+  unconfirmed HTTPS mode or an unestablished toggle is `inconclusive`, never a
+  negative.
+- Without a positive P the negatives have no discriminating power and are
+  `inconclusive`.
+- N2 has no HTTP-mode positive control in this run, and that limitation is
+  recorded.
+- The owned-client release outcome of each fetch is carried into the releases.
+
+**M-DNS-3 (Q1, 1 operation).** Private read of
+`getProcess("DnsClient").getServerIp()` on PC1 and PC2 (documented; the product
+has no such reader). PC1 equal to its E5-intended resolver is
+`supported_in_sample`. A different non-empty value after an accepted E5 dispatch
+is `contradicted`. The raw PC2 value is recorded as the measured representation
+of "unset". An unobserved E5 dispatch or read is `inconclusive`.
+
+**M-DNS-1/2 (Q1, optional).** Omitted, because the required Q1 set alone
+exceeds the ceiling. No `nslookup` parser is added and no reader is promoted.
+
+**Q2/Q3.** These are declarative. Their prerequisites (S2 and S3, and for Q2 a
+Q0 record) are unmet, so both refuse as `NOT_PERMITTED` before any reader.
+
+### 12.7 Invariants
+
+- No bridge contact before request admission, process isolation, repository
+  identity and a writable record. No fixture effect before the exact-build and
+  empty-workspace reads.
+- One channel per invocation, one ledger, and no uncounted engine operation.
+- The reserve is set before the first effect and never consumed by
+  non-finalization work.
+- No device is removed unless this invocation's runtime attempted its creation.
+  There is no prefix deletion, no adoption, no repeated ambiguous cleanup and
+  no claim reset.
+- Offline simulations can never satisfy the promotion predicate. The runner
+  mutates no catalog.
+- S1's public route, retained reuse, scoped E5 contradiction/uncertainty gates,
+  fixed session, client rows and release projection are unchanged. The moved
+  reader keeps byte-identical script text and parse rules.
+
+### 12.8 Test design
+
+| Level | Scope | Module |
+| --- | --- | --- |
+| Unit (module contracts) | request admission table, feasibility, ledger exact/over limit and deadline caps, record/promotion predicate, store containment and immutability, reader parse reasons, classification rules | `tests/test_service_qualification_contracts.py`, `tests/test_service_qualification_store.py` |
+| Integration (architecture) | coordinator over injected transport, runtimes and clock: call order, refused calls, write-ahead boundaries, finalization triggers, ownership and restoration | `tests/test_service_qualification_coordinator.py` |
+| Probe harness | the actual generated Q0/Q1 scripts and the reused production scripts, evaluated by one long-lived Node process over a stateful stub engine; fails rather than skips under `GITHUB_ACTIONS` | `tests/test_service_qualification_probes.py`, stub in `tests/service_qualification_engine.py` |
+| System | the real CLI entry and production composition, with only external boundaries controlled: nominal Q0 simulation on each channel, default and unauthorized refusal, Q1 infeasibility, Q2/Q3 refusal, target/SHA/build/channel mismatch, real `TEST_PROCESS` refusal before contact | `tests/test_service_qualification_cli.py` |
+| Acceptance | this table's criteria traced in 12.9 | brief |
+| LIVE | not applicable in this assignment: Q0/Q1 each need their own stage- and SHA-specific authorization | none |
+
+Required pairs:
+
+- complete versus missing, stale or malformed provenance;
+- an empty workspace versus a foreign or unobservable one;
+- safe creation versus collision or an unknown effect;
+- the exact budget versus a budget stop with the reserve kept;
+- an observed negative versus a timeout;
+- a contradictory versus an inconclusive result;
+- successful versus failing cleanup;
+- observer residue independent of workspace emptiness;
+- persistence loss before versus after an effect;
+- no claim reset;
+- mismatched-SHA and offline records refused as promotion evidence.
+
+These are new APIs, so their tests derive from these requirements and no
+import-error RED is manufactured. The version-reader move changes no behavior;
+it is covered by the existing S1 Node and public-route tests plus a parity
+assertion.
 
 ---
 
