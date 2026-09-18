@@ -235,8 +235,68 @@ consumer list as its input.
 
 ## Verification evidence
 
-Results of the correction are recorded once, in
-[`docs/qa/server-services-qualification.md`](../../qa/server-services-qualification.md)
-for the stage contract and in this section for the delivery. Historical logs are
-immutable and are never reconstructed; every log is labelled with the SHA and
-tree it actually exercised.
+Every figure below was observed in the sibling worktree `Cisco-MCP-s4a` on
+branch `feature/server-pt-s4a-qualification-runner`, with its own `.venv`
+(CPython 3.12.10) and `packet_tracer_mcp` resolving inside that worktree.
+Instruction loading: this session loaded `CLAUDE.md`, `AGENTS.md` and
+`docs/engineering/standards.md` from the primary checkout, and the three files
+in this worktree are byte-identical to them (same Git blob identities). A fresh
+session started inside this worktree was not observed, so its effective loading
+remains **pending**, not passed. Nothing in this delivery contacted Packet
+Tracer, and the two commits below are unpushed.
+
+| Commit | Tree | Scope |
+| --- | --- | --- |
+| `b311657` | `0e16fdd` | Part A: documentation projection, no runtime or test behavior |
+| `78fdb91` | `dfe8858` | Part B: the S4A-C1..C4 corrections and their regressions |
+
+A third, documentation-only commit adds this section and is the branch tip. It
+changes no Python file, so the Ruff gate, the namespace inventory and the suite
+below are unaffected by it; the exact-commit delivery gate, the MkDocs build and
+the whitespace check were re-run on it.
+
+Checks, against `78fdb91` unless stated:
+
+| Check | Command | Result |
+| --- | --- | --- |
+| causal regressions | `pytest -q` on the four S4a modules | 115 + 33 + 40 + 19 passed |
+| affected S4a and S1 area | `pytest -q` on the S4a, run-record, product-entry and service-runtime modules | 455 passed |
+| full offline suite | `pytest -q` | 6166 passed, 3 skipped, 3 pre-existing warnings |
+| quality gate, delivery mode | `scripts\quality_gate.py --base cisco/main --delivery-commit HEAD` | clean tree at the exact commit; 63 changed Python files gated, 0 mechanical exemptions, Ruff lint and format clean |
+| namespace inventory | `scripts\namespace_inventory.py` | 0 active imports, 0 active strings, 0 unreviewed inert mentions. Markdown is not scanned, so the archival path does not affect its classification |
+| docs | `mkdocs build --site-dir _site` | built; only the two pre-existing `handoff.md` link warnings, none introduced |
+| whitespace | `git diff --check` | clean |
+| archive integrity | SHA-256 of every archived file after deleting and re-checking it out | all eight match `source-manifest.json`; the brief archive's Git blob identity equals its source blob at `9973f66` |
+
+Measured result of the projection, as committed blob bytes:
+
+| File | Before (`9973f66`) | After (`78fdb91`) |
+| --- | --- | --- |
+| `docs/engineering/change-briefs/server-pt-services.md` | 391,435 | 19,052 |
+| `handoff.md` | 267,914 | 269,299 |
+| `AGENTS.md`, `CLAUDE.md`, `docs/engineering/standards.md` | 22,625 | 22,625 |
+| **default reading set** | **681,974** | **310,976** |
+
+No token or cost figure is claimed: none was measured, and none would be
+meaningful without naming its tokenizer.
+
+Measured result of the corrections: the Q1 executor's nominal trace spends 45
+operations and its worst case, with the positive fetch's first inspection lost,
+spends exactly the planned 46 with no refused call and the 10-operation reserve
+untouched. The full Q1 stage now passes its gate and completes through the CLI.
+
+### Residual limitations
+
+- **Not LIVE-ready, and not accepted.** S4a stays `READY_FOR_REVIEW`. Only an
+  independent reviewer can accept it, and no Q0 or Q1 LIVE authorization exists.
+- **Exact-SHA CI is pending.** `78fdb91` has never been pushed, so no CI run has
+  ever seen it. The earlier green run belongs to `9973f66` and is not
+  relabelled.
+- **Offline only.** Every probe result above comes from the Node stub engine.
+  Whether Packet Tracer behaves the way that stub does is exactly what Q0 and Q1
+  would measure, and no offline run is promotion evidence.
+- **M-HTTPS-2 cannot be supported by this build's readers.** The measurement is
+  INCONCLUSIVE by construction until a qualified listener-refusal observable
+  exists. Adding one is an S1b/Q1b question, not a change to make here.
+- **The `handoff.md` reduction is deferred**, with its consumers listed above.
+- **Instruction loading inside this worktree is unobserved**, as stated above.
