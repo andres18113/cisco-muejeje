@@ -212,13 +212,120 @@ def test_an_unowned_run_key_takes_no_contender_and_no_observer(engine_factory):
     probes.queue_atomicity_contender("A")
     collect = probes.collect_atomicity()
     register = probes.register_observer_and_trigger(PC)
-    assert collect.observed and collect.payload["present"] is False
+    assert not collect.observed
+    assert collect.cause == "probe_error:run_bag_not_owned"
     assert register.observed and register.payload["registered1"] is False
     assert register.payload["register1_error"] == "run_bag_not_owned"
     snapshot = engine.snapshot()
     assert snapshot["registrations"] == []
     assert snapshot["devices"][0]["ports"] == []
     assert _bag(engine) == {RUN: planted}
+
+
+def test_a_foreign_complete_atom_log_is_neither_evidence_nor_deleted(engine_factory):
+    """Collection must prove ownership before reading or releasing a log."""
+    engine = engine_factory()
+    planted = _plant_foreign_run_key(engine)
+    planted["atom"] = {
+        "claim": "A",
+        "seq": 4,
+        "log": [
+            {"c": "A", "s": "check", "n": 1},
+            {"c": "A", "s": "claimed", "n": 2},
+            {"c": "B", "s": "check", "n": 3},
+            {"c": "B", "s": "refused", "n": 4},
+        ],
+    }
+    engine.evaluate(
+        f"this.__mcpE6Q[{json.dumps(RUN)}]={json.dumps(planted)};"
+        "reportResult('planted');"
+    )
+    before = _bag(engine)
+    probes, _transport = _probes(engine)
+
+    collect = probes.collect_atomicity()
+
+    assert not collect.observed
+    assert collect.cause == "probe_error:run_bag_not_owned"
+    assert _bag(engine) == before
+
+
+def test_atomicity_collection_rechecks_ownership_after_a_successful_claim(
+    engine_factory,
+):
+    """A prior claim does not survive replacement of its owner field."""
+    engine = engine_factory()
+    probes, _transport = _probes(engine)
+    _claim(probes)
+    for contender in ("A", "B"):
+        assert probes.queue_atomicity_contender(contender).accepted
+    # Evaluating this script first drains both contenders, then replaces the
+    # ownership fact before the collection continuation begins.
+    engine.evaluate(
+        f"this.__mcpE6Q[{json.dumps(RUN)}].owner='replacement-owner';"
+        "reportResult('replaced');"
+    )
+    before = _bag(engine)
+
+    collect = probes.collect_atomicity()
+
+    assert not collect.observed
+    assert collect.cause == "probe_error:run_bag_not_owned"
+    assert _bag(engine) == before
+
+
+def test_absent_run_key_stops_every_mutating_continuation(engine_factory):
+    """Absence is reported separately and creates no callbacks or bag state."""
+    engine = engine_factory()
+    engine.seed_device(PC, "PC-PT")
+    probes, _transport = _probes(engine)
+    before = engine.snapshot()
+
+    readings = (
+        probes.collect_atomicity(),
+        probes.read_observer_and_register_zero_event(PC),
+        probes.release_observers_and_trigger(PC),
+        probes.read_post_release_and_drop(),
+    )
+
+    assert all(not item.observed for item in readings)
+    assert {item.cause for item in readings} == {"probe_error:run_bag_absent"}
+    assert engine.snapshot() == before
+    assert _bag(engine) == {}
+
+
+@pytest.mark.parametrize("continuation", ["evidence", "release", "after"])
+def test_foreign_observer_bookkeeping_stops_before_each_continuation_effect(
+    engine_factory, continuation
+):
+    """Usable callbacks owned by another invocation are never adopted."""
+    engine = engine_factory()
+    engine.seed_device(PC, "PC-PT")
+    owner, _transport = _probes(engine, nonce="1" * 32)
+    _claim(owner)
+    registered = owner.register_observer_and_trigger(PC)
+    assert registered.observed and registered.payload["registered1"] is True
+    if continuation in ("release", "after"):
+        evidence = owner.read_observer_and_register_zero_event(PC)
+        assert evidence.observed and evidence.payload["registered2"] is True
+    if continuation == "after":
+        release = owner.release_observers_and_trigger(PC)
+        assert release.observed and release.payload["registered3"] is True
+
+    before_bag = _bag(engine)
+    before_state = engine.snapshot()
+    foreign, _transport = _probes(engine, nonce="2" * 32)
+    if continuation == "evidence":
+        reading = foreign.read_observer_and_register_zero_event(PC)
+    elif continuation == "release":
+        reading = foreign.release_observers_and_trigger(PC)
+    else:
+        reading = foreign.read_post_release_and_drop()
+
+    assert not reading.observed
+    assert reading.cause == "probe_error:run_bag_not_owned"
+    assert _bag(engine) == before_bag
+    assert engine.snapshot() == before_state
 
 
 def test_a_fresh_receiver_per_evaluation_is_an_observed_negative(engine_factory):
@@ -237,16 +344,31 @@ def test_a_fresh_receiver_per_evaluation_is_an_observed_negative(engine_factory)
 # -- ATOM-1 --------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(("queue", "channel"), [("fifo", "file"), ("coalesce", "http")])
-def test_queued_contenders_leave_one_ordered_claim(engine_factory, queue, channel):
-    """Sequential or batched evaluations produce one claim and no interleaving."""
+@pytest.mark.parametrize(
+    ("queue", "channel", "conclusion", "scope"),
+    [
+        ("fifo", "file", SUPPORTED, "separate_evaluations"),
+        ("coalesce", "http", INCONCLUSIVE, "unknown"),
+    ],
+)
+def test_queued_contenders_keep_the_log_without_overstating_evaluation_scope(
+    engine_factory, queue, channel, conclusion, scope
+):
+    """The ordered log survives even when batching leaves separation unknown."""
     engine = engine_factory(queue=queue)
     probes, _transport = _probes(engine)
     _claim(probes)
     receipts = [probes.queue_atomicity_contender(name) for name in ("A", "B")]
     collect = probes.collect_atomicity()
     result = assess_atomicity(receipts, collect, channel=channel)
-    assert result.conclusion is SUPPORTED
+    assert result.conclusion is conclusion
+    assert result.facts["evaluation_scope"] == scope
+    assert result.facts["log"] == [
+        {"c": "A", "s": "check", "n": 1},
+        {"c": "A", "s": "claimed", "n": 2},
+        {"c": "B", "s": "check", "n": 3},
+        {"c": "B", "s": "refused", "n": 4},
+    ]
     assert engine.snapshot()["run_bags"] == {RUN: ["owner", "sentinel"]}
 
 

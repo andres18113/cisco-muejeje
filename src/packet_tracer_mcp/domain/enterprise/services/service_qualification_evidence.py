@@ -196,6 +196,9 @@ def assess_atomicity(
         limitations.append("http_channel_may_join_queued_commands_into_one_batch")
     facts: dict[str, Any] = {
         "channel": channel,
+        "evaluation_scope": (
+            "separate_evaluations" if channel == "file" else "unknown"
+        ),
         "queued": {item.step: item.accepted for item in contenders},
     }
     if not all(item.accepted for item in contenders):
@@ -248,6 +251,13 @@ def assess_atomicity(
             )
     if len(claimed) != 1:
         return Assessment(INCONCLUSIVE, facts, ["no_claim_recorded"], limitations)
+    if channel != "file":
+        return Assessment(
+            INCONCLUSIVE,
+            facts,
+            ["separate_evaluations_not_observed"],
+            limitations,
+        )
     return Assessment(SUPPORTED, facts, [], limitations)
 
 

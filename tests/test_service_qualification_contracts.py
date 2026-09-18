@@ -589,12 +589,23 @@ _SERIAL = [
 ]
 
 
-def test_atomicity_sample_without_counterexample_is_only_limited_support():
-    """No interleaving in one pair supports that pair, and nothing universal."""
+def test_atomicity_http_sample_is_inconclusive_without_observed_separation():
+    """An ordered HTTP log does not prove it came from separate evaluations."""
     result = assess_atomicity(_receipts(), _collect(_SERIAL), channel="http")
-    assert result.conclusion is SUPPORTED
+    assert result.conclusion is INCONCLUSIVE
+    assert result.causes == ["separate_evaluations_not_observed"]
+    assert result.facts["evaluation_scope"] == "unknown"
+    assert result.facts["log"] == _SERIAL
     assert "not_universal_atomicity" in result.limitations
     assert "http_channel_may_join_queued_commands_into_one_batch" in result.limitations
+
+
+def test_atomicity_file_sample_supports_only_its_observed_separate_pair():
+    """A file-channel pair can be scoped support while remaining finite."""
+    result = assess_atomicity(_receipts(), _collect(_SERIAL), channel="file")
+    assert result.conclusion is SUPPORTED
+    assert result.facts["evaluation_scope"] == "separate_evaluations"
+    assert "not_universal_atomicity" in result.limitations
 
 
 def test_atomicity_counterexamples_contradict_the_candidate_invariant():

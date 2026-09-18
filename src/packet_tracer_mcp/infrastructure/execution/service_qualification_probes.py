@@ -285,14 +285,14 @@ class PacketTracerQualificationProbes:
         """
         run, nonce = self._run, self._nonce
         return (
-            "var __q=this.__mcpE6Q;var __r=(__q&&Object.prototype"
-            f".hasOwnProperty.call(__q,{run}))?__q[{run}]:null;"
+            "var __q=this.__mcpE6Q;var __present=!!(__q&&Object.prototype"
+            f".hasOwnProperty.call(__q,{run}));var __r=__present?__q[{run}]:null;"
             f"var __own=!!(__r&&__r.owner==={nonce});"
         )
 
     def _observer_bag(self) -> str:
-        run = self._run
-        return f"var __q=this.__mcpE6Q;var __r=__q&&__q[{run}];var __B=__r&&__r.unreg;"
+        """Bind observer state only after proving this invocation owns the bag."""
+        return self._owned_bag() + "var __B=__own&&__r.unreg;"
 
     @staticmethod
     def _source(device: str) -> str:
@@ -392,11 +392,14 @@ class PacketTracerQualificationProbes:
 
     def collect_atomicity(self) -> ProbeReading:
         """Collect the ordered contender log; release it only when complete."""
-        run = self._run
         return self._read(
             "atom_collect",
-            f"var __q=this.__mcpE6Q;var __r=__q&&__q[{run}];var __a=__r&&__r.atom;"
-            "if(!__a){reportResult(JSON.stringify({present:false,log:[],claim:'',"
+            self._owned_bag()
+            + "if(!__present){reportResult(JSON.stringify({step:'atom_collect',"
+            "probe_error:'run_bag_absent'}));}else if(!__own){reportResult("
+            "JSON.stringify({step:'atom_collect',probe_error:'run_bag_not_owned'}));}"
+            "else{var __a=__r.atom;if(!__a){reportResult(JSON.stringify("
+            "{present:false,log:[],claim:'',"
             "terminal_steps:0,released:false}));}else{var __log=[],__t=0;"
             "for(var __i=0;__i<__a.log.length;__i++){var __v=__a.log[__i];"
             "if(__v.s==='claimed'||__v.s==='refused'){__t++;}"
@@ -405,7 +408,7 @@ class PacketTracerQualificationProbes:
             "if(__t===2&&__a.log.length===4){delete __r.atom;"
             "__rel=!__has(__r,'atom');}"
             "reportResult(JSON.stringify({present:true,log:__log,"
-            "claim:String(__a.claim),terminal_steps:__t,released:__rel}));}",
+            "claim:String(__a.claim),terminal_steps:__t,released:__rel}));}}",
         )
 
     # -- M-UNREG-1 / M-UNREG-2 ---------------------------------------------
@@ -447,7 +450,11 @@ class PacketTracerQualificationProbes:
         return self._read(
             "unreg_evidence",
             self._observer_bag()
-            + "if(!__B||!__B.cb1){reportResult(JSON.stringify({step:'unreg_evidence',"
+            + "if(!__present){reportResult(JSON.stringify({step:'unreg_evidence',"
+            "probe_error:'run_bag_absent'}));}else if(!__own){reportResult("
+            "JSON.stringify({step:'unreg_evidence',"
+            "probe_error:'run_bag_not_owned'}));}else if(!__B||!__B.cb1){"
+            "reportResult(JSON.stringify({step:'unreg_evidence',"
             "probe_error:'observer_bookkeeping_absent'}));}else{"
             + self._source(device)
             + "var __ev=[];for(var __i=0;__i<__B.cb1.events.length;__i++){"
@@ -467,7 +474,11 @@ class PacketTracerQualificationProbes:
         return self._read(
             "unreg_release",
             self._observer_bag()
-            + "if(!__B||!__B.cb1||!__B.cb2){reportResult(JSON.stringify("
+            + "if(!__present){reportResult(JSON.stringify({step:'unreg_release',"
+            "probe_error:'run_bag_absent'}));}else if(!__own){reportResult("
+            "JSON.stringify({step:'unreg_release',"
+            "probe_error:'run_bag_not_owned'}));}else if(!__B||!__B.cb1||!__B.cb2){"
+            "reportResult(JSON.stringify("
             "{step:'unreg_release',probe_error:'observer_bookkeeping_absent'}));}"
             "else{var __e1=__B.cb1,__e2=__B.cb2,__id=null;"
             "for(var __i=0;__i<__e1.events.length;__i++){var __v=__e1.events[__i];"
@@ -499,7 +510,11 @@ class PacketTracerQualificationProbes:
         return self._read(
             "unreg_after",
             self._observer_bag()
-            + "if(!__B||!__B.cb1||!__B.cb2||!__B.cb3){reportResult(JSON.stringify("
+            + "if(!__present){reportResult(JSON.stringify({step:'unreg_after',"
+            "probe_error:'run_bag_absent'}));}else if(!__own){reportResult("
+            "JSON.stringify({step:'unreg_after',"
+            "probe_error:'run_bag_not_owned'}));}else if(!__B||!__B.cb1||!__B.cb2||"
+            "!__B.cb3){reportResult(JSON.stringify("
             "{step:'unreg_after',probe_error:'observer_bookkeeping_absent'}));}"
             "else{var __e1=__B.cb1,__e2=__B.cb2,__e3=__B.cb3,__y=__B.trigger_y||0;"
             "var __after=function(e){var c=0;for(var i=0;i<e.events.length;i++){"

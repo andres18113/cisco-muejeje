@@ -30,6 +30,8 @@ Behaviour switches (`config`) select the engine facts under test:
   cell without failing the others;
 - `fetch_failure`: `error_page` renders fresh non-marker content for a refused
   fetch; `unchanged` leaves the client page as it was (a timeout);
+- `fetch_content_override`: when set to a string, a served fetch returns that
+  fresh content instead of the server page, modelling a wrong completed read;
 - `serve_https_when_disabled` / `serve_http_when_disabled`: contradict the
   candidate listener model on purpose;
 - `version`, `version_getter`, `active_file`, `unset_dns`.
@@ -62,6 +64,7 @@ const config = Object.assign({
   deliver_events: 'after_eval', unregister_available: true,
   unregister_effective: true, unregister_throws: false, register_throws: false,
   https_identity: 'distinct', page_tables: 'separate', fetch_failure: 'error_page',
+  fetch_content_override: null,
   serve_https_when_disabled: false, serve_http_when_disabled: false,
   unset_dns: '0.0.0.0', reset_claim_between_queued: false, go_returns: true,
   create_throws: false, remove_throws: false, readdress_throws: false,
@@ -187,6 +190,9 @@ const makeClient = () => {
           : (web.httpEnabled || config.serve_http_when_disabled);
         if (served) {
           c.page = (c.https ? web.tables.https : web.tables.http)['index.html'] || '';
+          if (typeof config.fetch_content_override === 'string') {
+            c.page = config.fetch_content_override;
+          }
         }
       }
       if (!served && config.fetch_failure === 'error_page') { c.page = 'Request Timeout'; }

@@ -1560,6 +1560,14 @@ def _https_listener(execution: _Execution) -> Assessment:
     if not listener_toggle_established(positive_setup, http=False, https=True):
         return assess_https_listener(positive_setup, None, None, None, None)
     positive = _fetch(execution, "https-positive", "https", marker)
+    positive_assessment = assess_https_listener(
+        positive_setup, positive, None, None, None
+    )
+    if (
+        execution.stopped
+        or positive_assessment.conclusion is MeasurementConclusion.CONTRADICTED
+    ):
+        return positive_assessment
     http_negative = _fetch(execution, "http-negative", "http", marker)
     partial = assess_https_listener(positive_setup, positive, http_negative, None, None)
     if partial.conclusion is MeasurementConclusion.CONTRADICTED:

@@ -778,6 +778,43 @@ def test_an_unread_listener_toggle_admits_no_fetch_and_no_second_toggle(harness)
     assert h.engine.snapshot()["devices"] == []
 
 
+def test_wrong_positive_page_is_classified_before_any_negative_effect(harness):
+    """A released positive contradiction stops at its own channel boundary."""
+    h = harness({"fetch_content_override": "WRONG-FRESH-PAGE"})
+
+    record, _ledger = _q1_executor(h)
+
+    listener = next(
+        item for item in record.measurements if item.experiment_id == "M-HTTPS-2"
+    )
+    assert listener.conclusion is MeasurementConclusion.CONTRADICTED
+    assert listener.facts["positive_https_only"]["fetch"] == "fresh_without_marker"
+    assert listener.facts["negative_http_mode_http_disabled"]["fetch"] == "not_run"
+    assert listener.facts["negative_https_mode_https_disabled"]["fetch"] == "not_run"
+    assert len(h.scripts("createClient()")) == 1
+    assert h.scripts("setHttpsEnable(false)") == []
+    assert h.scripts("getServerIp()") == []
+    assert [item.resource for item in record.releases if item.kind == "client"] == [
+        "client:https-positive"
+    ]
+    dns = next(item for item in record.measurements if item.experiment_id == "M-DNS-3")
+    assert dns.status is MeasurementStatus.NOT_RUN
+    assert dns.reason == "stopped:contradiction:M-HTTPS-2"
+    assert record.primary_failure == "contradiction:M-HTTPS-2"
+    assert [item.step for item in record.transitions][-2:] == [
+        "finalization:started",
+        "finalization:completed",
+    ]
+    durable = h.durable()
+    durable_listener = next(
+        item for item in durable.measurements if item.experiment_id == "M-HTTPS-2"
+    )
+    assert durable_listener.conclusion is MeasurementConclusion.CONTRADICTED
+    assert durable.primary_failure == "contradiction:M-HTTPS-2"
+    snapshot = h.engine.snapshot()
+    assert snapshot["devices"] == [] and snapshot["live_clients"] == 0
+
+
 def test_q1_https_success_with_https_disabled_stops_the_stage(harness):
     """The declared contradiction: M-DNS-3 does not run afterwards."""
     h = harness({"serve_https_when_disabled": True})

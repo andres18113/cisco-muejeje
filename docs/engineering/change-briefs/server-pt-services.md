@@ -9,7 +9,9 @@ resolutions — is preserved byte-for-byte under
 only to answer a named unresolved question.
 
 Authority order: `AGENTS.md` and `docs/engineering/standards.md` first, then the
-owning code and its tests, then this brief. A historical record never grants a
+approved active requirements and design recorded in this brief, then the owning
+code and its tests. Code shows actual behavior and tests verify it; neither may
+silently redefine an approved requirement. A historical record never grants a
 permission, and a LIVE permission recorded in one never applies to a new run.
 
 ## Accepted baselines
@@ -30,8 +32,10 @@ stays at its documentary or offline level.
 
 ## Active scope
 
-Correct, offline, the three causal defects the `9973f66` review raised in the
-S4a qualification runner, and keep S4a unaccepted until they close.
+Complete, offline, the existing S4A-C1..C4 correction contract after review of
+`405f293`, and keep S4a unaccepted until the remaining continuation ownership,
+effect-ordering, evidence-scope and projection defects close. The reviewed
+commit, not main, is the base of this focused correction.
 
 In scope:
 
@@ -64,15 +68,16 @@ were already superseded, rejected or not yet activated there.
 | R-OBS-02, 06, 07, 08; RD-10 — mutation decision, script contract, effect footprint | `domain/enterprise/models/execution.py` (`decide_mutation` and its fact enums), `enterprise_configuration_runtime.py`, `enterprise_service_runtime.py`; [E6 architecture](../../architecture/enterprise-services.md#mutation-and-observation-vocabulary); `tests/test_execution_status_facts.py`, `tests/test_service_mutation_script_harness.py`, `tests/test_service_application_uncertainty.py` |
 | R-OBS-03, R-HTTPS-02/03, R-ENTRY-08, R-CAP-05 — observation limits | `enterprise_service_runtime.py`; `tests/test_service_runtime_observation.py`, `tests/test_service_runtime.py` |
 | R-EVD-01 — evidence separated from status | `domain/enterprise/models/service_runtime.py` (`ObservationFact`); `tests/test_service_application_uncertainty.py` |
-| R-ENTRY-01..11, R-NET-01/02, R-RET-01/02 — product entry, admission, run records | `adapters/mcp/service_tools.py`, `application/use_cases/apply_enterprise_services.py`, `infrastructure/persistence/service_run_record_store.py`, `docs/tools.md`; `tests/test_apply_enterprise_services.py`, `tests/test_service_tools_surface.py`, `tests/test_service_run_record_store.py` |
+| R-ENTRY-01..11, R-NET-01/02, R-RET-01/02 — product entry, admission, run records | `adapters/mcp/service_tools.py`, [apply_enterprise_services.py](../../../src/packet_tracer_mcp/application/use_cases/apply_enterprise_services.py), `infrastructure/persistence/service_run_record_store.py`, `docs/tools.md`; [test_apply_enterprise_services.py](../../../tests/test_apply_enterprise_services.py), `tests/test_service_tools_surface.py`, `tests/test_service_run_record_store.py`. R-ENTRY-07 is active for S1: the product path removes no user topology, service, account or message; future S2 coverage is an extension, not activation of the existing S1 obligation |
 | R-ENTRY-04 — foundational evidence | `application/use_cases/foundational_evidence.py`; `tests/test_service_foundational_evidence.py` |
 | R-CAP-01..07 — capability authority and provenance | `infrastructure/catalog/service_capabilities.py`, `domain/enterprise/services/service_capability_resolution.py`; [E6 architecture](../../architecture/enterprise-services.md#packet-tracer-9010858-baseline); `tests/test_service_capabilities.py`, `tests/test_service_client_capabilities.py` |
 | R-QUAL-01..04 — the governed qualification runner | `domain/enterprise/models/service_qualification.py`, `application/use_cases/qualify_server_services.py`, `adapters/cli/service_qualification.py`, `docs/qa/server-services-qualification.md`; the S4a tests below |
 | R-SEC-02/04, R-REG-01/03 — secret handling, registry hygiene, enum presentation | `docs/engineering/standards.md`, the Ruff configuration in `pyproject.toml`, `scripts/quality_gate.py`; `tests/test_execution_status_facts.py` |
 | R-TEST-01 — test-inventory discipline | `docs/engineering/standards.md`, *Architecture and test design*. It is a general rule, not an S0-only one |
 | R-HTTP-01..03, R-DNS-01..03 — DNS and HTTP service contracts | [E6 architecture](../../architecture/enterprise-services.md); `domain/enterprise/services/service_compiler.py`; `tests/test_enterprise_services.py` |
+| R-COV-01/02 — complete, honestly labelled per-client product results | [apply_enterprise_services.py](../../../src/packet_tracer_mcp/application/use_cases/apply_enterprise_services.py), [service_compiler.py](../../../src/packet_tracer_mcp/domain/enterprise/services/service_compiler.py); [test_apply_enterprise_services.py](../../../tests/test_apply_enterprise_services.py), including skipped, blocked, recovery and unsampled-result assertions. These obligations are active in S1; later slices extend their service coverage |
 | R-QUAL-05/06 — re-qualification after a content or protocol change | this brief, **Open decisions**; unimplemented until S1b, S2 or S3 is authorized |
-| R-HTTPS-01/04, R-DNS-04, R-MAIL-01..07, R-DHCP-01..08, R-EVT-01..07, R-SEC-01/03/05/06, R-OBS-04/05, R-COV-01/02, R-ENTRY-07 | **not active.** Their text stays in the [archived brief](../../reference/server-pt/server-pt-services-brief-9973f66.md); each becomes active only when its slice (S1b, S2, S3, S5) is authorized, and must be restated here at that point |
+| R-HTTPS-01/04, R-DNS-04, R-MAIL-01..07, R-DHCP-01..08, R-EVT-01..07, R-SEC-01/03/05/06, R-OBS-04/05 | **not active.** Their text stays in the [archived brief](../../reference/server-pt/server-pt-services-brief-9973f66.md); each becomes active only when its slice (S1b, S2, S3, S5) is authorized, and must be restated here at that point |
 
 Supersessions that still bind: TD-12.1 — the classifier reads the original
 runtime input, never a repaired copy — and TD-12.2 — a missing list item never
@@ -93,9 +98,9 @@ restated here.
 
 | ID | Requirement | Acceptance |
 | --- | --- | --- |
-| S4A-C1 | A pre-existing run key is rejected **without writing anything**. Every later write under the run key, and its release, are permitted only by ownership this invocation established inside the engine through its own nonce — never by the key's name. A collided key is not overwritten, reset or retried. | Node-harness tests over the real generated scripts: with a foreign sentinel and unrelated fields already under the run key, every pre-existing field is unchanged afterwards and no delete occurs; a fresh key writes and releases normally; a lost write acknowledgement over a foreign key leaves the finalizer refusing to delete and reporting residue. Assertions read the stub's independent snapshot, never a response field. |
-| S4A-C2 | The outcome of the preceding effect is evaluated before the next effect is admitted: E5 is classified before any E6 enable is dispatched, the second atomicity contender is queued only after the first receipt is interpreted, and an unestablished listener setup admits no later toggle and no experimental fetch. An incomplete result set is unknown, not success. | Coordinator tests through the real runtimes and the stub engine: empty, short and unknown E5 result sets put zero E6 enable scripts on the channel; an unaccepted first contender leaves exactly one queued contender; a lost `prepare_https_only` produces no fetch and no `setHttpsEnable`. The nominal successful paths still complete. |
-| S4A-C3 | A conclusion is never stronger than its observation. A cross-read cell that threw is unobserved, not `false`, and keeps its cause; two failed cross reads can never yield the separate-table model, and one failed cross read can never manufacture a contradiction. The listener-isolation model is supported only by a coherent, correlated negative observable with a positive control **in the same mode**; where the implementation has no such observable the measurement is INCONCLUSIVE, and no HTTP code, `onDone` semantics or timeout is invented to replace it. Wrong content on the marked positive page still contradicts that positive expectation. | Domain tests over generated shared and separate table reads with per-cell exceptions and with missing or contradictory fields; listener tests for a wrong-page response while the listener still serves, an absent same-mode positive, a timeout, and the coherent positive. Sample, build and channel limitations stay in the record. |
+| S4A-C1 | A pre-existing run key is rejected **without writing anything**. Every later read/write continuation that can mutate the run bag or an owned resource, and the final release, is permitted only by ownership this invocation proves inside that same evaluation through its nonce — never by the key's name or an earlier successful claim. A collided, absent or ownership-replaced key is not adopted, overwritten, reclaimed or deleted, and foreign logs are not reclassified as this run's evidence. | Node-harness tests execute the real generated scripts with a foreign complete atom log and with observer bookkeeping at every continuation branch. Foreign and ownership-replaced state is unchanged; registration, unregistration, trigger and deletion call counts remain zero. Directly absent and foreign keys stay distinguishable, while a fresh owned key keeps the positive collection, observer and bounded finalization paths. Assertions read the stub's independent snapshot, never a response field. |
+| S4A-C2 | The outcome of the preceding effect is evaluated before the next effect is admitted: E5 is classified before any E6 enable is dispatched, the second atomicity contender is queued only after the first receipt is interpreted, an unestablished listener setup admits no fetch, and the positive HTTPS fetch is classified before the HTTP-negative fetch. An incomplete result set or unreleased client is unknown, not success. | Coordinator tests through the real runtimes and generated readers: empty, short and unknown E5 result sets put zero E6 enable scripts on the channel; an unaccepted first contender leaves exactly one queued contender; a lost `prepare_https_only` produces no fetch and no `setHttpsEnable`; and fresh wrong positive content with a released client preserves the contradiction while the channel shows no later negative client, listener toggle or DNS3 effect. Authorized finalization and persistence still run. The nominal successful paths still complete. |
+| S4A-C3 | A conclusion is never stronger than its observation. A cross-read cell that threw is unobserved, not `false`, and keeps its cause; two failed cross reads can never yield the separate-table model, and one failed cross read can never manufacture a contradiction. The listener-isolation model is supported only by a coherent, correlated negative observable with a positive control **in the same mode**; where the implementation has no such observable the measurement is INCONCLUSIVE, and no HTTP code, `onDone` semantics or timeout is invented to replace it. Wrong content on the marked positive page still contradicts that positive expectation. An ordered ATOM-1 log is retained as an observation, but a sample whose evaluations were coalesced or whose separation is unknown is INCONCLUSIVE for the separate-evaluation claim. | Domain tests over generated shared and separate table reads with per-cell exceptions and with missing or contradictory fields; listener tests for a wrong-page response while the listener still serves, an absent same-mode positive, a timeout, and the coherent positive; and the existing coalesced HTTP harness test expecting INCONCLUSIVE while retaining its ordered log and scope limitation. Sample, build and channel limitations stay in the record. |
 | S4A-C4 | Q1 fits its ceiling on its **bounded worst case**, not on its luckiest trace, with the cleanup reserve intact. | A stage-definition test pins the planned worst case against the ceiling; a coordinator test drives the Q1 executor at the production ceiling with the responses that force every extra poll, and asserts that no call was refused, that the finalization reserve was never borrowed, and that both restoration reads ran. |
 
 ### S4A-C1 — ownership before a run key write
@@ -120,6 +125,14 @@ recorded, and the finalizer touches nothing. An unobserved claim leaves ownershi
 undecided in Python, and the engine-side check — not a name — then decides
 whether the release may delete.
 
+The same-evaluation proof applies to every existing continuation, not only
+the initial claim, the first observer registration and final release.
+`collect_atomicity` must not read or delete a foreign `atom`; each observer
+continuation must stop before copying evidence, creating callbacks, changing
+callback state, unregistering, triggering or deleting when the run bag is
+absent or no longer owned. Lost ownership remains distinct from absent observer
+bookkeeping, and foreign data never becomes this run's measured evidence.
+
 ### S4A-C2 — stop rules before the next effect
 
 `_configure_q1` dispatched the E6 enables and only then read its E5 flag, and
@@ -131,6 +144,12 @@ fetch and no second toggle unless the first toggle was read back in the same
 evaluation, and a fetch whose owned client could not be proven released stops
 further experiments. `e5_accepted` keeps its meaning — channel acceptance of a
 fire-and-forget batch, never an observed effect — and the record still says so.
+
+The positive HTTPS fetch is itself a stop boundary: its completed reading is
+assessed immediately, before the HTTP-negative client is created. A wrong fresh
+page preserves the positive contradiction, leaves all later experimental rows
+NOT_RUN with their causal stop, and proceeds only to the already-authorized
+finalization and persistence path.
 
 ### S4A-C3 — conclusions no stronger than observations
 
@@ -150,6 +169,13 @@ consequently INCONCLUSIVE unless something contradicts it, with every
 descriptive observation and both limitations preserved. Fresh content without
 the marker on the marked positive page contradicts that positive expectation and
 stops the stage.
+
+ATOM-1 similarly separates what was observed from what is claimed. Its ordered
+log remains evidence about the executed sample, but an HTTP sample that was
+coalesced, or any sample whose evaluation separation is unknown, cannot support
+non-interleaving between separate evaluations. Such a sample is INCONCLUSIVE
+for that claim; an observed counterexample remains CONTRADICTED, and the finite
+file-channel sample remains explicitly non-universal.
 
 ### S4A-C4 — the Q1 budget
 
@@ -197,8 +223,10 @@ stop inconclusively.
 | integration (coordinator) | the real coordinator, runtimes, probes and record store over a controlled channel | `tests/test_service_qualification_coordinator.py` |
 | system (CLI) | the stage gate an operator actually meets | `tests/test_service_qualification_cli.py` |
 
-Acceptance-level testing does not apply: the acceptance of a Q stage is a LIVE
-record at an exact SHA, and no LIVE run is authorized.
+Offline acceptance testing of the runner applies through the coordinator and
+CLI contracts above. LIVE acceptance of Q0 or Q1 requires a separately
+authorized observed run at an exact SHA and is not performed here; its absence
+does not make the offline acceptance controls N/A.
 
 ## Open decisions
 
