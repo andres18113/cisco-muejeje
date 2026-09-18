@@ -3868,6 +3868,124 @@ and malformed-receipt refusal are unchanged. Acceptance is the focused native
 UI module, repeated race-sensitive execution, affected/full offline suites,
 clean exact-commit delivery validation, and exact-SHA GitHub Actions 4/4.
 
+### 11.10 CDD3 integration correction before qualification
+
+Risk remains **L** because the correction controls runtime identity, mutation
+scope, continuation after contradictory evidence, and persisted/public evidence.
+It starts from reviewed S1 commit `cdd3c3545e9f599b027c25e8e195abf326766bf5`
+(tree `755ebff79866d45a64e01343133cb489b51f1f43`) with authoritative
+`cisco/main` re-resolved to `6263344e31ba3b0de6539d652f2cd06fc73a3562`.
+The correction is offline only. It does not authorize Packet Tracer contact,
+LIVE qualification, S4a/S2/S1b work, capability promotion, a protocol or bridge
+replacement, extension changes, push, merge, rebase, or branch/worktree cleanup.
+
+Three causal defects remain in the real public route:
+
+1. A8 freezes the target-directed inventory from eligible E6 hosts and clients
+   before A10 derives their full E5 prerequisite closure. Switch-owned VLAN and
+   access-port actions are therefore absent from the production snapshot.
+2. Runtime provenance reads `NetworkFile.getVersion()`, which Cisco documents as
+   the version in which the active file was saved, rather than
+   `AppWindow.getVersion()`, which documents the executing Packet Tracer version.
+3. E2 stops only for uncertain E5 effects. A fresh failed verification for a
+   required governed VLAN/access-port action can therefore be followed by E6
+   even when endpoint IPv4/netmask core evidence remains valid.
+
+The intended boundary changes are:
+
+- derive the eligible service subjects and full E5 closure before the single
+  inventory snapshot; request the union of those subjects and every device that
+  owns an active or retainable closure action, while keeping the E6 subject set
+  separate and resolving every name through the deployment manifest;
+- observe the executable version only through the documented
+  `AppWindow.getVersion()` call, keep missing/malformed/incomplete exact builds
+  unavailable, and never fall back to saved-file or caller/manifest metadata;
+- after E5, evaluate action and verification contradictions only for the
+  active/retained governed closure, independently of effect uncertainty; a
+  contradiction preserves the typed E5 result, records a distinct reason, and
+  completes without dispatching E6. Aggregate `PARTIAL` alone remains allowed.
+
+The retained invariants are one lazy fixed channel; exact manifest, source-tree,
+and runtime provenance bindings; the active/retained/excluded partition; bounded
+name and port reads with missing/duplicate detection; no name-only fallback; no
+E6 effect after uncertainty or contradiction; complete client projection and
+record round-trip; immutable historical inputs; and no promotion from offline
+fixtures or documentary API references to LIVE support.
+
+Acceptance is RED then GREEN for these named tests:
+
+- `test_actual_public_entry_requests_complete_e5_inventory_and_reuses_retained_actions`
+  drives actual `register_tools`, lazy service binding, coordinator, composition,
+  compilers, E5/E6 applicators, and a temporary real record store. Its exact-name
+  provider must observe the server, selected clients, and prerequisite switch;
+  the second identical call rechecks identities/readbacks and does not redispatch
+  retained E5 actions.
+- `test_public_entry_refuses_missing_or_duplicate_prerequisite_switch`
+  proves both target defects stop before mutation while unrelated inventory and
+  an optional ineligible service do not expand the requested scope.
+- `test_runtime_provenance_uses_application_version_on_each_fixed_channel`
+  executes the generated provenance JavaScript in the Node stub for HTTP and
+  file channels, separates application from saved-file versions, and covers a
+  missing getter, partial build, exception, malformed response, and missing file
+  without fabricating or falling back.
+- `test_required_e5_contradiction_stops_e6_and_survives_round_trip` drives the
+  real coordinator and both applicators with accepted mutations, valid endpoint
+  cores, and a fresh required switch verification failure; it expects zero E6
+  mutations, a non-VERIFIED result, complete not-executed client rows, and the
+  original failed E5 evidence after reload.
+- `test_legitimate_partial_e5_without_governed_contradiction_advances` and
+  `test_excluded_e5_contradiction_does_not_block_selected_services` preserve the
+  positive core rule and bounded noninterference.
+
+Verification proceeds through those individual tests, their files, the affected
+S1/coexistence suites, both Node harnesses, the complete offline suite, namespace
+inventory, MkDocs, whitespace, correction/base self-review, and clean
+exact-commit quality validation. LIVE verification and exact-SHA CI are pending;
+the latter cannot exist without a separately authorized push.
+
+The behavioral RED results reproduced the reviewed causes before production
+changes:
+
+- the exact-name inventory provider was asked for the server and two PCs but not
+  `HQ-DEFAULT-ACCESS-SW-01`;
+- with the saved file at `9.0.1.0858` and the application stub at `9.0.1.9999`,
+  the generated provenance script returned `9.0.1.0858`, and a missing
+  application getter still produced that saved-file version; and
+- a fresh failed governed VLAN verification returned no stop code and reached
+  the E6 continuation path.
+
+The causal correction computes the E5 closure before freezing inventory and
+binds every closure action owner through the manifest; executes the documented
+`AppWindow.getVersion()` reader and admits only a bounded four-component exact
+build; and scopes the existing configuration contradiction policy to the
+governed active/retained action set before E6. The distinct
+`E5_CONTRADICTION` continuation code preserves the complete E5 result and the
+not-executed client projection. Excluded rows remain outside that decision, and
+aggregate `PARTIAL` without a governed contradiction still advances.
+
+Observed offline verification after the correction:
+
+| Verification | Result |
+| --- | --- |
+| Focused coordinator and public-surface modules | **92 passed** |
+| Affected S1 suite | **460 passed** |
+| CP-SCALE, voice, and control-plane coexistence | **539 passed** |
+| Two S0 Node harnesses | **60 passed** |
+| Full offline suite | **5994 passed, 3 skipped, 3 warnings** in 377.69 s |
+| Namespace inventory | 0 active legacy imports, 0 active legacy string references, 0 unreviewed inert mentions |
+| MkDocs | built successfully; only the two pre-existing missing `handoff.md` warnings under `docs/reference/cp-scale/` |
+| Whitespace | worktree and committed S1/base diff checks passed |
+| Provisional quality gate | base and merge base `6263344e31ba3b0de6539d652f2cd06fc73a3562`; 48 Python files; zero mechanical exemptions; all checks passed |
+
+The measured toolchain was Python 3.12.10, pytest 9.1.1, Ruff 0.16.7, Node
+24.19.0, and Git 2.55.0.windows.3. The correction changed only this maintained
+brief, the existing adapter/application/model boundaries, and their two test
+modules. `EXTENSION/`, `.github/`, and `docs/reference/server-pt/` are unchanged
+from the reviewed `cdd3c354` tree. No Packet Tracer, product bridge, CP-LIVE,
+GUI automation, push, merge, or capability promotion occurred. Executable
+version output and the corrected product route remain unqualified in LIVE
+Packet Tracer; exact-SHA CI and independent acceptance remain pending.
+
 ---
 
 ## Appendix A — Source index

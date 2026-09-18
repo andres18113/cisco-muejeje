@@ -7,6 +7,7 @@ Define todas las herramientas que el LLM puede invocar.
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -155,6 +156,51 @@ from ...shared.utils import (
 )
 from .public_surface import PublicMcpSurface
 from .service_tools import register_service_tools
+
+_SERVICE_ENVIRONMENT_JS = (
+    "try{var app=ipc.appWindow();var f=app.getActiveFile();"
+    "if(!f){reportResult(JSON.stringify({found:false,"
+    "reason:'active_file_unavailable'}));}"
+    "else if(typeof app.getVersion!=='function'){"
+    "reportResult(JSON.stringify({found:false,"
+    "reason:'application_version_unavailable'}));}else{"
+    "reportResult(JSON.stringify({found:true,backend:'packet_tracer',"
+    "backend_version:String(app.getVersion()||''),"
+    "extension_version:'',runtime_mode:'logical-workspace'}));}}"
+    "catch(e){reportResult('PT_ERROR:'+e);}"
+)
+_EXACT_PACKET_TRACER_BUILD = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+")
+_MAX_PACKET_TRACER_VERSION_LENGTH = 64
+
+
+def _parse_service_environment(
+    raw: str | None,
+    *,
+    channel: str,
+) -> EnvironmentFingerprint:
+    """Parse one bounded executable-version observation, with no fallback."""
+    if not raw or raw.startswith(("PT_ERROR", "ERROR")):
+        return EnvironmentFingerprint()
+    try:
+        observed = json.loads(raw)
+    except (TypeError, ValueError):
+        return EnvironmentFingerprint()
+    if not isinstance(observed, dict) or observed.get("found") is not True:
+        return EnvironmentFingerprint()
+    backend_version = str(observed.get("backend_version") or "").strip()
+    if (
+        not backend_version
+        or len(backend_version) > _MAX_PACKET_TRACER_VERSION_LENGTH
+        or _EXACT_PACKET_TRACER_BUILD.fullmatch(backend_version) is None
+    ):
+        return EnvironmentFingerprint()
+    return EnvironmentFingerprint(
+        backend="packet_tracer",
+        backend_version=backend_version,
+        bridge_transport=channel,
+        extension_version=str(observed.get("extension_version") or ""),
+        runtime_mode=str(observed.get("runtime_mode") or ""),
+    )
 
 
 def register_tools(
@@ -2975,30 +3021,12 @@ def register_tools(
 
     def _observe_service_environment(channel: str) -> EnvironmentFingerprint:
         """Read current backend provenance; never copy it from the manifest."""
-        script = (
-            "try{var f=ipc.appWindow().getActiveFile();"
-            "if(!f){reportResult(JSON.stringify({found:false}));}else{"
-            "reportResult(JSON.stringify({found:true,backend:'packet_tracer',"
-            "backend_version:String(f.getVersion()||''),"
-            "extension_version:'',runtime_mode:'logical-workspace'}));}}"
-            "catch(e){reportResult('PT_ERROR:'+e);}"
+        raw = _bridge_send_and_wait(
+            _SERVICE_ENVIRONMENT_JS,
+            timeout=10.0,
+            channel=channel,
         )
-        raw = _bridge_send_and_wait(script, timeout=10.0, channel=channel)
-        if not raw or raw.startswith(("PT_ERROR", "ERROR")):
-            return EnvironmentFingerprint()
-        try:
-            observed = json.loads(raw)
-        except (TypeError, ValueError):
-            return EnvironmentFingerprint()
-        if not observed.get("found"):
-            return EnvironmentFingerprint()
-        return EnvironmentFingerprint(
-            backend=str(observed.get("backend") or ""),
-            backend_version=str(observed.get("backend_version") or ""),
-            bridge_transport=channel,
-            extension_version=str(observed.get("extension_version") or ""),
-            runtime_mode=str(observed.get("runtime_mode") or ""),
-        )
+        return _parse_service_environment(raw, channel=channel)
 
     # D-8 stays deferred: extracting the bridge session out of this closure
     # is a registry refactor of its own. S1 pays one import and one call,

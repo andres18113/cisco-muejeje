@@ -66,11 +66,12 @@ class ServiceRunStatus(StrEnum):
 
 
 class ServiceEntryRefusal(StrEnum):
-    """Why admission refused. Every one of these happens before any effect.
+    """Why admission or a governed continuation gate stopped the run.
 
-    `NONE` is the absence of a refusal, not a silent pass: a run that reached
-    an effect carries it, and its outcome is then told by the E5 and E6
-    results.
+    Most values are pre-effect admission refusals. E5 effect uncertainty and
+    contradiction are post-E5 continuation refusals: they preserve the typed
+    E5 result and prevent any E6 effect. `NONE` is the absence of either kind,
+    not a silent pass; the E5 and E6 results still decide the run outcome.
     """
 
     __str__ = Enum.__str__
@@ -97,6 +98,7 @@ class ServiceEntryRefusal(StrEnum):
     DRIFT_UNREADABLE = "drift_unreadable"
     RETAINED_RESULT_INVALID = "retained_result_invalid"
     E5_EFFECT_UNCERTAIN = "e5_effect_uncertain"
+    E5_CONTRADICTION = "e5_contradiction"
     FOUNDATIONAL_CONFIGURATION_MISSING = "foundational_configuration_missing"
     EFFECT_HALTED = "effect_halted"
 

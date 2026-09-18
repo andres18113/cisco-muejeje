@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
+import shutil
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -29,6 +32,9 @@ from service_entry_fixture import (
 from packet_tracer_mcp.adapters.mcp import service_tools, tool_registry
 from packet_tracer_mcp.adapters.mcp.public_surface import PublicMcpSurface
 from packet_tracer_mcp.adapters.mcp.tool_registry import register_tools
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    ActionExecutionStatus,
+)
 from packet_tracer_mcp.domain.enterprise.models.execution import (
     DispatchFact,
     ResultFact,
@@ -48,6 +54,79 @@ from packet_tracer_mcp.infrastructure.persistence.service_run_record_store impor
 )
 
 TOOL_NAME = "pt_apply_enterprise_services"
+
+
+def _run_environment_javascript(
+    script: str,
+    *,
+    application_version: str = BACKEND_VERSION,
+    saved_file_version: str = BACKEND_VERSION,
+    active_file: bool = True,
+    application_getter: bool = True,
+    application_raises: bool = False,
+) -> str:
+    """Execute the registry's exact observation source against a Node stub."""
+    app_getter = ""
+    if application_getter:
+        app_getter = (
+            "getVersion:function(){throw new Error('version unavailable');},"
+            if application_raises
+            else "getVersion:function(){return "
+            + json.dumps(application_version)
+            + ";},"
+        )
+    active = (
+        "null"
+        if not active_file
+        else "{getVersion:function(){return " + json.dumps(saved_file_version) + ";}}"
+    )
+    harness = (
+        "var reported='';"
+        "var app={" + app_getter + "getActiveFile:function(){return " + active + ";}};"
+        "global.ipc={appWindow:function(){return app;}};"
+        "global.reportResult=function(value){reported=String(value);};"
+        + script
+        + ";process.stdout.write(reported);"
+    )
+    completed = subprocess.run(
+        [shutil.which("node"), "-e", harness],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    return completed.stdout
+
+
+def _captured_environment_observer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    responder,
+):
+    """Capture the real registry closure while replacing only transport seams."""
+    captured = {}
+
+    class FileTransport:
+        def __init__(self) -> None:
+            self.dir = tmp_path / "mailbox"
+
+        def pt_alive(self) -> bool:
+            return True
+
+        def send_and_wait(self, script: str, timeout: float):
+            return responder(script)
+
+    def http_send(script, *_args, **_kwargs):
+        return responder(script)
+
+    def capture_registration(_mcp, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(tool_registry, "FileBridge", FileTransport)
+    monkeypatch.setattr(tool_registry, "correlated_http_send_and_wait", http_send)
+    monkeypatch.setattr(tool_registry, "register_service_tools", capture_registration)
+    register_tools(FastMCP("environment-observer"))
+    return captured["observe_environment"]
 
 
 def _registered_tools(surface: PublicMcpSurface = PublicMcpSurface.ENTERPRISE):
@@ -156,6 +235,218 @@ class _Channel:
         return bool(self.sends or self.waits or self.inventories or self.health_reads)
 
 
+class _SimulatedProductTransport:
+    """Deterministic external bridge answers for the real product wiring."""
+
+    def __init__(
+        self,
+        tmp_path: Path,
+        inventory: list,
+        *,
+        application_version: str = BACKEND_VERSION,
+        saved_file_version: str = "8.2.2.0400",
+    ) -> None:
+        self.dir = tmp_path / "mailbox"
+        self.inventory = {item.device_name: item for item in inventory}
+        self.application_version = application_version
+        self.saved_file_version = saved_file_version
+        self.inventory_requests: list[tuple[str, ...]] = []
+        self.send_payloads: list[str] = []
+        self.dispatch_payloads: list[str] = []
+        self.addresses: dict[str, tuple[str, str]] = {}
+        self.last_dns_command = ""
+        self.unhandled: list[str] = []
+
+    def pt_alive(self) -> bool:
+        return True
+
+    def send(self, script: str) -> bool:
+        self.send_payloads.append(script)
+        for arguments in re.findall(r"configurePcIp\((.*?)\);", script):
+            values = json.loads("[" + arguments + "]")
+            if values[1] is False:
+                self.addresses[str(values[0])] = (str(values[2]), str(values[3]))
+        return True
+
+    def send_and_wait(self, script: str, timeout: float) -> str:
+        del timeout
+        if "application_version_unavailable" in script:
+            return _run_environment_javascript(
+                script,
+                application_version=self.application_version,
+                saved_file_version=self.saved_file_version,
+            )
+        inventory_match = re.search(r"var names=(\[.*?\]),wanted=", script)
+        if inventory_match:
+            names = tuple(json.loads(inventory_match.group(1)))
+            self.inventory_requests.append(names)
+            devices = []
+            for name in names:
+                target = self.inventory.get(name)
+                if target is None:
+                    continue
+                ipv4, mask = self.addresses.get(name, ("", ""))
+                devices.append(
+                    {
+                        "name": name,
+                        "model": target.model,
+                        "ports": [
+                            {
+                                "name": interface,
+                                "ip": ipv4,
+                                "mask": mask,
+                                "up": True,
+                                "linked": True,
+                            }
+                            for interface in target.interfaces
+                        ],
+                    }
+                )
+            return json.dumps({"devices": devices, "links": None})
+        if "terminal_kind:'ios_command_line'" in script:
+            return json.dumps(
+                {
+                    "found": True,
+                    "booting": False,
+                    "terminal": True,
+                    "terminal_available": True,
+                    "terminal_kind": "ios_command_line",
+                    "prompt": "Switch#",
+                    "output": "Switch#",
+                }
+            )
+        if "getVlanCount" in script:
+            return json.dumps(
+                {"found": True, "configuration_channel": True, "present": True}
+            )
+        if "owner_device_name" in script and "getAccessVlan" in script:
+            device = self._json_argument(script, r"getDevice\((\"(?:\\.|[^\"\\])*\")\)")
+            interface = self._json_argument(
+                script,
+                r"getPort\((\"(?:\\.|[^\"\\])*\")\)",
+            )
+            return json.dumps(
+                {
+                    "device_found": True,
+                    "port_found": True,
+                    "complete": True,
+                    "owner_device_name": device,
+                    "interface": interface,
+                    "admin_op_mode": 3,
+                    "access_vlan": 10,
+                }
+            )
+        if "address_channel:able" in script:
+            device = self._json_argument(script, r"getDevice\((\"(?:\\.|[^\"\\])*\")\)")
+            interface = self._json_argument(
+                script,
+                r"var want=(\"(?:\\.|[^\"\\])*\")",
+            )
+            ipv4, mask = self.addresses.get(device, ("", ""))
+            return json.dumps(
+                {
+                    "found": True,
+                    "port_found": True,
+                    "interface": interface,
+                    "address_channel": True,
+                    "ipv4": ipv4,
+                    "netmask": mask,
+                }
+            )
+        self.unhandled.append(script)
+        return "ERROR:unhandled simulated file read"
+
+    def dispatch_and_wait(
+        self,
+        script: str,
+        timeout: float,
+    ) -> BridgeDispatchOutcome:
+        del timeout
+        self.dispatch_payloads.append(script)
+        body = self._service_response(script)
+        return BridgeDispatchOutcome(
+            dispatch=DispatchFact.ACCEPTED,
+            result=ResultFact.CORRELATED,
+            body=body,
+        )
+
+    def _service_response(self, script: str) -> str:
+        if "var results=[]" in script:
+            identifiers = [
+                json.loads(item)
+                for item in re.findall(
+                    r"var r=\{id:(\"(?:\\.|[^\"\\])*\")",
+                    script,
+                )
+            ]
+            return json.dumps(
+                {
+                    "results": [
+                        {
+                            "id": identifier,
+                            "attempted": True,
+                            "skip_reason": "",
+                            "call_error": "",
+                            "call_result": True,
+                            "pre_read": True,
+                            "post_read": True,
+                            "ok": True,
+                            "changed": True,
+                            "pre": "before",
+                            "post": "after",
+                        }
+                        for identifier in identifiers
+                    ]
+                }
+            )
+        if "out.records={}" in script:
+            encoded = re.search(r"JSON.parse\((\"(?:\\.|[^\"\\])*\")\)", script)
+            records = json.loads(json.loads(encoded.group(1))) if encoded else {}
+            return json.dumps({"found": True, "enabled": True, "records": records})
+        if "out.content=String(p.getPage" in script:
+            return json.dumps(
+                {"found": True, "enabled": True, "content": "SAMPLE_WEB_PAGE"}
+            )
+        if "var started=false;var blocked=false" in script:
+            command = self._json_argument(
+                script,
+                r"enterCommand\((\"(?:\\.|[^\"\\])*\")\)",
+            )
+            self.last_dns_command = command
+            return json.dumps({"started": True, "blocked": False, "before": "C:\\>"})
+        if "var cp=d&&typeof d.getCommandPrompt" in script:
+            hostname = self.last_dns_command.removeprefix("ping ")
+            if hostname == "www.lab.example":
+                output = (
+                    f"C:\\>{self.last_dns_command}\n"
+                    "Pinging 198.18.160.2 with 32 bytes of data:\n"
+                    "Packets: Sent = 4, Received = 4, Lost = 0"
+                )
+            else:
+                output = (
+                    f"C:\\>{self.last_dns_command}\n"
+                    f"Ping request could not find host {hostname}.\nC:\\>"
+                )
+            return json.dumps({"found": True, "output": output})
+        if "content_before:before" in script:
+            return json.dumps({"started": True, "content_before": "", "owned": True})
+        if "var found=!!(slot&&slot.manager&&slot.client)" in script:
+            return json.dumps(
+                {"found": True, "deleted": True, "present": False, "error": ""}
+            )
+        if "var bag=this.__mcpE6HttpClients" in script:
+            return json.dumps({"found": True, "content": "SAMPLE_WEB_PAGE"})
+        self.unhandled.append(script)
+        return "ERROR:unhandled simulated service read"
+
+    @staticmethod
+    def _json_argument(script: str, pattern: str) -> str:
+        match = re.search(pattern, script)
+        if match is None:
+            raise AssertionError(f"Expected JSON argument was absent: {pattern}")
+        return str(json.loads(match.group(1)))
+
+
 def _invoke(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -249,6 +540,114 @@ def _invoke_actual_registry(
     return json.loads(rendered[0][0].text), contacts
 
 
+def _registered_product_simulation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    channel: str,
+    application_version: str = BACKEND_VERSION,
+    saved_file_version: str = "8.2.2.0400",
+):
+    """Register the real public route over one deterministic bridge channel."""
+    manifest, inventory = deployment_manifest()
+    manifest = manifest.model_copy(
+        update={
+            "environment_fingerprint": FINGERPRINT.model_copy(
+                update={
+                    "bridge_transport": channel,
+                    "runtime_mode": "logical-workspace",
+                }
+            )
+        }
+    )
+    transport = _SimulatedProductTransport(
+        tmp_path,
+        inventory,
+        application_version=application_version,
+        saved_file_version=saved_file_version,
+    )
+
+    class Store:
+        def latest_by_deployment_id(self, deployment_id: str):
+            return manifest if deployment_id == DEPLOYMENT_ID else None
+
+    class HttpResponse:
+        def __init__(self, body: str = "") -> None:
+            self.status = 200
+            self._body = body.encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return self._body
+
+    def urlopen(request, timeout=None):
+        del timeout
+        url = request.full_url if hasattr(request, "full_url") else str(request)
+        if channel != "http":
+            raise OSError("simulated HTTP transport unavailable")
+        if "/ping" in url:
+            return HttpResponse(
+                json.dumps(
+                    {
+                        "service": "pt-mcp-bridge",
+                        "id": tool_registry.token_fingerprint("test-token"),
+                    }
+                )
+            )
+        if "/status" in url:
+            return HttpResponse(json.dumps({"connected": True}))
+        if "/queue" in url and hasattr(request, "data"):
+            transport.send(request.data.decode("utf-8"))
+            return HttpResponse("queued")
+        raise AssertionError(f"Unexpected simulated HTTP request: {url}")
+
+    def http_read(script, timeout, **_kwargs):
+        return transport.send_and_wait(script, timeout)
+
+    def http_dispatch(script, timeout, **_kwargs):
+        return transport.dispatch_and_wait(script, timeout)
+
+    monkeypatch.setattr(service_tools, "DeploymentManifestStore", Store)
+    monkeypatch.setattr(
+        service_tools,
+        "ServiceRunRecordStore",
+        lambda *args, **kwargs: ServiceRunRecordStore(tmp_path),
+    )
+    monkeypatch.setattr(
+        service_tools,
+        "ImportIsolationPreflight",
+        lambda _root: IsolationPreflight(),
+    )
+    monkeypatch.setattr(tool_registry, "FileBridge", lambda: transport)
+    monkeypatch.setattr(tool_registry, "get_bridge_token", lambda: "test-token")
+    monkeypatch.setattr(tool_registry.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(tool_registry, "correlated_http_send_and_wait", http_read)
+    monkeypatch.setattr(tool_registry, "correlated_http_dispatch", http_dispatch)
+
+    mcp = FastMCP(f"actual-product-{channel}")
+    register_tools(mcp)
+    return mcp, transport
+
+
+def _call_enterprise_services(mcp: FastMCP) -> dict:
+    rendered = asyncio.run(
+        mcp.call_tool(
+            TOOL_NAME,
+            {
+                "intent_json": intent_json(),
+                "deployment_id": DEPLOYMENT_ID,
+                "packet_tracer_version": BACKEND_VERSION,
+            },
+        )
+    )
+    return json.loads(rendered[0][0].text)
+
+
 def test_the_production_wiring_refuses_under_pytest_before_any_channel(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
@@ -310,6 +709,182 @@ def test_actual_registry_invalid_json_precedes_external_health(
 
     assert result["refusal_code"] == ServiceEntryRefusal.INTENT_INVALID.value
     assert contacts == []
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
+@pytest.mark.parametrize("channel", ["http", "file"])
+def test_runtime_provenance_uses_application_version_on_each_fixed_channel(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    channel: str,
+):
+    """The generated script observes the executable, not saved-file metadata."""
+
+    def saved_match_application_differs(script: str) -> str:
+        return _run_environment_javascript(
+            script,
+            application_version="9.0.1.9999",
+            saved_file_version=BACKEND_VERSION,
+        )
+
+    observer = _captured_environment_observer(
+        monkeypatch,
+        tmp_path,
+        saved_match_application_differs,
+    )
+    mismatching = observer(channel)
+    assert mismatching.backend_version == "9.0.1.9999"
+    assert mismatching.bridge_transport == channel
+
+    def application_match_saved_differs(script: str) -> str:
+        return _run_environment_javascript(
+            script,
+            application_version=BACKEND_VERSION,
+            saved_file_version="8.2.2.0400",
+        )
+
+    observer = _captured_environment_observer(
+        monkeypatch,
+        tmp_path,
+        application_match_saved_differs,
+    )
+    matching = observer(channel)
+    assert matching.backend_version == BACKEND_VERSION
+    assert matching.bridge_transport == channel
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
+@pytest.mark.parametrize("channel", ["http", "file"])
+@pytest.mark.parametrize(
+    "case",
+    [
+        "missing_getter",
+        "partial_version",
+        "getter_exception",
+        "malformed_response",
+        "missing_active_file",
+    ],
+)
+def test_runtime_provenance_refuses_unavailable_or_incomplete_application_version(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    channel: str,
+    case: str,
+):
+    """Exact-build admission never fabricates or falls back to a file version."""
+
+    def responder(script: str) -> str:
+        if case == "malformed_response":
+            return "{not-json"
+        raw = _run_environment_javascript(
+            script,
+            application_version=(
+                "9.0.1" if case == "partial_version" else BACKEND_VERSION
+            ),
+            saved_file_version=BACKEND_VERSION,
+            active_file=case != "missing_active_file",
+            application_getter=case != "missing_getter",
+            application_raises=case == "getter_exception",
+        )
+        if case == "missing_getter":
+            assert json.loads(raw)["found"] is False
+        return raw
+
+    observer = _captured_environment_observer(monkeypatch, tmp_path, responder)
+
+    observed = observer(channel)
+
+    assert observed.backend == "packet_tracer"
+    assert observed.backend_version == ""
+    assert observed.bridge_transport == ""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
+@pytest.mark.parametrize("channel", ["http", "file"])
+def test_actual_public_entry_requests_complete_e5_inventory_and_reuses_retained_actions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    channel: str,
+):
+    """The complete public route succeeds with an exact-name bridge provider."""
+    mcp, transport = _registered_product_simulation(
+        monkeypatch,
+        tmp_path,
+        channel=channel,
+    )
+    _manifest, inventory = deployment_manifest()
+    expected_names = {item.device_name for item in inventory}
+
+    first = _call_enterprise_services(mcp)
+
+    assert first["refusal_code"] == ServiceEntryRefusal.NONE.value, first[
+        "blocked_reason"
+    ]
+    assert first["status"] == "verified", (first, transport.unhandled)
+    assert first["transport"] == channel
+    assert len(first["clients"]) == 2
+    assert all(
+        outcome["status"] == ActionExecutionStatus.VERIFIED.value
+        for client in first["clients"]
+        for outcome in client["results"].values()
+        if outcome["required"]
+    )
+    assert len(transport.inventory_requests) == 1
+    assert set(transport.inventory_requests[0]) == expected_names
+    assert any(
+        name.endswith("ACCESS-SW-01") for name in transport.inventory_requests[0]
+    )
+    first_e5_dispatches = len(transport.send_payloads)
+    assert first_e5_dispatches > 0
+    first_record = ServiceRunRecordStore(tmp_path).load(DEPLOYMENT_ID, first["run_id"])
+    assert first_record.configuration_result is not None
+    assert first_record.service_result is not None
+
+    second = _call_enterprise_services(mcp)
+
+    assert second["status"] == "verified", (second, transport.unhandled)
+    assert second["refusal_code"] == ServiceEntryRefusal.NONE.value
+    assert second["e5_effect_scope"]["retained"]
+    assert second["e5_effect_scope"]["mutated"] == []
+    assert len(transport.send_payloads) == first_e5_dispatches
+    assert len(transport.inventory_requests) == 2
+    assert all(set(names) == expected_names for names in transport.inventory_requests)
+    second_record = ServiceRunRecordStore(tmp_path).load(
+        DEPLOYMENT_ID, second["run_id"]
+    )
+    assert second_record.e5_effect_scope.retained
+    assert second_record.configuration_result is not None
+    assert second_record.service_result is not None
+    assert transport.unhandled == []
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
+@pytest.mark.parametrize("channel", ["http", "file"])
+def test_actual_public_entry_refuses_executable_version_mismatch_before_effects(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    channel: str,
+):
+    """A matching saved file cannot stand in for the executing application."""
+    mcp, transport = _registered_product_simulation(
+        monkeypatch,
+        tmp_path,
+        channel=channel,
+        application_version="9.0.1.9999",
+        saved_file_version=BACKEND_VERSION,
+    )
+
+    result = _call_enterprise_services(mcp)
+
+    assert result["refusal_code"] == (
+        ServiceEntryRefusal.ENVIRONMENT_FINGERPRINT_MISMATCH.value
+    )
+    assert result["status"] == "refused"
+    assert result["transport"] == channel
+    assert transport.inventory_requests == []
+    assert transport.send_payloads == []
+    assert transport.dispatch_payloads == []
+    assert transport.unhandled == []
 
 
 def test_invalid_json_does_not_construct_a_manifest_store(

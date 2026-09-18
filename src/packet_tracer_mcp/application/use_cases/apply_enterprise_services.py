@@ -117,6 +117,7 @@ from ..ports.service_run_record import (
 from .apply_configuration import ConfigurationApplicator, ConfigurationRuntime
 from .apply_services import ServiceApplicator, ServiceRuntime
 from .compose_enterprise_reference import compose_enterprise_reference
+from .execute_enterprise_reference import configuration_application_contradiction
 from .foundational_evidence import derive_service_foundational_statuses
 
 #: The E5 row representations that mean "this action's effect is unknown".
@@ -522,6 +523,40 @@ def _e5_effect_is_uncertain(
             or item.message == _MISSING_RESULT_MESSAGE
         )
     )
+
+
+def _e5_contradiction(
+    configuration_result: ConfigurationApplicationResult,
+    governed_action_ids: set[str],
+) -> str:
+    """Return the existing contradiction decision for governed E5 rows only."""
+    action_results = [
+        item
+        for item in configuration_result.action_results
+        if item.action_id in governed_action_ids
+    ]
+    verification_results = [
+        item
+        for item in configuration_result.verification_results
+        if item.action_id in governed_action_ids
+    ]
+    no_result_preflight_failure = (
+        configuration_result.status is ConfigurationApplicationStatus.FAILED
+        and not configuration_result.action_results
+        and not configuration_result.verification_results
+    )
+    scoped = configuration_result.model_copy(
+        update={
+            "status": (
+                ConfigurationApplicationStatus.FAILED
+                if configuration_result.preflight_errors or no_result_preflight_failure
+                else ConfigurationApplicationStatus.PARTIAL
+            ),
+            "action_results": action_results,
+            "verification_results": verification_results,
+        }
+    )
+    return configuration_application_contradiction(scoped)
 
 
 def _drift_conflicts(
@@ -1242,15 +1277,42 @@ def apply_enterprise_services(
             "No requested service is eligible on this build.",
         )
 
+    service_subject_ids = {
+        device_id
+        for service in eligible
+        for device_id in [
+            service.host_device_id,
+            *service.client_device_ids,
+        ]
+    }
+    unsupported = _unsupported_paths(
+        configuration_plan,
+        service_plan,
+        eligible,
+    )
+    if unsupported:
+        return refuse(
+            "A8",
+            ServiceEntryRefusal.SERVICE_PATH_UNSUPPORTED,
+            "The selected path is outside the static, same-site, same-segment, "
+            "single-access-switch S1 contract: " + ", ".join(unsupported),
+        )
+
+    # A8's one immutable inventory snapshot must already include every owner
+    # that A10 can authorize. Computing the pure closure here does not mutate or
+    # decide retention; it supplies the complete manifest-bound target universe.
+    try:
+        scope = _e5_closure(configuration_plan, service_plan, eligible)
+    except ValueError as exc:
+        return refuse(
+            "A10",
+            ServiceEntryRefusal.SERVICE_PATH_UNSUPPORTED,
+            _sanitized(str(exc)),
+        )
+    actions_by_id = {item.id: item for item in configuration_plan.actions}
     semantic_ids = sorted(
-        {
-            device_id
-            for service in eligible
-            for device_id in [
-                service.host_device_id,
-                *service.client_device_ids,
-            ]
-        }
+        service_subject_ids
+        | {actions_by_id[identifier].device_id for identifier in scope}
     )
     try:
         runtime_names = [
@@ -1281,28 +1343,7 @@ def apply_enterprise_services(
     deployed_names = {key: value.device_name for key, value in targets.items()}
     models = {key: value.model for key, value in targets.items()}
 
-    unsupported = _unsupported_paths(
-        configuration_plan,
-        service_plan,
-        eligible,
-    )
-    if unsupported:
-        return refuse(
-            "A8",
-            ServiceEntryRefusal.SERVICE_PATH_UNSUPPORTED,
-            "The selected path is outside the static, same-site, same-segment, "
-            "single-access-switch S1 contract: " + ", ".join(unsupported),
-        )
-
     # -- A10: the E5 scope, its drift, and any retained result ------------
-    try:
-        scope = _e5_closure(configuration_plan, service_plan, eligible)
-    except ValueError as exc:
-        return refuse(
-            "A10",
-            ServiceEntryRefusal.SERVICE_PATH_UNSUPPORTED,
-            _sanitized(str(exc)),
-        )
     excluded = {item.id for item in configuration_plan.actions} - scope
     conflicts, unreadable, endpoint_confirmed = _drift_conflicts(
         configuration_plan, scope, deployed_names, endpoint_observer, run
@@ -1379,7 +1420,8 @@ def apply_enterprise_services(
         capabilities=capabilities,
         eligible=eligible,
         ineligible=ineligible,
-        scope=mutation_scope,
+        mutation_scope=mutation_scope,
+        governed_scope=scope,
         retained_action_results=retained_results,
         excluded=excluded,
         deployed_names=deployed_names,
@@ -1402,7 +1444,8 @@ def _execute(
     capabilities: ServiceCapabilityRecords,
     eligible: Sequence[ServiceDefinition],
     ineligible: dict[str, list[str]],
-    scope: set[str],
+    mutation_scope: set[str],
+    governed_scope: set[str],
     retained_action_results: Sequence[ActionApplicationResult],
     excluded: set[str],
     deployed_names: dict[str, str],
@@ -1436,7 +1479,7 @@ def _execute(
             capabilities=device_capabilities,
             runtime_context=context,
             deployment_manifest=manifest,
-            mutation_action_ids=sorted(scope),
+            mutation_action_ids=sorted(mutation_scope),
             excluded_action_ids=sorted(excluded),
             retained_action_results=retained_action_results,
         )
@@ -1465,7 +1508,7 @@ def _execute(
     run.transition(ServiceStage.CONFIGURATION_APPLY, outcome="completed")
 
     # -- E2: refuse to build on an E5 state nobody can describe ------------
-    uncertain = _e5_effect_is_uncertain(configuration_result, scope)
+    uncertain = _e5_effect_is_uncertain(configuration_result, governed_scope)
     if uncertain:
         run.record.e5_effect_uncertain = True
         run.record.dirty_state = DirtyState.UNKNOWN
@@ -1487,6 +1530,30 @@ def _execute(
             blocked_reason=(
                 "E5 rows in scope left their effect unknown, so no E6 effect "
                 "was dispatched: " + ", ".join(uncertain)
+            ),
+        )
+
+    contradiction = _e5_contradiction(configuration_result, governed_scope)
+    if contradiction:
+        run.record.dirty_state = configuration_result.dirty_state
+        run.limitations.append("e5_contradiction")
+        return _finish(
+            run,
+            configuration_result=configuration_result,
+            service_result=None,
+            service_plan=service_plan,
+            eligible=eligible,
+            ineligible=ineligible,
+            deployed_names=deployed_names,
+            models=models,
+            stage=ServiceStage.CONFIGURATION_APPLY,
+            packet_tracer_version=packet_tracer_version,
+            transport=transport,
+            deployment_id=deployment_id,
+            refusal_code=ServiceEntryRefusal.E5_CONTRADICTION,
+            blocked_reason=(
+                "E5 contradicted the governed configuration, so no E6 effect "
+                "was dispatched: " + contradiction
             ),
         )
 

@@ -36,17 +36,23 @@ from packet_tracer_mcp.application.ports.service_run_record import (
 )
 from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
     MAX_INTENT_JSON_BYTES,
+    ServiceInvocationBinding,
     ServiceStageRuntimes,
     TransportSelection,
+    _e5_contradiction,
     apply_enterprise_services,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration import (
     SetEndpointStaticAddress,
+    VerificationKind,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
+    ConfigurationApplicationStatus,
     ConfigurationFailureCode,
+    FieldVerificationStatus,
     RuntimeConfigurationTarget,
+    VerificationResult,
 )
 from packet_tracer_mcp.domain.enterprise.models.execution import (
     DirtyState,
@@ -405,6 +411,91 @@ def test_two_clients_get_separate_verified_results(tmp_path: Path):
     assert len(identifiers) == 2
 
 
+def test_complete_e5_prerequisite_inventory_is_requested_before_it_is_frozen(
+    tmp_path: Path,
+):
+    """The target-directed snapshot includes switch-owned closure actions."""
+    harness = _harness(tmp_path)
+    _manifest, inventory = deployment_manifest()
+    by_name = {item.device_name: item for item in inventory}
+    requested: list[tuple[str, ...]] = []
+
+    def exact_inventory(names):
+        normalized = tuple(names)
+        requested.append(normalized)
+        return [by_name[name] for name in normalized if name in by_name]
+
+    result = apply_enterprise_services(
+        harness.intent,
+        deployment_id=harness.deployment_id,
+        packet_tracer_version=harness.version,
+        manifest_store=harness.manifest_store,
+        import_preflight=harness.preflight,
+        session_factory=lambda: ServiceInvocationBinding(
+            runtimes=ServiceStageRuntimes(
+                configuration=harness.configuration,
+                services=harness.services,
+            ),
+            record_store=harness.record_store,
+            environment_fingerprint=FINGERPRINT,
+            transport_selection=harness.transport,
+            source_tree=SourceTreeIdentity(sha="test-source", dirty=True),
+            endpoint_observer=harness.observer,
+            inventory_reader=exact_inventory,
+        ),
+    )
+
+    assert result.status is ServiceRunStatus.VERIFIED
+    assert len(requested) == 1
+    assert set(requested[0]) == set(by_name)
+    assert any(name.endswith("ACCESS-SW-01") for name in requested[0])
+
+
+@pytest.mark.parametrize("defect", ["missing", "duplicate"])
+def test_public_entry_refuses_missing_or_duplicate_prerequisite_switch(
+    tmp_path: Path,
+    defect: str,
+):
+    """Switch identity defects stop the complete governed closure pre-effect."""
+    harness = _harness(tmp_path)
+    _manifest, inventory = deployment_manifest()
+    by_name = {item.device_name: item for item in inventory}
+
+    def defective_inventory(names):
+        rows = [by_name[name] for name in names if name in by_name]
+        switch = next(
+            item for item in rows if item.device_name.endswith("ACCESS-SW-01")
+        )
+        if defect == "missing":
+            return [item for item in rows if item is not switch]
+        return [*rows, switch.model_copy(deep=True)]
+
+    result = apply_enterprise_services(
+        harness.intent,
+        deployment_id=harness.deployment_id,
+        packet_tracer_version=harness.version,
+        manifest_store=harness.manifest_store,
+        import_preflight=harness.preflight,
+        session_factory=lambda: ServiceInvocationBinding(
+            runtimes=ServiceStageRuntimes(
+                configuration=harness.configuration,
+                services=harness.services,
+            ),
+            record_store=harness.record_store,
+            environment_fingerprint=FINGERPRINT,
+            transport_selection=harness.transport,
+            source_tree=SourceTreeIdentity(sha="test-source", dirty=True),
+            endpoint_observer=harness.observer,
+            inventory_reader=defective_inventory,
+        ),
+    )
+
+    assert result.refusal_code is ServiceEntryRefusal.TARGET_IDENTITY_MISMATCH
+    assert harness.mutating_calls == []
+    assert harness.configuration.verified == []
+    assert harness.services.verified == []
+
+
 def test_one_client_contradiction_does_not_promote_the_other(tmp_path: Path):
     """A per-client result means the clients are decided separately."""
     harness = _harness(tmp_path)
@@ -493,6 +584,51 @@ def test_dns_success_with_residue_only_unknown_remains_verified(tmp_path: Path):
     assert result.status is ServiceRunStatus.VERIFIED
     assert result.dirty_state is DirtyState.UNKNOWN
     assert any("residue_unknown" in item for item in result.limitations)
+
+
+def test_legitimate_partial_e5_without_governed_contradiction_advances(
+    tmp_path: Path,
+):
+    """Endpoint PARTIAL with a verified fresh core still permits E6."""
+    harness = _harness(tmp_path)
+
+    result = harness.run()
+
+    assert result.configuration_result is not None
+    assert result.configuration_result.status.value == "partial"
+    assert harness.services.applied
+    assert result.status is ServiceRunStatus.VERIFIED
+
+
+def test_excluded_e5_contradiction_does_not_block_selected_services(
+    tmp_path: Path,
+):
+    """A failed row outside the governed closure cannot contaminate S1."""
+    harness = _harness(tmp_path)
+    result = harness.run()
+    assert result.configuration_result is not None
+    governed = {
+        *result.configuration_result.mutation_action_ids,
+        *result.configuration_result.retained_action_ids,
+    }
+    unrelated = VerificationResult(
+        expectation_id="verify/unrelated",
+        action_id="action/unrelated",
+        status=ActionExecutionStatus.FAILED,
+        fresh_evidence=True,
+    )
+    contaminated = result.configuration_result.model_copy(
+        update={
+            "status": ConfigurationApplicationStatus.FAILED,
+            "verification_results": [
+                *result.configuration_result.verification_results,
+                unrelated,
+            ],
+        }
+    )
+
+    assert _e5_contradiction(contaminated, governed) == ""
+    assert result.status is ServiceRunStatus.VERIFIED
 
 
 def test_the_advisory_client_dns_reader_never_gates_a_service(tmp_path: Path):
@@ -713,6 +849,63 @@ def test_an_e5_runtime_that_raises_after_dispatch_stops_before_e6(
     assert result.dirty_state is DirtyState.UNKNOWN
     assert harness.services.applied == []
     assert any("e5_effect_uncertain" in item for item in result.limitations)
+
+
+def test_required_e5_contradiction_stops_e6_and_survives_round_trip(
+    tmp_path: Path,
+):
+    """A fresh switch contradiction is distinct from endpoint core PARTIAL."""
+
+    class ContradictingSwitchRuntime(RecordingConfigurationRuntime):
+        def verify(self, expectations):
+            observed = super().verify(expectations)
+            for index, expectation in enumerate(expectations):
+                if expectation.kind is VerificationKind.VLAN:
+                    observed[index] = observed[index].model_copy(
+                        update={
+                            "status": ActionExecutionStatus.FAILED,
+                            "fields": {"vlan": FieldVerificationStatus.FAILED},
+                            "message": "fresh switch VLAN contradiction",
+                        }
+                    )
+                    break
+            return observed
+
+    harness = _harness(tmp_path)
+    harness.configuration = ContradictingSwitchRuntime(
+        targets=list(harness.configuration.targets)
+    )
+
+    result = harness.run(run_id="run-e5-contradiction")
+
+    assert result.refusal_code.value == "e5_contradiction"
+    assert result.status is not ServiceRunStatus.VERIFIED
+    assert result.e5_effect_uncertain is False
+    assert result.configuration_result is not None
+    failed = [
+        item
+        for item in result.configuration_result.verification_results
+        if item.status is ActionExecutionStatus.FAILED
+    ]
+    assert failed
+    assert all(item.fresh_evidence for item in failed)
+    assert result.service_result is None
+    assert harness.services.applied == []
+    assert len(result.clients) == 2
+    assert all(
+        check.status is ActionExecutionStatus.SKIPPED and check.cause == "not_executed"
+        for client in result.clients
+        for outcome in client.results.values()
+        for check in outcome.checks
+    )
+    stored = ServiceRunRecordStore(tmp_path).load(DEPLOYMENT_ID, result.run_id)
+    assert stored.configuration_result is not None
+    assert any(
+        item.status is ActionExecutionStatus.FAILED
+        and item.message == "fresh switch VLAN contradiction"
+        for item in stored.configuration_result.verification_results
+    )
+    assert stored.service_result is None
 
 
 def test_a_store_failure_after_the_first_effect_dispatches_nothing_more(
