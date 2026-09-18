@@ -123,6 +123,10 @@ class ConfigurationFailureCode(StrEnum):
     SECURITY_BEHAVIOR_UNOBSERVABLE = "security_behavior_unobservable"
     SECURITY_CLEANUP_FAILED = "security_cleanup_failed"
     DEPLOYMENT_MANIFEST_REQUIRED = "deployment_manifest_required"
+    #: The action belongs to the plan but not to the scope this run was
+    #: authorized to mutate. It is not a failure and not a retained
+    #: success: nothing was rendered, dispatched or observed for it.
+    OUT_OF_SCOPE = "out_of_scope"
     ENVIRONMENT_FINGERPRINT_MISMATCH = "environment_fingerprint_mismatch"
     #: The channel accepted the dispatch and no correlated read decided
     #: the outcome. It is not a failure and not a success.
@@ -1000,6 +1004,11 @@ class ConfigurationApplicationResult(BaseModel):
     action_results: list[ActionApplicationResult] = Field(default_factory=list)
     mutation_action_ids: list[str] = Field(default_factory=list)
     retained_action_ids: list[str] = Field(default_factory=list)
+    #: Plan actions this run was not authorized to apply. They carry
+    #: SKIPPED/OUT_OF_SCOPE rows, never fabricated retained successes,
+    #: and together with the two lists above they account for every
+    #: identity in the plan exactly once.
+    excluded_action_ids: list[str] = Field(default_factory=list)
     verification_results: list[VerificationResult] = Field(default_factory=list)
     preflight_errors: list[str] = Field(default_factory=list)
     deployment_id: str = ""

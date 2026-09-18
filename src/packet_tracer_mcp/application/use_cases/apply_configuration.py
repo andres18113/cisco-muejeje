@@ -112,6 +112,7 @@ class ConfigurationApplicator:
         deployment_manifest: DeploymentManifest | None = None,
         defer_voice_signal_until_bootstrap: bool = False,
         mutation_action_ids: Collection[str] | None = None,
+        excluded_action_ids: Collection[str] = (),
         retained_action_results: Sequence[ActionApplicationResult] = (),
         retained_deferred_voice_action_ids: Collection[str] = (),
         phase_observer: (Callable[[int, tuple[str, ...]], None] | None) = None,
@@ -196,11 +197,13 @@ class ConfigurationApplicator:
 
         (
             mutation_ids,
+            excluded_ids,
             retained_results,
             mutation_scope_errors,
         ) = self._mutation_scope(
             plan,
             mutation_action_ids=mutation_action_ids,
+            excluded_action_ids=excluded_action_ids,
             retained_action_results=retained_action_results,
         )
         retained_deferred_voice_ids = frozenset(retained_deferred_voice_action_ids)
@@ -333,7 +336,9 @@ class ConfigurationApplicator:
             capabilities,
             action_ids=mutation_ids,
         )
-        blocked = self._unexecutable_closure(plan, refusals)
+        # An excluded action is not rendered, so it can neither be refused
+        # for want of a capability nor block a required action.
+        blocked = self._unexecutable_closure(plan, refusals) - excluded_ids
         required_blocked = sorted(
             (
                 action
@@ -388,6 +393,17 @@ class ConfigurationApplicator:
         }
         deferred_voice_ids = frozenset(deferred_voice_actions)
         results = dict(retained_results)
+        for action in plan.actions:
+            if action.id not in excluded_ids:
+                continue
+            results[action.id] = ActionApplicationResult(
+                action_id=action.id,
+                status=ActionExecutionStatus.SKIPPED,
+                failure_code=ConfigurationFailureCode.OUT_OF_SCOPE,
+                message=(
+                    "Outside the mutation scope this run was authorized to apply."
+                ),
+            )
         self._capability_refusal_results(refusals, results)
 
         for phase in sorted({action.phase for action in plan.actions}):
@@ -435,6 +451,7 @@ class ConfigurationApplicator:
             deferred_voice_actions,
             deployed_names,
             defer_voice_signal_until_bootstrap=(defer_voice_signal_until_bootstrap),
+            excluded_action_ids=excluded_ids,
         )
         status, failure_code = self._overall_status(
             action_results, verification_results
@@ -489,7 +506,12 @@ class ConfigurationApplicator:
                 item.id for item in plan.actions if item.id in mutation_ids
             ],
             retained_action_ids=[
-                item.id for item in plan.actions if item.id not in mutation_ids
+                item.id
+                for item in plan.actions
+                if item.id not in mutation_ids and item.id not in excluded_ids
+            ],
+            excluded_action_ids=[
+                item.id for item in plan.actions if item.id in excluded_ids
             ],
             verification_results=verification_results,
             deployment_id=deployment_id,
@@ -929,6 +951,7 @@ class ConfigurationApplicator:
         deployed_names: dict[str, str],
         *,
         defer_voice_signal_until_bootstrap: bool,
+        excluded_action_ids: frozenset[str] = frozenset(),
     ) -> tuple[
         list[ActionApplicationResult],
         list[VerificationResult],
@@ -943,6 +966,21 @@ class ConfigurationApplicator:
             ready: list[VerificationExpectation] = []
             settled: dict[str, VerificationResult] = {}
             for item in expectations:
+                if item.action_id in excluded_action_ids:
+                    # Its action was never applied by this run, so there
+                    # is nothing to read back. Reporting it as anything
+                    # else would let a bounded run claim, or be blamed
+                    # for, the whole plan.
+                    settled[item.id] = VerificationResult(
+                        expectation_id=item.id,
+                        action_id=item.action_id,
+                        status=ActionExecutionStatus.SKIPPED,
+                        message=(
+                            "Outside the mutation scope this run was "
+                            "authorized to apply."
+                        ),
+                    )
+                    continue
                 prerequisites = (
                     item.verification_prerequisites
                     or legacy_action_prerequisites([item.action_id])
@@ -1304,27 +1342,39 @@ class ConfigurationApplicator:
         *,
         mutation_action_ids: Collection[str] | None,
         retained_action_results: Sequence[ActionApplicationResult],
+        excluded_action_ids: Collection[str] = (),
     ) -> tuple[
+        frozenset[str],
         frozenset[str],
         dict[str, ActionApplicationResult],
         list[str],
     ]:
-        """Validate one explicit mutation delta without weakening verification."""
+        """Validate one explicit mutation delta without weakening verification.
+
+        The plan partitions into mutated, retained and excluded, and the
+        three sets must cover every identity exactly once. Omitting
+        `excluded_action_ids` keeps the previous contract unchanged,
+        including the rule that every non-mutated action needs a retained
+        result.
+        """
         plan_ids = {item.id for item in plan.actions}
+        excluded_ids = frozenset(excluded_action_ids)
         if mutation_action_ids is None:
+            refusals: list[str] = []
             if retained_action_results:
-                return (
-                    frozenset(),
-                    {},
-                    [
-                        "Retained action results require an explicit mutation "
-                        "action scope."
-                    ],
+                refusals.append(
+                    "Retained action results require an explicit mutation action scope."
                 )
-            return frozenset(plan_ids), {}, []
+            if excluded_ids:
+                refusals.append(
+                    "Excluded action ids require an explicit mutation action scope."
+                )
+            if refusals:
+                return frozenset(), frozenset(), {}, refusals
+            return frozenset(plan_ids), frozenset(), {}, []
 
         mutation_ids = frozenset(mutation_action_ids)
-        unknown = sorted(mutation_ids - plan_ids)
+        unknown = sorted((mutation_ids | excluded_ids) - plan_ids)
         retained_by_id = {
             item.action_id: item.model_copy(deep=True)
             for item in retained_action_results
@@ -1335,9 +1385,14 @@ class ConfigurationApplicator:
                 "Mutation scope contains actions outside the typed plan: "
                 + ", ".join(unknown)
             )
+        overlap = sorted(mutation_ids & excluded_ids)
+        if overlap:
+            errors.append(
+                "Actions cannot be mutated and excluded at once: " + ", ".join(overlap)
+            )
         if len(retained_by_id) != len(retained_action_results):
             errors.append("Retained action results contain duplicate identities.")
-        expected_retained = plan_ids - mutation_ids
+        expected_retained = plan_ids - mutation_ids - excluded_ids
         missing = sorted(expected_retained - set(retained_by_id))
         extra = sorted(set(retained_by_id) - expected_retained)
         if missing:
@@ -1373,7 +1428,24 @@ class ConfigurationApplicator:
                 "Retained actions depend on newly mutated actions: "
                 + ", ".join(reverse_dependencies)
             )
-        return mutation_ids, retained_by_id, errors
+        # A mutated action whose prerequisite is excluded can never
+        # establish its effect: the prerequisite is not being applied and
+        # has no retained result to stand in for it. Caught here, before
+        # any effect, rather than halfway through the batch.
+        excluded_prerequisites = sorted(
+            f"{item.id}:{dependency}"
+            for item in plan.actions
+            if item.id in mutation_ids
+            for dependency in sorted(
+                {*item.depends_on, *item.apply_dependencies} & excluded_ids
+            )
+        )
+        if excluded_prerequisites:
+            errors.append(
+                "Mutated actions depend on excluded actions: "
+                + ", ".join(excluded_prerequisites)
+            )
+        return mutation_ids, excluded_ids, retained_by_id, errors
 
     @staticmethod
     def _physical_interface(action: ConfigurationAction) -> str:

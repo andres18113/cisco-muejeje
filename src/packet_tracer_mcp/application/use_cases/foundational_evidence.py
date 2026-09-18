@@ -41,6 +41,10 @@ from ...domain.enterprise.models.physical_deployment import (
     PhysicalDeploymentResult,
     PhysicalObjectKind,
 )
+from ...domain.enterprise.models.service_plan import (
+    FoundationalServiceRequirement,
+    ServicePlan,
+)
 
 #: Strength order used only to resolve a conflict, never to upgrade anything.
 #: Lower wins, so two sources disagreeing about one foundation fail closed.
@@ -72,8 +76,10 @@ _PHYSICAL_TO_ACTION: dict[PhysicalDeploymentItemStatus, ActionExecutionStatus] =
     PhysicalDeploymentItemStatus.FAILED: ActionExecutionStatus.FAILED,
 }
 
+
 def _weakest(
-    left: ActionExecutionStatus, right: ActionExecutionStatus,
+    left: ActionExecutionStatus,
+    right: ActionExecutionStatus,
 ) -> ActionExecutionStatus:
     """Two sources disagreeing about one foundation resolve to the weaker."""
     unknown = _STATUS_STRENGTH[ActionExecutionStatus.UNKNOWN]
@@ -93,30 +99,38 @@ def _merge(
     target[source_id] = status if existing is None else _weakest(existing, status)
 
 
-def _endpoint_core_is_verified(
-    plan: ControlPlanePlan,
-    requirement: ControlPlaneFoundationRequirement,
+def endpoint_core_is_verified(
+    *,
+    source_configuration_id: str,
+    source_configuration_hash: str,
+    requirement_source_id: str,
+    requirement_source_hash: str,
     configuration_result: ConfigurationApplicationResult,
     verification: VerificationResult,
 ) -> bool:
-    """Whether one E5 row can satisfy its exact E9 endpoint foundation."""
+    """Whether one E5 row can satisfy its exact endpoint foundation.
+
+    Plan-agnostic on purpose. E9 and E6 both need exactly this predicate,
+    and the one thing that must not happen is two copies of it drifting
+    apart: the E9 gate would keep refusing while the E6 gate started
+    agreeing, about the same row. The caller supplies the identity it is
+    binding against; the predicate never reads a plan.
+    """
     if (
-        requirement.source_hash != plan.source_configuration_hash
-        or configuration_result.config_plan_id != plan.source_configuration_id
-        or configuration_result.config_semantic_hash
-        != plan.source_configuration_hash
-        or verification.action_id != requirement.source_id
+        requirement_source_hash != source_configuration_hash
+        or configuration_result.config_plan_id != source_configuration_id
+        or configuration_result.config_semantic_hash != source_configuration_hash
+        or verification.action_id != requirement_source_id
         or not verification.expectation_id
-        or verification.status not in {
+        or verification.status
+        not in {
             ActionExecutionStatus.PARTIAL,
             ActionExecutionStatus.VERIFIED,
         }
         or verification.evidence_method != "structured_endpoint_getters"
         or not verification.fresh_evidence
-        or verification.fields.get("ipv4")
-        is not FieldVerificationStatus.VERIFIED
-        or verification.fields.get("netmask")
-        is not FieldVerificationStatus.VERIFIED
+        or verification.fields.get("ipv4") is not FieldVerificationStatus.VERIFIED
+        or verification.fields.get("netmask") is not FieldVerificationStatus.VERIFIED
         or verification.convergence is None
         or verification.convergence.final_status is not verification.status
     ):
@@ -156,8 +170,13 @@ def _configuration_foundation_status(
 ) -> ActionExecutionStatus:
     if requirement.kind != "endpoint_address":
         return verification.status
-    if _endpoint_core_is_verified(
-        plan, requirement, configuration_result, verification,
+    if endpoint_core_is_verified(
+        source_configuration_id=plan.source_configuration_id,
+        source_configuration_hash=plan.source_configuration_hash,
+        requirement_source_id=requirement.source_id,
+        requirement_source_hash=requirement.source_hash,
+        configuration_result=configuration_result,
+        verification=verification,
     ):
         return ActionExecutionStatus.VERIFIED
     # A contradictory aggregate VERIFIED cannot outrank missing or stale core
@@ -197,9 +216,7 @@ def derive_foundational_statuses(
     such as Voice, which declare their own required source ids.
     """
     statuses: dict[str, ActionExecutionStatus] = {}
-    requirements_by_source: dict[
-        str, list[ControlPlaneFoundationRequirement]
-    ] = {}
+    requirements_by_source: dict[str, list[ControlPlaneFoundationRequirement]] = {}
     for requirement in plan.foundational_requirements:
         if requirement.source_id:
             requirements_by_source.setdefault(requirement.source_id, []).append(
@@ -217,7 +234,10 @@ def derive_foundational_statuses(
                     statuses,
                     requirement.source_id,
                     _configuration_foundation_status(
-                        plan, requirement, configuration_result, item,
+                        plan,
+                        requirement,
+                        configuration_result,
+                        item,
                     ),
                 )
 
@@ -226,7 +246,8 @@ def derive_foundational_statuses(
             if item.target_kind is not PhysicalObjectKind.LINK:
                 continue
             status = _PHYSICAL_TO_ACTION.get(
-                item.status, ActionExecutionStatus.UNKNOWN,
+                item.status,
+                ActionExecutionStatus.UNKNOWN,
             )
             # `observed` is the field the deployer sets from a real read-back.
             # A row claiming OBSERVED without it is not evidence of anything.
@@ -298,3 +319,87 @@ def unmet_foundations(
                 "does not match.",
             )
     return sorted(set(unmet))
+
+
+def derive_service_foundational_statuses(
+    plan: ServicePlan,
+    configuration_result: ConfigurationApplicationResult,
+) -> dict[str, ActionExecutionStatus]:
+    """Map one E6 plan's foundational E5 actions to what was actually executed.
+
+    `ServiceApplicator` refuses to apply anything whose foundation is not
+    VERIFIED, and until now the only way to produce that mapping was for a
+    caller to build it by hand -- which is the same defect this module was
+    written to close for E9, in the stage that mutates a server's services.
+
+    The rules are the E9 rules, not softer ones:
+
+    - only rows for an action this plan actually names as a foundation count;
+    - the E5 result must be the exact plan and semantic hash the E6 plan was
+      compiled against, or nothing is derived and the gate refuses;
+    - an `endpoint_address` foundation may be satisfied by a PARTIAL row whose
+      IPv4/netmask core is fresh and attributable, through the SAME predicate
+      E9 uses. It satisfies only its own action; it never promotes the E5 row
+      and never speaks for gateway, DNS or any other field;
+    - an aggregate VERIFIED with no attributable core degrades to UNKNOWN;
+    - two rows disagreeing about one foundation resolve to the weaker. A
+      conflict is never settled by choosing the success.
+
+    Every other foundation kind copies its verification status, because no core
+    predicate exists for it and inventing one here would be exactly the
+    unattributable promotion the rest of this module refuses.
+    """
+    statuses: dict[str, ActionExecutionStatus] = {}
+    requirements_by_action: dict[str, list[FoundationalServiceRequirement]] = {}
+    for requirement in plan.foundational_requirements:
+        if requirement.configuration_action_id:
+            requirements_by_action.setdefault(
+                requirement.configuration_action_id, []
+            ).append(requirement)
+    if not requirements_by_action:
+        return statuses
+
+    identity_matches = (
+        configuration_result.config_plan_id == plan.source_configuration_id
+        and configuration_result.config_semantic_hash == plan.source_configuration_hash
+    )
+    for item in configuration_result.verification_results:
+        requirements = requirements_by_action.get(item.action_id)
+        if not requirements:
+            continue
+        for requirement in requirements:
+            _merge(
+                statuses,
+                requirement.configuration_action_id,
+                _service_foundation_status(
+                    plan, requirement, configuration_result, item, identity_matches
+                ),
+            )
+    return statuses
+
+
+def _service_foundation_status(
+    plan: ServicePlan,
+    requirement: FoundationalServiceRequirement,
+    configuration_result: ConfigurationApplicationResult,
+    verification: VerificationResult,
+    identity_matches: bool,
+) -> ActionExecutionStatus:
+    if not identity_matches:
+        # The rows describe a different configuration than the one this E6
+        # plan was compiled against. They are evidence about something else.
+        return ActionExecutionStatus.UNKNOWN
+    if requirement.kind != "endpoint_address":
+        return verification.status
+    if endpoint_core_is_verified(
+        source_configuration_id=plan.source_configuration_id,
+        source_configuration_hash=plan.source_configuration_hash,
+        requirement_source_id=requirement.configuration_action_id,
+        requirement_source_hash=plan.source_configuration_hash,
+        configuration_result=configuration_result,
+        verification=verification,
+    ):
+        return ActionExecutionStatus.VERIFIED
+    if verification.status is ActionExecutionStatus.VERIFIED:
+        return ActionExecutionStatus.UNKNOWN
+    return verification.status
