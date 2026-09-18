@@ -12,9 +12,9 @@ section 9 for the correction record and section 10.2 for the acceptance and
 its exact-SHA CI. Status of S1: implemented offline on branch
 `feature/server-pt-s1-product-entry`, independently **accepted within its
 offline scope** at `1f08afa` with exact-SHA CI run `35374589931`; see section
-10 for its design record and 11.11 for the acceptance. Status of S4a: assigned
-for offline implementation on branch
-`feature/server-pt-s4a-qualification-runner`; see section 12. Status of every
+10 for its design record and 11.11 for the acceptance. Status of S4a:
+implemented offline on branch `feature/server-pt-s4a-qualification-runner`,
+**READY_FOR_REVIEW** and never self-approved; see section 12. Status of every
 other later slice: not approved
 and not implementation-ready without its own independent approval and the
 gates named in sections 4.6, 5.8 and 7.3. Risk class **L**.
@@ -4425,6 +4425,188 @@ These are new APIs, so their tests derive from these requirements and no
 import-error RED is manufactured. The version-reader move changes no behavior;
 it is covered by the existing S1 Node and public-route tests plus a parity
 assertion.
+
+### 12.9 Implementation and verification results
+
+The design in 12.1 to 12.8 was committed first, as `770e9a8`, before any
+production code. The implementation is `cdc8bbf` and the fix of finding 5 is
+`7c27694`. The work followed the design's order: pure contracts,
+the ledger and coordinator, the probes with their Node harness, and the CLI
+with its system tests.
+
+#### What was implemented
+
+| Path | Purpose |
+| --- | --- |
+| `domain/enterprise/models/service_qualification.py` | stage definitions and hard ceilings, the request, authorization and repository admission rules, the measurement and record models, and the promotion-evidence predicate |
+| `domain/enterprise/services/service_qualification_evidence.py` | the pure rules that turn probe readings into conclusions (M-ENG-1, ATOM-1, M-UNREG-1/2, M-HTTPS-1/2, M-DNS-3) |
+| `application/ports/service_qualification.py` | transport, record-store, build-reader and probe ports |
+| `application/use_cases/qualify_server_services.py` | `OperationLedger`, `LedgeredTransport`, the coordinator, the Q0/Q1 executors and finalization |
+| `infrastructure/execution/service_qualification_probes.py` | the generated single-line probes and their strict shape parser |
+| `infrastructure/execution/service_environment.py` | the S1 `AppWindow.getVersion()` reader, moved unchanged; `tool_registry.py` imports it |
+| `infrastructure/persistence/service_qualification_store.py` | the contained, create-only store, which never rewrites a completed record |
+| `adapters/cli/service_qualification.py` | argument translation, catalog-backed fixture resolution and the LIVE composition |
+| `docs/qa/server-services-qualification.md` | the authorization and record template; it holds no active authorization and no measurement |
+
+#### Findings made during implementation
+
+Each finding changed code or the design record before delivery. None was left
+behind as a disabled check.
+
+1. **Q1 costs 45, not 43.** The Q1 executor, driven below its stage gate with
+   an explicit test ledger, spent 45 operations. A negative control's
+   production fetch always polls to its deadline, because freshness requires
+   the marker, so it spends two inspections. M-HTTPS-2 is therefore 13
+   operations, not 11. The stage definition, 12.5 and 12.6 were corrected; the
+   design commit's message still carries the historical 43.
+2. **The M-UNREG trigger moved off the terminal.** The draft typed `ipconfig`
+   into the PC's command prompt. The full suite's closed inventory of
+   terminal-dispatch seams
+   (`test_command_dispatch_integrity.py::test_only_the_known_seams_dispatch_commands_to_a_terminal`)
+   rejected a new `enterCommand` site. That gate requires a deliberate decision
+   about the readiness guard. Two ways satisfied it:
+   - extend the inventory and carry `PAGER_GUARD_JS`/`IDLE_GUARD_JS`, which
+     would also make the 51 pre-existing Ruff findings of that test module
+     mine to pay;
+   - use a documented event that needs no terminal at all.
+
+   The second was chosen. `HostPort::setIpSubnetMask` on the owned PC's port
+   fires `ipChanged`: it is deterministic, no pager or busy prompt can swallow
+   it, and it adds no terminal seam. The inventory test is unchanged and still
+   guards every other dispatcher.
+3. **The Q1 probes are a mutation family.** The mutation-containment sweep
+   (`test_transport_mutation_containment.py`) found `setEnable`,
+   `setHttpsEnable` and `setPageContents` in the probe module. As the gate
+   instructs, the module is classified as family
+   `server_services_qualification`, with its containment (runner-only,
+   authorized, ledgered, owned fixtures, run-namespaced state) and its ceiling
+   (a record supports its own sample; an offline simulation never qualifies).
+   Touching that test module made its Ruff state mine. Its 12 findings were
+   fixed: two docstrings restructured in English, seven one-line docstrings
+   added, and a regular expression made exact (`other_policy\.py`). The file
+   was then formatted. No assertion changed.
+4. **Coordinator ordering and robustness defects, fixed before commit.** Each
+   is listed with its coverage:
+   - the initial measurement list was not attached to the record. The
+     nominal Q0 test now asserts the status of every declared measurement,
+     omitted ones included;
+   - the workspace was still read after a build mismatch. Covered by
+     `test_a_build_mismatch_refuses_after_one_read_and_no_effect`;
+   - a fetch that no longer fit the budget did not stop the run. The
+     procedure-boundary stop is covered by
+     `test_a_lost_inspection_spends_slack_and_stops_before_a_release_is_refused`.
+     The per-fetch guard is defensive: at the fixed Q1 costs it cannot be
+     reached without a larger fault, and it is not exercised separately;
+   - a non-budget exception from the run-bag release, or from finalization
+     itself, could skip completing the record. Covered by
+     `test_a_failing_run_bag_release_is_secondary_and_the_record_completes`
+     for the release; the catch around finalization as a whole is defensive.
+5. **The run key was not reported when its release failed.** The regression
+   written for finding 4 failed before its fix (RED, commit `7c27694`). When
+   every step had released its own entry and the final release then failed,
+   no bag residue was recorded, although nothing had observed the run key's
+   deletion. The key is now always reported as unresolved.
+
+#### Verification commands and their outcomes
+
+Every row below was measured on `7c2769470330e6a1dad12ecf69d7c3749b0b0b70`
+from a clean tree, except the two rows that name an earlier commit. The
+delivery commit is this section's own docs-only commit on top of it; the
+delivery quality gate, the documentation-style tests, the MkDocs build, the
+namespace inventory and the whitespace check were re-run there with the same
+results, and the offline suite is unaffected by a documentation change.
+
+| Verification | Result |
+| --- | --- |
+| Focused S4a modules (contracts, store, probe harness, coordinator, CLI) | **152 passed** |
+| Node harnesses: both S0 harnesses plus the S4a probe harness | **88 passed** |
+| Affected: all `tests/test_service_*.py`, `test_apply_enterprise_services.py`, `test_enterprise_services.py`, the dispatch-integrity and mutation-containment gates, docs style | **701 passed** |
+| Coexistence: every CP-SCALE, voice and control-plane module | **1563 passed, 2 skipped** |
+| Full offline suite at `7c27694` | **6147 passed, 3 skipped, 3 warnings** in 441.41 s; the tree was clean before and after |
+| Full offline suite at `cdc8bbf` | 6146 passed, 3 skipped, 3 warnings in 460.29 s |
+| Full offline suite before findings 2 and 3 | 6138 passed, 2 failed (the two architecture gates), 3 skipped; kept as the trigger of those findings |
+| Simulated Q0 through the real CLI (file and HTTP channels) | completed; 19 operations, equal to the planned minimum; restoration proven twice; dirty state `unknown` (observer residue) |
+| Q1 executor below its stage gate | 45 operations, equal to the planned minimum; all three measurements supported by the stub; the real stage refuses before contact |
+| Namespace inventory | 0 active legacy imports, 0 active legacy string references, 0 unreviewed inert mentions |
+| MkDocs | built; only the two pre-existing `handoff.md` warnings under `docs/reference/cp-scale/` |
+| Whitespace | staged and committed checks clean |
+| Delivery quality gate at `7c27694` | clean exact commit; base and merge base `6263344`; 63 Python files (48 inherited from S1, 15 from S4a); zero mechanical exemptions; Ruff lint and format passed |
+
+The S4a delta against `1f08afa` touches 19 files: 15 added and 4 modified.
+The modified files are this brief, `mkdocs.yml`, `tool_registry.py` and
+`test_transport_mutation_containment.py`. `EXTENSION/`, `.github/` and
+`docs/reference/` are unchanged.
+
+The toolchain was Python 3.12.10, pytest 9.1.1, Ruff 0.16.7, Node 24.19.0 and
+Git 2.55.0.windows.3, in the worktree's own `.venv`.
+
+#### Traceability
+
+| Requirement | Evidence |
+| --- | --- |
+| S4A-R1 | `test_the_default_invocation_refuses_before_composing_anything`, `test_an_unauthorized_request_never_opens_a_channel`, `test_no_execution_flag_refuses_alone_and_first` |
+| S4A-R2 | `test_request_values_are_refused_by_kind_and_subject`, `test_authorization_scope_is_compared_exactly`, `test_repository_identity_must_be_complete_clean_and_published`, and the CLI mismatch tests |
+| S4A-R3 | `test_production_wiring_refuses_as_test_process_before_any_contact` |
+| S4A-R4 | `test_nominal_q0_uses_one_channel_and_exactly_the_planned_operations` |
+| S4A-R5 | `test_the_runner_reads_the_application_version_never_the_saved_file`, `test_an_unavailable_build_is_never_recovered`, `test_a_build_mismatch_refuses_after_one_read_and_no_effect`, `test_the_registry_and_the_runner_share_one_reader` |
+| S4A-R6 | `test_a_foreign_workspace_refuses_before_creation_and_is_untouched`, `test_an_engine_managed_object_is_reported_and_retained` |
+| S4A-R7 | `test_a_same_name_device_appearing_mid_run_is_a_collision_not_adopted`, `test_an_unknown_creation_is_never_replayed` |
+| S4A-R8 | ledger unit tests, `test_the_time_budget_stops_work_but_keeps_the_finalization_reserve`, `test_q1_executor_at_exactly_its_planned_minimum_completes`, `test_q1_executor_one_below_its_minimum_creates_nothing`, `test_a_lost_inspection_spends_slack_and_stops_before_a_release_is_refused`, Q1 infeasibility tests |
+| S4A-R9 | `test_persistence_loss_before_the_first_effect_is_a_refusal`, `test_persistence_loss_after_an_effect_halts_effects_but_finalizes`, `test_write_ahead_steps_precede_their_work_and_survive_reload` |
+| S4A-R10 | the Node probe harness (M-ENG-1, ATOM-1, M-UNREG, Q1 probes) and the assessment unit tests |
+| S4A-R11 | `test_a_contradiction_stops_later_experiments_before_their_fixture`, `test_an_exception_in_a_probe_still_finalizes_owned_state`, `test_cancellation_finalizes_and_then_propagates`, `test_a_secondary_cleanup_failure_never_replaces_the_primary` |
+| S4A-R12 | `test_a_failing_cleanup_is_reported_and_not_repeated`, `test_a_foreign_device_appearing_mid_run_is_neither_removed_nor_ignored`, `test_observer_residue_keeps_the_state_unknown_despite_an_empty_workspace`, `test_no_claim_reset_and_no_production_global_is_ever_written`, `test_the_finalizer_removes_only_its_own_run_key`, `test_a_failing_run_bag_release_is_secondary_and_the_record_completes` |
+| S4A-R13 | store tests, `test_only_a_completed_live_record_at_the_exact_sha_can_be_evidence`, `test_a_simulated_record_can_never_serve_as_promotion_evidence` |
+| S4A-R14 | `test_the_runner_mutates_no_catalog_and_the_product_has_no_override`, `test_the_capability_scope_is_enforced_before_the_fixture_exists` |
+
+#### Deviations from the assignment, each stated rather than absorbed
+
+- Q1 cannot run at its ceiling. The runner refuses it before contact as
+  `infeasible` with its numbers. Its executable definition is proven only
+  below the stage gate, in coordinator tests that build a larger test ledger
+  explicitly. No production path can raise the ceiling.
+- The version reader moved out of `tool_registry.py`. The move is
+  byte-identical in script text and parse rules. It is not a size extraction.
+- The runner requires the executed HEAD to be published as its upstream. The
+  CP-SCALE governed pattern requires the same, but no branch name is
+  prescribed.
+- M-UNREG uses `HostPort.ipChanged` instead of a terminal command (finding 2).
+
+#### What is NOT verified
+
+Nothing here observed Packet Tracer. The following remain LIVE measurement
+gates:
+
+- whether the real engine behaves like any configuration of the Node stub;
+- whether `_ScriptModule` is reachable from a `runCode` or file-channel
+  evaluation;
+- whether `ipChanged` is delivered to a Script Engine callback, and with which
+  `args` names;
+- the receiver of `this` on the HTTP channel;
+- whether a real webview batch interleaves;
+- the real HTTPS page-table layout and negative-control behaviour;
+- the value `getServerIp` returns for an unset resolver.
+
+The runner has never started a bridge. The fresh-session instruction-loading
+check for this worktree remains pending (12.1). Exact-SHA CI cannot exist
+without a separately authorized push.
+
+### 12.10 Decisions left to the independent review
+
+1. **Q1 budget.** The ceiling is 30 and the executable definition needs 45.
+   The options are a reviewed ceiling of at least 45 plus slack, a split into
+   separately authorized stages, or a smaller fixture. The runner refuses until
+   the stage definition changes by review.
+2. **Q0 slack.** Q0 fits with one operation of slack. A lost response in a
+   required step ends the run early, with its reason recorded; the reviewer
+   may prefer more slack.
+3. **M-UNREG event source.** The reviewer should confirm that
+   `HostPort.ipChanged` on an owned fixture is an acceptable engine-generic
+   subject for the S2/S3 observer decision (mail and DHCP events are not
+   exercised in Q0).
+4. **ATOM-1 on the HTTP channel.** The bridge may join the two queued
+   contenders into one `runCode`, which makes the sample weaker there. The
+   record says so. A file-channel Q0 is the stronger sample.
 
 ---
 
