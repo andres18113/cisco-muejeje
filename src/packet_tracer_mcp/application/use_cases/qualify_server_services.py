@@ -1670,6 +1670,9 @@ def _release_engine_state(execution: _Execution) -> None:
             detail=reading.cause if reading is not None else "not_dispatched",
         )
     )
+    # The run key itself is residue even when every step released its own
+    # entry: nothing observed its deletion.
+    record.engine_residue.append("bag:run_key:release_unverified")
     for name in sorted(execution.bag_unreleased):
         record.engine_residue.append(f"bag:{name}:release_unverified")
 

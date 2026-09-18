@@ -706,3 +706,31 @@ def test_a_lost_inspection_spends_slack_and_stops_before_a_release_is_refused(
     assert ledger.refused_calls == 0 and ledger.used == 45
     snapshot = h.engine.snapshot()
     assert snapshot["live_clients"] == 0 and snapshot["devices"] == []
+
+
+def test_a_failing_run_bag_release_is_secondary_and_the_record_completes(harness):
+    """An exception while releasing engine state never skips completion."""
+    h = harness()
+    base = h.boundaries()
+
+    class FailingRelease:
+        def __init__(self, inner):
+            self.inner = inner
+
+        def __getattr__(self, name):
+            return getattr(self.inner, name)
+
+        def release_run_bag(self):
+            raise RuntimeError("release exploded")
+
+    record = h.run(
+        probes=lambda bound, run_id, nonce: FailingRelease(
+            base.probes(bound, run_id, nonce)
+        )
+    ).record
+    assert "release:run_bag:exception:RuntimeError" in record.secondary_failures
+    assert any(item.startswith("bag:") for item in record.engine_residue)
+    assert record.dirty_state is DirtyState.UNKNOWN
+    durable = h.durable()
+    assert durable.completed_at is not None
+    assert h.engine.snapshot()["devices"] == []
