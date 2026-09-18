@@ -5,93 +5,109 @@ Define todas las herramientas que el LLM puede invocar.
 """
 
 from __future__ import annotations
+
 import json
 import time
-import urllib.request
 import urllib.parse
+import urllib.request
 from pathlib import Path
+
 from mcp.server.fastmcp import FastMCP
 from pydantic import ValidationError
 
+from ...application.use_cases.apply_acl import (
+    apply_acl_uc,
+    build_acl_plan,
+    remove_acl_uc,
+)
+from ...application.use_cases.apply_hardening import (
+    apply_hardening_uc,
+    build_hardening_config,
+)
+from ...application.use_cases.apply_interface_tuning import apply_interface_tuning_uc
+from ...application.use_cases.apply_nat import (
+    apply_nat_uc,
+    build_nat_config,
+    remove_nat_uc,
+)
+from ...application.use_cases.apply_switch_security import (
+    apply_port_security_uc,
+    apply_stp_uc,
+)
+from ...application.use_cases.apply_vlan import apply_vlan_uc, build_vlan_plan
+from ...application.use_cases.capability_discovery import CapabilityDiscoveryService
 from ...application.use_cases.compose_enterprise_reference import (
     compose_enterprise_reference,
 )
+from ...application.use_cases.deploy_enterprise_topology import (
+    EnterprisePhysicalTopologyDeployer,
+)
+from ...domain.enterprise.models.deployment import EnvironmentFingerprint
+from ...domain.enterprise.models.discovery import DetailLevel, ProbeLevel, ProbeRequest
 from ...domain.enterprise.models.intent import EnterpriseIntent
+from ...domain.models.acls import ACLBinding
+from ...domain.models.errors import ErrorCode, PlanError
+from ...domain.models.interface_tuning import InterfaceTuning
+from ...domain.models.netflow import NetflowExporter
 from ...domain.models.plans import TopologyPlan
 from ...domain.models.requests import TopologyRequest
-from ...domain.models.acls import ACLBinding
-from ...domain.services.orchestrator import plan_from_request
-from ...domain.services.validator import validate_plan
-from ...domain.services.auto_fixer import fix_plan
-from ...domain.services.explainer import explain_plan
-from ...domain.services.estimator import estimate_from_request, estimate_from_plan
-from ...application.use_cases.apply_acl import (
-    build_acl_plan,
-    apply_acl_uc,
-    remove_acl_uc,
-)
-from ...application.use_cases.apply_nat import (
-    build_nat_config,
-    apply_nat_uc,
-    remove_nat_uc,
-)
-from ...application.use_cases.apply_vlan import build_vlan_plan, apply_vlan_uc
-from ...application.use_cases.apply_switch_security import (
-    apply_stp_uc,
-    apply_port_security_uc,
-)
-from ...domain.models.switch_security import STPConfig, PortSecurityConfig
-from ...application.use_cases.apply_hardening import (
-    build_hardening_config,
-    apply_hardening_uc,
-)
-from ...application.use_cases.apply_interface_tuning import apply_interface_tuning_uc
-from ...domain.models.interface_tuning import InterfaceTuning
-from ...domain.services.topology_diff import diff as topology_diff, health_check
-from ...domain.services.security_audit import audit_security
-from ...domain.services.port_inspect import nat_mode_label, summarize_ports
-from ...domain.services.packet_trace import summarize_trace, traffic_type_label
-from ...domain.models.netflow import NetflowExporter
-from ...domain.models.errors import ErrorCode, PlanError
+from ...domain.models.switch_security import PortSecurityConfig, STPConfig
 from ...domain.rules.netflow_rules import (
     validate_netflow,
     validate_netflow_against_topology,
 )
-from ...infrastructure.generator.ptbuilder_generator import (
-    generate_ptbuilder_script,
-    generate_full_script,
-    generate_executable_script,
+from ...domain.services.auto_fixer import fix_plan
+from ...domain.services.canvas import (
+    CanvasImageError,
+    decode_pt_image,
+    normalize_format,
 )
-from ...infrastructure.generator.cli_config_generator import (
-    generate_all_configs,
-    generate_pc_config,
+from ...domain.services.estimator import estimate_from_request
+from ...domain.services.explainer import explain_plan
+from ...domain.services.orchestrator import plan_from_request
+from ...domain.services.packet_trace import summarize_trace, traffic_type_label
+from ...domain.services.port_inspect import nat_mode_label, summarize_ports
+from ...domain.services.security_audit import audit_security
+from ...domain.services.topology_diff import diff as topology_diff
+from ...domain.services.topology_diff import health_check
+from ...domain.services.validator import validate_plan
+from ...infrastructure.catalog.aliases import MODEL_ALIASES
+from ...infrastructure.catalog.cables import CABLE_TYPES, infer_cable
+from ...infrastructure.catalog.devices import ALL_MODELS, resolve_model
+from ...infrastructure.catalog.enterprise_capabilities import (
+    EnterpriseCapabilityAdapter,
 )
-from ...infrastructure.generator.acl_cli_generator import generate_acl_cli
-from ...infrastructure.execution.manual_executor import ManualExecutor
-from ...infrastructure.execution.deploy_executor import DeployExecutor
-from ...infrastructure.execution.live_bridge import (
-    PTCommandBridge,
-    DEFAULT_PORT,
-    correlated_http_send_and_wait,
-)
+from ...infrastructure.catalog.modules import ALL_MODULES, resolve_module
+from ...infrastructure.catalog.templates import list_templates
+from ...infrastructure.execution.bridge_preflight import BridgeReadinessPreflight
 from ...infrastructure.execution.bridge_token import (
     get_bridge_token,
     has_persisted_bridge_token,
     token_fingerprint,
-    token_was_rotated,
     token_is_ephemeral,
+    token_was_rotated,
 )
+from ...infrastructure.execution.deploy_executor import DeployExecutor
 from ...infrastructure.execution.file_bridge import FileBridge
-from ...infrastructure.execution.bridge_preflight import BridgeReadinessPreflight
+from ...infrastructure.execution.live_bridge import (
+    DEFAULT_PORT,
+    PTCommandBridge,
+    correlated_http_send_and_wait,
+)
+from ...infrastructure.execution.manual_executor import ManualExecutor
+from ...infrastructure.execution.packet_tracer_physical_runtime import (
+    PacketTracerPhysicalTopologyRuntime,
+)
+from ...infrastructure.execution.probe_runtime import PacketTracerBridgeProbeRuntime
 from ...infrastructure.execution.simulation_trace_runtime import (
     packet_trace_js,
     simulation_mode_js,
     simulation_step_js,
 )
 from ...infrastructure.execution.topology_observation import (
+    LayoutPoint,
     LinkEndpoint,
     LinkExpectation,
-    LayoutPoint,
     assess_layout_application,
     build_layout_observation_js,
     parse_layout_observation,
@@ -103,45 +119,31 @@ from ...infrastructure.execution.transport_health import (
     format_transport_health,
     select_transport,
 )
-from ...infrastructure.persistence.project_repository import ProjectRepository
+from ...infrastructure.execution.typed_ping import TypedPingExecutor
+from ...infrastructure.generator.acl_cli_generator import generate_acl_cli
+from ...infrastructure.generator.cli_config_generator import (
+    generate_all_configs,
+    generate_pc_config,
+)
+from ...infrastructure.generator.ptbuilder_generator import (
+    generate_executable_script,
+    generate_full_script,
+    generate_ptbuilder_script,
+)
+from ...infrastructure.persistence.capability_snapshot_store import (
+    CapabilitySnapshotStore,
+)
 from ...infrastructure.persistence.deployment_manifest_store import (
     DeploymentManifestStore,
     ManifestPersistenceError,
 )
-from ...infrastructure.catalog.devices import ALL_MODELS, resolve_model
-from ...infrastructure.catalog.cables import CABLE_TYPES, CABLE_RULES, infer_cable
-from ...infrastructure.catalog.aliases import MODEL_ALIASES
-from ...infrastructure.catalog.templates import list_templates
-from ...infrastructure.catalog.modules import ALL_MODULES, resolve_module
-from ...infrastructure.catalog.enterprise_capabilities import (
-    EnterpriseCapabilityAdapter,
-)
-from ...infrastructure.execution.probe_runtime import PacketTracerBridgeProbeRuntime
-from ...infrastructure.persistence.capability_snapshot_store import (
-    CapabilitySnapshotStore,
-)
-from ...application.use_cases.capability_discovery import CapabilityDiscoveryService
-from ...application.use_cases.deploy_enterprise_topology import (
-    EnterprisePhysicalTopologyDeployer,
-)
-from ...domain.enterprise.models.deployment import EnvironmentFingerprint
-from ...domain.enterprise.models.discovery import DetailLevel, ProbeLevel, ProbeRequest
-from ...infrastructure.execution.packet_tracer_physical_runtime import (
-    PacketTracerPhysicalTopologyRuntime,
-)
+from ...infrastructure.persistence.project_repository import ProjectRepository
 from ...shared.enums import RoutingProtocol, TopologyTemplate
-from ...infrastructure.execution.typed_ping import TypedPingExecutor
 from ...shared.utils import (
     js_escape,
-    safe_name_component,
-    resolve_within,
     normalize_ip,
-)
-from ...domain.services.canvas import (
-    CanvasImageError,
-    decode_pt_image,
-    normalize_format,
-    validate_color,
+    resolve_within,
+    safe_name_component,
 )
 from .public_surface import PublicMcpSurface
 
@@ -152,7 +154,6 @@ def register_tools(
     public_surface: PublicMcpSurface = PublicMcpSurface.ENTERPRISE,
 ) -> None:
     """Registra todas las tools en el servidor MCP."""
-
     if not isinstance(public_surface, PublicMcpSurface):
         raise TypeError("public_surface must be a PublicMcpSurface")
 
@@ -165,6 +166,7 @@ def register_tools(
     def pt_list_devices() -> str:
         """
         Lista todos los dispositivos disponibles en Packet Tracer con sus puertos.
+
         Usa esto para saber qué modelos, puertos y cables puedes usar.
         """
         lines = []
@@ -182,9 +184,7 @@ def register_tools(
 
     @mcp.tool()
     def pt_list_templates() -> str:
-        """
-        Lista todas las plantillas de topología disponibles con sus descripciones.
-        """
+        """Lista todas las plantillas de topología disponibles con sus descripciones."""
         templates = list_templates()
         lines = []
         for t in templates:
@@ -243,6 +243,7 @@ def register_tools(
     ) -> str:
         """
         Estimación rápida (dry-run) sin generar plan completo.
+
         Muestra cuántos dispositivos, enlaces y subredes se crearán.
 
         Parámetros:
@@ -345,7 +346,7 @@ def register_tools(
             ipv6_base=ipv6_base,
             wireless_laptops=wireless_laptops,
         )
-        plan, validation = plan_from_request(request)
+        plan, _validation = plan_from_request(request)
         return plan.model_dump_json(indent=2)
 
     # ------------------------------------------------------------------
@@ -452,6 +453,7 @@ def register_tools(
     def pt_fix_plan(plan_json: str) -> str:
         """
         Intenta corregir errores del plan automáticamente.
+
         Corrige cables, upgradea routers si faltan puertos, reasigna puertos.
 
         Parámetros:
@@ -478,6 +480,7 @@ def register_tools(
     def pt_explain_plan(plan_json: str) -> str:
         """
         Explica las decisiones del plan en lenguaje natural.
+
         Útil para entender por qué se eligieron ciertos modelos, IPs, etc.
 
         Parámetros:
@@ -613,7 +616,6 @@ def register_tools(
         )
         plan, validation = plan_from_request(request)
         explanation = explain_plan(plan)
-        estimation = estimate_from_plan(plan)
 
         parts: list[str] = []
 
@@ -683,7 +685,7 @@ def register_tools(
 
         pcs = [d for d in plan.devices if d.category in ("pc", "server", "laptop")]
         if pcs:
-            parts.append(f"\n--- Hosts ---")
+            parts.append("\n--- Hosts ---")
             use_dhcp = bool(plan.dhcp_pools)
             for pc in pcs:
                 parts.append(generate_pc_config(pc, use_dhcp=use_dhcp))
@@ -791,9 +793,10 @@ def register_tools(
         output_dir: str = "projects",
     ) -> str:
         """
-        Despliega un plan en Packet Tracer: copia el script al portapapeles
-        de Windows, exporta los archivos de configuracion, y genera
-        instrucciones paso a paso.
+        Despliega un plan en Packet Tracer.
+
+        Copia el script al portapapeles de Windows, exporta los archivos de
+        configuracion, y genera instrucciones paso a paso.
 
         Uso: despues de pt_full_build o pt_plan_topology, pasa el plan JSON
         aqui para preparar todo para Packet Tracer.
@@ -953,6 +956,7 @@ def register_tools(
     def _ensure_bridge() -> bool:
         """
         Garantiza que exista un bridge escuchando en :54321.
+
         Si ya hay uno (interno o externo), no hace nada.
         Si no hay ninguno, arranca uno in-process como thread daemon.
         Retorna True si el bridge está operativo.
@@ -1701,6 +1705,7 @@ def register_tools(
     def pt_query_topology() -> str:
         """
         Query current devices in Packet Tracer.
+
         Returns name, model, and port/IP info for each device in the active topology.
         Requires bridge connected (use pt_bridge_status to verify).
         """
@@ -1760,6 +1765,7 @@ def register_tools(
     def pt_export_topology() -> str:
         """
         Export a detailed snapshot of the full topology currently in Packet Tracer.
+
         Returns JSON with devices (name, model, x/y position, interfaces with IPs)
         and links (endpoints, ports, cable type). This gives a complete picture of
         what is deployed so the LLM can reason about the topology.
@@ -1879,6 +1885,7 @@ def register_tools(
     def pt_delete_device(device_name: str) -> str:
         """
         Delete a device from the active topology in Packet Tracer.
+
         Uses getLogicalWorkspace().removeDevice() and verifies the device is gone.
 
         Parameters:
@@ -2092,6 +2099,7 @@ def register_tools(
     ) -> str:
         """
         Add a single device to Packet Tracer with validation.
+
         Checks: name not empty, model exists in catalog, no duplicate name.
 
         Parameters:
@@ -2155,6 +2163,7 @@ def register_tools(
     ) -> str:
         """
         Create a link between two devices in Packet Tracer with full validation.
+
         Checks: both devices exist, both ports exist, ports are free, cable type is valid.
         If cable_type is omitted, it is inferred from the device categories.
 
@@ -2426,6 +2435,7 @@ def register_tools(
     def pt_send_raw(js_code: str, wait_result: bool = False) -> str:
         """
         Send arbitrary JavaScript to Packet Tracer via bridge.
+
         Useful for exploring the IPC API or running custom commands.
 
         If wait_result=True, reportResult() is auto-injected into scope.
@@ -2663,7 +2673,7 @@ def register_tools(
         dry_run: bool = False,
     ) -> str:
         """
-        Instala N módulos en un solo runCode JS — power-off → addModule×N → power-on.
+        Instala N módulos en un solo runCode JS — power-off -> addModule xN -> power-on.
 
         Útil cuando hay que poner varios módulos seriales (HWIC-2T, NIM-2T, etc.) en
         varios routers a la vez. PREFERIR esta tool sobre llamadas múltiples a
@@ -2742,7 +2752,7 @@ def register_tools(
                 ensure_ascii=False,
             )
 
-        # Construir un único JS one-liner: power-off de devices únicos → addModule × N → power-on
+        # Construir un único JS one-liner: power-off de devices únicos -> addModule x N -> power-on
         unique_devs = []
         seen = set()
         for v in validated:
@@ -3024,8 +3034,9 @@ def register_tools(
         dry_run: bool = False,
     ) -> str:
         """
-        Aplica una ACL usando la API de objetos de PT (AclProcess.addAcl/addStatement)
-        en lugar de CLI vía configureIosDevice.
+        Aplica una ACL con la API de objetos de PT en lugar de CLI.
+
+        Usa AclProcess.addAcl/addStatement en vez de configureIosDevice.
 
         Mismo input que pt_apply_acl. Es más rápida (sin parsing de CLI) y menos
         propensa a tirar popups modales que rompan el bridge si una línea sale mal.

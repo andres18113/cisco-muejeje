@@ -25,7 +25,6 @@ from ...domain.enterprise.models.configuration import (
     VerificationKind,
 )
 from ...domain.enterprise.models.configuration_runtime import (
-    mutation_execution_status,
     ActionApplicationResult,
     ActionExecutionStatus,
     ConfigurationApplicationResult,
@@ -38,6 +37,7 @@ from ...domain.enterprise.models.configuration_runtime import (
     RuntimeVerification,
     VerificationResult,
     VoiceSignalBarrierResult,
+    mutation_execution_status,
 )
 from ...domain.enterprise.models.deployment import (
     DeploymentIdentityError,
@@ -46,12 +46,11 @@ from ...domain.enterprise.models.deployment import (
     resolve_manifest_targets,
     validate_manifest_environment,
 )
+from ...domain.enterprise.models.evidence import evidence_from_legacy_result
 from ...domain.enterprise.models.execution import (
-    MutationDisposition,
     journal_from_action_results,
     satisfies_apply_dependency,
 )
-from ...domain.enterprise.models.evidence import evidence_from_legacy_result
 from ...domain.enterprise.models.verification import (
     legacy_action_prerequisites,
     prerequisites_satisfied,
@@ -63,28 +62,35 @@ from ...domain.enterprise.services.configuration_dependencies import (
 
 
 class ConfigurationRuntime(Protocol):
-    def inventory(self) -> list[RuntimeConfigurationTarget]: ...
+    """The port an E5 configuration runtime must implement."""
+
+    def inventory(self) -> list[RuntimeConfigurationTarget]:
+        """Return the devices the runtime can see."""
 
     def apply_actions(
         self,
         actions: Sequence[ConfigurationAction],
-    ) -> list[RuntimeActionMutation]: ...
+    ) -> list[RuntimeActionMutation]:
+        """Apply one batch and report what was observed per action."""
 
     def verify(
         self,
         expectations: Sequence[VerificationExpectation],
-    ) -> list[RuntimeVerification]: ...
+    ) -> list[RuntimeVerification]:
+        """Observe one batch of expectations."""
 
     def wait_for_voice_access_forwarding(
         self,
         expectations: Sequence[VerificationExpectation],
-    ) -> list[RuntimeVerification]: ...
+    ) -> list[RuntimeVerification]:
+        """Wait until the Voice access ports forward, or report why not."""
 
 
 class ConfigurationApplicator:
     """No planifica: ejecuta exactamente las acciones ya compiladas."""
 
     def __init__(self, runtime: ConfigurationRuntime) -> None:
+        """Bind the applicator to one configuration runtime."""
         self._runtime = runtime
 
     _VOICE_FOUNDATION_KINDS = frozenset(
@@ -110,6 +116,7 @@ class ConfigurationApplicator:
         retained_deferred_voice_action_ids: Collection[str] = (),
         phase_observer: (Callable[[int, tuple[str, ...]], None] | None) = None,
     ) -> ConfigurationApplicationResult:
+        """Apply one ConfigurationPlan and return its full typed outcome."""
         started = monotonic()
         runtime_context = runtime_context or ConfigurationRuntimeContext()
         if actual_source_topology_hash != plan.source_topology_hash:
@@ -694,10 +701,7 @@ class ConfigurationApplicator:
         ):
             lifecycle_observer("VOICE_SIGNAL_VERIFIED")
         try:
-            wait_for_forwarding = getattr(
-                self._runtime,
-                "wait_for_voice_access_forwarding",
-            )
+            wait_for_forwarding = self._runtime.wait_for_voice_access_forwarding
             forwarding_raw = {
                 item.expectation_id: item
                 for item in wait_for_forwarding(runtime_expectations)
@@ -1306,7 +1310,6 @@ class ConfigurationApplicator:
         list[str],
     ]:
         """Validate one explicit mutation delta without weakening verification."""
-
         plan_ids = {item.id for item in plan.actions}
         if mutation_action_ids is None:
             if retained_action_results:

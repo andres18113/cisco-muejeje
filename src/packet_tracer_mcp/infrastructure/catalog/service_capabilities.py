@@ -7,19 +7,18 @@ habilitarse no demuestra que la Extensions API permita publicar un archivo.
 from __future__ import annotations
 
 from ...domain.enterprise.models.capabilities import CapabilityStatus
+from ...domain.enterprise.models.evidence import CapabilityReadiness, ReadinessStatus
 from ...domain.enterprise.models.service_plan import (
     ServiceActionType,
     ServiceCapabilityProfile,
     ServiceType,
 )
-from ...domain.enterprise.models.evidence import CapabilityReadiness, ReadinessStatus
 
 
 def packet_tracer_service_capabilities(
     packet_tracer_version: str = "9.0.1.0858",
 ) -> dict[str, ServiceCapabilityProfile]:
     """Devuelve evidencia conservadora para el runtime local medido."""
-
     source = "PT 9.0.1 local IpcAPI reference and controlled process probes"
     profiles = {
         service_type: ServiceCapabilityProfile(

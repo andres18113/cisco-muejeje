@@ -25,11 +25,11 @@ from dataclasses import dataclass, field
 
 from ...domain.enterprise.models.capabilities import DeviceCapabilities
 from ...domain.enterprise.models.compilation import EnterpriseCompileSummary
+from ...domain.enterprise.models.configuration import ConfigurationPlan
 from ...domain.enterprise.models.control_plane import (
     ControlPlaneIntent,
     ControlPlanePlan,
 )
-from ...domain.enterprise.models.configuration import ConfigurationPlan
 from ...domain.enterprise.models.deployment import DeploymentManifest
 from ...domain.enterprise.models.enterprise_plan import EnterprisePlan
 from ...domain.enterprise.models.hardware import HardwarePlan
@@ -92,9 +92,11 @@ class EnterpriseReferenceComposition:
 
     @property
     def hardware_plan(self) -> HardwarePlan | None:
+        """The selected hardware plan, when hardware was planned."""
         return self.hardware.plan if self.hardware is not None else None
 
     def compact_summary(self) -> dict[str, object]:
+        """Return the stable report shape; consumers depend on these keys."""
         return {
             "valid": self.valid,
             "sites": len(self.enterprise.sites) if self.enterprise else 0,

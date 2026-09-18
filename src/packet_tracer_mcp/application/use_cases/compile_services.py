@@ -19,6 +19,7 @@ def compile_enterprise_services(
     *,
     capabilities: dict[str, ServiceCapabilityProfile] | None = None,
 ) -> ServiceCompileResult:
+    """Compile one backend-neutral ServicePlan from E4 and E5."""
     return ServiceCompiler().compile(
         enterprise,
         topology,

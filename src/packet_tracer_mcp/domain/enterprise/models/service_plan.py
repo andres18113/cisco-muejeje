@@ -3,19 +3,23 @@
 from __future__ import annotations
 
 from collections import Counter
-from enum import Enum, IntEnum
+from enum import Enum, IntEnum, StrEnum
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
 from .capabilities import CapabilityStatus
 from .configuration import ConfigurationIssue
-from .execution import OperationSemantics
 from .evidence import CapabilityReadiness
+from .execution import OperationSemantics
 from .verification import VerificationPrerequisite
 
 
-class ServiceType(str, Enum):
+class ServiceType(StrEnum):
+    """Service family one Server-PT process can host."""
+
+    __str__ = Enum.__str__
+
     DNS = "dns"
     HTTP = "http"
     HTTPS = "https"
@@ -24,11 +28,17 @@ class ServiceType(str, Enum):
 
 
 class ServicePhase(IntEnum):
+    """Order in which compiled E6 actions reach their host."""
+
     ENABLE = 20
     CONTENT = 30
 
 
-class ServiceActionType(str, Enum):
+class ServiceActionType(StrEnum):
+    """Typed E6 action applied to a service host."""
+
+    __str__ = Enum.__str__
+
     ENABLE_DNS = "enable_dns_service"
     ADD_DNS_RECORD = "add_dns_record"
     ENABLE_HTTP = "enable_http_service"
@@ -39,13 +49,21 @@ class ServiceActionType(str, Enum):
     PUBLISH_TFTP_FILE = "publish_tftp_file"
 
 
-class ServiceEvidenceKind(str, Enum):
+class ServiceEvidenceKind(StrEnum):
+    """How one verification row obtained what it claims."""
+
+    __str__ = Enum.__str__
+
     DIRECT_STATE = "direct_state"
     BEHAVIORAL = "behavioral"
     COMPOSED_BEHAVIORAL = "composed_behavioral"
 
 
-class ServiceVerificationKind(str, Enum):
+class ServiceVerificationKind(StrEnum):
+    """What a single verification expectation observes."""
+
+    __str__ = Enum.__str__
+
     DIRECT_SERVICE_STATE = "direct_service_state"
     DNS_RESOLUTION = "dns_resolution"
     DNS_NEGATIVE_CONTROL = "dns_negative_control"
@@ -57,6 +75,8 @@ class ServiceVerificationKind(str, Enum):
 
 
 class DnsRecordRequirement(BaseModel):
+    """One requested A record, stated before a host is chosen."""
+
     hostname: str
     address: str
     record_type: Literal["A"] = "A"
@@ -64,6 +84,8 @@ class DnsRecordRequirement(BaseModel):
 
 
 class TftpFileRequirement(BaseModel):
+    """One file a TFTP service is required to publish."""
+
     filename: str
     content: str
 
@@ -85,6 +107,8 @@ class ServiceCapabilityProfile(BaseModel):
 
 
 class BaseServiceAction(BaseModel):
+    """Fields every typed E6 action carries, whatever its family."""
+
     id: str
     action_type: ServiceActionType
     phase: ServicePhase
@@ -104,10 +128,14 @@ class BaseServiceAction(BaseModel):
 
 
 class EnableDnsService(BaseServiceAction):
+    """Turn the DNS process on for its host."""
+
     action_type: Literal[ServiceActionType.ENABLE_DNS] = ServiceActionType.ENABLE_DNS
 
 
 class AddDnsRecord(BaseServiceAction):
+    """Ensure one A record exists on the DNS host."""
+
     action_type: Literal[ServiceActionType.ADD_DNS_RECORD] = (
         ServiceActionType.ADD_DNS_RECORD
     )
@@ -120,10 +148,14 @@ class AddDnsRecord(BaseServiceAction):
 
 
 class EnableHttpService(BaseServiceAction):
+    """Turn the HTTP process on for its host."""
+
     action_type: Literal[ServiceActionType.ENABLE_HTTP] = ServiceActionType.ENABLE_HTTP
 
 
 class SetHttpContent(BaseServiceAction):
+    """Set the served index page and record its digest."""
+
     action_type: Literal[ServiceActionType.SET_HTTP_CONTENT] = (
         ServiceActionType.SET_HTTP_CONTENT
     )
@@ -133,12 +165,16 @@ class SetHttpContent(BaseServiceAction):
 
 
 class EnableHttpsService(BaseServiceAction):
+    """Turn the HTTPS process on for its host."""
+
     action_type: Literal[ServiceActionType.ENABLE_HTTPS] = (
         ServiceActionType.ENABLE_HTTPS
     )
 
 
 class ConfigureNtpService(BaseServiceAction):
+    """Configure the NTP service on its host."""
+
     action_type: Literal[ServiceActionType.CONFIGURE_NTP] = (
         ServiceActionType.CONFIGURE_NTP
     )
@@ -146,10 +182,14 @@ class ConfigureNtpService(BaseServiceAction):
 
 
 class EnableTftpService(BaseServiceAction):
+    """Turn the TFTP process on for its host."""
+
     action_type: Literal[ServiceActionType.ENABLE_TFTP] = ServiceActionType.ENABLE_TFTP
 
 
 class PublishTftpFile(BaseServiceAction):
+    """Ensure one file is published by the TFTP host."""
+
     action_type: Literal[ServiceActionType.PUBLISH_TFTP_FILE] = (
         ServiceActionType.PUBLISH_TFTP_FILE
     )
@@ -175,6 +215,8 @@ ServiceAction = Annotated[
 
 
 class ServiceDefinition(BaseModel):
+    """One compiled service with its host and its selected clients."""
+
     id: str
     name: str
     service_type: ServiceType
@@ -192,6 +234,8 @@ class ServiceDefinition(BaseModel):
 
 
 class FoundationalServiceRequirement(BaseModel):
+    """The E5 action this service needs verified before it may apply."""
+
     id: str
     device_id: str
     device_name: str
@@ -202,6 +246,8 @@ class FoundationalServiceRequirement(BaseModel):
 
 
 class ServiceVerificationExpectation(BaseModel):
+    """One observation the plan expects once its action has applied."""
+
     id: str
     service_id: str
     action_id: str
@@ -219,6 +265,8 @@ class ServiceVerificationExpectation(BaseModel):
 
 
 class ServicePlan(BaseModel):
+    """The compiled E6 plan for one topology and one configuration."""
+
     id: str
     source_topology_id: str
     source_topology_hash: str
@@ -236,13 +284,17 @@ class ServicePlan(BaseModel):
     )
 
     def actions_of_type(self, action_type: ServiceActionType) -> list[ServiceAction]:
+        """Return every action of one type, in plan order."""
         return [item for item in self.actions if item.action_type is action_type]
 
     def services_on_host(self, device_id: str) -> list[ServiceDefinition]:
+        """Return every service compiled onto one device."""
         return [item for item in self.services if item.host_device_id == device_id]
 
 
 class ServiceCompileSummary(BaseModel):
+    """Counts of one compilation, for reports that must not hold plans."""
+
     service_plan_id: str = ""
     semantic_hash: str = ""
     source_topology_hash: str = ""
@@ -258,6 +310,8 @@ class ServiceCompileSummary(BaseModel):
 
 
 class ServiceCompileResult(BaseModel):
+    """A compiled plan, or the issues that prevented one."""
+
     plan: ServicePlan | None = None
     semantic_hash: str = ""
     summary: ServiceCompileSummary = Field(default_factory=ServiceCompileSummary)
@@ -265,6 +319,7 @@ class ServiceCompileResult(BaseModel):
 
     @property
     def is_valid(self) -> bool:
+        """Whether a plan exists and no issue is an error."""
         from .configuration import ConfigurationIssueSeverity
 
         return self.plan is not None and not any(
@@ -272,6 +327,7 @@ class ServiceCompileResult(BaseModel):
         )
 
     def compact_summary(self) -> dict[str, object]:
+        """Return the stable report shape; consumers depend on these keys."""
         return {
             **self.summary.model_dump(mode="json"),
             "issues": [item.model_dump(mode="json") for item in self.issues],
@@ -279,5 +335,6 @@ class ServiceCompileResult(BaseModel):
 
 
 def service_action_type_counts(actions: list[ServiceAction]) -> dict[str, int]:
+    """Count actions by type, sorted by the type value."""
     counts = Counter(item.action_type.value for item in actions)
     return dict(sorted(counts.items()))

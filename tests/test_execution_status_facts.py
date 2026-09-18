@@ -13,6 +13,12 @@ import json
 
 import pytest
 
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
+    ConfigurationActionType,
+    ConfigurationIssueCode,
+    ConfigurationIssueSeverity,
+    VerificationKind,
+)
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionApplicationResult,
     ActionExecutionStatus,
@@ -41,6 +47,12 @@ from packet_tracer_mcp.domain.enterprise.models.execution import (
     journal_from_action_results,
     satisfies_apply_dependency,
 )
+from packet_tracer_mcp.domain.enterprise.models.service_plan import (
+    ServiceActionType,
+    ServiceEvidenceKind,
+    ServiceType,
+    ServiceVerificationKind,
+)
 from packet_tracer_mcp.infrastructure.execution.file_bridge import RequestDisposition
 
 # -- 1. presentation equivalence of the StrEnum conversion ---------------
@@ -56,6 +68,17 @@ _CONVERTED_ENUMS = (
     FieldVerificationStatus,
     ConvergenceOutcome,
     RequestDisposition,
+    # Converted in S1, because S1 touches the two modules and therefore owns
+    # their Ruff state. Each one is public vocabulary that is interpolated
+    # into messages and persisted records, so each is asserted here.
+    ConfigurationActionType,
+    ConfigurationIssueSeverity,
+    ConfigurationIssueCode,
+    VerificationKind,
+    ServiceType,
+    ServiceActionType,
+    ServiceEvidenceKind,
+    ServiceVerificationKind,
 )
 
 

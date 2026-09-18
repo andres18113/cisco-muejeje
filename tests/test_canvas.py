@@ -108,7 +108,9 @@ class TestParseUuidList:
 
 class TestCanvasTools:
     """Guards sobre el JS. Son closures en register_tools, así que se verifican
-    por texto igual que TestReconcileWiring en test_live_reconcile.py."""
+
+    por texto igual que TestReconcileWiring en test_live_reconcile.py.
+    """
 
     def _src(self) -> str:
         return Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(
@@ -117,6 +119,7 @@ class TestCanvasTools:
 
     def test_no_draw_tool_is_shipped(self):
         """drawCircle/drawLine no se exponen: el tercer argumento resulto ser el
+
         z-order, no radio ni grosor, y los colores no se aplican como se pasan.
 
         Medido en PT 9.0.0.0810: tres circulos con tercer argumento 60, 60 y 300
@@ -129,7 +132,9 @@ class TestCanvasTools:
 
     def test_note_uses_the_z_order_getter_not_a_font_size(self):
         """El tercer argumento de addNote es el z-order. Verificado pasando 12 y
-        14: las notas salen identicas."""
+
+        14: las notas salen identicas.
+        """
         src = self._src()
         assert "getIncNoteZOrder" in src
         assert "size: float" not in src
@@ -151,7 +156,7 @@ class TestCanvasTools:
         assert 'resolve_within(base, f"{safe}.{ext}")' in src
 
     def test_clear_sweeps_notes_AND_items(self):
-        """getCanvasItemIds NO incluye las notas: son conjuntos distintos.
+        """GetCanvasItemIds NO incluye las notas: son conjuntos distintos.
 
         Barrer solo uno dejaba 18 notas en pantalla reportando remaining=0, que
         es peor que no borrar: el usuario cree que quedo limpio.
@@ -170,8 +175,10 @@ class TestCanvasTools:
 
     def test_stale_ids_are_not_reported_as_failures(self):
         """PT deja ids de nota huerfanos: sin texto y que removeCanvasItem
+
         rechaza. Contarlos como restantes hacia creer que la limpieza fallo
-        cuando el canvas quedaba vacio (medido: 14 huerfanos, canvas limpio)."""
+        cuando el canvas quedaba vacio (medido: 14 huerfanos, canvas limpio).
+        """
         src = self._src()
         assert "stale_ids: __stale" in src
         assert "getCanvasNoteText(__rest[__q])" in src

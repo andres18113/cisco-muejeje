@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from enum import IntEnum, Enum
+from enum import Enum, IntEnum, StrEnum
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
@@ -14,6 +14,8 @@ from .verification import VerificationPrerequisite
 
 
 class ConfigurationPhase(IntEnum):
+    """Order in which compiled E5 actions reach their device."""
+
     IDENTITY = 10
     L2_DEFINITIONS = 20
     L2_INTERFACES = 30
@@ -23,7 +25,11 @@ class ConfigurationPhase(IntEnum):
     VERIFICATION = 70
 
 
-class ConfigurationActionType(str, Enum):
+class ConfigurationActionType(StrEnum):
+    """Typed E5 action the configuration compiler emits."""
+
+    __str__ = Enum.__str__
+
     CONFIGURE_HOSTNAME = "configure_hostname"
     CREATE_VLAN = "create_vlan"
     CONFIGURE_ACCESS_PORT = "configure_access_port"
@@ -39,12 +45,20 @@ class ConfigurationActionType(str, Enum):
     CONFIGURE_ETHERNET_LINK_MODE = "configure_ethernet_link_mode"
 
 
-class ConfigurationIssueSeverity(str, Enum):
+class ConfigurationIssueSeverity(StrEnum):
+    """Whether a compilation issue blocks the plan."""
+
+    __str__ = Enum.__str__
+
     ERROR = "error"
     WARNING = "warning"
 
 
-class ConfigurationIssueCode(str, Enum):
+class ConfigurationIssueCode(StrEnum):
+    """Typed reason a compiled plan was refused."""
+
+    __str__ = Enum.__str__
+
     SOURCE_TOPOLOGY_HASH_MISSING = "SOURCE_TOPOLOGY_HASH_MISSING"
     SITE_TOPOLOGY_MISSING = "SITE_TOPOLOGY_MISSING"
     SEGMENT_ALLOCATION_MISSING = "SEGMENT_ALLOCATION_MISSING"
@@ -147,6 +161,8 @@ class ConfigurationIssueCode(str, Enum):
 
 
 class ConfigurationIssue(BaseModel):
+    """One compilation finding, with the subject it is about."""
+
     severity: ConfigurationIssueSeverity
     code: ConfigurationIssueCode
     message: str
@@ -181,6 +197,8 @@ class ConfigurationPolicy(BaseModel):
 
 
 class BaseConfigurationAction(BaseModel):
+    """Fields every typed E5 action carries, whatever its family."""
+
     id: str
     action_type: ConfigurationActionType
     phase: ConfigurationPhase
@@ -197,6 +215,8 @@ class BaseConfigurationAction(BaseModel):
 
 
 class ConfigureHostname(BaseConfigurationAction):
+    """Set the device hostname."""
+
     action_type: Literal[ConfigurationActionType.CONFIGURE_HOSTNAME] = (
         ConfigurationActionType.CONFIGURE_HOSTNAME
     )
@@ -204,6 +224,8 @@ class ConfigureHostname(BaseConfigurationAction):
 
 
 class CreateVlan(BaseConfigurationAction):
+    """Create one VLAN on a switch."""
+
     action_type: Literal[ConfigurationActionType.CREATE_VLAN] = (
         ConfigurationActionType.CREATE_VLAN
     )
@@ -216,6 +238,8 @@ class CreateVlan(BaseConfigurationAction):
 
 
 class ConfigureAccessPort(BaseConfigurationAction):
+    """Put one port in access mode on its data VLAN."""
+
     action_type: Literal[ConfigurationActionType.CONFIGURE_ACCESS_PORT] = (
         ConfigurationActionType.CONFIGURE_ACCESS_PORT
     )
@@ -226,6 +250,8 @@ class ConfigureAccessPort(BaseConfigurationAction):
 
 
 class ConfigureTrunk(BaseConfigurationAction):
+    """Put one port in trunk mode with its allowed VLANs."""
+
     action_type: Literal[ConfigurationActionType.CONFIGURE_TRUNK] = (
         ConfigurationActionType.CONFIGURE_TRUNK
     )
@@ -237,6 +263,8 @@ class ConfigureTrunk(BaseConfigurationAction):
 
 
 class ConfigureRoutedInterface(BaseConfigurationAction):
+    """Address one routed interface."""
+
     action_type: Literal[ConfigurationActionType.CONFIGURE_ROUTED_INTERFACE] = (
         ConfigurationActionType.CONFIGURE_ROUTED_INTERFACE
     )
@@ -249,6 +277,8 @@ class ConfigureRoutedInterface(BaseConfigurationAction):
 
 
 class ConfigureSvi(BaseConfigurationAction):
+    """Address one switched virtual interface."""
+
     action_type: Literal[ConfigurationActionType.CONFIGURE_SVI] = (
         ConfigurationActionType.CONFIGURE_SVI
     )
@@ -261,6 +291,8 @@ class ConfigureSvi(BaseConfigurationAction):
 
 
 class ConfigureSubinterface(BaseConfigurationAction):
+    """Address one dot1Q subinterface of a routed parent."""
+
     action_type: Literal[ConfigurationActionType.CONFIGURE_SUBINTERFACE] = (
         ConfigurationActionType.CONFIGURE_SUBINTERFACE
     )
@@ -274,11 +306,15 @@ class ConfigureSubinterface(BaseConfigurationAction):
 
 
 class AddressRange(BaseModel):
+    """One inclusive address range, used for DHCP exclusions."""
+
     start: str
     end: str
 
 
 class ConfigureDhcpPool(BaseConfigurationAction):
+    """Define one IOS DHCP pool on the segment gateway."""
+
     action_type: Literal[ConfigurationActionType.CONFIGURE_DHCP_POOL] = (
         ConfigurationActionType.CONFIGURE_DHCP_POOL
     )
@@ -295,6 +331,8 @@ class ConfigureDhcpPool(BaseConfigurationAction):
 
 
 class SetEndpointStaticAddress(BaseConfigurationAction):
+    """Give one endpoint a static address, mask, gateway and DNS server."""
+
     action_type: Literal[ConfigurationActionType.SET_ENDPOINT_STATIC] = (
         ConfigurationActionType.SET_ENDPOINT_STATIC
     )
@@ -307,6 +345,8 @@ class SetEndpointStaticAddress(BaseConfigurationAction):
 
 
 class SetEndpointDhcp(BaseConfigurationAction):
+    """Put one endpoint in DHCP mode on its bound interface."""
+
     action_type: Literal[ConfigurationActionType.SET_ENDPOINT_DHCP] = (
         ConfigurationActionType.SET_ENDPOINT_DHCP
     )
@@ -370,7 +410,11 @@ ConfigurationAction = Annotated[
 ]
 
 
-class VerificationKind(str, Enum):
+class VerificationKind(StrEnum):
+    """What one E5 verification expectation reads back."""
+
+    __str__ = Enum.__str__
+
     HOSTNAME = "hostname"
     VLAN = "vlan"
     ACCESS_PORT = "access_port"
@@ -382,6 +426,8 @@ class VerificationKind(str, Enum):
 
 
 class VerificationExpectation(BaseModel):
+    """One read-back the plan expects after its action applied."""
+
     id: str
     action_id: str
     kind: VerificationKind
@@ -395,6 +441,8 @@ class VerificationExpectation(BaseModel):
 
 
 class DeviceConfigurationPlan(BaseModel):
+    """The actions and capabilities one device needs."""
+
     device_id: str
     device_name: str
     model: str
@@ -404,6 +452,8 @@ class DeviceConfigurationPlan(BaseModel):
 
 
 class ConfigurationPlan(BaseModel):
+    """The compiled E5 plan for one topology."""
+
     id: str
     source_topology_id: str
     source_topology_hash: str
@@ -416,16 +466,20 @@ class ConfigurationPlan(BaseModel):
     )
 
     def actions_for_device(self, device_id: str) -> list[ConfigurationAction]:
+        """Return every action targeting one device, in plan order."""
         return [action for action in self.actions if action.device_id == device_id]
 
     def actions_of_type(
         self,
         action_type: ConfigurationActionType,
     ) -> list[ConfigurationAction]:
+        """Return every action of one type, in plan order."""
         return [action for action in self.actions if action.action_type is action_type]
 
 
 class ConfigurationCompileSummary(BaseModel):
+    """Counts of one compilation, for reports that must not hold plans."""
+
     config_plan_id: str = ""
     semantic_hash: str = ""
     source_topology_hash: str = ""
@@ -440,6 +494,8 @@ class ConfigurationCompileSummary(BaseModel):
 
 
 class ConfigurationCompileResult(BaseModel):
+    """A compiled plan, or the issues that prevented one."""
+
     plan: ConfigurationPlan | None = None
     semantic_hash: str = ""
     summary: ConfigurationCompileSummary = Field(
@@ -449,11 +505,13 @@ class ConfigurationCompileResult(BaseModel):
 
     @property
     def is_valid(self) -> bool:
+        """Whether a plan exists and no issue is an error."""
         return self.plan is not None and not any(
             issue.severity is ConfigurationIssueSeverity.ERROR for issue in self.issues
         )
 
     def compact_summary(self) -> dict[str, str | int | dict[str, int] | list[dict]]:
+        """Return the stable report shape; consumers depend on these keys."""
         return {
             **self.summary.model_dump(mode="json"),
             "issues": [issue.model_dump(mode="json") for issue in self.issues],
@@ -461,5 +519,6 @@ class ConfigurationCompileResult(BaseModel):
 
 
 def action_type_counts(actions: list[ConfigurationAction]) -> dict[str, int]:
+    """Count actions by type, sorted by the type value."""
     counts = Counter(action.action_type.value for action in actions)
     return dict(sorted(counts.items()))

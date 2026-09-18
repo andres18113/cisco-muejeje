@@ -24,7 +24,6 @@ from ..models.configuration import (
 from ..models.enterprise_plan import EnterprisePlan
 from ..models.requirements import ServiceRequirement
 from ..models.roles import DeviceRole
-from ..models.verification import PrerequisiteKind, VerificationPrerequisite
 from ..models.service_plan import (
     AddDnsRecord,
     ConfigureNtpService,
@@ -48,11 +47,11 @@ from ..models.service_plan import (
     SetHttpContent,
     service_action_type_counts,
 )
+from ..models.verification import PrerequisiteKind, VerificationPrerequisite
 from .configuration_dependencies import (
     ConfigurationDependencyError,
     order_dependency_actions,
 )
-
 
 _HOSTNAME_RE = re.compile(
     r"(?=^.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*"
@@ -119,6 +118,7 @@ class ServiceCompiler:
         *,
         capabilities: dict[str, ServiceCapabilityProfile] | None = None,
     ) -> ServiceCompileResult:
+        """Compile services for one enterprise, topology and configuration."""
         issues: list[ConfigurationIssue] = []
         capabilities = capabilities or {}
         if not topology.physical_identity_hash:
