@@ -131,6 +131,91 @@ Packet Tracer.
 | `pt_health_check` | Sweep the live topology: down links, cabled-without-IP, duplicate IPs. |
 | `pt_verify_connectivity` | Run a ping from a device's console and parse the result. |
 
+## Enterprise services
+
+| Tool | What it does |
+|------|--------------|
+| `pt_apply_enterprise_services` | Apply and verify DNS and HTTP for the selected PC-PT clients of one Server-PT, against a deployment `pt_live_deploy` already produced. |
+
+```text
+pt_apply_enterprise_services(
+    intent_json: str,
+    deployment_id: str,
+    packet_tracer_version: str,
+    run_label: str = "",
+) -> JSON
+```
+
+It does not deploy a topology and it does not delete anything of yours. It also
+does not clean up when it finishes: the only thing it releases is the temporary
+background clients its own verification created, and it reports the outcome of
+every one of those releases, including the ones that did not resolve.
+
+**Supported path.** One site, one segment, a static Server-PT and the static
+PC-PT clients on that same segment. A client outside the host's segment is
+refused rather than assumed to work: reaching it needs routed support that this
+entry point does not provide, and same-subnet addressing alone is not a path.
+
+**Inputs.**
+
+- `intent_json` — an `EnterpriseIntent` as JSON, carrying the requested
+  services. A DNS service must declare an explicit `address`; there is no
+  inference from whatever the host is later assigned.
+- `deployment_id` — the verified physical deployment to bind to.
+- `packet_tracer_version` — the exact build. It must equal the manifest's, and
+  separately the *current* environment fingerprint is validated against the
+  manifest, because a caller string agreeing with a stored string is not an
+  observation of anything.
+- `run_label` — display metadata. It never chooses a file and never overwrites
+  another run.
+
+**What it refuses, before touching anything.** An unparseable intent (which
+reaches no bridge at all), an unknown or unreadable deployment, a version
+mismatch, a process that is not the isolated live one, no available channel, an
+unwritable run record, a DNS service with no address or two DNS services that
+disagree, a composed identity that is not the deployed one, a changed
+environment fingerprint, a required service whose operations are not authorized
+on this build, an endpoint that already carries a different address, and an
+endpoint whose current address could not be read — unknown is not empty.
+
+**What it returns.** Per service and **per client** results, each check with its
+observation, cause, claim level and limitations; the E5 scope it actually
+applied (`mutated`, `retained`, `excluded`); whether an E5 effect is uncertain;
+the owned-resource releases; the last durable stage and the path of the
+persisted record; and the provenance of every capability it used.
+
+**Three kinds of uncertainty are kept apart**, and the response says each one
+separately:
+
+| Field | What it answers |
+|-------|-----------------|
+| `status`, per-client `status` | Did the service work for this client? |
+| `e5_effect_uncertain` | Is it known whether a mutation this run dispatched actually happened? |
+| `dirty_state` | Is it known what else changed? |
+
+A run can be `verified` while `dirty_state` is `unknown`. Adding a DNS record is
+observed only within the record it wanted, so what else the table may hold is
+not something this run measured, and it says so rather than reporting a clean
+result it cannot support.
+
+**Persistence.** Each run writes `data/services/<deployment_id>/<run_id>.json`
+before the first effect and rewrites it at every stage boundary; refusals that
+never bound a deployment go to `data/services/_admission/`. The record holds the
+full typed E5 and E6 results, not counts. Only stage boundaries are durable, so
+an interrupted record tells you which stage was last written — it is never proof
+that the work inside that stage did not execute, and it is never resumed
+automatically.
+
+**Capability provenance.** Every DNS and HTTP capability this tool uses is
+`documentary_baseline`: read from Cisco's reference and from controlled process
+probes, not from a recorded run of this code against Packet Tracer. Every
+response carries `provenance:documentary_baseline` in `limitations`. The tool is
+offline verified; it has no LIVE acceptance record yet, and a capability is
+promoted only by a committed record naming the build, the executed tree SHA, the
+transport, the target model and the run id. `CLIENT_DNS_SERVER` is compiled as
+an advisory per-client reader, always optional and always `unknown`: it gates
+nothing and is never inferred from another getter.
+
 ## Live-state inspection
 
 These read the device rather than the plan, which is what makes them useful to

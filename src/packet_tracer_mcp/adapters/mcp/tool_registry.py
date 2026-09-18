@@ -146,6 +146,7 @@ from ...shared.utils import (
     safe_name_component,
 )
 from .public_surface import PublicMcpSurface
+from .service_tools import register_service_tools
 
 
 def register_tools(
@@ -2894,6 +2895,18 @@ def register_tools(
     def _bridge_send_payload(js_call: str) -> bool:
         """Envía un JS payload fire-and-forget por el canal disponible (HTTP o archivo)."""
         return _channel_send(_js_guard(js_call))
+
+    # D-8 stays deferred: extracting the bridge session out of this closure
+    # is a registry refactor of its own. S1 pays one import and one call,
+    # and passes the SAME transport helpers the rest of the surface uses so
+    # the product tool shares this session instead of opening a second one.
+    register_service_tools(
+        mcp,
+        send_and_wait=_bridge_send_and_wait,
+        send_payload=_bridge_send_payload,
+        query_inventory=_live_devices,
+        pick_channel=_pick_channel,
+    )
 
     @mcp.tool()
     def pt_apply_acl(
