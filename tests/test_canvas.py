@@ -5,6 +5,7 @@ devolvió los bytes en decimal separados por coma y CON SIGNO, empezando por
 `-119,80,78,71,13,10,26,10` — que es la firma PNG `89 50 4E 47 0D 0A 1A 0A`.
 """
 
+import re
 from pathlib import Path
 
 import pytest
@@ -152,9 +153,13 @@ class TestCanvasTools:
 
         Barrer solo uno dejaba 18 notas en pantalla reportando remaining=0, que
         es peor que no borrar: el usuario cree que quedo limpio.
+
+        La aserción compara el fuente sin espacios porque el invariante es que
+        ambos getters estén en la MISMA lista y en ese orden, no en qué columna
+        los deje el formateador.
         """
-        src = self._src()
-        assert '"getCanvasNoteIds", "getCanvasItemIds",' in src
+        src = re.sub(r"\s+", "", self._src())
+        assert '"getCanvasNoteIds","getCanvasItemIds",' in src
         assert "removeCanvasItem(__ids[__i])" in src
 
     def test_clear_counts_what_is_left_across_both_sets(self):
