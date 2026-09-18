@@ -25,7 +25,11 @@ from dataclasses import dataclass, field
 
 from ...domain.enterprise.models.capabilities import DeviceCapabilities
 from ...domain.enterprise.models.compilation import EnterpriseCompileSummary
-from ...domain.enterprise.models.configuration import ConfigurationPlan
+from ...domain.enterprise.models.configuration import (
+    ConfigurationIssueSeverity,
+    ConfigurationPlan,
+    ConfigurationPolicy,
+)
 from ...domain.enterprise.models.control_plane import (
     ControlPlaneIntent,
     ControlPlanePlan,
@@ -35,6 +39,10 @@ from ...domain.enterprise.models.enterprise_plan import EnterprisePlan
 from ...domain.enterprise.models.hardware import HardwarePlan
 from ...domain.enterprise.models.intent import EnterpriseIntent
 from ...domain.enterprise.models.link_performance import TrafficAttributionResult
+from ...domain.enterprise.models.service_plan import (
+    ServiceCapabilityRecords,
+    ServicePlan,
+)
 from ...domain.enterprise.models.voice_plan import (
     VoiceCapabilityProfile,
     VoiceIntent,
@@ -58,6 +66,7 @@ from ...infrastructure.persistence.capability_snapshot_store import (
 from .compile_configuration import compile_enterprise_configuration
 from .compile_control_plane import compile_enterprise_control_plane
 from .compile_enterprise import compile_enterprise_topology
+from .compile_services import compile_enterprise_services
 from .compile_voice import compile_enterprise_voice
 from .plan_enterprise_hardware import (
     EnterpriseHardwareComposition,
@@ -78,11 +87,22 @@ class EnterpriseReferenceComposition:
     configuration: ConfigurationPlan | None = None
     voice: VoicePlan | None = None
     control_plane: ControlPlanePlan | None = None
+    #: E6, composed only when the caller asks for it. The product entry
+    #: point does; every pre-existing caller does not, and for them this
+    #: stays None and nothing about their composition changes.
+    services: ServicePlan | None = None
     #: La resolucion de capacidades con la que se compilo E5, publicada para
     #: que quien aplique use EXACTAMENTE la misma. Resolverla dos veces dejaria
     #: que compilacion y aplicacion discrepen sobre que soporta el build.
     capabilities: dict[str, DeviceCapabilities] = field(default_factory=dict)
     voice_capabilities: dict[str, VoiceCapabilityProfile] = field(default_factory=dict)
+    #: The EXACT service capability resolution E6 was compiled with,
+    #: published for the same reason as `capabilities`: whoever applies
+    #: must use this one, not a second resolution that could disagree.
+    service_capabilities: ServiceCapabilityRecords = field(default_factory=dict)
+    #: The configuration policy actually used, so a caller can see the
+    #: client DNS server that reached E5 rather than infer it.
+    configuration_policy: ConfigurationPolicy | None = None
     issues: list[str] = field(default_factory=list)
 
     @property
@@ -133,6 +153,9 @@ def compose_enterprise_reference(
     voice_intent: VoiceIntent | None = None,
     voice_capabilities: dict[str, VoiceCapabilityProfile] | None = None,
     policy: HardwarePlanningPolicy | None = None,
+    configuration_policy: ConfigurationPolicy | None = None,
+    services: bool = False,
+    service_capabilities: ServiceCapabilityRecords | None = None,
 ) -> EnterpriseReferenceComposition:
     """Compone el producto offline y se detiene en la primera etapa invalida."""
     designed = EnterpriseDesigner().design(intent)
@@ -209,9 +232,11 @@ def compose_enterprise_reference(
             capabilities=capabilities,
         )
 
+    resolved_policy = configuration_policy or ConfigurationPolicy()
     configuration = compile_enterprise_configuration(
         enterprise,
         topology,
+        resolved_policy,
         capabilities=capabilities,
         deployment_manifest=deployment_manifest,
         traffic_by_link=traffic.contributions_by_link,
@@ -230,6 +255,37 @@ def compose_enterprise_reference(
             ]
             or ["Configuration compilation produced no plan."],
         )
+
+    compiled_services: ServicePlan | None = None
+    resolved_service_capabilities: ServiceCapabilityRecords = (
+        service_capabilities if service_capabilities is not None else {}
+    )
+    if services:
+        compiled_service_result = compile_enterprise_services(
+            enterprise,
+            topology,
+            configuration.plan,
+            capabilities=resolved_service_capabilities,
+        )
+        if not compiled_service_result.is_valid or compiled_service_result.plan is None:
+            return EnterpriseReferenceComposition(
+                enterprise=enterprise,
+                hardware=hardware,
+                topology=topology,
+                traffic=traffic,
+                topology_summary=compiled.summary,
+                capabilities=capabilities,
+                service_capabilities=resolved_service_capabilities,
+                configuration=configuration.plan,
+                configuration_policy=resolved_policy,
+                issues=[
+                    f"E6 services: {issue.message}"
+                    for issue in compiled_service_result.issues
+                    if issue.severity is ConfigurationIssueSeverity.ERROR
+                ]
+                or ["Service compilation produced no plan."],
+            )
+        compiled_services = compiled_service_result.plan
 
     compiled_voice: VoicePlan | None = None
     resolved_voice_capabilities = voice_capabilities or {}
@@ -251,6 +307,9 @@ def compose_enterprise_reference(
                 capabilities=capabilities,
                 voice_capabilities=resolved_voice_capabilities,
                 configuration=configuration.plan,
+                configuration_policy=resolved_policy,
+                services=compiled_services,
+                service_capabilities=resolved_service_capabilities,
                 issues=[f"E7 voice: {issue.message}" for issue in voice.issues]
                 or ["Voice compilation produced no plan."],
             )
@@ -266,6 +325,9 @@ def compose_enterprise_reference(
             capabilities=capabilities,
             voice_capabilities=resolved_voice_capabilities,
             configuration=configuration.plan,
+            configuration_policy=resolved_policy,
+            services=compiled_services,
+            service_capabilities=resolved_service_capabilities,
             voice=compiled_voice,
         )
 
@@ -285,6 +347,9 @@ def compose_enterprise_reference(
             capabilities=capabilities,
             voice_capabilities=resolved_voice_capabilities,
             configuration=configuration.plan,
+            configuration_policy=resolved_policy,
+            services=compiled_services,
+            service_capabilities=resolved_service_capabilities,
             voice=compiled_voice,
             issues=[
                 f"E9 control plane: {issue.message}" for issue in control_plane.issues
@@ -301,6 +366,9 @@ def compose_enterprise_reference(
         capabilities=capabilities,
         voice_capabilities=resolved_voice_capabilities,
         configuration=configuration.plan,
+        configuration_policy=resolved_policy,
+        services=compiled_services,
+        service_capabilities=resolved_service_capabilities,
         voice=compiled_voice,
         control_plane=control_plane.plan,
     )

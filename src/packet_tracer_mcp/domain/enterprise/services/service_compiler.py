@@ -367,6 +367,8 @@ class ServiceCompiler:
                     action_ids=[item.id for item in service_actions],
                     protocol=protocol,
                     ports=ports,
+                    required=requirement.required,
+                    verification_required=requirement.verification_required,
                 )
             )
 

@@ -286,6 +286,12 @@ class ServiceDefinition(BaseModel):
     verification_expectation_ids: list[str] = Field(default_factory=list)
     protocol: str
     ports: list[int] = Field(default_factory=list)
+    #: Whether an ineligible version of this service refuses the whole run
+    #: or is excluded from it. Carried from the requirement so admission
+    #: does not have to re-derive which intent line produced the service.
+    required: bool = True
+    #: Whether this service's expectations gate it.
+    verification_required: bool = True
 
 
 class FoundationalServiceRequirement(BaseModel):
