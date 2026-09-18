@@ -6,15 +6,20 @@ binding amendments of technical decision TD-12 and takes precedence over the
 revision 2.2 clauses it names.
 
 Status of S0: implemented offline on branch
-`feature/server-pt-s0-observation-integrity`, **READY_FOR_REVIEW**; see section
-8 for the implementation record. Status of every later slice: not approved and
-not implementation-ready without its own independent approval and the gates
-named in sections 4.6, 5.8 and 7.3. Risk class **L**.
+`feature/server-pt-s0-observation-integrity`, independently **accepted within
+its offline scope** at `ba45d14`; see section 8 for the implementation record,
+section 9 for the correction record and section 10.2 for the acceptance and
+its exact-SHA CI. Status of S1: implemented offline on branch
+`feature/server-pt-s1-product-entry`, **READY_FOR_REVIEW**; see section 10 for
+its design and acceptance record. Status of every later slice: not approved
+and not implementation-ready without its own independent approval and the
+gates named in sections 4.6, 5.8 and 7.3. Risk class **L**.
 
 Planning deliverable for Cisco-Muejeje (`andres18113/cisco-muejeje`). This
 document is the versioned M/L change brief required by
 `docs/engineering/standards.md`: chapters 0 to 7 record the design before
-implementation and chapter 8 records what was implemented against it. It is
+implementation, chapters 8 and 9 record what S0 implemented and corrected
+against it, and chapter 10 records the S1 design and its result. It is
 self-contained and needs no other file. Revision 2.2 answered the correction
 review of revision 2.1 (findings C1 and C2) and changed nothing outside those
 findings and their dependent clauses; revision 2.1 answered B1 to B3 and G1 to
@@ -2870,6 +2875,645 @@ remains a real gap to close with measured output. Delivery status stays
   phase in the table, in the `_publish` docstring and in the test comment.
   The timeout and cancellation policy is unchanged, and no
   `RequestDisposition` claims non-execution.
+
+---
+
+## 10. S1 design and acceptance record
+
+This section is the proportional change brief required before implementing
+S1. It records the design; section 10.9 records what the implementation
+measured against it. It does not restate chapters 0 to 7, which remain the
+source specification, and it does not copy the planning history into a second
+document.
+
+### 10.1 Identity, authorization and instruction loading
+
+| Field | Value |
+| --- | --- |
+| Risk | **L** (public MCP contract, authorization, evidence semantics, persistence, bounded effect scope) |
+| Authorization | S1 offline design and implementation only; no LIVE Packet Tracer contact, no merge, no push without explicit owner authorization |
+| Delivery status | `READY_FOR_REVIEW`; never self-approved |
+| Starting commit | `ba45d14b98e86a4f9f863111a246fad0e8d59c9e` |
+| Starting tree | `fb7aee276494c70c540ec35f0d8d2ec74405b2dc` |
+| Branch | `feature/server-pt-s1-product-entry`, created at the accepted S0 commit |
+| Preserved branch | `feature/server-pt-s0-observation-integrity`, still at `ba45d14` |
+| Authoritative main | `cisco/main` = `6263344e31ba3b0de6539d652f2cd06fc73a3562`; S0 is not integrated there |
+| Quality-gate base | `cisco/main`, proven to resolve before the gate runs; never the feature upstream and never `ba45d14` |
+| Checkout | the maintainer checkout, whose `.venv` owns the editable installation |
+
+Workspace deviation, stated rather than hidden. The assignment prefers an
+isolated sibling worktree. S1 is implemented in the maintainer checkout
+instead, because that checkout was already clean at the accepted commit, owns
+its `.venv` and editable installation, is the checkout in which `cisco/main`
+resolves, and is the worktree the test runner recognizes. The S0 branch is
+preserved as a ref at `ba45d14`; no other worktree, environment or
+unpublished work is touched.
+
+Instruction loading. `AGENTS.md`, `CLAUDE.md` and
+`docs/engineering/standards.md` were read from this active checkout, and their
+content was present in the implementer session instruction context. The
+`/context` Memory-panel inspection that `CLAUDE.md` prescribes is a
+user-invoked interactive command that the implementer process cannot run for
+itself, so that specific check is recorded as **pending**, not as passed. File
+existence is not treated as proof of effective loading.
+
+Namespace and process identity, observed in the implementing interpreter
+before any edit: `sys.executable` is the checkout-local
+`.venv\Scripts\python.exe`; `packet_tracer_mcp.__file__` resolves inside
+`src/packet_tracer_mcp/`; `src.packet_tracer_mcp` is not in `sys.modules`. No
+`PYTHONPATH` is set, no `sys.modules` alias is created, and the `TEST_PROCESS`
+gate is not disabled anywhere in this slice.
+
+### 10.2 Accepted S0 dependency and its now-observed CI result
+
+S0 was independently accepted **within its offline scope** at `ba45d14` (tree
+`fb7aee2`). That acceptance is a source-and-CI acceptance: the reviewer did
+not run the suite locally, did not reproduce the historical RED chronology and
+did not contact Packet Tracer.
+
+Exact-SHA CI for `ba45d14`, appended here as now observed and **not**
+back-dated into any earlier statement: run `35286895624`, attempt 1, event
+`push`, completed **success**, all six jobs green - quality `105421110127`,
+docs `105421110102`, pytest Ubuntu 3.13 `105421110211`, Ubuntu 3.11
+`105421110149`, Windows 3.13 `105421110205`, Windows 3.11 `105421110096`. The
+Ubuntu/Python 3.13 log records **5804 passed, 2 skipped, 3 warnings in
+340.03s**; that count belongs to that job alone. The implementer local
+**5803 passed / 3 skipped** in section 8.5 is a different execution and stays
+separately named. Every earlier "pending" CI statement in sections 8 and 9
+remains as written: it was true when written, and this paragraph is the later,
+superseding observation rather than a rewrite of it.
+
+This is offline evidence. It proves nothing about Packet Tracer behaviour and
+it promotes no capability.
+
+### 10.3 Problem, intended outcome, scope and exclusions
+
+Problem. After S0 the observation pipeline tells the truth, but there is no
+product entry point: nothing composes E5 and E6 together, applies only the E5
+actions the services need, derives foundations from executed evidence, and
+returns attributable per-client service results. The only end-to-end sequence,
+`execute_enterprise_reference`, deploys into an empty workspace and always
+cleans up, so it cannot serve an operator existing deployment.
+
+Intended outcome. One new MCP tool applies and verifies DNS and HTTP for the
+selected PC-PT clients of one Server-PT on one segment, against a
+`DeploymentManifest` produced by the physical deployment path, and returns and
+persists a per-client result that keeps functional success, effect uncertainty
+and residue uncertainty apart.
+
+In scope: exactly the tool
+`pt_apply_enterprise_services(intent_json, deployment_id, packet_tracer_version, run_label="")`
+on the `enterprise` surface; the R-NET-01 topology (one site, one segment,
+static Server-PT, static PC-PT clients, no routed service client); DNS and
+HTTP application and verification; bounded E5 application; foundation
+derivation from executed rows; the explicit capability catalog with
+provenance; the run record store; the requirements listed in 10.5.
+
+Explicit exclusions, none of which this slice implements or prepares: SMTP,
+POP3, email, DHCP, NTP and TFTP features; HTTPS content or behaviour
+(`SetHttpsContent`, R-HTTPS-01 and R-HTTPS-04 stay S1b and Q1); an `nslookup`
+parser or `DNS_LOOKUP`; the event framework; the qualification runner; any new
+`.pts`, `muejeje.pts`, Runtime V6, engine protocol, bridge endpoint, transport
+or GUI automation; `EXTENSION/`, CP-LIVE, voice and PoE; secret resolution
+(S2); the two-pass DNS address allocator; routed single-gateway clients (S1c);
+destructive topology cleanup of any kind; and every form of real Packet Tracer
+contact, including a read-only probe.
+
+Preserved contracts: `pt_live_deploy` stays physical-only; existing callers of
+`compose_enterprise_reference` keep their behaviour and hashes when no service
+composition is requested; `execute_enterprise_reference` is not exposed; no
+public parameter accepts caller-supplied foundation statuses or experimental
+capabilities.
+
+### 10.4 What is inherited, what is new, and what remains unresolved
+
+Separating these three is required by the assignment, because a reader must
+not mistake reused S0 code for newly proven behaviour.
+
+**Inherited and preserved, not re-implemented.** The S0 transport facts and
+`BridgeDispatchOutcome`; `decide_mutation` and its decision table; the journal
+and `_derive_dirty_state`; `evidence_from_service_verification`; the corrected
+readers `_no_client_contradiction`, `_release_contradiction`, `_web_fetch`,
+`_finalize_client`, `_dns_window_reading` and `_verify_dns` with the accepted
+V1 and V2 corrections; the TD-12 `received_mutation` snapshot and its separate
+`call_error`; the ownership and finalization golden exception. S1 consumes
+these; it does not restate or relax them. In particular the corrected
+ownership logic is **not** reverted to the older string-equality text of the
+original plan.
+
+**Specified new behaviour of this slice.** The admission workflow A1..A10 and
+the effect stages E1..P1; the bounded E5 mutation scope with
+`excluded_action_ids`; `derive_service_foundational_statuses` over a shared
+plan-agnostic endpoint-core predicate; `derive_service_policy` and the client
+DNS configuration path; target-aware capability resolution with explicit
+provenance; the run record store and its lifecycle; per-client result
+assembly; the MCP registration and its JSON translation.
+
+**Unresolved measured capabilities, unchanged by this slice.** Every DNS and
+HTTP capability S1 uses is `documentary_baseline` under RD-8; no record
+becomes `recorded_run`. `CLIENT_DNS_SERVER` stays UNKNOWN until M-DNS-3 and is
+compiled advisory. HTTPS behavioural verification stays UNKNOWN (R-HTTPS-04).
+Engine persistence, `EXECUTE_ONCE` repeat behaviour, new ping dialects,
+webview CORS and the `this-sm:` origin remain unqualified. A partial-footprint
+DNS add still leaves `dirty_state` UNKNOWN even when the behavioural claim is
+VERIFIED (RD-11), and S1 preserves that rather than smoothing it.
+### 10.5 Module contracts resolved before coding
+
+Source inspection refined the internal signatures below; it did not weaken any
+scope, provenance or acceptance rule. Names taken from chapter 4 were verified
+against the tree before use, because a name in the plan is not proof that a
+symbol exists.
+
+#### 10.5.1 The new use case, its ports and its result
+
+```text
+application/use_cases/apply_enterprise_services.py          (new)
+
+@dataclass(frozen=True)
+class ServiceStageRuntimes:
+    configuration: ConfigurationRuntime          # E5 port, already defined
+    services: ServiceRuntime                     # E6 port, already defined
+
+@dataclass(frozen=True)
+class TransportSelection:
+    channel: str            # "http" | "file"; selected ONCE, at A5
+    fixed_at: datetime
+    ready: bool
+    detail: str = ""
+
+apply_enterprise_services(
+    intent: EnterpriseIntent,
+    *,
+    deployment_id: str,
+    packet_tracer_version: str,
+    runtimes: ServiceStageRuntimes,
+    manifest_store: DeploymentManifestPort,
+    record_store: ServiceRunRecordPort,
+    import_preflight: ImportIsolationPreflight,
+    environment_fingerprint: EnvironmentFingerprint,
+    transport_selection: TransportSelection,
+    endpoint_observer: EndpointDriftObserver | None = None,
+    capability_catalog: Callable[[str], ServiceCapabilityRecords] = packet_tracer_service_capabilities,
+    run_label: str = "",
+    run_id: str = "",                            # generated when empty; never from run_label
+) -> ServiceStageResult
+```
+
+`ServiceStageRuntimes` carries exactly the two runtime ports named by the
+assignment. The directed endpoint drift read is a third, separate port
+(`EndpointDriftObserver`, satisfied by the existing
+`PacketTracerEndpointAddressObserver`) rather than a third field, because it
+is an admission-time read and not a stage runtime; when it is absent the drift
+observation is *unreadable*, which is a refusal input, never an empty
+endpoint.
+
+Ports live in `application/ports/`:
+
+```text
+class DeploymentManifestPort(Protocol):
+    def latest_by_deployment_id(self, deployment_id: str) -> DeploymentManifest | None: ...
+
+class ServiceRunRecordPort(Protocol):
+    def begin(self, record: ServiceRunRecord) -> Path: ...
+    def advance(self, record: ServiceRunRecord) -> Path: ...
+    def complete(self, record: ServiceRunRecord) -> Path: ...
+    def load(self, deployment_id: str, run_id: str) -> ServiceRunRecord: ...
+    def retained_result_for(self, deployment_id: str, *, configuration_semantic_hash: str,
+                            manifest_hash: str, environment_fingerprint_hash: str,
+                            ) -> ServiceRunRecord | None: ...
+
+class EndpointDriftObserver(Protocol):
+    def observe(self, runtime_device_name: str, interface: str) -> ForwardingAddressObservation: ...
+```
+
+Domain keeps no filesystem dependency: `ServiceRunRecord` is a pure typed
+model in `domain/enterprise/models/service_run_record.py`, and only
+`infrastructure/persistence/service_run_record_store.py` knows about paths.
+
+`ServiceStageResult` (domain model, JSON-rendered by the adapter):
+
+```text
+run_id, run_label, stage: ServiceStage, status: ServiceRunStatus,
+refusal_code: ServiceEntryRefusal, blocked_reason: str,
+transport: str, packet_tracer_version: str, deployment_id: str,
+e5_effect_scope: E5EffectScope{mutated[], retained[], excluded[], conflicts[]},
+e5_effect_uncertain: bool,
+configuration_result: ConfigurationApplicationResult | None,
+foundational_statuses: dict[str, ActionExecutionStatus],
+service_result: ServiceApplicationResult | None,
+services: list[ServiceEntryOutcome], clients: list[ClientServiceOutcome],
+releases: list[OwnedResourceRelease], provenance: dict[str, str],
+persisted_stage: ServiceStage | None, record_path: str, persist_error: str,
+admission: AdmissionTrace{refusals[], reads[]}, limitations: list[str],
+dirty_state: DirtyState
+```
+
+`ServiceStage` is `admission, configuration_apply, foundational_evidence,
+service_apply, release, persist, completed`, exactly the vocabulary of 4.4.
+`ServiceEntryRefusal` is one admission vocabulary; it does not duplicate
+`ConfigurationFailureCode`, which keeps travelling untouched inside
+`configuration_result` and `service_result`.
+
+#### 10.5.2 Admission order, and which call is a read, a mutation or a cleanup
+
+Every step below is a **read or a pure computation** except E1 and E4, which
+are the only steps allowed to mutate user state, and E5r, which releases only
+resources this run owns. The order is enforced by the use case and asserted by
+an ordered recording fake.
+
+| Step | Call | Class | Refusal code on failure |
+| --- | --- | --- | --- |
+| A1 | `EnterpriseIntent.model_validate_json(intent_json)` | pure | `INTENT_INVALID` (no record; no bridge contacted) |
+| A2 | `manifest_store.latest_by_deployment_id` | read (local store) | `DEPLOYMENT_MANIFEST_MISSING` / `DEPLOYMENT_MANIFEST_UNREADABLE` (no record) |
+| A3 | `packet_tracer_version == manifest.backend_version` | pure | `VERSION_MISMATCH` (unbound admission record if writable) |
+| A4 | `import_preflight.ensure_isolated()` | read (process) | `IMPORT_ISOLATION_REFUSED`, detail carries the state, `TEST_PROCESS` included |
+| A5 | transport selection already fixed; readiness asserted | pure | `TRANSPORT_UNAVAILABLE` |
+| A6 | `record_store.begin(...)` write-ahead | local write | `RECORD_STORE_UNWRITABLE`; the run is refused |
+| A7 | `compose_enterprise_reference(..., services=True, configuration_policy=derive_service_policy(intent))` | pure | `COMPOSITION_FAILED`, or `DNS_SERVER_ADDRESS_REQUIRED` / `DNS_AUTHORITY_CONFLICT` from the policy |
+| A8 | physical hash equality; `validate_manifest_environment`; `resolve_manifest_targets` for every host and client | pure + runtime inventory read | `TARGET_IDENTITY_MISMATCH`, `ENVIRONMENT_FINGERPRINT_MISMATCH`, `SERVICE_PATH_UNSUPPORTED` |
+| A9 | capability resolution for every action and every required expectation on its own target | pure | `SERVICE_INELIGIBLE` (required) / service excluded and reported SKIPPED (optional) |
+| A10 | closure C; directed endpoint drift pre-reads; retained-result eligibility | reads | `EXISTING_CONFIGURATION_CONFLICT`, `DRIFT_UNREADABLE`, `RETAINED_RESULT_INVALID` |
+| E1 | `ConfigurationApplicator.apply(..., mutation_action_ids=C, excluded_action_ids=P-C, retained_action_results=...)` | **mutation** | E5 vocabulary inside `configuration_result` |
+| E2 | contradiction / missing result / effect-uncertainty check (R-RET-02) | pure | stops before E6 effects; `e5_effect_uncertain=True`, run-level UNKNOWN |
+| E3 | `derive_service_foundational_statuses(service_plan, configuration_result)` | pure | `FOUNDATIONAL_CONFIGURATION_MISSING` inside the E6 result |
+| E4 | `ServiceApplicator.apply(...)` | **mutation** plus owned-temporary verification | E6 vocabulary inside `service_result` |
+| E5r | owned-client release outcomes collected | owned cleanup only | recorded per resource; never user-state removal |
+| P1 | `record_store.complete(...)` | local write | `persist_error` reported separately from the primary error |
+
+A caller string agreeing with a stored string is not a current observation:
+A3 compares the caller against the manifest, and A8 independently validates
+the *current* environment fingerprint against the manifest through the
+existing `validate_manifest_environment`. Both are required.
+
+Invalid JSON (A1) must reach no bridge at all. The recording fakes assert that
+`inventory`, `apply_actions` and `verify` were never called on either runtime.
+
+Concurrency: the workflow is serial for this scope. S1 promises nothing about
+concurrent invocations sharing one terminal or client bag, and adds no
+exclusive-session mechanism it cannot enforce.
+
+#### 10.5.3 The E5 partition, its verification scope and its hashes
+
+Let `P` be every typed action id of the composed `ConfigurationPlan` and `C`
+the closure of the eligible E6 `foundational_requirements`
+`configuration_action_id` values over `depends_on` and `apply_dependencies`.
+
+* First application: `mutated = C`, `retained = {}`, `excluded = P - C`.
+* Valid re-run: `C` partitions into `mutated` and eligible `retained`;
+  `excluded` stays `P - C`.
+* Invariants, all fail-closed at preflight: the three sets are pairwise
+  disjoint; their union is exactly `P`; no foreign or duplicate id; no mutated
+  action depends on an excluded action; the existing retained
+  reverse-dependency rule is unchanged.
+
+`P-E5-2` adds `excluded_action_ids: Collection[str] = ()` to
+`ConfigurationApplicator.apply`. Omitting it preserves the old contract
+exactly, including the rule that retained results are required for every
+non-mutated action. Excluded actions receive
+`status=SKIPPED, failure_code=OUT_OF_SCOPE` rows; they are never rendered,
+never dispatched, never counted as retained APPLIED, and never enter the
+journal, whose scope is already `mutation_action_ids`. Verification
+expectations whose `action_id` is excluded are reported `SKIPPED /
+OUT_OF_SCOPE` instead of being verified, so a requirement outside `C` neither
+blocks the run nor is reported as global success for the whole E5 plan.
+`ConfigurationApplicationResult` gains `excluded_action_ids`, and
+`retained_action_ids` becomes `P - mutated - excluded` so the three lists
+account for every identity.
+
+The plan is never shrunk or re-hashed to evade its own scope validation: the
+same `ConfigurationPlan` object, with its original id and semantic hash, is
+passed to the applicator, and the narrowing travels as explicit parameters.
+
+Access-port and VLAN kinds have no typed pre-read. They are applied as
+registered declarative setters, and `e5_effect_scope` discloses that as
+explicit partial-application semantics rather than claiming an equivalence to
+the endpoint drift read.
+
+#### 10.5.4 Foundation derivation and conflict precedence
+
+`_endpoint_core_is_verified` is refactored into a plan-agnostic predicate
+`endpoint_core_is_verified(*, source_configuration_id, source_configuration_hash,
+requirement_source_id, requirement_source_hash, configuration_result,
+verification)` in `foundational_evidence.py`. E9 keeps its exact current
+behaviour by delegating to it; E6 reuses the same freshness, method, IPv4 and
+netmask field statuses, convergence detail, device, interface and subject
+checks.
+
+```text
+derive_service_foundational_statuses(plan: ServicePlan,
+                                     configuration_result: ConfigurationApplicationResult,
+                                     ) -> dict[str, ActionExecutionStatus]
+```
+
+Rules, in order:
+
+1. Only verification rows whose `action_id` is a
+   `FoundationalServiceRequirement.configuration_action_id` of this plan
+   participate. There is no status parameter and no caller-supplied default.
+2. The bindings are exact: `configuration_result.config_plan_id ==
+   plan.source_configuration_id` and `config_semantic_hash ==
+   plan.source_configuration_hash`. A mismatch yields no status at all, and
+   the applicator then refuses with `FOUNDATIONAL_CONFIGURATION_MISSING`.
+3. `kind == "endpoint_address"`: the core predicate decides. A PARTIAL
+   endpoint row with a complete attributable core satisfies **only** its own
+   `configuration_action_id`. It never rewrites the E5 row to VERIFIED and
+   never verifies gateway, DNS or any other field.
+4. `kind != "endpoint_address"`: the verification status is copied. No
+   promotion path exists for it in S1.
+5. An aggregate VERIFIED without an attributable core degrades to UNKNOWN,
+   exactly as E9 already does.
+6. Two rows disagreeing about one foundation resolve to the **weaker** status
+   through the existing `_weakest` order. Conflict is never resolved by
+   choosing success.
+
+`FoundationalServiceRequirement` gains `kind: Literal["endpoint_address",
+"l3_interface"] = "endpoint_address"`, set by the compiler from the E5 action
+type it points at. Without it the derivation would have to guess the kind from
+a plan it is not given. The field is additive and the E6 semantic hash is
+recomputed from the model, which existing tests assert only for determinism
+and length.
+
+#### 10.5.5 Capability resolution and provenance
+
+`packet_tracer_service_capabilities(version)` is rewritten as an explicit
+record table and returns
+`dict[str, ServiceCapabilityProfile | ClientOperationCapability]`:
+
+* `"Server-PT:<service_type>"` keeps the four-dimension profile.
+* `"<model>:<action_type>"` authorizes one application operation on one target
+  model.
+* `"<model>:<verification_kind>"` authorizes one verification on one target
+  model; client expectations resolve by **client** model and kind, never by
+  the server profile.
+
+Every record carries `provenance` in `{documentary_baseline, recorded_run}`
+and, for `recorded_run`, `build`, `executed_sha`, `transport`, `model` and
+`run_id`. The four legacy client entries `PC-PT:dns_resolution`,
+`PC-PT:dns_negative_control`, `PC-PT:http_fetch` and `PC-PT:http_by_hostname`
+are re-keyed from the documentary baseline and stay `documentary_baseline`
+forever; golden identity never upgrades them. `PC-PT:client_dns_server` is
+UNKNOWN. Any version other than `"9.0.1.0858"` yields every dimension UNKNOWN
+with `source="no recorded evidence for <version>"`; nothing is produced by an
+enum comprehension.
+
+Consistency is validated over the record **list** before it becomes a
+dictionary, so a duplicate or contradictory record fails closed instead of
+being silently discarded: unique keys, one declared version, and behavioural
+SUPPORTED implies readiness `verify=READY`. The resolution used for
+compilation, admission and execution is the same single snapshot; it is
+resolved once per invocation and published in the result and the record.
+
+RD-8 is applied as a disclosed compatibility decision: the first DNS and HTTP
+product slice may use `documentary_baseline` records, and every response and
+record carries `provenance:documentary_baseline` in `limitations`. No public
+parameter injects experimental support.
+
+#### 10.5.6 Run record lifecycle, containment and retained reuse
+
+`ServiceRunRecordStore(base_dir=data/services)` writes
+`data/services/<deployment_id>/<run_id>.json` and unbound admission records
+under `data/services/_admission/<run_id>.json`, with `safe_name_component` on
+both components and `resolve_within` on the result, then `tmp` + atomic
+`os.replace`, mirroring `deployment_manifest_store.py`. `run_label` is display
+metadata only: it never chooses a path and never authorizes overwriting
+another run. Run ids are generated independently of it.
+
+The record persists the full typed `configuration_result` and `service_result`
+dumps, not compact counts, plus plan ids and hashes, manifest hash,
+environment fingerprint hash, executed source SHA, build, fixed channel,
+capability provenance by key, stage transitions, selected clients, the
+mutated, retained and excluded id lists, uncertainty flags, release outcomes
+and limitations. The TD-12 `received_mutation`, its canonical cause and the
+separate `call_error` survive the round trip because the full typed rows do.
+
+Lifecycle, as R-ENTRY-06 requires: A1 and A2 failures produce no record,
+because no valid bound identity exists. A3 to A5 failures write an unbound
+admission record when the store is writable and otherwise return the refusal
+with `record: none`. A6 refuses the run if it cannot create the bound record.
+Every stage transition is written **before** the next effectful stage begins.
+
+Persistence failure containment, with its enforcement point named before
+implementation: the use case owns a single `_MutationGate`. The stage
+sequencer is the primary control - after a failed rewrite it does not enter
+the next effectful stage - and the gate is the enforced backstop: the
+injected runtimes are wrapped by application-owned adapters whose
+`apply_actions` consults the gate and raises `ServiceEffectHalted` before
+touching the runtime, while `inventory` and `verify` pass through. Neither
+applicator orchestration is copied. The acceptance test fails the store while
+further work is still available and asserts that no later mutating runtime
+call occurs, not merely that `persist_error` appears in the response. The
+response reports the last durable `persisted_stage` and `persist_error`
+separately from the primary error; bounded observation and already-owned
+resource cleanup continue.
+
+Only stage boundaries are durable. The record therefore claims stage-level
+recovery, never per-action crash recovery. An interrupted record never proves
+that work did not execute and is never auto-resumed.
+
+Retained E5 reuse (R-RET-01) requires all of: the same deployment id,
+manifest hash, configuration semantic hash and environment fingerprint hash; a
+prior run that completed without effect uncertainty and with no FAILED or
+`POSTCONDITION_UNSATISFIED` row in the retained set; and fresh prerequisite
+re-verification before trust (an endpoint pre-read for endpoint actions).
+Nothing is retained from an interrupted or uncertain record. Re-entering a
+mutation scope is not retry permission: every new invocation passes admission,
+drift, replay policy and effect checks again, and an ambiguous action is never
+replayed merely because its prior result was not retained.
+
+Redaction: public responses and records carry no bridge token, no generated
+script, no raw exception payload and no secret. Diagnostics are typed and
+bounded, and the redaction test asserts the raw, JSON-escaped and URL-encoded
+forms of a fixture sentinel are all absent. No secret resolver is added to
+make that testable.
+
+#### 10.5.7 Per-client output schema and required or optional aggregation
+
+```text
+class ClientServiceOutcome(BaseModel):
+    client_device_id: str
+    deployed_name: str
+    model: str
+    results: dict[str, ClientCheckOutcome]      # keyed by service_id
+    limitations: list[str]
+
+class ClientCheckOutcome(BaseModel):
+    service_id: str
+    service_type: ServiceType
+    status: ActionExecutionStatus
+    checks: list[ClientCheckRow]                # one per expectation
+    required: bool
+    limitations: list[str]
+
+class ClientCheckRow(BaseModel):
+    expectation_id: str, kind: ServiceVerificationKind, required: bool
+    status: ActionExecutionStatus, observation: ObservationFact, cause: str
+    claim_level: str, fresh_evidence: bool, failure_code: ConfigurationFailureCode
+    limitations: list[str]
+```
+
+Aggregation rules. Every selected client has a row for every service it was
+selected for, including SKIPPED, DEPENDENCY_BLOCKED and recovery-read rows
+(R-COV-01). Optional rows - advisory readers and expectations of a service
+with `verification_required=False` - are reported in full but never gate a
+status and never report VERIFIED for a capability they lack. A client is never
+promoted from a server-level success: the aggregate reads the client rows.
+No sampling is performed for the two-client acceptance; if a later slice
+samples, unsampled clients are labelled `NOT_ATTEMPTED` under R-COV-02 and
+never VERIFIED.
+
+The response separates three things that this project has confused before: a
+behavioural claim (`status`, `claim_level`), effect uncertainty
+(`e5_effect_uncertain`, the sticky flag, run-level UNKNOWN) and residue
+uncertainty (`dirty_state`, `residue_unknown:` limitations). An attempted
+partial-footprint DNS add may leave `dirty_state` UNKNOWN while the
+behavioural claim is VERIFIED, and both statements appear in the response and
+the record. Unresolved client releases are exposed in both as well: "no
+topology cleanup" never removes the owned-client finalization obligation.
+### 10.6 Requirement traceability
+
+Each row names the observable acceptance predicate, the symbol that owns the
+behaviour, the level that validates it, the negative control that proves the
+predicate can fail, and the evidence retained. Predicates derive from the
+requirements of 4.3, never from incidental implementation behaviour.
+
+| Requirement | Observable acceptance predicate | Owning symbol | Level | Negative control | Evidence retained |
+| --- | --- | --- | --- | --- | --- |
+| R-ENTRY-01 | the tool exists once on the `enterprise` surface with exactly the four inputs; invalid JSON returns a typed error and contacts no bridge | `service_tools.register_service_tools` | offline system | a second registration or a changed schema fails the surface test; a fake runtime asserts zero calls on invalid JSON | tool schema snapshot in the surface test |
+| R-ENTRY-02 | A1..A10 complete before the first mutation; admission reads are recorded; every refusal has a typed code | `apply_enterprise_services` | unit + integration | ordered recording fake asserts zero mutating calls for each refusal class, including `TEST_PROCESS` | `admission.reads[]` and `admission.refusals[]` in the record |
+| R-ENTRY-03 | composed physical hash equals `manifest.physical_topology_hash`; `validate_manifest_environment` passes; every host and client resolves | admission A8 | integration | wrong hash yields `TARGET_IDENTITY_MISMATCH`, changed fingerprint yields `ENVIRONMENT_FINGERPRINT_MISMATCH`, both with zero mutations | refusal code plus the two hashes in the record |
+| R-ENTRY-04 | foundations come only from executed E5 rows through the shared core predicate; no status parameter exists | `derive_service_foundational_statuses` | unit | aggregate VERIFIED without core, wrong hash or id, stale method, missing `fresh_evidence`, failed field, non-endpoint PARTIAL: none reach VERIFIED | `foundational_statuses` map in the record |
+| R-ENTRY-05 | the response carries per-service and per-client status, `observation`, `claim_level`, `limitations`, `e5_effect_scope`, `persisted_stage`, `record_path`, `run_id`, `transport`, `packet_tracer_version` and `provenance`; no secret, no script | `ServiceStageResult` + adapter rendering | unit + offline system | redaction test with a fixture sentinel in raw, JSON-escaped and URL-encoded form | the rendered JSON in the surface test |
+| R-ENTRY-06 | the 4.8 lifecycle holds at every branch | `ServiceRunRecordStore` + `_MutationGate` | unit + integration | rejection before A6 leaves no bound record; store failure after the first effect dispatches no further mutation | `stages[]`, `persisted_stage`, `persist_error` |
+| R-ENTRY-07 | the product path removes no user device, link, service, account or message | whole product path | unit | a corpus test fails if `removeDevice`, `removePool`, `deleteUser` or `deleteMailAt` appears on the S1 product path | the corpus assertion |
+| R-ENTRY-08 (inherited from S0) | owned temporaries are released on every exit path with a recorded outcome | `enterprise_service_runtime._finalize_client` | unit (S0, unchanged) | S0 per-exit-path tests stay green | `releases[]` in the record |
+| R-ENTRY-09 | exactly `C` reaches the E5 runtime; excluded rows are `SKIPPED/OUT_OF_SCOPE`; an endpoint conflict refuses with zero effects | `_e5_closure` + `ConfigurationApplicator.apply(excluded_action_ids=...)` | unit + integration | a foreign id, a duplicate id, a mutated action depending on an excluded one, and a conflicting non-empty address each refuse | `e5_effect_scope` with the three id lists |
+| R-ENTRY-10 | every operation-level check completes before the first E5 effect; an unknown mutation is never dispatched | admission A9 | integration | one unknown required client operation refuses before E5 | `admission.refusals[]` naming the unknown key |
+| R-ENTRY-11 | eligibility per action and per required expectation on its own target; required ineligible refuses, optional ineligible is excluded and reported SKIPPED with the unknown operations named | `_service_eligibility` | unit + integration | the same plan with `required: true` refuses and with `required: false` is excluded before `C` is derived | the `service_ineligible:` limitation |
+| R-NET-01 | one site, one segment, static server and clients; a routed service client is refused | compiler + admission | unit | a client on another segment yields `SERVICE_PATH_UNSUPPORTED`; no routing feature is added to make it pass | the refusal and the enumerated `C` |
+| R-NET-02 | MCP intent to `ConfigurationPolicy.dns_server` to `SetEndpointStaticAddress.dns_server` to the recorded runtime call arguments | `derive_service_policy` + composition | integration | a DNS service without an explicit address yields `DNS_SERVER_ADDRESS_REQUIRED`; two incompatible authorities refuse instead of one being chosen | the recorded `apply_actions` arguments |
+| R-CAP-01 | SUPPORTED dimensions only for `"9.0.1.0858"`; any other build is entirely UNKNOWN | `packet_tracer_service_capabilities` | unit | an unknown build yields nothing SUPPORTED; a newly added `ServiceType` gains no SUPPORTED dimension | `capability_snapshot` in the record |
+| R-CAP-02 | catalog version from `manifest.backend_version`; caller version must equal it; the runtime fingerprint must match the manifest | admission A3 and A8 | unit | a mismatching caller version refuses before effects | the two versions in the record |
+| R-CAP-03 | application resolves by target model and action type; client verification by client model and kind | catalog + `ServiceApplicator` | unit + integration | a server-authorized but client-unknown kind stays UNKNOWN; a PC-PT action without an entry is `SKIPPED/CAPABILITY_UNKNOWN` | the resolved keys in `provenance` |
+| R-CAP-04 | construction validates unique keys, one version, behavioural SUPPORTED implies `verify=READY` | catalog construction | unit | a duplicate record and a contradictory record both fail closed before dictionary conversion | the construction error |
+| R-CAP-05 (inherited) | a changed reader keeps its evidence only under golden-script equality of its vendor-call surface | S0 golden tests | unit (S0, unchanged) | a changed call surface fails the golden test | the golden scripts |
+| R-CAP-06 | `CLIENT_DNS_SERVER` is compiled advisory and stays UNKNOWN | compiler + catalog | unit | it never blocks, never reports VERIFIED, and is not inferred from another getter | the optional row with `required=false` |
+| R-CAP-07 | every record carries provenance; legacy DNS/HTTP stay `documentary_baseline`; promotion needs `recorded_run` with build, SHA, transport, model and run id | catalog records | unit | a promotion attempt without those fields fails closed; no public parameter injects support | `provenance` map plus the response limitation |
+| R-HTTP-01 (inherited) | enable, content and port read-back preserved | S0 runtime and harness | unit + harness | S0 scenarios stay green | S0 harness output |
+| R-HTTP-02 | one fresh HTTP fetch by address per selected client; the count equals the selected clients | compiler `_expectations` | unit | dropping a client changes the count; a server-level success never fills a client row | per-client rows |
+| R-HTTP-03 | HTTP by hostname stays composed on `DNS_RESOLUTION` and `HTTP_FETCH` | compiler | unit | the existing dependency-blocked test stays unchanged | the composed expectation |
+| R-DNS-01 (inherited) | A-record apply and read-back preserved, PARTIAL footprint when attempted | S0 runtime | unit + harness | S0 scenarios stay green | `dirty_state=unknown` with the named limitation |
+| R-DNS-02 | one fresh resolution and one negative control per client | compiler | unit | count test per client | per-client rows |
+| R-DNS-03 | `CLIENT_DNS_SERVER` read-back compiled per client, optional | compiler + runtime | unit | it is never required and never VERIFIED in S1 | the advisory row |
+| R-COV-01 | every selected client has a row for every service it was selected for | result assembly | unit | a skipped, blocked or recovery row is still present, never hidden | `clients[]` |
+| R-COV-02 | sampling, if any, names sampled clients and labels the rest `NOT_ATTEMPTED` | result assembly | unit | no sampling occurs in S1; the rule is asserted so a later slice cannot silently promote | `clients[]` |
+| R-RET-01 | retained reuse requires identity equality, a clean completed prior run and fresh prerequisite re-verification | `retained_result_for` + admission A10 | unit + integration | same hashes with a changed environment refused; an interrupted prior run not reused; full rows survive the round trip | the retained id list |
+| R-RET-02 | an E5 row in `C` with `SESSION_FAILED` or the legacy missing-result representation stops before E6 effects | `_e5_effect_uncertain` | integration | an E5 runtime raising after dispatch yields no E6 effect, `e5_effect_uncertain=true` and run-level UNKNOWN | the flag and the run-level `dirty_state` |
+| R-QUAL-02 (product side) | the composition root has no parameter for experimental capabilities | composition + catalog | unit | attempting to inject one has no public path | the signature test |
+| R-QUAL-04 | records preserve build, SHA, transport and model for every measurement | record schema | unit | a record missing one of them fails validation | the record schema test |
+| R-SEC-02 | every external value reaches JavaScript through `json.dumps` | runtime (S0, preserved) | unit | adversarial strings with quotes, `</script>` and newlines | the generated script |
+| R-SEC-03 | only allowlisted process names and members appear; no caller-supplied JavaScript or command text | runtime (S0, preserved) | unit | a caller-supplied string never reaches an executable position | the corpus assertion |
+| R-SEC-04 | bridge token, `/ping` exception and path containment unchanged | `tests/test_bridge_security.py` | regression | the existing suite fails if any changes | unchanged suite |
+| R-REG-01 | E5, E6, E8, E9, NTP/TFTP, voice, namespace and CP-SCALE suites unchanged | whole tree | offline system | full `pytest -q` | the suite result |
+| R-REG-03 | touched files satisfy the Ruff gate with no `noqa` | quality gate | gate | a violating touched file fails the gate | the gate output |
+
+R-ENTRY-08, R-CAP-05, R-HTTP-01, R-DNS-01, R-HTTPS-02, R-HTTPS-03, R-OBS-*,
+R-EVD-01 and R-TEST-01 are S0 requirements. S1 preserves them; their evidence
+is the unchanged S0 suite, not a new claim.
+
+### 10.7 Error, effect and evidence rules applied in S1
+
+The rules of 4.5 apply unchanged. The five that govern this slice are restated
+because they decide concrete branches:
+
+1. **Fail-closed authorization before effects.** Missing or unobservable
+   identity, capability, drift or fingerprint values are *unknown*, never
+   permission. An unreadable required drift observation is not an empty
+   endpoint and refuses.
+2. **No retry of an ambiguous mutation.** A timeout with unknown outcome never
+   authorizes repeating a mutation, no fallback transport is selected after an
+   ambiguous outcome, and the channel fixed at A5 does not change mid-run.
+3. **D-9 containment, isolated.** An E5 row with `SESSION_FAILED` or the
+   legacy "Runtime returned no mutation result." representation is not
+   evidence of non-execution and not evidence of a CLEAN run. S1 recognizes
+   both, records `e5_effect_uncertain` and reports run-level UNKNOWN. The
+   recognition lives in one named helper with its own tests; message parsing
+   does not spread and E5 is not redesigned here.
+4. **Typed causes, sanitized boundaries.** Error kind, stage and cause travel
+   as typed fields; message prefixes are never parsed for decisions;
+   exceptions and malformed rows are UNKNOWN, never FAILED; secrets and unsafe
+   external detail are removed at the public boundary while the causal chain
+   is preserved.
+5. **Evidence separation.** `DOCUMENTED` does not imply `SUPPORTED`;
+   configuration or dispatch does not imply an observed result; `PARTIAL`,
+   `APPLIED` or unobservable output does not imply `VERIFIED`; offline CI does
+   not prove LIVE behaviour; earlier or foreign evidence never substitutes for
+   exact current provenance.
+
+### 10.8 Test design, and the levels that do not apply
+
+Levels follow 6.1. For every behaviour change a causal RED is established
+first where it is meaningful; an import error or the absence of a
+newly added enum member is never used as the sole evidence of a behavioural
+regression, and no production decision is re-implemented in a test oracle.
+
+| Group | Location | Positive and negative controls |
+| --- | --- | --- |
+| Unit, admission | `tests/test_apply_enterprise_services.py` | invalid JSON, missing manifest, unreadable manifest, version mismatch, foreign process, `TEST_PROCESS`, transport unavailable, unknown capability; zero mutations on every rejection; no bridge at all on invalid JSON; recorded read order |
+| Unit, catalog | `tests/test_service_capabilities.py` (extended), `tests/test_service_client_capabilities.py` | exact baseline build against another build; client unknown while server supported; duplicate and contradictory records; documentary provenance; the advisory getter remains UNKNOWN; no experimental override at the public boundary |
+| Unit, E5 scope | `tests/test_configuration_mutation_scope_exclusion.py` | first application without fabricated retained rows; disjoint partition; foreign and duplicate ids; a mutated action depending on an excluded one; the default old API behaviour; no out-of-scope rendering or effect |
+| Unit, policy | `tests/test_service_policy_derivation.py` | address present, absent and conflicting; user input preserved without hidden mutation; the physical manifest identity preserved |
+| Unit, foundations | `tests/test_service_foundational_evidence.py` | PARTIAL with a complete attributable core succeeds; VERIFIED aggregate without core, wrong hash, wrong id, wrong interface, stale or missing freshness, a failed field and a contradictory row do not; existing E9 derivation unchanged |
+| Unit, store | `tests/test_service_run_record_store.py` | create, rewrite and load; an atomic replacement failure leaves the last valid file; malformed record refused; traversal and unsafe ids; an interrupted record; exact identity retention; no path derived from `run_label` |
+| Integration, real components | `tests/test_apply_enterprise_services.py` | real input models, composition, compilers, both applicators, the real foundation helper and the real store in a temporary directory, with injected runtimes only at the external boundary; two PCs get separate results; the runtime call arguments carry the DNS address; exactly `C` reaches E5 |
+| Integration, containment | same module | existing endpoint conflict; missing and uncertain E5 result; store failure before and after the first effect; stale retained rows; one client contradiction; a skipped optional service; an unknown optional reader; dispatch traces and the absence of forbidden calls asserted |
+| Integration, evidence | same module | TD-12 and S0 facts survive JSON and the store; per-client outcome agrees with the rows; DNS partial footprint and cleanup failure stay visible; no blanket VERIFIED; sentinels redacted |
+| Offline system, MCP | `tests/test_service_tools_surface.py` | exactly one new enterprise tool; the schema matches the four inputs; the public route invokes the same application use case rather than a test-only helper; the default production wiring refuses under `TEST_PROCESS` before contacting a channel; existing surfaces unchanged |
+| Regression | whole suite | E5, E6, E8, E9, namespace, bridge authentication, replay registry and the S0 tables and harnesses |
+
+Production wiring is used in the product path: the offline tests inject
+deterministic collaborators at the external boundary only. There is no public
+bypass flag and no `if pytest` branch anywhere in the product path, and one
+test proves that the real production wiring refuses under pytest through
+`ImportIsolationPreflight` **before** a channel is contacted.
+
+Levels deliberately not applied, with reasons: performance and load (no
+requirement in scope); webview CORS and the `this-sm:` origin (unverifiable
+offline, `docs/testing.md`); LIVE Packet Tracer behaviour (separately
+authorized, see 10.10); Script Engine API reachability (same reason). A
+documentation-only change in this slice does not gain an invented unit test.
+
+Authorized existing-test changes, with before and after rationale, recorded
+because the contract legitimately changed:
+
+| Test | Before | After | Why |
+| --- | --- | --- | --- |
+| `tests/test_service_capabilities.py::test_packet_tracer_service_matrix_keeps_four_capability_dimensions` | asserted `set(profiles)` equals exactly the five `Server-PT:<type>` keys | asserts the five profile keys are present with their four dimensions, and that client operation keys also exist | R-CAP-03 requires the client operation entries in the same single resolution; the old equality encoded a catalog that had no client keys, which is exactly what this slice replaces |
+
+No other existing test is weakened, and no fixture is simplified to evade the
+production path.
+
+### 10.9 Verification results
+
+Recorded after implementation; see the entries added in this section by the
+implementing commits.
+
+### 10.10 LIVE boundary and rollback
+
+LIVE acceptance is a separate future authorization and is **not** performed by
+this slice: one explicitly identified operator-owned sample topology of the
+R-NET-01 shape (never the university topology), one segment, DNS and HTTP for
+two PCs, through the actual MCP entry point, with the exact executed SHA,
+build and channel, per-client results, the persisted record and owned-client
+release. The user topology and services are left in place, the run stops at
+the first contradiction and preserves evidence, and nothing is repaired or
+repeated automatically. Until that record exists, product usability is
+**offline verified only**, with documentary capability provenance disclosed in
+every response.
+
+Rollback is `git revert` of the implementing commits. It does not undo Packet
+Tracer state, because this slice performed none, and it does not delete run
+records, which are local files. Reverting code is never described as restoring
+a topology.
 
 ---
 
