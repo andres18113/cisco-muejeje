@@ -1,0 +1,622 @@
+"""Generated Q0/Q1 qualification probes and their strict shape parsers.
+
+Every script is one line, has no `//` comment and serializes every datum with
+`json.dumps`, because Packet Tracer evaluates it with `new Function()` and a
+pasted copy loses its newlines. Every script reports through `reportResult`
+from inside its own `try`, so an engine exception becomes a typed reading
+instead of a modal dialog.
+
+Scope of what is written: all run state lives under the run-namespaced bag
+`this.__mcpE6Q[<run_id>]`. No probe writes a production global
+(`__mcpE6Claims`, `__mcpE6Inert`, `__mcpE6HttpClients`), and the Q1 probes
+touch only the owned fixture devices they are handed.
+
+Vendor surface, checked against Cisco's local reference
+(`help/default/IpcAPI`, labelled 8.1.0) unless marked otherwise:
+
+- `Device::getPort(string)`, `HostPort::setIpSubnetMask(ip, ip)` and the
+  `ipChanged(ip, ip, ip, ip)` event; `registerEvent(name, obj, cb)` with
+  `src.className/objectUuid/eventName` (`scriptModules_scriptEngine.htm`).
+  The M-UNREG trigger re-addresses the owned PC's port instead of typing a
+  terminal command: it needs no terminal-dispatch seam, and no pager or busy
+  prompt can swallow it;
+- `HttpServer::setEnable/isEnabled/setPageContents/getPage`,
+  `HttpsServer::setHttpsEnable/isHttpsEnabled` (plus the inherited members);
+- `DnsClient::getServerIp()`;
+- `_ScriptModule.unregisterIpcEventByID(...)` is NOT documented: it is the
+  maintained extension's existing usage (`EXTENSION/script-engine/main.js`).
+  Its return value is recorded by type only and never interpreted.
+
+A parser accepts a payload only when every key its step promises is present
+with its exact type. A missing key is not a false or a zero: the reading is
+then unobserved, and the rules decide nothing from it.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any
+
+from ...application.ports.service_qualification import DispatchOutcome
+from ...domain.enterprise.models.execution import DispatchFact, ResultFact
+from ...domain.enterprise.services.service_qualification_evidence import (
+    ProbeReading,
+    QueueReceipt,
+)
+
+DispatchAndWait = Callable[[str, float], DispatchOutcome]
+Send = Callable[[str], bool]
+
+#: The fixed, bounded loop that widens the window between a contender's check
+#: and its claim. It exists only to make an interleaving observable if one can
+#: happen; it proves nothing when none does.
+ATOMICITY_SPIN = 50000
+#: The observed event source: the owned PC's port, re-addressed within
+#: TEST-NET-1 so that each trigger is a real change and routes nowhere.
+TRIGGER_PORT = "FastEthernet0"
+TRIGGER_MASK = "255.255.255.0"
+TRIGGER_ADDRESSES = ("192.0.2.201", "192.0.2.202")
+OBSERVED_EVENT = "ipChanged"
+_MAX_CAUSE = 200
+
+_BOOL = (bool,)
+_INT = (int,)
+_STR = (str,)
+_LIST = (list,)
+_DICT = (dict,)
+_OPTIONAL_BOOL = (bool, type(None))
+
+_SPECS: dict[str, dict[str, tuple[type, ...]]] = {
+    "eng_write": {
+        "receiver_is_global": _BOOL,
+        "run_bag_preexisting": _BOOL,
+        "written": _BOOL,
+    },
+    "eng_read": {
+        "receiver_is_global": _BOOL,
+        "found": _BOOL,
+        "nonce_matches": _BOOL,
+        "released": _BOOL,
+    },
+    "atom_collect": {
+        "present": _BOOL,
+        "log": _LIST,
+        "claim": _STR,
+        "terminal_steps": _INT,
+        "released": _BOOL,
+    },
+    "unreg_register": {
+        "found": _BOOL,
+        "event": _STR,
+        "registered1": _BOOL,
+        "register1_error": _STR,
+        "trigger_x": _INT,
+        "trigger_error": _STR,
+        "cb1_calls": _INT,
+    },
+    "unreg_evidence": {
+        "cb1_calls": _INT,
+        "cb1_events": _LIST,
+        "registered2": _BOOL,
+        "register2_error": _STR,
+        "cb2_calls": _INT,
+    },
+    "unreg_release": {
+        "release1": _DICT,
+        "cb2_calls_before_inert": _INT,
+        "cb2_inert": _BOOL,
+        "registered3": _BOOL,
+        "register3_error": _STR,
+        "cb1_calls_before_y": _INT,
+        "cb2_calls_before_y": _INT,
+        "cb3_calls_before_y": _INT,
+        "trigger_y": _INT,
+        "trigger_error": _STR,
+    },
+    "unreg_after": {
+        "cb1_calls": _INT,
+        "cb1_events_after_y": _INT,
+        "cb2_calls": _INT,
+        "cb2_events_after_inert": _INT,
+        "cb3_calls": _INT,
+        "cb3_events_after_y": _INT,
+        "release2": _DICT,
+        "release3": _DICT,
+        "dropped": _BOOL,
+    },
+    "bag_release": {
+        "had_run_bag": _BOOL,
+        "keys": _LIST,
+        "observers_marked_inert": _INT,
+        "present_after": _BOOL,
+    },
+    "page_write": {
+        "http_found": _BOOL,
+        "https_found": _BOOL,
+        "reference_equal": _BOOL,
+        "http_write_error": _STR,
+        "https_write_error": _STR,
+    },
+    "page_read": {
+        "hh": _BOOL,
+        "hs": _BOOL,
+        "sh": _BOOL,
+        "ss": _BOOL,
+        "read_errors": _INT,
+    },
+    "https_only": {
+        "error": _STR,
+        "index_written": _DICT,
+        "http_enabled": _OPTIONAL_BOOL,
+        "https_enabled": _OPTIONAL_BOOL,
+        "https_process_enabled": _OPTIONAL_BOOL,
+    },
+    "https_disable": {
+        "error": _STR,
+        "http_enabled": _OPTIONAL_BOOL,
+        "https_enabled": _OPTIONAL_BOOL,
+        "https_process_enabled": _OPTIONAL_BOOL,
+    },
+    "client_resolvers": {"clients": _DICT},
+}
+
+#: Bounded error text from inside the engine. It is defined once per script.
+_ERR = (
+    "var __er=function(x){var s='';try{s=String(x&&x.message?x.message:x);}"
+    "catch(y){s='error';}return (s||'error').substring(0,200);};"
+)
+_OWN = "var __has=function(o,k){return Object.prototype.hasOwnProperty.call(o,k);};"
+
+
+def _wrap(step: str, body: str) -> str:
+    """Guard one probe body so an exception still reports a typed error."""
+    return (
+        "try{" + _ERR + _OWN + body + "}catch(__e){reportResult(JSON.stringify("
+        "{step:" + json.dumps(step) + ",probe_error:String(__e).substring(0,200)"
+        "}));}"
+    )
+
+
+def _type_error(payload: Mapping[str, Any], spec: Mapping[str, tuple]) -> str:
+    for key, types in spec.items():
+        if key not in payload:
+            return f"missing:{key}"
+        value = payload[key]
+        if isinstance(value, bool) and bool not in types:
+            return f"type:{key}"
+        if not isinstance(value, types):
+            return f"type:{key}"
+    return ""
+
+
+def parse_probe_reading(step: str, outcome: DispatchOutcome) -> ProbeReading:
+    """Turn one dispatch outcome into a reading that the rules may trust."""
+    if outcome.result is not ResultFact.CORRELATED:
+        return ProbeReading(
+            step,
+            outcome.dispatch,
+            outcome.result,
+            False,
+            cause=(outcome.detail or outcome.result.value)[:_MAX_CAUSE],
+        )
+    body = outcome.body
+    if body is None or body.startswith(("PT_ERROR", "ERROR")):
+        return ProbeReading(
+            step,
+            outcome.dispatch,
+            ResultFact.ENGINE_ERROR,
+            False,
+            cause=("engine_error:" + str(body or ""))[:_MAX_CAUSE],
+        )
+    try:
+        payload = json.loads(body)
+    except (TypeError, ValueError):
+        payload = None
+    if not isinstance(payload, dict):
+        return ProbeReading(
+            step, outcome.dispatch, ResultFact.MALFORMED, False, cause="not_an_object"
+        )
+    if payload.get("probe_error"):
+        return ProbeReading(
+            step,
+            outcome.dispatch,
+            ResultFact.ENGINE_ERROR,
+            False,
+            cause=("probe_error:" + str(payload["probe_error"]))[:_MAX_CAUSE],
+        )
+    shape = _type_error(payload, _SPECS[step])
+    if shape:
+        return ProbeReading(
+            step, outcome.dispatch, ResultFact.MALFORMED, False, cause="shape:" + shape
+        )
+    return ProbeReading(step, outcome.dispatch, ResultFact.CORRELATED, True, payload)
+
+
+class PacketTracerQualificationProbes:
+    """The Q0 engine probes and the Q1 private probes for one run.
+
+    The instance is bound to one run identity and to the invocation's counted
+    callables; it has no channel of its own and never chooses one.
+    """
+
+    def __init__(
+        self,
+        *,
+        run_id: str,
+        nonce: str,
+        dispatch_and_wait: DispatchAndWait,
+        send: Send,
+        timeout_seconds: float = 10.0,
+    ) -> None:
+        """Bind the probes to one run and one fixed, counted channel."""
+        self._run = json.dumps(run_id)
+        self._nonce = json.dumps(nonce)
+        self._marker_root = "MCPQ-" + nonce[:16]
+        self._dispatch_and_wait = dispatch_and_wait
+        self._send = send
+        self._timeout = timeout_seconds
+
+    def _read(self, step: str, script: str) -> ProbeReading:
+        return parse_probe_reading(
+            step, self._dispatch_and_wait(_wrap(step, script), self._timeout)
+        )
+
+    def _run_bag(self) -> str:
+        run = self._run
+        return (
+            "var __q=this.__mcpE6Q=this.__mcpE6Q||{};"
+            f"var __r=__q[{run}]=__q[{run}]||{{}};"
+        )
+
+    def _observer_bag(self) -> str:
+        run = self._run
+        return f"var __q=this.__mcpE6Q;var __r=__q&&__q[{run}];var __B=__r&&__r.unreg;"
+
+    @staticmethod
+    def _source(device: str) -> str:
+        return (
+            f"var __d=ipc.network().getDevice({json.dumps(device)});"
+            "var __t=(__d&&typeof __d.getPort==='function')"
+            f"?__d.getPort({json.dumps(TRIGGER_PORT)}):null;"
+        )
+
+    @staticmethod
+    def _trigger(address: str, guard: str) -> str:
+        """Re-address the source port once, reporting a failed setter."""
+        return (
+            f"var __te='';if({guard}){{try{{__t.setIpSubnetMask("
+            f"{json.dumps(address)},{json.dumps(TRIGGER_MASK)});}}"
+            "catch(__x){__te=__er(__x);}}"
+        )
+
+    @staticmethod
+    def _register(entry: str, flag: str, error: str) -> str:
+        event = json.dumps(OBSERVED_EVENT)
+        return (
+            f"var {flag}=false,{error}='';if(__t){{try{{"
+            f"__t.registerEvent({event},null,{entry}.fn);{flag}=true;}}"
+            f"catch(__x){{{error}=__er(__x);}}}}else{{{error}='source_port_absent';}}"
+        )
+
+    # -- M-ENG-1 -----------------------------------------------------------
+
+    def write_bag_sentinel(self) -> ProbeReading:
+        """Write the run nonce under the evaluation receiver."""
+        run = self._run
+        return self._read(
+            "eng_write",
+            "var __g=(function(){return this;})();"
+            "var __q=this.__mcpE6Q=this.__mcpE6Q||{};"
+            f"var __pre=__has(__q,{run});var __r=__q[{run}]=__q[{run}]||{{}};"
+            f"__r.sentinel={{nonce:{self._nonce}}};"
+            "reportResult(JSON.stringify({step:'eng_write',"
+            "receiver_is_global:this===__g,run_bag_preexisting:__pre,written:true}));",
+        )
+
+    def read_and_release_bag_sentinel(self) -> ProbeReading:
+        """Read the nonce in a separate evaluation; release it only if it matches."""
+        run = self._run
+        return self._read(
+            "eng_read",
+            "var __g=(function(){return this;})();var __q=this.__mcpE6Q;"
+            f"var __r=__q&&__q[{run}];var __s=__r&&__r.sentinel;"
+            f"var __m=!!(__s&&__s.nonce==={self._nonce});var __rel=false;"
+            "if(__m){delete __r.sentinel;__rel=!__has(__r,'sentinel');}"
+            "reportResult(JSON.stringify({step:'eng_read',"
+            "receiver_is_global:this===__g,found:!!__s,nonce_matches:__m,"
+            "released:__rel}));",
+        )
+
+    # -- ATOM-1 ------------------------------------------------------------
+
+    def queue_atomicity_contender(self, contender: str) -> QueueReceipt:
+        """Queue one contender for the run-owned claim without waiting."""
+        name = json.dumps(contender)
+        script = (
+            "try{"
+            + self._run_bag()
+            + "var __a=__r.atom=__r.atom||{log:[],claim:'',seq:0};"
+            f"__a.log.push({{c:{name},s:'check',n:++__a.seq}});"
+            "var __free=(__a.claim==='');var __w=0;"
+            f"for(var __i=0;__i<{ATOMICITY_SPIN};__i++){{__w=(__w+__i)%9973;}}"
+            f"__a.spin=__w;if(__free){{__a.claim={name};}}"
+            f"__a.log.push({{c:{name},s:(__free?'claimed':'refused'),n:++__a.seq}});"
+            "}catch(__e){}"
+        )
+        accepted = bool(self._send(script))
+        return QueueReceipt(
+            step=f"contender_{contender}",
+            accepted=accepted,
+            dispatch=(
+                DispatchFact.ACCEPTED if accepted else DispatchFact.ACCEPTANCE_UNKNOWN
+            ),
+        )
+
+    def collect_atomicity(self) -> ProbeReading:
+        """Collect the ordered contender log; release it only when complete."""
+        run = self._run
+        return self._read(
+            "atom_collect",
+            f"var __q=this.__mcpE6Q;var __r=__q&&__q[{run}];var __a=__r&&__r.atom;"
+            "if(!__a){reportResult(JSON.stringify({present:false,log:[],claim:'',"
+            "terminal_steps:0,released:false}));}else{var __log=[],__t=0;"
+            "for(var __i=0;__i<__a.log.length;__i++){var __v=__a.log[__i];"
+            "if(__v.s==='claimed'||__v.s==='refused'){__t++;}"
+            "if(__log.length<16){__log.push({c:String(__v.c),s:String(__v.s),"
+            "n:Number(__v.n)});}}var __rel=false;"
+            "if(__t===2&&__a.log.length===4){delete __r.atom;"
+            "__rel=!__has(__r,'atom');}"
+            "reportResult(JSON.stringify({present:true,log:__log,"
+            "claim:String(__a.claim),terminal_steps:__t,released:__rel}));}",
+        )
+
+    # -- M-UNREG-1 / M-UNREG-2 ---------------------------------------------
+
+    def register_observer_and_trigger(self, device: str) -> ProbeReading:
+        """Register cb1 on the device's port and trigger X by re-addressing it."""
+        event = json.dumps(OBSERVED_EVENT)
+        return self._read(
+            "unreg_register",
+            self._source(device) + "if(!__t){reportResult(JSON.stringify({found:false,"
+            f"event:{event},registered1:false,"
+            "register1_error:'source_port_absent',trigger_x:0,trigger_error:'',"
+            "cb1_calls:0}));}"
+            "else{" + self._run_bag() + "var __B=__r.unreg={seq:0};"
+            "__B.mk=function(e){return function(src,args){e.calls++;"
+            "try{if(!e.ident&&src){e.ident={className:String(src.className||''),"
+            "uuid:String(src.objectUuid||'')};}}catch(__x){}"
+            "if(e.released){return;}if(e.events.length<8){var k=[];"
+            "try{for(var n in args){if(k.length<8){k.push(String(n));}}}catch(__y){}"
+            "e.events.push({seq:++__B.seq,className:String(src&&src.className||''),"
+            "uuid:String(src&&src.objectUuid||''),"
+            "eventName:String(src&&src.eventName||''),arg_keys:k});}};};"
+            "var __e1=__B.cb1={calls:0,events:[],released:false,ident:null};"
+            "__e1.fn=__B.mk(__e1);"
+            + self._register("__e1", "__ok", "__err")
+            + "var __x0=++__B.seq;"
+            + self._trigger(TRIGGER_ADDRESSES[0], "__ok")
+            + f"reportResult(JSON.stringify({{found:true,event:{event},"
+            "registered1:__ok,register1_error:__err,trigger_x:__x0,"
+            "trigger_error:__te,cb1_calls:__e1.calls}));}",
+        )
+
+    def read_observer_and_register_zero_event(self, device: str) -> ProbeReading:
+        """Read cb1's evidence and register cb2, which has seen no event."""
+        return self._read(
+            "unreg_evidence",
+            self._observer_bag()
+            + "if(!__B||!__B.cb1){reportResult(JSON.stringify({step:'unreg_evidence',"
+            "probe_error:'observer_bookkeeping_absent'}));}else{"
+            + self._source(device)
+            + "var __ev=[];for(var __i=0;__i<__B.cb1.events.length;__i++){"
+            "var __v=__B.cb1.events[__i];__ev.push({seq:__v.seq,"
+            "className:__v.className,uuid:__v.uuid,eventName:__v.eventName,"
+            "arg_keys:__v.arg_keys});}"
+            "var __e2=__B.cb2={calls:0,events:[],released:false,ident:null};"
+            "__e2.fn=__B.mk(__e2);"
+            + self._register("__e2", "__ok", "__err")
+            + "reportResult(JSON.stringify({cb1_calls:__B.cb1.calls,cb1_events:__ev,"
+            "registered2:__ok,register2_error:__err,cb2_calls:__e2.calls}));}",
+        )
+
+    def release_observers_and_trigger(self, device: str) -> ProbeReading:
+        """Release cb1 by its observed identity, mark cb2 inert, add cb3, trigger Y."""
+        event = json.dumps(OBSERVED_EVENT)
+        return self._read(
+            "unreg_release",
+            self._observer_bag()
+            + "if(!__B||!__B.cb1||!__B.cb2){reportResult(JSON.stringify("
+            "{step:'unreg_release',probe_error:'observer_bookkeeping_absent'}));}"
+            "else{var __e1=__B.cb1,__e2=__B.cb2,__id=null;"
+            "for(var __i=0;__i<__e1.events.length;__i++){var __v=__e1.events[__i];"
+            f"if(__v.eventName==={event}&&__v.className&&__v.uuid){{__id=__v;break;}}}}"
+            "var __av=(typeof _ScriptModule!=='undefined'&&!!_ScriptModule&&"
+            "typeof _ScriptModule.unregisterIpcEventByID==='function');"
+            "var __rel={attempted:false,available:__av,threw:'',return_type:''};"
+            "if(__id&&__av){__rel.attempted=true;try{var __rv=_ScriptModule"
+            f".unregisterIpcEventByID(__id.className,__id.uuid,{event},null,__e1.fn);"
+            "__rel.return_type=typeof __rv;}catch(__x){__rel.threw=__er(__x);}}"
+            "var __c2=__e2.calls;__e2.released=true;"
+            + self._source(device)
+            + "var __e3=__B.cb3={calls:0,events:[],released:false,ident:null};"
+            "__e3.fn=__B.mk(__e3);"
+            + self._register("__e3", "__ok3", "__err3")
+            + "var __b1=__e1.calls,__b2=__e2.calls,__b3=__e3.calls;"
+            "var __y=++__B.seq;__B.trigger_y=__y;__B.cb2_at_inert=__e2.events.length;"
+            + self._trigger(TRIGGER_ADDRESSES[1], "__t")
+            + "reportResult(JSON.stringify({release1:__rel,"
+            "cb2_calls_before_inert:__c2,"
+            "cb2_inert:true,registered3:__ok3,register3_error:__err3,"
+            "cb1_calls_before_y:__b1,cb2_calls_before_y:__b2,cb3_calls_before_y:__b3,"
+            "trigger_y:__y,trigger_error:__te}));}",
+        )
+
+    def read_post_release_and_drop(self) -> ProbeReading:
+        """Read every counter after Y and drop the run's observer bookkeeping."""
+        event = json.dumps(OBSERVED_EVENT)
+        return self._read(
+            "unreg_after",
+            self._observer_bag()
+            + "if(!__B||!__B.cb1||!__B.cb2||!__B.cb3){reportResult(JSON.stringify("
+            "{step:'unreg_after',probe_error:'observer_bookkeeping_absent'}));}"
+            "else{var __e1=__B.cb1,__e2=__B.cb2,__e3=__B.cb3,__y=__B.trigger_y||0;"
+            "var __after=function(e){var c=0;for(var i=0;i<e.events.length;i++){"
+            "if(e.events[i].seq>__y){c++;}}return c;};"
+            "var __av=(typeof _ScriptModule!=='undefined'&&!!_ScriptModule&&"
+            "typeof _ScriptModule.unregisterIpcEventByID==='function');"
+            "var __out={cb1_calls:__e1.calls,cb1_events_after_y:__after(__e1),"
+            "cb2_calls:__e2.calls,cb2_events_after_inert:"
+            "__e2.events.length-(__B.cb2_at_inert||0),cb3_calls:__e3.calls,"
+            "cb3_events_after_y:__after(__e3)};"
+            "var __release=function(e){var o={attempted:false,threw:'',"
+            "return_type:''};if(e.ident&&e.ident.className&&e.ident.uuid&&__av){"
+            "o.attempted=true;try{var rv=_ScriptModule.unregisterIpcEventByID("
+            f"e.ident.className,e.ident.uuid,{event},null,e.fn);"
+            "o.return_type=typeof rv;}catch(__x){o.threw=__er(__x);}}"
+            "e.released=true;return o;};"
+            "__e1.released=true;__out.release2=__release(__e2);"
+            "__out.release3=__release(__e3);delete __r.unreg;"
+            "__out.dropped=!__has(__r,'unreg');reportResult(JSON.stringify(__out));}",
+        )
+
+    def release_run_bag(self) -> ProbeReading:
+        """Mark remaining observers inert and delete the run bag (finalizer).
+
+        Only this run's key is touched. Marking an observer inert bounds what
+        it records; it does not detach it, so the coordinator keeps reporting
+        every observer it could not prove released.
+        """
+        run = self._run
+        return self._read(
+            "bag_release",
+            f"var __q=this.__mcpE6Q;var __had=!!(__q&&__has(__q,{run}));"
+            f"var __keys=[],__inert=0;if(__had){{var __r=__q[{run}];"
+            "for(var __k in __r){if(__keys.length<16){__keys.push(String(__k));}}"
+            "var __B=__r.unreg;if(__B){var __n=['cb1','cb2','cb3'];"
+            "for(var __i=0;__i<3;__i++){if(__B[__n[__i]]){"
+            "__B[__n[__i]].released=true;__inert++;}}}"
+            f"delete __q[{run}];}}"
+            "reportResult(JSON.stringify({had_run_bag:__had,keys:__keys,"
+            "observers_marked_inert:__inert,"
+            f"present_after:!!(__q&&__has(__q,{run}))}}));",
+        )
+
+    # -- Q1 private probes on owned fixtures --------------------------------
+
+    def _marker(self, label: str) -> str:
+        return f"{self._marker_root}-{label}"
+
+    def _page(self, label: str) -> str:
+        return f"<html><body>{self._marker(label)}</body></html>"
+
+    def page_marker_names(self) -> dict[str, str]:
+        """Return the run-specific page names and markers the M-HTTPS-1 probes use."""
+        return {
+            "http_page": f"mcpq-{self._marker_root[5:]}-h.html",
+            "https_page": f"mcpq-{self._marker_root[5:]}-s.html",
+            "http_marker": self._marker("H"),
+            "https_marker": self._marker("S"),
+        }
+
+    @staticmethod
+    def _server(server: str) -> str:
+        return (
+            f"var __d=ipc.network().getDevice({json.dumps(server)});"
+            "var __h=__d?__d.getProcess('HttpServer'):null;"
+            "var __s=__d?__d.getProcess('HttpsServer'):null;"
+        )
+
+    def write_page_markers(self, server: str) -> ProbeReading:
+        """Write distinct run pages through the HTTP and HTTPS handles."""
+        names = self.page_marker_names()
+        return self._read(
+            "page_write",
+            self._server(server) + "var __he='',__se='';"
+            "if(__h){try{__h.setPageContents("
+            f"{json.dumps(names['http_page'])},{json.dumps(self._page('H'))});}}"
+            "catch(__x){__he=__er(__x);}}"
+            "if(__s){try{__s.setPageContents("
+            f"{json.dumps(names['https_page'])},{json.dumps(self._page('S'))});}}"
+            "catch(__x){__se=__er(__x);}}"
+            "reportResult(JSON.stringify({http_found:!!__h,https_found:!!__s,"
+            "reference_equal:(!!__h&&__h===__s),http_write_error:__he,"
+            "https_write_error:__se}));",
+        )
+
+    def cross_read_page_markers(self, server: str) -> ProbeReading:
+        """Read every handle/page combination in a separate evaluation."""
+        names = self.page_marker_names()
+        page_h, page_s = json.dumps(names["http_page"]), json.dumps(names["https_page"])
+        mark_h, mark_s = (
+            json.dumps(names["http_marker"]),
+            json.dumps(names["https_marker"]),
+        )
+        return self._read(
+            "page_read",
+            self._server(server)
+            + "if(!__h||!__s){reportResult(JSON.stringify({step:'page_read',"
+            "probe_error:'process_absent'}));}else{var __n=0;"
+            "var __f=function(p,u,m){try{return String(p.getPage(u)).indexOf(m)>=0;}"
+            "catch(__x){__n++;return false;}};"
+            f"var __o={{hh:__f(__h,{page_h},{mark_h}),hs:__f(__h,{page_s},{mark_s}),"
+            f"sh:__f(__s,{page_h},{mark_h}),ss:__f(__s,{page_s},{mark_s})}};"
+            "__o.read_errors=__n;reportResult(JSON.stringify(__o));}",
+        )
+
+    @staticmethod
+    def _listener_states() -> str:
+        return (
+            "var __he=null,__se=null,__sp=null;"
+            "try{__he=__h?!!__h.isEnabled():null;}catch(__x){}"
+            "try{__se=__s?!!__s.isHttpsEnabled():null;}catch(__x){}"
+            "try{__sp=__s?!!__s.isEnabled():null;}catch(__x){}"
+        )
+
+    def prepare_https_only(self, server: str, marker: str) -> ProbeReading:
+        """Write the marked index through both handles and disable HTTP.
+
+        Writing the page through both handles keeps this condition independent
+        of M-HTTPS-1: whichever table the HTTPS listener serves holds the
+        marker. It chooses no S1b content contract.
+        """
+        page = json.dumps(f"<html><body>{marker}</body></html>")
+        return self._read(
+            "https_only",
+            self._server(server) + "var __err='',__iw={http:false,https:false};"
+            "if(!__h||!__s){__err='process_absent';}else{"
+            f"try{{__h.setPageContents('index.html',{page});__iw.http=true;}}"
+            "catch(__x){__err='index_http:'+__er(__x);}"
+            f"try{{__s.setPageContents('index.html',{page});__iw.https=true;}}"
+            "catch(__x){__err='index_https:'+__er(__x);}"
+            "try{__h.setEnable(false);}catch(__x){__err='disable_http:'+__er(__x);}}"
+            + self._listener_states()
+            + "reportResult(JSON.stringify({error:__err,index_written:__iw,"
+            "http_enabled:__he,https_enabled:__se,https_process_enabled:__sp}));",
+        )
+
+    def disable_https(self, server: str) -> ProbeReading:
+        """Disable the HTTPS listener and read both states back."""
+        return self._read(
+            "https_disable",
+            self._server(server) + "var __err='';"
+            "if(!__s){__err='process_absent';}else{try{__s.setHttpsEnable(false);}"
+            "catch(__x){__err='disable_https:'+__er(__x);}}"
+            + self._listener_states()
+            + "reportResult(JSON.stringify({error:__err,http_enabled:__he,"
+            "https_enabled:__se,https_process_enabled:__sp}));",
+        )
+
+    def read_client_resolvers(self, clients: Sequence[str]) -> ProbeReading:
+        """Read `DnsClient.getServerIp()` on the named clients."""
+        return self._read(
+            "client_resolvers",
+            f"var __o={{}};var __n={json.dumps(list(clients))};"
+            "for(var __i=0;__i<__n.length;__i++){"
+            "var __c={found:false,value:null,error:''};"
+            "try{var __d=ipc.network().getDevice(__n[__i]);"
+            "var __p=__d?__d.getProcess('DnsClient'):null;if(__p){__c.found=true;"
+            "var __v=__p.getServerIp();__c.value=(__v===null||__v===undefined)"
+            "?null:String(__v).substring(0,64);}}catch(__x){__c.error=__er(__x);}"
+            "__o[__n[__i]]=__c;}reportResult(JSON.stringify({clients:__o}));",
+        )

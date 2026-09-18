@@ -39,10 +39,10 @@ EXECUTION = PACKAGE / "infrastructure" / "execution"
 
 #: Las primitivas Python que MUTAN Packet Tracer. Todo lo demás lee.
 _MUTATION_PRIMITIVES = {
-    "configure_ios",            # lote IOS por el canal de configuración
+    "configure_ios",  # lote IOS por el canal de configuración
     "configure_endpoint_ipv4",  # `configurePcIp` sobre un endpoint
-    "_mutation_ack",            # creación/borrado físico con ACK acotado
-    "_module_mutation_ack",     # inserción de módulo con ACK acotado
+    "_mutation_ack",  # creación/borrado físico con ACK acotado
+    "_module_mutation_ack",  # inserción de módulo con ACK acotado
 }
 
 #: Y las APIs de Packet Tracer que mutan, para los módulos que arman su propio
@@ -51,9 +51,17 @@ _MUTATION_PRIMITIVES = {
 #: apoyaba sólo en las primitivas Python y dejó una familia entera sin
 #: clasificar. Buscar el nombre de la API cierra ese hueco.
 _MUTATING_PT_APIS = {
-    "lwAddDevice", "lwAddLink", "removeDevice", "configureIosDevice",
-    "configurePcIp", "setEnable", "setEnabled", "setHttpsEnable",
-    "setPageContents", "addARecordToNameServerDb", "setSimulationMode",
+    "lwAddDevice",
+    "lwAddLink",
+    "removeDevice",
+    "configureIosDevice",
+    "configurePcIp",
+    "setEnable",
+    "setEnabled",
+    "setHttpsEnable",
+    "setPageContents",
+    "addARecordToNameServerDb",
+    "setSimulationMode",
     "resetSimulation",
 }
 
@@ -178,6 +186,19 @@ CONTAINED_MUTATION_FAMILIES = {
         ),
         "ceiling": "a tool result reports what the channel accepted, not what the device did",
     },
+    "server_services_qualification": {
+        "owner": "infrastructure/execution/service_qualification_probes.py",
+        "containment": (
+            "runner-only probes on fixtures this invocation created, dispatched "
+            "only under an exact stage- and SHA-specific authorization through "
+            "one counted ledger with a finalization reserve; engine state is "
+            "run-namespaced and no probe is a product action"
+        ),
+        "ceiling": (
+            "a stage record supports its own sample on one channel, build and "
+            "executed SHA; an offline simulation never qualifies a capability"
+        ),
+    },
     "simulation_mode": {
         "owner": "infrastructure/execution/simulation_trace_runtime.py",
         "containment": (
@@ -209,10 +230,17 @@ PAYLOAD_BUILDERS_AND_PROSE = {
 #: Métodos por los que un ORQUESTADOR provoca una mutación sin despacharla él:
 #: se los pide a un runtime inyectado, que sí es una familia clasificada.
 _ORCHESTRATION_CALLS = {
-    "ensure_device", "ensure_link", "ensure_module", "remove_device",
-    "create_temporary_device", "delete_temporary_device",
-    "create_device", "create_link", "delete_device",
-    "apply_actions", "cleanup_actions",
+    "ensure_device",
+    "ensure_link",
+    "ensure_module",
+    "remove_device",
+    "create_temporary_device",
+    "delete_temporary_device",
+    "create_device",
+    "create_link",
+    "delete_device",
+    "apply_actions",
+    "cleanup_actions",
 }
 
 #: Un orquestador NO agrega superficie de ambigüedad de transporte: hereda la
@@ -239,12 +267,16 @@ _COMPOSITE_RUNTIME_FAMILIES = {
 
 
 def _docstrings(tree: ast.AST) -> set[int]:
-    """Los `id()` de las constantes que son docstring, para no confundir un
-    ejemplo de uso en prosa con un despacho real. `live_bridge.py` documenta
-    `addDevice(...)` en su docstring y no muta nada."""
+    """Return the `id()` of every docstring constant.
+
+    A usage example in prose is not a real dispatch: `live_bridge.py` documents
+    `addDevice(...)` in its docstring and mutates nothing.
+    """
     marked: set[int] = set()
     for node in ast.walk(tree):
-        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+        if isinstance(
+            node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+        ):
             body = getattr(node, "body", [])
             if (
                 body
@@ -275,9 +307,7 @@ def _modules_dispatching_mutations() -> dict[str, set[str]]:
                 and isinstance(node.value, str)
                 and id(node) not in skip
             ):
-                used.update(
-                    name for name in _MUTATING_PT_APIS if name in node.value
-                )
+                used.update(name for name in _MUTATING_PT_APIS if name in node.value)
         if used:
             found[path.relative_to(PACKAGE).as_posix()] = used
     return found
@@ -317,6 +347,7 @@ def test_no_disposition_claims_a_request_did_not_execute():
 
 
 def test_every_disposition_is_covered_by_the_property():
+    """Every request disposition is covered by the no-execution property."""
     assert len(list(RequestDisposition)) >= 4
 
 
@@ -350,6 +381,7 @@ def test_no_classified_family_names_a_module_that_stopped_dispatching():
 
 @pytest.mark.parametrize("family", sorted(CONTAINED_MUTATION_FAMILIES))
 def test_every_family_states_a_containment_and_a_ceiling(family):
+    """Every classified family names its containment, ceiling and owner."""
     entry = CONTAINED_MUTATION_FAMILIES[family]
 
     assert entry["containment"].strip()
@@ -359,6 +391,7 @@ def test_every_family_states_a_containment_and_a_ceiling(family):
 
 @pytest.mark.parametrize("module", sorted(PAYLOAD_BUILDERS_AND_PROSE))
 def test_every_exempted_module_exists_and_says_why(module):
+    """Every exempted payload builder exists and states why it is exempt."""
     assert (PACKAGE / module).exists()
     assert PAYLOAD_BUILDERS_AND_PROSE[module].strip()
 
@@ -385,7 +418,8 @@ def test_every_orchestrator_sits_in_the_layer_where_a_runtime_mediates():
     orchestrating = _modules_orchestrating_mutations()
 
     stray = {
-        module for module in orchestrating
+        module
+        for module in orchestrating
         if not module.startswith(_ORCHESTRATION_LAYER)
         and module not in _accounted_for()
     }
@@ -412,6 +446,7 @@ def test_the_qualification_passes_are_seen_as_orchestrators():
 
 
 def test_cp_scale_cleanup_is_mediated_application_orchestration_not_dispatch():
+    """CP-SCALE cleanup orchestrates through a runtime and dispatches nothing."""
     module = "application/cp_scale_live/cleanup.py"
     assert module in _modules_orchestrating_mutations()
     assert module not in _modules_dispatching_mutations()
@@ -419,22 +454,30 @@ def test_cp_scale_cleanup_is_mediated_application_orchestration_not_dispatch():
     assert module.startswith(_ORCHESTRATION_LAYER)
 
 
-def test_an_orchestrator_outside_both_application_roots_is_rejected(tmp_path, monkeypatch):
+def test_an_orchestrator_outside_both_application_roots_is_rejected(
+    tmp_path, monkeypatch
+):
+    """An orchestrator outside the application roots fails the layer rule."""
     module = tmp_path / "application" / "other_policy.py"
     module.parent.mkdir()
-    module.write_text("def restore(runtime, device):\n    runtime.remove_device(device)\n", encoding="utf-8")
+    module.write_text(
+        "def restore(runtime, device):\n    runtime.remove_device(device)\n",
+        encoding="utf-8",
+    )
     monkeypatch.setattr(f"{__name__}.PACKAGE", tmp_path)
     discovered = _modules_orchestrating_mutations()
     assert set(discovered) == {"application/other_policy.py"}
     assert not any(module.startswith(_ORCHESTRATION_LAYER) for module in discovered)
-    with pytest.raises(AssertionError, match="application/other_policy.py"):
+    with pytest.raises(AssertionError, match=r"application/other_policy\.py"):
         test_every_orchestrator_sits_in_the_layer_where_a_runtime_mediates()
 
 
 def test_an_orchestrator_never_counts_as_its_own_containment_family():
-    assert not (
-        _owners() & set(_modules_orchestrating_mutations())
-    ) - _COMPOSITE_RUNTIME_FAMILIES
+    """Only composite runtimes may be both orchestrator and family owner."""
+    assert (
+        not (_owners() & set(_modules_orchestrating_mutations()))
+        - _COMPOSITE_RUNTIME_FAMILIES
+    )
     assert _COMPOSITE_RUNTIME_FAMILIES <= _owners()
 
 
@@ -442,10 +485,12 @@ def test_an_orchestrator_never_counts_as_its_own_containment_family():
 
 
 def test_the_only_retry_in_the_dispatch_path_is_read_only():
-    """Un reintento sobre una mutación ambigua es exactamente lo que la
-    limitación prohíbe. El único reintento del ejecutor IOS está acotado a
-    corrupción PROBADA del despacho, que significa que IOS nunca recibió lo que
-    se pidió."""
+    """Only a proven-corrupted, read-only dispatch may be retried.
+
+    Retrying an ambiguous mutation is exactly what the limitation forbids. The
+    IOS executor's only retry is bounded to PROVEN dispatch corruption, which
+    means IOS never received what was requested.
+    """
     source = (EXECUTION / "ios_terminal.py").read_text(encoding="utf-8")
 
     assert "_READ_ONLY_DISPATCH_ATTEMPTS" in source
@@ -453,6 +498,9 @@ def test_the_only_retry_in_the_dispatch_path_is_read_only():
 
 
 def test_the_physical_path_says_in_words_that_an_unknown_is_not_replayed():
-    source = (EXECUTION / "packet_tracer_physical_runtime.py").read_text(encoding="utf-8")
+    """The physical runtime states that an unknown outcome is not replayed."""
+    source = (EXECUTION / "packet_tracer_physical_runtime.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "will not be replayed" in source

@@ -4180,11 +4180,15 @@ minimum exceeds its hard ceiling (`INFEASIBLE`), before any reader or contact.
 | Stage | Setup | Required experiments | Reserve | Planned minimum | Ceiling |
 | --- | --- | --- | --- | --- | --- |
 | Q0 | build 1, workspace 1, PC1 create 2, identity read-back 1 = 5 | M-ENG-1 2, ATOM-1 3, M-UNREG-1/2 4 = 9 | run-bag release 1, PC1 removal 2, restoration 2 = 5 | **19** | 20 |
-| Q1 | build 1, workspace 1, 4 devices x 2, 3 links x 2, workspace read-back 1, E5 endpoint batch 1, E6 enable batch 1 = 19 | M-HTTPS-1 2, M-HTTPS-2 11, M-DNS-3 1 = 14 | 4 removals x 2, restoration 2 = 10 | **43** | 30 |
+| Q1 | build 1, workspace 1, 4 devices x 2, 3 links x 2, workspace read-back 1, E5 endpoint batch 1, E6 enable batch 1 = 19 | M-HTTPS-1 2, M-HTTPS-2 13, M-DNS-3 1 = 16 | 4 removals x 2, restoration 2 = 10 | **45** | 30 |
 
 Q1 is therefore **infeasible at its ceiling** under the transport-boundary
-counting unit, even with the minimum of one inspection per fetch and no endpoint
-read-back. The runner refuses Q1 before contact and reports the numbers. The
+counting unit, even with no endpoint read-back. The design draft counted 11
+operations for M-HTTPS-2 and a total of 43. The implementation measured 13
+(12.9): the production reader keeps polling for its marker until the deadline,
+so each negative fetch always spends its second inspection (start, two
+inspections, release), and only the positive fetch can finish in three. The
+runner refuses Q1 before contact and reports the numbers. The
 limit is not raised, and Q1 is not shortened by dropping controls. This is an
 open review decision (12.10): a reviewed ceiling, a split of Q1 into separately
 authorized stages, or a smaller fixture. Q0 fits with one operation of slack.
@@ -4265,11 +4269,15 @@ and is not the production claim map, so no claim reset is involved.
 
 **M-UNREG-1 and M-UNREG-2 (Q0, required, 4 shared operations on
 `__MCP_E6Q_PC1`; prerequisite M-ENG-1 supported).**
-- Source: `Pc::getCommandPrompt()` gives a `TerminalLine` with event
-  `commandEnded(string, CommandStatus)`.
+- Source: `Device::getPort("FastEthernet0")` gives the PC's `HostPort`,
+  with event `ipChanged(ip, ip, ip, ip)`. (The design draft used the
+  command prompt's `commandEnded`; 12.9 records why that changed.)
 - Registration: `obj.registerEvent(name, null, cb)`, whose callback `src`
   carries `className`, `objectUuid` and `eventName`.
-- Trigger: `enterCommand("ipconfig")`.
+- Trigger: `HostPort::setIpSubnetMask(ip, mask)` on the owned PC, first to
+  `192.0.2.201/24` (X) and then to `192.0.2.202/24` (Y), so that each
+  trigger is a real change within TEST-NET-1. A setter that throws is
+  reported as a cause and never read as an absent event.
 - Release: `_ScriptModule.unregisterIpcEventByID(className, uuid, event, null,
   cb)` is used by the maintained extension (`main.js:16`), but no Cisco page
   documents it, so it is labelled undocumented existing usage. Its return value
@@ -4334,7 +4342,7 @@ self-reads must contain their own marker, otherwise the result is
 (`contradicted`). This does not choose `SetHttpsContent` or `shared_content`;
 S1b does.
 
-**M-HTTPS-2 (Q1, 11 operations).**
+**M-HTTPS-2 (Q1, 13 operations).**
 - Setup: the positive setup writes an `index.html` that carries a run marker
   through both handles (so that the result does not presuppose M-HTTPS-1),
   disables HTTP, and reads back `isEnabled`/`isHttpsEnabled`.

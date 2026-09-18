@@ -87,5 +87,6 @@ nav:
       - Enterprise Hardware Planner: architecture/enterprise-hardware.md
       - Packet Tracer Capability Discovery: architecture/packet-tracer-capability-discovery.md
       - Capability Probes QA: qa/capability-probes.md
+      - Server-PT Qualification QA: qa/server-services-qualification.md
       - Testing: testing.md
   - Credits & Attribution: credits.md
