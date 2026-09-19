@@ -292,12 +292,111 @@ Deferred, with its consumers identified in the `0850de3` archive: reducing root
 
 ## Next authorized offline work
 
-1. Land Block A and Block B with their regressions and keep the package
-   `READY_FOR_REVIEW`.
+1. Independent review of this package. Block A and Block B are landed with
+   their regressions; the package stays `READY_FOR_REVIEW`.
 2. Exact-SHA CI once a push is authorized; no earlier run is relabeled.
-3. Independent review. Only after it may a new exact-SHA Q1 authorization be
-   requested; its sample cannot become S1b/Q1b evidence.
+3. Only after that review may a new exact-SHA Q1 authorization be requested,
+   and a Q2 authorization for mail; neither sample can become S1b/Q1b
+   evidence, and nothing here promotes a capability.
 
 ## Verification evidence
 
-Pending: recorded by the results commit of this package.
+Observed in the sibling worktree `Cisco-MCP-s2`, branch
+`feature/server-pt-s2-mail`, cut from `0850de3` (tree `acc6caf`), with its own
+`.venv` (CPython 3.12.10) and `packet_tracer_mcp` resolving inside that
+worktree. `cisco/main` resolved to `6263344`. Instruction loading: this session
+loaded `CLAUDE.md`, `AGENTS.md` and `docs/engineering/standards.md` from the
+primary checkout, and the three files in this worktree are byte-identical to
+them; a fresh session started inside this worktree was not observed, so its
+effective loading remains **pending**, not passed. Nothing contacted Packet
+Tracer, started a product bridge, executed a Q stage, promoted a capability or
+reset a claim.
+
+| Commit | Tree | Scope |
+| --- | --- | --- |
+| `51e5164` | `d833d18` | evidence: the `0850de3` Q batch and the S4a brief, archived byte-for-byte |
+| `17153c6` | `7c00f00` | design: the S2 and Q1-repair requirements above, recorded before any behavior change |
+| `27fb87f` | `8e617e4` | format only: the replay registry and its taxonomy test, AST-identical to the parent |
+| `1cf1b45` | `c10b7e4` | lint only: the registry's Ruff findings, with its enum presentation pinned by test |
+| `6ebd517` | `ec14119` | Block A: S2 mail under the R-EVT-05 fallback |
+| `147f3b4` | `a900a06` | Block B: the Q1 page-table repair and its listener observations |
+| this commit | — | results only: this section |
+
+### Causal RED and GREEN
+
+| Block | RED, before the production change | GREEN, after it |
+| --- | --- | --- |
+| A — compiler, secrets, script harness, integration | the four new modules failed at collection on the absent API | 22, 10, 32 and 12 passed |
+| A — decision rows 21 and 22 | 4 failed / 89 passed: both tuples were `inconsistent`, and the sticky-row set lacked `22` | 94 passed |
+| A — public surface | new assertions on an unchanged surface | 3 passed, on both channels |
+| B — the Node stub made update-only | the unchanged `0850de3` probe reproduced the LIVE failure offline: INCONCLUSIVE, `marker_write_failed`, `File not exist: mcpq-…-h.html` and `-s.html` | — |
+| B — probes, contracts, coordinator, CLI | 8/34, 18/64, 9/34 and 1/18 failed/passed | 42, 82, 43 and 19 passed |
+
+One defect surfaced during GREEN and was fixed in the layer that caused it: a
+VERIFIED mailbox-presence recovery read made the SMTP service's usability
+VERIFIED while the send's own outcome stayed unobserved
+(`test_unrelated_dns_and_http_success_never_upgrades_mail`). That was a design
+defect of the reader, not a test to relax: presence is now OBSERVED with status
+PARTIAL and `supporting_evidence_only` (S2-06). One Block B test premise was
+corrected the same way: the all-timeouts trace needs a stub that serves nothing
+(`serve_nothing`), not merely an unchanged page after a refused fetch.
+
+Explicit deltas to existing tests, each with its reason in the diff: the
+taxonomy counts (Services 8 → 13, families 48 → 53), the sticky-row set (adds
+`22`), the S0 effect-class test (the three event kinds are the first
+`user_state` kinds), the converted-enum presentation list (the four registry
+enums and `AddressingPreference`), the mutation-containment inventory (six mail
+mutators), and every Q1 figure (worst case 46 → 54, M-HTTPS-1 2 → 4, M-HTTPS-2
+14 → 20). The three `0850de3` page-table probe tests and the listener contract
+tests were replaced by tests of the repaired procedure that keep their
+invariants: an unreadable cell is never an absence, and no negative control
+establishes the listener model.
+
+### Suites and gates
+
+| Check | Tree | Result |
+| --- | --- | --- |
+| E6, S1, S0, S4a and both architecture gates | `147f3b4` | 946 passed |
+| full offline suite | `147f3b4` | 6274 passed, 3 skipped, 3 pre-existing Pytest warnings |
+| full offline suite | the Block A worktree, Python identical to `6ebd517` | 6263 passed, 3 skipped |
+| quality gate, delivery mode | `147f3b4`, clean tree | 72 changed Python files gated, 0 mechanical exemptions, Ruff lint and format clean |
+| quality gate, worktree mode | this commit | same 72 files, clean |
+| namespace inventory | this commit | 0 active imports, 0 active strings, 0 unreviewed inert mentions |
+| documentation build | this commit | built; only the two pre-existing `handoff.md` link warnings, none introduced |
+| whitespace | this commit | `git diff --check` clean |
+| archive integrity | `51e5164` | the committed ZIP is 21,509 bytes with SHA-256 `e93b130a…adfdc`; every archived record hashes to its `source-manifest.json` value |
+
+The documentation-only commits changed no Python, so the gate and the suite
+above are unaffected by them; the gate, the docs build and the whitespace check
+were re-run on this commit.
+
+## Residual limitations
+
+- **READY_FOR_REVIEW, never self-approved.** Only an independent reviewer can
+  accept this package. Exact-SHA CI is **pending**: nothing here has been
+  pushed, and no earlier run is relabeled onto these commits.
+- **Offline only.** Every mail and Q1 result above comes from a Node stub
+  engine. Whether Packet Tracer behaves that way is exactly what Q2 and a
+  re-authorized Q1 would measure, and no offline run promotes anything.
+- **Two vendor inferences are labelled, not measured.** The mailbox reader
+  reads `Mail`'s `from`, `rcpt`, `subject` and `content` as properties, which
+  Cisco's `struct_mail` page documents as public attributes but does not show
+  through the Script Engine; and the claim bounds duplicates only under the
+  single-evaluation atomicity inference, which the HTTP channel's ATOM-1 left
+  INCONCLUSIVE.
+- **No mail capability is usable in the product.** Every mail operation is
+  UNKNOWN in the catalog and UNKNOWN/UNMEASURED in the replay registry, so a
+  required mail service is refused before E5 and an optional one is excluded.
+- **No event path exists.** SMTP send, POP3 retrieval and end-to-end rows
+  report a typed blocked result. R-EVT-01..03 and R-OBS-05 are not implemented
+  and R-SEC-06 is unreachable, because no retrieval is dispatched; R-MAIL-07
+  belongs to Q2.
+- **The repaired Q1 has not run.** M-HTTPS-2 stays INCONCLUSIVE by
+  construction until a qualified listener-refusal observable exists, and any
+  future sample is attributed to the SHA that executed it.
+- **Reporting budget.** Mail adds up to five rows per selected client while the
+  S1 response budget stays at five rows per client, so a very large mail plan
+  is refused at composition rather than reported partially.
+- **Carried from `0850de3`:** Q0 observer cleanup stays UNKNOWN, pid 28652 was
+  still running at the batch handoff, and any later LIVE work needs a fresh,
+  operator-confirmed dedicated process.
