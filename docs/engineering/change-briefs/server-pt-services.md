@@ -23,7 +23,7 @@ permission, and a LIVE permission recorded in one never applies to a new run.
 | S0 — observation integrity | `0bddc9a` | accepted | archived brief `9973f66`, sections 8 and 9 |
 | S1 — product entry point (`pt_apply_enterprise_services`) | `1f08afa` | accepted, offline only | archived brief `9973f66`, sections 10 and 11 |
 | S4a — qualification runner and Q0/Q1 probes | `0850de3` (tree `acc6caf`) | accepted | archived brief `0850de3`; archived brief `9973f66`, section 12 |
-| S2 — mail and repaired Q1 candidate | `cdc30cd` (tree `629573e`) | offline candidate; S2-R1 remains open as C0 below | this brief, Blocks A to C |
+| S2 — mail and repaired Q1 candidate | `cdc30cd` (tree `629573e`) | offline candidate; S2-R1 C0 closed on the S3 branch, independent review pending | this brief, Blocks A to C and C0 below |
 
 Authoritative main observed by delivery CI:
 `6263344e31ba3b0de6539d652f2cd06fc73a3562` (`cisco/main` in the maintainer
@@ -409,6 +409,8 @@ M-DHCP-1/2/4/6 rather than being filled by offline tests.
 | `945265a` | touched-file lint ownership and preserved enum presentation |
 | `b25eb20` | acceptance hardening, scale, containment and stable documentation |
 | `ea7f8d2` | explicit replay-taxonomy delta: Services 13 to 16, total 53 to 56 |
+| `874be85` | evidence-only projection of the first full-green S3 candidate |
+| `8bcfdec` | single author-review fix pass: exclusion conflict, staged recovery evidence, configure-only admission, generated error boundary and exact typed reads |
 
 ### Causal RED and GREEN
 
@@ -416,7 +418,7 @@ M-DHCP-1/2/4/6 rather than being filled by offline tests.
 | --- | --- | --- |
 | C0 owned release | the real generated Node release script cropped a synthetic value and the production store retained `S3C0-`; a later non-secret mutation batch retained `S3C0-mut` from an earlier resolved value | both emit `engine_error:Error`; complete raw/JSON/URL forms, cross-bound fragments and safe controls remain bounded; 87 focused and 234 affected tests passed |
 | authority/bootstrap | real intent composition emitted an IOS pool and could not compile DHCP; an uncertain E5 action plus a VERIFIED mode row incorrectly founded E6 | one canonical delegation suppresses only that IOS pool, retains clients, and the exact fresh true mode plus an admissible action is required |
-| pool/acquisition/readers | the runtime had no DHCP family; the persistent Node harness failed at the missing dispatch | 19 harness cases exercise void add/get, no-op/conflict, post-read after throw, exclusions, claims/nonces, lost response, replay, address and bounded lease-table evidence; no release/reset/event method exists |
+| pool/acquisition/readers | the runtime had no DHCP family; the persistent Node harness failed at the missing dispatch | 22 harness cases exercise void add/get, no-op/conflict, post-read after throw, exclusions, claims/nonces, lost response, replay, address and bounded lease-table evidence; no release/reset/event method exists |
 | dependent effects | the real applicator dispatched mail client configuration while `DHCP_LEASE` was UNKNOWN | stage-aware verification prerequisites suppress the actual call, retain independent work, detect cycles and admit a synthetic VERIFIED control once |
 | full taxonomy | the first full run had one failure: Services was still pinned at 13 although three S3 families were registered | the accepted delta pins 16 services and 56 total families with enable replay-safe and pool/acquisition UNKNOWN |
 
@@ -432,6 +434,9 @@ M-DHCP-1/2/4/6 rather than being filled by offline tests.
 | namespace inventory | `ea7f8d2` | 0 active imports, 0 active strings, 0 unreviewed inert mentions |
 | documentation | `ea7f8d2` | built; only the two pre-existing `handoff.md` link warnings |
 | whitespace | `ea7f8d2` | worktree and index clean |
+| self-review focused fix pass | `8bcfdec` | 266 passed |
+| affected/coexistence after self-review | `8bcfdec` | 628 passed |
+| full offline suite after self-review | `8bcfdec` / `9caf1d2` | 6392 passed, 3 skipped, 3 pre-existing warnings |
 
 C0 is closed for this adapter and its invocation-local resolved values; it is
 not a claim about arbitrary strings elsewhere in the process. S3 is complete
@@ -439,6 +444,9 @@ offline at the intentional boundary: candidate paths execute only with
 test-injected capability records, while every product DHCP capability remains
 UNKNOWN/UNMEASURED and dependent effects therefore remain unavailable by
 default. Exact-SHA CI is pending because push is not authorized.
+The whole-branch review was performed by the author; independent review is
+still required and was not simulated because this assignment forbids
+subagents.
 
 ## Open decisions
 
@@ -455,14 +463,14 @@ Deferred, with its consumers identified in the `0850de3` archive: reducing root
 
 ## Next authorized offline work
 
-1. Independent review of this package. Blocks A, B and the Block C review
-   correction are landed with their regressions; the package stays
-   `READY_FOR_REVIEW`.
-2. Exact-SHA CI is recorded above for `8ae2d60`; no earlier run is
-   relabeled onto it, and it is relabeled onto nothing later.
-3. Only after that review may a new exact-SHA Q1 authorization be requested,
-   and a Q2 authorization for mail; neither sample can become S1b/Q1b
-   evidence, and nothing here promotes a capability.
+1. Independent review of the S3 branch, including C0 and Block D. Author
+   self-review does not accept it; the package stays `READY_FOR_REVIEW`.
+2. S2 exact-SHA CI remains attributed to `8ae2d60`. S3 exact-SHA CI is
+   pending because this assignment authorizes no push; no earlier run is
+   relabeled onto S3.
+3. A new Q1 authorization, Q2 for mail and Q3 for DHCP each remain separate
+   future scopes after review. Nothing here authorizes one or promotes a
+   capability.
 
 ## Verification evidence
 
