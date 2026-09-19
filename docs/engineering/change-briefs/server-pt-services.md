@@ -262,6 +262,35 @@ A failed positive spends one readiness read instead of the steps it stops, so
 every early exit costs less than the complete path. Six operations of slack
 remain; they are not a retry entitlement.
 
+## Block C — review correction delta on `6e78e74` (risk L)
+
+Review disposition **REQUIRES_CHANGES**, not a rejection of the E6 architecture.
+This block corrects six originating boundaries on the candidate lineage; every
+preserved contract above stays as it is, and the archived Q batch, the
+historical records and the `0850de3` attributions are untouched. Risk stays
+**L**: the delta affects secret handling, effect admission and evidence.
+
+### Requirements and acceptance
+
+| ID | Requirement | Component | Acceptance |
+| --- | --- | --- | --- |
+| S2-12 (R-SEC-01) | One invocation-local sanitization boundary carries every outbound runtime string: verification causes, mutation diagnostics, batch-wide details, observed snapshots, limitations and messages. Redaction runs **before** whitespace folding and truncation, over exactly the values this invocation resolved. A script that carries a resolved value never returns arbitrary external text: its caught engine error becomes one of a closed category vocabulary instead of a cropped message. | `infrastructure/execution/secret_resolver.py` (`EvidenceSanitizer`), `transport_outcome.py` (`detail_text`/`bound_detail`), `enterprise_service_runtime.py` (`_safe`, `__ec`) | Real runtime → applicator → JSON/store with explicit test-bound capabilities and a synthetic credential: a correlated verification ENGINE_ERROR carrying the value is safe; raw, JSON-escaped and URL-encoded forms stay safe on mutation and on verification; repeated whitespace and a value crossing the truncation bound leak no material; a value resolved by an earlier batch of the same invocation does not escape in a later verification error; cause category, stage, TD-12 snapshot and the send's original uncertainty survive; safe diagnostics, `secret_unresolved` admission and the no-file-fallback refusal are unchanged. |
+| S2-02.1 (R-MAIL-02, R-SEC-05) | Account existence has four distinct outcomes, not two: `absent` (null), `present` (non-null, `getUser()` equal), `mismatch` (non-null, `getUser()` different) and an unobserved pre-read. Only `absent` authorizes `addUser`. A mismatch is a correlated refusal (`account_identity_mismatch`, decision row 21) that repairs, overwrites and calls nothing. | `enterprise_service_runtime.py` (`_account_lines`, `_allowed_skips`, `_row_invalid_check`) | Generated script over the Node engine with null, matching object, mismatched non-null object and a throwing getter. Mismatch and error: zero `addUser` calls and independently inspected account state unchanged. The matching no-op and the genuine absence/creation positives keep their rows. |
+| S2-05.1 (R-MAIL-04, R-EVT-06/07) | The send's prerequisite is the **absence of an own key** on the claim object. A present key whose value is not a readable claim (`op_id` and `nonce` strings) is unknown ownership: no send, no overwrite, no adoption, no reset (`subject_claim_unreadable`, decision row 21). A readable claim keeps the own-replay/foreign distinction. | `enterprise_service_runtime.py` (`_send_lines`, `_allowed_skips`) | Repeated invocations of the generated script over the persistent Node engine: valid own claim, valid foreign claim and each of `null`, `false`, `0`, `""` under the key. Every present inadmissible entry: zero sends and a byte-equivalent held claim. One send for a genuinely missing key, and no retry after a lost answer. |
+| S2-06.1 (R-MAIL-04 supporting) | A mailbox scan row is used only when its counters are coherent with the bounded scanner that produced them: non-negative counts, `scanned == min(count, MAILBOX_SCAN_LIMIT)`, `matches + mismatched <= scanned`, `truncated == (count > scanned)`, and all counters at their defaults when the recipient account was not found. An incoherent payload is MALFORMED (`mailbox_scan_incoherent:<relation>`) and establishes neither presence nor absence. | `enterprise_service_runtime.py` (`_mailbox_scan_incoherence`, `_verify_smtp_delivered`) | The real reader over controlled payloads and over its normal generated-script path: zero scanned with a match, negative counters, a count over the bound, conflicting truncation, missing fields, a valid match inside a truncated scan and valid no-match results. `supporting_evidence_only`, the absent POP3 claim, unrelated-message privacy and the send's original uncertainty are unchanged, and no new field-format claim is made. |
+| Q1R-7 | The page procedure separates three cases: no mutation attempted, an attempted effect reconciled by a complete read of both handles, and an attempted effect that remains unresolved. Only the third sets `outcome_unknown`, which stops every further experimental effect and leaves only the owned finalization. A setter return, a caught exception and an inconclusive table conclusion are none of them a reconciliation. The first causal error is preserved and no write is retried. | `service_qualification_evidence.py` (`assess_page_tables`), `qualify_server_services.py` | Generated probe, pure assessor and coordinator: a baseline read failure runs no setter and attributes no unknown effect; a page change followed by a throwing setter admits no later page setter, listener toggle, fetch or unrelated experimental effect; a lost or unreadable necessary read after an attempted write stops conservatively while a loss before any effect does not; the ordinary shared and separate models still complete; finalization, record persistence, ownership and budget limits are unchanged. |
+| Q1R-5.1 | The repaired Q1 stage does not repeat M-DNS-3. It is declared OMITTED with the reason naming the `0850de3` sample that already measured it, and the stage's accounting drops its operation. Nothing relabels that sample as new support, and the reviewed probe and rule stay available for a future authorized measurement. | `service_qualification.py` (`_q1`), `qualify_server_services.py` (`_q1`), `docs/qa/server-services-qualification.md` | The stage-definition test pins the worst case at 53 of 60 with the 10-operation reserve intact; a coordinator run records M-DNS-3 as OMITTED with its reason and dispatches no resolver read. |
+
+### Invariants added by this block
+
+6. No outbound runtime string is folded or truncated before it is redacted, and
+   no script holding a resolved value returns arbitrary external text.
+7. An effect is admitted only by positive evidence of the documented
+   precondition. Inconsistent identity, an unreadable claim and a malformed
+   observation are unknown, never absence.
+8. An experimental effect whose outcome is unresolved ends the experimental
+   phase; only the owned finalization and persistence continue.
+
 ## Test design
 
 | Level | Scope | Files |
