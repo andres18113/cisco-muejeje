@@ -32,6 +32,7 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceType,
     ServiceVerificationKind,
 )
+from packet_tracer_mcp.domain.enterprise.models.service_runtime import ObservationFact
 from packet_tracer_mcp.infrastructure.catalog.service_capabilities import (
     packet_tracer_service_capabilities,
 )
@@ -182,6 +183,42 @@ def test_candidate_path_persists_separate_mode_configuration_and_lease_rows(tmp_
     )
 
 
+def test_configure_only_needs_no_acquisition_capability_and_reports_not_attempted(
+    tmp_path,
+):
+    """Admit server configuration while keeping acquisition explicitly absent."""
+    payload = _payload()
+    payload["sites"][0]["services"][-1]["verification_mode"] = "configure_only"
+    harness = _harness(tmp_path, payload)
+    harness.configuration = _ModeConfigurationRuntime(
+        targets=harness.configuration.targets
+    )
+    records = _candidate_catalog()
+    for key in ("PC-PT:acquire_dhcp_lease", "PC-PT:dhcp_lease"):
+        records[key] = records[key].model_copy(
+            update={"support": CapabilityStatus.UNKNOWN}
+        )
+
+    result = harness.run(capability_catalog=lambda _version: records)
+
+    assert result.refusal_code is ServiceEntryRefusal.NONE
+    assert not any(
+        "acquire-dhcp" in identifier
+        for batch in harness.services.applied
+        for identifier in batch
+    )
+    lease_rows = [
+        check
+        for client in result.clients
+        for outcome in client.results.values()
+        for check in outcome.checks
+        if check.kind is ServiceVerificationKind.DHCP_LEASE
+    ]
+    assert len(lease_rows) == len(CLIENT_IDS)
+    assert all(row.observation is ObservationFact.NOT_ATTEMPTED for row in lease_rows)
+    assert all(row.cause == "configure_only" for row in lease_rows)
+
+
 def test_unqualified_mode_reader_refuses_before_e5_even_with_other_dhcp_support(
     tmp_path,
 ):
@@ -194,6 +231,17 @@ def test_unqualified_mode_reader_refuses_before_e5_even_with_other_dhcp_support(
     result = harness.run(capability_catalog=lambda _version: records)
 
     assert result.refusal_code is ServiceEntryRefusal.SERVICE_INELIGIBLE
+    assert harness.mutating_calls == []
+
+
+def test_required_client_service_cannot_outlive_optional_ineligible_dhcp(tmp_path):
+    """Propagate optional DHCP exclusion to required services on its clients."""
+    harness = _harness(tmp_path, _payload(required=False))
+
+    result = harness.run()
+
+    assert result.refusal_code is ServiceEntryRefusal.SERVICE_INELIGIBLE
+    assert "dhcp_prerequisite:service/hq/lab-dhcp=ineligible" in result.blocked_reason
     assert harness.mutating_calls == []
 
 

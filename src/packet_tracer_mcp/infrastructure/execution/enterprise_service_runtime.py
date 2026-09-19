@@ -1836,7 +1836,7 @@ class PacketTracerEnterpriseServiceRuntime:
         shape = _typed_payload(payload, scalar_types)
         if (
             shape
-            or payload.get("enabled") is not True
+            or not isinstance(payload.get("enabled"), bool)
             or isinstance(payload.get("max"), bool)
             or not isinstance(payload.get("max"), int)
             or not isinstance(payload.get("exclusions"), list)
@@ -1887,15 +1887,51 @@ class PacketTracerEnterpriseServiceRuntime:
             )
         except json.JSONDecodeError:
             wanted_ranges = None
-        if not isinstance(wanted_ranges, list):
+        if not isinstance(wanted_ranges, list) or any(
+            not isinstance(item, dict)
+            or set(item) != {"start", "end"}
+            or not all(isinstance(item[key], str) for key in ("start", "end"))
+            for item in wanted_ranges
+        ):
             return self._observed(
                 expectation,
                 observation=ObservationFact.MALFORMED,
                 method="dhcp_server_configuration_readback",
                 cause="dhcp_expected_exclusions_invalid",
             )
+        try:
+            parsed_ranges = [
+                (ip_address(item["start"]), ip_address(item["end"])) for item in ranges
+            ]
+            parsed_wanted = {
+                (ip_address(item["start"]), ip_address(item["end"]))
+                for item in wanted_ranges
+            }
+            lease_start = ip_address(str(expected.get("lease_start") or ""))
+            lease_end = ip_address(str(expected.get("lease_end") or ""))
+        except ValueError:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_server_configuration_readback",
+                cause="dhcp_exclusion_not_parsable",
+            )
+        if any(start > end for start, end in parsed_ranges) or lease_start > lease_end:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_server_configuration_readback",
+                cause="dhcp_exclusion_range_invalid",
+            )
+        exclusion_conflict = any(
+            (start, end) not in parsed_wanted
+            and start <= lease_end
+            and end >= lease_start
+            for start, end in parsed_ranges
+        )
         matches = (
-            payload["interface"] == expected.get("interface")
+            payload["enabled"] is True
+            and payload["interface"] == expected.get("interface")
             and payload["pool_name"] == expected.get("pool_name")
             and payload["network"] == expected.get("network")
             and payload["mask"] == expected.get("netmask")
@@ -1905,6 +1941,7 @@ class PacketTracerEnterpriseServiceRuntime:
             and payload["end"] == expected.get("lease_end")
             and payload["max"] == expected.get("max_users")
             and all(item in ranges for item in wanted_ranges)
+            and not exclusion_conflict
         )
         return self._observed(
             expectation,
@@ -1913,7 +1950,13 @@ class PacketTracerEnterpriseServiceRuntime:
             ),
             method="dhcp_server_configuration_readback",
             claim_level="stored_dhcp_configuration" if matches else "",
-            cause="" if matches else "dhcp_server_state_mismatch",
+            cause=(
+                ""
+                if matches
+                else "dhcp_exclusion_conflict"
+                if exclusion_conflict
+                else "dhcp_server_state_mismatch"
+            ),
             observed={
                 "interface": payload["interface"],
                 "pool_name": payload["pool_name"],
@@ -1989,7 +2032,8 @@ class PacketTracerEnterpriseServiceRuntime:
                 "error": str,
             },
         )
-        if shape or payload.get("dhcp_mode") not in {True, False, None}:
+        mode = payload.get("dhcp_mode")
+        if shape or (mode is not None and not isinstance(mode, bool)):
             return self._observed(
                 expectation,
                 observation=ObservationFact.MALFORMED,
@@ -3395,6 +3439,13 @@ class PacketTracerEnterpriseServiceRuntime:
         subject at all. Collapsing them into `{}` was what made a failed read
         indistinguishable from a device that reported nothing.
         """
+        if self._sanitizer.holds_values:
+            js = (
+                _ERROR_CATEGORY_HELPER
+                + "try{"
+                + js
+                + "}catch(e){reportResult(JSON.stringify({__mcp_error:__ec(e)}));}"
+            )
         if self._dispatch_and_wait is not None:
             outcome = self._dispatch_and_wait(js, timeout)
         else:
@@ -3450,6 +3501,34 @@ class PacketTracerEnterpriseServiceRuntime:
                     result=ResultFact.MALFORMED,
                     disposition=outcome.disposition,
                     detail="not_a_json_object",
+                ),
+            )
+        if "__mcp_error" in value:
+            category = value.get("__mcp_error")
+            allowed = {f"engine_error:{name}" for name in _ERROR_NAMES} | {
+                "engine_error:other"
+            }
+            if set(value) != {"__mcp_error"} or category not in allowed:
+                return BridgeObservation(
+                    kind=BridgeObservationKind.MALFORMED,
+                    payload=None,
+                    message="The generated error boundary returned an invalid category.",
+                    outcome=BridgeDispatchOutcome(
+                        dispatch=outcome.dispatch,
+                        result=ResultFact.MALFORMED,
+                        disposition=outcome.disposition,
+                        detail="invalid_engine_error_category",
+                    ),
+                )
+            return BridgeObservation(
+                kind=BridgeObservationKind.ENGINE_ERROR,
+                payload=None,
+                message="Packet Tracer reported a categorized engine error.",
+                outcome=BridgeDispatchOutcome(
+                    dispatch=outcome.dispatch,
+                    result=ResultFact.ENGINE_ERROR,
+                    disposition=outcome.disposition,
+                    detail=category,
                 ),
             )
         return BridgeObservation(

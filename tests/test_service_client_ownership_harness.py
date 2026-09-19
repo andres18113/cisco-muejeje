@@ -482,6 +482,25 @@ def test_generated_release_uses_a_closed_category_after_secret_resolution(
     assert "engine_error:Error" in persisted
 
 
+def test_generated_start_uses_a_closed_category_after_secret_resolution(stub, tmp_path):
+    """Categorize an uncaught start getter error inside the generated script."""
+    engine = stub(
+        throw_on=["getLastPageContent"],
+        throw_message={"getLastPageContent": "x" * 195 + _C0_SECRET},
+    )
+    runtime = _runtime(
+        engine,
+        secret_resolver=EnvironmentSecretResolver(_C0_ENVIRON),
+    )
+    _resolve_c0_secret(runtime)
+
+    row = runtime.verify(_expectation())
+    persisted = _persisted_release(row, tmp_path)
+
+    assert _C0_SECRET[:5] not in persisted
+    assert "engine_error:Error" in persisted
+
+
 def _unresolved(row) -> list[str]:
     """Return the ownership limitations the row carries, if any."""
     return [

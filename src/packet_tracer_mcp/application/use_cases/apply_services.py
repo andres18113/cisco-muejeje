@@ -387,6 +387,7 @@ class ServiceApplicator:
 
         pending = [item for item in plan.actions if item.id not in results]
         staged_verification: dict[str, ServiceVerificationResult] = {}
+        staged_recovery_limitations: list[str] = []
         expectations_by_id = {item.id: item for item in plan.verification_expectations}
         while pending:
             progress = False
@@ -399,7 +400,7 @@ class ServiceApplicator:
                 and expectations_by_id[identifier].action_id in results
             }
             if stage_ids:
-                staged_rows, _stage_limitations = self._verify(
+                staged_rows, stage_limitations = self._verify(
                     plan,
                     results,
                     capabilities,
@@ -410,6 +411,7 @@ class ServiceApplicator:
                 )
                 for item in staged_rows:
                     staged_verification[item.expectation_id] = item
+                staged_recovery_limitations.extend(stage_limitations)
                 progress = bool(staged_rows)
             for action in list(pending):
                 failed_dependencies = [
@@ -549,6 +551,7 @@ class ServiceApplicator:
             for identifier, decision in sorted(decisions.items())
             if decision.residue is MutationResidue.UNKNOWN
         ]
+        limitations.extend(staged_recovery_limitations)
         verification, recovery_limitations = self._verify(
             plan,
             results,
@@ -558,6 +561,7 @@ class ServiceApplicator:
             retained_results=staged_verification,
         )
         limitations.extend(recovery_limitations)
+        limitations = list(dict.fromkeys(limitations))
         outcomes = self._outcomes(plan, results, verification)
         journal = journal_from_action_results(
             plan_id=plan.id,
@@ -843,6 +847,23 @@ class ServiceApplicator:
                     evidence_kind=expectation.evidence_kind,
                     failure_code=ConfigurationFailureCode.DEPENDENCY_BLOCKED,
                     message="Blocked by: " + ", ".join(blocked),
+                )
+                continue
+            if (
+                expectation.kind is ServiceVerificationKind.DHCP_LEASE
+                and expectation.expected.get("configure_only") is True
+            ):
+                results[expectation.id] = ServiceVerificationResult(
+                    expectation_id=expectation.id,
+                    service_id=expectation.service_id,
+                    status=ActionExecutionStatus.UNKNOWN,
+                    evidence_kind=expectation.evidence_kind,
+                    evidence_method="configure_only",
+                    failure_code=ConfigurationFailureCode.NONE,
+                    observation=ObservationFact.NOT_ATTEMPTED,
+                    cause="configure_only",
+                    claim_level="acquisition_not_attempted",
+                    message="No explicit DHCP acquisition was requested.",
                 )
                 continue
             service = services[expectation.service_id]

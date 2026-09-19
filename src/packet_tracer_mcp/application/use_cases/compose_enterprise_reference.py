@@ -274,6 +274,7 @@ def compose_enterprise_reference(
             traffic=traffic,
             topology_summary=compiled.summary,
             capabilities=capabilities,
+            configuration_policy=resolved_policy,
             issues=[
                 f"E5 configuration: {issue.message}" for issue in configuration.issues
             ]

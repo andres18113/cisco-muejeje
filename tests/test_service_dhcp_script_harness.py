@@ -698,6 +698,39 @@ def test_server_state_reads_every_stored_field_but_not_lease_cleanliness(engine)
     assert contradicted.cause == "dhcp_server_state_mismatch"
 
 
+def test_unrelated_exclusion_inside_the_lease_window_blocks_acquisition_foundation(
+    engine,
+):
+    """Preserve the range but refuse to call a capacity-conflicted pool ready."""
+    item = engine()
+    _prime_pool(item)
+    item.state["server"]["enabled"] = True
+    item.state["server"]["exclusions"].append(
+        {"start": "192.0.2.15", "end": "192.0.2.15"}
+    )
+    item.sync()
+
+    row = _runtime(item).verify(_server_expectation())
+
+    assert row.status is ActionExecutionStatus.FAILED
+    assert row.cause == "dhcp_exclusion_conflict"
+    assert {"start": "192.0.2.15", "end": "192.0.2.15"} in item.state["server"][
+        "exclusions"
+    ]
+
+
+def test_fresh_disabled_server_is_a_contradiction_not_a_malformed_read(engine):
+    """Preserve a typed false enable flag as negative evidence."""
+    item = engine()
+    _prime_pool(item)
+
+    row = _runtime(item).verify(_server_expectation())
+
+    assert row.status is ActionExecutionStatus.FAILED
+    assert row.observation is ObservationFact.CONTRADICTED
+    assert row.cause == "dhcp_server_state_mismatch"
+
+
 def test_fresh_in_range_address_is_unattributed_and_foreign_address_contradicts(engine):
     """Separate compatible address read-back from incompatible assignment."""
     item = engine()
@@ -740,6 +773,40 @@ def test_absent_address_is_unknown_and_false_mode_is_a_contradiction(engine):
 
     assert row.status is ActionExecutionStatus.FAILED
     assert row.cause == "dhcp_mode_disabled"
+
+
+def test_numeric_dhcp_mode_is_malformed_instead_of_truthy():
+    """Require an exact boolean rather than accepting numeric one as true."""
+    body = json.dumps(
+        {
+            "found": True,
+            "port_found": True,
+            "interface": INTERFACE,
+            "mode_channel": True,
+            "address_channel": True,
+            "mac_channel": True,
+            "dhcp_mode": 1,
+            "ipv4": "",
+            "netmask": "",
+            "mac": "0011.2233.4455",
+            "lease_time": "",
+            "error": "",
+        }
+    )
+    runtime = PacketTracerEnterpriseServiceRuntime(
+        lambda: [],
+        lambda _js, _timeout: None,
+        dispatch_and_wait=lambda _js, _timeout: BridgeDispatchOutcome(
+            dispatch=DispatchFact.ACCEPTED,
+            result=ResultFact.CORRELATED,
+            body=body,
+        ),
+    )
+
+    row = runtime.verify(_lease_expectation(ServiceVerificationKind.DHCP_LEASE))
+
+    assert row.observation is ObservationFact.MALFORMED
+    assert row.cause == "dhcp_client_shape:dhcp_mode"
 
 
 def test_configure_only_returns_typed_not_attempted_without_a_client_read(engine):

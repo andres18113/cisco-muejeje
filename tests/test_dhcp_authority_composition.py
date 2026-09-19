@@ -246,8 +246,8 @@ def test_e6_rejects_a_delegated_segment_that_still_contains_an_ios_pool():
     }
 
 
-def test_two_sites_may_delegate_distinct_segments_without_competing():
-    """Allow one canonical Server-PT authority on each independent segment."""
+def _two_site_payload():
+    """Return two canonical sites whose display names are not identity."""
     sites = []
     for name, site_type in (("HQ", "hq"), ("Branch", "branch")):
         site_id = name.casefold()
@@ -282,7 +282,12 @@ def test_two_sites_may_delegate_distinct_segments_without_competing():
                 ],
             }
         )
-    payload = {"name": "MULTI", "address_space": "198.18.0.0/16", "sites": sites}
+    return {"name": "MULTI", "address_space": "198.18.0.0/16", "sites": sites}
+
+
+def test_two_sites_may_delegate_distinct_segments_without_competing():
+    """Allow one canonical Server-PT authority on each independent segment."""
+    payload = _two_site_payload()
 
     composition = _compose(payload)
 
@@ -295,7 +300,7 @@ def test_two_sites_may_delegate_distinct_segments_without_competing():
 
 def test_policy_uses_canonical_ids_when_server_display_names_collide():
     """Resolve authority by semantic id even if two sites show the same name."""
-    payload = _dhcp_payload()
+    payload = _two_site_payload()
     intent = EnterpriseIntent.model_validate(payload)
     initial = compose_enterprise_reference(
         intent, packet_tracer_version=BACKEND_VERSION
@@ -312,7 +317,10 @@ def test_policy_uses_canonical_ids_when_server_display_names_collide():
     )
 
     assert derived.is_valid
-    assert derived.policy.delegated_dhcp_server_device_ids == {SEGMENT_ID: SERVER_ID}
+    assert derived.policy.delegated_dhcp_server_device_ids == {
+        "branch-data": "endpoint/branch/default/server/001",
+        "hq-data": "endpoint/hq/default/server/001",
+    }
 
 
 def test_ambiguous_server_interfaces_are_refused_instead_of_choosing_first():

@@ -84,31 +84,27 @@ def register_service_tools(
         run_label: str = "",
     ) -> str:
         """
-        Aplica y verifica los servicios DNS y HTTP de un despliegue existente.
+        Apply governed Server-PT services to an existing deployment.
 
-        Trabaja sobre un DeploymentManifest ya producido por pt_live_deploy: no
-        despliega topología, no borra nada del usuario y no limpia la topología
-        al terminar. Solo libera los clientes temporales que la propia
-        verificación creó.
+        The tool binds a DeploymentManifest produced by pt_live_deploy; it
+        deploys no topology and deletes no operator resource. The bounded path
+        is one site and segment with a static Server-PT and wired PC-PT clients
+        on one access switch. DNS/HTTP use the documentary baseline. Mail and
+        delegated Server-PT DHCP compile as candidates but remain unavailable
+        under the default UNKNOWN capability records.
 
-        Alcance soportado (R-NET-01): un sitio, un segmento, un Server-PT
-        estático y los PC-PT estáticos de ese mismo segmento. Un cliente fuera
-        del segmento del host se rechaza en vez de darse por bueno.
+        Parameters:
+        - intent_json: EnterpriseIntent JSON with the requested services; DNS
+          requires an explicit address and DHCP requires canonical identities.
+        - deployment_id: the already verified physical deployment identity.
+        - packet_tracer_version: the exact build, equal to the manifest and the
+          freshly observed environment fingerprint.
+        - run_label: display metadata; it chooses no path and overwrites no run.
 
-        Parámetros:
-        - intent_json: EnterpriseIntent en JSON, con los servicios pedidos. Un
-          servicio DNS debe declarar su address explícita.
-        - deployment_id: identificador del despliegue físico ya verificado.
-        - packet_tracer_version: build exacta; debe coincidir con la del
-          manifest, y además se valida el entorno actual contra el manifest.
-        - run_label: etiqueta de presentación. No elige ruta ni sobrescribe
-          ninguna corrida.
-
-        Devuelve JSON con el resultado por servicio y POR CLIENTE, el alcance
-        E5 aplicado, la incertidumbre de efecto y de residuo, las liberaciones
-        de recursos propios y la ruta del registro persistido. Toda capacidad
-        DNS/HTTP usada se declara como documentary_baseline: todavía no existe
-        una corrida LIVE registrada que la promueva.
+        Returns JSON with per-service and per-client checks, the actual E5
+        effect scope, effect/residue uncertainty, owned-resource releases,
+        capability provenance and the durable run-record path. Offline results
+        never promote a Packet Tracer capability.
         """
 
         def bind_session() -> ServiceInvocationBinding:

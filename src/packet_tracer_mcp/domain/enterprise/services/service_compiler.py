@@ -1675,6 +1675,7 @@ class ServiceCompiler:
                         client_device_name=client.name,
                         host_model=service.host_model,
                         client_model=client.model,
+                        required=acquisition is not None,
                         expected={
                             "interface": foundation.interface,
                             "server_interface": pool.interface,

@@ -23,8 +23,16 @@ from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ConfigurationRuntimeContext,
     RuntimeActionMutation,
 )
+from packet_tracer_mcp.domain.enterprise.models.execution import (
+    DispatchFact,
+    FootprintFact,
+    PostconditionFact,
+    ResultFact,
+    TransitionFact,
+)
 from packet_tracer_mcp.domain.enterprise.models.intent import EnterpriseIntent
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
+    AcquireDhcpLease,
     ClientOperationCapability,
     ConfigureEmailClient,
     ServiceActionType,
@@ -168,9 +176,21 @@ class _Runtime:
     def apply_actions(self, actions):
         self.applied.append([item.id for item in actions])
         return [
-            RuntimeActionMutation(
-                action_id=item.id,
-                applied=True,
+            (
+                RuntimeActionMutation(
+                    action_id=item.id,
+                    applied=True,
+                    operation=item.operation,
+                    dispatch=DispatchFact.ACCEPTED,
+                    result=ResultFact.CORRELATED,
+                    postcondition=PostconditionFact.UNOBSERVED,
+                    transition=TransitionFact.NOT_APPLICABLE,
+                    footprint=FootprintFact.PARTIAL,
+                    attempted=True,
+                    cause="no_qualified_observation",
+                )
+                if isinstance(item, AcquireDhcpLease)
+                else RuntimeActionMutation(action_id=item.id, applied=True)
             )
             for item in actions
         ]
@@ -247,6 +267,10 @@ def test_unknown_lease_blocks_the_actual_mail_client_call_but_not_static_work():
     }
     assert lease_ids <= set(runtime.verified)
     assert all(runtime.verified.count(identifier) == 1 for identifier in lease_ids)
+    assert any(
+        item.startswith("recovery_read_after_unresolved_action:svc/acquire-dhcp/")
+        for item in result.limitations
+    )
     dependent_checks = {
         item.id
         for item in plan.verification_expectations
