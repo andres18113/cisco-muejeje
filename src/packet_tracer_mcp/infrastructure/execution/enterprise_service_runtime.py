@@ -165,6 +165,10 @@ _SKIP_ACCOUNT_IDENTITY_MISMATCH = "account_identity_mismatch"
 _SKIP_SUBJECT_CLAIM_UNREADABLE = "subject_claim_unreadable"
 _SKIP_POOL_CONFLICT = "pool_conflict"
 _SKIP_DHCP_MODE_NOT_ENABLED = "dhcp_mode_not_enabled"
+_SKIP_DHCP_MODE_INVALID = "dhcp_mode_invalid"
+_SKIP_DHCP_MODE_GETTER_ERROR = "dhcp_mode_getter_error"
+_SKIP_DHCP_ENABLE_INVALID = "dhcp_enable_invalid"
+_SKIP_DHCP_ENABLE_GETTER_ERROR = "dhcp_enable_getter_error"
 _REFUSALS = frozenset(
     {
         _SKIP_PRECONDITION_UNOBSERVED,
@@ -173,6 +177,10 @@ _REFUSALS = frozenset(
         _SKIP_SUBJECT_CLAIM_UNREADABLE,
         _SKIP_POOL_CONFLICT,
         _SKIP_DHCP_MODE_NOT_ENABLED,
+        _SKIP_DHCP_MODE_INVALID,
+        _SKIP_DHCP_MODE_GETTER_ERROR,
+        _SKIP_DHCP_ENABLE_INVALID,
+        _SKIP_DHCP_ENABLE_GETTER_ERROR,
     }
 )
 
@@ -1133,10 +1141,18 @@ class PacketTracerEnterpriseServiceRuntime:
                     _SKIP_PRECONDITION_UNOBSERVED,
                     _SKIP_SUBJECT_CLAIM_UNREADABLE,
                     _SKIP_DHCP_MODE_NOT_ENABLED,
+                    _SKIP_DHCP_MODE_INVALID,
+                    _SKIP_DHCP_MODE_GETTER_ERROR,
                 }
             )
         if isinstance(action, EnableServerDhcp):
-            return frozenset({_SKIP_PRECONDITION_UNOBSERVED})
+            return frozenset(
+                {
+                    _SKIP_PRECONDITION_UNOBSERVED,
+                    _SKIP_DHCP_ENABLE_INVALID,
+                    _SKIP_DHCP_ENABLE_GETTER_ERROR,
+                }
+            )
         if isinstance(action, ConfigureServerDhcpPool):
             return frozenset(
                 {
@@ -1512,10 +1528,13 @@ class PacketTracerEnterpriseServiceRuntime:
             'var m=d.getProcess("DhcpServer");var p=null;var pv=null,qv=null;',
             f"try{{p=m&&m.getDhcpServerProcessByPortName({interface});}}catch(e){{p=null;}}",
             f'if(!p){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}else{{',
-            "try{pv=!!p.isEnable();r.pre_read=true;r.pre=__dg(pv);}catch(e){}",
-            'if(!r.pre_read){r.skip_reason="precondition_unobserved";}else{',
+            "var __pe='';try{var __pr=p.isEnable();if(typeof __pr==='boolean'){"
+            "pv=__pr;r.pre_read=true;r.pre=__dg(pv);}else{__pe='dhcp_enable_invalid';}}"
+            "catch(e){__pe='dhcp_enable_getter_error';}",
+            'if(!r.pre_read){r.skip_reason=__pe||"precondition_unobserved";}else{',
             f"try{{r.attempted=true;p.setEnable(true);}}catch(e){{r.call_error={reader}(e);}}",
-            "try{qv=!!p.isEnable();r.post_read=true;r.post=__dg(qv);}catch(e){}",
+            "try{var __qr=p.isEnable();if(typeof __qr==='boolean'){qv=__qr;"
+            "r.post_read=true;r.post=__dg(qv);}}catch(e){}",
             "if(r.post_read){r.ok=qv===true;}if(r.pre_read&&r.post_read){r.changed=pv!==qv;}",
             "}}results.push(r);",
         ]
@@ -1632,9 +1651,13 @@ class PacketTracerEnterpriseServiceRuntime:
             f'r.skip_reason="{_SKIP_SUBJECT_CLAIMED}";}}}}else{{',
             "var port=null;for(var i=0;i<d.getPortCount();i++){var q=d.getPortAt(i);"
             "if(q&&typeof q.getName==='function'&&String(q.getName())===__if){port=q;break;}}",
-            'var p=d.getProcess("DhcpClient");var mode=null;'
-            "try{mode=port&&typeof port.isDhcpClientOn==='function'?!!port.isDhcpClientOn():null;}catch(e){mode=null;}",
+            'var p=d.getProcess("DhcpClient");var mode=null,mode_state="unavailable";'
+            "if(port&&typeof port.isDhcpClientOn==='function'){try{var mode_raw=port.isDhcpClientOn();"
+            "if(typeof mode_raw==='boolean'){mode=mode_raw;mode_state='valid';}"
+            "else{mode_state='invalid';}}catch(e){mode_state='error';}}",
             f'if(mode===false){{r.pre_read=true;r.pre=__dg(mode);r.skip_reason="{_SKIP_DHCP_MODE_NOT_ENABLED}";}}'
+            f'else if(mode_state==="invalid"){{r.skip_reason="{_SKIP_DHCP_MODE_INVALID}";}}'
+            f'else if(mode_state==="error"){{r.skip_reason="{_SKIP_DHCP_MODE_GETTER_ERROR}";}}'
             f'else if(mode!==true||!p){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}else{{',
             "r.pre_read=true;r.pre=__dg(mode);"
             "__c[__key]={state:'in_progress',op_id:__aid,interface:__if,nonce:__nonce};",
@@ -1800,15 +1823,17 @@ class PacketTracerEnterpriseServiceRuntime:
             f"var q=p&&p.getPool({pool_name});var xs=[];"
             "if(p){var n=p.getExcludedAddressCount();for(var i=0;i<n;i++){"
             "var x=p.getExcludedAddressAt(i);xs.push({start:String(x.first),end:String(x.second)});}}"
+            "var ev=null,ev_valid=false;if(p){var eraw=p.isEnable();"
+            "ev_valid=typeof eraw==='boolean';if(ev_valid){ev=eraw;}}"
             "var out={found:!!d,process_found:!!p,pool_found:!!q,"
             f"interface:{interface},pool_name:q?String(q.getDhcpPoolName()):'',"
-            "enabled:p?!!p.isEnable():null,network:q?String(q.getNetworkAddress()):'',"
+            "enabled:ev,enabled_valid:ev_valid,network:q?String(q.getNetworkAddress()):'',"
             "mask:q?String(q.getSubnetMask()):'',gateway:q?String(q.getDefaultRouter()):'',"
             "dns:q?String(q.getDnsServerIp()):'',start:q?String(q.getStartIp()):'',"
             "end:q?String(q.getEndIp()):'',max:q?q.getMaxUsers():null,exclusions:xs,error:''};"
             "reportResult(JSON.stringify(out));}catch(e){reportResult(JSON.stringify({"
             f"found:false,process_found:false,pool_found:false,interface:{interface},"
-            f"pool_name:'',enabled:null,network:'',mask:'',gateway:'',dns:'',start:'',end:'',max:null,exclusions:[],error:{reader}(e)}}));}}"
+            f"pool_name:'',enabled:null,enabled_valid:false,network:'',mask:'',gateway:'',dns:'',start:'',end:'',max:null,exclusions:[],error:{reader}(e)}}));}}"
         )
         observation = self._observe(script, 5.0)
         if observation.kind is not BridgeObservationKind.PAYLOAD:
@@ -1834,18 +1859,26 @@ class PacketTracerEnterpriseServiceRuntime:
             "error": str,
         }
         shape = _typed_payload(payload, scalar_types)
-        if (
-            shape
+        typed_shape = shape
+        if not typed_shape and (
+            not isinstance(payload.get("enabled_valid"), bool)
+            or not payload.get("enabled_valid")
             or not isinstance(payload.get("enabled"), bool)
-            or isinstance(payload.get("max"), bool)
-            or not isinstance(payload.get("max"), int)
-            or not isinstance(payload.get("exclusions"), list)
         ):
+            typed_shape = "enabled"
+        if not typed_shape and (
+            isinstance(payload.get("max"), bool)
+            or not isinstance(payload.get("max"), int)
+        ):
+            typed_shape = "max"
+        if not typed_shape and not isinstance(payload.get("exclusions"), list):
+            typed_shape = "exclusions"
+        if typed_shape:
             return self._observed(
                 expectation,
                 observation=ObservationFact.MALFORMED,
                 method="dhcp_server_configuration_readback",
-                cause=f"dhcp_server_shape:{shape or 'typed_fields'}",
+                cause=f"dhcp_server_shape:{typed_shape}",
             )
         if payload["error"]:
             return self._observed(
@@ -1996,15 +2029,17 @@ class PacketTracerEnterpriseServiceRuntime:
             "var addressable=!!p&&typeof p.getIpAddress==='function'&&typeof p.getSubnetMask==='function';"
             "var macable=!!p&&typeof p.getMacAddress==='function';"
             'var cp=d&&d.getProcess("DhcpClient");var data=cp&&cp.getDataOfPort(want);'
+            "var mode=null,modevalid=false;if(modeable){var moderaw=p.isDhcpClientOn();"
+            "modevalid=typeof moderaw==='boolean';if(modevalid){mode=moderaw;}}"
             "reportResult(JSON.stringify({found:!!d,port_found:!!p,interface:want,"
             "mode_channel:modeable,address_channel:addressable,mac_channel:macable,"
-            "dhcp_mode:modeable?!!p.isDhcpClientOn():null,"
+            "mode_value_valid:modevalid,dhcp_mode:mode,"
             "ipv4:addressable?String(p.getIpAddress()):'',"
             "netmask:addressable?String(p.getSubnetMask()):'',"
             "mac:macable?String(p.getMacAddress()):'',"
             "lease_time:data?String(data.getLeaseTimeStr()):'',error:''}));}catch(e){"
             "reportResult(JSON.stringify({found:false,port_found:false,"
-            f"interface:{interface},mode_channel:false,address_channel:false,mac_channel:false,"
+            f"interface:{interface},mode_channel:false,address_channel:false,mac_channel:false,mode_value_valid:false,"
             f"dhcp_mode:null,ipv4:'',netmask:'',mac:'',lease_time:'',error:{reader}(e)}}));}}"
         )
         observation = self._observe(script, self._mail_timeout)
@@ -2025,6 +2060,7 @@ class PacketTracerEnterpriseServiceRuntime:
                 "mode_channel": bool,
                 "address_channel": bool,
                 "mac_channel": bool,
+                "mode_value_valid": bool,
                 "ipv4": str,
                 "netmask": str,
                 "mac": str,
@@ -2033,7 +2069,11 @@ class PacketTracerEnterpriseServiceRuntime:
             },
         )
         mode = payload.get("dhcp_mode")
-        if shape or (mode is not None and not isinstance(mode, bool)):
+        if (
+            shape
+            or (mode is not None and not isinstance(mode, bool))
+            or (payload.get("mode_channel") and not payload.get("mode_value_valid"))
+        ):
             return self._observed(
                 expectation,
                 observation=ObservationFact.MALFORMED,

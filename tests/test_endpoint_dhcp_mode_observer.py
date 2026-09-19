@@ -70,6 +70,8 @@ def test_observer_accepts_only_a_typed_fresh_mode_payload():
             "port_found": True,
             "interface": "FastEthernet0",
             "mode_channel": True,
+            "mode_value_valid": True,
+            "mode_error": False,
             "dhcp_mode": True,
         }
     )
@@ -156,6 +158,75 @@ def test_wrong_interface_and_unreadable_mode_are_unobservable():
     assert unreadable.status is ActionExecutionStatus.UNOBSERVABLE
 
 
+def test_invalid_native_mode_cannot_become_an_e6_foundation():
+    """Carry an invalid getter result through real E5 verification and gating."""
+    action = SetEndpointDhcp(
+        id="endpoint-dhcp",
+        phase=ConfigurationPhase.ENDPOINT_ADDRESSING,
+        device_id="client-1",
+        device_name="PC-01",
+        site_id="hq",
+        interface="FastEthernet0",
+        segment_id="hq-data",
+        network="192.0.2.0",
+        prefix=24,
+        netmask="255.255.255.0",
+        gateway="192.0.2.1",
+        required_capability="endpoint_dhcp",
+    )
+    plan = ConfigurationPlan(
+        id="cfg-invalid-dhcp-mode",
+        source_topology_id="topology",
+        source_topology_hash="topology-hash",
+        actions=[action],
+        verification_expectations=[_expectation()],
+    )
+    plan.semantic_hash = configuration_plan_semantic_hash(plan)
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        lambda: [],
+        lambda _js: True,
+        lambda _js, _timeout: None,
+        endpoint_dhcp_mode_observer=_ModeReader(
+            _observation(
+                dhcp_mode=None,
+                fresh_evidence=False,
+                failure_reason="mode_value_invalid",
+            )
+        ),
+        endpoint_timeout_seconds=0.0,
+        convergence_interval_seconds=0.0,
+    )
+    applied = ConfigurationApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash="topology-hash",
+        capabilities={},
+    )
+    services = ServicePlan(
+        id="services",
+        source_topology_id="topology",
+        source_topology_hash="topology-hash",
+        source_configuration_id=plan.id,
+        source_configuration_hash=plan.semantic_hash,
+        foundational_requirements=[
+            FoundationalServiceRequirement(
+                id="foundation-mode",
+                device_id="client-1",
+                device_name="PC-01",
+                model="PC-PT",
+                ipv4="",
+                segment_id="hq-data",
+                configuration_action_id=action.id,
+                kind="endpoint_dhcp_mode",
+            )
+        ],
+    )
+
+    statuses = derive_service_foundational_statuses(services, applied)
+
+    assert applied.verification_results[0].status is ActionExecutionStatus.UNOBSERVABLE
+    assert statuses == {action.id: ActionExecutionStatus.UNOBSERVABLE}
+
+
 def test_real_e5_route_founds_e6_on_mode_true_with_no_address():
     """Carry the actual E5 reader result into the E6 foundation predicate."""
     action = SetEndpointDhcp(
@@ -187,6 +258,8 @@ def test_real_e5_route_founds_e6_on_mode_true_with_no_address():
             "port_found": True,
             "interface": "FastEthernet0",
             "mode_channel": True,
+            "mode_value_valid": True,
+            "mode_error": False,
             "dhcp_mode": True,
         }
     )

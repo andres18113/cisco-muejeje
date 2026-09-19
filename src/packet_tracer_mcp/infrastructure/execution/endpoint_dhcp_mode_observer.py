@@ -36,9 +36,12 @@ def endpoint_dhcp_mode_read_js(device_name: str, interface: str) -> str:
             "if(c&&typeof c.getName==='function'&&String(c.getName())===want)",
             "{p=c;break;}}}",
             "var able=!!p&&typeof p.isDhcpClientOn==='function';",
-            "var mode=able?!!p.isDhcpClientOn():null;",
+            "var mode=null,mode_valid=false,mode_error=false;",
+            "if(able){try{var raw=p.isDhcpClientOn();mode_valid=typeof raw==='boolean';",
+            "if(mode_valid){mode=raw;}}catch(e){mode_error=true;}}",
             "reportResult(JSON.stringify({found:!!d,port_found:!!p,interface:want,",
-            "mode_channel:able,dhcp_mode:mode}));}",
+            "mode_channel:able,mode_value_valid:mode_valid,mode_error:mode_error,",
+            "dhcp_mode:mode}));}",
             "catch(e){reportResult('ERROR:dhcp_mode_reader');}",
         )
     )
@@ -89,6 +92,8 @@ class PacketTracerEndpointDhcpModeObserver:
             "port_found": bool,
             "interface": str,
             "mode_channel": bool,
+            "mode_value_valid": bool,
+            "mode_error": bool,
         }
         if any(
             key not in value or not isinstance(value[key], expected)
@@ -98,7 +103,24 @@ class PacketTracerEndpointDhcpModeObserver:
             and not isinstance(value.get("dhcp_mode"), bool)
         ):
             return self._unobservable(runtime_device_name, interface, "malformed_shape")
-        usable = value["mode_channel"] and isinstance(value.get("dhcp_mode"), bool)
+        usable = (
+            value["mode_channel"]
+            and value["mode_value_valid"]
+            and not value["mode_error"]
+            and isinstance(value.get("dhcp_mode"), bool)
+        )
+        if not value["found"]:
+            reason = "device_not_found"
+        elif not value["port_found"]:
+            reason = "port_not_found"
+        elif not value["mode_channel"]:
+            reason = "mode_channel_unavailable"
+        elif value["mode_error"]:
+            reason = "mode_getter_error"
+        elif not value["mode_value_valid"]:
+            reason = "mode_value_invalid"
+        else:
+            reason = ""
         return DhcpModeObservation(
             runtime_device_name=runtime_device_name,
             interface=value["interface"],
@@ -107,7 +129,7 @@ class PacketTracerEndpointDhcpModeObserver:
             mode_channel=value["mode_channel"],
             dhcp_mode=value.get("dhcp_mode") if usable else None,
             fresh_evidence=usable,
-            failure_reason="" if usable else "mode_channel_unavailable",
+            failure_reason="" if usable else reason,
         )
 
     @staticmethod

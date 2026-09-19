@@ -35,6 +35,9 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceVerificationKind,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_runtime import ObservationFact
+from packet_tracer_mcp.infrastructure.execution.endpoint_dhcp_mode_observer import (
+    PacketTracerEndpointDhcpModeObserver,
+)
 from packet_tracer_mcp.infrastructure.execution.enterprise_service_runtime import (
     PacketTracerEnterpriseServiceRuntime,
 )
@@ -111,7 +114,12 @@ const poolObject = (pool) => ({
 });
 
 const serverProcess = {
-  isEnable: () => { before('isEnable'); return state.server.enabled; },
+  isEnable: () => {
+    before('isEnable');
+    if (state.server.enable_behavior === 'throw') { throw new Error('enable read failed'); }
+    if (state.server.enable_behavior === 'undefined') { return undefined; }
+    return state.server.enabled;
+  },
   setEnable: (value) => {
     before('setEnable:' + value); state.server.enabled = !!value; after('setEnable');
   },
@@ -151,7 +159,12 @@ const serverMain = {
 
 const portObject = (port) => ({
   getName: () => port.name,
-  isDhcpClientOn: () => { before('isDhcpClientOn'); return port.mode; },
+  isDhcpClientOn: () => {
+    before('isDhcpClientOn');
+    if (port.mode_behavior === 'throw') { throw new Error('mode read failed'); }
+    if (port.mode_behavior === 'undefined') { return undefined; }
+    return port.mode;
+  },
   getIpAddress: () => { before('getIpAddress'); return port.ip; },
   getSubnetMask: () => { before('getSubnetMask:client'); return port.mask; },
   getMacAddress: () => { before('getMacAddress'); return port.mac; },
@@ -230,6 +243,7 @@ class _DhcpEngine:
                 "name": SERVER,
                 "interface": INTERFACE,
                 "enabled": False,
+                "enable_behavior": "value",
                 "port": {
                     "name": INTERFACE,
                     "mode": False,
@@ -257,6 +271,7 @@ class _DhcpEngine:
                 "port": {
                     "name": INTERFACE,
                     "mode": True,
+                    "mode_behavior": "value",
                     "ip": "",
                     "mask": "",
                     "mac": "0011.2233.4455",
@@ -325,6 +340,11 @@ class _DhcpEngine:
             result=ResultFact.CORRELATED,
             body=body,
         )
+
+    def send_and_wait(self, script: str, _timeout: float) -> str | None:
+        """Execute one generated reader and return its correlated body."""
+        outcome = self.dispatch_and_wait(script, _timeout)
+        return outcome.body
 
     def sync(self) -> None:
         """Push Python-side fixture changes into the persistent engine."""
@@ -575,6 +595,71 @@ def test_acquisition_claim_precedes_one_void_dhcp_run_and_replay_sends_nothing(e
     assert second.cause == "own_claim_replayed"
 
 
+@pytest.mark.parametrize(
+    "native_value",
+    [0, 1, "", "false", None],
+    ids=["zero", "one", "empty", "false-string", "null"],
+)
+def test_generated_mode_observer_rejects_non_boolean_native_values(
+    engine, native_value
+):
+    """Catch truthiness coercion in the actual generated mode reader."""
+    item = engine()
+    item.state["client"]["port"]["mode"] = native_value
+    item.sync()
+
+    observed = PacketTracerEndpointDhcpModeObserver(item.send_and_wait).observe(
+        CLIENT, INTERFACE
+    )
+
+    assert observed.dhcp_mode is None
+    assert observed.fresh_evidence is False
+    assert observed.failure_reason == "mode_value_invalid"
+
+
+@pytest.mark.parametrize("behavior", ["undefined", "throw"])
+def test_generated_mode_observer_keeps_unreadable_native_values_unobserved(
+    engine, behavior
+):
+    """Keep undefined and throwing getters distinct from observed false."""
+    item = engine()
+    item.state["client"]["port"]["mode_behavior"] = behavior
+    item.sync()
+
+    observed = PacketTracerEndpointDhcpModeObserver(item.send_and_wait).observe(
+        CLIENT, INTERFACE
+    )
+
+    assert observed.dhcp_mode is None
+    assert observed.fresh_evidence is False
+    assert (
+        observed.failure_reason
+        == {
+            "undefined": "mode_value_invalid",
+            "throw": "mode_getter_error",
+        }[behavior]
+    )
+
+
+@pytest.mark.parametrize(
+    "native_value",
+    [0, 1, "", "false", None],
+    ids=["zero", "one", "empty", "false-string", "null"],
+)
+def test_invalid_native_mode_never_writes_a_claim_or_runs_dhcp(engine, native_value):
+    """Catch a truthy invalid mode admitting the generated acquisition effect."""
+    item = engine()
+    item.state["client"]["port"]["mode"] = native_value
+    item.sync()
+
+    [mutation] = _runtime(item).apply_actions([_acquire()])
+
+    assert item.state["client"]["runs"] == 0
+    assert item.state["claims"] == {}
+    assert mutation.attempted is False
+    assert mutation.cause == "dhcp_mode_invalid"
+
+
 def test_effect_then_throw_and_lost_reply_both_quarantine_without_retry(engine):
     """Keep ambiguity sticky whether the call throws or its answer is lost."""
     throwing = engine(throw_after=["dhcpRun"])
@@ -731,6 +816,30 @@ def test_fresh_disabled_server_is_a_contradiction_not_a_malformed_read(engine):
     assert row.cause == "dhcp_server_state_mismatch"
 
 
+@pytest.mark.parametrize(
+    "native_value",
+    [0, 1, "", "false", None],
+    ids=["zero", "one", "empty", "false-string", "null"],
+)
+def test_invalid_native_server_enable_neither_mutates_nor_verifies(
+    engine, native_value
+):
+    """Catch isEnable truthiness coercion in mutation and direct read-back."""
+    item = engine()
+    _prime_pool(item)
+    item.state["server"]["enabled"] = native_value
+    item.sync()
+
+    [mutation] = _runtime(item).apply_actions([_enable()])
+    readback = _runtime(item).verify(_server_expectation())
+
+    assert not any(entry.startswith("setEnable:") for entry in item.log)
+    assert mutation.attempted is False
+    assert mutation.cause == "dhcp_enable_invalid"
+    assert readback.observation is ObservationFact.MALFORMED
+    assert readback.cause == "dhcp_server_shape:enabled"
+
+
 def test_fresh_in_range_address_is_unattributed_and_foreign_address_contradicts(engine):
     """Separate compatible address read-back from incompatible assignment."""
     item = engine()
@@ -775,35 +884,18 @@ def test_absent_address_is_unknown_and_false_mode_is_a_contradiction(engine):
     assert row.cause == "dhcp_mode_disabled"
 
 
-def test_numeric_dhcp_mode_is_malformed_instead_of_truthy():
-    """Require an exact boolean rather than accepting numeric one as true."""
-    body = json.dumps(
-        {
-            "found": True,
-            "port_found": True,
-            "interface": INTERFACE,
-            "mode_channel": True,
-            "address_channel": True,
-            "mac_channel": True,
-            "dhcp_mode": 1,
-            "ipv4": "",
-            "netmask": "",
-            "mac": "0011.2233.4455",
-            "lease_time": "",
-            "error": "",
-        }
-    )
-    runtime = PacketTracerEnterpriseServiceRuntime(
-        lambda: [],
-        lambda _js, _timeout: None,
-        dispatch_and_wait=lambda _js, _timeout: BridgeDispatchOutcome(
-            dispatch=DispatchFact.ACCEPTED,
-            result=ResultFact.CORRELATED,
-            body=body,
-        ),
-    )
+@pytest.mark.parametrize(
+    "native_value",
+    [0, 1, "", "false", None],
+    ids=["zero", "one", "empty", "false-string", "null"],
+)
+def test_generated_client_readback_rejects_non_boolean_mode(engine, native_value):
+    """Catch truthiness coercion in the real generated client read-back."""
+    item = engine()
+    item.state["client"]["port"]["mode"] = native_value
+    item.sync()
 
-    row = runtime.verify(_lease_expectation(ServiceVerificationKind.DHCP_LEASE))
+    row = _runtime(item).verify(_lease_expectation(ServiceVerificationKind.DHCP_LEASE))
 
     assert row.observation is ObservationFact.MALFORMED
     assert row.cause == "dhcp_client_shape:dhcp_mode"
