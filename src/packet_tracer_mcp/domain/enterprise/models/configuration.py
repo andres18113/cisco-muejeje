@@ -73,6 +73,11 @@ class ConfigurationIssueCode(StrEnum):
     GATEWAY_INVALID = "GATEWAY_INVALID"
     GATEWAY_INTERFACE_MISSING = "GATEWAY_INTERFACE_MISSING"
     DHCP_SERVER_MISSING = "DHCP_SERVER_MISSING"
+    DHCP_DELEGATED_TO_SERVICE = "DHCP_DELEGATED_TO_SERVICE"
+    DHCP_AUTHORITY_CONFLICT = "DHCP_AUTHORITY_CONFLICT"
+    DHCP_RELAY_REQUIRED = "DHCP_RELAY_REQUIRED"
+    DHCP_INTERFACE_MISSING = "DHCP_INTERFACE_MISSING"
+    DHCP_POOL_INVALID = "DHCP_POOL_INVALID"
     ADDRESS_SPACE_EXHAUSTED = "ADDRESS_SPACE_EXHAUSTED"
     DUPLICATE_IPV4 = "DUPLICATE_IPV4"
     DHCP_STATIC_COLLISION = "DHCP_STATIC_COLLISION"
@@ -195,6 +200,8 @@ class ConfigurationPolicy(BaseModel):
     )
     gateway_device_ids: dict[str, str] = Field(default_factory=dict)
     dhcp_server_device_ids: dict[str, str] = Field(default_factory=dict)
+    delegated_dhcp_segment_ids: list[str] = Field(default_factory=list)
+    delegated_dhcp_server_device_ids: dict[str, str] = Field(default_factory=dict)
     native_vlan_id: int | None = None
     dns_server: str | None = None
 
@@ -430,6 +437,7 @@ class VerificationKind(StrEnum):
     L3_INTERFACE = "l3_interface"
     DHCP_POOL = "dhcp_pool"
     ENDPOINT_ADDRESSING = "endpoint_addressing"
+    ENDPOINT_DHCP_MODE = "endpoint_dhcp_mode"
     SERIAL_CONTROLLER = "serial_controller"
 
 

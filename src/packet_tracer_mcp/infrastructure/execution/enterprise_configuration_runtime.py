@@ -42,6 +42,7 @@ from ..generator.configuration_renderer import PacketTracerIosRenderer
 from .configuration_runtime import PacketTracerConfigurationRuntime
 from .device_lifecycle import StateConvergenceWaiter
 from .endpoint_address_observer import PacketTracerEndpointAddressObserver
+from .endpoint_dhcp_mode_observer import PacketTracerEndpointDhcpModeObserver
 from .ios_terminal import (
     ControlledIosExecutor,
     DeviceIdentityProvenance,
@@ -227,6 +228,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             Callable[[], SimulationStateObservation] | None
         ) = None,
         endpoint_address_observer=None,
+        endpoint_dhcp_mode_observer=None,
     ) -> None:
         self._query_inventory = query_inventory
         self._send = send
@@ -234,6 +236,10 @@ class PacketTracerEnterpriseConfigurationRuntime:
         self._endpoint_addresses = (
             endpoint_address_observer
             or PacketTracerEndpointAddressObserver(send_and_wait)
+        )
+        self._endpoint_dhcp_modes = (
+            endpoint_dhcp_mode_observer
+            or PacketTracerEndpointDhcpModeObserver(send_and_wait)
         )
         self._configuration = PacketTracerConfigurationRuntime(send)
         self._ios = ControlledIosExecutor(send_and_wait)
@@ -881,6 +887,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 results.append(self._verify_serial_controller(expectation))
             elif expectation.kind is VerificationKind.ENDPOINT_ADDRESSING:
                 results.append(self._verify_endpoint(expectation))
+            elif expectation.kind is VerificationKind.ENDPOINT_DHCP_MODE:
+                results.append(self._verify_endpoint_dhcp_mode(expectation))
             elif expectation.kind is VerificationKind.ACCESS_PORT:
                 results.append(self._verify_access_port(expectation))
             elif expectation.kind is VerificationKind.DHCP_POOL:
@@ -2184,6 +2192,83 @@ class PacketTracerEnterpriseConfigurationRuntime:
             ),
         )
         return show, convergence, converged
+
+    def _verify_endpoint_dhcp_mode(
+        self,
+        expectation: VerificationExpectation,
+    ) -> RuntimeVerification:
+        """Read DHCP mode without waiting for an address acquisition."""
+        interface = str(expectation.expected.get("interface") or "")
+        if not interface:
+            return self._unobservable(
+                expectation,
+                message="The DHCP-mode expectation names no interface.",
+                evidence_method="structured_endpoint_dhcp_mode",
+            )
+        observed = self._endpoint_dhcp_modes.observe(
+            expectation.device_name,
+            interface,
+        )
+        exact_subject = (
+            observed.runtime_device_name == expectation.device_name
+            and observed.interface == interface
+        )
+        if not (
+            exact_subject
+            and observed.device_found
+            and observed.port_found
+            and observed.mode_channel
+            and observed.fresh_evidence
+            and isinstance(observed.dhcp_mode, bool)
+        ):
+            return self._unobservable(
+                expectation,
+                message=(
+                    observed.failure_reason
+                    or "The exact endpoint DHCP-mode getter was unavailable."
+                ),
+                evidence_method="structured_endpoint_dhcp_mode",
+            )
+        status = (
+            ActionExecutionStatus.VERIFIED
+            if observed.dhcp_mode
+            else ActionExecutionStatus.FAILED
+        )
+        return RuntimeVerification(
+            expectation_id=expectation.id,
+            status=status,
+            evidence_method="structured_endpoint_dhcp_mode",
+            fresh_evidence=True,
+            fields={
+                "dhcp_mode": (
+                    FieldVerificationStatus.VERIFIED
+                    if observed.dhcp_mode
+                    else FieldVerificationStatus.FAILED
+                )
+            },
+            convergence=ConvergenceReport(
+                attempts=1,
+                elapsed_ms=0,
+                final_status=status,
+                last_observable_state=(
+                    "dhcp_mode_enabled" if observed.dhcp_mode else "dhcp_mode_disabled"
+                ),
+                details={
+                    "kind": "endpoint_dhcp_mode",
+                    "device_name": expectation.device_name,
+                    "interface": interface,
+                    "last_observation": {
+                        "device_found": observed.device_found,
+                        "port_found": observed.port_found,
+                        "mode_channel": observed.mode_channel,
+                        "interface": observed.interface,
+                        "dhcp_mode": observed.dhcp_mode,
+                        "fresh_evidence": observed.fresh_evidence,
+                        "failure_reason": observed.failure_reason,
+                    },
+                },
+            ),
+        )
 
     def _verify_endpoint(self, expectation: VerificationExpectation) -> RuntimeVerification:
         """Read back the exact interface the action addressed.

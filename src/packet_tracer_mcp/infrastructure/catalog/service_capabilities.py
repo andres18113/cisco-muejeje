@@ -257,6 +257,61 @@ def _mail_operations(version: str) -> list[ClientOperationCapability]:
     ]
 
 
+_DHCP_UNKNOWN_SOURCE = (
+    "documented DHCP members only; M-DHCP-1..6 and Q3 not run, R-EVT-05 "
+    "permits read-back at most UNKNOWN"
+)
+
+
+def _dhcp_profiles(version: str) -> list[ServiceCapabilityProfile]:
+    """Server-PT DHCP is a complete but entirely UNKNOWN product profile."""
+    unknown = CapabilityStatus.UNKNOWN
+    return [
+        ServiceCapabilityProfile(
+            service_type=ServiceType.DHCP,
+            compile_support=CapabilityStatus.SUPPORTED,
+            application_support=unknown,
+            action_application_support={
+                ServiceActionType.ENABLE_SERVER_DHCP.value: unknown,
+                ServiceActionType.CONFIGURE_SERVER_DHCP_POOL.value: unknown,
+            },
+            direct_readback_support=unknown,
+            behavioral_verification_support=unknown,
+            source=_DHCP_UNKNOWN_SOURCE,
+            packet_tracer_version=version,
+            capability_readiness={
+                "behavioral_verification": _readiness(
+                    "dhcp_behavioral_verification",
+                    verify=ReadinessStatus.UNKNOWN,
+                    apply_status=ReadinessStatus.UNKNOWN,
+                    reason="Acquisition and lease-table end conditions require Q3.",
+                )
+            },
+            provenance=CapabilityProvenance.DOCUMENTARY_BASELINE,
+        )
+    ]
+
+
+def _dhcp_operations(version: str) -> list[ClientOperationCapability]:
+    """Every DHCP action or reader on its actual model, all UNKNOWN."""
+    return [
+        _operation(
+            model,
+            operation.value,
+            CapabilityStatus.UNKNOWN,
+            version=version,
+            source=_DHCP_UNKNOWN_SOURCE,
+        )
+        for model, operation in (
+            (_CLIENT_MODEL, ServiceActionType.ACQUIRE_DHCP_LEASE),
+            (_CLIENT_MODEL, ServiceVerificationKind.ENDPOINT_DHCP_MODE),
+            (_CLIENT_MODEL, ServiceVerificationKind.DHCP_LEASE),
+            (_SERVER_MODEL, ServiceVerificationKind.DHCP_SERVER_STATE),
+            (_SERVER_MODEL, ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED),
+        )
+    ]
+
+
 def _baseline_client_operations(version: str) -> list[ClientOperationCapability]:
     """Client-side verification, keyed by the model that performs it."""
     supported = (
@@ -333,7 +388,7 @@ def _unknown_records(version: str) -> list[object]:
     known = {item.key for item in operations}
     operations.extend(
         item.model_copy(update={"source": source})
-        for item in _mail_operations(version)
+        for item in [*_mail_operations(version), *_dhcp_operations(version)]
         if item.key not in known
     )
     return [*profiles, *operations]
@@ -401,8 +456,10 @@ def packet_tracer_service_capabilities(
         records: list[object] = [
             *_baseline_profiles(version),
             *_mail_profiles(version),
+            *_dhcp_profiles(version),
             *_baseline_client_operations(version),
             *_mail_operations(version),
+            *_dhcp_operations(version),
         ]
     else:
         records = _unknown_records(version)

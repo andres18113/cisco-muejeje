@@ -15,6 +15,7 @@ from .service_plan import (
     EmailAccountRequirement,
     EmailClientRequirement,
     EmailPairRequirement,
+    ServerDhcpPoolRequirement,
     ServiceType,
     TftpFileRequirement,
 )
@@ -80,4 +81,5 @@ class ServiceRequirement(BaseModel):
     email_pairs: list[EmailPairRequirement] = Field(default_factory=list)
     #: `configure_only` configures and reads back; `effectful` also sends.
     verification_mode: Literal["effectful", "configure_only"] = "effectful"
+    dhcp_pool: ServerDhcpPoolRequirement | None = None
     metadata: dict[str, str] = Field(default_factory=dict)

@@ -65,6 +65,19 @@ class SourceTreeIdentity(BaseModel):
     dirty: bool = True
 
 
+class DhcpServiceAuthorityRecord(BaseModel):
+    """Canonical Server-PT DHCP authority persisted independently of outcomes."""
+
+    service_id: str
+    server_device_id: str
+    segment_id: str
+    interface: str
+    pool_name: str
+    client_device_ids: list[str] = Field(default_factory=list)
+    action_ids: list[str] = Field(default_factory=list)
+    expectation_ids: list[str] = Field(default_factory=list)
+
+
 class ServiceRunRecord(BaseModel):
     """One run, from the identity it bound to the outcome it observed."""
 
@@ -113,6 +126,7 @@ class ServiceRunRecord(BaseModel):
     selected_clients: list[str] = Field(default_factory=list)
     releases: list[OwnedResourceRelease] = Field(default_factory=list)
     nonces: dict[str, str] = Field(default_factory=dict)
+    dhcp_authorities: list[DhcpServiceAuthorityRecord] = Field(default_factory=list)
     dirty_state: DirtyState = DirtyState.CLEAN
     limitations: list[str] = Field(default_factory=list)
     persist_error: str = ""

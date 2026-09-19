@@ -62,6 +62,7 @@ from ...domain.enterprise.models.configuration_runtime import (
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
 )
+from ...domain.enterprise.models.capabilities import CapabilityStatus
 from ...domain.enterprise.models.deployment import (
     DeploymentIdentityError,
     DeploymentManifest,
@@ -89,12 +90,17 @@ from ...domain.enterprise.models.service_entry import (
     StageTransition,
 )
 from ...domain.enterprise.models.service_plan import (
+    ClientOperationCapability,
+    ConfigureServerDhcpPool,
     ServiceCapabilityRecords,
     ServiceDefinition,
     ServicePlan,
+    ServiceType,
+    ServiceVerificationKind,
     secret_refs,
 )
 from ...domain.enterprise.models.service_run_record import (
+    DhcpServiceAuthorityRecord,
     ServiceRunRecord,
     SourceTreeIdentity,
     generate_run_id,
@@ -105,7 +111,6 @@ from ...domain.enterprise.services.service_capability_resolution import (
     resolve_action_capability,
     resolve_verification_capability,
 )
-from ...domain.enterprise.services.service_policy import derive_service_policy
 from ...infrastructure.catalog.service_capabilities import (
     capability_snapshot_hash,
     packet_tracer_service_capabilities,
@@ -449,11 +454,95 @@ def _service_eligibility(
             )
             if not resolution.is_supported:
                 missing.append(f"{resolution.key}={resolution.support.value}")
+        if service.service_type is ServiceType.DHCP:
+            mode_foundations = [
+                item
+                for item in plan.foundational_requirements
+                if item.device_id in service.client_device_ids
+                and item.kind == "endpoint_dhcp_mode"
+            ]
+            for foundation in mode_foundations:
+                key = (
+                    f"{foundation.model}:"
+                    f"{ServiceVerificationKind.ENDPOINT_DHCP_MODE.value}"
+                )
+                record = capabilities.get(key)
+                support = (
+                    record.support
+                    if isinstance(record, ClientOperationCapability)
+                    else CapabilityStatus.UNKNOWN
+                )
+                if support is not CapabilityStatus.SUPPORTED:
+                    missing.append(f"{key}={support.value}")
         if missing:
             unknown_operations[service.id] = sorted(set(missing))
             continue
         eligible.append(service)
-    return eligible, unknown_operations
+    dhcp_owner_by_client = {
+        client_id: service.id
+        for service in plan.services
+        if service.service_type is ServiceType.DHCP
+        for client_id in service.client_device_ids
+    }
+    still_eligible: list[ServiceDefinition] = []
+    for service in eligible:
+        blocked = sorted(
+            {
+                dhcp_owner_by_client[client_id]
+                for client_id in service.client_device_ids
+                if client_id in dhcp_owner_by_client
+                and dhcp_owner_by_client[client_id] in unknown_operations
+            }
+        )
+        if blocked and service.service_type is not ServiceType.DHCP:
+            unknown_operations[service.id] = [
+                f"dhcp_prerequisite:{identifier}=ineligible"
+                for identifier in blocked
+            ]
+            continue
+        still_eligible.append(service)
+    return still_eligible, unknown_operations
+
+
+def _dhcp_authorities(plan: ServicePlan) -> list[DhcpServiceAuthorityRecord]:
+    """Project canonical DHCP authority into the durable run record."""
+    actions_by_service: dict[str, list[Any]] = {}
+    for action in plan.actions:
+        actions_by_service.setdefault(action.service_id, []).append(action)
+    expectations_by_service: dict[str, list[Any]] = {}
+    for expectation in plan.verification_expectations:
+        expectations_by_service.setdefault(expectation.service_id, []).append(
+            expectation
+        )
+    records: list[DhcpServiceAuthorityRecord] = []
+    for service in plan.services:
+        if service.service_type is not ServiceType.DHCP:
+            continue
+        pool = next(
+            (
+                item
+                for item in actions_by_service.get(service.id, ())
+                if isinstance(item, ConfigureServerDhcpPool)
+            ),
+            None,
+        )
+        if pool is None:
+            continue
+        records.append(
+            DhcpServiceAuthorityRecord(
+                service_id=service.id,
+                server_device_id=service.host_device_id,
+                segment_id=service.segment_id,
+                interface=pool.interface,
+                pool_name=pool.pool_name,
+                client_device_ids=list(service.client_device_ids),
+                action_ids=[item.id for item in actions_by_service[service.id]],
+                expectation_ids=[
+                    item.id for item in expectations_by_service.get(service.id, ())
+                ],
+            )
+        )
+    return records
 
 
 def _reporting_budget_exceeded(plan: ServicePlan) -> bool:
@@ -1195,21 +1284,7 @@ def apply_enterprise_services(
             _external_cause(exc),
         )
 
-    # -- A7: compose, with the policy the requested services imply --------
-    policy = derive_service_policy(intent)
-    if not policy.is_valid:
-        first = next(
-            item
-            for item in policy.issues
-            if item.severity is ConfigurationIssueSeverity.ERROR
-        )
-        code = (
-            ServiceEntryRefusal.DNS_SERVER_ADDRESS_REQUIRED
-            if first.code is ConfigurationIssueCode.DNS_SERVER_ADDRESS_REQUIRED
-            else ServiceEntryRefusal.DNS_AUTHORITY_CONFLICT
-        )
-        return refuse("A7", code, first.message)
-
+    # -- A7: compose, deriving policy once canonical identities exist ------
     capabilities = capability_catalog(manifest.backend_version)
     run.record.capability_snapshot = CapabilitySnapshotSummary(
         packet_tracer_version=manifest.backend_version,
@@ -1220,10 +1295,34 @@ def apply_enterprise_services(
         intent,
         packet_tracer_version=manifest.backend_version,
         deployment_manifest=manifest,
-        configuration_policy=policy.policy,
         services=True,
         service_capabilities=capabilities,
     )
+    if composition.service_policy_issues:
+        first = next(
+            item
+            for item in composition.service_policy_issues
+            if item.severity is ConfigurationIssueSeverity.ERROR
+        )
+        codes = {
+            ConfigurationIssueCode.DNS_SERVER_ADDRESS_REQUIRED: (
+                ServiceEntryRefusal.DNS_SERVER_ADDRESS_REQUIRED
+            ),
+            ConfigurationIssueCode.DNS_AUTHORITY_CONFLICT: (
+                ServiceEntryRefusal.DNS_AUTHORITY_CONFLICT
+            ),
+            ConfigurationIssueCode.DHCP_AUTHORITY_CONFLICT: (
+                ServiceEntryRefusal.DHCP_AUTHORITY_CONFLICT
+            ),
+            ConfigurationIssueCode.DHCP_RELAY_REQUIRED: (
+                ServiceEntryRefusal.DHCP_RELAY_REQUIRED
+            ),
+        }
+        return refuse(
+            "A7",
+            codes.get(first.code, ServiceEntryRefusal.COMPOSITION_FAILED),
+            first.message,
+        )
     if composition.issues or composition.services is None:
         return refuse(
             "A7",
@@ -1244,6 +1343,7 @@ def apply_enterprise_services(
     run.record.configuration_plan_id = configuration_plan.id
     run.record.configuration_semantic_hash = configuration_plan.semantic_hash
     run.record.service_semantic_hash = service_plan.semantic_hash
+    run.record.dhcp_authorities = _dhcp_authorities(service_plan)
 
     # -- A8: the composed identity must be the deployed one ---------------
     if composition.topology.physical_identity_hash != manifest.physical_topology_hash:
@@ -1961,6 +2061,12 @@ def _unsupported_paths(
     for item in plan.foundational_requirements:
         requirements.setdefault(item.device_id, []).append(item)
     actions = {item.id: item for item in configuration_plan.actions}
+    delegated_clients = {
+        client_id: (service.site_id, service.segment_id)
+        for service in services
+        if service.service_type is ServiceType.DHCP
+        for client_id in service.client_device_ids
+    }
 
     def access_switches(action_id: str) -> set[str]:
         switches: set[str] = set()
@@ -2000,9 +2106,11 @@ def _unsupported_paths(
                 unsupported.append(f"{service.id}:{device_id}:foundation_missing")
                 continue
             if isinstance(action, SetEndpointDhcp):
-                unsupported.append(f"{service.id}:{device_id}:dhcp")
-                continue
-            if not isinstance(action, SetEndpointStaticAddress):
+                delegated = delegated_clients.get(device_id)
+                if delegated != (service.site_id, service.segment_id):
+                    unsupported.append(f"{service.id}:{device_id}:dhcp")
+                    continue
+            elif not isinstance(action, SetEndpointStaticAddress):
                 unsupported.append(f"{service.id}:{device_id}:not_static")
                 continue
             if action.site_id != service.site_id:

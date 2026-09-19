@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 from .capabilities import CapabilityStatus
-from .configuration import ConfigurationIssue
+from .configuration import AddressRange, ConfigurationIssue
 from .evidence import CapabilityReadiness
 from .execution import OperationSemantics
 from .verification import VerificationPrerequisite
@@ -28,6 +28,7 @@ class ServiceType(StrEnum):
     TFTP = "tftp"
     SMTP = "smtp"
     POP3 = "pop3"
+    DHCP = "dhcp"
 
 
 class ServicePhase(IntEnum):
@@ -39,6 +40,8 @@ class ServicePhase(IntEnum):
     CLIENT = 40
     #: Execute-once user-state effects, after every client is configured.
     MESSAGE = 50
+    #: Explicit client acquisition after server configuration, before client effects.
+    ACQUISITION = 35
 
 
 class ServiceActionType(StrEnum):
@@ -59,6 +62,9 @@ class ServiceActionType(StrEnum):
     ENSURE_EMAIL_ACCOUNT = "ensure_email_account"
     CONFIGURE_EMAIL_CLIENT = "configure_email_client"
     SEND_MAIL_MESSAGE = "send_mail_message"
+    ENABLE_SERVER_DHCP = "enable_server_dhcp"
+    CONFIGURE_SERVER_DHCP_POOL = "configure_server_dhcp_pool"
+    ACQUIRE_DHCP_LEASE = "acquire_dhcp_lease"
 
 
 class ServiceEvidenceKind(StrEnum):
@@ -95,11 +101,22 @@ class ServiceVerificationKind(StrEnum):
     POP3_RETRIEVE = "pop3_retrieve"
     #: Send and retrieval of one message, composed. Gated with its parts.
     EMAIL_END_TO_END = "email_end_to_end"
+    #: E5 mode-only evidence; catalogued here for one capability vocabulary.
+    ENDPOINT_DHCP_MODE = "endpoint_dhcp_mode"
+    DHCP_SERVER_STATE = "dhcp_server_state"
+    DHCP_LEASE = "dhcp_lease"
+    DHCP_LEASE_ATTRIBUTED = "dhcp_lease_attributed"
 
 
 #: Kinds that run on the service host even when they are reported on a client:
 #: mailbox presence is read from the server's own account table.
-HOST_PERFORMED_KINDS = frozenset({ServiceVerificationKind.SMTP_DELIVERED})
+HOST_PERFORMED_KINDS = frozenset(
+    {
+        ServiceVerificationKind.SMTP_DELIVERED,
+        ServiceVerificationKind.DHCP_SERVER_STATE,
+        ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED,
+    }
+)
 
 
 class DnsRecordRequirement(BaseModel):
@@ -116,6 +133,15 @@ class TftpFileRequirement(BaseModel):
 
     filename: str
     content: str
+
+
+class ServerDhcpPoolRequirement(BaseModel):
+    """Operator choices for one Server-PT pool; zero/empty values derive later."""
+
+    interface: str = ""
+    pool_name: str = ""
+    start_offset: int = 0
+    max_users: int = 0
 
 
 class EmailAccountRequirement(BaseModel):
@@ -224,6 +250,8 @@ class BaseServiceAction(BaseModel):
     site_id: str
     depends_on: list[str] = Field(default_factory=list)
     apply_dependencies: list[str] = Field(default_factory=list)
+    #: Verification rows that must be VERIFIED before this effect is eligible.
+    verification_dependencies: list[str] = Field(default_factory=list)
     required_capability: str
     critical: bool = True
     operation: OperationSemantics = OperationSemantics.SET_VALUE
@@ -372,6 +400,57 @@ class SendMailMessage(BaseServiceAction):
     nonce: str = ""
 
 
+class EnableServerDhcp(BaseServiceAction):
+    """Enable DHCP on the exact addressed Server-PT interface."""
+
+    action_type: Literal[ServiceActionType.ENABLE_SERVER_DHCP] = (
+        ServiceActionType.ENABLE_SERVER_DHCP
+    )
+    interface: str
+
+
+class ConfigureServerDhcpPool(BaseServiceAction):
+    """Ensure one non-destructive Server-PT DHCP pool is configured."""
+
+    action_type: Literal[ServiceActionType.CONFIGURE_SERVER_DHCP_POOL] = (
+        ServiceActionType.CONFIGURE_SERVER_DHCP_POOL
+    )
+    operation: Literal[OperationSemantics.ENSURE_PRESENT] = (
+        OperationSemantics.ENSURE_PRESENT
+    )
+    interface: str
+    pool_name: str
+    segment_id: str
+    network: str
+    prefix: int
+    netmask: str
+    gateway: str
+    dns_server: str = ""
+    lease_start: str
+    lease_end: str
+    max_users: int
+    excluded_ranges: list[AddressRange] = Field(default_factory=list)
+
+
+class AcquireDhcpLease(BaseServiceAction):
+    """Start DHCP once on one exact client/interface under a durable claim."""
+
+    action_type: Literal[ServiceActionType.ACQUIRE_DHCP_LEASE] = (
+        ServiceActionType.ACQUIRE_DHCP_LEASE
+    )
+    operation: Literal[OperationSemantics.EXECUTE_ONCE] = (
+        OperationSemantics.EXECUTE_ONCE
+    )
+    interface: str
+    segment_id: str
+    server_device_id: str
+    server_device_name: str
+    pool_name: str
+    network: str
+    prefix: int
+    netmask: str
+
+
 ServiceAction = Annotated[
     EnableDnsService
     | AddDnsRecord
@@ -385,7 +464,10 @@ ServiceAction = Annotated[
     | EnablePop3Service
     | EnsureEmailAccount
     | ConfigureEmailClient
-    | SendMailMessage,
+    | SendMailMessage
+    | EnableServerDhcp
+    | ConfigureServerDhcpPool
+    | AcquireDhcpLease,
     Field(discriminator="action_type"),
 ]
 
@@ -449,7 +531,9 @@ class FoundationalServiceRequirement(BaseModel):
     #: `endpoint_address` foundation may be satisfied by the attributable
     #: IPv4/netmask core of a PARTIAL row; every other kind copies its
     #: verification status, because no core predicate exists for it.
-    kind: Literal["endpoint_address", "l3_interface"] = "endpoint_address"
+    kind: Literal[
+        "endpoint_address", "endpoint_dhcp_mode", "l3_interface"
+    ] = "endpoint_address"
 
 
 class ServiceVerificationExpectation(BaseModel):

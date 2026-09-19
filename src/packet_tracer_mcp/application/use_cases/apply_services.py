@@ -98,6 +98,12 @@ VERIFICATION_EFFECT_CLASSES: dict[ServiceVerificationKind, str] = {
     ServiceVerificationKind.SMTP_SEND: "user_state",
     ServiceVerificationKind.POP3_RETRIEVE: "user_state",
     ServiceVerificationKind.EMAIL_END_TO_END: "user_state",
+    # S3. Acquisition is an action; every verification kind below is a
+    # bounded getter/scan and never starts or releases DHCP by itself.
+    ServiceVerificationKind.ENDPOINT_DHCP_MODE: "read_only",
+    ServiceVerificationKind.DHCP_SERVER_STATE: "read_only",
+    ServiceVerificationKind.DHCP_LEASE: "read_only",
+    ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED: "read_only",
 }
 
 #: Verification failure code per status, split by whether the read was a
@@ -380,8 +386,33 @@ class ServiceApplicator:
             )
 
         pending = [item for item in plan.actions if item.id not in results]
+        staged_verification: dict[str, ServiceVerificationResult] = {}
+        expectations_by_id = {
+            item.id: item for item in plan.verification_expectations
+        }
         while pending:
             progress = False
+            stage_ids = {
+                identifier
+                for action in pending
+                for identifier in action.verification_dependencies
+                if identifier not in staged_verification
+                and identifier in expectations_by_id
+                and expectations_by_id[identifier].action_id in results
+            }
+            if stage_ids:
+                staged_rows, _stage_limitations = self._verify(
+                    plan,
+                    results,
+                    capabilities,
+                    deployed_names,
+                    decisions,
+                    retained_results=staged_verification,
+                    only_ids=stage_ids,
+                )
+                for item in staged_rows:
+                    staged_verification[item.expectation_id] = item
+                progress = bool(staged_rows)
             for action in list(pending):
                 failed_dependencies = [
                     dependency
@@ -402,6 +433,27 @@ class ServiceApplicator:
                     )
                     pending.remove(action)
                     progress = True
+                    continue
+                failed_verifications = [
+                    dependency
+                    for dependency in action.verification_dependencies
+                    if dependency in staged_verification
+                    and staged_verification[dependency].status
+                    is not ActionExecutionStatus.VERIFIED
+                ]
+                if failed_verifications:
+                    results[action.id] = ActionApplicationResult(
+                        action_id=action.id,
+                        status=ActionExecutionStatus.DEPENDENCY_BLOCKED,
+                        failure_code=ConfigurationFailureCode.DEPENDENCY_BLOCKED,
+                        message="Blocked by: "
+                        + ", ".join(
+                            f"verification_not_verified:{identifier}"
+                            for identifier in sorted(failed_verifications)
+                        ),
+                    )
+                    pending.remove(action)
+                    progress = True
             ready = [
                 item
                 for item in pending
@@ -409,6 +461,12 @@ class ServiceApplicator:
                     dependency in results
                     and self._effect_established(dependency, decisions, results)
                     for dependency in item.depends_on
+                )
+                and all(
+                    dependency in staged_verification
+                    and staged_verification[dependency].status
+                    is ActionExecutionStatus.VERIFIED
+                    for dependency in item.verification_dependencies
                 )
             ]
             if ready:
@@ -499,6 +557,7 @@ class ServiceApplicator:
             capabilities,
             deployed_names,
             decisions,
+            retained_results=staged_verification,
         )
         limitations.extend(recovery_limitations)
         outcomes = self._outcomes(plan, results, verification)
@@ -631,14 +690,24 @@ class ServiceApplicator:
             return f"prerequisite_unsatisfied:{dependency}"
         return f"prerequisite_outcome_unknown:{dependency}"
 
-    def _verify(self, plan, action_results, capabilities, deployed_names, decisions):
+    def _verify(
+        self,
+        plan,
+        action_results,
+        capabilities,
+        deployed_names,
+        decisions,
+        *,
+        retained_results: dict[str, ServiceVerificationResult] | None = None,
+        only_ids: set[str] | None = None,
+    ):
         """Observe every expectation the frontier and the capabilities admit.
 
         Returns the rows plus the limitations that recovery reads added, so a
         run that read anything after an unresolved action says so in its own
         result rather than only in a message.
         """
-        results: dict[str, ServiceVerificationResult] = {}
+        results: dict[str, ServiceVerificationResult] = dict(retained_results or {})
         recovery_limitations: list[str] = []
         services = {item.id: item for item in plan.services}
         action_statuses = {
@@ -684,6 +753,10 @@ class ServiceApplicator:
                 [],
             )
         for expectation in ordered:
+            if expectation.id in results:
+                continue
+            if only_ids is not None and expectation.id not in only_ids:
+                continue
             prerequisites = expectation.verification_prerequisites or [
                 VerificationPrerequisite(
                     kind=PrerequisiteKind.ACTION_APPLIED,
@@ -861,7 +934,11 @@ class ServiceApplicator:
                     message=str(exc),
                 )
         return (
-            [results[item.id] for item in plan.verification_expectations],
+            [
+                results[item.id]
+                for item in plan.verification_expectations
+                if item.id in results
+            ],
             recovery_limitations,
         )
 

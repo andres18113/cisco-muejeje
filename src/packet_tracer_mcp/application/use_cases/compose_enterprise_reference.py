@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from ...domain.enterprise.models.capabilities import DeviceCapabilities
 from ...domain.enterprise.models.compilation import EnterpriseCompileSummary
 from ...domain.enterprise.models.configuration import (
+    ConfigurationIssue,
     ConfigurationIssueSeverity,
     ConfigurationPlan,
     ConfigurationPolicy,
@@ -50,6 +51,7 @@ from ...domain.enterprise.models.voice_plan import (
 )
 from ...domain.enterprise.services.enterprise_designer import EnterpriseDesigner
 from ...domain.enterprise.services.hardware_planner import HardwarePlanningPolicy
+from ...domain.enterprise.services.service_policy import derive_service_policy
 from ...domain.enterprise.services.traffic_attribution import (
     attribute_enterprise_traffic,
 )
@@ -103,6 +105,8 @@ class EnterpriseReferenceComposition:
     #: The configuration policy actually used, so a caller can see the
     #: client DNS server that reached E5 rather than infer it.
     configuration_policy: ConfigurationPolicy | None = None
+    #: Typed policy issues are retained so the product entry preserves their code.
+    service_policy_issues: list[ConfigurationIssue] = field(default_factory=list)
     issues: list[str] = field(default_factory=list)
 
     @property
@@ -232,7 +236,25 @@ def compose_enterprise_reference(
             capabilities=capabilities,
         )
 
-    resolved_policy = configuration_policy or ConfigurationPolicy()
+    derived_policy = derive_service_policy(
+        intent,
+        base_policy=configuration_policy,
+        enterprise=enterprise,
+        topology=topology,
+    )
+    resolved_policy = derived_policy.policy
+    if not derived_policy.is_valid:
+        return EnterpriseReferenceComposition(
+            enterprise=enterprise,
+            hardware=hardware,
+            topology=topology,
+            traffic=traffic,
+            topology_summary=compiled.summary,
+            capabilities=capabilities,
+            configuration_policy=resolved_policy,
+            service_policy_issues=list(derived_policy.issues),
+            issues=[f"service policy: {item.message}" for item in derived_policy.issues],
+        )
     configuration = compile_enterprise_configuration(
         enterprise,
         topology,

@@ -89,6 +89,8 @@ class ServiceEntryRefusal(StrEnum):
     COMPOSITION_FAILED = "composition_failed"
     DNS_SERVER_ADDRESS_REQUIRED = "dns_server_address_required"
     DNS_AUTHORITY_CONFLICT = "dns_authority_conflict"
+    DHCP_AUTHORITY_CONFLICT = "dhcp_authority_conflict"
+    DHCP_RELAY_REQUIRED = "dhcp_relay_required"
     TARGET_IDENTITY_MISMATCH = "target_identity_mismatch"
     ENVIRONMENT_FINGERPRINT_MISMATCH = "environment_fingerprint_mismatch"
     SERVICE_PATH_UNSUPPORTED = "service_path_unsupported"

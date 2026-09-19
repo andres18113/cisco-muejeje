@@ -19,7 +19,7 @@ from collections.abc import Callable, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass
 from enum import Enum, StrEnum
-from ipaddress import ip_address
+from ipaddress import ip_address, ip_network
 from time import monotonic, sleep
 
 from ...application.ports.secret_resolver import SecretResolver, SecretUnavailable
@@ -37,15 +37,18 @@ from ...domain.enterprise.models.execution import (
     TransitionFact,
 )
 from ...domain.enterprise.models.service_plan import (
+    AcquireDhcpLease,
     SECRET_BEARING_ACTIONS,
     AddDnsRecord,
     ConfigureEmailClient,
     ConfigureNtpService,
+    ConfigureServerDhcpPool,
     EnableDnsService,
     EnableHttpService,
     EnableHttpsService,
     EnablePop3Service,
     EnableSmtpService,
+    EnableServerDhcp,
     EnableTftpService,
     EnsureEmailAccount,
     PublishTftpFile,
@@ -112,6 +115,7 @@ _PROCESS = {
     ServiceType.TFTP: "TftpServer",
     ServiceType.SMTP: "SmtpServer",
     ServiceType.POP3: "Pop3Server",
+    ServiceType.DHCP: "DhcpServer",
 }
 
 #: The mail families. Their batches and their reads run one at a time per
@@ -125,12 +129,23 @@ _MAIL_ACTIONS = (
     EnsureEmailAccount,
     ConfigureEmailClient,
     SendMailMessage,
+    EnableServerDhcp,
+    ConfigureServerDhcpPool,
+    AcquireDhcpLease,
 )
 _MAIL_LOCK = threading.RLock()
 
 #: The production claim global and the per-client subject key (R-EVT-06/07).
 _CLAIMS = "this.__mcpE6Claims"
 _CLAIM_PREFIX = "email_client:"
+_DHCP_CLAIM_PREFIX = "dhcp_client:"
+
+#: One read cannot enumerate more rows than this even when a pool declares more.
+DHCP_LEASE_SCAN_LIMIT = 256
+_MAC_TEXT = re.compile(
+    r"^(?:[0-9A-Fa-f]{4}\.){2}[0-9A-Fa-f]{4}$|"
+    r"^(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$"
+)
 
 #: The bound on one mailbox scan, newest first. A mailbox holding more mail
 #: than this can prove presence but never absence.
@@ -148,12 +163,16 @@ _SKIP_SUBJECT_CLAIMED = "subject_claimed"
 _SKIP_OWN_CLAIM_REPLAYED = "own_claim_replayed"
 _SKIP_ACCOUNT_IDENTITY_MISMATCH = "account_identity_mismatch"
 _SKIP_SUBJECT_CLAIM_UNREADABLE = "subject_claim_unreadable"
+_SKIP_POOL_CONFLICT = "pool_conflict"
+_SKIP_DHCP_MODE_NOT_ENABLED = "dhcp_mode_not_enabled"
 _REFUSALS = frozenset(
     {
         _SKIP_PRECONDITION_UNOBSERVED,
         _SKIP_SUBJECT_CLAIMED,
         _SKIP_ACCOUNT_IDENTITY_MISMATCH,
         _SKIP_SUBJECT_CLAIM_UNREADABLE,
+        _SKIP_POOL_CONFLICT,
+        _SKIP_DHCP_MODE_NOT_ENABLED,
     }
 )
 
@@ -253,6 +272,7 @@ _PARTIAL_FOOTPRINTS: dict[type, str] = {
     AddDnsRecord: _DNS_PARTIAL_FOOTPRINT,
     EnsureEmailAccount: "footprint_partial:email_account_credential",
     ConfigureEmailClient: "footprint_partial:email_client_password",
+    ConfigureServerDhcpPool: "footprint_partial:dhcp_pool_lease_state",
 }
 
 #: Observation fact -> (status, fresh_evidence). NOT_ATTEMPTED and UNSPECIFIED
@@ -920,12 +940,13 @@ class PacketTracerEnterpriseServiceRuntime:
                 cause=skip,
                 message=f"The engine refused before any setter: {skip}." + note,
             )
-        if isinstance(action, SendMailMessage):
-            # Row 22: `sendMail` returns before any delivery exists, and no
-            # observer is admitted, so the effect is never observed here. A
+        if isinstance(action, SendMailMessage | AcquireDhcpLease):
+            # Row 22: the execute-once call returns before its outcome exists,
+            # and no qualified observer is admitted. A
             # replay that met this operation's own claim cannot say whether
             # the earlier evaluation sent, so it states nothing (`None`).
             replayed = skip == _SKIP_OWN_CLAIM_REPLAYED
+            is_dhcp = isinstance(action, AcquireDhcpLease)
             return RuntimeActionMutation(
                 action_id=action.id,
                 applied=True,
@@ -944,7 +965,11 @@ class PacketTracerEnterpriseServiceRuntime:
                 message=(
                     "An earlier evaluation of this operation holds its claim."
                     if replayed
-                    else "The message was dispatched once under its claim."
+                    else (
+                        "DHCP acquisition was started once under its claim."
+                        if is_dhcp
+                        else "The message was dispatched once under its claim."
+                    )
                 )
                 + note,
             )
@@ -1095,6 +1120,26 @@ class PacketTracerEnterpriseServiceRuntime:
                     _SKIP_SUBJECT_CLAIM_UNREADABLE,
                 }
             )
+        if isinstance(action, AcquireDhcpLease):
+            return frozenset(
+                {
+                    _SKIP_SUBJECT_CLAIMED,
+                    _SKIP_OWN_CLAIM_REPLAYED,
+                    _SKIP_PRECONDITION_UNOBSERVED,
+                    _SKIP_SUBJECT_CLAIM_UNREADABLE,
+                    _SKIP_DHCP_MODE_NOT_ENABLED,
+                }
+            )
+        if isinstance(action, EnableServerDhcp):
+            return frozenset({_SKIP_PRECONDITION_UNOBSERVED})
+        if isinstance(action, ConfigureServerDhcpPool):
+            return frozenset(
+                {
+                    _SKIP_ALREADY_SATISFIED,
+                    _SKIP_PRECONDITION_UNOBSERVED,
+                    _SKIP_POOL_CONFLICT,
+                }
+            )
         return frozenset({_SKIP_ALREADY_SATISFIED, _SKIP_FAMILY_NOT_IMPLEMENTED})
 
     @staticmethod
@@ -1157,12 +1202,16 @@ class PacketTracerEnterpriseServiceRuntime:
             # and the row cannot be used to claim a satisfied no-op.
             if row["post_read"] and row["ok"] is not True:
                 return "already_satisfied_contradicted"
-        elif row["skip_reason"] == _SKIP_ACCOUNT_IDENTITY_MISMATCH:
+        elif row["skip_reason"] in {
+            _SKIP_ACCOUNT_IDENTITY_MISMATCH,
+            _SKIP_POOL_CONFLICT,
+            _SKIP_DHCP_MODE_NOT_ENABLED,
+        }:
             # Unlike the other refusals, this one IS a completed pre-read: it
             # reports what the lookup returned. A row that claims it without
             # having read anything has invented the contradiction.
             if not row["pre_read"]:
-                return "identity_mismatch_requires_pre_read"
+                return "refusal_requires_pre_read"
         elif row["pre_read"] or row["post_read"]:
             return "declined_requires_no_reads"
         return ""
@@ -1203,6 +1252,12 @@ class PacketTracerEnterpriseServiceRuntime:
             return runtime._client_lines(row, action, secrets or {}, reader)
         if isinstance(action, SendMailMessage):
             return runtime._send_lines(row, action, secrets or {}, reader)
+        if isinstance(action, EnableServerDhcp):
+            return runtime._enable_server_dhcp_lines(row, action, reader)
+        if isinstance(action, ConfigureServerDhcpPool):
+            return runtime._server_dhcp_pool_lines(row, action, reader)
+        if isinstance(action, AcquireDhcpLease):
+            return runtime._acquire_dhcp_lines(row, action, reader)
         if isinstance(action, PublishTftpFile):
             # A declined family: no process lookup, no call, no reads. The
             # baseline reported `ok=false` here and the outcome stays FAILED.
@@ -1439,6 +1494,147 @@ class PacketTracerEnterpriseServiceRuntime:
             "results.push(r);",
         ]
 
+    @staticmethod
+    def _enable_server_dhcp_lines(
+        row: str,
+        action: EnableServerDhcp,
+        reader: str,
+    ) -> list[str]:
+        """Bracket the exact interface's documented DHCP enable flag."""
+        interface = json.dumps(action.interface)
+        return [
+            row,
+            'var m=d.getProcess("DhcpServer");var p=null;var pv=null,qv=null;',
+            f"try{{p=m&&m.getDhcpServerProcessByPortName({interface});}}catch(e){{p=null;}}",
+            f'if(!p){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}else{{',
+            "try{pv=!!p.isEnable();r.pre_read=true;r.pre=__dg(pv);}catch(e){}",
+            "if(!r.pre_read){r.skip_reason=\"precondition_unobserved\";}else{",
+            f"try{{r.attempted=true;p.setEnable(true);}}catch(e){{r.call_error={reader}(e);}}",
+            "try{qv=!!p.isEnable();r.post_read=true;r.post=__dg(qv);}catch(e){}",
+            "if(r.post_read){r.ok=qv===true;}if(r.pre_read&&r.post_read){r.changed=pv!==qv;}",
+            "}}results.push(r);",
+        ]
+
+    @staticmethod
+    def _server_dhcp_pool_lines(
+        row: str,
+        action: ConfigureServerDhcpPool,
+        reader: str,
+    ) -> list[str]:
+        """Ensure one named pool without deleting or overwriting conflicts."""
+        interface = json.dumps(action.interface)
+        pool_name = json.dumps(action.pool_name)
+        wanted_ranges = [item.model_dump(mode="json") for item in action.excluded_ranges]
+        wanted = {
+            "name": action.pool_name,
+            "network": action.network,
+            "mask": action.netmask,
+            "gateway": action.gateway,
+            "dns": action.dns_server,
+            "start": action.lease_start,
+            "end": action.lease_end,
+            "max": action.max_users,
+            "exclusions": wanted_ranges,
+        }
+        wanted_json = json.dumps(wanted, sort_keys=True, separators=(",", ":"))
+        wanted_js = json.dumps(wanted_json)
+        ranges_js = json.dumps(wanted_ranges, separators=(",", ":"))
+        setters = (
+            f"pool.setNetworkMask({json.dumps(action.network)},{json.dumps(action.netmask)});"
+            f"pool.setDefaultRouter({json.dumps(action.gateway)});"
+            + (
+                f"pool.setDnsServerIp({json.dumps(action.dns_server)});"
+                if action.dns_server
+                else ""
+            )
+            + f"pool.setStartIp({json.dumps(action.lease_start)});"
+            f"pool.setEndIp({json.dumps(action.lease_end)});"
+            f"pool.setMaxUsers({action.max_users});"
+        )
+        return [
+            row,
+            'var m=d.getProcess("DhcpServer");var p=null;var pv=null,qv=null;',
+            f"var __want=JSON.parse({wanted_js});var __ranges={ranges_js};",
+            "function __xs(){var out=[];var n=p.getExcludedAddressCount();"
+            "if(typeof n!=='number'||n<0||Math.floor(n)!==n){throw new Error('excluded_count');}"
+            "for(var i=0;i<n;i++){var x=p.getExcludedAddressAt(i);"
+            "if(!x){throw new Error('excluded_row');}"
+            "out.push({start:String(x.first),end:String(x.second)});}return out;}",
+            f"function __rd(){{var pool=p.getPool({pool_name});var xs=__xs();"
+            "if(!pool){return JSON.stringify({exists:false,exclusions:xs});}"
+            "return JSON.stringify({exists:true,name:String(pool.getDhcpPoolName()),"
+            "network:String(pool.getNetworkAddress()),mask:String(pool.getSubnetMask()),"
+            "gateway:String(pool.getDefaultRouter()),dns:String(pool.getDnsServerIp()),"
+            "start:String(pool.getStartIp()),end:String(pool.getEndIp()),"
+            "max:pool.getMaxUsers(),exclusions:xs});}",
+            "function __base(v){return v.exists===true&&v.name===__want.name&&"
+            "v.network===__want.network&&v.mask===__want.mask&&"
+            "v.gateway===__want.gateway&&v.dns===__want.dns&&"
+            "v.start===__want.start&&v.end===__want.end&&v.max===__want.max;}",
+            "function __has(xs,w){for(var i=0;i<xs.length;i++){"
+            "if(xs[i].start===w.start&&xs[i].end===w.end){return true;}}return false;}",
+            "function __ok(v){if(!__base(v)){return false;}"
+            "for(var i=0;i<__want.exclusions.length;i++){"
+            "if(!__has(v.exclusions,__want.exclusions[i])){return false;}}return true;}",
+            f"try{{p=m&&m.getDhcpServerProcessByPortName({interface});}}catch(e){{p=null;}}",
+            f'if(!p){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}else{{',
+            "try{pv=__rd();r.pre_read=true;r.pre=__dg(pv);}catch(e){}",
+            f'if(!r.pre_read){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}else{{',
+            "var pre=JSON.parse(pv);if(pre.exists&&!__base(pre)){"
+            f'r.skip_reason="{_SKIP_POOL_CONFLICT}";}}else if(__ok(pre)){{'
+            f'r.skip_reason="{_SKIP_ALREADY_SATISFIED}";}}else{{',
+            "try{r.attempted=true;var pool=null;if(!pre.exists){"
+            f"p.addPool({pool_name});pool=p.getPool({pool_name});"
+            "if(!pool){throw new Error('pool_missing_after_add');}"
+            f"}}else{{pool=p.getPool({pool_name});}}"
+            "for(var i=0;i<__ranges.length;i++){if(!__has(pre.exclusions,__ranges[i])){"
+            "p.addExcludedAddress(__ranges[i].start,__ranges[i].end);}}"
+            "if(!pre.exists){"
+            + setters
+            + "}"
+            f"}}catch(e){{r.call_error={reader}(e);}}}}"
+            "try{qv=__rd();r.post_read=true;r.post=__dg(qv);}catch(e){}"
+            "if(r.post_read){r.ok=__ok(JSON.parse(qv));}"
+            "if(r.pre_read&&r.post_read){r.changed=pv!==qv;}",
+            "}}results.push(r);",
+        ]
+
+    @staticmethod
+    def _acquire_dhcp_lines(
+        row: str,
+        action: AcquireDhcpLease,
+        reader: str,
+    ) -> list[str]:
+        """Call documented void `dhcpRun(port)` once under a subject claim."""
+        action_id = json.dumps(action.id)
+        interface = json.dumps(action.interface)
+        key = json.dumps(
+            f"{_DHCP_CLAIM_PREFIX}{action.host_device_id}:{action.interface}"
+        )
+        return [
+            row,
+            f"var __key={key},__aid={action_id},__if={interface};",
+            f"var __c={_CLAIMS}={_CLAIMS}||{{}};",
+            "var __has=Object.prototype.hasOwnProperty.call(__c,__key);",
+            "if(__has){var __v=__c[__key];if(!__v||typeof __v!=='object'||"
+            "typeof __v.op_id!=='string'||typeof __v.interface!=='string'){"
+            f'r.skip_reason="{_SKIP_SUBJECT_CLAIM_UNREADABLE}";}}'
+            "else if(__v.op_id===__aid&&__v.interface===__if){"
+            f'r.skip_reason="{_SKIP_OWN_CLAIM_REPLAYED}";}}else{{'
+            f'r.skip_reason="{_SKIP_SUBJECT_CLAIMED}";}}}}else{{',
+            "var port=null;for(var i=0;i<d.getPortCount();i++){var q=d.getPortAt(i);"
+            "if(q&&typeof q.getName==='function'&&String(q.getName())===__if){port=q;break;}}",
+            'var p=d.getProcess("DhcpClient");var mode=null;'
+            "try{mode=port&&typeof port.isDhcpClientOn==='function'?!!port.isDhcpClientOn():null;}catch(e){mode=null;}",
+            f'if(mode===false){{r.pre_read=true;r.pre=__dg(mode);r.skip_reason="{_SKIP_DHCP_MODE_NOT_ENABLED}";}}'
+            f'else if(mode!==true||!p){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}else{{',
+            "r.pre_read=true;r.pre=__dg(mode);"
+            "__c[__key]={state:'in_progress',op_id:__aid,interface:__if};",
+            f"try{{r.attempted=true;p.dhcpRun(__if);__c[__key].state='completed';}}"
+            f"catch(e){{__c[__key].state='unknown';r.call_error={reader}(e);}}",
+            "}}results.push(r);",
+        ]
+
     # -- verification ---------------------------------------------------
 
     def verify(
@@ -1479,6 +1675,15 @@ class PacketTracerEnterpriseServiceRuntime:
         if expectation.kind is ServiceVerificationKind.SMTP_DELIVERED:
             with _MAIL_LOCK:
                 return self._verify_smtp_delivered(expectation)
+        if expectation.kind is ServiceVerificationKind.DHCP_SERVER_STATE:
+            with _MAIL_LOCK:
+                return self._verify_dhcp_server_state(expectation)
+        if expectation.kind is ServiceVerificationKind.DHCP_LEASE:
+            with _MAIL_LOCK:
+                return self._verify_dhcp_lease(expectation)
+        if expectation.kind is ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED:
+            with _MAIL_LOCK:
+                return self._verify_dhcp_lease_attributed(expectation)
         if expectation.evidence_kind is ServiceEvidenceKind.DIRECT_STATE:
             return self._verify_direct(expectation)
         if expectation.kind in {
@@ -1567,6 +1772,466 @@ class PacketTracerEnterpriseServiceRuntime:
         if observation.outcome.result is ResultFact.LOST:
             return ObservationFact.LOST
         return ObservationFact.NOT_OBSERVED
+
+    def _verify_dhcp_server_state(self, expectation):
+        """Read exact stored DHCP fields without claiming lease-state cleanliness."""
+        expected = expectation.expected
+        host = json.dumps(expectation.host_device_name)
+        interface = json.dumps(str(expected.get("interface") or ""))
+        pool_name = json.dumps(str(expected.get("pool_name") or ""))
+        reader = "__ec" if self._sanitizer.holds_values else "__er"
+        helper = (
+            _ERROR_CATEGORY_HELPER
+            if self._sanitizer.holds_values
+            else _ERROR_TEXT_HELPER
+        )
+        script = (
+            helper
+            + f"try{{var d=ipc.network().getDevice({host});"
+            'var m=d&&d.getProcess("DhcpServer");'
+            f"var p=m&&m.getDhcpServerProcessByPortName({interface});"
+            f"var q=p&&p.getPool({pool_name});var xs=[];"
+            "if(p){var n=p.getExcludedAddressCount();for(var i=0;i<n;i++){"
+            "var x=p.getExcludedAddressAt(i);xs.push({start:String(x.first),end:String(x.second)});}}"
+            "var out={found:!!d,process_found:!!p,pool_found:!!q,"
+            f"interface:{interface},pool_name:q?String(q.getDhcpPoolName()):'',"
+            "enabled:p?!!p.isEnable():null,network:q?String(q.getNetworkAddress()):'',"
+            "mask:q?String(q.getSubnetMask()):'',gateway:q?String(q.getDefaultRouter()):'',"
+            "dns:q?String(q.getDnsServerIp()):'',start:q?String(q.getStartIp()):'',"
+            "end:q?String(q.getEndIp()):'',max:q?q.getMaxUsers():null,exclusions:xs,error:''};"
+            "reportResult(JSON.stringify(out));}catch(e){reportResult(JSON.stringify({"
+            f"found:false,process_found:false,pool_found:false,interface:{interface},"
+            f"pool_name:'',enabled:null,network:'',mask:'',gateway:'',dns:'',start:'',end:'',max:null,exclusions:[],error:{reader}(e)}}));}}"
+        )
+        observation = self._observe(script, 5.0)
+        if observation.kind is not BridgeObservationKind.PAYLOAD:
+            return self._observed(
+                expectation,
+                observation=self._transport_fact(observation),
+                method="dhcp_server_configuration_readback",
+                cause=observation.outcome.detail or observation.message,
+            )
+        payload = observation.payload or {}
+        scalar_types = {
+            "found": bool,
+            "process_found": bool,
+            "pool_found": bool,
+            "interface": str,
+            "pool_name": str,
+            "network": str,
+            "mask": str,
+            "gateway": str,
+            "dns": str,
+            "start": str,
+            "end": str,
+            "error": str,
+        }
+        shape = _typed_payload(payload, scalar_types)
+        if (
+            shape
+            or payload.get("enabled") is not True
+            or isinstance(payload.get("max"), bool)
+            or not isinstance(payload.get("max"), int)
+            or not isinstance(payload.get("exclusions"), list)
+        ):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_server_configuration_readback",
+                cause=f"dhcp_server_shape:{shape or 'typed_fields'}",
+            )
+        if payload["error"]:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.ENGINE_ERROR,
+                method="dhcp_server_configuration_readback",
+                cause=payload["error"],
+            )
+        if not payload["found"] or not payload["process_found"]:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.SUBJECT_NOT_FOUND,
+                method="dhcp_server_configuration_readback",
+                cause="dhcp_server_process_not_found",
+            )
+        if not payload["pool_found"]:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.CONTRADICTED,
+                method="dhcp_server_configuration_readback",
+                cause="dhcp_pool_not_found",
+            )
+        ranges = payload["exclusions"]
+        if any(
+            not isinstance(item, dict)
+            or set(item) != {"start", "end"}
+            or not all(isinstance(item[key], str) for key in ("start", "end"))
+            for item in ranges
+        ):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_server_configuration_readback",
+                cause="dhcp_exclusion_shape",
+            )
+        try:
+            wanted_ranges = json.loads(str(expected.get("excluded_ranges_json") or "[]"))
+        except json.JSONDecodeError:
+            wanted_ranges = None
+        if not isinstance(wanted_ranges, list):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_server_configuration_readback",
+                cause="dhcp_expected_exclusions_invalid",
+            )
+        matches = (
+            payload["interface"] == expected.get("interface")
+            and payload["pool_name"] == expected.get("pool_name")
+            and payload["network"] == expected.get("network")
+            and payload["mask"] == expected.get("netmask")
+            and payload["gateway"] == expected.get("gateway")
+            and payload["dns"] == expected.get("dns_server")
+            and payload["start"] == expected.get("lease_start")
+            and payload["end"] == expected.get("lease_end")
+            and payload["max"] == expected.get("max_users")
+            and all(item in ranges for item in wanted_ranges)
+        )
+        return self._observed(
+            expectation,
+            observation=(
+                ObservationFact.OBSERVED if matches else ObservationFact.CONTRADICTED
+            ),
+            method="dhcp_server_configuration_readback",
+            claim_level="stored_dhcp_configuration" if matches else "",
+            cause="" if matches else "dhcp_server_state_mismatch",
+            observed={
+                "interface": payload["interface"],
+                "pool_name": payload["pool_name"],
+                "excluded_range_count": len(ranges),
+            },
+            limitations=("lease_allocation_state_unobserved",),
+        )
+
+    def _verify_dhcp_lease(self, expectation):
+        """Read mode/address/lease-time without attributing acquisition."""
+        if expectation.expected.get("configure_only") is True:
+            return RuntimeServiceVerification(
+                expectation_id=expectation.id,
+                status=ActionExecutionStatus.UNKNOWN,
+                evidence_kind=expectation.evidence_kind,
+                evidence_method="dhcp_client_readback",
+                fresh_evidence=False,
+                observation=ObservationFact.NOT_ATTEMPTED,
+                claim_level="acquisition_not_attempted",
+                cause="configure_only",
+                message="No explicit DHCP acquisition was requested.",
+            )
+        host = json.dumps(expectation.client_device_name)
+        interface = json.dumps(str(expectation.expected.get("interface") or ""))
+        reader = "__ec" if self._sanitizer.holds_values else "__er"
+        helper = (
+            _ERROR_CATEGORY_HELPER
+            if self._sanitizer.holds_values
+            else _ERROR_TEXT_HELPER
+        )
+        script = (
+            helper
+            + f"try{{var d=ipc.network().getDevice({host});var want={interface};var p=null;"
+            "if(d){for(var i=0;i<d.getPortCount();i++){var c=d.getPortAt(i);"
+            "if(c&&typeof c.getName==='function'&&String(c.getName())===want){p=c;break;}}}"
+            "var modeable=!!p&&typeof p.isDhcpClientOn==='function';"
+            "var addressable=!!p&&typeof p.getIpAddress==='function'&&typeof p.getSubnetMask==='function';"
+            "var macable=!!p&&typeof p.getMacAddress==='function';"
+            'var cp=d&&d.getProcess("DhcpClient");var data=cp&&cp.getDataOfPort(want);'
+            "reportResult(JSON.stringify({found:!!d,port_found:!!p,interface:want,"
+            "mode_channel:modeable,address_channel:addressable,mac_channel:macable,"
+            "dhcp_mode:modeable?!!p.isDhcpClientOn():null,"
+            "ipv4:addressable?String(p.getIpAddress()):'',"
+            "netmask:addressable?String(p.getSubnetMask()):'',"
+            "mac:macable?String(p.getMacAddress()):'',"
+            "lease_time:data?String(data.getLeaseTimeStr()):'',error:''}));}catch(e){"
+            "reportResult(JSON.stringify({found:false,port_found:false,"
+            f"interface:{interface},mode_channel:false,address_channel:false,mac_channel:false,"
+            f"dhcp_mode:null,ipv4:'',netmask:'',mac:'',lease_time:'',error:{reader}(e)}}));}}"
+        )
+        observation = self._observe(script, self._mail_timeout)
+        if observation.kind is not BridgeObservationKind.PAYLOAD:
+            return self._observed(
+                expectation,
+                observation=self._transport_fact(observation),
+                method="dhcp_client_readback",
+                cause=observation.outcome.detail or observation.message,
+            )
+        payload = observation.payload or {}
+        shape = _typed_payload(
+            payload,
+            {
+                "found": bool,
+                "port_found": bool,
+                "interface": str,
+                "mode_channel": bool,
+                "address_channel": bool,
+                "mac_channel": bool,
+                "ipv4": str,
+                "netmask": str,
+                "mac": str,
+                "lease_time": str,
+                "error": str,
+            },
+        )
+        if shape or payload.get("dhcp_mode") not in {True, False, None}:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_client_readback",
+                cause=f"dhcp_client_shape:{shape or 'dhcp_mode'}",
+            )
+        if payload["error"]:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.ENGINE_ERROR,
+                method="dhcp_client_readback",
+                cause=payload["error"],
+            )
+        if (
+            not payload["found"]
+            or not payload["port_found"]
+            or payload["interface"] != expectation.expected.get("interface")
+            or not payload["mode_channel"]
+            or not payload["address_channel"]
+        ):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.SUBJECT_NOT_FOUND,
+                method="dhcp_client_readback",
+                cause="dhcp_client_subject_unreadable",
+            )
+        observed = {
+            "interface": payload["interface"],
+            "dhcp_mode": bool(payload["dhcp_mode"]),
+            "ipv4": payload["ipv4"],
+            "netmask": payload["netmask"],
+            "lease_time": payload["lease_time"],
+        }
+        if payload["dhcp_mode"] is not True:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.CONTRADICTED,
+                method="dhcp_client_readback",
+                cause="dhcp_mode_disabled",
+                observed=observed,
+            )
+        if not payload["ipv4"] and not payload["netmask"]:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.INCONCLUSIVE,
+                method="dhcp_client_readback",
+                cause="acquisition_not_observed",
+                observed=observed,
+            )
+        if not payload["ipv4"] or not payload["netmask"]:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_client_readback",
+                cause="address_mask_incomplete",
+                observed=observed,
+            )
+        try:
+            address = ip_address(payload["ipv4"])
+            network = ip_network(
+                f"{expectation.expected.get('network')}/{expectation.expected.get('prefix')}",
+                strict=True,
+            )
+        except ValueError:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_client_readback",
+                cause="address_not_parsable",
+                observed=observed,
+            )
+        compatible = (
+            address in network
+            and address not in {network.network_address, network.broadcast_address}
+            and payload["netmask"] == expectation.expected.get("netmask")
+        )
+        return self._observed(
+            expectation,
+            observation=(
+                ObservationFact.INCONCLUSIVE
+                if compatible
+                else ObservationFact.CONTRADICTED
+            ),
+            method="dhcp_client_readback",
+            claim_level="fresh_address_readback" if compatible else "",
+            cause="acquisition_unattributed" if compatible else "foreign_lease",
+            observed=observed,
+            limitations=("lease_time_causality_unqualified",),
+        )
+
+    def _verify_dhcp_lease_attributed(self, expectation):
+        """Bound a positive intended-pool row without inventing scan completion."""
+        expected = expectation.expected
+        server = json.dumps(expectation.host_device_name)
+        client = json.dumps(expectation.client_device_name)
+        client_interface = json.dumps(str(expected.get("interface") or ""))
+        server_interface = json.dumps(
+            str(expected.get("server_interface") or expected.get("interface") or "")
+        )
+        pool_name = json.dumps(str(expected.get("pool_name") or ""))
+        declared = int(expected.get("max_users") or 0)
+        bound = min(max(declared, 0), DHCP_LEASE_SCAN_LIMIT)
+        reader = "__ec" if self._sanitizer.holds_values else "__er"
+        helper = (
+            _ERROR_CATEGORY_HELPER
+            if self._sanitizer.holds_values
+            else _ERROR_TEXT_HELPER
+        )
+        script = (
+            helper
+            + f"try{{var cd=ipc.network().getDevice({client});var want={client_interface};var cp=null;"
+            "if(cd){for(var i=0;i<cd.getPortCount();i++){var c=cd.getPortAt(i);"
+            "if(c&&typeof c.getName==='function'&&String(c.getName())===want){cp=c;break;}}}"
+            f"var sd=ipc.network().getDevice({server});var sm=sd&&sd.getProcess('DhcpServer');"
+            f"var sp=sm&&sm.getDhcpServerProcessByPortName({server_interface});"
+            f"var pool=sp&&sp.getPool({pool_name});var rows=[];var repeated=false;"
+            "var seen={};var scan_error='';if(pool){for(var j=0;j<"
+            + str(bound)
+            + ";j++){try{var r=pool.getLeaseAt(j);if(!r){break;}"
+            "var row={ipAddress:String(r.ipAddress),macAddress:String(r.macAddress),"
+            "leaseTime:r.leaseTime,port:String(r.port)};var key=JSON.stringify(row);"
+            "if(seen[key]){repeated=true;break;}seen[key]=true;rows.push(row);"
+            f"}}catch(e){{scan_error={reader}(e);break;}}}}"
+            "}reportResult(JSON.stringify({client_found:!!cd,port_found:!!cp,"
+            "interface:want,ipv4:cp?String(cp.getIpAddress()):'',"
+            "netmask:cp?String(cp.getSubnetMask()):'',mac:cp?String(cp.getMacAddress()):'',"
+            f"server_found:!!sd,process_found:!!sp,pool_found:!!pool,pool_name:pool?String(pool.getDhcpPoolName()):'',"
+            "rows:rows,repeated:repeated,scan_error:scan_error,error:''}));}catch(e){"
+            "reportResult(JSON.stringify({client_found:false,port_found:false,"
+            f"interface:{client_interface},ipv4:'',netmask:'',mac:'',server_found:false,"
+            f"process_found:false,pool_found:false,pool_name:'',rows:[],repeated:false,scan_error:'',error:{reader}(e)}}));}}"
+        )
+        observation = self._observe(script, 5.0)
+        if observation.kind is not BridgeObservationKind.PAYLOAD:
+            return self._observed(
+                expectation,
+                observation=self._transport_fact(observation),
+                method="dhcp_intended_pool_lease_scan",
+                cause=observation.outcome.detail or observation.message,
+            )
+        payload = observation.payload or {}
+        shape = _typed_payload(
+            payload,
+            {
+                "client_found": bool,
+                "port_found": bool,
+                "interface": str,
+                "ipv4": str,
+                "netmask": str,
+                "mac": str,
+                "server_found": bool,
+                "process_found": bool,
+                "pool_found": bool,
+                "pool_name": str,
+                "repeated": bool,
+                "scan_error": str,
+                "error": str,
+            },
+        )
+        rows = payload.get("rows")
+        if shape or not isinstance(rows, list):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_intended_pool_lease_scan",
+                cause=f"lease_scan_shape:{shape or 'rows'}",
+            )
+        for row in rows:
+            if (
+                not isinstance(row, dict)
+                or set(row) != {"ipAddress", "macAddress", "leaseTime", "port"}
+                or not all(
+                    isinstance(row[key], str)
+                    for key in ("ipAddress", "macAddress", "port")
+                )
+                or isinstance(row["leaseTime"], bool)
+                or not isinstance(row["leaseTime"], (int, float))
+            ):
+                return self._observed(
+                    expectation,
+                    observation=ObservationFact.MALFORMED,
+                    method="dhcp_intended_pool_lease_scan",
+                    cause="lease_row_shape",
+                )
+        if payload["error"] or payload["scan_error"]:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.ENGINE_ERROR,
+                method="dhcp_intended_pool_lease_scan",
+                cause=payload["error"] or payload["scan_error"],
+            )
+        if not (
+            payload["client_found"]
+            and payload["port_found"]
+            and payload["server_found"]
+            and payload["process_found"]
+            and payload["pool_found"]
+            and payload["interface"] == expected.get("interface")
+            and payload["pool_name"] == expected.get("pool_name")
+        ):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.SUBJECT_NOT_FOUND,
+                method="dhcp_intended_pool_lease_scan",
+                cause="lease_scan_subject_not_found",
+            )
+        same_ip = [row for row in rows if row["ipAddress"] == payload["ipv4"]]
+        exact = [row for row in same_ip if row["macAddress"] == payload["mac"]]
+        observed = {
+            "interface": payload["interface"],
+            "ipv4": payload["ipv4"],
+            "mac": payload["mac"],
+            "rows_scanned": len(rows),
+            "scan_limit": bound,
+            "truncated": declared > bound,
+            "repeated": payload["repeated"],
+        }
+        if exact:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.OBSERVED,
+                method="dhcp_intended_pool_lease_scan",
+                claim_level="attributed_to_intended_server",
+                observed=observed,
+                limitations=("not_acquisition_in_this_run", "not_sole_authority"),
+            )
+        if (
+            same_ip
+            and _MAC_TEXT.fullmatch(payload["mac"])
+            and any(_MAC_TEXT.fullmatch(row["macAddress"]) for row in same_ip)
+        ):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.CONTRADICTED,
+                method="dhcp_intended_pool_lease_scan",
+                cause="foreign_lease_row",
+                observed=observed,
+            )
+        limitations = ["lease_table_end_condition_unqualified"]
+        if payload["repeated"]:
+            limitations.append("lease_row_repeated")
+        if declared > bound:
+            limitations.append("lease_scan_truncated")
+        return self._observed(
+            expectation,
+            observation=ObservationFact.INCONCLUSIVE,
+            method="dhcp_intended_pool_lease_scan",
+            cause="lease_table_incomplete",
+            observed=observed,
+            limitations=limitations,
+        )
 
     def _verify_direct(self, expectation):
         """Read the service's own getters back and compare typed values."""

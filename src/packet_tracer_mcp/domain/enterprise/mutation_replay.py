@@ -53,14 +53,17 @@ from .models.security_plan import (
     SecurityAction,
 )
 from .models.service_plan import (
+    AcquireDhcpLease,
     AddDnsRecord,
     ConfigureEmailClient,
     ConfigureNtpService,
+    ConfigureServerDhcpPool,
     EnableDnsService,
     EnableHttpService,
     EnableHttpsService,
     EnablePop3Service,
     EnableSmtpService,
+    EnableServerDhcp,
     EnableTftpService,
     EnsureEmailAccount,
     PublishTftpFile,
@@ -757,6 +760,42 @@ PRODUCT_MUTATION_REPLAY_REGISTRY: tuple[MutationReplayPolicy, ...] = (
         ),
         "A pre-effect claim bounds duplicates within one evaluation only, an "
         "inference the HTTP channel has not qualified; Q2 is pending.",
+    ),
+    _action_policy(
+        MutationSurface.SERVICE,
+        EnableServerDhcp,
+        _SERVICE_ENTRYPOINT,
+        ReplayClassification.REPLAY_SAFE,
+        _SHAPE,
+        _STRUCTURED_SETTER,
+        "The exact interface process enable flag is set and read back.",
+    ),
+    _action_policy(
+        MutationSurface.SERVICE,
+        ConfigureServerDhcpPool,
+        _SERVICE_ENTRYPOINT,
+        ReplayClassification.UNKNOWN,
+        _UNMEASURED,
+        (
+            ReplayContainment.PRE_READ_FAIL_CLOSED,
+            ReplayContainment.NO_BLIND_RETRY,
+            ReplayContainment.INDEPENDENT_READBACK,
+        ),
+        "Pool creation and setter interaction remain M-DHCP-1; conflicts are "
+        "refused and no pool is deleted or overwritten.",
+    ),
+    _action_policy(
+        MutationSurface.SERVICE,
+        AcquireDhcpLease,
+        _SERVICE_ENTRYPOINT,
+        ReplayClassification.UNKNOWN,
+        _UNMEASURED,
+        (
+            ReplayContainment.IN_PAYLOAD_EFFECT_GUARD,
+            ReplayContainment.NO_BLIND_RETRY,
+        ),
+        "dhcpRun is execute-once under a pre-effect subject claim; controlled "
+        "repeat and HTTP evaluation atomicity remain unqualified pending Q3.",
     ),
     _physical_policy(
         "PhysicalEnsureDevice",

@@ -1,8 +1,9 @@
 """Derive the E5 configuration policy that the requested services imply.
 
 One decision lives here, and it has to be taken BEFORE E5 compiles: which DNS
-server address every static client endpoint is configured with. `E5` already
-knows how to place `ConfigurationPolicy.dns_server` on
+server address every static client endpoint is configured with and which
+canonical segments delegate DHCP to Server-PT. `E5` already knows how to place
+`ConfigurationPolicy.dns_server` on
 `SetEndpointStaticAddress`, and the runtime already carries it into
 `configurePcIp`. What never existed was the step that reads the requested DNS
 service and fills the policy, so a product invocation that asked for DNS left
@@ -35,9 +36,14 @@ from ..models.configuration import (
     ConfigurationIssueSeverity,
     ConfigurationPolicy,
 )
+from ..models.enterprise_plan import EnterprisePlan
 from ..models.intent import EnterpriseIntent
-from ..models.requirements import ServiceRequirement
+from ..models.requirements import EndpointRequirement, ServiceRequirement
+from ..models.roles import DeviceRole
+from ..models.segments import SegmentRole
 from ..models.service_plan import ServiceType
+from ...models.plans import DevicePlan, TopologyPlan
+from .segment_assignment import SegmentAssignmentPolicy
 
 
 @dataclass(frozen=True)
@@ -77,10 +83,66 @@ def _is_dns(requirement: ServiceRequirement) -> bool:
     return requirement.name.strip().casefold() == ServiceType.DNS.value
 
 
+def _is_dhcp(requirement: ServiceRequirement) -> bool:
+    """Whether this requirement explicitly asks for Server-PT DHCP."""
+    if requirement.service_type is not None:
+        return requirement.service_type is ServiceType.DHCP
+    return requirement.name.strip().casefold() == ServiceType.DHCP.value
+
+
+def _canonical_services(
+    enterprise: EnterprisePlan,
+) -> list[tuple[str, ServiceRequirement]]:
+    """Return services with canonical site ids produced by the designer."""
+    values = [
+        (site.site_id, requirement)
+        for site in enterprise.sites
+        for requirement in site.services
+    ]
+    values.extend(
+        (requirement.metadata.get("site_id", ""), requirement)
+        for requirement in enterprise.services
+    )
+    return values
+
+
+def _device_segment(
+    device: DevicePlan,
+    enterprise: EnterprisePlan,
+) -> str:
+    """Resolve one canonical device to exactly one canonical segment."""
+    explicit = device.metadata.get("segment_role", "").strip()
+    try:
+        role = (
+            SegmentRole(explicit)
+            if explicit
+            else SegmentAssignmentPolicy().segment_for(
+                EndpointRequirement(
+                    role=DeviceRole(device.enterprise_role),
+                    count=1,
+                    wired=not device.wireless,
+                    wireless=device.wireless,
+                )
+            )
+        )
+    except (ValueError, TypeError):
+        return ""
+    matches = [
+        segment.name
+        for site in enterprise.sites
+        if site.site_id == device.site_id
+        for segment in site.segments
+        if segment.role is role
+    ]
+    return matches[0] if len(matches) == 1 else ""
+
+
 def derive_service_policy(
     intent: EnterpriseIntent,
     *,
     base_policy: ConfigurationPolicy | None = None,
+    enterprise: EnterprisePlan | None = None,
+    topology: TopologyPlan | None = None,
 ) -> ServicePolicyDerivation:
     """Derive the configuration policy the requested services require.
 
@@ -93,7 +155,12 @@ def derive_service_policy(
     issues: list[ConfigurationIssue] = []
     addresses: dict[str, list[str]] = {}
 
-    for site_id, requirement in _requested_services(intent):
+    services = (
+        _canonical_services(enterprise)
+        if enterprise is not None
+        else _requested_services(intent)
+    )
+    for site_id, requirement in services:
         if not _is_dns(requirement):
             continue
         subject = f"service/{site_id or 'global'}/{requirement.name}"
@@ -131,5 +198,121 @@ def derive_service_policy(
 
     if len(addresses) == 1:
         policy.dns_server = next(iter(addresses))
+
+    dhcp = [item for item in services if _is_dhcp(item[1])]
+    if not dhcp:
+        return ServicePolicyDerivation(policy=policy, issues=issues)
+    if enterprise is None or topology is None:
+        issues.append(
+            ConfigurationIssue(
+                severity=ConfigurationIssueSeverity.ERROR,
+                code=ConfigurationIssueCode.DHCP_AUTHORITY_CONFLICT,
+                message=(
+                    "Server-PT DHCP authority requires canonical enterprise and "
+                    "topology identities before E5 compilation."
+                ),
+                subject="dhcp",
+            )
+        )
+        return ServicePolicyDerivation(policy=policy, issues=issues)
+
+    devices = {item.id or item.name: item for item in topology.devices}
+    segments = {
+        segment.name: (site.site_id, segment)
+        for site in enterprise.sites
+        for segment in site.segments
+    }
+    delegated: dict[str, str] = {}
+    for site_id, requirement in sorted(
+        dhcp, key=lambda item: (item[0], item[1].name.casefold())
+    ):
+        subject = f"service/{site_id or 'global'}/{requirement.name}"
+        segment_id = requirement.segment_id.strip()
+        segment_entry = segments.get(segment_id)
+        host = devices.get(requirement.host_device_id)
+        if (
+            not segment_id
+            or segment_entry is None
+            or segment_entry[0] != site_id
+            or host is None
+            or host.site_id != site_id
+            or host.model.casefold() != "server-pt"
+        ):
+            issues.append(
+                ConfigurationIssue(
+                    severity=ConfigurationIssueSeverity.ERROR,
+                    code=ConfigurationIssueCode.DHCP_AUTHORITY_CONFLICT,
+                    message=(
+                        f"DHCP service {requirement.name!r} does not identify one "
+                        "canonical Server-PT and segment in its site."
+                    ),
+                    subject=subject,
+                )
+            )
+            continue
+        host_segment = _device_segment(host, enterprise)
+        if host_segment != segment_id:
+            observed_segment = host_segment or "an unresolved segment"
+            issues.append(
+                ConfigurationIssue(
+                    severity=ConfigurationIssueSeverity.ERROR,
+                    code=ConfigurationIssueCode.DHCP_RELAY_REQUIRED,
+                    message=(
+                        f"DHCP server {host.id!r} is on {observed_segment}, not "
+                        f"delegated segment {segment_id!r}."
+                    ),
+                    subject=subject,
+                )
+            )
+            continue
+        foreign_clients = sorted(
+            client_id
+            for client_id in requirement.client_device_ids
+            if (client := devices.get(client_id)) is None
+            or _device_segment(client, enterprise) != segment_id
+        )
+        if foreign_clients:
+            issues.append(
+                ConfigurationIssue(
+                    severity=ConfigurationIssueSeverity.ERROR,
+                    code=ConfigurationIssueCode.DHCP_RELAY_REQUIRED,
+                    message=(
+                        "Delegated DHCP clients are missing or outside the server "
+                        "segment: " + ", ".join(foreign_clients)
+                    ),
+                    subject=subject,
+                )
+            )
+            continue
+        if segment_id in delegated:
+            issues.append(
+                ConfigurationIssue(
+                    severity=ConfigurationIssueSeverity.ERROR,
+                    code=ConfigurationIssueCode.DHCP_AUTHORITY_CONFLICT,
+                    message=(
+                        f"Segment {segment_id!r} is delegated to both "
+                        f"{delegated[segment_id]!r} and {requirement.host_device_id!r}."
+                    ),
+                    subject=subject,
+                )
+            )
+            continue
+        if site_id in policy.dhcp_server_device_ids:
+            issues.append(
+                ConfigurationIssue(
+                    severity=ConfigurationIssueSeverity.ERROR,
+                    code=ConfigurationIssueCode.DHCP_AUTHORITY_CONFLICT,
+                    message=(
+                        f"Segment {segment_id!r} has both an explicit IOS DHCP "
+                        "authority and an explicit Server-PT authority."
+                    ),
+                    subject=subject,
+                )
+            )
+            continue
+        delegated[segment_id] = requirement.host_device_id
+
+    policy.delegated_dhcp_segment_ids = sorted(delegated)
+    policy.delegated_dhcp_server_device_ids = dict(sorted(delegated.items()))
 
     return ServicePolicyDerivation(policy=policy, issues=issues)

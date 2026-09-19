@@ -296,14 +296,16 @@ class ConfigurationCompiler:
             static_by_segment, gateway_action_by_segment, gateway_devices, policy, issues,
         )
         actions.extend(pool_actions)
+        delegated_dhcp = set(policy.delegated_dhcp_segment_ids)
         for endpoint, segment, interface, access_dependency in pending_dhcp:
             pool = pool_by_segment.get(segment.name)
-            if pool is None or not interface:
+            delegated = segment.name in delegated_dhcp
+            if (pool is None and not delegated) or not interface:
                 # An entry with no interface only kept its segment's pool alive;
                 # it was never a client this plan can configure.
                 continue
             allocation = allocations[segment.name]
-            dependencies = [pool.id]
+            dependencies = [] if delegated else [pool.id]
             if access_dependency:
                 dependencies.append(access_dependency)
             actions.append(SetEndpointDhcp(
@@ -349,7 +351,10 @@ class ConfigurationCompiler:
         if any(issue.severity is ConfigurationIssueSeverity.ERROR for issue in issues):
             return self._result(None, actions, topology, issues)
 
-        expectations = self._expectations(actions)
+        expectations = self._expectations(
+            actions,
+            delegated_dhcp_segment_ids=set(policy.delegated_dhcp_segment_ids),
+        )
         for action in actions:
             action.apply_dependencies = list(action.depends_on)
         for expectation in expectations:
@@ -1206,8 +1211,19 @@ class ConfigurationCompiler:
         actions: list[ConfigureDhcpPool] = []
         by_segment: dict[str, ConfigureDhcpPool] = {}
         requested = {segment.name for _, segment, _, _ in pending}
+        delegated = set(policy.delegated_dhcp_segment_ids)
         for segment in sorted(site_segments.values(), key=lambda item: item.name):
             if segment.name not in requested or segment.name not in allocations:
+                continue
+            if segment.name in delegated:
+                issues.append(
+                    _warning(
+                        ConfigurationIssueCode.DHCP_DELEGATED_TO_SERVICE,
+                        f"DHCP for segment {segment.name} is delegated to E6; "
+                        "E5 emits no IOS pool.",
+                        segment.name,
+                    )
+                )
                 continue
             server_id = policy.dhcp_server_device_ids.get(segment.site)
             server = devices.get(server_id) if server_id else gateway_devices.get(segment.site)
@@ -1301,7 +1317,12 @@ class ConfigurationCompiler:
         return issues
 
     @staticmethod
-    def _expectations(actions: list[ConfigurationAction]) -> list[VerificationExpectation]:
+    def _expectations(
+        actions: list[ConfigurationAction],
+        *,
+        delegated_dhcp_segment_ids: set[str] | None = None,
+    ) -> list[VerificationExpectation]:
+        delegated_dhcp_segment_ids = delegated_dhcp_segment_ids or set()
         expectations: list[VerificationExpectation] = []
         for action in actions:
             kind: VerificationKind
@@ -1351,6 +1372,12 @@ class ConfigurationCompiler:
                     "serial_endpoint_role": action.serial_endpoint_role,
                     "clock_rate_bps": action.clock_rate_bps,
                 }
+            elif (
+                isinstance(action, SetEndpointDhcp)
+                and action.segment_id in delegated_dhcp_segment_ids
+            ):
+                kind = VerificationKind.ENDPOINT_DHCP_MODE
+                expected = {"mode": "dhcp", "interface": action.interface}
             else:
                 kind = VerificationKind.ENDPOINT_ADDRESSING
                 # The interface travels with the expectation because the

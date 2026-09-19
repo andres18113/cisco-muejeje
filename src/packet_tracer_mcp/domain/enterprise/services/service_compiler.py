@@ -7,10 +7,13 @@ import ipaddress
 import json
 import re
 from collections import defaultdict
+from typing import cast
 
 from ...models.plans import DevicePlan, TopologyPlan
 from ..models.capabilities import CapabilityStatus
 from ..models.configuration import (
+    AddressRange,
+    ConfigureDhcpPool,
     ConfigurationIssue,
     ConfigurationIssueCode,
     ConfigurationIssueSeverity,
@@ -25,19 +28,23 @@ from ..models.enterprise_plan import EnterprisePlan
 from ..models.requirements import ServiceRequirement
 from ..models.roles import DeviceRole
 from ..models.service_plan import (
+    AcquireDhcpLease,
     AddDnsRecord,
     ConfigureEmailClient,
     ConfigureNtpService,
+    ConfigureServerDhcpPool,
     EnableDnsService,
     EnableHttpService,
     EnableHttpsService,
     EnablePop3Service,
     EnableSmtpService,
+    EnableServerDhcp,
     EnableTftpService,
     EnsureEmailAccount,
     FoundationalServiceRequirement,
     PublishTftpFile,
     SendMailMessage,
+    ServerDhcpPoolRequirement,
     ServiceAction,
     ServiceCapabilityProfile,
     ServiceCompileResult,
@@ -76,6 +83,7 @@ _SERVICE_PROTOCOLS = {
     ServiceType.TFTP: ("udp", [69]),
     ServiceType.SMTP: ("tcp", [25]),
     ServiceType.POP3: ("tcp", [110]),
+    ServiceType.DHCP: ("udp", [67, 68]),
 }
 _SERVICE_HOST_ROLES = {
     ServiceType.DNS: (DeviceRole.DNS_SERVER.value, DeviceRole.SERVER.value),
@@ -85,10 +93,13 @@ _SERVICE_HOST_ROLES = {
     ServiceType.TFTP: (DeviceRole.TFTP_SERVER.value, DeviceRole.SERVER.value),
     ServiceType.SMTP: (DeviceRole.SERVER.value,),
     ServiceType.POP3: (DeviceRole.SERVER.value,),
+    ServiceType.DHCP: (DeviceRole.DHCP_SERVER.value, DeviceRole.SERVER.value),
 }
 #: The mail families select their clients from the requirement's own lists and
 #: never by role, so a PC that is not an email client is never touched.
 _MAIL_TYPES = frozenset({ServiceType.SMTP, ServiceType.POP3})
+_SAFE_DHCP_POOL_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+MAX_SERVER_DHCP_USERS = 4096
 
 
 def _issue(
@@ -167,6 +178,16 @@ class ServiceCompiler:
             item.device_id: item
             for item in configuration.actions
             if isinstance(item, (SetEndpointStaticAddress, SetEndpointDhcp))
+        }
+        dhcp_mode_action_ids = {
+            item.action_id
+            for item in configuration.verification_expectations
+            if item.kind.value == ServiceVerificationKind.ENDPOINT_DHCP_MODE.value
+        }
+        ios_dhcp_segments = {
+            item.segment_id
+            for item in configuration.actions
+            if isinstance(item, ConfigureDhcpPool)
         }
         l3_foundations: dict[str, list[object]] = defaultdict(list)
         for item in configuration.actions:
@@ -257,6 +278,25 @@ class ServiceCompiler:
                     issues,
                     service_id,
                 )
+            elif service_type is ServiceType.DHCP:
+                client_ids = self._dhcp_clients(
+                    requirement,
+                    host_id,
+                    devices,
+                    foundations,
+                    dhcp_mode_action_ids,
+                    issues,
+                    service_id,
+                )
+                if requirement.segment_id in ios_dhcp_segments:
+                    issues.append(
+                        _error(
+                            ConfigurationIssueCode.DHCP_AUTHORITY_CONFLICT,
+                            f"Delegated segment {requirement.segment_id!r} still "
+                            "contains an E5 IOS DHCP pool.",
+                            service_id,
+                        )
+                    )
             else:
                 client_ids = self._clients(
                     requirement,
@@ -267,12 +307,18 @@ class ServiceCompiler:
                     issues,
                     service_id,
                 )
-            self._add_foundation(foundation_requirements, host, host_foundation)
+            self._add_foundation(
+                foundation_requirements,
+                host,
+                host_foundation,
+                dhcp_mode_action_ids=dhcp_mode_action_ids,
+            )
             for client_id in client_ids:
                 self._add_foundation(
                     foundation_requirements,
                     devices[client_id],
                     foundations[client_id],
+                    dhcp_mode_action_ids=dhcp_mode_action_ids,
                 )
                 client_foundation = foundations[client_id]
                 if client_foundation.segment_id != host_foundation.segment_id:
@@ -310,6 +356,7 @@ class ServiceCompiler:
                             foundation_requirements,
                             gateway_device,
                             gateway_action,
+                            dhcp_mode_action_ids=dhcp_mode_action_ids,
                         )
 
             profile = capabilities.get(f"{host.model}:{service_type.value}")
@@ -348,6 +395,18 @@ class ServiceCompiler:
                     host,
                     address,
                     client_ids,
+                    devices,
+                    issues,
+                )
+            elif service_type is ServiceType.DHCP:
+                service_actions = self._dhcp_actions(
+                    service_id,
+                    requirement,
+                    host,
+                    host_foundation,
+                    client_ids,
+                    foundations,
+                    configuration,
                     devices,
                     issues,
                 )
@@ -448,8 +507,50 @@ class ServiceCompiler:
         )
         if not errors:
             expectations = self._expectations(
-                services, actions, source_requirements, devices
+                services,
+                actions,
+                source_requirements,
+                devices,
+                foundations,
             )
+            lease_by_client = {
+                item.client_device_id: item.id
+                for item in expectations
+                if item.kind is ServiceVerificationKind.DHCP_LEASE
+                and item.client_device_id
+            }
+            server_state_by_service = {
+                item.service_id: item.id
+                for item in expectations
+                if item.kind is ServiceVerificationKind.DHCP_SERVER_STATE
+            }
+            for action in actions:
+                if isinstance(action, AcquireDhcpLease):
+                    action.verification_dependencies = [
+                        server_state_by_service[action.service_id]
+                    ]
+                elif (
+                    action.service_type is not ServiceType.DHCP
+                    and action.host_device_id in lease_by_client
+                ):
+                    action.verification_dependencies = [
+                        lease_by_client[action.host_device_id]
+                    ]
+            for expectation in expectations:
+                if (
+                    expectation.kind
+                    not in {
+                        ServiceVerificationKind.DHCP_LEASE,
+                        ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED,
+                    }
+                    and expectation.client_device_id in lease_by_client
+                ):
+                    expectation.depends_on = sorted(
+                        {
+                            *expectation.depends_on,
+                            lease_by_client[expectation.client_device_id],
+                        }
+                    )
             for action in actions:
                 action.apply_dependencies = list(action.depends_on)
             for expectation in expectations:
@@ -605,6 +706,74 @@ class ServiceCompiler:
                 )
             else:
                 valid.append(client_id)
+        return valid
+
+    @staticmethod
+    def _dhcp_clients(
+        requirement: ServiceRequirement,
+        host_id: str,
+        devices: dict[str, DevicePlan],
+        foundations: dict[str, object],
+        dhcp_mode_action_ids: set[str],
+        issues: list[ConfigurationIssue],
+        service_id: str,
+    ) -> list[str]:
+        """Select only delegated DHCP clients with a mode-only E5 contract."""
+        requested = sorted(set(requirement.client_device_ids))
+        if not requested:
+            requested = sorted(
+                device_id
+                for device_id, action in foundations.items()
+                if device_id != host_id
+                and isinstance(action, SetEndpointDhcp)
+                and action.segment_id == requirement.segment_id
+            )
+        valid: list[str] = []
+        for client_id in requested:
+            action = foundations.get(client_id)
+            if client_id not in devices:
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.SERVICE_CLIENT_MISSING,
+                        f"DHCP client {client_id!r} does not exist in E4.",
+                        service_id,
+                    )
+                )
+            elif not isinstance(action, SetEndpointDhcp):
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.FOUNDATIONAL_CONFIGURATION_MISSING,
+                        f"DHCP client {client_id!r} has no E5 DHCP-mode action.",
+                        service_id,
+                    )
+                )
+            elif action.segment_id != requirement.segment_id:
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.DHCP_RELAY_REQUIRED,
+                        f"DHCP client {client_id!r} is on {action.segment_id!r}, not "
+                        f"delegated segment {requirement.segment_id!r}.",
+                        service_id,
+                    )
+                )
+            elif action.id not in dhcp_mode_action_ids:
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.FOUNDATIONAL_CONFIGURATION_MISSING,
+                        f"DHCP client {client_id!r} lacks the delegated mode reader.",
+                        service_id,
+                    )
+                )
+            else:
+                valid.append(client_id)
+        if not valid:
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.FOUNDATIONAL_CONFIGURATION_MISSING,
+                    "A delegated DHCP service needs at least one bound client.",
+                    service_id,
+                )
+            )
         return valid
 
     @staticmethod
@@ -883,7 +1052,13 @@ class ServiceCompiler:
         return sorted(pairs)
 
     @staticmethod
-    def _add_foundation(target, device: DevicePlan, action) -> None:
+    def _add_foundation(
+        target,
+        device: DevicePlan,
+        action,
+        *,
+        dhcp_mode_action_ids: set[str],
+    ) -> None:
         device_id = device.id or device.name
         target[action.id] = FoundationalServiceRequirement(
             id=_stable_id("foundation", device_id, action.id),
@@ -899,11 +1074,274 @@ class ServiceCompiler:
             # row is how an L3 interface could be promoted by the endpoint core
             # predicate, which only describes an endpoint.
             kind=(
-                "endpoint_address"
+                "endpoint_dhcp_mode"
+                if action.id in dhcp_mode_action_ids
+                else "endpoint_address"
                 if isinstance(action, (SetEndpointStaticAddress, SetEndpointDhcp))
                 else "l3_interface"
             ),
         )
+
+    def _dhcp_actions(
+        self,
+        service_id: str,
+        requirement: ServiceRequirement,
+        host: DevicePlan,
+        host_foundation: SetEndpointStaticAddress,
+        client_ids: list[str],
+        foundations: dict[str, object],
+        configuration: ConfigurationPlan,
+        devices: dict[str, DevicePlan],
+        issues: list[ConfigurationIssue],
+    ) -> list[ServiceAction]:
+        """Compile one validated same-segment Server-PT DHCP service."""
+        requested = requirement.dhcp_pool or ServerDhcpPoolRequirement()
+        interface = requested.interface.strip() or host_foundation.interface
+        if not interface or interface != host_foundation.interface:
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.DHCP_INTERFACE_MISSING,
+                    f"DHCP interface {interface!r} does not equal the static "
+                    f"server interface {host_foundation.interface!r}.",
+                    service_id,
+                )
+            )
+            return []
+        if requested.start_offset < 0 or requested.max_users < 0:
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.DHCP_POOL_INVALID,
+                    "DHCP start_offset and max_users must be non-negative.",
+                    service_id,
+                )
+            )
+            return []
+        max_users = requested.max_users or len(client_ids)
+        if not 0 < max_users <= MAX_SERVER_DHCP_USERS:
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.DHCP_POOL_INVALID,
+                    f"DHCP max_users must be between 1 and {MAX_SERVER_DHCP_USERS}.",
+                    service_id,
+                )
+            )
+            return []
+        client_actions = [foundations[client_id] for client_id in client_ids]
+        first = cast(SetEndpointDhcp, client_actions[0])
+        if any(
+            not isinstance(item, SetEndpointDhcp)
+            or (
+                item.segment_id,
+                item.network,
+                item.prefix,
+                item.netmask,
+                item.gateway,
+                item.dns_server or "",
+            )
+            != (
+                first.segment_id,
+                first.network,
+                first.prefix,
+                first.netmask,
+                first.gateway,
+                first.dns_server or "",
+            )
+            for item in client_actions
+        ):
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.DHCP_POOL_INVALID,
+                    "Delegated DHCP clients do not share one allocation.",
+                    service_id,
+                )
+            )
+            return []
+        try:
+            network = ipaddress.ip_network(f"{first.network}/{first.prefix}")
+            server_address = ipaddress.ip_address(host_foundation.ipv4)
+            gateway = ipaddress.ip_address(first.gateway)
+        except ValueError:
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.DHCP_POOL_INVALID,
+                    "The delegated DHCP allocation is not valid IPv4.",
+                    service_id,
+                )
+            )
+            return []
+        if (
+            server_address not in network
+            or gateway not in network
+            or str(network.netmask) != first.netmask
+            or host_foundation.segment_id != first.segment_id
+        ):
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.DHCP_POOL_INVALID,
+                    "The DHCP server, gateway, network and mask are inconsistent.",
+                    service_id,
+                )
+            )
+            return []
+        static = {
+            ipaddress.ip_address(item.ipv4)
+            for item in configuration.actions
+            if isinstance(item, SetEndpointStaticAddress)
+            and item.segment_id == first.segment_id
+        }
+        excluded = sorted({server_address, gateway, *static})
+        excluded_ranges = self._compact_address_ranges(excluded)
+        window = self._lease_window(
+            network,
+            excluded_ranges,
+            start_offset=requested.start_offset,
+            max_users=max_users,
+        )
+        if window is None:
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.DHCP_POOL_INVALID,
+                    "The delegated segment has no bounded usable DHCP range.",
+                    service_id,
+                )
+            )
+            return []
+        lease_start, lease_end = window
+        pool_name = requested.pool_name.strip() or re.sub(
+            r"[^A-Za-z0-9]+", "_", first.segment_id.upper()
+        ).strip("_")
+        if not _SAFE_DHCP_POOL_NAME.fullmatch(pool_name):
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.DHCP_POOL_INVALID,
+                    f"DHCP pool name {pool_name!r} is not safe.",
+                    service_id,
+                )
+            )
+            return []
+        common = dict(
+            service_id=service_id,
+            service_type=ServiceType.DHCP,
+            host_device_id=host.id or host.name,
+            host_device_name=host.name,
+            host_model=host.model,
+            site_id=host.site_id,
+            required_capability="service_dhcp_application",
+        )
+        enable = EnableServerDhcp(
+            id=_stable_id("enable-server-dhcp", service_id, interface),
+            phase=ServicePhase.ENABLE,
+            interface=interface,
+            **common,
+        )
+        pool = ConfigureServerDhcpPool(
+            id=_stable_id("server-dhcp-pool", service_id, pool_name),
+            phase=ServicePhase.CONTENT,
+            depends_on=[enable.id],
+            interface=interface,
+            pool_name=pool_name,
+            segment_id=first.segment_id,
+            network=str(network.network_address),
+            prefix=network.prefixlen,
+            netmask=str(network.netmask),
+            gateway=str(gateway),
+            dns_server=first.dns_server or "",
+            lease_start=lease_start,
+            lease_end=lease_end,
+            max_users=max_users,
+            excluded_ranges=excluded_ranges,
+            **common,
+        )
+        actions: list[ServiceAction] = [enable, pool]
+        if requirement.verification_mode == "configure_only":
+            return actions
+        for client_id in client_ids:
+            client_action = foundations[client_id]
+            client_action = cast(SetEndpointDhcp, client_action)
+            client = devices[client_id]
+            actions.append(
+                AcquireDhcpLease(
+                    id=_stable_id("acquire-dhcp", service_id, client_id),
+                    phase=ServicePhase.ACQUISITION,
+                    service_id=service_id,
+                    service_type=ServiceType.DHCP,
+                    host_device_id=client_id,
+                    host_device_name=client.name,
+                    host_model=client.model,
+                    site_id=client.site_id,
+                    depends_on=[pool.id],
+                    required_capability="client_dhcp_acquisition",
+                    interface=client_action.interface,
+                    segment_id=first.segment_id,
+                    server_device_id=host.id or host.name,
+                    server_device_name=host.name,
+                    pool_name=pool_name,
+                    network=str(network.network_address),
+                    prefix=network.prefixlen,
+                    netmask=str(network.netmask),
+                )
+            )
+        return actions
+
+    @staticmethod
+    def _compact_address_ranges(
+        values: list[ipaddress.IPv4Address],
+    ) -> list[AddressRange]:
+        """Collapse exclusions without enumerating a subnet."""
+        if not values:
+            return []
+        ranges: list[AddressRange] = []
+        start = previous = values[0]
+        for value in values[1:]:
+            if int(value) == int(previous) + 1:
+                previous = value
+                continue
+            ranges.append(AddressRange(start=str(start), end=str(previous)))
+            start = previous = value
+        ranges.append(AddressRange(start=str(start), end=str(previous)))
+        return ranges
+
+    @staticmethod
+    def _lease_window(
+        network: ipaddress.IPv4Network,
+        excluded_ranges: list[AddressRange],
+        *,
+        start_offset: int,
+        max_users: int,
+    ) -> tuple[str, str] | None:
+        """Return the first bounded capacity window using compact intervals."""
+        lower = int(network.network_address) + 1 + start_offset
+        upper = int(network.broadcast_address) - 1
+        if lower > upper:
+            return None
+        exclusions = sorted(
+            (int(ipaddress.ip_address(item.start)), int(ipaddress.ip_address(item.end)))
+            for item in excluded_ranges
+        )
+        cursor = lower
+        remaining = max_users
+        first: int | None = None
+        last: int | None = None
+        for excluded_start, excluded_end in [*exclusions, (upper + 1, upper + 1)]:
+            if excluded_end < cursor:
+                continue
+            interval_end = min(upper, excluded_start - 1)
+            if cursor <= interval_end:
+                if first is None:
+                    first = cursor
+                available = interval_end - cursor + 1
+                if available >= remaining:
+                    last = cursor + remaining - 1
+                    remaining = 0
+                    break
+                remaining -= available
+                last = interval_end
+            cursor = max(cursor, excluded_end + 1)
+            if cursor > upper:
+                break
+        if remaining or first is None or last is None:
+            return None
+        return str(ipaddress.ip_address(first)), str(ipaddress.ip_address(last))
 
     def _actions(
         self,
@@ -1086,7 +1524,7 @@ class ServiceCompiler:
             ],
         ]
 
-    def _expectations(self, services, actions, requirements, devices):
+    def _expectations(self, services, actions, requirements, devices, foundations):
         by_service: dict[str, list[ServiceAction]] = defaultdict(list)
         for action in actions:
             by_service[action.service_id].append(action)
@@ -1109,7 +1547,11 @@ class ServiceCompiler:
                 id=_stable_id("verify-direct", service.id),
                 service_id=service.id,
                 action_id=terminal.id,
-                kind=ServiceVerificationKind.DIRECT_SERVICE_STATE,
+                kind=(
+                    ServiceVerificationKind.DHCP_SERVER_STATE
+                    if service.service_type is ServiceType.DHCP
+                    else ServiceVerificationKind.DIRECT_SERVICE_STATE
+                ),
                 evidence_kind=ServiceEvidenceKind.DIRECT_STATE,
                 host_device_id=service.host_device_id,
                 host_device_name=service.host_device_name,
@@ -1148,6 +1590,34 @@ class ServiceCompiler:
                     ],
                     separators=(",", ":"),
                 )
+            elif service.service_type is ServiceType.DHCP:
+                pool = next(
+                    item
+                    for item in service_actions
+                    if isinstance(item, ConfigureServerDhcpPool)
+                )
+                direct.expected.update(
+                    {
+                        "interface": pool.interface,
+                        "pool_name": pool.pool_name,
+                        "network": pool.network,
+                        "prefix": pool.prefix,
+                        "netmask": pool.netmask,
+                        "gateway": pool.gateway,
+                        "dns_server": pool.dns_server,
+                        "lease_start": pool.lease_start,
+                        "lease_end": pool.lease_end,
+                        "max_users": pool.max_users,
+                        "excluded_ranges_json": json.dumps(
+                            [
+                                item.model_dump(mode="json")
+                                for item in pool.excluded_ranges
+                            ],
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                    }
+                )
             expectations.append(direct)
             if service.service_type is ServiceType.SMTP:
                 expectations.extend(
@@ -1164,6 +1634,67 @@ class ServiceCompiler:
                 )
                 continue
             requirement = requirements[service.id]
+            if service.service_type is ServiceType.DHCP:
+                pool = next(
+                    item
+                    for item in service_actions
+                    if isinstance(item, ConfigureServerDhcpPool)
+                )
+                acquisitions = {
+                    item.host_device_id: item
+                    for item in service_actions
+                    if isinstance(item, AcquireDhcpLease)
+                }
+                for client_id in service.client_device_ids:
+                    client = devices[client_id]
+                    foundation = cast(SetEndpointDhcp, foundations[client_id])
+                    acquisition = acquisitions.get(client_id)
+                    lease = ServiceVerificationExpectation(
+                        id=_stable_id("verify-dhcp-lease", service.id, client_id),
+                        service_id=service.id,
+                        action_id=(acquisition.id if acquisition else pool.id),
+                        kind=ServiceVerificationKind.DHCP_LEASE,
+                        evidence_kind=ServiceEvidenceKind.BEHAVIORAL,
+                        host_device_id=service.host_device_id,
+                        host_device_name=service.host_device_name,
+                        client_device_id=client_id,
+                        client_device_name=client.name,
+                        host_model=service.host_model,
+                        client_model=client.model,
+                        expected={
+                            "interface": foundation.interface,
+                            "server_interface": pool.interface,
+                            "network": pool.network,
+                            "prefix": pool.prefix,
+                            "netmask": pool.netmask,
+                            "configure_only": acquisition is None,
+                            "server_device_id": service.host_device_id,
+                            "server_device_name": service.host_device_name,
+                            "pool_name": pool.pool_name,
+                            "max_users": pool.max_users,
+                        },
+                    )
+                    expectations.append(lease)
+                    expectations.append(
+                        ServiceVerificationExpectation(
+                            id=_stable_id(
+                                "verify-dhcp-attribution", service.id, client_id
+                            ),
+                            service_id=service.id,
+                            action_id=pool.id,
+                            kind=ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED,
+                            evidence_kind=ServiceEvidenceKind.DIRECT_STATE,
+                            host_device_id=service.host_device_id,
+                            host_device_name=service.host_device_name,
+                            client_device_id=client_id,
+                            client_device_name=client.name,
+                            host_model=service.host_model,
+                            client_model=client.model,
+                            expected=dict(lease.expected),
+                            required=False,
+                        )
+                    )
+                continue
             # `verification_required=False` makes the expectations OPTIONAL, it
             # does not delete them. Compiling nothing would leave the selected
             # clients with no row at all, and R-COV-01 requires a row per
@@ -1503,6 +2034,11 @@ class ServiceCompiler:
     def _semantic_hash(plan: ServicePlan) -> str:
         payload = plan.model_dump(mode="json")
         payload["semantic_hash"] = ""
+        # Additive scheduling metadata must not perturb legacy plan identities
+        # when it is absent. Non-empty prerequisites remain hash-bound.
+        for action in payload["actions"]:
+            if not action.get("verification_dependencies"):
+                action.pop("verification_dependencies", None)
         canonical = json.dumps(
             payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
         )

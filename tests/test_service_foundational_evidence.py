@@ -17,6 +17,7 @@ from packet_tracer_mcp.application.use_cases.foundational_evidence import (
     derive_service_foundational_statuses,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    ActionApplicationResult,
     ActionExecutionStatus,
     ConfigurationApplicationResult,
     ConfigurationApplicationStatus,
@@ -33,6 +34,7 @@ _CONFIG_ID = "cfg_reference"
 _CONFIG_HASH = "cfg-hash"
 _ENDPOINT_ACTION = "cfg/endpoint-static/hq-server-01"
 _SWITCH_ACTION = "cfg/svi/hq-mls-01"
+_DHCP_ACTION = "cfg/endpoint-dhcp/hq-client-01"
 
 
 def _plan(
@@ -69,14 +71,78 @@ def _config(
     *verifications: VerificationResult,
     plan_id: str = _CONFIG_ID,
     semantic_hash: str = _CONFIG_HASH,
+    action_results: list[ActionApplicationResult] | None = None,
 ) -> ConfigurationApplicationResult:
     return ConfigurationApplicationResult(
         config_plan_id=plan_id,
         config_semantic_hash=semantic_hash,
         source_topology_hash="topo-hash",
         status=ConfigurationApplicationStatus.VERIFIED,
+        action_results=list(action_results or []),
         verification_results=list(verifications),
     )
+
+
+def _dhcp_mode_requirement() -> FoundationalServiceRequirement:
+    return FoundationalServiceRequirement(
+        id="svc/foundation/client-mode",
+        device_id="hq/client/1",
+        device_name="HQ-CLIENT-01",
+        model="PC-PT",
+        ipv4="",
+        segment_id="hq/data",
+        configuration_action_id=_DHCP_ACTION,
+        kind="endpoint_dhcp_mode",
+    )
+
+
+def _dhcp_mode_row(
+    *,
+    status: ActionExecutionStatus = ActionExecutionStatus.VERIFIED,
+    interface: str = "FastEthernet0",
+    observed_interface: str | None = None,
+    fresh_evidence: bool = True,
+) -> VerificationResult:
+    return VerificationResult(
+        expectation_id="cfg/verify/client-mode",
+        action_id=_DHCP_ACTION,
+        status=status,
+        evidence_method="structured_endpoint_dhcp_mode",
+        fresh_evidence=fresh_evidence,
+        fields={
+            "dhcp_mode": (
+                FieldVerificationStatus.VERIFIED
+                if status is ActionExecutionStatus.VERIFIED
+                else FieldVerificationStatus.FAILED
+            )
+        },
+        convergence=ConvergenceReport(
+            attempts=1,
+            final_status=status,
+            details={
+                "kind": "endpoint_dhcp_mode",
+                "device_name": "HQ-CLIENT-01",
+                "interface": interface,
+                "last_observation": {
+                    "device_found": True,
+                    "port_found": True,
+                    "mode_channel": True,
+                    "interface": (
+                        interface if observed_interface is None else observed_interface
+                    ),
+                    "dhcp_mode": status is ActionExecutionStatus.VERIFIED,
+                    "fresh_evidence": fresh_evidence,
+                    "failure_reason": "",
+                },
+            },
+        ),
+    )
+
+
+def _applied_dhcp_mode(
+    status: ActionExecutionStatus = ActionExecutionStatus.APPLIED,
+) -> ActionApplicationResult:
+    return ActionApplicationResult(action_id=_DHCP_ACTION, status=status)
 
 
 def _endpoint_core(
@@ -174,6 +240,64 @@ def test_a_non_endpoint_foundation_copies_its_verification_status():
     statuses = derive_service_foundational_statuses(_plan(requirement), _config(row))
 
     assert statuses == {_SWITCH_ACTION: ActionExecutionStatus.VERIFIED}
+
+
+def test_fresh_true_dhcp_mode_satisfies_without_an_address():
+    """S3-02: bootstrap proves mode on the exact port, not acquisition."""
+    statuses = derive_service_foundational_statuses(
+        _plan(_dhcp_mode_requirement()),
+        _config(
+            _dhcp_mode_row(),
+            action_results=[_applied_dhcp_mode()],
+        ),
+    )
+
+    assert statuses == {_DHCP_ACTION: ActionExecutionStatus.VERIFIED}
+
+
+def test_applied_alone_never_satisfies_dhcp_mode():
+    statuses = derive_service_foundational_statuses(
+        _plan(_dhcp_mode_requirement()),
+        _config(action_results=[_applied_dhcp_mode()]),
+    )
+
+    assert statuses == {}
+
+
+def test_false_dhcp_mode_is_a_fresh_contradiction():
+    statuses = derive_service_foundational_statuses(
+        _plan(_dhcp_mode_requirement()),
+        _config(
+            _dhcp_mode_row(status=ActionExecutionStatus.FAILED),
+            action_results=[_applied_dhcp_mode()],
+        ),
+    )
+
+    assert statuses == {_DHCP_ACTION: ActionExecutionStatus.FAILED}
+
+
+def test_dhcp_mode_on_another_interface_grants_nothing():
+    statuses = derive_service_foundational_statuses(
+        _plan(_dhcp_mode_requirement()),
+        _config(
+            _dhcp_mode_row(observed_interface="FastEthernet1"),
+            action_results=[_applied_dhcp_mode()],
+        ),
+    )
+
+    assert statuses == {_DHCP_ACTION: ActionExecutionStatus.UNKNOWN}
+
+
+def test_uncertain_dhcp_mode_dispatch_cannot_found_e6():
+    statuses = derive_service_foundational_statuses(
+        _plan(_dhcp_mode_requirement()),
+        _config(
+            _dhcp_mode_row(),
+            action_results=[_applied_dhcp_mode(ActionExecutionStatus.UNKNOWN)],
+        ),
+    )
+
+    assert statuses == {_DHCP_ACTION: ActionExecutionStatus.UNKNOWN}
 
 
 # -- what does not -------------------------------------------------------

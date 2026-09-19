@@ -162,6 +162,58 @@ def endpoint_core_is_verified(
     )
 
 
+def endpoint_dhcp_mode_is_verified(
+    *,
+    requirement: FoundationalServiceRequirement,
+    configuration_result: ConfigurationApplicationResult,
+    verification: VerificationResult,
+) -> bool:
+    """Whether E5 freshly proved DHCP mode on the exact delegated interface."""
+    actions = [
+        item
+        for item in configuration_result.action_results
+        if item.action_id == requirement.configuration_action_id
+    ]
+    if (
+        len(actions) != 1
+        or actions[0].status
+        not in {
+            ActionExecutionStatus.APPLIED,
+            ActionExecutionStatus.NO_OP,
+            ActionExecutionStatus.REASSERTED,
+            ActionExecutionStatus.VERIFIED,
+        }
+        or verification.action_id != requirement.configuration_action_id
+        or verification.status is not ActionExecutionStatus.VERIFIED
+        or verification.evidence_method != "structured_endpoint_dhcp_mode"
+        or not verification.fresh_evidence
+        or verification.fields.get("dhcp_mode")
+        is not FieldVerificationStatus.VERIFIED
+        or verification.convergence is None
+        or verification.convergence.final_status is not verification.status
+    ):
+        return False
+    details = verification.convergence.details
+    observation = details.get("last_observation")
+    if not isinstance(observation, Mapping):
+        return False
+    interface = details.get("interface")
+    return bool(
+        details.get("kind") == "endpoint_dhcp_mode"
+        and isinstance(details.get("device_name"), str)
+        and str(details.get("device_name")).strip()
+        and isinstance(interface, str)
+        and interface.strip()
+        and observation.get("device_found") is True
+        and observation.get("port_found") is True
+        and observation.get("mode_channel") is True
+        and observation.get("interface") == interface
+        and observation.get("dhcp_mode") is True
+        and observation.get("fresh_evidence") is True
+        and observation.get("failure_reason") in (None, "")
+    )
+
+
 def _configuration_foundation_status(
     plan: ControlPlanePlan,
     requirement: ControlPlaneFoundationRequirement,
@@ -389,6 +441,16 @@ def _service_foundation_status(
         # The rows describe a different configuration than the one this E6
         # plan was compiled against. They are evidence about something else.
         return ActionExecutionStatus.UNKNOWN
+    if requirement.kind == "endpoint_dhcp_mode":
+        if endpoint_dhcp_mode_is_verified(
+            requirement=requirement,
+            configuration_result=configuration_result,
+            verification=verification,
+        ):
+            return ActionExecutionStatus.VERIFIED
+        if verification.status is ActionExecutionStatus.VERIFIED:
+            return ActionExecutionStatus.UNKNOWN
+        return verification.status
     if requirement.kind != "endpoint_address":
         return verification.status
     if endpoint_core_is_verified(
