@@ -43,6 +43,7 @@ from ...infrastructure.execution.enterprise_service_runtime import (
 from ...infrastructure.execution.import_isolation_preflight import (
     ImportIsolationPreflight,
 )
+from ...infrastructure.execution.secret_resolver import EnvironmentSecretResolver
 from ...infrastructure.execution.transport_outcome import BridgeDispatchOutcome
 from ...infrastructure.persistence.deployment_manifest_store import (
     DeploymentManifestStore,
@@ -154,6 +155,9 @@ def register_service_tools(
             endpoint_reader = PacketTracerEndpointAddressObserver(
                 bound_send_and_wait,
             )
+            # One resolver per invocation: admission and the runtime resolve
+            # through the same instance, and nothing outlives the call.
+            secret_resolver = EnvironmentSecretResolver()
             configuration_runtime = PacketTracerEnterpriseConfigurationRuntime(
                 cached_inventory,
                 bound_send_payload,
@@ -164,6 +168,7 @@ def register_service_tools(
                 cached_inventory,
                 bound_send_and_wait,
                 dispatch_and_wait=bound_dispatch_and_wait,
+                secret_resolver=secret_resolver,
             )
 
             def inventory_reader(
@@ -195,6 +200,7 @@ def register_service_tools(
                 source_tree=_observe_source_tree(governed_root),
                 endpoint_observer=endpoint_reader,
                 inventory_reader=inventory_reader,
+                secret_resolver=secret_resolver,
             )
 
         result = apply_enterprise_services(

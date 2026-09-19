@@ -26,13 +26,18 @@ from ..models.requirements import ServiceRequirement
 from ..models.roles import DeviceRole
 from ..models.service_plan import (
     AddDnsRecord,
+    ConfigureEmailClient,
     ConfigureNtpService,
     EnableDnsService,
     EnableHttpService,
     EnableHttpsService,
+    EnablePop3Service,
+    EnableSmtpService,
     EnableTftpService,
+    EnsureEmailAccount,
     FoundationalServiceRequirement,
     PublishTftpFile,
+    SendMailMessage,
     ServiceAction,
     ServiceCapabilityProfile,
     ServiceCompileResult,
@@ -60,12 +65,17 @@ _HOSTNAME_RE = re.compile(
 )
 _SAFE_TFTP_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,126}$")
 _SAFE_HTTP_CONTENT = re.compile(r"^[\x20-\x7E\r\n\t]{0,4096}$")
+_MAIL_USER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")
+_MAIL_DISPLAY = re.compile(r"^[\x20-\x7E]{0,64}$")
+_SECRET_REF = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 _SERVICE_PROTOCOLS = {
     ServiceType.DNS: ("udp/tcp", [53]),
     ServiceType.HTTP: ("tcp", [80]),
     ServiceType.HTTPS: ("tcp", [443]),
     ServiceType.NTP: ("udp", [123]),
     ServiceType.TFTP: ("udp", [69]),
+    ServiceType.SMTP: ("tcp", [25]),
+    ServiceType.POP3: ("tcp", [110]),
 }
 _SERVICE_HOST_ROLES = {
     ServiceType.DNS: (DeviceRole.DNS_SERVER.value, DeviceRole.SERVER.value),
@@ -73,7 +83,12 @@ _SERVICE_HOST_ROLES = {
     ServiceType.HTTPS: (DeviceRole.WEB_SERVER.value, DeviceRole.SERVER.value),
     ServiceType.NTP: (DeviceRole.NTP_SERVER.value, DeviceRole.SERVER.value),
     ServiceType.TFTP: (DeviceRole.TFTP_SERVER.value, DeviceRole.SERVER.value),
+    ServiceType.SMTP: (DeviceRole.SERVER.value,),
+    ServiceType.POP3: (DeviceRole.SERVER.value,),
 }
+#: The mail families select their clients from the requirement's own lists and
+#: never by role, so a PC that is not an email client is never touched.
+_MAIL_TYPES = frozenset({ServiceType.SMTP, ServiceType.POP3})
 
 
 def _issue(
@@ -233,15 +248,25 @@ class ServiceCompiler:
                     )
                 )
 
-            client_ids = self._clients(
-                requirement,
-                site_id,
-                host_id,
-                devices,
-                foundations,
-                issues,
-                service_id,
-            )
+            if service_type in _MAIL_TYPES:
+                client_ids = self._mail_clients(
+                    requirement,
+                    service_type,
+                    devices,
+                    foundations,
+                    issues,
+                    service_id,
+                )
+            else:
+                client_ids = self._clients(
+                    requirement,
+                    site_id,
+                    host_id,
+                    devices,
+                    foundations,
+                    issues,
+                    service_id,
+                )
             self._add_foundation(foundation_requirements, host, host_foundation)
             for client_id in client_ids:
                 self._add_foundation(
@@ -316,15 +341,26 @@ class ServiceCompiler:
                     )
                 )
 
-            service_actions = self._actions(
-                service_id,
-                requirement,
-                service_type,
-                host,
-                host_foundation,
-                devices,
-                issues,
-            )
+            if service_type is ServiceType.SMTP:
+                service_actions = self._mail_actions(
+                    service_id,
+                    requirement,
+                    host,
+                    address,
+                    client_ids,
+                    devices,
+                    issues,
+                )
+            else:
+                service_actions = self._actions(
+                    service_id,
+                    requirement,
+                    service_type,
+                    host,
+                    host_foundation,
+                    devices,
+                    issues,
+                )
             if profile is not None:
                 for action in service_actions:
                     # One resolution, the same one admission and execution use:
@@ -572,6 +608,281 @@ class ServiceCompiler:
         return valid
 
     @staticmethod
+    def _mail_clients(
+        requirement: ServiceRequirement,
+        service_type: ServiceType,
+        devices: dict[str, DevicePlan],
+        foundations: dict[str, object],
+        issues: list[ConfigurationIssue],
+        service_id: str,
+    ) -> list[str]:
+        """Select exactly the requirement's email clients, never by role.
+
+        An SMTP service selects the devices its `email_clients` name; a POP3
+        service selects none, because every per-pair row belongs to the SMTP
+        service so that no expectation depends across services. A separately
+        listed `client_device_ids` that disagrees is refused rather than
+        silently ignored.
+        """
+        if service_type is ServiceType.POP3:
+            if requirement.client_device_ids:
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.EMAIL_CLIENT_INVALID,
+                        "A POP3 service selects no clients; its retrieval rows "
+                        "belong to the SMTP service on the same host.",
+                        service_id,
+                    )
+                )
+            return []
+        listed = [item.client_device_id for item in requirement.email_clients]
+        duplicates = sorted({item for item in listed if listed.count(item) > 1})
+        for device_id in duplicates:
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.EMAIL_CLIENT_INVALID,
+                    f"Email client {device_id!r} is listed more than once.",
+                    service_id,
+                )
+            )
+        requested = sorted(set(listed))
+        if (
+            requirement.client_device_ids
+            and sorted(set(requirement.client_device_ids)) != requested
+        ):
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.EMAIL_CLIENT_INVALID,
+                    "client_device_ids must equal the email clients of an SMTP "
+                    "service.",
+                    service_id,
+                )
+            )
+        valid: list[str] = []
+        for client_id in requested:
+            if client_id not in devices:
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.SERVICE_CLIENT_MISSING,
+                        f"Service client {client_id!r} does not exist in E4.",
+                        service_id,
+                    )
+                )
+            elif client_id not in foundations:
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.FOUNDATIONAL_CONFIGURATION_MISSING,
+                        f"Service client {client_id!r} has no E5 endpoint addressing action.",
+                        service_id,
+                    )
+                )
+            else:
+                valid.append(client_id)
+        return valid
+
+    def _mail_actions(
+        self,
+        service_id: str,
+        requirement: ServiceRequirement,
+        host: DevicePlan,
+        address: str,
+        client_ids: list[str],
+        devices: dict[str, DevicePlan],
+        issues: list[ConfigurationIssue],
+    ) -> list[ServiceAction]:
+        """Compile the SMTP family: server, accounts, clients and messages.
+
+        Pairs are explicit when the requirement lists them, else a ring over
+        the sorted selected clients -- a self-send for one client -- and never
+        all pairs. Each pair has one stable `message_ref`; its nonce is bound
+        per run, outside the plan.
+        """
+        server = dict(
+            service_id=service_id,
+            service_type=ServiceType.SMTP,
+            host_device_id=host.id or host.name,
+            host_device_name=host.name,
+            host_model=host.model,
+            site_id=host.site_id,
+            required_capability="service_smtp_application",
+        )
+
+        def on_client(client_id: str) -> dict[str, object]:
+            device = devices[client_id]
+            return {
+                **server,
+                "host_device_id": client_id,
+                "host_device_name": device.name,
+                "host_model": device.model,
+                "site_id": device.site_id,
+            }
+
+        domain = requirement.domain_name.strip().casefold()
+        if not domain or not _HOSTNAME_RE.fullmatch(domain):
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.EMAIL_DOMAIN_INVALID,
+                    f"SMTP domain {requirement.domain_name!r} is not a valid domain.",
+                    service_id,
+                )
+            )
+            return []
+        enable = EnableSmtpService(
+            id=_stable_id("enable-smtp", service_id),
+            phase=ServicePhase.ENABLE,
+            domain_name=domain,
+            **server,
+        )
+        accounts: dict[str, EnsureEmailAccount] = {}
+        names: dict[str, str] = {}
+        displays: dict[str, str] = {}
+        for item in sorted(
+            requirement.email_accounts, key=lambda value: value.username.casefold()
+        ):
+            key = item.username.casefold()
+            if not _MAIL_USER.fullmatch(item.username) or key in accounts:
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.EMAIL_ACCOUNT_INVALID,
+                        f"Mail account {item.username!r} is invalid or repeated.",
+                        service_id,
+                    )
+                )
+                continue
+            if not _MAIL_DISPLAY.fullmatch(item.display_name):
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.EMAIL_ACCOUNT_INVALID,
+                        f"Mail account {item.username!r} has an unsafe display name.",
+                        service_id,
+                    )
+                )
+                continue
+            if not _SECRET_REF.fullmatch(item.secret_ref):
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.SECRET_REF_INVALID,
+                        f"Mail account {item.username!r} names an invalid secret "
+                        "reference.",
+                        service_id,
+                    )
+                )
+                continue
+            names[key] = item.username
+            displays[key] = item.display_name or item.username
+            accounts[key] = EnsureEmailAccount(
+                id=_stable_id("email-account", service_id, key),
+                phase=ServicePhase.CONTENT,
+                depends_on=[enable.id],
+                username=item.username,
+                secret_ref=item.secret_ref,
+                **server,
+            )
+
+        clients: dict[str, ConfigureEmailClient] = {}
+        for item in sorted(
+            requirement.email_clients, key=lambda value: value.client_device_id
+        ):
+            if item.client_device_id not in client_ids:
+                continue
+            account = accounts.get(item.username.casefold())
+            if account is None:
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.EMAIL_ACCOUNT_MISSING,
+                        f"Email client {item.client_device_id!r} uses undeclared "
+                        f"account {item.username!r}.",
+                        service_id,
+                    )
+                )
+                continue
+            key = item.username.casefold()
+            clients[item.client_device_id] = ConfigureEmailClient(
+                id=_stable_id("email-client", service_id, item.client_device_id),
+                phase=ServicePhase.CLIENT,
+                depends_on=[account.id],
+                username=names[key],
+                mail_id=f"{names[key]}@{domain}",
+                display_name=displays[key],
+                smtp_server=address,
+                pop3_server=address,
+                secret_ref=account.secret_ref,
+                **on_client(item.client_device_id),
+            )
+
+        pairs = self._mail_pairs(requirement, sorted(clients), issues, service_id)
+        sends: list[SendMailMessage] = []
+        for sender, recipient in pairs:
+            if sender not in clients or recipient not in clients:
+                continue
+            source, target = clients[sender], clients[recipient]
+            sends.append(
+                SendMailMessage(
+                    id=_stable_id("email-send", service_id, sender, recipient),
+                    phase=ServicePhase.MESSAGE,
+                    depends_on=sorted(
+                        {source.id, accounts[target.username.casefold()].id}
+                    ),
+                    message_ref=_stable_id("message", service_id, sender, recipient),
+                    sender_mail_id=source.mail_id,
+                    recipient_mail_id=target.mail_id,
+                    recipient_username=target.username,
+                    smtp_server=address,
+                    secret_ref=source.secret_ref,
+                    **on_client(sender),
+                )
+            )
+        return [
+            enable,
+            *(accounts[key] for key in sorted(accounts)),
+            *(clients[key] for key in sorted(clients)),
+            *sends,
+        ]
+
+    @staticmethod
+    def _mail_pairs(
+        requirement: ServiceRequirement,
+        clients: list[str],
+        issues: list[ConfigurationIssue],
+        service_id: str,
+    ) -> list[tuple[str, str]]:
+        """Return the explicit pairs, or the default ring, in stable order."""
+        if requirement.verification_mode == "configure_only":
+            if requirement.email_pairs:
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.EMAIL_PAIR_INVALID,
+                        "A configure_only mail service sends no message, so it "
+                        "cannot list message pairs.",
+                        service_id,
+                    )
+                )
+            return []
+        if not requirement.email_pairs:
+            if len(clients) == 1:
+                return [(clients[0], clients[0])]
+            return [
+                (clients[index], clients[(index + 1) % len(clients)])
+                for index in range(len(clients))
+            ]
+        pairs: list[tuple[str, str]] = []
+        selected = set(clients)
+        for item in requirement.email_pairs:
+            pair = (item.sender_device_id, item.recipient_device_id)
+            if pair in pairs or not {*pair} <= selected:
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.EMAIL_PAIR_INVALID,
+                        f"Message pair {pair!r} is repeated or names a device that "
+                        "is not a selected email client.",
+                        service_id,
+                    )
+                )
+                continue
+            pairs.append(pair)
+        return sorted(pairs)
+
+    @staticmethod
     def _add_foundation(target, device: DevicePlan, action) -> None:
         device_id = device.id or device.name
         target[action.id] = FoundationalServiceRequirement(
@@ -731,6 +1042,14 @@ class ServiceCompiler:
                     **common,
                 )
             ]
+        if service_type is ServiceType.POP3:
+            return [
+                EnablePop3Service(
+                    id=_stable_id("enable-pop3", service_id),
+                    phase=ServicePhase.ENABLE,
+                    **common,
+                )
+            ]
         enable = EnableTftpService(
             id=_stable_id("enable-tftp", service_id),
             phase=ServicePhase.ENABLE,
@@ -778,7 +1097,14 @@ class ServiceCompiler:
             service_actions = by_service[service.id]
             if not service_actions:
                 continue
-            terminal = service_actions[-1]
+            # The server's own state is read after the last action that ran on
+            # the server; client configuration and messages come later and are
+            # observed by their own rows.
+            terminal = [
+                item
+                for item in service_actions
+                if item.host_device_id == service.host_device_id
+            ][-1]
             direct = ServiceVerificationExpectation(
                 id=_stable_id("verify-direct", service.id),
                 service_id=service.id,
@@ -808,7 +1134,35 @@ class ServiceCompiler:
                     ),
                     "",
                 )
+            elif service.service_type is ServiceType.SMTP:
+                direct.expected["domain_name"] = next(
+                    item.domain_name
+                    for item in service_actions
+                    if isinstance(item, EnableSmtpService)
+                )
+                direct.expected["accounts_json"] = json.dumps(
+                    [
+                        item.username
+                        for item in service_actions
+                        if isinstance(item, EnsureEmailAccount)
+                    ],
+                    separators=(",", ":"),
+                )
             expectations.append(direct)
+            if service.service_type is ServiceType.SMTP:
+                expectations.extend(
+                    self._mail_expectations(
+                        service,
+                        service_actions,
+                        pop3_on_host=any(
+                            item.service_type is ServiceType.POP3
+                            and item.host_device_id == service.host_device_id
+                            for item in services
+                        ),
+                        devices=devices,
+                    )
+                )
+                continue
             requirement = requirements[service.id]
             # `verification_required=False` makes the expectations OPTIONAL, it
             # does not delete them. Compiling nothing would leave the selected
@@ -1007,6 +1361,117 @@ class ServiceCompiler:
                 item.id,
             ),
         )
+
+    @staticmethod
+    def _mail_expectations(
+        service: ServiceDefinition,
+        service_actions: list[ServiceAction],
+        *,
+        pop3_on_host: bool,
+        devices: dict[str, DevicePlan],
+    ) -> list[ServiceVerificationExpectation]:
+        """Compile the client read-backs and every pair's rows for one SMTP service.
+
+        Every row belongs to the SMTP service, so no expectation depends on a
+        service that admission might exclude. Under the R-EVT-05 fallback only
+        mailbox presence gates the service: the send event, the retrieval and
+        their composition compile optional and report a typed blocked result.
+        """
+        common = dict(
+            service_id=service.id,
+            host_device_id=service.host_device_id,
+            host_device_name=service.host_device_name,
+        )
+        rows: list[ServiceVerificationExpectation] = []
+        clients = {
+            item.host_device_id: item
+            for item in service_actions
+            if isinstance(item, ConfigureEmailClient)
+        }
+        by_mail = {item.mail_id: device for device, item in clients.items()}
+        for client_id, action in sorted(clients.items()):
+            rows.append(
+                ServiceVerificationExpectation(
+                    id=_stable_id("verify-email-client", service.id, client_id),
+                    action_id=action.id,
+                    kind=ServiceVerificationKind.EMAIL_CLIENT_STATE,
+                    evidence_kind=ServiceEvidenceKind.DIRECT_STATE,
+                    client_device_id=client_id,
+                    client_device_name=devices[client_id].name,
+                    expected={
+                        "name": action.display_name,
+                        "user": action.username,
+                        "mail_id": action.mail_id,
+                        "smtp_server": action.smtp_server,
+                        "pop3_server": action.pop3_server,
+                    },
+                    **common,
+                )
+            )
+        for send in (
+            item for item in service_actions if isinstance(item, SendMailMessage)
+        ):
+            sender = send.host_device_id
+            recipient = by_mail[send.recipient_mail_id]
+            pair = {
+                "message_ref": send.message_ref,
+                "sender_mail_id": send.sender_mail_id,
+                "recipient_mail_id": send.recipient_mail_id,
+            }
+            smtp_send = ServiceVerificationExpectation(
+                id=_stable_id("verify-smtp-send", service.id, send.id),
+                action_id=send.id,
+                kind=ServiceVerificationKind.SMTP_SEND,
+                evidence_kind=ServiceEvidenceKind.BEHAVIORAL,
+                client_device_id=sender,
+                client_device_name=devices[sender].name,
+                required=False,
+                expected=dict(pair),
+                **common,
+            )
+            rows.append(smtp_send)
+            rows.append(
+                ServiceVerificationExpectation(
+                    id=_stable_id("verify-smtp-delivered", service.id, send.id),
+                    action_id=send.id,
+                    kind=ServiceVerificationKind.SMTP_DELIVERED,
+                    evidence_kind=ServiceEvidenceKind.BEHAVIORAL,
+                    client_device_id=recipient,
+                    client_device_name=devices[recipient].name,
+                    expected={**pair, "recipient_username": send.recipient_username},
+                    **common,
+                )
+            )
+            if not pop3_on_host:
+                continue
+            retrieve = ServiceVerificationExpectation(
+                id=_stable_id("verify-pop3-retrieve", service.id, send.id),
+                action_id=send.id,
+                kind=ServiceVerificationKind.POP3_RETRIEVE,
+                evidence_kind=ServiceEvidenceKind.BEHAVIORAL,
+                client_device_id=recipient,
+                client_device_name=devices[recipient].name,
+                depends_on=[smtp_send.id],
+                required=False,
+                expected=dict(pair),
+                **common,
+            )
+            rows.append(retrieve)
+            rows.append(
+                ServiceVerificationExpectation(
+                    id=_stable_id("verify-email-end-to-end", service.id, send.id),
+                    action_id=send.id,
+                    kind=ServiceVerificationKind.EMAIL_END_TO_END,
+                    evidence_kind=ServiceEvidenceKind.COMPOSED_BEHAVIORAL,
+                    client_device_id=recipient,
+                    client_device_name=devices[recipient].name,
+                    depends_on=sorted([smtp_send.id, retrieve.id]),
+                    required=False,
+                    expected=dict(pair),
+                    **common,
+                )
+            )
+        return rows
 
     @staticmethod
     def _bind_expectation_targets(

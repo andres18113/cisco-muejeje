@@ -47,6 +47,7 @@ from packet_tracer_mcp.domain.enterprise.models.execution import (
     journal_from_action_results,
     satisfies_apply_dependency,
 )
+from packet_tracer_mcp.domain.enterprise.models.requirements import AddressingPreference
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceActionType,
     ServiceEvidenceKind,
@@ -91,6 +92,8 @@ _CONVERTED_ENUMS = (
     ReplayClassification,
     EvidenceBasis,
     ReplayContainment,
+    # Converted in S2, which extends the service requirement model.
+    AddressingPreference,
 )
 
 
@@ -332,8 +335,75 @@ def test_row_15_is_unknown_with_session_failed():
     assert decision.frontier is False
 
 
+def test_row_21_is_a_correlated_refusal_that_called_nothing():
+    """S2: the engine refused before any setter, so nothing is in doubt.
+
+    A claim held by another operation, or an ensure-present whose pre-read
+    could not prove absence, reports `attempted=False` with no read. No call
+    means no residue and no stickiness, and the refused state was not
+    established, so the frontier stays closed.
+    """
+    decision = decide_mutation(
+        _mutation(
+            (
+                DispatchFact.ACCEPTED,
+                ResultFact.CORRELATED,
+                PostconditionFact.UNOBSERVED,
+                TransitionFact.NOT_APPLICABLE,
+                FootprintFact.COVERED,
+                False,
+            ),
+            applied=True,
+            cause="subject_claimed",
+        )
+    )
+
+    assert decision.row == "21"
+    assert decision.status is ActionExecutionStatus.FAILED
+    assert decision.disposition is MutationDisposition.FAILED
+    assert decision.failure_code is ConfigurationFailureCode.APPLICATION_FAILED
+    assert decision.residue is MutationResidue.NONE
+    assert decision.frontier is False
+    assert decision.sticky is False
+    assert decision.cause == "not_attempted:refused:subject_claimed"
+
+
+@pytest.mark.parametrize("attempted", [True, None], ids=["this_eval", "replayed"])
+def test_row_22_is_an_execute_once_effect_nobody_observed(attempted):
+    """S2: an execute-once effect with no qualified same-evaluation reading.
+
+    `sendMail` returns before any delivery exists, and no observer is admitted
+    under the event fallback, so the effect may or may not have happened. That
+    is sticky, it never opens the frontier, and a replay of this operation's
+    own claim (`attempted=None`) is the same doubt, not a refusal.
+    """
+    decision = decide_mutation(
+        _mutation(
+            (
+                DispatchFact.ACCEPTED,
+                ResultFact.CORRELATED,
+                PostconditionFact.UNOBSERVED,
+                TransitionFact.NOT_APPLICABLE,
+                FootprintFact.PARTIAL,
+                attempted,
+            ),
+            applied=True,
+            cause="no_qualified_observation",
+        )
+    )
+
+    assert decision.row == "22"
+    assert decision.status is ActionExecutionStatus.APPLIED
+    assert decision.disposition is MutationDisposition.UNKNOWN
+    assert decision.failure_code is ConfigurationFailureCode.OUTCOME_UNKNOWN
+    assert decision.residue is MutationResidue.UNKNOWN
+    assert decision.frontier is False
+    assert decision.sticky is True
+    assert decision.cause == "effect_unobservable:no_qualified_observation"
+
+
 def test_the_sticky_rows_are_exactly_the_ones_the_table_names():
-    """Rows 3 to 8, 10, 15, 19 and every inconsistent tuple, and no others."""
+    """Rows 3 to 8, 10, 15, 19, 22 and every inconsistent tuple, and no others."""
     sticky_rows = set()
     for *facts, applied in _every_tuple():
         decision = decide_mutation(_mutation(tuple(facts), applied))
@@ -350,6 +420,7 @@ def test_the_sticky_rows_are_exactly_the_ones_the_table_names():
         "10",
         "15",
         "19",
+        "22",
         "inconsistent",
     }
 

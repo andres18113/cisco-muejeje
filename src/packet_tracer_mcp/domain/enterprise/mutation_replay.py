@@ -54,12 +54,17 @@ from .models.security_plan import (
 )
 from .models.service_plan import (
     AddDnsRecord,
+    ConfigureEmailClient,
     ConfigureNtpService,
     EnableDnsService,
     EnableHttpService,
     EnableHttpsService,
+    EnablePop3Service,
+    EnableSmtpService,
     EnableTftpService,
+    EnsureEmailAccount,
     PublishTftpFile,
+    SendMailMessage,
     ServiceAction,
     SetHttpContent,
 )
@@ -690,6 +695,68 @@ PRODUCT_MUTATION_REPLAY_REGISTRY: tuple[MutationReplayPolicy, ...] = (
         _UNMEASURED,
         (ReplayContainment.REFUSED_OR_NO_MUTATION,),
         "The registered runtime returns failure without issuing a publication mutation.",
+    ),
+    # S2 mail. The two enables are declarative setters read back in the
+    # payload, like the other enables; the classification is about the payload
+    # shape and promotes no capability, which stays UNKNOWN in the catalog.
+    _action_policy(
+        MutationSurface.SERVICE,
+        EnableSmtpService,
+        _SERVICE_ENTRYPOINT,
+        ReplayClassification.REPLAY_SAFE,
+        _SHAPE,
+        _STRUCTURED_SETTER,
+        "The SMTP domain and enable flag are set and read back in the payload.",
+    ),
+    _action_policy(
+        MutationSurface.SERVICE,
+        EnablePop3Service,
+        _SERVICE_ENTRYPOINT,
+        ReplayClassification.REPLAY_SAFE,
+        _SHAPE,
+        _STRUCTURED_SETTER,
+        "The POP3 enable flag is set and read back in the payload.",
+    ),
+    _action_policy(
+        MutationSurface.SERVICE,
+        EnsureEmailAccount,
+        _SERVICE_ENTRYPOINT,
+        ReplayClassification.UNKNOWN,
+        _UNMEASURED,
+        (
+            ReplayContainment.PRE_READ_FAIL_CLOSED,
+            ReplayContainment.NO_BLIND_RETRY,
+            ReplayContainment.INDEPENDENT_READBACK,
+        ),
+        "The account is added only after a completed pre-read proved absence; "
+        "what a repeated add does to an existing account is gate M-MAIL-3.",
+    ),
+    _action_policy(
+        MutationSurface.SERVICE,
+        ConfigureEmailClient,
+        _SERVICE_ENTRYPOINT,
+        ReplayClassification.UNKNOWN,
+        _UNMEASURED,
+        (
+            ReplayContainment.IN_PAYLOAD_EFFECT_GUARD,
+            ReplayContainment.NO_BLIND_RETRY,
+            ReplayContainment.INDEPENDENT_READBACK,
+        ),
+        "Refused while any claim is held on the client; the password write is "
+        "never read back, so a repeat's full effect is unobserved.",
+    ),
+    _action_policy(
+        MutationSurface.SERVICE,
+        SendMailMessage,
+        _SERVICE_ENTRYPOINT,
+        ReplayClassification.UNKNOWN,
+        _UNMEASURED,
+        (
+            ReplayContainment.IN_PAYLOAD_EFFECT_GUARD,
+            ReplayContainment.NO_BLIND_RETRY,
+        ),
+        "A pre-effect claim bounds duplicates within one evaluation only, an "
+        "inference the HTTP channel has not qualified; Q2 is pending.",
     ),
     _physical_policy(
         "PhysicalEnsureDevice",

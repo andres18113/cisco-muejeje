@@ -216,6 +216,20 @@ transport, the target model and the run id. `CLIENT_DNS_SERVER` is compiled as
 an advisory per-client reader, always optional and always `unknown`: it gates
 nothing and is never inferred from another getter.
 
+**Mail (SMTP/POP3) is accepted in the intent and never executed on this
+build.** An `smtp` service carries `domain_name`, `email_accounts` (a
+`username` and an opaque `secret_ref` each), `email_clients`, optional
+`email_pairs` and `verification_mode`; a `pop3` service on the same host adds
+its enable and retrieval rows. Every mail operation is `unknown` in the
+capability catalog, so a required mail service is refused before the first
+effect (`service_ineligible`) and an optional one is excluded and reported per
+selected client. No argument or catalog override exists to change that. The
+candidate runtime behind it -- credential references resolved from
+`PT_MCP_SECRET_<REF>` on the HTTP channel only, a pre-effect claim per client,
+mailbox presence as supporting evidence only, and no send or retrieval event
+observed -- is described in the
+[E6 architecture](architecture/enterprise-services.md#mail-under-the-event-fallback).
+
 ## Live-state inspection
 
 These read the device rather than the plan, which is what makes them useful to

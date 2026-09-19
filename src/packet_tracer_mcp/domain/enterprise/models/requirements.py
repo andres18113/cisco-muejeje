@@ -2,17 +2,29 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import Enum, StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from .link_performance import LinkMedia
 from .roles import DeviceRole
 from .segments import SegmentRole
-from .service_plan import DnsRecordRequirement, ServiceType, TftpFileRequirement
+from .service_plan import (
+    DnsRecordRequirement,
+    EmailAccountRequirement,
+    EmailClientRequirement,
+    EmailPairRequirement,
+    ServiceType,
+    TftpFileRequirement,
+)
 
 
-class AddressingPreference(str, Enum):
+class AddressingPreference(StrEnum):
+    """How an endpoint requirement asks to be addressed."""
+
+    __str__ = Enum.__str__
+
     DHCP = "dhcp"
     STATIC = "static"
     SLAAC = "slaac"
@@ -59,4 +71,13 @@ class ServiceRequirement(BaseModel):
     http_content: str = ""
     ntp_authoritative: bool = True
     tftp_files: list[TftpFileRequirement] = Field(default_factory=list)
+    #: SMTP only: the server's mail domain, its accounts, the selected
+    #: clients and which account each uses, and explicit message pairs.
+    #: Without explicit pairs the clients form a ring (a self-send for one).
+    domain_name: str = ""
+    email_accounts: list[EmailAccountRequirement] = Field(default_factory=list)
+    email_clients: list[EmailClientRequirement] = Field(default_factory=list)
+    email_pairs: list[EmailPairRequirement] = Field(default_factory=list)
+    #: `configure_only` configures and reads back; `effectful` also sends.
+    verification_mode: Literal["effectful", "configure_only"] = "effectful"
     metadata: dict[str, str] = Field(default_factory=dict)

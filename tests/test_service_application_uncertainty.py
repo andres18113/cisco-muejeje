@@ -736,11 +736,29 @@ def test_a_legacy_verification_row_produces_the_baseline_adapter_output():
 # -- 6. recovery reads -----------------------------------------------------
 
 
+#: S2's event-dependent kinds: the first user-state probes. They may never run
+#: as a recovery read after an unresolved send.
+_USER_STATE_KINDS = {
+    ServiceVerificationKind.SMTP_SEND,
+    ServiceVerificationKind.POP3_RETRIEVE,
+    ServiceVerificationKind.EMAIL_END_TO_END,
+}
+
+
 def test_every_s0_verification_kind_has_a_declared_effect_class():
-    """An unclassified kind must not silently become a recovery read."""
+    """An unclassified kind must not silently become a recovery read.
+
+    Every kind is declared. The S2 event kinds are exactly the user-state ones,
+    and every other kind stays read-only or an owned temporary, as in S0.
+    """
     for kind in ServiceVerificationKind:
         assert kind in VERIFICATION_EFFECT_CLASSES, kind
-        assert VERIFICATION_EFFECT_CLASSES[kind] in {"read_only", "owned_temporary"}
+        expected = (
+            {"user_state"}
+            if kind in _USER_STATE_KINDS
+            else {"read_only", "owned_temporary"}
+        )
+        assert VERIFICATION_EFFECT_CLASSES[kind] in expected, kind
 
 
 def test_a_read_only_probe_still_runs_after_an_unresolved_action():

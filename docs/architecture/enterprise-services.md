@@ -153,7 +153,7 @@ response.
 | server | `EnsureEmailAccount(username, secret_ref)` | ensure-present: `addUser` only after a completed pre-read proved absence; an existing account is never changed and its credential stays unverified; an unreadable pre-read refuses rather than adding |
 | client | `ConfigureEmailClient` | every field except the password is read back; refused while any claim is held on that client |
 | message | `SendMailMessage` (execute-once) | one `sendMail` per pair per run under a pre-effect claim; never reported successful, because no same-evaluation observation of `mailSent` is qualified |
-| server read | `smtp_delivered` | bounded read-only scan of the intended recipient's mailbox for the pair's nonce; presence only, returned as counts and flags |
+| server read | `smtp_delivered` | bounded read-only scan of the intended recipient's mailbox for the pair's nonce; presence only, returned as counts and flags, and reported PARTIAL so it never makes the mail service VERIFIED |
 | gated | `smtp_send`, `pop3_retrieve`, `email_end_to_end` | optional rows that register no observer and never call `getMailIpc` |
 
 Pairs are explicit, else a ring over the sorted selected clients (a self-send

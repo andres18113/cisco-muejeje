@@ -74,13 +74,13 @@ def test_the_counts_are_stated_explicitly():
         "Control Plane": 7,
         "Security": 8,
         "Voice": 7,
-        "Services": 8,
+        "Services": 13,
         "Physical Topology": 4,
         # No es una mutacion tipada, pero muta y esta expuesta. Tipificar el
         # resto no puede ser la via por la que se queda sin clasificar.
         "Legacy / raw CLI": 1,
     }
-    assert len(_families()) == 48
+    assert len(_families()) == 53
 
 
 def test_non_product_paths_cannot_masquerade_as_registered_product_families():

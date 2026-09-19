@@ -190,6 +190,73 @@ def _baseline_profiles(version: str) -> list[ServiceCapabilityProfile]:
     ]
 
 
+#: Why every S2 mail record is UNKNOWN on the measured build.
+_MAIL_UNKNOWN_SOURCE = (
+    "no recorded mail evidence; R-EVT-05 fallback (no safe zero-event release "
+    "on either channel at 0850de3), Q2 not run"
+)
+
+
+def _mail_profiles(version: str) -> list[ServiceCapabilityProfile]:
+    """SMTP and POP3 on the server: documented, not measured, so UNKNOWN."""
+    unknown = CapabilityStatus.UNKNOWN
+    readiness = _readiness(
+        "mail_behavioral_verification",
+        verify=ReadinessStatus.UNKNOWN,
+        apply_status=ReadinessStatus.UNKNOWN,
+        reason=(
+            "Mailbox presence is supporting evidence only; send and retrieval "
+            "events are gated until a safe zero-event release is established."
+        ),
+    )
+    return [
+        ServiceCapabilityProfile(
+            service_type=service_type,
+            compile_support=CapabilityStatus.SUPPORTED,
+            application_support=unknown,
+            action_application_support={item.value: unknown for item in actions},
+            direct_readback_support=unknown,
+            behavioral_verification_support=unknown,
+            source=_MAIL_UNKNOWN_SOURCE,
+            packet_tracer_version=version,
+            capability_readiness={"behavioral_verification": readiness},
+            provenance=CapabilityProvenance.DOCUMENTARY_BASELINE,
+        )
+        for service_type, actions in (
+            (
+                ServiceType.SMTP,
+                (
+                    ServiceActionType.ENABLE_SMTP,
+                    ServiceActionType.ENSURE_EMAIL_ACCOUNT,
+                ),
+            ),
+            (ServiceType.POP3, (ServiceActionType.ENABLE_POP3,)),
+        )
+    ]
+
+
+def _mail_operations(version: str) -> list[ClientOperationCapability]:
+    """Every S2 operation on the model that performs it, each UNKNOWN."""
+    return [
+        _operation(
+            model,
+            operation.value,
+            CapabilityStatus.UNKNOWN,
+            version=version,
+            source=_MAIL_UNKNOWN_SOURCE,
+        )
+        for model, operation in (
+            (_CLIENT_MODEL, ServiceActionType.CONFIGURE_EMAIL_CLIENT),
+            (_CLIENT_MODEL, ServiceActionType.SEND_MAIL_MESSAGE),
+            (_CLIENT_MODEL, ServiceVerificationKind.EMAIL_CLIENT_STATE),
+            (_CLIENT_MODEL, ServiceVerificationKind.SMTP_SEND),
+            (_CLIENT_MODEL, ServiceVerificationKind.POP3_RETRIEVE),
+            (_CLIENT_MODEL, ServiceVerificationKind.EMAIL_END_TO_END),
+            (_SERVER_MODEL, ServiceVerificationKind.SMTP_DELIVERED),
+        )
+    ]
+
+
 def _baseline_client_operations(version: str) -> list[ClientOperationCapability]:
     """Client-side verification, keyed by the model that performs it."""
     supported = (
@@ -260,6 +327,15 @@ def _unknown_records(version: str) -> list[object]:
         )
         for kind in ServiceVerificationKind
     ]
+    # The measured build's operation keys that are not client kinds (mail
+    # actions and the server-performed mailbox scan) answer UNKNOWN too, so an
+    # unmeasured build never lacks a record the baseline has.
+    known = {item.key for item in operations}
+    operations.extend(
+        item.model_copy(update={"source": source})
+        for item in _mail_operations(version)
+        if item.key not in known
+    )
     return [*profiles, *operations]
 
 
@@ -324,7 +400,9 @@ def packet_tracer_service_capabilities(
     if version == BASELINE_PACKET_TRACER_VERSION:
         records: list[object] = [
             *_baseline_profiles(version),
+            *_mail_profiles(version),
             *_baseline_client_operations(version),
+            *_mail_operations(version),
         ]
     else:
         records = _unknown_records(version)

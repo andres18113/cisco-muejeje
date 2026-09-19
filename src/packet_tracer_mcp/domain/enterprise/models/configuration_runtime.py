@@ -794,6 +794,50 @@ _admit(
     cause="not_attempted:family_not_implemented",
     row="20",
 )
+#: S2. The engine refused before any setter: a claim held by another
+#: operation, or an ensure-present whose pre-read could not prove absence. No
+#: call was made, so there is no residue and nothing to doubt, and the refused
+#: state was not established.
+_admit(
+    DispatchFact.ACCEPTED,
+    ResultFact.CORRELATED,
+    PostconditionFact.UNOBSERVED,
+    TransitionFact.NOT_APPLICABLE,
+    FootprintFact.COVERED,
+    False,
+    True,
+    status=ActionExecutionStatus.FAILED,
+    disposition=MutationDisposition.FAILED,
+    failure_code=ConfigurationFailureCode.APPLICATION_FAILED,
+    residue=MutationResidue.NONE,
+    frontier=False,
+    sticky=False,
+    cause="not_attempted:refused",
+    row="21",
+)
+#: S2. An execute-once effect with no qualified same-evaluation observation:
+#: `sendMail` returns before any delivery exists and no observer is admitted
+#: under the event fallback. The effect may have happened -- in this
+#: evaluation (`attempted=True`) or in an earlier evaluation of this same
+#: operation (`attempted=None`) -- so the row is sticky and never opens the
+#: frontier. No later read may clear it.
+_admit(
+    DispatchFact.ACCEPTED,
+    ResultFact.CORRELATED,
+    PostconditionFact.UNOBSERVED,
+    TransitionFact.NOT_APPLICABLE,
+    FootprintFact.PARTIAL,
+    (True, None),
+    True,
+    status=ActionExecutionStatus.APPLIED,
+    disposition=MutationDisposition.UNKNOWN,
+    failure_code=ConfigurationFailureCode.OUTCOME_UNKNOWN,
+    residue=MutationResidue.UNKNOWN,
+    frontier=False,
+    sticky=True,
+    cause="effect_unobservable",
+    row="22",
+)
 
 
 #: Everything the table does not admit. The received fields stay on the result

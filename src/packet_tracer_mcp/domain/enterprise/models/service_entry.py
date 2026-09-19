@@ -101,6 +101,8 @@ class ServiceEntryRefusal(StrEnum):
     E5_CONTRADICTION = "e5_contradiction"
     FOUNDATIONAL_CONFIGURATION_MISSING = "foundational_configuration_missing"
     EFFECT_HALTED = "effect_halted"
+    SECRET_TRANSPORT_UNAVAILABLE = "secret_transport_unavailable"
+    SECRET_UNRESOLVED = "secret_unresolved"
 
 
 class AdmissionRead(BaseModel):

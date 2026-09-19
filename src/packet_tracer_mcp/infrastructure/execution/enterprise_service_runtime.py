@@ -14,12 +14,15 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from collections.abc import Callable, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass
 from enum import Enum, StrEnum
 from ipaddress import ip_address
 from time import monotonic, sleep
 
+from ...application.ports.secret_resolver import SecretResolver, SecretUnavailable
 from ...domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationFailureCode,
@@ -34,19 +37,26 @@ from ...domain.enterprise.models.execution import (
     TransitionFact,
 )
 from ...domain.enterprise.models.service_plan import (
+    SECRET_BEARING_ACTIONS,
     AddDnsRecord,
+    ConfigureEmailClient,
     ConfigureNtpService,
     EnableDnsService,
     EnableHttpService,
     EnableHttpsService,
+    EnablePop3Service,
+    EnableSmtpService,
     EnableTftpService,
+    EnsureEmailAccount,
     PublishTftpFile,
+    SendMailMessage,
     ServiceAction,
     ServiceEvidenceKind,
     ServiceType,
     ServiceVerificationExpectation,
     ServiceVerificationKind,
     SetHttpContent,
+    mail_message_text,
 )
 from ...domain.enterprise.models.service_runtime import (
     ObservationFact,
@@ -54,6 +64,7 @@ from ...domain.enterprise.models.service_runtime import (
 )
 from .command_dispatch import PAGER_GUARD_JS
 from .runtime_inventory import normalize_runtime_inventory
+from .secret_resolver import redact_secret_values
 from .transport_outcome import BridgeDispatchOutcome, sanitized_detail
 
 _HOSTNAME = re.compile(
@@ -99,7 +110,54 @@ _PROCESS = {
     ServiceType.HTTPS: "HttpsServer",
     ServiceType.NTP: "NtpServer",
     ServiceType.TFTP: "TftpServer",
+    ServiceType.SMTP: "SmtpServer",
+    ServiceType.POP3: "Pop3Server",
 }
+
+#: The mail families. Their batches and their reads run one at a time per
+#: process behind `_MAIL_LOCK` (R-OBS-04): the applicator already dispatches
+#: one batch at a time within an invocation, and this closes the gap between
+#: two invocations in one MCP process. Across processes only the engine claim
+#: remains.
+_MAIL_ACTIONS = (
+    EnableSmtpService,
+    EnablePop3Service,
+    EnsureEmailAccount,
+    ConfigureEmailClient,
+    SendMailMessage,
+)
+_MAIL_LOCK = threading.RLock()
+
+#: The production claim global and the per-client subject key (R-EVT-06/07).
+_CLAIMS = "this.__mcpE6Claims"
+_CLAIM_PREFIX = "email_client:"
+
+#: The bound on one mailbox scan, newest first. A mailbox holding more mail
+#: than this can prove presence but never absence.
+MAILBOX_SCAN_LIMIT = 100
+
+#: Why a mail row reports that no setter ran, beyond the two shared reasons.
+_SKIP_PRECONDITION_UNOBSERVED = "precondition_unobserved"
+_SKIP_SUBJECT_CLAIMED = "subject_claimed"
+_SKIP_OWN_CLAIM_REPLAYED = "own_claim_replayed"
+_REFUSALS = frozenset({_SKIP_PRECONDITION_UNOBSERVED, _SKIP_SUBJECT_CLAIMED})
+
+#: The event-dependent kinds R-EVT-05's fallback leaves without an observer.
+_GATED_EVENT_KINDS = frozenset(
+    {
+        ServiceVerificationKind.SMTP_SEND,
+        ServiceVerificationKind.POP3_RETRIEVE,
+        ServiceVerificationKind.EMAIL_END_TO_END,
+    }
+)
+_GATED_EVENT_CAUSE = "event_observation_gated:r_evt_05_fallback"
+
+#: What a mailbox-presence row never establishes, stated on every such row.
+_MAIL_DELIVERY_LIMITATIONS = (
+    "not_a_mailsent_success_event",
+    "not_pop3_retrieval_evidence",
+    "dispatch_outcome_reported_separately",
+)
 
 #: The digest helper and the bounded error reader, defined once per batch.
 #:
@@ -146,6 +204,15 @@ _SKIP_FAMILY_NOT_IMPLEMENTED = "family_not_implemented"
 #: Widening the read is gate M-DNS-4, so until then the residue outside that
 #: membership stays unobserved and is named here.
 _DNS_PARTIAL_FOOTPRINT = "footprint_partial:dns_a_record_table"
+
+#: Every family whose attempted setter writes more than its read observes,
+#: with the unobserved scope it names. A mail credential is written and never
+#: read back, so existence and field equality never prove it.
+_PARTIAL_FOOTPRINTS: dict[type, str] = {
+    AddDnsRecord: _DNS_PARTIAL_FOOTPRINT,
+    EnsureEmailAccount: "footprint_partial:email_account_credential",
+    ConfigureEmailClient: "footprint_partial:email_client_password",
+}
 
 #: Observation fact -> (status, fresh_evidence). NOT_ATTEMPTED and UNSPECIFIED
 #: are absent on purpose: they carry the status the producer stated.
@@ -446,9 +513,11 @@ class PacketTracerEnterpriseServiceRuntime:
         dispatch_and_wait: Callable[[str, float], BridgeDispatchOutcome] | None = None,
         dns_timeout_seconds: float = 5.0,
         http_timeout_seconds: float = 8.0,
+        mail_timeout_seconds: float = 8.0,
         convergence_interval_seconds: float = 0.25,
         clock: Callable[[], float] = monotonic,
         sleeper: Callable[[float], None] = sleep,
+        secret_resolver: SecretResolver | None = None,
     ) -> None:
         """Bind the runtime to one inventory reader and one command channel.
 
@@ -457,12 +526,17 @@ class PacketTracerEnterpriseServiceRuntime:
         wrapped as ACCEPTANCE_UNKNOWN plus NOT_OBSERVED -- never
         NOT_SUBMITTED, because a callable that returns `None` cannot prove the
         payload stayed inside this process.
+
+        `secret_resolver` is the one source of credential values. Without it a
+        secret-bearing action is refused before any script exists.
         """
         self._query_inventory = query_inventory
         self._send_and_wait = send_and_wait
         self._dispatch_and_wait = dispatch_and_wait
         self._dns_timeout = dns_timeout_seconds
         self._http_timeout = http_timeout_seconds
+        self._mail_timeout = mail_timeout_seconds
+        self._secret_resolver = secret_resolver
         self._interval = convergence_interval_seconds
         self._clock = clock
         self._sleep = sleeper
@@ -498,17 +572,94 @@ class PacketTracerEnterpriseServiceRuntime:
                 )
                 for item in actions
             ]
-        host = json.dumps(next(iter(host_names)))
-        lines = [
-            f"var d=ipc.network().getDevice({host});var results=[];",
-            _SCRIPT_HELPERS,
-            "if(!d){reportResult(JSON.stringify({results:[]}));}else{",
-        ]
+        serialized = any(isinstance(item, _MAIL_ACTIONS) for item in actions)
+        with _MAIL_LOCK if serialized else nullcontext():
+            return self._apply_batch(actions, next(iter(host_names)))
+
+    def _apply_batch(
+        self,
+        actions: Sequence[ServiceAction],
+        host_name: str,
+    ) -> list[RuntimeActionMutation]:
+        """Build, dispatch and read one batch; refuse what cannot be built.
+
+        A secret-bearing action whose reference does not resolve, and a send
+        with no bound nonce, are refused before any script exists, so their
+        rows are NOT_SUBMITTED: the payload provably never left this process.
+        Every string of every returned row is redacted of every value this
+        batch resolved, in raw, JSON-escaped and URL-encoded form.
+        """
+        secrets: dict[str, str] = {}
+        refused: dict[str, RuntimeActionMutation] = {}
         for action in actions:
-            lines.extend(self._mutation_lines(action))
-        lines.append("reportResult(JSON.stringify({results:results}));}")
-        observation = self._observe("".join(lines), 10.0)
-        return self._batch_mutations(actions, observation)
+            if isinstance(action, SendMailMessage) and not action.nonce:
+                refused[action.id] = self._not_submitted(
+                    action, "message_nonce_unbound"
+                )
+                continue
+            if not isinstance(action, SECRET_BEARING_ACTIONS):
+                continue
+            try:
+                secrets[action.secret_ref] = self._secret(action.secret_ref)
+            except SecretUnavailable as error:
+                refused[action.id] = self._not_submitted(
+                    action, f"secret_unresolved:{error.reason}"
+                )
+        ready = [item for item in actions if item.id not in refused]
+        rows: dict[str, RuntimeActionMutation] = dict(refused)
+        if ready:
+            host = json.dumps(host_name)
+            lines = [
+                f"var d=ipc.network().getDevice({host});var results=[];",
+                _SCRIPT_HELPERS,
+                "if(!d){reportResult(JSON.stringify({results:[]}));}else{",
+            ]
+            for action in ready:
+                lines.extend(self._mutation_lines(action, secrets))
+            lines.append("reportResult(JSON.stringify({results:results}));}")
+            observation = self._observe("".join(lines), 10.0)
+            rows.update(
+                {
+                    item.action_id: item
+                    for item in self._batch_mutations(ready, observation)
+                }
+            )
+        ordered = [rows[item.id] for item in actions]
+        if not secrets:
+            return ordered
+        values = list(secrets.values())
+        return [
+            row.model_copy(
+                update={
+                    field: redact_secret_values(getattr(row, field), values)
+                    for field in ("message", "cause", "call_error")
+                }
+            )
+            for row in ordered
+        ]
+
+    def _secret(self, secret_ref: str) -> str:
+        """Resolve one reference through the bound resolver, or refuse."""
+        if self._secret_resolver is None:
+            raise SecretUnavailable(secret_ref, "no_resolver")
+        return self._secret_resolver.resolve(secret_ref).reveal()
+
+    @staticmethod
+    def _not_submitted(action: ServiceAction, cause: str) -> RuntimeActionMutation:
+        """Report an action refused before its script existed (row 1)."""
+        return RuntimeActionMutation(
+            action_id=action.id,
+            applied=False,
+            operation=action.operation,
+            dispatch=DispatchFact.NOT_SUBMITTED,
+            result=ResultFact.NOT_APPLICABLE,
+            postcondition=PostconditionFact.NOT_APPLICABLE,
+            transition=TransitionFact.NOT_APPLICABLE,
+            footprint=FootprintFact.NOT_APPLICABLE,
+            attempted=None,
+            cause=cause,
+            message="The action was refused before any script was dispatched.",
+        )
 
     def _batch_mutations(
         self,
@@ -637,7 +788,7 @@ class PacketTracerEnterpriseServiceRuntime:
         """
         if row is None:
             return self._invalid_row_mutation(action, batch_id, "row_missing", note)
-        check = self._row_invalid_check(row)
+        check = self._row_invalid_check(row, self._allowed_skips(action))
         if check:
             return self._invalid_row_mutation(
                 action,
@@ -648,7 +799,53 @@ class PacketTracerEnterpriseServiceRuntime:
 
         attempted = bool(row["attempted"])
         call_error = sanitized_detail(row["call_error"])
-        if row["skip_reason"] == _SKIP_FAMILY_NOT_IMPLEMENTED:
+        skip = row["skip_reason"]
+        if skip in _REFUSALS:
+            # Row 21: the engine refused before any setter. Nothing was
+            # called, so nothing was changed and nothing is in doubt.
+            return RuntimeActionMutation(
+                action_id=action.id,
+                applied=True,
+                operation=action.operation,
+                batch_id=batch_id,
+                dispatch=DispatchFact.ACCEPTED,
+                result=ResultFact.CORRELATED,
+                postcondition=PostconditionFact.UNOBSERVED,
+                transition=TransitionFact.NOT_APPLICABLE,
+                footprint=FootprintFact.COVERED,
+                attempted=False,
+                cause=skip,
+                message=f"The engine refused before any setter: {skip}." + note,
+            )
+        if isinstance(action, SendMailMessage):
+            # Row 22: `sendMail` returns before any delivery exists, and no
+            # observer is admitted, so the effect is never observed here. A
+            # replay that met this operation's own claim cannot say whether
+            # the earlier evaluation sent, so it states nothing (`None`).
+            replayed = skip == _SKIP_OWN_CLAIM_REPLAYED
+            return RuntimeActionMutation(
+                action_id=action.id,
+                applied=True,
+                operation=action.operation,
+                batch_id=batch_id,
+                dispatch=DispatchFact.ACCEPTED,
+                result=ResultFact.CORRELATED,
+                postcondition=PostconditionFact.UNOBSERVED,
+                transition=TransitionFact.NOT_APPLICABLE,
+                footprint=FootprintFact.PARTIAL,
+                attempted=None if replayed else True,
+                cause=(
+                    _SKIP_OWN_CLAIM_REPLAYED if replayed else "no_qualified_observation"
+                ),
+                call_error=call_error,
+                message=(
+                    "An earlier evaluation of this operation holds its claim."
+                    if replayed
+                    else "The message was dispatched once under its claim."
+                )
+                + note,
+            )
+        if skip == _SKIP_FAMILY_NOT_IMPLEMENTED:
             return RuntimeActionMutation(
                 action_id=action.id,
                 applied=True,
@@ -697,7 +894,11 @@ class PacketTracerEnterpriseServiceRuntime:
                 TransitionFact.CHANGED if row["changed"] else TransitionFact.UNCHANGED
             )
             if footprint is FootprintFact.PARTIAL and attempted:
-                cause = _DNS_PARTIAL_FOOTPRINT
+                cause = _PARTIAL_FOOTPRINTS[type(action)]
+            elif isinstance(action, EnsureEmailAccount) and not attempted:
+                # R-SEC-05: an existing account was left untouched, and its
+                # existence says nothing about the credential it holds.
+                cause = "account_preexisting:credential_unverified"
             else:
                 cause = call_error
         return RuntimeActionMutation(
@@ -761,12 +962,38 @@ class PacketTracerEnterpriseServiceRuntime:
         """
         if not attempted:
             return FootprintFact.COVERED
-        if isinstance(action, AddDnsRecord):
+        if isinstance(action, tuple(_PARTIAL_FOOTPRINTS)):
             return FootprintFact.PARTIAL
         return FootprintFact.COVERED
 
     @staticmethod
-    def _row_invalid_check(row: dict) -> str:
+    def _allowed_skips(action: ServiceAction) -> frozenset[str]:
+        """Return the only skip reasons this family's script can report.
+
+        A reason a family never generates is not an answer from that family:
+        a DNS row that says `subject_claimed` is an invalid row, not a refusal.
+        """
+        if isinstance(action, EnsureEmailAccount):
+            return frozenset({_SKIP_ALREADY_SATISFIED, _SKIP_PRECONDITION_UNOBSERVED})
+        if isinstance(action, ConfigureEmailClient):
+            return frozenset({_SKIP_SUBJECT_CLAIMED})
+        if isinstance(action, SendMailMessage):
+            return frozenset(
+                {
+                    _SKIP_SUBJECT_CLAIMED,
+                    _SKIP_OWN_CLAIM_REPLAYED,
+                    _SKIP_PRECONDITION_UNOBSERVED,
+                }
+            )
+        return frozenset({_SKIP_ALREADY_SATISFIED, _SKIP_FAMILY_NOT_IMPLEMENTED})
+
+    @staticmethod
+    def _row_invalid_check(
+        row: dict,
+        allowed_skips: frozenset[str] = frozenset(
+            {_SKIP_ALREADY_SATISFIED, _SKIP_FAMILY_NOT_IMPLEMENTED}
+        ),
+    ) -> str:
         """Name the first contract check the row fails, or "" when admissible.
 
         Flags must be actual booleans. `isinstance(value, bool)` is the point:
@@ -806,10 +1033,7 @@ class PacketTracerEnterpriseServiceRuntime:
             if row["skip_reason"]:
                 return "attempted_requires_empty_skip_reason"
             return ""
-        if row["skip_reason"] not in {
-            _SKIP_ALREADY_SATISFIED,
-            _SKIP_FAMILY_NOT_IMPLEMENTED,
-        }:
+        if row["skip_reason"] not in allowed_skips:
             return "skip_reason_unknown"
         if row["call_result"] is not None:
             return "skipped_requires_no_call_result"
@@ -828,12 +1052,17 @@ class PacketTracerEnterpriseServiceRuntime:
         return ""
 
     @staticmethod
-    def _mutation_lines(action: ServiceAction) -> list[str]:
+    def _mutation_lines(
+        action: ServiceAction,
+        secrets: dict[str, str] | None = None,
+    ) -> list[str]:
         """Generate one action's pre-read, setter and unconditional post-read.
 
         Each of the three steps has its own try/catch, so a setter that throws
         does not hide a post-read that would have shown its effect, and a
-        failed pre-read does not stop the post-read from running.
+        failed pre-read does not stop the post-read from running. `secrets`
+        holds this batch's resolved values by reference; a value reaches the
+        script only through `json.dumps`.
         """
         action_id = json.dumps(action.id)
         row = (
@@ -842,6 +1071,13 @@ class PacketTracerEnterpriseServiceRuntime:
             + ',attempted:false,skip_reason:"",call_error:"",call_result:null,'
             "pre_read:false,post_read:false,ok:null,changed:null,pre:null,post:null};"
         )
+        runtime = PacketTracerEnterpriseServiceRuntime
+        if isinstance(action, EnsureEmailAccount):
+            return runtime._account_lines(row, action, secrets or {})
+        if isinstance(action, ConfigureEmailClient):
+            return runtime._client_lines(row, action, secrets or {})
+        if isinstance(action, SendMailMessage):
+            return runtime._send_lines(row, action, secrets or {})
         if isinstance(action, PublishTftpFile):
             # A declined family: no process lookup, no call, no reads. The
             # baseline reported `ok=false` here and the outcome stays FAILED.
@@ -888,8 +1124,20 @@ class PacketTracerEnterpriseServiceRuntime:
         that returns true has not been read back, and a return value is not an
         observation of state.
         """
-        if isinstance(action, EnableDnsService | EnableHttpService):
+        if isinstance(action, EnableDnsService | EnableHttpService | EnablePop3Service):
             return "!!p.isEnabled()", "p.setEnable(true)", "qv===true"
+        if isinstance(action, EnableSmtpService):
+            # One typed read covers both setters, so the footprint is covered:
+            # the flag and the domain are compared together as one value.
+            domain = json.dumps(action.domain_name)
+            wanted = json.dumps(
+                json.dumps([True, action.domain_name], separators=(",", ":"))
+            )
+            return (
+                "JSON.stringify([!!p.isEnabled(),String(p.getServerDomainName())])",
+                f"p.setServerDomainName({domain});p.setEnable(true)",
+                f"qv==={wanted}",
+            )
         if isinstance(action, EnableHttpsService):
             return "!!p.isHttpsEnabled()", "p.setHttpsEnable(true)", "qv===true"
         if isinstance(action, SetHttpContent):
@@ -911,6 +1159,128 @@ class PacketTracerEnterpriseServiceRuntime:
         if isinstance(action, ConfigureNtpService | EnableTftpService):
             return "!!p.isEnabled()", "p.setEnabled(true)", "qv===true"
         raise ValueError(f"No registered mutation family for {type(action).__name__}.")
+
+    @staticmethod
+    def _account_lines(
+        row: str, action: EnsureEmailAccount, secrets: dict[str, str]
+    ) -> list[str]:
+        """Ensure one server account exists without ever changing one.
+
+        `addUser` runs only when a completed pre-read proved the account
+        absent. A present account is left alone -- its password is never
+        read, compared or changed (R-SEC-05) -- and a pre-read that threw
+        refuses instead of adding, because a getter failure is not evidence of
+        nonexistence. Existence is `getEmailUser(name)` non-null with
+        `getUser()` equal to the name.
+        """
+        name = json.dumps(action.username)
+        password = json.dumps(secrets[action.secret_ref])
+        return [
+            row,
+            'var p=d.getProcess("EmailServer");var pv=null,qv=null;',
+            f"var __ex=function(){{var u=p.getEmailUser({name});"
+            f"return !!u&&String(u.getUser())==={name};}};",
+            "try{pv=__ex();r.pre_read=true;r.pre=__dg(pv);}catch(e){}",
+            'if(!r.pre_read){r.skip_reason="' + _SKIP_PRECONDITION_UNOBSERVED + '";}'
+            'else if(pv===true){r.skip_reason="' + _SKIP_ALREADY_SATISFIED + '";}'
+            f"else{{try{{r.attempted=true;r.call_result=!!p.addUser({name},{password});}}"
+            "catch(e){r.call_error=__er(e);}}",
+            'if(r.skip_reason!=="' + _SKIP_PRECONDITION_UNOBSERVED + '"){'
+            "try{qv=__ex();r.post_read=true;r.post=__dg(qv);}catch(e){}}",
+            "if(r.post_read){r.ok=(qv===true);}",
+            "if(r.pre_read&&r.post_read){r.changed=(pv!==qv);}",
+            "results.push(r);",
+        ]
+
+    @staticmethod
+    def _client_lines(
+        row: str, action: ConfigureEmailClient, secrets: dict[str, str]
+    ) -> list[str]:
+        """Configure one client's mail user and read every field but the password.
+
+        Refused with no call while any claim is held on this client, so an
+        `EmailClient` is never reconfigured while an operation on it is
+        unresolved (R-OBS-04). The password is written and never read back,
+        which is why the footprint is partial.
+        """
+        key = json.dumps(_CLAIM_PREFIX + action.host_device_name)
+        fields = [
+            action.display_name,
+            action.username,
+            action.mail_id,
+            action.smtp_server,
+            action.pop3_server,
+        ]
+        wanted = json.dumps(json.dumps(fields, separators=(",", ":")))
+        name, user, mail_id, smtp, pop3 = (json.dumps(item) for item in fields)
+        password = json.dumps(secrets[action.secret_ref])
+        return [
+            row,
+            f"var __c={_CLAIMS}||{{}};",
+            f"if(Object.prototype.hasOwnProperty.call(__c,{key})){{"
+            'r.skip_reason="' + _SKIP_SUBJECT_CLAIMED + '";}else{',
+            'var p=d.getProcess("EmailClient");var pv=null,qv=null;',
+            "var __rd=function(){var u=p.getEmailUser();return JSON.stringify(["
+            "String(u.getName()),String(u.getUser()),String(u.getMailId()),"
+            "String(u.getSmtpServer()),String(u.getPop3Server())]);};",
+            "try{pv=__rd();r.pre_read=true;r.pre=__dg(pv);}catch(e){}",
+            "try{r.attempted=true;var u=p.getEmailUser();"
+            f"u.setName({name});u.setUser({user});u.setMailId({mail_id});"
+            f"u.setSmtpServer({smtp});u.setPop3Server({pop3});u.setPassword({password});"
+            "}catch(e){r.call_error=__er(e);}",
+            "try{qv=__rd();r.post_read=true;r.post=__dg(qv);}catch(e){}",
+            f"if(r.post_read){{r.ok=(qv==={wanted});}}",
+            "if(r.pre_read&&r.post_read){r.changed=(pv!==qv);}",
+            "}",
+            "results.push(r);",
+        ]
+
+    @staticmethod
+    def _send_lines(
+        row: str, action: SendMailMessage, secrets: dict[str, str]
+    ) -> list[str]:
+        """Dispatch one message at most once, under a pre-effect claim.
+
+        In one evaluation: an existing claim on the client refuses -- as
+        `own_claim_replayed` when it is this operation's claim for this run's
+        nonce, else `subject_claimed` -- and nothing is sent. Otherwise the
+        claim is written `in_progress` BEFORE `sendMail`, and becomes
+        `completed` when the call returns or `unknown` when it throws. No
+        claim is ever cleared here: under the event fallback no send is ever
+        observed to have resolved, so the claim stays as the quarantine of
+        the subject for the Packet Tracer session (R-EVT-06/07). This bounds
+        duplicates only within one evaluation; it is not exactly-once.
+        """
+        key = json.dumps(_CLAIM_PREFIX + action.host_device_name)
+        operation = json.dumps(action.id)
+        reference = json.dumps(action.message_ref)
+        nonce = json.dumps(action.nonce)
+        text = json.dumps(mail_message_text(action.nonce))
+        sender = json.dumps(action.sender_mail_id)
+        recipient = json.dumps(action.recipient_mail_id)
+        server = json.dumps(action.smtp_server)
+        password = json.dumps(secrets[action.secret_ref])
+        return [
+            row,
+            f"var __c={_CLAIMS}={_CLAIMS}||{{}};"
+            f"var __held=Object.prototype.hasOwnProperty.call(__c,{key})?__c[{key}]:null;",
+            f"if(__held){{r.skip_reason=(__held.op_id==={operation}"
+            f"&&__held.nonce==={nonce})?"
+            '"' + _SKIP_OWN_CLAIM_REPLAYED + '":"' + _SKIP_SUBJECT_CLAIMED + '";}else{',
+            'var __s=null;try{var __p=d.getProcess("EmailClient");'
+            "__s=__p?__p.getSmtpClient():null;}catch(e){__s=null;}",
+            'if(!__s){r.skip_reason="' + _SKIP_PRECONDITION_UNOBSERVED + '";}else{',
+            "this.__mcpE6Seq=(this.__mcpE6Seq||0)+1;",
+            f'__c[{key}]={{state:"in_progress",op_id:{operation},'
+            f"message_ref:{reference},nonce:{nonce},seq:this.__mcpE6Seq}};",
+            "try{r.attempted=true;"
+            f"r.call_result=!!__s.sendMail({sender},{recipient},{text},{text},"
+            f"{password},{server});"
+            f'__c[{key}].state="completed";}}catch(e){{__c[{key}].state="unknown";'
+            "r.call_error=__er(e);}",
+            "}}",
+            "results.push(r);",
+        ]
 
     # -- verification ---------------------------------------------------
 
@@ -944,6 +1314,14 @@ class PacketTracerEnterpriseServiceRuntime:
         expectation: ServiceVerificationExpectation,
     ) -> RuntimeServiceVerification:
         """Route one expectation to its reader."""
+        if expectation.kind in _GATED_EVENT_KINDS:
+            return self._gated_event_row(expectation)
+        if expectation.kind is ServiceVerificationKind.EMAIL_CLIENT_STATE:
+            with _MAIL_LOCK:
+                return self._verify_email_client(expectation)
+        if expectation.kind is ServiceVerificationKind.SMTP_DELIVERED:
+            with _MAIL_LOCK:
+                return self._verify_smtp_delivered(expectation)
         if expectation.evidence_kind is ServiceEvidenceKind.DIRECT_STATE:
             return self._verify_direct(expectation)
         if expectation.kind in {
@@ -1044,6 +1422,18 @@ class PacketTracerEnterpriseServiceRuntime:
             )
         elif service_type in {ServiceType.HTTP, ServiceType.HTTPS}:
             lines.append("out.content=String(p.getPage('index.html'));")
+        elif service_type is ServiceType.SMTP:
+            # Existence per planned account, each in its own try: a getter
+            # that throws leaves that account unread (null), never absent.
+            accounts = str(expectation.expected.get("accounts_json") or "[]")
+            lines.append(
+                "out.domain=String(p.getServerDomainName());"
+                'var es=d.getProcess("EmailServer");out.accounts={};'
+                "var wanted=JSON.parse(" + json.dumps(accounts) + ");"
+                "for(var i=0;i<wanted.length;i++){var n=wanted[i];"
+                "try{var u=es.getEmailUser(n);out.accounts[n]=!!u&&String(u.getUser())===n;}"
+                "catch(e){out.accounts[n]=null;}}"
+            )
         lines.append("}reportResult(JSON.stringify(out));")
         observation = self._observe("".join(lines), 5.0)
         method = "structured_service_getters"
@@ -1107,6 +1497,8 @@ class PacketTracerEnterpriseServiceRuntime:
                 )
             marker = str(expectation.expected.get("marker") or "")
             matches = matches and (not marker or marker in content)
+        elif service_type is ServiceType.SMTP:
+            return self._smtp_state(expectation, payload, enabled, method, claim)
         return self._observed(
             expectation,
             observation=(
@@ -1119,6 +1511,313 @@ class PacketTracerEnterpriseServiceRuntime:
                 "Structured service state matched."
                 if matches
                 else "Structured service state differed."
+            ),
+        )
+
+    def _smtp_state(self, expectation, payload, enabled, method, claim):
+        """Judge the SMTP flag, domain and account existence together.
+
+        Existence never proves a credential, so every row says so. An account
+        whose getter threw is unread: the reading is inconclusive rather than
+        a contradiction, because a getter failure is not an absent account.
+        """
+        domain = payload.get("domain")
+        accounts = payload.get("accounts")
+        limitations = ["credential_claim:unverified"]
+        if not isinstance(domain, str) or not isinstance(accounts, dict):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method=method,
+                claim_level=claim,
+                cause="typed_shape_missing",
+                message="The direct read-back payload is not the typed shape.",
+            )
+        wanted = json.loads(str(expectation.expected.get("accounts_json") or "[]"))
+        values = [accounts.get(name, "absent") for name in wanted]
+        if any(value is not None and not isinstance(value, bool) for value in values):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method=method,
+                claim_level=claim,
+                cause="account_shape",
+                message="The account read-back is not the typed shape.",
+            )
+        if any(value is None for value in values):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.INCONCLUSIVE,
+                method=method,
+                claim_level=claim,
+                cause="account_unreadable",
+                limitations=limitations,
+                message="An account could not be read, which is not an absence.",
+            )
+        matches = (
+            enabled
+            and domain == str(expectation.expected.get("domain_name") or "")
+            and all(values)
+        )
+        return self._observed(
+            expectation,
+            observation=(
+                ObservationFact.OBSERVED if matches else ObservationFact.CONTRADICTED
+            ),
+            method=method,
+            claim_level=claim,
+            observed={"enabled": enabled},
+            limitations=limitations,
+            message=(
+                "Structured service state matched."
+                if matches
+                else "Structured service state differed."
+            ),
+        )
+
+    def _verify_email_client(self, expectation):
+        """Read one client's mail user back, every field except the password."""
+        client = json.dumps(expectation.client_device_name)
+        observation = self._observe(
+            f"var d=ipc.network().getDevice({client});"
+            'var p=d?d.getProcess("EmailClient"):null;var out={found:!!p};'
+            "if(p){var u=p.getEmailUser();out.fields=[String(u.getName()),"
+            "String(u.getUser()),String(u.getMailId()),String(u.getSmtpServer()),"
+            "String(u.getPop3Server())];}reportResult(JSON.stringify(out));",
+            5.0,
+        )
+        method = "structured_email_client_getters"
+        claim = "direct_client_state"
+        limitations = ["password_not_read"]
+        if observation.kind is not BridgeObservationKind.PAYLOAD:
+            return self._observed(
+                expectation,
+                observation=self._transport_fact(observation),
+                method=method,
+                claim_level=claim,
+                cause=observation.outcome.detail,
+                message="The client read-back did not deliver a correlated answer.",
+            )
+        payload = observation.payload or {}
+        if payload.get("found") is not True:
+            return self._observed(
+                expectation,
+                observation=(
+                    ObservationFact.SUBJECT_NOT_FOUND
+                    if payload.get("found") is False
+                    else ObservationFact.MALFORMED
+                ),
+                method=method,
+                claim_level=claim,
+                cause="email_client_not_found",
+                message="The client has no readable email process.",
+            )
+        fields = payload.get("fields")
+        if not isinstance(fields, list) or not all(
+            isinstance(item, str) for item in fields
+        ):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method=method,
+                claim_level=claim,
+                cause="typed_shape_missing",
+                message="The client read-back payload is not the typed shape.",
+            )
+        wanted = [
+            str(expectation.expected.get(name) or "")
+            for name in ("name", "user", "mail_id", "smtp_server", "pop3_server")
+        ]
+        matches = fields == wanted
+        return self._observed(
+            expectation,
+            observation=(
+                ObservationFact.OBSERVED if matches else ObservationFact.CONTRADICTED
+            ),
+            method=method,
+            claim_level=claim,
+            limitations=limitations,
+            message=(
+                "The client's mail fields matched."
+                if matches
+                else "The client's mail fields differed."
+            ),
+        )
+
+    def _verify_smtp_delivered(self, expectation):
+        """Scan the recipient's server mailbox for this pair's message, read-only.
+
+        Presence and only presence: not the sender's `mailSent`, not a POP3
+        retrieval, and never a change to the send row. The scan is bounded,
+        newest first, and returns counts and flags -- another message's text
+        never leaves the engine. Absence within the deadline is unknown, never
+        a failure, and a truncated scan cannot prove absence at all.
+        """
+        method = "server_mailbox_scan"
+        claim = "server_mailbox_presence"
+        nonce = str(expectation.expected.get("nonce") or "")
+        if not nonce:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method=method,
+                claim_level=claim,
+                cause="message_nonce_unbound",
+                message="The row carries no bound message nonce.",
+            )
+        host = json.dumps(expectation.host_device_name)
+        user = json.dumps(str(expectation.expected.get("recipient_username") or ""))
+        text = json.dumps(mail_message_text(nonce))
+        sender = json.dumps(str(expectation.expected.get("sender_mail_id") or ""))
+        recipient = json.dumps(str(expectation.expected.get("recipient_mail_id") or ""))
+        script = (
+            f"var d=ipc.network().getDevice({host});"
+            'var es=d?d.getProcess("EmailServer"):null;'
+            "var out={found_user:false,count:0,scanned:0,truncated:false,"
+            "matches:0,mismatched:0};"
+            f"if(es){{var u=es.getEmailUser({user});"
+            f"if(u&&String(u.getUser())==={user}){{out.found_user=true;"
+            "var ms=u.getMailBox().getMails();var n=ms?ms.length:0;out.count=n;"
+            f"for(var i=n-1;i>=0&&out.scanned<{MAILBOX_SCAN_LIMIT};i--){{"
+            f"var m=ms[i];out.scanned++;if(String(m.subject)==={text}){{"
+            f"if(String(m.from)==={sender}&&String(m.rcpt)==={recipient}"
+            f"&&String(m.content).indexOf({text})>=0){{out.matches++;}}"
+            "else{out.mismatched++;}}}out.truncated=n>out.scanned;}}"
+            "reportResult(JSON.stringify(out));"
+        )
+        spec = {
+            "found_user": bool,
+            "truncated": bool,
+            "count": int,
+            "scanned": int,
+            "matches": int,
+            "mismatched": int,
+        }
+
+        def admissible(item: BridgeObservation) -> dict | None:
+            if item.kind is not BridgeObservationKind.PAYLOAD:
+                return None
+            payload = item.payload or {}
+            for name, kind in spec.items():
+                value = payload.get(name)
+                if isinstance(value, bool) is not (kind is bool) or not isinstance(
+                    value, kind
+                ):
+                    return None
+            return payload
+
+        def settled(item: BridgeObservation) -> bool:
+            payload = admissible(item)
+            return bool(
+                payload
+                and (
+                    not payload["found_user"]
+                    or payload["matches"]
+                    or payload["mismatched"]
+                )
+            )
+
+        observation = self._poll(
+            lambda: self._observe(script, 3.0), settled, self._mail_timeout
+        )
+        if observation.kind is not BridgeObservationKind.PAYLOAD:
+            return self._observed(
+                expectation,
+                observation=self._transport_fact(observation),
+                method=method,
+                claim_level=claim,
+                cause=observation.outcome.detail,
+                message="The mailbox scan did not deliver a correlated answer.",
+            )
+        payload = admissible(observation)
+        if payload is None:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method=method,
+                claim_level=claim,
+                cause="typed_shape_missing",
+                message="The mailbox scan payload is not the typed shape.",
+            )
+        observed = {
+            "scanned": payload["scanned"],
+            "matches": payload["matches"],
+            "truncated": payload["truncated"],
+        }
+        if not payload["found_user"]:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.SUBJECT_NOT_FOUND,
+                method=method,
+                claim_level=claim,
+                cause="recipient_account_not_found",
+                message="The recipient account was not present on the server.",
+            )
+        if payload["mismatched"]:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.CONTRADICTED,
+                method=method,
+                claim_level=claim,
+                cause="nonce_message_fields_mismatch",
+                observed=observed,
+                limitations=list(_MAIL_DELIVERY_LIMITATIONS),
+                message="A message carrying this pair's nonce has other fields.",
+            )
+        if payload["matches"]:
+            count = payload["matches"]
+            row = self._observed(
+                expectation,
+                observation=ObservationFact.OBSERVED,
+                method=method,
+                claim_level=claim,
+                observed=observed,
+                limitations=[
+                    *_MAIL_DELIVERY_LIMITATIONS,
+                    "supporting_evidence_only",
+                    *([f"nonce_message_count:{count}"] if count > 1 else []),
+                ],
+                message="The pair's message is present in the recipient's mailbox.",
+            )
+            # The reading is an observation; the claim is not verification of
+            # the mail service. VERIFIED would roll up into service usability
+            # while the send's own outcome stays unobserved and no retrieval
+            # exists, which is the false success R-EVT-05's fallback forbids
+            # (the same shape as R-HTTPS-03's unattributable page).
+            return row.model_copy(update={"status": ActionExecutionStatus.PARTIAL})
+        return self._observed(
+            expectation,
+            observation=ObservationFact.INCONCLUSIVE,
+            method=method,
+            claim_level=claim,
+            cause=(
+                "mailbox_scan_truncated"
+                if payload["truncated"]
+                else "message_not_observed_within_deadline"
+            ),
+            observed=observed,
+            limitations=list(_MAIL_DELIVERY_LIMITATIONS),
+            message="The pair's message was not observed in the scanned mailbox.",
+        )
+
+    @staticmethod
+    def _gated_event_row(expectation):
+        """Report an event-dependent row that no observer may serve (R-EVT-05).
+
+        Nothing is dispatched: no `registerEvent`, no `getMailIpc`. The row is
+        a typed blocked result, never a success and never a failure.
+        """
+        return RuntimeServiceVerification(
+            expectation_id=expectation.id,
+            status=ActionExecutionStatus.UNOBSERVABLE,
+            evidence_kind=expectation.evidence_kind,
+            evidence_method="event_observation_not_admitted",
+            fresh_evidence=False,
+            observation=ObservationFact.NOT_ATTEMPTED,
+            cause=_GATED_EVENT_CAUSE,
+            message=(
+                "Event-dependent verification is gated: no safe zero-event "
+                "release is established, so no observer is registered."
             ),
         )
 

@@ -63,6 +63,13 @@ _MUTATING_PT_APIS = {
     "addARecordToNameServerDb",
     "setSimulationMode",
     "resetSimulation",
+    # S2 mail: the account add, the execute-once send and the mail setters.
+    "addUser",
+    "sendMail",
+    "setServerDomainName",
+    "setMailId",
+    "setSmtpServer",
+    "setPop3Server",
 }
 
 #: Cada familia, con la contención que la cubre y el techo de lo que puede
@@ -106,8 +113,16 @@ CONTAINED_MUTATION_FAMILIES = {
     },
     "services": {
         "owner": "infrastructure/execution/enterprise_service_runtime.py",
-        "containment": "typed actions only; capability-gated before dispatch",
-        "ceiling": "compile readiness is not behaviour",
+        "containment": (
+            "typed actions only; capability-gated before dispatch; mail "
+            "families refused unless every credential resolved on the HTTP "
+            "channel, and each send guarded by a same-evaluation claim that "
+            "product code never resets"
+        ),
+        "ceiling": (
+            "compile readiness is not behaviour; a send is never observed and "
+            "mailbox presence is supporting evidence only"
+        ),
     },
     "voice": {
         "owner": "infrastructure/execution/enterprise_voice_runtime.py",

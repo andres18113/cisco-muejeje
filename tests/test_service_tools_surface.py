@@ -27,6 +27,7 @@ from service_entry_fixture import (
     IsolationPreflight,
     deployment_manifest,
     intent_json,
+    intent_payload,
 )
 
 from packet_tracer_mcp.adapters.mcp import service_tools, tool_registry
@@ -634,18 +635,102 @@ def _registered_product_simulation(
     return mcp, transport
 
 
-def _call_enterprise_services(mcp: FastMCP) -> dict:
+def _call_enterprise_services(mcp: FastMCP, intent: str | None = None) -> dict:
     rendered = asyncio.run(
         mcp.call_tool(
             TOOL_NAME,
             {
-                "intent_json": intent_json(),
+                "intent_json": intent if intent is not None else intent_json(),
                 "deployment_id": DEPLOYMENT_ID,
                 "packet_tracer_version": BACKEND_VERSION,
             },
         )
     )
     return json.loads(rendered[0][0].text)
+
+
+def _mail_intent(*, required: bool) -> str:
+    """Return the fixture intent plus an SMTP and a POP3 service for its PCs."""
+    payload = intent_payload()
+    payload["sites"][0]["services"] += [
+        {
+            "name": "lab-mail",
+            "service_type": "smtp",
+            "required": required,
+            "domain_name": "lab.example",
+            "email_accounts": [
+                {"username": "user1", "secret_ref": "mail.user1"},
+                {"username": "user2", "secret_ref": "mail.user2"},
+            ],
+            "email_clients": [
+                {
+                    "client_device_id": "endpoint/hq/default/user_pc/001",
+                    "username": "user1",
+                },
+                {
+                    "client_device_id": "endpoint/hq/default/user_pc/002",
+                    "username": "user2",
+                },
+            ],
+        },
+        {"name": "lab-pop3", "service_type": "pop3", "required": required},
+    ]
+    return json.dumps(payload)
+
+
+_MAIL_MEMBERS = (
+    "addUser",
+    "sendMail",
+    "setPassword",
+    "getMailIpc",
+    "EmailClient",
+    "EmailServer",
+    "SmtpServer",
+    "Pop3Server",
+)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
+@pytest.mark.parametrize("channel", ["http", "file"])
+def test_the_default_catalog_keeps_every_mail_effect_off_the_public_route(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    channel: str,
+):
+    """S2-11: optional mail is excluded and no mail script leaves the product."""
+    mcp, transport = _registered_product_simulation(
+        monkeypatch, tmp_path, channel=channel
+    )
+
+    result = _call_enterprise_services(mcp, _mail_intent(required=False))
+
+    assert result["refusal_code"] == ServiceEntryRefusal.NONE.value, result[
+        "blocked_reason"
+    ]
+    mail = [
+        item for item in result["services"] if item["service_type"] in {"smtp", "pop3"}
+    ]
+    assert len(mail) == 2
+    assert all(item["usability_status"] == "skipped" for item in mail)
+    for script in [*transport.send_payloads, *transport.dispatch_payloads]:
+        for member in _MAIL_MEMBERS:
+            assert member not in script, member
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
+def test_a_required_mail_service_is_refused_on_the_public_route(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """S2-08/11: required and UNKNOWN refuses before any effect."""
+    mcp, transport = _registered_product_simulation(
+        monkeypatch, tmp_path, channel="http"
+    )
+
+    result = _call_enterprise_services(mcp, _mail_intent(required=True))
+
+    assert result["refusal_code"] == ServiceEntryRefusal.SERVICE_INELIGIBLE.value
+    assert transport.send_payloads == []
+    assert transport.dispatch_payloads == []
 
 
 def test_the_production_wiring_refuses_under_pytest_before_any_channel(

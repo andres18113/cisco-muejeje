@@ -38,6 +38,7 @@ observation and owned cleanup are exactly what must still be allowed.
 
 from __future__ import annotations
 
+import secrets as _random
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -91,6 +92,7 @@ from ...domain.enterprise.models.service_plan import (
     ServiceCapabilityRecords,
     ServiceDefinition,
     ServicePlan,
+    secret_refs,
 )
 from ...domain.enterprise.models.service_run_record import (
     ServiceRunRecord,
@@ -108,6 +110,7 @@ from ...infrastructure.catalog.service_capabilities import (
     capability_snapshot_hash,
     packet_tracer_service_capabilities,
 )
+from ..ports.secret_resolver import SecretResolver
 from ..ports.service_run_record import (
     DeploymentManifestPort,
     EndpointDriftObserver,
@@ -133,6 +136,14 @@ MAX_INTENT_JSON_BYTES = 1 << 20
 # These are response-composition budgets, not Packet Tracer capacity claims.
 MAX_REPORTING_CLIENTS = 1000
 MAX_CLIENT_CHECK_ROWS = MAX_REPORTING_CLIENTS * 5
+#: The only channel a secret-bearing script may travel on (R-SEC-01): a POST
+#: body over the authenticated loopback bridge, never a request file on disk.
+SECRET_CHANNEL = "http"
+
+
+def _fresh_nonce() -> str:
+    """Return one unpredictable message nonce for one run."""
+    return _random.token_hex(8)
 
 
 class ServiceEffectHalted(RuntimeError):
@@ -176,6 +187,9 @@ class ServiceInvocationBinding:
     inventory_reader: (
         Callable[[Sequence[str]], list[RuntimeConfigurationTarget]] | None
     ) = None
+    #: The one credential source of this session; the service runtime is bound
+    #: to the same instance, so admission and dispatch see one value.
+    secret_resolver: SecretResolver | None = None
 
 
 @dataclass
@@ -925,6 +939,8 @@ def apply_enterprise_services(
     run_id: str = "",
     source_tree: SourceTreeIdentity | None = None,
     now: Callable[[], datetime] | None = None,
+    secret_resolver: SecretResolver | None = None,
+    message_nonce_factory: Callable[[], str] = _fresh_nonce,
 ) -> ServiceStageResult:
     """Apply and verify the requested services against an existing deployment.
 
@@ -1093,6 +1109,7 @@ def apply_enterprise_services(
         endpoint_observer = binding.endpoint_observer
         source_tree = binding.source_tree
         inventory_reader = binding.inventory_reader
+        secret_resolver = binding.secret_resolver
     else:
         inventory_reader = None
 
@@ -1298,6 +1315,39 @@ def apply_enterprise_services(
             "single-access-switch S1 contract: " + ", ".join(unsupported),
         )
 
+    # -- A9: credentials, before any user-state mutation (R-SEC-01) -------
+    # Only an eligible service can dispatch, so only its references matter,
+    # and every one of them must resolve on the authenticated HTTP channel
+    # before E5 runs. A refusal names references, never a value or a
+    # resolver's own message.
+    references = secret_refs(_plan_for(service_plan, eligible).actions)
+    if references:
+        if transport_selection.channel != SECRET_CHANNEL:
+            return refuse(
+                "A9",
+                ServiceEntryRefusal.SECRET_TRANSPORT_UNAVAILABLE,
+                f"Secret-bearing actions require the {SECRET_CHANNEL} channel; "
+                f"{transport_selection.channel!r} was selected and no fallback "
+                "exists.",
+            )
+        unresolved: list[str] = []
+        for reference in references:
+            try:
+                if secret_resolver is None:
+                    raise LookupError("no secret resolver is bound")
+                secret_resolver.resolve(reference)
+            except Exception as exc:
+                category = getattr(exc, "reason", "") or type(exc).__name__
+                unresolved.append(f"{reference}:{category}")
+                continue
+            run.read("A9", f"secret_ref:{reference}", "resolved")
+        if unresolved:
+            return refuse(
+                "A9",
+                ServiceEntryRefusal.SECRET_UNRESOLVED,
+                _sanitized("Unresolved secret references: " + ", ".join(unresolved)),
+            )
+
     # A8's one immutable inventory snapshot must already include every owner
     # that A10 can authorize. Computing the pure closure here does not mutate or
     # decide retention; it supplies the complete manifest-bound target universe.
@@ -1429,6 +1479,7 @@ def apply_enterprise_services(
         packet_tracer_version=packet_tracer_version,
         transport=transport_selection.channel,
         deployment_id=deployment_id,
+        message_nonce_factory=message_nonce_factory,
     )
 
 
@@ -1453,6 +1504,7 @@ def _execute(
     packet_tracer_version: str,
     transport: str,
     deployment_id: str,
+    message_nonce_factory: Callable[[], str] = _fresh_nonce,
 ) -> ServiceStageResult:
     """Run the effect stages, in order, behind the mutation gate.
 
@@ -1583,6 +1635,13 @@ def _execute(
             models=models,
         )
     eligible_plan = _plan_for(service_plan, eligible)
+    # One fresh nonce per message, bound into a copy of the plan and written
+    # ahead with the stage record, so an earlier run's message can never
+    # satisfy this run's rows and the compiled plan's hash is untouched.
+    run.record.nonces = {
+        reference: message_nonce_factory() for reference in eligible_plan.message_refs()
+    }
+    eligible_plan = eligible_plan.with_message_nonces(run.record.nonces)
     run.transition(ServiceStage.SERVICE_APPLY, outcome="started")
     service_result: ServiceApplicationResult | None = None
     halted_detail = ""

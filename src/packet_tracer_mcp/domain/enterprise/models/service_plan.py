@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from enum import Enum, IntEnum, StrEnum
 from typing import Annotated, Literal
 
@@ -25,6 +26,8 @@ class ServiceType(StrEnum):
     HTTPS = "https"
     NTP = "ntp"
     TFTP = "tftp"
+    SMTP = "smtp"
+    POP3 = "pop3"
 
 
 class ServicePhase(IntEnum):
@@ -32,6 +35,10 @@ class ServicePhase(IntEnum):
 
     ENABLE = 20
     CONTENT = 30
+    #: Configuration applied on a selected client, after its server content.
+    CLIENT = 40
+    #: Execute-once user-state effects, after every client is configured.
+    MESSAGE = 50
 
 
 class ServiceActionType(StrEnum):
@@ -47,6 +54,11 @@ class ServiceActionType(StrEnum):
     CONFIGURE_NTP = "configure_ntp_service"
     ENABLE_TFTP = "enable_tftp_service"
     PUBLISH_TFTP_FILE = "publish_tftp_file"
+    ENABLE_SMTP = "enable_smtp_service"
+    ENABLE_POP3 = "enable_pop3_service"
+    ENSURE_EMAIL_ACCOUNT = "ensure_email_account"
+    CONFIGURE_EMAIL_CLIENT = "configure_email_client"
+    SEND_MAIL_MESSAGE = "send_mail_message"
 
 
 class ServiceEvidenceKind(StrEnum):
@@ -73,6 +85,21 @@ class ServiceVerificationKind(StrEnum):
     CLIENT_DNS_SERVER = "client_dns_server"
     NTP_SYNC = "ntp_sync"
     TFTP_RETRIEVE = "tftp_retrieve"
+    #: A client's own mail configuration, read back field by field.
+    EMAIL_CLIENT_STATE = "email_client_state"
+    #: The sender's `mailSent` event. Gated: no observer is admitted.
+    SMTP_SEND = "smtp_send"
+    #: Presence of the pair's message in the recipient's server mailbox.
+    SMTP_DELIVERED = "smtp_delivered"
+    #: The recipient's `mailReceived` event. Gated: no retrieval is admitted.
+    POP3_RETRIEVE = "pop3_retrieve"
+    #: Send and retrieval of one message, composed. Gated with its parts.
+    EMAIL_END_TO_END = "email_end_to_end"
+
+
+#: Kinds that run on the service host even when they are reported on a client:
+#: mailbox presence is read from the server's own account table.
+HOST_PERFORMED_KINDS = frozenset({ServiceVerificationKind.SMTP_DELIVERED})
 
 
 class DnsRecordRequirement(BaseModel):
@@ -89,6 +116,28 @@ class TftpFileRequirement(BaseModel):
 
     filename: str
     content: str
+
+
+class EmailAccountRequirement(BaseModel):
+    """One server mail account; its credential is an opaque reference."""
+
+    username: str
+    secret_ref: str
+    display_name: str = ""
+
+
+class EmailClientRequirement(BaseModel):
+    """Which account one selected client uses."""
+
+    client_device_id: str
+    username: str
+
+
+class EmailPairRequirement(BaseModel):
+    """One explicit message: a sender client and a recipient client."""
+
+    sender_device_id: str
+    recipient_device_id: str
 
 
 class CapabilityProvenance(StrEnum):
@@ -256,6 +305,73 @@ class PublishTftpFile(BaseServiceAction):
     content_sha256: str
 
 
+class EnableSmtpService(BaseServiceAction):
+    """Set the SMTP domain and turn the SMTP process on for its host."""
+
+    action_type: Literal[ServiceActionType.ENABLE_SMTP] = ServiceActionType.ENABLE_SMTP
+    domain_name: str
+
+
+class EnablePop3Service(BaseServiceAction):
+    """Turn the POP3 process on for its host."""
+
+    action_type: Literal[ServiceActionType.ENABLE_POP3] = ServiceActionType.ENABLE_POP3
+
+
+class EnsureEmailAccount(BaseServiceAction):
+    """Ensure one server mail account exists; never change an existing one.
+
+    `secret_ref` names the credential. The value is resolved by the runtime
+    for the one script that adds a missing account and is never stored here.
+    """
+
+    action_type: Literal[ServiceActionType.ENSURE_EMAIL_ACCOUNT] = (
+        ServiceActionType.ENSURE_EMAIL_ACCOUNT
+    )
+    operation: Literal[OperationSemantics.ENSURE_PRESENT] = (
+        OperationSemantics.ENSURE_PRESENT
+    )
+    username: str
+    secret_ref: str
+
+
+class ConfigureEmailClient(BaseServiceAction):
+    """Configure one selected client's mail user; its host is the client."""
+
+    action_type: Literal[ServiceActionType.CONFIGURE_EMAIL_CLIENT] = (
+        ServiceActionType.CONFIGURE_EMAIL_CLIENT
+    )
+    username: str
+    mail_id: str
+    display_name: str
+    smtp_server: str
+    pop3_server: str
+    secret_ref: str
+
+
+class SendMailMessage(BaseServiceAction):
+    """Send one pair's message once, from the sender client.
+
+    `message_ref` is the compiled identity of the pair's message. `nonce` is
+    empty in a compiled plan and bound per run, so the plan's hash never
+    depends on it and an earlier run's message can never satisfy a later one.
+    """
+
+    action_type: Literal[ServiceActionType.SEND_MAIL_MESSAGE] = (
+        ServiceActionType.SEND_MAIL_MESSAGE
+    )
+    operation: Literal[OperationSemantics.EXECUTE_ONCE] = (
+        OperationSemantics.EXECUTE_ONCE
+    )
+    message_ref: str
+    sender_mail_id: str
+    recipient_mail_id: str
+    recipient_username: str
+    smtp_server: str
+    secret_ref: str
+    nonce: str = ""
+
+
 ServiceAction = Annotated[
     EnableDnsService
     | AddDnsRecord
@@ -264,9 +380,34 @@ ServiceAction = Annotated[
     | EnableHttpsService
     | ConfigureNtpService
     | EnableTftpService
-    | PublishTftpFile,
+    | PublishTftpFile
+    | EnableSmtpService
+    | EnablePop3Service
+    | EnsureEmailAccount
+    | ConfigureEmailClient
+    | SendMailMessage,
     Field(discriminator="action_type"),
 ]
+
+#: The families whose script carries a credential. A plan containing any of
+#: them is admitted only on the authenticated HTTP channel (R-SEC-01).
+SECRET_BEARING_ACTIONS = (EnsureEmailAccount, ConfigureEmailClient, SendMailMessage)
+
+
+def secret_refs(actions: Sequence[object]) -> list[str]:
+    """Return the sorted distinct credential references some actions need."""
+    return sorted(
+        {
+            item.secret_ref
+            for item in actions
+            if isinstance(item, SECRET_BEARING_ACTIONS) and item.secret_ref
+        }
+    )
+
+
+def mail_message_text(nonce: str) -> str:
+    """Return the one subject and body a pair's message carries."""
+    return f"MCP-E6-MAIL-{nonce}"
 
 
 class ServiceDefinition(BaseModel):
@@ -342,6 +483,8 @@ class ServiceVerificationExpectation(BaseModel):
     @property
     def target_model(self) -> str:
         """The model that performs this observation."""
+        if self.kind in HOST_PERFORMED_KINDS:
+            return self.host_model
         return self.client_model if self.client_device_id else self.host_model
 
 
@@ -371,6 +514,30 @@ class ServicePlan(BaseModel):
     def services_on_host(self, device_id: str) -> list[ServiceDefinition]:
         """Return every service compiled onto one device."""
         return [item for item in self.services if item.host_device_id == device_id]
+
+    def message_refs(self) -> list[str]:
+        """Return the message identities this plan would send, in plan order."""
+        return [
+            item.message_ref
+            for item in self.actions
+            if isinstance(item, SendMailMessage)
+        ]
+
+    def with_message_nonces(self, nonces: Mapping[str, str]) -> ServicePlan:
+        """Return a copy whose messages and message rows carry this run's nonces.
+
+        The compiled plan, its identity and its semantic hash are unchanged:
+        a nonce belongs to one run, and the hash describes the plan.
+        """
+        bound = self.model_copy(deep=True)
+        for action in bound.actions:
+            if isinstance(action, SendMailMessage):
+                action.nonce = nonces.get(action.message_ref, "")
+        for expectation in bound.verification_expectations:
+            reference = expectation.expected.get("message_ref")
+            if isinstance(reference, str) and reference in nonces:
+                expectation.expected["nonce"] = nonces[reference]
+        return bound
 
 
 class ServiceCompileSummary(BaseModel):

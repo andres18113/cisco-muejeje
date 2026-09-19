@@ -87,6 +87,17 @@ VERIFICATION_EFFECT_CLASSES: dict[ServiceVerificationKind, str] = {
     ServiceVerificationKind.CLIENT_DNS_SERVER: "read_only",
     ServiceVerificationKind.NTP_SYNC: "read_only",
     ServiceVerificationKind.TFTP_RETRIEVE: "read_only",
+    # S2. Client getters and the server mailbox scan create nothing, so they
+    # may run as recovery reads -- the scan after an unresolved send is
+    # exactly that, and it never lifts the send's own uncertainty.
+    ServiceVerificationKind.EMAIL_CLIENT_STATE: "read_only",
+    ServiceVerificationKind.SMTP_DELIVERED: "read_only",
+    # Observing `mailSent`/`mailReceived` would register an observer, and a
+    # retrieval changes the recipient's client state: neither may run on an
+    # unresolved prerequisite, and under the event fallback neither runs.
+    ServiceVerificationKind.SMTP_SEND: "user_state",
+    ServiceVerificationKind.POP3_RETRIEVE: "user_state",
+    ServiceVerificationKind.EMAIL_END_TO_END: "user_state",
 }
 
 #: Verification failure code per status, split by whether the read was a
