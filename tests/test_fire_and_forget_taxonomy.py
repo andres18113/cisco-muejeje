@@ -74,13 +74,17 @@ def test_the_counts_are_stated_explicitly():
         "Control Plane": 7,
         "Security": 8,
         "Voice": 7,
-        "Services": 13,
+        # S3 adds enable, pool ensure-present and claimed acquisition.
+        "Services": 16,
         "Physical Topology": 4,
         # No es una mutacion tipada, pero muta y esta expuesta. Tipificar el
         # resto no puede ser la via por la que se queda sin clasificar.
         "Legacy / raw CLI": 1,
     }
-    assert len(_families()) == 53
+    assert len(_families()) == 56
+    assert TAXONOMY["Services"]["EnableServerDhcp"] == REPLAY_SAFE
+    assert TAXONOMY["Services"]["ConfigureServerDhcpPool"] == UNKNOWN
+    assert TAXONOMY["Services"]["AcquireDhcpLease"] == UNKNOWN
 
 
 def test_non_product_paths_cannot_masquerade_as_registered_product_families():
