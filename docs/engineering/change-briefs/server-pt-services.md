@@ -321,8 +321,9 @@ Deferred, with its consumers identified in the `0850de3` archive: reducing root
 
 ## Next authorized offline work
 
-1. Independent review of this package. Block A and Block B are landed with
-   their regressions; the package stays `READY_FOR_REVIEW`.
+1. Independent review of this package. Blocks A, B and the Block C review
+   correction are landed with their regressions; the package stays
+   `READY_FOR_REVIEW`.
 2. Exact-SHA CI once a push is authorized; no earlier run is relabeled.
 3. Only after that review may a new exact-SHA Q1 authorization be requested,
    and a Q2 authorization for mail; neither sample can become S1b/Q1b
@@ -349,7 +350,14 @@ reset a claim.
 | `1cf1b45` | `c10b7e4` | lint only: the registry's Ruff findings, with its enum presentation pinned by test |
 | `6ebd517` | `ec14119` | Block A: S2 mail under the R-EVT-05 fallback |
 | `147f3b4` | `a900a06` | Block B: the Q1 page-table repair and its listener observations |
+| `6e78e74` | `5c0850c` | results of Blocks A and B; the reviewed candidate |
+| `7d37db9` | `675fc96` | design: the Block C requirements above, recorded before any behavior change |
+| `5313eb0` | `ab95747` | Block C: the S2 secret boundary, both effect admissions and the mailbox coherence rule |
+| `4b45039` | `2cf89ce` | Block C: the unresolved Q1 page effect and the M-DNS-3 scope alignment |
 | this commit | — | results only: this section |
+
+Successful CI run `35414623111` is evidence for `6e78e74` and for nothing
+else. The three commits above it have no CI run, and none may be inherited.
 
 ### Causal RED and GREEN
 
@@ -360,6 +368,10 @@ reset a claim.
 | A — public surface | new assertions on an unchanged surface | 3 passed, on both channels |
 | B — the Node stub made update-only | the unchanged `0850de3` probe reproduced the LIVE failure offline: INCONCLUSIVE, `marker_write_failed`, `File not exist: mcpq-…-h.html` and `-s.html` | — |
 | B — probes, contracts, coordinator, CLI | 8/34, 18/64, 9/34 and 1/18 failed/passed | 42, 82, 43 and 19 passed |
+| C — S2-12 boundary and S2-06.1 coherence | both new modules failed at collection on the absent `EvidenceSanitizer` and `mailbox_scan_incoherence` | 20 and 13 passed |
+| C — S2-02.1 and S2-05.1 over the real scripts | 7 failed / 48 passed: the mismatched identity ran `addUser`, each of `null`, `false`, `0` and `""` under an own claim key sent a message, and a credential-bearing script returned engine text | 42 passed |
+| C — S2-12 through the applicator and the store | 1 failed: the response and the stored record carried the whole credential from a verification `ENGINE_ERROR`, and a second occurrence left the cropped prefix `pa\"ss\\w` behind | 13 passed |
+| C — Q1R-7 assessor, probe and coordinator | 1 failed on the assertion that encoded the defect (`lost_read.outcome_unknown is False`); the stub setter that changes the page and then throws reproduced it against the real probe | 87, 43 and 45 passed |
 
 One defect surfaced during GREEN and was fixed in the layer that caused it: a
 VERIFIED mailbox-presence recovery read made the SMTP service's usability
@@ -381,6 +393,21 @@ tests were replaced by tests of the repaired procedure that keep their
 invariants: an unreadable cell is never an absence, and no negative control
 establishes the listener model.
 
+Block C's explicit deltas, each with its reason in the diff:
+`test_a_failed_or_lost_step_stops_without_a_conclusion` no longer asserts
+`lost_read.outcome_unknown is False`, which was the defect written down as an
+expectation; the three page-effect cases are now their own tests. Every Q1
+budget figure moves with the scope (worst case 54 → 53, required experiment
+operations 25 → 24, the nominal executor trace 52 → 51, the infeasibility
+control 53 → 52). The coordinator's M-DNS-3 assertions become OMITTED with its
+reason instead of `ran`/`stopped:`, and `test_q1_measures_all_three_...` is
+renamed for the two experiments it now measures. `_page_procedure` in the
+probe harness follows the coordinator's step admission instead of running all
+four steps unconditionally, so a skipped step is `None` there too. The Node
+mail stub gains `account_identity` and a guarded `getUser`, without which it
+always returned the requested username and could not express the identity
+defect; the Q stub gains `setpage_throws_after_http/https`.
+
 ### Suites and gates
 
 | Check | Tree | Result |
@@ -389,21 +416,43 @@ establishes the listener model.
 | full offline suite | `147f3b4` | 6274 passed, 3 skipped, 3 pre-existing Pytest warnings |
 | full offline suite | the Block A worktree, Python identical to `6ebd517` | 6263 passed, 3 skipped |
 | quality gate, delivery mode | `147f3b4`, clean tree | 72 changed Python files gated, 0 mechanical exemptions, Ruff lint and format clean |
-| quality gate, worktree mode | this commit | same 72 files, clean |
+| mail, secrets, observation and integration suites | `4b45039` | 20, 13, 42 and 13 passed |
+| qualification contracts, coordinator, probes and CLI | `4b45039` | 87, 45, 43 and 19 passed |
+| full offline suite | `4b45039` | 6316 passed, 3 skipped, the same 3 pre-existing Pytest warnings |
+| quality gate, delivery mode | `4b45039`, clean tree | base `cisco/main` → `6263344`, merge base identical; 73 changed Python files gated, 0 mechanical exemptions, Ruff lint and format clean |
+| quality gate, delivery mode | this commit, clean tree | the same 73 files, clean |
 | namespace inventory | this commit | 0 active imports, 0 active strings, 0 unreviewed inert mentions |
 | documentation build | this commit | built; only the two pre-existing `handoff.md` link warnings, none introduced |
 | whitespace | this commit | `git diff --check` clean |
 | archive integrity | `51e5164` | the committed ZIP is 21,509 bytes with SHA-256 `e93b130a…adfdc`; every archived record hashes to its `source-manifest.json` value |
 
-The documentation-only commits changed no Python, so the gate and the suite
-above are unaffected by them; the gate, the docs build and the whitespace check
-were re-run on this commit.
+Every Node harness ran: the suite reports three skips and none of them is the
+missing-Node skip. They are the symlink-privilege case in
+`test_cp_live_data_integrity.py` and the two absent-artefact cases in the
+positive-voice modules, all three pre-existing and environmental.
+
+The documentation-only commits changed no Python, so the suite above is
+unaffected by them; the gate, the docs build and the whitespace check were
+re-run on this commit.
 
 ## Residual limitations
 
 - **READY_FOR_REVIEW, never self-approved.** Only an independent reviewer can
-  accept this package. Exact-SHA CI is **pending**: nothing here has been
-  pushed, and no earlier run is relabeled onto these commits.
+  accept this package. Exact-SHA CI is **pending** for every Block C commit:
+  nothing here has been pushed, and run `35414623111` stays attributed to
+  `6e78e74` alone.
+- **The Q1 page effect is bounded, not reconciled.** Block C adds no
+  reconciliation read. An attempted write that was not read back stops the
+  experimental phase instead of being resolved, so a repaired-Q1 run can end
+  with `index.html` on the owned disposable server in a state its own record
+  calls unresolved. That is the conservative answer, not a measurement.
+- **The safe error category costs detail.** A batch that resolved a credential
+  now reports `engine_error:<Name>` instead of the engine's own message, so a
+  mail setter failure is diagnosed by category and by the surrounding typed
+  facts. Batches with no resolved value keep their bounded diagnostic.
+- **M-DNS-3 is not re-measured.** Its only sample remains the Q1-file run at
+  `0850de3`, with that run's reader, model, build and channel. The probe and
+  its rule stay in the runner and in their own tests, unscheduled.
 - **Offline only.** Every mail and Q1 result above comes from a Node stub
   engine. Whether Packet Tracer behaves that way is exactly what Q2 and a
   re-authorized Q1 would measure, and no offline run promotes anything.
