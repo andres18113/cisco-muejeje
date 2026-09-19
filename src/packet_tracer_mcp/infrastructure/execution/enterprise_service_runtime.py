@@ -143,6 +143,10 @@ _DHCP_CLAIM_PREFIX = "dhcp_client:"
 
 #: One read cannot enumerate more rows than this even when a pool declares more.
 DHCP_LEASE_SCAN_LIMIT = 256
+#: One native read cannot let an engine-supplied exclusion count control an
+#: unbounded loop. The product already admits at most 4096 DHCP users, while
+#: compact exclusion ranges normally make this ceiling much larger than needed.
+DHCP_EXCLUSION_SCAN_LIMIT = 4096
 _MAC_TEXT = re.compile(
     r"^(?:[0-9A-Fa-f]{4}\.){2}[0-9A-Fa-f]{4}$|"
     r"^(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$"
@@ -1614,6 +1618,7 @@ class PacketTracerEnterpriseServiceRuntime:
         wanted_js = json.dumps(wanted_json)
         ranges_js = json.dumps(wanted_ranges, separators=(",", ":"))
         max_users_js = json.dumps(action.max_users)
+        exclusion_limit_js = json.dumps(DHCP_EXCLUSION_SCAN_LIMIT)
         setters = (
             f"pool.setNetworkMask({json.dumps(action.network)},{json.dumps(action.netmask)});"
             f"pool.setDefaultRouter({json.dumps(action.gateway)});"
@@ -1631,7 +1636,9 @@ class PacketTracerEnterpriseServiceRuntime:
             'var m=d.getProcess("DhcpServer");var p=null;var pv=null,qv=null;',
             f"var __want=JSON.parse({wanted_js});var __ranges={ranges_js};",
             "function __xs(){var out=[];var n=p.getExcludedAddressCount();"
-            "if(typeof n!=='number'||n<0||Math.floor(n)!==n){throw new Error('excluded_count');}"
+            "if(typeof n!=='number'||!isFinite(n)||n<0||Math.floor(n)!==n||n>"
+            + exclusion_limit_js
+            + "){throw new Error('excluded_count');}"
             "for(var i=0;i<n;i++){var x=p.getExcludedAddressAt(i);"
             "if(!x){throw new Error('excluded_row');}"
             "out.push({start:String(x.first),end:String(x.second)});}return out;}",
@@ -1858,6 +1865,7 @@ class PacketTracerEnterpriseServiceRuntime:
         host = json.dumps(expectation.host_device_name)
         interface = json.dumps(str(expected.get("interface") or ""))
         pool_name = json.dumps(str(expected.get("pool_name") or ""))
+        exclusion_limit_js = json.dumps(DHCP_EXCLUSION_SCAN_LIMIT)
         reader = "__ec" if self._sanitizer.holds_values else "__er"
         helper = (
             _ERROR_CATEGORY_HELPER
@@ -1869,8 +1877,13 @@ class PacketTracerEnterpriseServiceRuntime:
             'var m=d&&d.getProcess("DhcpServer");'
             f"var p=m&&m.getDhcpServerProcessByPortName({interface});"
             f"var q=p&&p.getPool({pool_name});var xs=[];"
-            "if(p){var n=p.getExcludedAddressCount();for(var i=0;i<n;i++){"
-            "var x=p.getExcludedAddressAt(i);xs.push({start:String(x.first),end:String(x.second)});}}"
+            "if(p){var n=p.getExcludedAddressCount();"
+            "if(typeof n!=='number'||!isFinite(n)||n<0||Math.floor(n)!==n||n>"
+            + exclusion_limit_js
+            + "){throw new Error('excluded_count');}"
+            "for(var i=0;i<n;i++){var x=p.getExcludedAddressAt(i);"
+            "if(!x){throw new Error('excluded_row');}"
+            "xs.push({start:String(x.first),end:String(x.second)});}}"
             "var ev=null,ev_valid=false;if(p){var eraw=p.isEnable();"
             "ev_valid=typeof eraw==='boolean';if(ev_valid){ev=eraw;}}"
             "var out={found:!!d,process_found:!!p,pool_found:!!q,"
@@ -1907,26 +1920,16 @@ class PacketTracerEnterpriseServiceRuntime:
             "error": str,
         }
         shape = _typed_payload(payload, scalar_types)
-        typed_shape = shape
-        if not typed_shape and (
-            not isinstance(payload.get("enabled_valid"), bool)
-            or not payload.get("enabled_valid")
-            or not isinstance(payload.get("enabled"), bool)
+        if (
+            shape
+            or not isinstance(payload.get("enabled_valid"), bool)
+            or not isinstance(payload.get("exclusions"), list)
         ):
-            typed_shape = "enabled"
-        if not typed_shape and (
-            isinstance(payload.get("max"), bool)
-            or not isinstance(payload.get("max"), int)
-        ):
-            typed_shape = "max"
-        if not typed_shape and not isinstance(payload.get("exclusions"), list):
-            typed_shape = "exclusions"
-        if typed_shape:
             return self._observed(
                 expectation,
                 observation=ObservationFact.MALFORMED,
                 method="dhcp_server_configuration_readback",
-                cause=f"dhcp_server_shape:{typed_shape}",
+                cause=f"dhcp_server_shape:{shape or 'envelope'}",
             )
         if payload["error"]:
             return self._observed(
@@ -1935,19 +1938,44 @@ class PacketTracerEnterpriseServiceRuntime:
                 method="dhcp_server_configuration_readback",
                 cause=payload["error"],
             )
-        if not payload["found"] or not payload["process_found"]:
+        found = payload["found"]
+        process_found = payload["process_found"]
+        pool_found = payload["pool_found"]
+        if (process_found and not found) or (pool_found and not process_found):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_server_configuration_readback",
+                cause="dhcp_server_subject_incoherent",
+            )
+        pool_fields = ("pool_name", "network", "mask", "gateway", "dns", "start", "end")
+        if not process_found:
+            impossible_absence = (
+                payload["enabled_valid"]
+                or payload.get("enabled") is not None
+                or payload.get("max") is not None
+                or bool(payload["exclusions"])
+                or any(payload[key] for key in pool_fields)
+            )
+            if impossible_absence:
+                return self._observed(
+                    expectation,
+                    observation=ObservationFact.MALFORMED,
+                    method="dhcp_server_configuration_readback",
+                    cause="dhcp_server_absence_incoherent",
+                )
             return self._observed(
                 expectation,
                 observation=ObservationFact.SUBJECT_NOT_FOUND,
                 method="dhcp_server_configuration_readback",
                 cause="dhcp_server_process_not_found",
             )
-        if not payload["pool_found"]:
+        if not payload["enabled_valid"] or not isinstance(payload.get("enabled"), bool):
             return self._observed(
                 expectation,
-                observation=ObservationFact.CONTRADICTED,
+                observation=ObservationFact.MALFORMED,
                 method="dhcp_server_configuration_readback",
-                cause="dhcp_pool_not_found",
+                cause="dhcp_server_shape:enabled",
             )
         ranges = payload["exclusions"]
         if any(
@@ -1961,6 +1989,31 @@ class PacketTracerEnterpriseServiceRuntime:
                 observation=ObservationFact.MALFORMED,
                 method="dhcp_server_configuration_readback",
                 cause="dhcp_exclusion_shape",
+            )
+        if not pool_found:
+            if payload.get("max") is not None or any(
+                payload[key] for key in pool_fields
+            ):
+                return self._observed(
+                    expectation,
+                    observation=ObservationFact.MALFORMED,
+                    method="dhcp_server_configuration_readback",
+                    cause="dhcp_pool_absence_incoherent",
+                )
+            return self._observed(
+                expectation,
+                observation=ObservationFact.CONTRADICTED,
+                method="dhcp_server_configuration_readback",
+                cause="dhcp_pool_not_found",
+            )
+        if isinstance(payload.get("max"), bool) or not isinstance(
+            payload.get("max"), int
+        ):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_server_configuration_readback",
+                cause="dhcp_server_shape:max",
             )
         try:
             wanted_ranges = json.loads(

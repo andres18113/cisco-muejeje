@@ -144,10 +144,18 @@ const serverProcess = {
     after('addPool');
   },
   getExcludedAddressCount: () => {
-    before('getExcludedAddressCount'); return state.server.exclusions.length;
+    before('getExcludedAddressCount');
+    if (state.server.excluded_count_behavior === 'infinity') { return Infinity; }
+    if (state.server.excluded_count_override !== null) {
+      return state.server.excluded_count_override;
+    }
+    return state.server.exclusions.length;
   },
   getExcludedAddressAt: (index) => {
     before('getExcludedAddressAt:' + index);
+    if (state.server.synthetic_exclusions) {
+      return {first: '198.51.100.1', second: '198.51.100.1'};
+    }
     const item = state.server.exclusions[index];
     return item ? {first: item.start, second: item.end} : null;
   },
@@ -251,6 +259,9 @@ class _DhcpEngine:
                 "interface": INTERFACE,
                 "enabled": False,
                 "enable_behavior": "value",
+                "excluded_count_behavior": "value",
+                "excluded_count_override": None,
+                "synthetic_exclusions": False,
                 "port": {
                     "name": INTERFACE,
                     "mode": False,
@@ -571,6 +582,92 @@ def test_missing_post_read_never_claims_the_pool_was_stored(engine):
     assert mutation.postcondition is PostconditionFact.UNOBSERVED
 
 
+def test_oversized_exclusion_count_refuses_before_any_setter(engine):
+    """Catch a finite native count crossing the internal scan ceiling."""
+    item = engine()
+    item.state["server"].update(
+        excluded_count_override=4097,
+        synthetic_exclusions=True,
+    )
+    item.sync()
+
+    [mutation] = _runtime(item).apply_actions([_pool()])
+
+    assert "getExcludedAddressAt:4096" not in item.log
+    assert not any(
+        entry.startswith(("addPool:", "addExcludedAddress:", "setNetworkMask:"))
+        for entry in item.log
+    )
+    assert mutation.attempted is False
+    assert mutation.cause == "precondition_unobserved"
+
+
+@pytest.mark.parametrize(
+    ("count", "behavior"),
+    [
+        (-1, "value"),
+        (1.5, "value"),
+        (None, "infinity"),
+        (4097, "value"),
+    ],
+    ids=["negative", "fractional", "infinite", "oversized"],
+)
+def test_invalid_exclusion_counts_fail_closed_in_mutation_and_readback(
+    engine, count, behavior
+):
+    """Reject every nonfinite or out-of-bound native count without iterating."""
+    item = engine()
+    item.state["server"].update(
+        excluded_count_override=count,
+        excluded_count_behavior=behavior,
+        synthetic_exclusions=True,
+    )
+    item.sync()
+
+    [mutation] = _runtime(item).apply_actions([_pool()])
+    readback = _runtime(item).verify(_server_expectation())
+
+    assert not any(entry.startswith("getExcludedAddressAt:") for entry in item.log)
+    assert not any(
+        entry.startswith(("addPool:", "addExcludedAddress:", "setNetworkMask:"))
+        for entry in item.log
+    )
+    assert mutation.attempted is False
+    assert mutation.cause == "precondition_unobserved"
+    assert readback.observation is ObservationFact.ENGINE_ERROR
+
+
+def test_exclusion_scan_accepts_the_exact_internal_boundary(engine):
+    """Read the last admitted row and never call beyond the finite ceiling."""
+    item = engine()
+    _prime_pool(item)
+    item.state["server"].update(
+        enabled=True,
+        excluded_count_override=service_runtime_module.DHCP_EXCLUSION_SCAN_LIMIT,
+        synthetic_exclusions=True,
+    )
+    item.sync()
+
+    row = _runtime(item).verify(_server_expectation())
+
+    last = service_runtime_module.DHCP_EXCLUSION_SCAN_LIMIT - 1
+    assert f"getExcludedAddressAt:{last}" in item.log
+    assert f"getExcludedAddressAt:{last + 1}" not in item.log
+    assert row.observation is ObservationFact.CONTRADICTED
+    assert row.cause == "dhcp_server_state_mismatch"
+
+
+def test_exclusion_post_read_failure_preserves_effect_uncertainty(engine):
+    """Keep a setter attempt unknown when the bounded post-read cannot complete."""
+    item = engine(throw_after_calls={"getExcludedAddressCount": 1})
+
+    [mutation] = _runtime(item).apply_actions([_pool()])
+
+    assert mutation.attempted is True
+    assert mutation.postcondition is PostconditionFact.UNOBSERVED
+    assert POOL in item.state["server"]["pools"]
+
+
 @pytest.mark.parametrize(
     "held", [None, False, 0, ""], ids=["null", "false", "zero", "empty"]
 )
@@ -797,6 +894,70 @@ def test_server_state_reads_every_stored_field_but_not_lease_cleanliness(engine)
 
     assert contradicted.status is ActionExecutionStatus.FAILED
     assert contradicted.cause == "dhcp_server_state_mismatch"
+
+
+def test_server_state_preserves_correlated_getter_error_category(engine):
+    """Keep a caught native exception as ENGINE_ERROR instead of bad success shape."""
+    item = engine(throw_before=["getExcludedAddressCount"])
+
+    row = _runtime(item).verify(_server_expectation())
+
+    assert row.status is ActionExecutionStatus.UNOBSERVABLE
+    assert row.observation is ObservationFact.ENGINE_ERROR
+    assert row.cause == "stub before: getExcludedAddressCount"
+
+
+@pytest.mark.parametrize(
+    "defect",
+    ["device", "process", "pool"],
+)
+def test_server_state_preserves_coherent_missing_subject_categories(engine, defect):
+    """Classify null success fields only after interpreting subject state."""
+    item = engine()
+    if defect == "device":
+        item.state["server"]["name"] = "OTHER"
+    elif defect == "process":
+        item.state["server"]["interface"] = "FastEthernet9"
+    item.sync()
+
+    row = _runtime(item).verify(_server_expectation())
+
+    if defect == "pool":
+        assert row.observation is ObservationFact.CONTRADICTED
+        assert row.cause == "dhcp_pool_not_found"
+    else:
+        assert row.observation is ObservationFact.SUBJECT_NOT_FOUND
+        assert row.cause == "dhcp_server_process_not_found"
+
+
+def test_server_state_rejects_impossible_cross_field_subject_shape(engine):
+    """Keep an impossible process-without-device payload MALFORMED."""
+    item = engine()
+    item.transport["mutation_body"] = json.dumps(
+        {
+            "found": False,
+            "process_found": True,
+            "pool_found": False,
+            "interface": INTERFACE,
+            "pool_name": "",
+            "enabled": True,
+            "enabled_valid": True,
+            "network": "",
+            "mask": "",
+            "gateway": "",
+            "dns": "",
+            "start": "",
+            "end": "",
+            "max": None,
+            "exclusions": [],
+            "error": "",
+        }
+    )
+
+    row = _runtime(item).verify(_server_expectation())
+
+    assert row.observation is ObservationFact.MALFORMED
+    assert row.cause == "dhcp_server_subject_incoherent"
 
 
 def test_unrelated_exclusion_inside_the_lease_window_blocks_acquisition_foundation(
