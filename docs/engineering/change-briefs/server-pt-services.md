@@ -373,14 +373,72 @@ M-DHCP-1/2/4/6 and every corresponding capability remains UNKNOWN.
 | integration | the real composition, compiler, applicators, runtime and store with only external seams injected | `tests/test_service_mail_integration.py`, `tests/test_service_qualification_coordinator.py` |
 | system | the public tool surface and the Q1 stage gate an operator meets | `tests/test_service_tools_surface.py`, `tests/test_service_qualification_cli.py` |
 | regression | S1 entry, S0 decision, S4a runner and the containment gates | the existing modules, unchanged except where a delta above names them |
-| S3 unit/domain | canonical authority, compact range arithmetic, mode foundations, IDs/hashes, capability/replay defaults | `tests/test_dhcp_authority_composition.py`, `tests/test_service_dhcp_compiler.py`, `tests/test_service_foundational_evidence.py`, capability and replay suites |
+| S3 unit/domain | canonical authority, compact range arithmetic, mode foundations, IDs/hashes, capability/replay defaults | `tests/test_dhcp_authority_composition.py`, `tests/test_endpoint_dhcp_mode_observer.py`, `tests/test_service_foundational_evidence.py`, capability and replay suites |
 | S3 generated-script harness | real generated pool, mode, acquisition and lease-reader scripts executed by persistent Node stubs; stub state and call log are the oracle | `tests/test_service_dhcp_script_harness.py`; the C0 case in `tests/test_service_client_ownership_harness.py` |
 | S3 integration/system | intent through composition, E5/E6, stage-aware application, persistence, unchanged MCP schema and reporting budgets | `tests/test_service_dhcp_integration.py`, `tests/test_apply_enterprise_services.py`, `tests/test_service_product_scale.py`, surface tests |
 
 Acceptance testing is offline through the product use case and the runner. A
 positive runtime test with an injected catalog is not product acceptance, and
-LIVE acceptance of S2 (Q2) or of the repaired Q1 requires a new exact-SHA
-authorization that this brief does not grant.
+LIVE acceptance of S2 (Q2), S3 (Q3) or of the repaired Q1 requires a new
+exact-SHA authorization that this brief does not grant.
+
+## S3 implementation evidence
+
+Observed offline in sibling worktree `Cisco-MCP-s3`, branch
+`feature/server-pt-s3-dhcp`, cut from exact commit `cdc30cd` (tree `629573e`).
+The worktree owns a CPython 3.14 `.venv`; `packet_tracer_mcp` resolves from that
+worktree. `AGENTS.md` and `docs/engineering/standards.md` were read from it.
+This Codex session was not freshly started there, so effective instruction
+loading for the sibling remains **pending**, not inferred from matching files.
+Nothing opened or contacted Packet Tracer, started a product bridge, ran a Q
+stage, promoted a capability, reset a claim, pushed or merged.
+
+The installed Cisco reference under Packet Tracer 9.0.1
+`help/default/IpcAPI` was inspected before behavior edits. It confirms the
+members and return types recorded above. `addPool` and `dhcpRun` are void;
+`isEnable` is the getter; `setNetworkMask` takes network and mask; and no lease
+count/end condition or lease-time semantics is documented. Those gaps remain
+M-DHCP-1/2/4/6 rather than being filled by offline tests.
+
+| Commit | Scope |
+| --- | --- |
+| `e565752` | design delta recorded before behavior changes |
+| `09295d2` | C0 originating-boundary correction and real generated-script/store regressions |
+| `d6cfecd` | canonical authority, E5 mode bootstrap, typed DHCP runtime, scheduling, admission and persistence |
+| `9fd6163` | format only; AST hashes equal for all 25 formatted files |
+| `945265a` | touched-file lint ownership and preserved enum presentation |
+| `b25eb20` | acceptance hardening, scale, containment and stable documentation |
+| `ea7f8d2` | explicit replay-taxonomy delta: Services 13 to 16, total 53 to 56 |
+
+### Causal RED and GREEN
+
+| Boundary | RED | GREEN |
+| --- | --- | --- |
+| C0 owned release | the real generated Node release script cropped a synthetic value and the production store retained `S3C0-`; a later non-secret mutation batch retained `S3C0-mut` from an earlier resolved value | both emit `engine_error:Error`; complete raw/JSON/URL forms, cross-bound fragments and safe controls remain bounded; 87 focused and 234 affected tests passed |
+| authority/bootstrap | real intent composition emitted an IOS pool and could not compile DHCP; an uncertain E5 action plus a VERIFIED mode row incorrectly founded E6 | one canonical delegation suppresses only that IOS pool, retains clients, and the exact fresh true mode plus an admissible action is required |
+| pool/acquisition/readers | the runtime had no DHCP family; the persistent Node harness failed at the missing dispatch | 19 harness cases exercise void add/get, no-op/conflict, post-read after throw, exclusions, claims/nonces, lost response, replay, address and bounded lease-table evidence; no release/reset/event method exists |
+| dependent effects | the real applicator dispatched mail client configuration while `DHCP_LEASE` was UNKNOWN | stage-aware verification prerequisites suppress the actual call, retain independent work, detect cycles and admit a synthetic VERIFIED control once |
+| full taxonomy | the first full run had one failure: Services was still pinned at 13 although three S3 families were registered | the accepted delta pins 16 services and 56 total families with enable replay-safe and pool/acquisition UNKNOWN |
+
+### Suites and gates
+
+| Check | Commit/tree | Result |
+| --- | --- | --- |
+| untouched baseline | `cdc30cd` / `629573e` | 6317 passed, 3 skipped, 5 warnings |
+| S3 focused closure | executable content through `b25eb20` | 234 passed, 1 pre-existing Pytest warning |
+| affected/coexistence | executable content through `b25eb20` | 628 passed |
+| full offline suite, first run | `b25eb20` | 6385 passed, 3 skipped, 1 taxonomy-delta failure |
+| full offline suite | `ea7f8d2` / `752718f` | 6386 passed, 3 skipped, 3 pre-existing warnings |
+| namespace inventory | `ea7f8d2` | 0 active imports, 0 active strings, 0 unreviewed inert mentions |
+| documentation | `ea7f8d2` | built; only the two pre-existing `handoff.md` link warnings |
+| whitespace | `ea7f8d2` | worktree and index clean |
+
+C0 is closed for this adapter and its invocation-local resolved values; it is
+not a claim about arbitrary strings elsewhere in the process. S3 is complete
+offline at the intentional boundary: candidate paths execute only with
+test-injected capability records, while every product DHCP capability remains
+UNKNOWN/UNMEASURED and dependent effects therefore remain unavailable by
+default. Exact-SHA CI is pending because push is not authorized.
 
 ## Open decisions
 
