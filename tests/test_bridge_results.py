@@ -21,14 +21,24 @@ from packet_tracer_mcp.infrastructure.execution.live_bridge import (
     report_result_js,
 )
 
-
 TOKEN = "test-token-that-is-long-enough-to-be-valid-0123456789"
 RID_A = "a" * 32
 RID_B = "b" * 32
 
+#: What a measured duration may read below the duration that actually
+#: elapsed. `time.monotonic()` returns seconds since boot as a float, so at a
+#: modest uptime its representation granularity already exceeds the margin an
+#: exact lower bound leaves: a true 9.25 s wait read back as
+#: 9.249999999999972 is one ulp of the clock value at an uptime of 128-256 s,
+#: not a short wait. `monotonic_ns` has no such error, so what is left is the
+#: clock's own resolution -- 1 ns where `clock_gettime` backs it, 15.625 ms
+#: where `GetTickCount64` does.
+CLOCK_RESOLUTION_NS = max(1, round(time.get_clock_info("monotonic").resolution * 1e9))
+
 
 @pytest.fixture
 def bridge():
+    """Serve one real bridge on an ephemeral port, stopped after the test."""
     instance = PTCommandBridge(port=0, token=TOKEN)
     instance.start()
     yield instance
@@ -84,6 +94,7 @@ def _get_result(
 
 
 def test_product_http_transport_authenticates_and_guards_fire_and_forget():
+    """A fire-and-forget send reaches the queue wrapped in its catch guard."""
     transport = PacketTracerHttpTransport(port=0, token=TOKEN)
     assert transport.bridge_transport == "http"
     transport.start(wait_for_connection=False)
@@ -97,6 +108,12 @@ def test_product_http_transport_authenticates_and_guards_fire_and_forget():
 
 
 def test_late_result_is_isolated_from_the_next_operation(bridge):
+    """A result posted after its wait expired is refused, not handed on.
+
+    The timed-out caller gets 204, the late post gets 410, and the next
+    operation's result is its own: a stale answer never becomes someone
+    else's.
+    """
     assert _queue_result_operation(bridge, RID_A) == 200
     bridge._queue.get_nowait()
 
@@ -116,6 +133,7 @@ def test_late_result_is_isolated_from_the_next_operation(bridge):
 
 
 def test_concurrent_out_of_order_results_do_not_cross(bridge):
+    """Two waiters each receive their own rid's result, posted in reverse."""
     assert _queue_result_operation(bridge, RID_A) == 200
     assert _queue_result_operation(bridge, RID_B) == 200
     observed: dict[str, tuple[int, str]] = {}
@@ -144,6 +162,14 @@ def test_concurrent_out_of_order_results_do_not_cross(bridge):
 
 
 def test_governed_wait_longer_than_the_old_fixed_window_is_honored(bridge):
+    """A result arriving well past the old fixed window is still delivered.
+
+    Receiving SLOW_RESULT is the primary fact: the bridge could only answer
+    with it after the post, so the call blocked for the whole delay. The
+    elapsed bound is the quantitative check on that, and it is measured
+    against the clock's own resolution rather than as an exact float
+    inequality.
+    """
     delay = 9.25
     assert _queue_result_operation(bridge, RID_A) == 200
 
@@ -152,18 +178,22 @@ def test_governed_wait_longer_than_the_old_fixed_window_is_honored(bridge):
         _post_result(bridge, RID_A, "SLOW_RESULT")
 
     responder = threading.Thread(target=respond_after_old_window)
+    # Read BEFORE the thread starts. Taken afterwards, the sleep being
+    # measured can begin before the measurement point, so the observed window
+    # is shorter than the sleep by however long the start took.
+    started = time.monotonic_ns()
     responder.start()
-    started = time.monotonic()
     result = _get_result(bridge, RID_A, wait=12.0)
-    elapsed = time.monotonic() - started
+    elapsed = time.monotonic_ns() - started
     responder.join(timeout=5.0)
 
     assert result == (200, "SLOW_RESULT")
-    assert elapsed >= delay
+    assert elapsed >= round(delay * 1e9) - CLOCK_RESOLUTION_NS
     assert not responder.is_alive()
 
 
 def test_orphan_storage_is_bounded_and_stale_entries_expire(bridge):
+    """The result store is capped: a full store refuses, an expired one makes room."""
     bridge._max_result_items = 3
     bridge._result_ttl = 60.0
 
@@ -183,6 +213,11 @@ def test_orphan_storage_is_bounded_and_stale_entries_expire(bridge):
 
 
 def test_consumed_tombstones_do_not_exhaust_scale_capacity(bridge):
+    """A consumed rid keeps its tombstone without holding a capacity slot.
+
+    The tombstone still has to refuse a very late post for that rid, which is
+    what separates "already delivered" from "never existed".
+    """
     bridge._max_result_items = 2
     first = "1" * 32
     second = "2" * 32
@@ -201,6 +236,11 @@ def test_consumed_tombstones_do_not_exhaust_scale_capacity(bridge):
 
 
 def test_rid_validation_and_duplicate_results_fail_closed(bridge):
+    """Every rid and wait the caller supplies is validated before it is used.
+
+    A missing, malformed or unknown rid and a non-finite wait are refused,
+    and a second queue or post for one rid never overwrites the first.
+    """
     malformed = "not-a-valid-rid"
     unknown = "c" * 32
     known = "d" * 32
@@ -210,9 +250,7 @@ def test_rid_validation_and_duplicate_results_fail_closed(bridge):
     assert _queue_result_operation(bridge, malformed) == 400
     assert _get_result(bridge, malformed, wait=0.0)[0] == 400
     assert _post_result(bridge, malformed, "malformed") == 400
-    malformed_wait = urllib.parse.urlencode(
-        {"t": TOKEN, "rid": unknown, "wait": "nan"}
-    )
+    malformed_wait = urllib.parse.urlencode({"t": TOKEN, "rid": unknown, "wait": "nan"})
     assert _request(bridge, f"/result?{malformed_wait}")[0] == 400
     assert _get_result(bridge, unknown, wait=0.0)[0] == 404
     assert _post_result(bridge, unknown, "unknown") == 404
@@ -230,6 +268,7 @@ def test_rid_validation_and_duplicate_results_fail_closed(bridge):
 
 
 def test_generated_rids_are_unique_and_strictly_serializable():
+    """A thousand generated rids are distinct and all match the wire pattern."""
     from packet_tracer_mcp.infrastructure.execution.live_bridge import next_rid
 
     rids = {next_rid() for _ in range(1000)}
@@ -239,6 +278,7 @@ def test_generated_rids_are_unique_and_strictly_serializable():
 
 
 def test_report_result_js_carries_encoded_token_and_rid_on_one_line():
+    """The callback encodes its query and stays one line, as PT requires."""
     token = "token with spaces&rid=attacker"
     js = report_result_js(54321, token, RID_A)
 
@@ -248,6 +288,11 @@ def test_report_result_js_carries_encoded_token_and_rid_on_one_line():
 
 
 def test_active_http_caller_reuses_one_rid_and_extends_the_socket_wait():
+    """Each call takes a fresh rid, and the socket wait exceeds the result wait.
+
+    The socket has to outlive the governed wait by its grace, or the caller
+    would abandon a result the bridge was still entitled to deliver.
+    """
     from packet_tracer_mcp.infrastructure.execution.live_bridge import (
         RESULT_SOCKET_GRACE_SECONDS,
         correlated_http_send_and_wait,
@@ -289,12 +334,11 @@ def test_active_http_caller_reuses_one_rid_and_extends_the_socket_wait():
         for url, _, _ in posts
     ]
     result_queries = [
-        urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
-        for url, _ in gets
+        urllib.parse.parse_qs(urllib.parse.urlparse(url).query) for url, _ in gets
     ]
     assert queue_rids[0] != queue_rids[1]
     assert [query["rid"][0] for query in result_queries] == queue_rids
-    assert all(rid in body for rid, (_, body, _) in zip(queue_rids, posts))
+    assert all(rid in body for rid, (_, body, _) in zip(queue_rids, posts, strict=True))
     assert all(query["wait"] == ["15.0"] for query in result_queries)
     assert all(timeout == 15.0 + RESULT_SOCKET_GRACE_SECONDS for _, timeout in gets)
     assert first == "result-for-" + queue_rids[0]
@@ -302,6 +346,7 @@ def test_active_http_caller_reuses_one_rid_and_extends_the_socket_wait():
 
 
 def test_wait_budget_has_a_finite_global_ceiling():
+    """A caller cannot ask for an unbounded or non-finite wait."""
     from packet_tracer_mcp.infrastructure.execution.live_bridge import (
         MAX_RESULT_WAIT_SECONDS,
         bounded_result_wait,
