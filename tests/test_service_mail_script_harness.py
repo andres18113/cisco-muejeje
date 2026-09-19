@@ -53,6 +53,7 @@ from packet_tracer_mcp.domain.enterprise.models.service_runtime import Observati
 from packet_tracer_mcp.infrastructure.execution.enterprise_service_runtime import (
     MAILBOX_SCAN_LIMIT,
     PacketTracerEnterpriseServiceRuntime,
+    mailbox_scan_incoherence,
 )
 from packet_tracer_mcp.infrastructure.execution.secret_resolver import (
     EnvironmentSecretResolver,
@@ -114,7 +115,12 @@ const serverUser = (dev, name) => {
   const account = dev.accounts[name];
   if (!account) { return null; }
   return {
-    getUser: () => { log.push('getUser'); return name; },
+    getUser: () => {
+      guard('account.getUser');
+      log.push('getUser');
+      const stored = (S.account_identity || {})[name];
+      return stored === undefined ? name : stored;
+    },
     getPassword: () => forbid('getPassword'),
     getMailBox: () => ({
       getMails: () => {
@@ -278,6 +284,9 @@ class _MailEngine:
             "send_throws_after_effect": False,
             "add_user_returns": True,
             "stores_domain_instead": None,
+            #: What `getUser()` answers for one account, when it has to
+            #: differ from the name the lookup asked for.
+            "account_identity": {},
         }
         self.state.update(overrides)
         self.scripts: list[str] = []
@@ -285,6 +294,10 @@ class _MailEngine:
         self.lose_answers = False
         #: Lose only the answers of scripts containing this text.
         self.lose_answers_for = ""
+        #: Answer scripts containing this text with `error_body` instead of
+        #: running them, so a read can report what Packet Tracer would.
+        self.error_for = ""
+        self.error_body = ""
         self.active = 0
         self.max_active = 0
         self.lock = threading.Lock()
@@ -322,7 +335,13 @@ class _MailEngine:
                 self.active -= 1
 
     def dispatch_and_wait(self, script: str, _timeout: float) -> BridgeDispatchOutcome:
-        """Deliver the script; optionally lose the answer after it ran."""
+        """Deliver the script; optionally fail or lose the answer."""
+        if self.error_for and self.error_for in script:
+            return BridgeDispatchOutcome(
+                dispatch=DispatchFact.ACCEPTED,
+                result=ResultFact.CORRELATED,
+                body=self.error_body,
+            )
         body = self.evaluate(script)
         lost = self.lose_answers or (
             bool(self.lose_answers_for) and self.lose_answers_for in script
@@ -584,6 +603,38 @@ def test_an_unreadable_account_is_never_treated_as_absent():
 # -- client configuration ----------------------------------------------------------
 
 
+def test_a_mismatched_account_identity_is_never_read_as_absence():
+    """S2-02.1: an inconsistent identity is not an empty slot."""
+    _needs_node()
+    engine = _MailEngine()
+    _seed_account(engine, "user1")
+    engine.state["account_identity"] = {"user1": "someone-else"}
+    before = json.dumps(engine.server["accounts"])
+    [row] = _runtime(engine).apply_actions([_account()])
+    decision = decide_mutation(row)
+
+    assert engine.state["add_user_calls"] == []
+    assert json.dumps(engine.server["accounts"]) == before
+    assert decision.row == "21"
+    assert decision.cause == "not_attempted:refused:account_identity_mismatch"
+    assert decision.sticky is False
+
+
+def test_an_account_identity_getter_that_throws_refuses_the_add():
+    """A getter failure is unobserved, and still never proves nonexistence."""
+    _needs_node()
+    engine = _MailEngine(failing=["account.getUser"])
+    _seed_account(engine, "user1")
+    before = json.dumps(engine.server["accounts"])
+    [row] = _runtime(engine).apply_actions([_account()])
+    decision = decide_mutation(row)
+
+    assert engine.state["add_user_calls"] == []
+    assert json.dumps(engine.server["accounts"]) == before
+    assert decision.row == "21"
+    assert decision.cause == "not_attempted:refused:precondition_unobserved"
+
+
 def test_a_client_is_configured_and_read_back_except_its_password():
     """R-MAIL-03: every field but the password is compared after the setters."""
     _needs_node()
@@ -698,6 +749,38 @@ def test_a_foreign_claim_refuses_the_send():
     assert engine.claims()[f"email_client:{PC1}"]["nonce"] == "an-earlier-run"
 
 
+@pytest.mark.parametrize(
+    "held", [None, False, 0, ""], ids=["null", "false", "zero", "empty"]
+)
+def test_a_present_but_unreadable_claim_is_never_an_empty_slot(held):
+    """S2-05.1: an own key that holds no readable claim refuses the send."""
+    _needs_node()
+    engine = _MailEngine()
+    engine.state["globals"]["__mcpE6Claims"] = {f"email_client:{PC1}": held}
+    before = json.dumps(engine.state["globals"]["__mcpE6Claims"])
+    [row] = _runtime(engine).apply_actions([_send()])
+    decision = decide_mutation(row)
+
+    assert engine.state["sends"] == []
+    assert json.dumps(engine.claims()) == before
+    assert decision.row == "21"
+    assert decision.cause == "not_attempted:refused:subject_claim_unreadable"
+
+
+def test_repeated_evaluations_over_an_unreadable_claim_send_nothing():
+    """Two deliveries of the same script leave the held entry as it was."""
+    _needs_node()
+    engine = _MailEngine()
+    engine.state["globals"]["__mcpE6Claims"] = {f"email_client:{PC1}": 0}
+    runtime = _runtime(engine)
+    runtime.apply_actions([_send()])
+    [row] = runtime.apply_actions([_send()])
+
+    assert engine.state["sends"] == []
+    assert engine.claims() == {f"email_client:{PC1}": 0}
+    assert decide_mutation(row).row == "21"
+
+
 def test_a_lost_answer_is_unknown_and_never_redispatched():
     """The send ran; the runtime does not learn it and does not try again."""
     _needs_node()
@@ -794,6 +877,22 @@ def test_unrelated_mailbox_content_never_leaves_the_engine():
     for report in engine.reports:
         assert "PRIVATE" not in str(report)
     assert "PRIVATE" not in _text_of(row)
+
+
+def test_the_generated_scan_satisfies_the_rule_it_is_judged_by():
+    """The reader's coherence relations are this scanner's, not a guess."""
+    _needs_node()
+    engine = _MailEngine()
+    unrelated = [_mail(f"other{i}") for i in range(MAILBOX_SCAN_LIMIT + 5)]
+    _seed_account(engine, "user2", [*unrelated, _mail("n0nce1")])
+    _runtime(engine).verify(_delivered())
+
+    scans = [
+        json.loads(item) for item in engine.reports if item and "found_user" in item
+    ]
+    assert scans
+    for payload in scans:
+        assert mailbox_scan_incoherence(payload) == ""
 
 
 def test_an_absent_recipient_account_is_unobservable():
@@ -976,6 +1075,27 @@ def test_an_echoed_credential_is_redacted_from_every_row():
         json.dumps(PASSWORD, ensure_ascii=False)[1:-1],
     ):
         assert form not in text
+
+
+def test_a_credential_bearing_script_returns_no_external_error_text():
+    """S2-12: the caught engine error becomes a closed category."""
+    _needs_node()
+    engine = _MailEngine(failing=["client.setPassword"])
+    engine.state["failure_detail"] = " while setting " + PASSWORD
+    [row] = _runtime(engine).apply_actions([_configure()])
+
+    assert row.call_error == "engine_error:Error"
+    assert "stub failure" not in _text_of(row)
+
+
+def test_a_batch_without_a_credential_keeps_its_bounded_diagnostic():
+    """A script that carries no value still reports what the setter said."""
+    _needs_node()
+    engine = _MailEngine(failing=["smtp.setEnable"])
+    engine.state["failure_detail"] = " on the enable setter"
+    [row] = _runtime(engine).apply_actions([_enable_smtp()])
+
+    assert "stub failure: smtp.setEnable on the enable setter" in row.call_error
 
 
 def test_an_unresolvable_credential_dispatches_nothing():

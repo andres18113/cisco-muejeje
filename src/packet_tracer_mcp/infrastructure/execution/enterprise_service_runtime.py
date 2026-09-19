@@ -64,7 +64,7 @@ from ...domain.enterprise.models.service_runtime import (
 )
 from .command_dispatch import PAGER_GUARD_JS
 from .runtime_inventory import normalize_runtime_inventory
-from .secret_resolver import redact_secret_values
+from .secret_resolver import EvidenceSanitizer
 from .transport_outcome import BridgeDispatchOutcome, sanitized_detail
 
 _HOSTNAME = re.compile(
@@ -137,10 +137,25 @@ _CLAIM_PREFIX = "email_client:"
 MAILBOX_SCAN_LIMIT = 100
 
 #: Why a mail row reports that no setter ran, beyond the two shared reasons.
+#:
+#: The last two exist because two different readings used to collapse into
+#: "nothing is there". `getEmailUser(name)` returning an object whose
+#: `getUser()` is a different name is an inconsistent identity, not an absent
+#: account; an own claim key holding something that is not a readable claim is
+#: unknown ownership, not a free slot. Neither admits an effect.
 _SKIP_PRECONDITION_UNOBSERVED = "precondition_unobserved"
 _SKIP_SUBJECT_CLAIMED = "subject_claimed"
 _SKIP_OWN_CLAIM_REPLAYED = "own_claim_replayed"
-_REFUSALS = frozenset({_SKIP_PRECONDITION_UNOBSERVED, _SKIP_SUBJECT_CLAIMED})
+_SKIP_ACCOUNT_IDENTITY_MISMATCH = "account_identity_mismatch"
+_SKIP_SUBJECT_CLAIM_UNREADABLE = "subject_claim_unreadable"
+_REFUSALS = frozenset(
+    {
+        _SKIP_PRECONDITION_UNOBSERVED,
+        _SKIP_SUBJECT_CLAIMED,
+        _SKIP_ACCOUNT_IDENTITY_MISMATCH,
+        _SKIP_SUBJECT_CLAIM_UNREADABLE,
+    }
+)
 
 #: The event-dependent kinds R-EVT-05's fallback leaves without an observer.
 _GATED_EVENT_KINDS = frozenset(
@@ -170,6 +185,22 @@ _MAIL_DELIVERY_LIMITATIONS = (
 #: 32-bit hash plus a length, which collides -- `yI76Uj5ZfPNL` and
 #: `qx51K0WT5Lj1` are both `1bb90b62:12` -- and the harness exercises exactly
 #: that pair, because a collision must not be able to produce a fact.
+#:
+#: `__er` returns a bounded copy of whatever the engine said. `__ec` returns
+#: one of eight constants instead, and a batch that resolved a credential uses
+#: it for every row: a 200-character crop of an external message can leave a
+#: confidential prefix behind, and no redactor downstream can put the rest of
+#: the value back to recognize it. A category is worth less than a message and
+#: is the only thing such a script may safely return (R-SEC-01).
+_ERROR_NAMES = (
+    "Error",
+    "EvalError",
+    "RangeError",
+    "ReferenceError",
+    "SyntaxError",
+    "TypeError",
+    "URIError",
+)
 _SCRIPT_HELPERS = (
     "function __dg(v){if(typeof v==='boolean'){return v?'1':'0';}"
     "var s=String(v);var h=0x811c9dc5;for(var i=0;i<s.length;i++){"
@@ -177,6 +208,10 @@ _SCRIPT_HELPERS = (
     "return ('0000000'+h.toString(16)).slice(-8)+':'+s.length;}"
     "function __er(e){var s='';try{s=String(e&&e.message?e.message:e);}"
     "catch(x){s='error';}return s.length>200?s.substring(0,200):s;}"
+    "function __ec(e){var n='';try{n=String(e&&e.name?e.name:'');}catch(x){n='';}"
+    f"var k={json.dumps(list(_ERROR_NAMES), separators=(',', ':'))};"
+    "for(var i=0;i<k.length;i++){if(n===k[i]){return 'engine_error:'+k[i];}}"
+    "return 'engine_error:other';}"
 )
 
 #: The exact keys the row contract requires. An omitted key is invalid: it is
@@ -427,6 +462,40 @@ def _dns_window_reading(window: str) -> DnsWindowReading:
     )
 
 
+def mailbox_scan_incoherence(payload: dict) -> str:
+    """Name the first relation one mailbox scan breaks, or "" when coherent.
+
+    The relations are the bounded scanner's own, read off the script
+    `_verify_smtp_delivered` generates: it reads `count` once, walks the
+    mailbox newest first while `scanned < MAILBOX_SCAN_LIMIT`, increments
+    exactly one of `matches`/`mismatched` per subject hit, sets `truncated`
+    from what it did not reach, and touches nothing at all when the recipient
+    account is absent. Nothing here is an assumption about how a `Mail` field
+    is spelled or typed; that stays unqualified until Q2 measures it.
+
+    A payload that breaks one of them is not a mailbox that held nothing. It
+    is an answer this reader cannot use, so it establishes neither presence
+    nor absence and the caller reports MALFORMED.
+    """
+    counters = ("count", "scanned", "matches", "mismatched")
+    if any(payload[name] < 0 for name in counters):
+        return "negative_counter"
+    if not payload["found_user"]:
+        # The script never enters the scan, so every counter is its default.
+        if any(payload[name] for name in counters) or payload["truncated"]:
+            return "absent_subject_carries_counters"
+        return ""
+    if payload["scanned"] > MAILBOX_SCAN_LIMIT:
+        return "scan_exceeds_bound"
+    if payload["scanned"] != min(payload["count"], MAILBOX_SCAN_LIMIT):
+        return "scan_not_the_bounded_walk"
+    if payload["matches"] + payload["mismatched"] > payload["scanned"]:
+        return "match_total_exceeds_scanned"
+    if payload["truncated"] is not (payload["count"] > payload["scanned"]):
+        return "truncation_contradicts_counts"
+    return ""
+
+
 def _no_client_contradiction(payload: dict, *, secure: bool) -> str:
     """Name the field that refutes a start payload's claim of no client.
 
@@ -528,8 +597,11 @@ class PacketTracerEnterpriseServiceRuntime:
         payload stayed inside this process.
 
         `secret_resolver` is the one source of credential values. Without it a
-        secret-bearing action is refused before any script exists.
+        secret-bearing action is refused before any script exists. One runtime
+        serves one invocation, so its `EvidenceSanitizer` holds exactly the
+        values this invocation resolved and nothing else.
         """
+        self._sanitizer = EvidenceSanitizer()
         self._query_inventory = query_inventory
         self._send_and_wait = send_and_wait
         self._dispatch_and_wait = dispatch_and_wait
@@ -586,8 +658,11 @@ class PacketTracerEnterpriseServiceRuntime:
         A secret-bearing action whose reference does not resolve, and a send
         with no bound nonce, are refused before any script exists, so their
         rows are NOT_SUBMITTED: the payload provably never left this process.
-        Every string of every returned row is redacted of every value this
-        batch resolved, in raw, JSON-escaped and URL-encoded form.
+
+        Redaction is the invocation's, not this batch's: every string of every
+        returned row passes the runtime's `EvidenceSanitizer`, which holds
+        every value resolved so far, so a value this batch never used cannot
+        leave through a row of it either.
         """
         secrets: dict[str, str] = {}
         refused: dict[str, RuntimeActionMutation] = {}
@@ -625,13 +700,12 @@ class PacketTracerEnterpriseServiceRuntime:
                 }
             )
         ordered = [rows[item.id] for item in actions]
-        if not secrets:
+        if not self._sanitizer.holds_values:
             return ordered
-        values = list(secrets.values())
         return [
             row.model_copy(
                 update={
-                    field: redact_secret_values(getattr(row, field), values)
+                    field: self._sanitizer.redact(getattr(row, field))
                     for field in ("message", "cause", "call_error")
                 }
             )
@@ -639,10 +713,22 @@ class PacketTracerEnterpriseServiceRuntime:
         ]
 
     def _secret(self, secret_ref: str) -> str:
-        """Resolve one reference through the bound resolver, or refuse."""
+        """Resolve one reference through the bound resolver, or refuse.
+
+        Every value this invocation reveals is remembered by the sanitizer at
+        the moment it is revealed, so no later diagnostic of this runtime --
+        of this batch, of the next one, or of a verification read -- can
+        return it.
+        """
         if self._secret_resolver is None:
             raise SecretUnavailable(secret_ref, "no_resolver")
-        return self._secret_resolver.resolve(secret_ref).reveal()
+        value = self._secret_resolver.resolve(secret_ref).reveal()
+        self._sanitizer.remember(value)
+        return value
+
+    def _safe(self, value: object) -> str:
+        """Return one bounded diagnostic that crossed the secret boundary."""
+        return self._sanitizer.safe(value)
 
     @staticmethod
     def _not_submitted(action: ServiceAction, cause: str) -> RuntimeActionMutation:
@@ -729,8 +815,8 @@ class PacketTracerEnterpriseServiceRuntime:
             ),
         )
 
-    @staticmethod
     def _whole_batch_mutation(
+        self,
         action: ServiceAction,
         observation: BridgeObservation,
         batch_id: str,
@@ -763,8 +849,8 @@ class PacketTracerEnterpriseServiceRuntime:
             transition=transition,
             footprint=FootprintFact.NOT_APPLICABLE,
             attempted=None,
-            cause=sanitized_detail(outcome.detail),
-            message=observation.message,
+            cause=self._safe(outcome.detail),
+            message=self._sanitizer.redact(observation.message),
         )
 
     def _row_mutation(
@@ -798,7 +884,7 @@ class PacketTracerEnterpriseServiceRuntime:
             )
 
         attempted = bool(row["attempted"])
-        call_error = sanitized_detail(row["call_error"])
+        call_error = self._safe(row["call_error"])
         skip = row["skip_reason"]
         if skip in _REFUSALS:
             # Row 21: the engine refused before any setter. Nothing was
@@ -974,7 +1060,13 @@ class PacketTracerEnterpriseServiceRuntime:
         a DNS row that says `subject_claimed` is an invalid row, not a refusal.
         """
         if isinstance(action, EnsureEmailAccount):
-            return frozenset({_SKIP_ALREADY_SATISFIED, _SKIP_PRECONDITION_UNOBSERVED})
+            return frozenset(
+                {
+                    _SKIP_ALREADY_SATISFIED,
+                    _SKIP_PRECONDITION_UNOBSERVED,
+                    _SKIP_ACCOUNT_IDENTITY_MISMATCH,
+                }
+            )
         if isinstance(action, ConfigureEmailClient):
             return frozenset({_SKIP_SUBJECT_CLAIMED})
         if isinstance(action, SendMailMessage):
@@ -983,6 +1075,7 @@ class PacketTracerEnterpriseServiceRuntime:
                     _SKIP_SUBJECT_CLAIMED,
                     _SKIP_OWN_CLAIM_REPLAYED,
                     _SKIP_PRECONDITION_UNOBSERVED,
+                    _SKIP_SUBJECT_CLAIM_UNREADABLE,
                 }
             )
         return frozenset({_SKIP_ALREADY_SATISFIED, _SKIP_FAMILY_NOT_IMPLEMENTED})
@@ -1047,6 +1140,12 @@ class PacketTracerEnterpriseServiceRuntime:
             # and the row cannot be used to claim a satisfied no-op.
             if row["post_read"] and row["ok"] is not True:
                 return "already_satisfied_contradicted"
+        elif row["skip_reason"] == _SKIP_ACCOUNT_IDENTITY_MISMATCH:
+            # Unlike the other refusals, this one IS a completed pre-read: it
+            # reports what the lookup returned. A row that claims it without
+            # having read anything has invented the contradiction.
+            if not row["pre_read"]:
+                return "identity_mismatch_requires_pre_read"
         elif row["pre_read"] or row["post_read"]:
             return "declined_requires_no_reads"
         return ""
@@ -1063,6 +1162,12 @@ class PacketTracerEnterpriseServiceRuntime:
         failed pre-read does not stop the post-read from running. `secrets`
         holds this batch's resolved values by reference; a value reaches the
         script only through `json.dumps`.
+
+        A batch that resolved anything reads its caught errors with `__ec`,
+        which returns a category, instead of `__er`, which returns a bounded
+        copy of the engine's own text. The choice is the batch's, not the
+        action's: the credential is in the evaluation, so no row of it may
+        carry external text that a later redactor might no longer recognize.
         """
         action_id = json.dumps(action.id)
         row = (
@@ -1071,13 +1176,14 @@ class PacketTracerEnterpriseServiceRuntime:
             + ',attempted:false,skip_reason:"",call_error:"",call_result:null,'
             "pre_read:false,post_read:false,ok:null,changed:null,pre:null,post:null};"
         )
+        reader = "__ec" if secrets else "__er"
         runtime = PacketTracerEnterpriseServiceRuntime
         if isinstance(action, EnsureEmailAccount):
-            return runtime._account_lines(row, action, secrets or {})
+            return runtime._account_lines(row, action, secrets or {}, reader)
         if isinstance(action, ConfigureEmailClient):
-            return runtime._client_lines(row, action, secrets or {})
+            return runtime._client_lines(row, action, secrets or {}, reader)
         if isinstance(action, SendMailMessage):
-            return runtime._send_lines(row, action, secrets or {})
+            return runtime._send_lines(row, action, secrets or {}, reader)
         if isinstance(action, PublishTftpFile):
             # A declined family: no process lookup, no call, no reads. The
             # baseline reported `ok=false` here and the outcome stays FAILED.
@@ -1103,11 +1209,13 @@ class PacketTracerEnterpriseServiceRuntime:
                 + _SKIP_ALREADY_SATISFIED
                 + '";}else{try{r.attempted=true;r.call_result='
                 + setter
-                + ";}catch(e){r.call_error=__er(e);}}"
+                + f";}}catch(e){{r.call_error={reader}(e);}}}}"
             )
         else:
             lines.append(
-                "try{r.attempted=true;" + setter + ";}catch(e){r.call_error=__er(e);}"
+                "try{r.attempted=true;"
+                + setter
+                + f";}}catch(e){{r.call_error={reader}(e);}}"
             )
         lines.append(f"try{{qv={read};r.post_read=true;r.post=__dg(qv);}}catch(e){{}}")
         lines.append(f"if(r.post_read){{r.ok=({ok_expression});}}")
@@ -1162,16 +1270,24 @@ class PacketTracerEnterpriseServiceRuntime:
 
     @staticmethod
     def _account_lines(
-        row: str, action: EnsureEmailAccount, secrets: dict[str, str]
+        row: str, action: EnsureEmailAccount, secrets: dict[str, str], reader: str
     ) -> list[str]:
         """Ensure one server account exists without ever changing one.
 
-        `addUser` runs only when a completed pre-read proved the account
-        absent. A present account is left alone -- its password is never
-        read, compared or changed (R-SEC-05) -- and a pre-read that threw
-        refuses instead of adding, because a getter failure is not evidence of
-        nonexistence. Existence is `getEmailUser(name)` non-null with
-        `getUser()` equal to the name.
+        `__ex` classifies the lookup into three readings instead of one
+        boolean: `absent` when `getEmailUser(name)` returned nothing,
+        `present` when it returned a user whose `getUser()` is that name, and
+        `mismatch` when it returned a user whose `getUser()` is a different
+        name. A getter that throws is a fourth outcome -- no reading at all --
+        because the pre-read never completes.
+
+        Only `absent` authorizes `addUser`. `present` is the documented no-op,
+        and its password is never read, compared or changed (R-SEC-05).
+        `mismatch` and an unobserved pre-read both refuse: an inconsistent
+        identity is the engine contradicting itself about this name, and
+        neither it nor a failed getter is evidence that the account is free to
+        create. Folding `mismatch` into `absent` is what let an add run
+        against a name the server had already answered for.
         """
         name = json.dumps(action.username)
         password = json.dumps(secrets[action.secret_ref])
@@ -1179,22 +1295,26 @@ class PacketTracerEnterpriseServiceRuntime:
             row,
             'var p=d.getProcess("EmailServer");var pv=null,qv=null;',
             f"var __ex=function(){{var u=p.getEmailUser({name});"
-            f"return !!u&&String(u.getUser())==={name};}};",
+            "if(u===null||u===undefined){return 'absent';}"
+            f"return String(u.getUser())==={name}?'present':'mismatch';}};",
             "try{pv=__ex();r.pre_read=true;r.pre=__dg(pv);}catch(e){}",
             'if(!r.pre_read){r.skip_reason="' + _SKIP_PRECONDITION_UNOBSERVED + '";}'
-            'else if(pv===true){r.skip_reason="' + _SKIP_ALREADY_SATISFIED + '";}'
+            "else if(pv==='present'){r.skip_reason=\"" + _SKIP_ALREADY_SATISFIED + '";}'
+            "else if(pv!=='absent'){r.skip_reason=\""
+            + _SKIP_ACCOUNT_IDENTITY_MISMATCH
+            + '";}'
             f"else{{try{{r.attempted=true;r.call_result=!!p.addUser({name},{password});}}"
-            "catch(e){r.call_error=__er(e);}}",
+            f"catch(e){{r.call_error={reader}(e);}}}}",
             'if(r.skip_reason!=="' + _SKIP_PRECONDITION_UNOBSERVED + '"){'
             "try{qv=__ex();r.post_read=true;r.post=__dg(qv);}catch(e){}}",
-            "if(r.post_read){r.ok=(qv===true);}",
+            "if(r.post_read){r.ok=(qv==='present');}",
             "if(r.pre_read&&r.post_read){r.changed=(pv!==qv);}",
             "results.push(r);",
         ]
 
     @staticmethod
     def _client_lines(
-        row: str, action: ConfigureEmailClient, secrets: dict[str, str]
+        row: str, action: ConfigureEmailClient, secrets: dict[str, str], reader: str
     ) -> list[str]:
         """Configure one client's mail user and read every field but the password.
 
@@ -1227,7 +1347,7 @@ class PacketTracerEnterpriseServiceRuntime:
             "try{r.attempted=true;var u=p.getEmailUser();"
             f"u.setName({name});u.setUser({user});u.setMailId({mail_id});"
             f"u.setSmtpServer({smtp});u.setPop3Server({pop3});u.setPassword({password});"
-            "}catch(e){r.call_error=__er(e);}",
+            f"}}catch(e){{r.call_error={reader}(e);}}",
             "try{qv=__rd();r.post_read=true;r.post=__dg(qv);}catch(e){}",
             f"if(r.post_read){{r.ok=(qv==={wanted});}}",
             "if(r.pre_read&&r.post_read){r.changed=(pv!==qv);}",
@@ -1237,19 +1357,31 @@ class PacketTracerEnterpriseServiceRuntime:
 
     @staticmethod
     def _send_lines(
-        row: str, action: SendMailMessage, secrets: dict[str, str]
+        row: str, action: SendMailMessage, secrets: dict[str, str], reader: str
     ) -> list[str]:
         """Dispatch one message at most once, under a pre-effect claim.
 
-        In one evaluation: an existing claim on the client refuses -- as
-        `own_claim_replayed` when it is this operation's claim for this run's
-        nonce, else `subject_claimed` -- and nothing is sent. Otherwise the
-        claim is written `in_progress` BEFORE `sendMail`, and becomes
-        `completed` when the call returns or `unknown` when it throws. No
-        claim is ever cleared here: under the event fallback no send is ever
-        observed to have resolved, so the claim stays as the quarantine of
-        the subject for the Packet Tracer session (R-EVT-06/07). This bounds
-        duplicates only within one evaluation; it is not exactly-once.
+        The prerequisite is the ABSENCE of an own key on the claim object,
+        which is what `hasOwnProperty` answers. Reading the stored value for
+        truth instead made every falsey entry -- `null`, `false`, `0`, `""` --
+        look like a free slot, so a present, unreadable claim was overwritten
+        and a message went out under it.
+
+        A present key is therefore classified, never emptied. A readable claim
+        (`op_id` and `nonce` both strings) refuses as `own_claim_replayed`
+        when it is this operation's claim for this run's nonce and as
+        `subject_claimed` otherwise; anything else under the key is unknown
+        ownership and refuses as `subject_claim_unreadable`. None of the three
+        writes, adopts, resets or sends.
+
+        With no own key the claim is written `in_progress` BEFORE `sendMail`,
+        and becomes `completed` when the call returns or `unknown` when it
+        throws. No claim is ever cleared here: under the event fallback no
+        send is ever observed to have resolved, so the claim stays as the
+        quarantine of the subject for the Packet Tracer session
+        (R-EVT-06/07). This bounds duplicates only within one evaluation; it
+        is not exactly-once, and the Python lock proves nothing about the
+        engine.
         """
         key = json.dumps(_CLAIM_PREFIX + action.host_device_name)
         operation = json.dumps(action.id)
@@ -1263,8 +1395,14 @@ class PacketTracerEnterpriseServiceRuntime:
         return [
             row,
             f"var __c={_CLAIMS}={_CLAIMS}||{{}};"
-            f"var __held=Object.prototype.hasOwnProperty.call(__c,{key})?__c[{key}]:null;",
-            f"if(__held){{r.skip_reason=(__held.op_id==={operation}"
+            f"var __present=Object.prototype.hasOwnProperty.call(__c,{key});"
+            f"var __held=__present?__c[{key}]:null;"
+            "var __readable=!!__held&&typeof __held==='object'"
+            "&&typeof __held.op_id==='string'&&typeof __held.nonce==='string';",
+            'if(__present&&!__readable){r.skip_reason="'
+            + _SKIP_SUBJECT_CLAIM_UNREADABLE
+            + '";}',
+            f"else if(__present){{r.skip_reason=(__held.op_id==={operation}"
             f"&&__held.nonce==={nonce})?"
             '"' + _SKIP_OWN_CLAIM_REPLAYED + '":"' + _SKIP_SUBJECT_CLAIMED + '";}else{',
             'var __s=null;try{var __p=d.getProcess("EmailClient");'
@@ -1277,7 +1415,7 @@ class PacketTracerEnterpriseServiceRuntime:
             f"r.call_result=!!__s.sendMail({sender},{recipient},{text},{text},"
             f"{password},{server});"
             f'__c[{key}].state="completed";}}catch(e){{__c[{key}].state="unknown";'
-            "r.call_error=__er(e);}",
+            f"r.call_error={reader}(e);}}",
             "}}",
             "results.push(r);",
         ]
@@ -1366,20 +1504,31 @@ class PacketTracerEnterpriseServiceRuntime:
         The status comes from the fact, not from a second interpretation of the
         same reading, which is what let a lost result and a contradicted read
         share one status.
+
+        This is also the one funnel every read exit passes, so it is where the
+        invocation's secret boundary sits for them. `_apply_batch` redacts its
+        own rows, but a verification resolves nothing and used to hand
+        `observation.outcome.detail` straight through: a value resolved
+        earlier in the same invocation could come back in an engine error the
+        reader merely bounded (R-SEC-01).
         """
         status, fresh = _OBSERVATION_STATUS[observation]
+        redact = self._sanitizer.redact
         return RuntimeServiceVerification(
             expectation_id=expectation.id,
             status=status,
             evidence_kind=expectation.evidence_kind,
             evidence_method=method,
             fresh_evidence=fresh,
-            observed=dict(observed or {}),
+            observed={
+                key: redact(value) if isinstance(value, str) else value
+                for key, value in (observed or {}).items()
+            },
             observation=observation,
-            cause=sanitized_detail(cause),
+            cause=self._safe(cause),
             claim_level=claim_level,
-            limitations=list(limitations),
-            message=message,
+            limitations=[redact(item) for item in limitations],
+            message=redact(message),
         )
 
     @staticmethod
@@ -1708,13 +1857,13 @@ class PacketTracerEnterpriseServiceRuntime:
 
         def settled(item: BridgeObservation) -> bool:
             payload = admissible(item)
+            if payload is None or mailbox_scan_incoherence(payload):
+                # An answer whose counters contradict the scan is not an
+                # answer. Ending the wait on one would let an unusable
+                # payload stand where a real reading was still coming.
+                return False
             return bool(
-                payload
-                and (
-                    not payload["found_user"]
-                    or payload["matches"]
-                    or payload["mismatched"]
-                )
+                not payload["found_user"] or payload["matches"] or payload["mismatched"]
             )
 
         observation = self._poll(
@@ -1738,6 +1887,19 @@ class PacketTracerEnterpriseServiceRuntime:
                 claim_level=claim,
                 cause="typed_shape_missing",
                 message="The mailbox scan payload is not the typed shape.",
+            )
+        broken = mailbox_scan_incoherence(payload)
+        if broken:
+            # The fields are the right types and still describe a scan that
+            # cannot have happened -- a match among zero examined messages,
+            # say. Type-checking alone admitted that as presence.
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method=method,
+                claim_level=claim,
+                cause=f"mailbox_scan_incoherent:{broken}",
+                message="The mailbox scan counters contradict the scan itself.",
             )
         observed = {
             "scanned": payload["scanned"],
@@ -2563,7 +2725,10 @@ class PacketTracerEnterpriseServiceRuntime:
                     dispatch=outcome.dispatch,
                     result=ResultFact.ENGINE_ERROR,
                     disposition=outcome.disposition,
-                    detail=sanitized_detail(body or "engine_error"),
+                    # The engine's own text, and the one place a resolved
+                    # value can come back from the evaluation. It crosses the
+                    # secret boundary here, before anything folds or crops it.
+                    detail=self._safe(body or "engine_error"),
                 ),
             )
         try:

@@ -71,19 +71,35 @@ class BridgeDispatchOutcome:
     detail: str = ""
 
 
+def detail_text(value: object) -> str:
+    """Return one external value as text, before anything bounds it.
+
+    This is the last point at which the text still says exactly what its
+    producer said. A caller that has to remove something from it -- a
+    resolved credential, say -- acts here, because the folding and the
+    truncation below both destroy the substring it would have to match.
+    """
+    if isinstance(value, BaseException):
+        return f"{type(value).__name__}:{value}"
+    return str(value or "")
+
+
+def bound_detail(text: str) -> str:
+    """Fold one diagnostic onto a single line within the shared bound."""
+    text = " ".join(text.split())
+    if len(text) <= MAX_DETAIL_CHARS:
+        return text
+    return text[: MAX_DETAIL_CHARS - 1] + "…"
+
+
 def sanitized_detail(value: object) -> str:
     """Reduce one external value to a bounded single-line diagnostic.
 
     Socket and OS errors carry paths, host names and, on some platforms,
     locale-dependent system text. The type name plus a bounded message is
     enough to debug a phase decision and small enough not to smuggle a
-    payload into a stored record.
+    payload into a stored record. This is NOT a credential boundary: a caller
+    whose text can contain a resolved value redacts between `detail_text` and
+    `bound_detail` instead of calling this.
     """
-    if isinstance(value, BaseException):
-        text = f"{type(value).__name__}:{value}"
-    else:
-        text = str(value or "")
-    text = " ".join(text.split())
-    if len(text) <= MAX_DETAIL_CHARS:
-        return text
-    return text[: MAX_DETAIL_CHARS - 1] + "…"
+    return bound_detail(detail_text(value))

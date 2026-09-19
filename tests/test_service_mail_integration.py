@@ -68,6 +68,7 @@ from packet_tracer_mcp.domain.enterprise.models.service_run_record import (
     ServiceRunRecord,
     SourceTreeIdentity,
 )
+from packet_tracer_mcp.domain.enterprise.models.service_runtime import ObservationFact
 from packet_tracer_mcp.infrastructure.catalog.service_capabilities import (
     packet_tracer_service_capabilities,
 )
@@ -519,6 +520,47 @@ def test_the_record_holds_no_credential_and_round_trips_cause_and_limitation(
         item.startswith("recovery_read_after_unresolved_action:")
         for item in delivered.limitations
     )
+
+
+def test_a_verification_engine_error_never_reaches_the_response_or_the_record(
+    tmp_path,
+):
+    """S2-12: the read exits redact too, before folding and truncation.
+
+    The client read-back is answered with an engine error that echoes the
+    credential the same invocation resolved, padded so the value crosses the
+    shared 200-character bound. Nothing the operator or the store can see may
+    carry any form of it, and the row must still say why it observed nothing.
+    """
+    _needs_node()
+    run = _Run(tmp_path, _mail_payload())
+    run.engine.error_for = "out.fields"
+    run.engine.error_body = (
+        "PT_ERROR: EmailClient refused "
+        + PASSWORD
+        + " and again "
+        + "x" * 130
+        + PASSWORD
+    )
+
+    result = run.run(capability_catalog=_candidate_catalog)
+
+    stored = b"".join(path.read_bytes() for path in tmp_path.rglob("*.json")).decode(
+        "utf-8"
+    )
+    rendered = result.model_dump_json()
+    # The second occurrence straddles the shared 200-character bound, so a
+    # crop applied before redaction would leave this prefix behind.
+    prefix = PASSWORD[:7]
+    for form in [*_credential_forms(), prefix, json.dumps(prefix)[1:-1]]:
+        assert form not in stored
+        assert form not in rendered
+    rows = _rows(result, ServiceVerificationKind.EMAIL_CLIENT_STATE)
+    assert rows
+    for row in rows:
+        assert row.observation is ObservationFact.ENGINE_ERROR
+        assert row.status is ActionExecutionStatus.UNOBSERVABLE
+        assert "EmailClient refused" in row.cause
 
 
 def test_a_lost_send_answer_is_never_resent(tmp_path):

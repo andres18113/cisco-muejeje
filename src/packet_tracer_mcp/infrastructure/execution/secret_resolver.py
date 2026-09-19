@@ -12,6 +12,10 @@ script: raw, JSON-escaped (both ASCII and Unicode escaping) and URL-encoded.
 A value shorter than `MIN_SECRET_LENGTH` is refused at resolution, because
 redacting one or two characters would mangle every diagnostic without making
 anything safer.
+
+`EvidenceSanitizer` is where that redaction becomes a boundary rather than a
+step: one instance per invocation, holding the values that invocation actually
+resolved, and removing them BEFORE anything folds or truncates the text.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ from collections.abc import Iterable, Mapping
 from urllib.parse import quote, quote_plus
 
 from ...application.ports.secret_resolver import SecretUnavailable, SecretValue
+from .transport_outcome import bound_detail, detail_text
 
 SECRET_ENV_PREFIX = "PT_MCP_SECRET_"
 MIN_SECRET_LENGTH = 4
@@ -87,3 +92,44 @@ def redact_secret_values(text: str, values: Iterable[str]) -> str:
     for form in forms:
         text = text.replace(form, REDACTED)
     return text
+
+
+class EvidenceSanitizer:
+    """The one boundary every outbound runtime string crosses (R-SEC-01).
+
+    It holds the values one invocation actually resolved -- never a sweep of
+    the environment, and never a value some other invocation revealed -- and
+    removes every form of them before the text is folded and truncated.
+
+    The order is the whole point. Folding rewrites repeated whitespace inside
+    a value, and truncation can cut a value at any offset, so a redactor that
+    runs after either one no longer has the substring it would have matched.
+    A diagnostic that has crossed this boundary is safe to bound, store and
+    return; one that has not is not, whatever bounded it first.
+    """
+
+    __slots__ = ("_forms",)
+
+    def __init__(self) -> None:
+        """Start with nothing to redact; an unused boundary changes no text."""
+        self._forms: tuple[str, ...] = ()
+
+    @property
+    def holds_values(self) -> bool:
+        """Return whether this invocation has resolved anything to redact."""
+        return bool(self._forms)
+
+    def remember(self, value: str) -> None:
+        """Record one resolved value, in every form it could reach text in."""
+        forms = set(self._forms) | {form for form in secret_forms(value) if form}
+        self._forms = tuple(sorted(forms, key=len, reverse=True))
+
+    def redact(self, text: str) -> str:
+        """Replace every remembered form, longest first, and nothing else."""
+        for form in self._forms:
+            text = text.replace(form, REDACTED)
+        return text
+
+    def safe(self, value: object) -> str:
+        """Return one bounded diagnostic with every remembered form removed."""
+        return bound_detail(self.redact(detail_text(value)))
