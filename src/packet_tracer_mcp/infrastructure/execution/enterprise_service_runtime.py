@@ -1508,7 +1508,7 @@ class PacketTracerEnterpriseServiceRuntime:
             f"try{{p=m&&m.getDhcpServerProcessByPortName({interface});}}catch(e){{p=null;}}",
             f'if(!p){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}else{{',
             "try{pv=!!p.isEnable();r.pre_read=true;r.pre=__dg(pv);}catch(e){}",
-            "if(!r.pre_read){r.skip_reason=\"precondition_unobserved\";}else{",
+            'if(!r.pre_read){r.skip_reason="precondition_unobserved";}else{',
             f"try{{r.attempted=true;p.setEnable(true);}}catch(e){{r.call_error={reader}(e);}}",
             "try{qv=!!p.isEnable();r.post_read=true;r.post=__dg(qv);}catch(e){}",
             "if(r.post_read){r.ok=qv===true;}if(r.pre_read&&r.post_read){r.changed=pv!==qv;}",
@@ -1524,7 +1524,9 @@ class PacketTracerEnterpriseServiceRuntime:
         """Ensure one named pool without deleting or overwriting conflicts."""
         interface = json.dumps(action.interface)
         pool_name = json.dumps(action.pool_name)
-        wanted_ranges = [item.model_dump(mode="json") for item in action.excluded_ranges]
+        wanted_ranges = [
+            item.model_dump(mode="json") for item in action.excluded_ranges
+        ]
         wanted = {
             "name": action.pool_name,
             "network": action.network,
@@ -1589,9 +1591,7 @@ class PacketTracerEnterpriseServiceRuntime:
             f"}}else{{pool=p.getPool({pool_name});}}"
             "for(var i=0;i<__ranges.length;i++){if(!__has(pre.exclusions,__ranges[i])){"
             "p.addExcludedAddress(__ranges[i].start,__ranges[i].end);}}"
-            "if(!pre.exists){"
-            + setters
-            + "}"
+            "if(!pre.exists){" + setters + "}"
             f"}}catch(e){{r.call_error={reader}(e);}}}}"
             "try{qv=__rd();r.post_read=true;r.post=__dg(qv);}catch(e){}"
             "if(r.post_read){r.ok=__ok(JSON.parse(qv));}"
@@ -1786,8 +1786,7 @@ class PacketTracerEnterpriseServiceRuntime:
             else _ERROR_TEXT_HELPER
         )
         script = (
-            helper
-            + f"try{{var d=ipc.network().getDevice({host});"
+            helper + f"try{{var d=ipc.network().getDevice({host});"
             'var m=d&&d.getProcess("DhcpServer");'
             f"var p=m&&m.getDhcpServerProcessByPortName({interface});"
             f"var q=p&&p.getPool({pool_name});var xs=[];"
@@ -1875,7 +1874,9 @@ class PacketTracerEnterpriseServiceRuntime:
                 cause="dhcp_exclusion_shape",
             )
         try:
-            wanted_ranges = json.loads(str(expected.get("excluded_ranges_json") or "[]"))
+            wanted_ranges = json.loads(
+                str(expected.get("excluded_ranges_json") or "[]")
+            )
         except json.JSONDecodeError:
             wanted_ranges = None
         if not isinstance(wanted_ranges, list):

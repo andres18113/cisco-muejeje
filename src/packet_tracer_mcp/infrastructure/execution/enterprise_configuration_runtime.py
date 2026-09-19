@@ -221,9 +221,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         l3_timeout_seconds: float = 8.0,
         convergence_interval_seconds: float = 0.25,
         ios_readiness: Callable[[str], bool] | None = None,
-        trunk_transition_observer: (
-            Callable[[str], dict[str, object]] | None
-        ) = None,
+        trunk_transition_observer: (Callable[[str], dict[str, object]] | None) = None,
         simulation_time_observer: (
             Callable[[], SimulationStateObservation] | None
         ) = None,
@@ -266,16 +264,27 @@ class PacketTracerEnterpriseConfigurationRuntime:
         return targets
 
     def read_trunk(
-        self, device_name: str, interface: str,
+        self,
+        device_name: str,
+        interface: str,
     ) -> TrunkReadbackObservation:
         """Read one trunk through the existing registered paged SHOW only."""
         show = self._ios.execute(
-            device_name, OperationalQueryId.SHOW_INTERFACES_TRUNK,
+            device_name,
+            OperationalQueryId.SHOW_INTERFACES_TRUNK,
         )
-        row = next((
-            item for item in parse_show_interfaces_trunk(show.output)
-            if same_interface_name(item.interface, interface)
-        ), None) if show.executed else None
+        row = (
+            next(
+                (
+                    item
+                    for item in parse_show_interfaces_trunk(show.output)
+                    if same_interface_name(item.interface, interface)
+                ),
+                None,
+            )
+            if show.executed
+            else None
+        )
         fresh = bool(show.executed and show.fresh_output_observed)
         complete = bool(show.output_complete)
         reason = show.failure_reason
@@ -299,9 +308,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             native_vlan=row.native_vlan if row is not None else None,
             allowed_vlans=row.allowed_vlans if row is not None else None,
             active_vlans=row.active_vlans if row is not None else None,
-            forwarding_vlans=(
-                row.forwarding_vlans if row is not None else None
-            ),
+            forwarding_vlans=(row.forwarding_vlans if row is not None else None),
             executed=bool(show.executed),
             fresh_output_observed=bool(show.fresh_output_observed),
             fresh_evidence=fresh,
@@ -316,47 +323,43 @@ class PacketTracerEnterpriseConfigurationRuntime:
     ) -> list[RuntimeVerification]:
         """Wait once per switch/VLAN until every signalled phone port is FWD."""
         ordered = list(expectations)
-        grouped: dict[
-            tuple[str, int], list[VerificationExpectation]
-        ] = defaultdict(list)
+        grouped: dict[tuple[str, int], list[VerificationExpectation]] = defaultdict(
+            list
+        )
         invalid: dict[str, RuntimeVerification] = {}
         for expectation in ordered:
             voice_vlan = expectation.expected.get("voice_vlan_id")
             if not isinstance(voice_vlan, int) or isinstance(
-                voice_vlan, bool,
+                voice_vlan,
+                bool,
             ):
                 invalid[expectation.id] = RuntimeVerification(
                     expectation_id=expectation.id,
                     status=ActionExecutionStatus.UNOBSERVABLE,
                     fields={
-                        "voice_forwarding": (
-                            FieldVerificationStatus.UNOBSERVABLE
-                        ),
+                        "voice_forwarding": (FieldVerificationStatus.UNOBSERVABLE),
                     },
-                    message=(
-                        "Voice access forwarding requires a typed voice VLAN."
-                    ),
+                    message=("Voice access forwarding requires a typed voice VLAN."),
                 )
                 continue
-            grouped[(expectation.device_name, voice_vlan)].append(
-                expectation
-            )
+            grouped[(expectation.device_name, voice_vlan)].append(expectation)
 
         observed = dict(invalid)
         for (device_name, voice_vlan), group in grouped.items():
-            observed.update(self._wait_voice_access_group(
-                device_name,
-                voice_vlan,
-                group,
-            ))
+            observed.update(
+                self._wait_voice_access_group(
+                    device_name,
+                    voice_vlan,
+                    group,
+                )
+            )
         return [
-            observed.get(expectation.id) or RuntimeVerification(
+            observed.get(expectation.id)
+            or RuntimeVerification(
                 expectation_id=expectation.id,
                 status=ActionExecutionStatus.UNOBSERVABLE,
                 fields={
-                    "voice_forwarding": (
-                        FieldVerificationStatus.UNOBSERVABLE
-                    ),
+                    "voice_forwarding": (FieldVerificationStatus.UNOBSERVABLE),
                 },
                 message="Voice access forwarding was not observed.",
             )
@@ -370,9 +373,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         expectations: Sequence[VerificationExpectation],
     ) -> dict[str, RuntimeVerification]:
         expected_interfaces = {
-            expectation.id: str(
-                expectation.expected.get("interface") or ""
-            )
+            expectation.id: str(expectation.expected.get("interface") or "")
             for expectation in expectations
         }
         latest: dict[str, object] = {
@@ -405,39 +406,47 @@ class PacketTracerEnterpriseConfigurationRuntime:
             vlan_present = False
             forward_delay_seconds = None
             if authoritative:
-                instance = next((
-                    item for item in parse_show_spanning_tree(show.output)
-                    if item.vlan_id == voice_vlan
-                ), None)
+                instance = next(
+                    (
+                        item
+                        for item in parse_show_spanning_tree(show.output)
+                        if item.vlan_id == voice_vlan
+                    ),
+                    None,
+                )
                 vlan_present = instance is not None
                 if instance is not None:
                     forward_delay_seconds = instance.forward_delay_seconds
                     for expectation in expectations:
                         interface = expected_interfaces[expectation.id]
-                        row = next((
-                            item for item in instance.interfaces
-                            if same_interface_name(
-                                item.interface, interface,
-                            )
-                        ), None)
+                        row = next(
+                            (
+                                item
+                                for item in instance.interfaces
+                                if same_interface_name(
+                                    item.interface,
+                                    interface,
+                                )
+                            ),
+                            None,
+                        )
                         if row is not None:
                             states[expectation.id] = str(row.state).upper()
-            latest.update({
-                "show": show,
-                "states": states,
-                "authoritative": authoritative,
-                "vlan_present": vlan_present,
-                "observed_device_name": show.observed_device_name,
-                "sample_round": sample_round,
-                "forward_delay_seconds": forward_delay_seconds,
-            })
+            latest.update(
+                {
+                    "show": show,
+                    "states": states,
+                    "authoritative": authoritative,
+                    "vlan_present": vlan_present,
+                    "observed_device_name": show.observed_device_name,
+                    "sample_round": sample_round,
+                    "forward_delay_seconds": forward_delay_seconds,
+                }
+            )
             all_forwarding = bool(
                 authoritative
                 and len(states) == len(expectations)
-                and all(
-                    state.startswith(("FWD", "FORW"))
-                    for state in states.values()
-                )
+                and all(state.startswith(("FWD", "FORW")) for state in states.values())
             )
             return {
                 "found": show.executed,
@@ -454,7 +463,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         )
                         and pvst_learning_progress_target_ms(
                             latest.get("forward_delay_seconds"),
-                        ) is not None
+                        )
+                        is not None
                     )
                 ),
             }
@@ -478,7 +488,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
             pvst_learning_progress_target_ms(
                 latest.get("forward_delay_seconds"),
             )
-            if learning_extension_candidate else None
+            if learning_extension_candidate
+            else None
         )
         extension_convergence: SimulationTimeConvergenceResult | None = None
         if learning_extension_target is not None:
@@ -488,15 +499,14 @@ class PacketTracerEnterpriseConfigurationRuntime:
             )
         convergence = (
             initial_convergence
-            if extension_convergence is None else extension_convergence
+            if extension_convergence is None
+            else extension_convergence
         )
         total_attempts = initial_convergence.attempts + (
-            extension_convergence.attempts
-            if extension_convergence is not None else 0
+            extension_convergence.attempts if extension_convergence is not None else 0
         )
         total_elapsed_ms = initial_convergence.elapsed_ms + (
-            extension_convergence.elapsed_ms
-            if extension_convergence is not None else 0
+            extension_convergence.elapsed_ms if extension_convergence is not None else 0
         )
         states = latest["states"]
         states = states if isinstance(states, dict) else {}
@@ -509,7 +519,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
             if state.startswith(("FWD", "FORW"))
         )
         missing_interfaces = sorted(
-            interface for identifier, interface in expected_interfaces.items()
+            interface
+            for identifier, interface in expected_interfaces.items()
             if identifier not in states
         )
         non_forwarding_interfaces = {
@@ -574,21 +585,20 @@ class PacketTracerEnterpriseConfigurationRuntime:
             ),
             last_observable_state=", ".join(
                 f"{key}:{value}" for key, value in sorted(states.items())
-            ) or "unobservable",
+            )
+            or "unobservable",
             details=details,
         )
         results: dict[str, RuntimeVerification] = {}
         for expectation in expectations:
             state = str(states.get(expectation.id) or "")
-            forwarding = bool(
-                authoritative
-                and state.startswith(("FWD", "FORW"))
-            )
+            forwarding = bool(authoritative and state.startswith(("FWD", "FORW")))
             results[expectation.id] = RuntimeVerification(
                 expectation_id=expectation.id,
                 status=(
                     ActionExecutionStatus.VERIFIED
-                    if forwarding else ActionExecutionStatus.UNOBSERVABLE
+                    if forwarding
+                    else ActionExecutionStatus.UNOBSERVABLE
                 ),
                 evidence_method="fresh_show_spanning_tree_voice_access",
                 fresh_evidence=authoritative,
@@ -621,7 +631,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
     ) -> DhcpPoolReadbackObservation:
         """Read pool existence, range coverage and available space only."""
         show = self._ios.execute(
-            device_name, OperationalQueryId.SHOW_IP_DHCP_POOL,
+            device_name,
+            OperationalQueryId.SHOW_IP_DHCP_POOL,
         )
         fresh = bool(show.executed and show.fresh_output_observed)
         complete = bool(show.output_complete)
@@ -638,7 +649,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
             reason = "The DHCP pool table was not attributed to one device."
         pools = (
             parse_show_ip_dhcp_pool(show.output)
-            if fresh and complete and identity else None
+            if fresh and complete and identity
+            else None
         )
         if pools is None:
             return DhcpPoolReadbackObservation(
@@ -658,7 +670,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
         # which the ladder would read as a finding about the router.
         wanted = pool_name.casefold()
         selected = next(
-            (item for item in pools if item.name.casefold() == wanted), None,
+            (item for item in pools if item.name.casefold() == wanted),
+            None,
         )
         if selected is None:
             return DhcpPoolReadbackObservation(
@@ -687,16 +700,20 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 identity_confirmed=True,
                 failure_reason="The requested lease range was not valid IPv4.",
             )
-        ranges = tuple(
-            (item.range_start, item.range_end) for item in selected.subnets
+        ranges = tuple((item.range_start, item.range_end) for item in selected.subnets)
+        covering = next(
+            (
+                item
+                for item in selected.subnets
+                if (
+                    ipaddress.IPv4Address(item.range_start)
+                    <= requested_start
+                    <= requested_end
+                    <= ipaddress.IPv4Address(item.range_end)
+                )
+            ),
+            None,
         )
-        covering = next((
-            item for item in selected.subnets
-            if (
-                ipaddress.IPv4Address(item.range_start) <= requested_start
-                <= requested_end <= ipaddress.IPv4Address(item.range_end)
-            )
-        ), None)
         only = selected.subnets[0] if len(selected.subnets) == 1 else None
         displayed = covering or only
         return DhcpPoolReadbackObservation(
@@ -720,7 +737,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
 
     @staticmethod
     def _refuse_batch(
-        actions: Sequence[ConfigurationAction], message: str,
+        actions: Sequence[ConfigurationAction],
+        message: str,
     ) -> list[RuntimeActionMutation]:
         """Rechaza el lote entero sin haber tocado ningun dispositivo."""
         return [
@@ -734,7 +752,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
         ]
 
     def apply_actions(
-        self, actions: Sequence[ConfigurationAction],
+        self,
+        actions: Sequence[ConfigurationAction],
     ) -> list[RuntimeActionMutation]:
         results: dict[str, RuntimeActionMutation] = {}
         ios_by_device: dict[str, list[ConfigurationAction]] = defaultdict(list)
@@ -767,7 +786,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
             target = self._targets.get(device_name)
             try:
                 prerendered[device_name] = self._renderer.render_device_batches(
-                    device_name, target.model if target else "", device_actions,
+                    device_name,
+                    target.model if target else "",
+                    device_actions,
                 )
             except ValueError as exc:
                 return self._refuse_batch(
@@ -792,7 +813,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 self._ready_ios_devices.add(device_name)
             # Ya renderizado en el preflight: aqui solo queda aplicar.
             for batch in prerendered[device_name]:
-                applied = self._configuration.configure_ios(device_name, batch.ios_payload)
+                applied = self._configuration.configure_ios(
+                    device_name, batch.ios_payload
+                )
                 batch_id = f"{device_name}:{int(batch.phase)}"
                 for action_id in batch.action_ids:
                     results[action_id] = RuntimeActionMutation(
@@ -800,19 +823,25 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         applied=applied,
                         failure_code=(
                             ConfigurationFailureCode.NONE
-                            if applied else ConfigurationFailureCode.APPLICATION_FAILED
+                            if applied
+                            else ConfigurationFailureCode.APPLICATION_FAILED
                         ),
                         message=(
                             "Configuration batch accepted by Packet Tracer."
-                            if applied else "Packet Tracer rejected the configuration batch."
+                            if applied
+                            else "Packet Tracer rejected the configuration batch."
                         ),
                         batch_id=batch_id,
                     )
 
         if endpoints:
-            payload = "".join(self._endpoint_call(action) for action in sorted(
-                endpoints, key=lambda item: item.id,
-            ))
+            payload = "".join(
+                self._endpoint_call(action)
+                for action in sorted(
+                    endpoints,
+                    key=lambda item: item.id,
+                )
+            )
             applied = bool(payload) and self._send(payload)
             batch_id = "endpoints:" + str(int(endpoints[0].phase))
             for action in endpoints:
@@ -821,21 +850,26 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     applied=applied,
                     failure_code=(
                         ConfigurationFailureCode.NONE
-                        if applied else ConfigurationFailureCode.APPLICATION_FAILED
+                        if applied
+                        else ConfigurationFailureCode.APPLICATION_FAILED
                     ),
                     message=(
                         "Endpoint batch accepted by Packet Tracer."
-                        if applied else "Packet Tracer rejected the endpoint batch."
+                        if applied
+                        else "Packet Tracer rejected the endpoint batch."
                     ),
                     batch_id=batch_id,
                 )
         return [
-            results.get(action.id, RuntimeActionMutation(
-                action_id=action.id,
-                applied=False,
-                failure_code=ConfigurationFailureCode.APPLICATION_FAILED,
-                message="No Packet Tracer adapter exists for this typed action.",
-            ))
+            results.get(
+                action.id,
+                RuntimeActionMutation(
+                    action_id=action.id,
+                    applied=False,
+                    failure_code=ConfigurationFailureCode.APPLICATION_FAILED,
+                    message="No Packet Tracer adapter exists for this typed action.",
+                ),
+            )
             for action in actions
         ]
 
@@ -848,30 +882,40 @@ class PacketTracerEnterpriseConfigurationRuntime:
         name = json.dumps(action.device_name)
         interface = json.dumps(action.interface)
         if isinstance(action, SetEndpointDhcp):
-            call = "configurePcIp(" + ",".join((name, "true", "null", "null", "null", "null", interface)) + ");"
+            call = (
+                "configurePcIp("
+                + ",".join((name, "true", "null", "null", "null", "null", interface))
+                + ");"
+            )
         else:
-            arguments = ",".join((
-                name,
-                "false",
-                json.dumps(action.ipv4),
-                json.dumps(action.netmask),
-                json.dumps(action.gateway),
-                json.dumps(action.dns_server or ""),
-                interface,
-            ))
+            arguments = ",".join(
+                (
+                    name,
+                    "false",
+                    json.dumps(action.ipv4),
+                    json.dumps(action.netmask),
+                    json.dumps(action.gateway),
+                    json.dumps(action.dns_server or ""),
+                    interface,
+                )
+            )
             call = "configurePcIp(" + arguments + ");"
         return "try{" + call + "}catch(__e){}"
 
     def verify(
-        self, expectations: Sequence[VerificationExpectation],
+        self,
+        expectations: Sequence[VerificationExpectation],
     ) -> list[RuntimeVerification]:
         ios_cache: dict[tuple[str, OperationalQueryId], object] = {}
         trunk_results = {
             item.expectation_id: item
-            for item in self._verify_trunks([
-                expectation for expectation in expectations
-                if expectation.kind is VerificationKind.TRUNK
-            ])
+            for item in self._verify_trunks(
+                [
+                    expectation
+                    for expectation in expectations
+                    if expectation.kind is VerificationKind.TRUNK
+                ]
+            )
         }
         results: list[RuntimeVerification] = []
         for expectation in expectations:
@@ -959,8 +1003,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         expectation
                         for expectation in grouped[device_name]
                         if (
-                            expectation_ids is None
-                            or expectation.id in expectation_ids
+                            expectation_ids is None or expectation.id in expectation_ids
                         )
                     ]
                     if not device_expectations:
@@ -979,20 +1022,25 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     )
                     rows = (
                         parse_show_interfaces_trunk(show.output)
-                        if authoritative else []
+                        if authoritative
+                        else []
                     )
                     changed: list[str] = []
                     for expectation in device_expectations:
                         expected_interface = str(
                             expectation.expected.get("interface") or ""
                         )
-                        row = next((
-                            item for item in rows
-                            if self._same_interface(
-                                item.interface,
-                                expected_interface,
-                            )
-                        ), None)
+                        row = next(
+                            (
+                                item
+                                for item in rows
+                                if self._same_interface(
+                                    item.interface,
+                                    expected_interface,
+                                )
+                            ),
+                            None,
+                        )
                         observed = self._trunk_observation(
                             expectation,
                             show,
@@ -1018,8 +1066,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         for item in device_expectations
                     )
                     refresh_boundary = bool(
-                        learning_extension_observation_active
-                        and device_pending
+                        learning_extension_observation_active and device_pending
                     )
                     if not changed and not refresh_boundary:
                         continue
@@ -1030,10 +1077,12 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         round_correlated[identifier] = correlated
             except Exception as exc:
                 failure_reason = f"{type(exc).__name__}: {exc}"
-                round_failures.append({
-                    "sample_round": sample_round,
-                    "failure_reason": failure_reason,
-                })
+                round_failures.append(
+                    {
+                        "sample_round": sample_round,
+                        "failure_reason": failure_reason,
+                    }
+                )
                 return {
                     "found": bool(latest),
                     "configuration_channel": False,
@@ -1059,8 +1108,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 transitions[identifier].append(transition)
 
             complete = bool(latest) and all(
-                self._trunk_observation_verified(latest[item.id])
-                for item in ordered
+                self._trunk_observation_verified(latest[item.id]) for item in ordered
             )
             return {
                 "found": bool(latest),
@@ -1084,14 +1132,16 @@ class PacketTracerEnterpriseConfigurationRuntime:
         ) -> None:
             if self._trunk_transition_observer is None:
                 return
-            pending_devices = sorted({
-                expectation.device_name
-                for expectation in ordered
-                if expectation.id in expectation_ids
-            })
+            pending_devices = sorted(
+                {
+                    expectation.device_name
+                    for expectation in ordered
+                    if expectation.id in expectation_ids
+                }
+            )
             for device_name in pending_devices:
-                learning_boundary_stp[device_name] = (
-                    self._observe_pvst_boundary(device_name)
+                learning_boundary_stp[device_name] = self._observe_pvst_boundary(
+                    device_name
                 )
 
         def expectation_learning_progress_target_ms(
@@ -1113,10 +1163,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 )
             ):
                 return None
-            if (
-                fields.get("forwarding_vlans")
-                is not FieldVerificationStatus.FAILED
-            ):
+            if fields.get("forwarding_vlans") is not FieldVerificationStatus.FAILED:
                 return None
             correlated = learning_boundary_stp.get(expectation.device_name)
             if (
@@ -1131,12 +1178,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 if isinstance(item, dict)
             }
             progress_targets: set[float] = set()
-            expected_interface = str(
-                expectation.expected.get("interface") or ""
-            )
+            expected_interface = str(expectation.expected.get("interface") or "")
             for vlan_id in {
-                int(item)
-                for item in expectation.expected.get("allowed_vlans", [])
+                int(item) for item in expectation.expected.get("allowed_vlans", [])
             }:
                 instance = instances.get(vlan_id)
                 if (
@@ -1150,20 +1194,20 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 if progress_target is None:
                     return None
                 progress_targets.add(progress_target)
-                port = next((
-                    item for item in instance.get("ports", [])
-                    if isinstance(item, dict)
-                    and self._same_interface(
-                        str(item.get("interface") or ""),
-                        expected_interface,
-                    )
-                ), None)
-                state = str(
-                    port.get("state") if isinstance(port, dict) else ""
-                ).upper()
-                allowed_states = (
-                    {"LRN", "FWD"} if allow_forwarding else {"LRN"}
+                port = next(
+                    (
+                        item
+                        for item in instance.get("ports", [])
+                        if isinstance(item, dict)
+                        and self._same_interface(
+                            str(item.get("interface") or ""),
+                            expected_interface,
+                        )
+                    ),
+                    None,
                 )
+                state = str(port.get("state") if isinstance(port, dict) else "").upper()
+                allowed_states = {"LRN", "FWD"} if allow_forwarding else {"LRN"}
                 if (
                     port is None
                     or port.get("row_present") is not True
@@ -1197,13 +1241,15 @@ class PacketTracerEnterpriseConfigurationRuntime:
             return next(iter(progress_targets))
 
         def pending_learning_progress_target_ms() -> float | None:
-            return learning_progress_target_ms(frozenset(
-                expectation.id
-                for expectation in ordered
-                if not self._trunk_observation_verified(
-                    latest.get(expectation.id, {}),
+            return learning_progress_target_ms(
+                frozenset(
+                    expectation.id
+                    for expectation in ordered
+                    if not self._trunk_observation_verified(
+                        latest.get(expectation.id, {}),
+                    )
                 )
-            ))
+            )
 
         def learning_extension_cohort_continuation_authorized() -> bool:
             if not learning_extension_expectation_ids:
@@ -1214,10 +1260,13 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 observed = latest.get(expectation.id, {})
                 if self._trunk_observation_verified(observed):
                     continue
-                if expectation_learning_progress_target_ms(
-                    expectation,
-                    allow_forwarding=True,
-                ) is None:
+                if (
+                    expectation_learning_progress_target_ms(
+                        expectation,
+                        allow_forwarding=True,
+                    )
+                    is None
+                ):
                     return False
             return True
 
@@ -1250,9 +1299,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         and not learning_boundary_refresh_error,
                     )
                 except Exception as exc:
-                    learning_boundary_refresh_error = (
-                        f"{type(exc).__name__}: {exc}"
-                    )
+                    learning_boundary_refresh_error = f"{type(exc).__name__}: {exc}"
         candidate_expectation_ids = frozenset(
             identifier
             for identifier in learning_boundary_expectation_ids
@@ -1264,7 +1311,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 not initial_convergence.configuration_channel
                 and not learning_boundary_refresh_complete
                 and not learning_boundary_refresh_error
-            ) else None
+            )
+            else None
         )
         learning_extension_candidate = learning_extension_target is not None
         if learning_extension_candidate:
@@ -1273,13 +1321,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
         if learning_extension_target is not None:
             learning_extension_observation_active = True
             try:
-                extension_convergence = (
-                    self._pvst_learning_extension.grant(
-                        lambda: inspect(learning_extension_expectation_ids),
-                        required_simulation_progress_ms=(
-                            learning_extension_target
-                        ),
-                    )
+                extension_convergence = self._pvst_learning_extension.grant(
+                    lambda: inspect(learning_extension_expectation_ids),
+                    required_simulation_progress_ms=(learning_extension_target),
                 )
             finally:
                 learning_extension_observation_active = False
@@ -1293,20 +1337,16 @@ class PacketTracerEnterpriseConfigurationRuntime:
             details = {
                 "kind": "trunk_round_robin",
                 "device_name": expectation.device_name,
-                "interface": str(
-                    expectation.expected.get("interface") or ""
+                "interface": str(expectation.expected.get("interface") or ""),
+                "expected_vlans": sorted(
+                    {
+                        int(item)
+                        for item in expectation.expected.get("allowed_vlans", [])
+                    }
                 ),
-                "expected_vlans": sorted({
-                    int(item)
-                    for item in expectation.expected.get(
-                        "allowed_vlans", []
-                    )
-                }),
                 "sample_rounds": sample_round,
                 "initial_sample_rounds": initial_convergence.attempts,
-                "learning_extension_candidate": (
-                    learning_extension_candidate
-                ),
+                "learning_extension_candidate": (learning_extension_candidate),
                 "learning_extension_expectation_ids": sorted(
                     learning_extension_expectation_ids
                 ),
@@ -1323,21 +1363,17 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 "learning_boundary_refresh_complete": (
                     learning_boundary_refresh_complete
                 ),
-                "learning_boundary_refresh_error": (
-                    learning_boundary_refresh_error
-                ),
+                "learning_boundary_refresh_error": (learning_boundary_refresh_error),
                 "learning_boundary_stp": learning_boundary_stp.get(
                     expectation.device_name,
                 ),
                 "transitions": transitions.get(expectation.id, []),
                 "round_failures": round_failures,
                 "terminal_authority": (
-                    "AUTHORITATIVE"
-                    if authoritative else "UNOBSERVABLE"
+                    "AUTHORITATIVE" if authoritative else "UNOBSERVABLE"
                 ),
                 "terminal_identity_confirmed": bool(
-                    observed.get("observed_device_name")
-                    == expectation.device_name
+                    observed.get("observed_device_name") == expectation.device_name
                     and observed.get("device_identity_provenance")
                     == DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
                 ),
@@ -1345,30 +1381,32 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     self._trunk_failure_dimension(observed, fields)
                 ),
             }
-            results.append(RuntimeVerification(
-                expectation_id=expectation.id,
-                status=status,
-                evidence_method="fresh_show_interfaces_trunk",
-                fresh_evidence=authoritative,
-                fields=fields,
-                message=self._trunk_observation_message(
-                    expectation,
-                    observed,
-                    fields,
-                    status,
-                ),
-                convergence=ConvergenceReport(
-                    attempts=sample_round,
-                    elapsed_ms=elapsed_ms,
-                    final_status=status,
-                    last_observable_state=json.dumps(
-                        self._trunk_transition_payload(observed),
-                        sort_keys=True,
-                        separators=(",", ":"),
+            results.append(
+                RuntimeVerification(
+                    expectation_id=expectation.id,
+                    status=status,
+                    evidence_method="fresh_show_interfaces_trunk",
+                    fresh_evidence=authoritative,
+                    fields=fields,
+                    message=self._trunk_observation_message(
+                        expectation,
+                        observed,
+                        fields,
+                        status,
                     ),
-                    details=details,
-                ),
-            ))
+                    convergence=ConvergenceReport(
+                        attempts=sample_round,
+                        elapsed_ms=elapsed_ms,
+                        final_status=status,
+                        last_observable_state=json.dumps(
+                            self._trunk_transition_payload(observed),
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                        details=details,
+                    ),
+                )
+            )
         return results
 
     @staticmethod
@@ -1380,8 +1418,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         authoritative: bool,
     ) -> dict[str, object]:
         expected_vlans = {
-            int(item)
-            for item in expectation.expected.get("allowed_vlans", [])
+            int(item) for item in expectation.expected.get("allowed_vlans", [])
         }
 
         def vlan_field(attribute: str) -> FieldVerificationStatus:
@@ -1404,7 +1441,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
         else:
             interface_status = (
                 FieldVerificationStatus.VERIFIED
-                if row is not None else FieldVerificationStatus.FAILED
+                if row is not None
+                else FieldVerificationStatus.FAILED
             )
             operational_status = (
                 FieldVerificationStatus.VERIFIED
@@ -1417,9 +1455,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             "fresh_output_observed": bool(show.fresh_output_observed),
             "output_complete": bool(show.output_complete),
             "observed_device_name": show.observed_device_name,
-            "device_identity_provenance": (
-                show.device_identity_provenance
-            ),
+            "device_identity_provenance": (show.device_identity_provenance),
             "failure_reason": show.failure_reason,
             # Retain exactly the current-command window that fed the parser.
             # Without it, a later missing row cannot be separated from a
@@ -1505,8 +1541,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         if FieldVerificationStatus.FAILED in fields.values():
             return ActionExecutionStatus.FAILED
         if fields and all(
-            item is FieldVerificationStatus.VERIFIED
-            for item in fields.values()
+            item is FieldVerificationStatus.VERIFIED for item in fields.values()
         ):
             return ActionExecutionStatus.VERIFIED
         return ActionExecutionStatus.UNOBSERVABLE
@@ -1517,9 +1552,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         observed: dict[str, object],
     ) -> bool:
         return (
-            cls._trunk_observation_status(
-                dict(observed.get("fields") or {})
-            )
+            cls._trunk_observation_status(dict(observed.get("fields") or {}))
             is ActionExecutionStatus.VERIFIED
         )
 
@@ -1534,10 +1567,10 @@ class PacketTracerEnterpriseConfigurationRuntime:
             return "FRESHNESS"
         if not observed.get("output_complete"):
             return "COMPLETENESS"
-        if (
-            observed.get("device_identity_provenance")
-            != DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
-            or not observed.get("observed_device_name")
+        if observed.get(
+            "device_identity_provenance"
+        ) != DeviceIdentityProvenance.CONFIRMED_UNIQUE.value or not observed.get(
+            "observed_device_name"
         ):
             return "IDENTITY"
         if not observed.get("row_present"):
@@ -1571,8 +1604,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         if not observed.get("row_present"):
             return "Trunk convergence timed out."
         expected_vlans = {
-            int(item)
-            for item in expectation.expected.get("allowed_vlans", [])
+            int(item) for item in expectation.expected.get("allowed_vlans", [])
         }
         omissions = []
         for field_name, label in (
@@ -1587,30 +1619,34 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 missing = sorted(expected_vlans - set(value))
                 if missing:
                     omissions.append(
-                        f"{label} omitted "
-                        + ",".join(str(item) for item in missing)
+                        f"{label} omitted " + ",".join(str(item) for item in missing)
                     )
         return "; ".join(omissions) or "Trunk convergence timed out."
 
     def _verify_hostname(
-        self, expectation: VerificationExpectation,
+        self,
+        expectation: VerificationExpectation,
     ) -> RuntimeVerification:
         expected = str(expectation.expected["hostname"])
         name = json.dumps(expectation.device_name)
         last_observed: dict = {}
 
         def inspect() -> dict:
-            js = "".join((
-                "try{var d=ipc.network().getDevice(", name, ");",
-                "var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;",
-                "var hs=!!d&&typeof d.getHostName==='function';",
-                "var h=hs?String(d.getHostName()):'';",
-                "var p=t&&typeof t.getPrompt==='function'?String(t.getPrompt()):'';",
-                "var o=t&&typeof t.getOutput==='function'?String(t.getOutput()):'';",
-                "reportResult(JSON.stringify({found:!!d,terminal:!!t,",
-                "hostname_supported:hs,hostname:h,prompt:p,output:o}));",
-                "}catch(e){reportResult('ERROR:'+e);}",
-            ))
+            js = "".join(
+                (
+                    "try{var d=ipc.network().getDevice(",
+                    name,
+                    ");",
+                    "var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;",
+                    "var hs=!!d&&typeof d.getHostName==='function';",
+                    "var h=hs?String(d.getHostName()):'';",
+                    "var p=t&&typeof t.getPrompt==='function'?String(t.getPrompt()):'';",
+                    "var o=t&&typeof t.getOutput==='function'?String(t.getOutput()):'';",
+                    "reportResult(JSON.stringify({found:!!d,terminal:!!t,",
+                    "hostname_supported:hs,hostname:h,prompt:p,output:o}));",
+                    "}catch(e){reportResult('ERROR:'+e);}",
+                )
+            )
             current = self._json_result(js, 3.0)
             actual = str(current.get("hostname") or "").strip()
             method = "packet_tracer_device_hostname_getter"
@@ -1637,13 +1673,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
         ).wait()
         actual = str(last_observed.get("actual_hostname") or "")
         evidence_method = str(
-            last_observed.get("evidence_method")
-            or "ios_terminal_prompt_identity"
+            last_observed.get("evidence_method") or "ios_terminal_prompt_identity"
         )
-        if (
-            not last_observed.get("found")
-            or not actual
-        ):
+        if not last_observed.get("found") or not actual:
             return self._unobservable(expectation)
         verified = (
             convergence.state is DeviceInitializationState.CONFIGURATION_READY
@@ -1653,14 +1685,16 @@ class PacketTracerEnterpriseConfigurationRuntime:
             expectation_id=expectation.id,
             status=(
                 ActionExecutionStatus.VERIFIED
-                if verified else ActionExecutionStatus.FAILED
+                if verified
+                else ActionExecutionStatus.FAILED
             ),
             evidence_method=evidence_method,
             fresh_evidence=True,
             fields={
                 "hostname": (
                     FieldVerificationStatus.VERIFIED
-                    if verified else FieldVerificationStatus.FAILED
+                    if verified
+                    else FieldVerificationStatus.FAILED
                 ),
             },
             message="" if verified else f"IOS prompt identity is {actual!r}.",
@@ -1669,7 +1703,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 elapsed_ms=convergence.elapsed_ms,
                 final_status=(
                     ActionExecutionStatus.VERIFIED
-                    if verified else ActionExecutionStatus.FAILED
+                    if verified
+                    else ActionExecutionStatus.FAILED
                 ),
                 last_observable_state=actual or "unobservable",
             ),
@@ -1712,9 +1747,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         # esta consulta, cualificada para continuacion acotada, exige ademas que
         # la lectura logica haya cerrado en un prompt.
         complete = bool(
-            show.executed
-            and show.fresh_output_observed
-            and show.output_complete
+            show.executed and show.fresh_output_observed and show.output_complete
         )
         row = parse_serial_controller(show.output) if complete else None
         if row is None:
@@ -1744,22 +1777,26 @@ class PacketTracerEnterpriseConfigurationRuntime:
             expectation_id=expectation.id,
             status=(
                 ActionExecutionStatus.VERIFIED
-                if verified else ActionExecutionStatus.FAILED
+                if verified
+                else ActionExecutionStatus.FAILED
             ),
             evidence_method="fresh_show_controllers_serial",
             fresh_evidence=True,
             fields={
                 "interface": (
                     FieldVerificationStatus.VERIFIED
-                    if interface_ok else FieldVerificationStatus.FAILED
+                    if interface_ok
+                    else FieldVerificationStatus.FAILED
                 ),
                 "serial_endpoint_role": (
                     FieldVerificationStatus.VERIFIED
-                    if role_ok else FieldVerificationStatus.FAILED
+                    if role_ok
+                    else FieldVerificationStatus.FAILED
                 ),
                 "clock_rate_bps": (
                     FieldVerificationStatus.VERIFIED
-                    if rate_ok else FieldVerificationStatus.FAILED
+                    if rate_ok
+                    else FieldVerificationStatus.FAILED
                 ),
             },
             message=(
@@ -1774,14 +1811,20 @@ class PacketTracerEnterpriseConfigurationRuntime:
         name = json.dumps(expectation.device_name)
 
         def inspect() -> dict:
-            js = "".join((
-                "try{var d=ipc.network().getDevice(", name, ");",
-                "var vm=d&&typeof d.getProcess==='function'?d.getProcess('VlanManager'):null;",
-                "var present=false;if(vm){for(var i=0;i<vm.getVlanCount();i++){var v=vm.getVlanAt(i);",
-                "if(v&&v.getVlanNumber()===", str(vlan_id), "){present=true;break;}}}",
-                "reportResult(JSON.stringify({found:!!d,configuration_channel:present,present:present}));",
-                "}catch(e){reportResult('ERROR:'+e);}",
-            ))
+            js = "".join(
+                (
+                    "try{var d=ipc.network().getDevice(",
+                    name,
+                    ");",
+                    "var vm=d&&typeof d.getProcess==='function'?d.getProcess('VlanManager'):null;",
+                    "var present=false;if(vm){for(var i=0;i<vm.getVlanCount();i++){var v=vm.getVlanAt(i);",
+                    "if(v&&v.getVlanNumber()===",
+                    str(vlan_id),
+                    "){present=true;break;}}}",
+                    "reportResult(JSON.stringify({found:!!d,configuration_channel:present,present:present}));",
+                    "}catch(e){reportResult('ERROR:'+e);}",
+                )
+            )
             return self._json_result(js, 3.0)
 
         convergence = StateConvergenceWaiter(
@@ -1792,24 +1835,34 @@ class PacketTracerEnterpriseConfigurationRuntime:
         verified = convergence.configuration_channel
         return RuntimeVerification(
             expectation_id=expectation.id,
-            status=ActionExecutionStatus.VERIFIED if verified else ActionExecutionStatus.FAILED,
+            status=ActionExecutionStatus.VERIFIED
+            if verified
+            else ActionExecutionStatus.FAILED,
             evidence_method="vlan_manager_object_state",
             fresh_evidence=True,
-            fields={"vlan_id": (
-                FieldVerificationStatus.VERIFIED if verified else FieldVerificationStatus.FAILED
-            )},
+            fields={
+                "vlan_id": (
+                    FieldVerificationStatus.VERIFIED
+                    if verified
+                    else FieldVerificationStatus.FAILED
+                )
+            },
             convergence=ConvergenceReport(
                 attempts=convergence.attempts,
                 elapsed_ms=convergence.elapsed_ms,
                 final_status=(
-                    ActionExecutionStatus.VERIFIED if verified else ActionExecutionStatus.FAILED
+                    ActionExecutionStatus.VERIFIED
+                    if verified
+                    else ActionExecutionStatus.FAILED
                 ),
                 last_observable_state="present" if verified else "absent",
             ),
         )
 
     def _verify_trunk(
-        self, expectation: VerificationExpectation, cache: dict,
+        self,
+        expectation: VerificationExpectation,
+        cache: dict,
     ) -> RuntimeVerification:
         expected_interface = str(expectation.expected["interface"])
         expected_vlans = frozenset(
@@ -1817,13 +1870,23 @@ class PacketTracerEnterpriseConfigurationRuntime:
         )
 
         def find_row(show: IosCommandResult):
-            return next((
-                item for item in parse_show_interfaces_trunk(show.output)
-                if self._same_interface(item.interface, expected_interface)
-            ), None) if show.executed else None
+            return (
+                next(
+                    (
+                        item
+                        for item in parse_show_interfaces_trunk(show.output)
+                        if self._same_interface(item.interface, expected_interface)
+                    ),
+                    None,
+                )
+                if show.executed
+                else None
+            )
 
         def vlan_status(
-            show: IosCommandResult, row, attribute: str,
+            show: IosCommandResult,
+            row,
+            attribute: str,
         ) -> FieldVerificationStatus:
             if (
                 row is None
@@ -1849,7 +1912,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     vlan_status(show, row, attribute)
                     is FieldVerificationStatus.VERIFIED
                     for attribute in (
-                        "allowed_vlans", "active_vlans", "forwarding_vlans",
+                        "allowed_vlans",
+                        "active_vlans",
+                        "forwarding_vlans",
                     )
                 )
             )
@@ -1861,13 +1926,20 @@ class PacketTracerEnterpriseConfigurationRuntime:
             traverses_expected_vlans,
             timeout_seconds=self._trunk_timeout,
         )
-        row = next((
-            item for item in parse_show_interfaces_trunk(show.output)
-            if self._same_interface(item.interface, expected_interface)
-        ), None) if show.executed else None
+        row = (
+            next(
+                (
+                    item
+                    for item in parse_show_interfaces_trunk(show.output)
+                    if self._same_interface(item.interface, expected_interface)
+                ),
+                None,
+            )
+            if show.executed
+            else None
+        )
         interface_status = (
-            FieldVerificationStatus.VERIFIED
-            if row else FieldVerificationStatus.FAILED
+            FieldVerificationStatus.VERIFIED if row else FieldVerificationStatus.FAILED
         )
         operational_status = (
             FieldVerificationStatus.VERIFIED
@@ -1923,16 +1995,27 @@ class PacketTracerEnterpriseConfigurationRuntime:
         )
 
     def _verify_l3(
-        self, expectation: VerificationExpectation, cache: dict,
+        self,
+        expectation: VerificationExpectation,
+        cache: dict,
     ) -> RuntimeVerification:
         expected_interface = str(expectation.expected["interface"])
         expected_ip = str(expectation.expected["ipv4"])
         expected_up = bool(expectation.expected.get("administrative_up", True))
+
         def find_row(show: IosCommandResult):
-            return next((
-                item for item in parse_show_ip_interface_brief(show.output)
-                if self._same_interface(item.interface, expected_interface)
-            ), None) if show.executed else None
+            return (
+                next(
+                    (
+                        item
+                        for item in parse_show_ip_interface_brief(show.output)
+                        if self._same_interface(item.interface, expected_interface)
+                    ),
+                    None,
+                )
+                if show.executed
+                else None
+            )
 
         def administrative_state_matches(row) -> bool:
             if row is None:
@@ -1953,32 +2036,47 @@ class PacketTracerEnterpriseConfigurationRuntime:
             ),
             timeout_seconds=self._l3_timeout,
         )
-        row = next((
-            item for item in parse_show_ip_interface_brief(show.output)
-            if self._same_interface(item.interface, expected_interface)
-        ), None) if show.executed else None
+        row = (
+            next(
+                (
+                    item
+                    for item in parse_show_ip_interface_brief(show.output)
+                    if self._same_interface(item.interface, expected_interface)
+                ),
+                None,
+            )
+            if show.executed
+            else None
+        )
         address_verified = bool(
-            converged and row and row.ip_address == expected_ip
+            converged
+            and row
+            and row.ip_address == expected_ip
             and show.fresh_output_observed
         )
         administrative_state_verified = administrative_state_matches(row)
         operational_up = bool(
-            row
-            and row.status.casefold() == "up"
-            and row.protocol.casefold() == "up"
+            row and row.status.casefold() == "up" and row.protocol.casefold() == "up"
         )
         verified = address_verified and administrative_state_verified
         return RuntimeVerification(
             expectation_id=expectation.id,
-            status=ActionExecutionStatus.VERIFIED if verified else ActionExecutionStatus.FAILED,
+            status=ActionExecutionStatus.VERIFIED
+            if verified
+            else ActionExecutionStatus.FAILED,
             evidence_method="fresh_show_ip_interface_brief",
             fresh_evidence=show.fresh_output_observed,
             fields={
-                "interface": FieldVerificationStatus.VERIFIED if row else FieldVerificationStatus.FAILED,
-                "ipv4": FieldVerificationStatus.VERIFIED if address_verified else FieldVerificationStatus.FAILED,
+                "interface": FieldVerificationStatus.VERIFIED
+                if row
+                else FieldVerificationStatus.FAILED,
+                "ipv4": FieldVerificationStatus.VERIFIED
+                if address_verified
+                else FieldVerificationStatus.FAILED,
                 "administrative_state": (
                     FieldVerificationStatus.VERIFIED
-                    if administrative_state_verified else FieldVerificationStatus.FAILED
+                    if administrative_state_verified
+                    else FieldVerificationStatus.FAILED
                 ),
                 # Carrier/protocol are deliberately absent: this expectation
                 # claims interface/IP/admin configuration, not reachability.
@@ -1988,14 +2086,20 @@ class PacketTracerEnterpriseConfigurationRuntime:
             },
             message=(
                 show.failure_reason
-                or ("" if operational_up else "Configuration verified; operational link is not up/up.")
-                if converged else "L3 configuration convergence timed out."
+                or (
+                    ""
+                    if operational_up
+                    else "Configuration verified; operational link is not up/up."
+                )
+                if converged
+                else "L3 configuration convergence timed out."
             ),
             convergence=convergence,
         )
 
     def _verify_access_port(
-        self, expectation: VerificationExpectation,
+        self,
+        expectation: VerificationExpectation,
     ) -> RuntimeVerification:
         """Lee el puerto como OBJETO, que es donde este backend lo expone.
 
@@ -2022,27 +2126,38 @@ class PacketTracerEnterpriseConfigurationRuntime:
         expected_voice = expectation.expected.get("voice_vlan_id")
         device = json.dumps(expectation.device_name)
         port = json.dumps(expected_interface)
-        js = "".join((
-            "try{var __d=ipc.network().getDevice(", device, ");",
-            "if(!__d){reportResult(JSON.stringify({device_found:false,port_found:false}));}",
-            "else{var __p=(typeof __d.getPort===", json.dumps("function"), ")?__d.getPort(", port, "):null;",
-            "if(!__p){reportResult(JSON.stringify({device_found:true,port_found:false}));}",
-            "else{var __r={device_found:true,port_found:true,complete:true};",
-            "try{__r.owner_device_name=String(__p.getOwnerDevice().getName());}catch(__oe){__r.complete=false;}",
-            "try{__r.interface=String(__p.getName());}catch(__ne){__r.complete=false;}",
-            "try{__r.admin_op_mode=__p.getAdminOpMode();}catch(__me){__r.complete=false;}",
-            "try{__r.access_vlan=__p.getAccessVlan();}catch(__ve){__r.complete=false;}",
-            # El error del getter de voz se retiene aparte y NO baja `complete`:
-            # un puerto sin ese getter no invalida lo que los otros cuatro sí
-            # establecieron.
+        js = "".join(
             (
-                "try{__r.voice_vlan=__p.getVoipVlanId();}"
-                "catch(__vve){__r.voice_vlan_error=String(__vve);}"
-                if expected_voice is not None else ""
-            ),
-            "reportResult(JSON.stringify(__r));}}}",
-            "catch(__e){reportResult(", json.dumps("ERROR:"), "+__e);}",
-        ))
+                "try{var __d=ipc.network().getDevice(",
+                device,
+                ");",
+                "if(!__d){reportResult(JSON.stringify({device_found:false,port_found:false}));}",
+                "else{var __p=(typeof __d.getPort===",
+                json.dumps("function"),
+                ")?__d.getPort(",
+                port,
+                "):null;",
+                "if(!__p){reportResult(JSON.stringify({device_found:true,port_found:false}));}",
+                "else{var __r={device_found:true,port_found:true,complete:true};",
+                "try{__r.owner_device_name=String(__p.getOwnerDevice().getName());}catch(__oe){__r.complete=false;}",
+                "try{__r.interface=String(__p.getName());}catch(__ne){__r.complete=false;}",
+                "try{__r.admin_op_mode=__p.getAdminOpMode();}catch(__me){__r.complete=false;}",
+                "try{__r.access_vlan=__p.getAccessVlan();}catch(__ve){__r.complete=false;}",
+                # El error del getter de voz se retiene aparte y NO baja `complete`:
+                # un puerto sin ese getter no invalida lo que los otros cuatro sí
+                # establecieron.
+                (
+                    "try{__r.voice_vlan=__p.getVoipVlanId();}"
+                    "catch(__vve){__r.voice_vlan_error=String(__vve);}"
+                    if expected_voice is not None
+                    else ""
+                ),
+                "reportResult(JSON.stringify(__r));}}}",
+                "catch(__e){reportResult(",
+                json.dumps("ERROR:"),
+                "+__e);}",
+            )
+        )
         observation = self._access_port_observation(js)
         if observation is None or observation.get("port_found") is not True:
             return self._unobservable(
@@ -2061,7 +2176,10 @@ class PacketTracerEnterpriseConfigurationRuntime:
         # pero `JSON.stringify` le borra la clave, y esa ausencia es la única
         # señal que queda.
         required_keys = [
-            "owner_device_name", "interface", "admin_op_mode", "access_vlan",
+            "owner_device_name",
+            "interface",
+            "admin_op_mode",
+            "access_vlan",
         ]
         if expected_voice is not None:
             required_keys.append("voice_vlan")
@@ -2070,18 +2188,21 @@ class PacketTracerEnterpriseConfigurationRuntime:
         )
         fields = {
             "device_identity": _field_status(
-                observation.get("owner_device_name"), _as_text,
+                observation.get("owner_device_name"),
+                _as_text,
                 lambda value: value == expectation.device_name,
             ),
             "interface": _field_status(
-                observation.get("interface"), _as_text,
+                observation.get("interface"),
+                _as_text,
                 lambda value: self._same_interface(value, expected_interface),
             ),
             "switchport_mode": self._switchport_mode_field(
                 observation.get("admin_op_mode"),
             ),
             "vlan_id": _field_status(
-                observation.get("access_vlan"), _as_vlan_id,
+                observation.get("access_vlan"),
+                _as_vlan_id,
                 lambda value: value == expected_vlan,
             ),
         }
@@ -2091,7 +2212,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
             # resultado válido y más angosto, no una verificación a medias que
             # se pueda redondear hacia arriba.
             fields["voice_vlan_id"] = _field_status(
-                observation.get("voice_vlan"), _as_vlan_id,
+                observation.get("voice_vlan"),
+                _as_vlan_id,
                 lambda value: value == int(expected_voice),
             )
         statuses = set(fields.values())
@@ -2108,14 +2230,16 @@ class PacketTracerEnterpriseConfigurationRuntime:
             fresh_evidence=True,
             fields=fields,
             message=(
-                "" if status is ActionExecutionStatus.VERIFIED
+                ""
+                if status is ActionExecutionStatus.VERIFIED
                 else "The access-port observation did not establish every field."
                 + (
                     # Una contradicción conserva el número observado, pero un
                     # payload ilegible sólo expone su tipo. El bridge no puede
                     # convertir un objeto arbitrario en un volcado sin límite.
                     _voice_vlan_evidence_message(observation, int(expected_voice))
-                    if expected_voice is not None else ""
+                    if expected_voice is not None
+                    else ""
                 )
             ),
         )
@@ -2153,14 +2277,19 @@ class PacketTracerEnterpriseConfigurationRuntime:
         key = (expectation.device_name, query_id)
         cached = cache.get(key)
         if cached is not None and cached.fresh_output_observed and predicate(cached):
-            return cached, ConvergenceReport(
-                attempts=0,
-                elapsed_ms=0,
-                final_status=ActionExecutionStatus.VERIFIED,
-                last_observable_state="cached_current_query",
-            ), True
+            return (
+                cached,
+                ConvergenceReport(
+                    attempts=0,
+                    elapsed_ms=0,
+                    final_status=ActionExecutionStatus.VERIFIED,
+                    last_observable_state="cached_current_query",
+                ),
+                True,
+            )
 
         latest: dict[str, IosCommandResult] = {}
+
         def inspect() -> dict:
             show = self._ios.execute(expectation.device_name, query_id)
             latest["show"] = show
@@ -2185,7 +2314,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
             elapsed_ms=observed.elapsed_ms,
             final_status=(
                 ActionExecutionStatus.VERIFIED
-                if converged else ActionExecutionStatus.FAILED
+                if converged
+                else ActionExecutionStatus.FAILED
             ),
             last_observable_state=(
                 "matched" if converged else show.failure_reason or "not_matched"
@@ -2270,7 +2400,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
             ),
         )
 
-    def _verify_endpoint(self, expectation: VerificationExpectation) -> RuntimeVerification:
+    def _verify_endpoint(
+        self, expectation: VerificationExpectation
+    ) -> RuntimeVerification:
         """Read back the exact interface the action addressed.
 
         Walking the port list and taking the first one exposing `getIpAddress`
@@ -2317,7 +2449,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 "fresh_evidence": read.fresh_evidence,
                 "failure_reason": read.failure_reason,
             }
-            observed["configuration_channel"] = self._endpoint_matches(expected, observed)
+            observed["configuration_channel"] = self._endpoint_matches(
+                expected, observed
+            )
             transition = {
                 "device_found": observed["found"],
                 "port_found": observed["port_found"],
@@ -2330,10 +2464,12 @@ class PacketTracerEnterpriseConfigurationRuntime:
             }
             current_signature = tuple(transition.values())
             if current_signature != signature:
-                transitions.append({
-                    "sample_round": sample_round,
-                    **transition,
-                })
+                transitions.append(
+                    {
+                        "sample_round": sample_round,
+                        **transition,
+                    }
+                )
                 signature = current_signature
             latest.clear()
             latest.update(observed)
@@ -2373,10 +2509,16 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 ),
             )
         ipv4_ok = self._ipv4_matches(expected, str(observed.get("ipv4") or ""))
-        mask_ok = str(observed.get("netmask") or "") == str(expected.get("netmask") or "")
+        mask_ok = str(observed.get("netmask") or "") == str(
+            expected.get("netmask") or ""
+        )
         fields = {
-            "ipv4": FieldVerificationStatus.VERIFIED if ipv4_ok else FieldVerificationStatus.FAILED,
-            "netmask": FieldVerificationStatus.VERIFIED if mask_ok else FieldVerificationStatus.FAILED,
+            "ipv4": FieldVerificationStatus.VERIFIED
+            if ipv4_ok
+            else FieldVerificationStatus.FAILED,
+            "netmask": FieldVerificationStatus.VERIFIED
+            if mask_ok
+            else FieldVerificationStatus.FAILED,
         }
         for field in ("gateway", "dns"):
             value = observed.get(field)
@@ -2388,14 +2530,19 @@ class PacketTracerEnterpriseConfigurationRuntime:
             else:
                 fields[field] = (
                     FieldVerificationStatus.VERIFIED
-                    if str(value) == str(wanted) else FieldVerificationStatus.FAILED
+                    if str(value) == str(wanted)
+                    else FieldVerificationStatus.FAILED
                 )
         converged = convergence.state is DeviceInitializationState.CONFIGURATION_READY
         core_verified = converged and ipv4_ok and mask_ok
-        partial = any(value is FieldVerificationStatus.UNOBSERVABLE for value in fields.values())
+        partial = any(
+            value is FieldVerificationStatus.UNOBSERVABLE for value in fields.values()
+        )
         status = (
-            ActionExecutionStatus.PARTIAL if core_verified and partial
-            else ActionExecutionStatus.VERIFIED if core_verified
+            ActionExecutionStatus.PARTIAL
+            if core_verified and partial
+            else ActionExecutionStatus.VERIFIED
+            if core_verified
             else ActionExecutionStatus.FAILED
         )
         return RuntimeVerification(
@@ -2412,9 +2559,14 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     {
                         key: observed.get(key)
                         for key in (
-                            "found", "port_found", "address_channel",
-                            "interface", "ipv4", "netmask",
-                            "fresh_evidence", "failure_reason",
+                            "found",
+                            "port_found",
+                            "address_channel",
+                            "interface",
+                            "ipv4",
+                            "netmask",
+                            "fresh_evidence",
+                            "failure_reason",
                         )
                     },
                     sort_keys=True,
@@ -2442,12 +2594,10 @@ class PacketTracerEnterpriseConfigurationRuntime:
 
     @staticmethod
     def _endpoint_matches(expected: dict, observed: dict) -> bool:
-        return (
-            PacketTracerEnterpriseConfigurationRuntime._ipv4_matches(
-                expected, str(observed.get("ipv4") or ""),
-            )
-            and str(observed.get("netmask") or "") == str(expected.get("netmask") or "")
-        )
+        return PacketTracerEnterpriseConfigurationRuntime._ipv4_matches(
+            expected,
+            str(observed.get("ipv4") or ""),
+        ) and str(observed.get("netmask") or "") == str(expected.get("netmask") or "")
 
     @staticmethod
     def _ipv4_matches(expected: dict, value: str) -> bool:
@@ -2459,12 +2609,14 @@ class PacketTracerEnterpriseConfigurationRuntime:
             return value == expected.get("ipv4")
         try:
             network = ipaddress.ip_network(
-                f"{expected.get('network')}/{expected.get('prefix')}", strict=True,
+                f"{expected.get('network')}/{expected.get('prefix')}",
+                strict=True,
             )
         except ValueError:
             return False
         return address in network and address not in {
-            network.network_address, network.broadcast_address,
+            network.network_address,
+            network.broadcast_address,
         }
 
     @staticmethod
@@ -2485,24 +2637,41 @@ class PacketTracerEnterpriseConfigurationRuntime:
             evidence_method=evidence_method,
             fresh_evidence=False,
             fields=fields,
-            message=message or (
-                f"No independent getter is registered for {expectation.kind.value}."
-            ),
+            message=message
+            or (f"No independent getter is registered for {expectation.kind.value}."),
         )
 
     def _json_result(self, js: str, timeout: float) -> dict:
         raw = self._send_and_wait(js, timeout)
         if raw is None:
-            return {"found": False, "configuration_channel": False, "failure_reason": "timeout"}
+            return {
+                "found": False,
+                "configuration_channel": False,
+                "failure_reason": "timeout",
+            }
         if raw.startswith(("ERROR:", "PT_ERROR:")):
-            return {"found": False, "configuration_channel": False, "failure_reason": raw}
+            return {
+                "found": False,
+                "configuration_channel": False,
+                "failure_reason": raw,
+            }
         try:
             value = json.loads(raw)
         except json.JSONDecodeError:
-            return {"found": False, "configuration_channel": False, "failure_reason": "malformed_json"}
-        return value if isinstance(value, dict) else {
-            "found": False, "configuration_channel": False, "failure_reason": "non_object_json",
-        }
+            return {
+                "found": False,
+                "configuration_channel": False,
+                "failure_reason": "malformed_json",
+            }
+        return (
+            value
+            if isinstance(value, dict)
+            else {
+                "found": False,
+                "configuration_channel": False,
+                "failure_reason": "non_object_json",
+            }
+        )
 
     @staticmethod
     def _same_interface(observed: str, expected: str) -> bool:
@@ -2525,7 +2694,8 @@ def _field_status(value: object, read, matches) -> FieldVerificationStatus:
     if readable is None:
         return FieldVerificationStatus.UNOBSERVABLE
     return (
-        FieldVerificationStatus.VERIFIED if matches(readable)
+        FieldVerificationStatus.VERIFIED
+        if matches(readable)
         else FieldVerificationStatus.FAILED
     )
 
@@ -2539,8 +2709,7 @@ def _voice_vlan_evidence_message(observation: dict, expected: int) -> str:
     """
     if "voice_vlan" not in observation:
         observed = (
-            "getter unavailable"
-            if "voice_vlan_error" in observation else "unavailable"
+            "getter unavailable" if "voice_vlan_error" in observation else "unavailable"
         )
     else:
         raw = observation["voice_vlan"]

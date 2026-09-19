@@ -387,9 +387,7 @@ class ServiceApplicator:
 
         pending = [item for item in plan.actions if item.id not in results]
         staged_verification: dict[str, ServiceVerificationResult] = {}
-        expectations_by_id = {
-            item.id: item for item in plan.verification_expectations
-        }
+        expectations_by_id = {item.id: item for item in plan.verification_expectations}
         while pending:
             progress = False
             stage_ids = {

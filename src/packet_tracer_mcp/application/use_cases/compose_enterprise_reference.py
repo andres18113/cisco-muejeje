@@ -253,7 +253,9 @@ def compose_enterprise_reference(
             capabilities=capabilities,
             configuration_policy=resolved_policy,
             service_policy_issues=list(derived_policy.issues),
-            issues=[f"service policy: {item.message}" for item in derived_policy.issues],
+            issues=[
+                f"service policy: {item.message}" for item in derived_policy.issues
+            ],
         )
     configuration = compile_enterprise_configuration(
         enterprise,

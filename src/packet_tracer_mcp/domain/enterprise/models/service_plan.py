@@ -531,9 +531,9 @@ class FoundationalServiceRequirement(BaseModel):
     #: `endpoint_address` foundation may be satisfied by the attributable
     #: IPv4/netmask core of a PARTIAL row; every other kind copies its
     #: verification status, because no core predicate exists for it.
-    kind: Literal[
-        "endpoint_address", "endpoint_dhcp_mode", "l3_interface"
-    ] = "endpoint_address"
+    kind: Literal["endpoint_address", "endpoint_dhcp_mode", "l3_interface"] = (
+        "endpoint_address"
+    )
 
 
 class ServiceVerificationExpectation(BaseModel):

@@ -84,7 +84,9 @@ def _supported_operation(records, model: str, operation: str) -> None:
     key = f"{model}:{operation}"
     current = records.get(key)
     if isinstance(current, ClientOperationCapability):
-        records[key] = current.model_copy(update={"support": CapabilityStatus.SUPPORTED})
+        records[key] = current.model_copy(
+            update={"support": CapabilityStatus.SUPPORTED}
+        )
     else:
         records[key] = ClientOperationCapability(
             key=key,
@@ -191,7 +193,9 @@ class _Runtime:
                 if status is ActionExecutionStatus.VERIFIED
                 else ObservationFact.INCONCLUSIVE
             ),
-            cause="" if status is ActionExecutionStatus.VERIFIED else "synthetic_unknown",
+            cause=""
+            if status is ActionExecutionStatus.VERIFIED
+            else "synthetic_unknown",
         )
 
 
@@ -254,12 +258,9 @@ def test_unknown_lease_blocks_the_actual_mail_client_call_but_not_static_work():
         }
     }
     assert set(runtime.verified).isdisjoint(dependent_checks)
-    by_expectation = {
-        item.expectation_id: item for item in result.verification_results
-    }
+    by_expectation = {item.expectation_id: item for item in result.verification_results}
     assert all(
-        by_expectation[identifier].status
-        is ActionExecutionStatus.DEPENDENCY_BLOCKED
+        by_expectation[identifier].status is ActionExecutionStatus.DEPENDENCY_BLOCKED
         for identifier in dependent_checks
     )
 

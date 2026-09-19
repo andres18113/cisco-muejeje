@@ -56,9 +56,7 @@ def _dhcp_payload(*, duplicate: bool = False, server_segment: str = "data"):
     }
     payload["sites"][0]["services"].append(service)
     if duplicate:
-        payload["sites"][0]["services"].append(
-            {**service, "name": "other-dhcp"}
-        )
+        payload["sites"][0]["services"].append({**service, "name": "other-dhcp"})
     return payload
 
 
@@ -80,12 +78,9 @@ def test_real_composition_delegates_one_segment_and_keeps_its_dhcp_clients():
 
     assert composition.issues == []
     assert composition.configuration_policy is not None
-    assert composition.configuration_policy.delegated_dhcp_segment_ids == [
-        SEGMENT_ID
-    ]
+    assert composition.configuration_policy.delegated_dhcp_segment_ids == [SEGMENT_ID]
     assert not any(
-        isinstance(action, ConfigureDhcpPool)
-        and action.segment_id == SEGMENT_ID
+        isinstance(action, ConfigureDhcpPool) and action.segment_id == SEGMENT_ID
         for action in composition.configuration.actions
     )
     clients = [
@@ -165,9 +160,7 @@ def test_a_server_on_another_segment_is_not_silently_used_as_a_relay():
 
 def test_a_wrong_explicit_server_interface_is_refused():
     payload = _dhcp_payload()
-    payload["sites"][0]["services"][-1]["dhcp_pool"]["interface"] = (
-        "FastEthernet9"
-    )
+    payload["sites"][0]["services"][-1]["dhcp_pool"]["interface"] = "FastEthernet9"
 
     composition = _compose(payload)
 

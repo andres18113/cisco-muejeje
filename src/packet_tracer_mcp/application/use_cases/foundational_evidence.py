@@ -187,8 +187,7 @@ def endpoint_dhcp_mode_is_verified(
         or verification.status is not ActionExecutionStatus.VERIFIED
         or verification.evidence_method != "structured_endpoint_dhcp_mode"
         or not verification.fresh_evidence
-        or verification.fields.get("dhcp_mode")
-        is not FieldVerificationStatus.VERIFIED
+        or verification.fields.get("dhcp_mode") is not FieldVerificationStatus.VERIFIED
         or verification.convergence is None
         or verification.convergence.final_status is not verification.status
     ):

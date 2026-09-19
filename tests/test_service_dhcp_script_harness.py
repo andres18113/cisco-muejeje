@@ -392,9 +392,7 @@ def _pool():
         lease_start="192.0.2.10",
         lease_end="192.0.2.19",
         max_users=10,
-        excluded_ranges=[
-            AddressRange(start="192.0.2.1", end="192.0.2.2")
-        ],
+        excluded_ranges=[AddressRange(start="192.0.2.1", end="192.0.2.2")],
         **_common(),
     )
 
@@ -457,7 +455,9 @@ def test_pool_creation_uses_void_add_then_get_and_preserves_unrelated_state(engi
         "start": "198.51.100.1",
         "end": "198.51.100.1",
     }
-    assert item.log.index("addPool:HQ_DATA") < item.log.index("setNetworkMask:192.0.2.0:255.255.255.0")
+    assert item.log.index("addPool:HQ_DATA") < item.log.index(
+        "setNetworkMask:192.0.2.0:255.255.255.0"
+    )
     assert item.log.count("getPool:HQ_DATA") >= 2
     assert mutation.footprint is FootprintFact.PARTIAL
     assert mutation.postcondition is PostconditionFact.SATISFIED
@@ -468,7 +468,9 @@ def test_matching_pool_is_a_noop_and_conflicting_pool_is_refused(engine):
     _prime_pool(matching)
     [same] = _runtime(matching).apply_actions([_pool()])
 
-    assert not any(entry.startswith(("addPool:", "setNetworkMask:")) for entry in matching.log)
+    assert not any(
+        entry.startswith(("addPool:", "setNetworkMask:")) for entry in matching.log
+    )
     assert same.attempted is False
 
     conflict = engine()
@@ -514,7 +516,9 @@ def test_missing_post_read_never_claims_the_pool_was_stored(engine):
     assert mutation.postcondition is PostconditionFact.UNOBSERVED
 
 
-@pytest.mark.parametrize("held", [None, False, 0, ""], ids=["null", "false", "zero", "empty"])
+@pytest.mark.parametrize(
+    "held", [None, False, 0, ""], ids=["null", "false", "zero", "empty"]
+)
 def test_every_present_malformed_claim_refuses_without_dhcp_run(engine, held):
     item = engine(claims={CLAIM_KEY: held})
     before = json.dumps(item.state["claims"], sort_keys=True)

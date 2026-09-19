@@ -147,10 +147,7 @@ def test_candidate_path_persists_separate_mode_configuration_and_lease_rows(tmp_
     result = harness.run(capability_catalog=lambda _version: _candidate_catalog())
 
     assert result.refusal_code is ServiceEntryRefusal.NONE
-    configured = {
-        item.action_type.value
-        for item in harness.configuration.rendered
-    }
+    configured = {item.action_type.value for item in harness.configuration.rendered}
     assert "set_endpoint_dhcp" in configured
     service_actions = {
         identifier for batch in harness.services.applied for identifier in batch

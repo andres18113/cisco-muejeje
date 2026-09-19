@@ -496,8 +496,7 @@ def _service_eligibility(
         )
         if blocked and service.service_type is not ServiceType.DHCP:
             unknown_operations[service.id] = [
-                f"dhcp_prerequisite:{identifier}=ineligible"
-                for identifier in blocked
+                f"dhcp_prerequisite:{identifier}=ineligible" for identifier in blocked
             ]
             continue
         still_eligible.append(service)

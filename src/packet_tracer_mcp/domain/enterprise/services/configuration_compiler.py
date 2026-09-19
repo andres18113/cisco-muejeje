@@ -55,7 +55,10 @@ from ..models.requirements import AddressingPreference, EndpointRequirement
 from ..models.roles import DeviceRole
 from ..models.segments import NetworkSegment, SegmentRole
 from ..models.verification import PrerequisiteKind, VerificationPrerequisite
-from .configuration_dependencies import ConfigurationDependencyError, order_configuration_actions
+from .configuration_dependencies import (
+    ConfigurationDependencyError,
+    order_configuration_actions,
+)
 from .link_performance_integration import LinkPerformanceIntegration, resolve_link_media
 from .link_performance_planner import LinkPerformancePlanner
 from .configuration_validator import validate_configuration_actions
@@ -67,7 +70,11 @@ _RESERVED_VLANS = {1002, 1003, 1004, 1005}
 #: fuera: no se les configura velocidad ni duplex desde aqui.
 _LINK_MODE_CATEGORIES = {"router", "switch"}
 _TRUNK_LINK_ROLES = {
-    "access_uplink", "distribution_uplink", "core_link", "redundant_link", "edge_link",
+    "access_uplink",
+    "distribution_uplink",
+    "core_link",
+    "redundant_link",
+    "edge_link",
 }
 _GATEWAY_ROLE_ORDER = {
     DeviceRole.EDGE_ROUTER.value: 0,
@@ -83,14 +90,20 @@ def _issue(
     message: str,
     subject: str = "",
 ) -> ConfigurationIssue:
-    return ConfigurationIssue(severity=severity, code=code, message=message, subject=subject)
+    return ConfigurationIssue(
+        severity=severity, code=code, message=message, subject=subject
+    )
 
 
-def _error(code: ConfigurationIssueCode, message: str, subject: str = "") -> ConfigurationIssue:
+def _error(
+    code: ConfigurationIssueCode, message: str, subject: str = ""
+) -> ConfigurationIssue:
     return _issue(ConfigurationIssueSeverity.ERROR, code, message, subject)
 
 
-def _warning(code: ConfigurationIssueCode, message: str, subject: str = "") -> ConfigurationIssue:
+def _warning(
+    code: ConfigurationIssueCode, message: str, subject: str = ""
+) -> ConfigurationIssue:
     return _issue(ConfigurationIssueSeverity.WARNING, code, message, subject)
 
 
@@ -124,7 +137,9 @@ class InterfaceRoutingSemantics(str, Enum):
 
 
 def interface_routing_semantics(
-    actions: list[ConfigurationAction], device_id: str, interface: str,
+    actions: list[ConfigurationAction],
+    device_id: str,
+    interface: str,
 ) -> InterfaceRoutingSemantics:
     """Clasifica una interfaz por la configuracion tipada que el plan le dio.
 
@@ -154,7 +169,9 @@ def interface_routing_semantics(
 
 
 def interface_is_routed(
-    actions: list[ConfigurationAction], device_id: str, interface: str,
+    actions: list[ConfigurationAction],
+    device_id: str,
+    interface: str,
 ) -> bool:
     """Sólo `ROUTED` habilita bandwidth. UNKNOWN y CONFLICT no lo hacen."""
     return (
@@ -195,63 +212,98 @@ class ConfigurationCompiler:
         issues: list[ConfigurationIssue] = []
         actions: list[ConfigurationAction] = []
         if not topology.physical_identity_hash:
-            issues.append(_error(
-                ConfigurationIssueCode.SOURCE_TOPOLOGY_HASH_MISSING,
-                "E5 requires the immutable semantic hash produced by E4.",
-                topology.id,
-            ))
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.SOURCE_TOPOLOGY_HASH_MISSING,
+                    "E5 requires the immutable semantic hash produced by E4.",
+                    topology.id,
+                )
+            )
 
         devices = {_device_key(device): device for device in topology.devices}
         for device_id, device in sorted(devices.items()):
             if device.category not in {"router", "switch"}:
                 continue
             if safe_ios_identifier(device.name, max_length=63) != device.name:
-                issues.append(_warning(
-                    ConfigurationIssueCode.HOSTNAME_NOT_IOS_COMPATIBLE,
-                    f"Semantic name {device.name!r} cannot be applied exactly as an IOS hostname.",
-                    device_id,
-                ))
+                issues.append(
+                    _warning(
+                        ConfigurationIssueCode.HOSTNAME_NOT_IOS_COMPATIBLE,
+                        f"Semantic name {device.name!r} cannot be applied exactly as an IOS hostname.",
+                        device_id,
+                    )
+                )
                 continue
-            actions.append(ConfigureHostname(
-                id=_action_id("hostname", device_id, device.name),
-                phase=ConfigurationPhase.IDENTITY,
-                device_id=device_id,
-                device_name=device.name,
-                site_id=device.site_id,
-                hostname=device.name,
-            ))
+            actions.append(
+                ConfigureHostname(
+                    id=_action_id("hostname", device_id, device.name),
+                    phase=ConfigurationPhase.IDENTITY,
+                    device_id=device_id,
+                    device_name=device.name,
+                    site_id=device.site_id,
+                    hostname=device.name,
+                )
+            )
         names_to_ids = {device.name: _device_key(device) for device in topology.devices}
         links = [self._resolved_link(link, names_to_ids) for link in topology.links]
         site_segments, segment_vlans = self._segments(enterprise, policy, issues)
         allocations = {
             allocation.segment_id: allocation
-            for allocation in (enterprise.addressing.allocations if enterprise.addressing else [])
+            for allocation in (
+                enterprise.addressing.allocations if enterprise.addressing else []
+            )
         }
 
         endpoint_segments = self._endpoint_segments(
-            topology, site_segments, issues,
+            topology,
+            site_segments,
+            issues,
         )
         pair_members = self._pair_members(topology.devices)
         access_actions, endpoint_access, switch_local_vlans = self._access_actions(
-            topology, links, devices, site_segments, endpoint_segments,
-            segment_vlans, pair_members, issues,
+            topology,
+            links,
+            devices,
+            site_segments,
+            endpoint_segments,
+            segment_vlans,
+            pair_members,
+            issues,
         )
         actions.extend(access_actions)
 
-        gateway_actions, gateway_action_by_segment, router_trunk_links, gateway_devices = (
-            self._gateway_actions(
-                devices, links, site_segments, segment_vlans,
-                allocations, policy, issues,
-            )
+        (
+            gateway_actions,
+            gateway_action_by_segment,
+            router_trunk_links,
+            gateway_devices,
+        ) = self._gateway_actions(
+            devices,
+            links,
+            site_segments,
+            segment_vlans,
+            allocations,
+            policy,
+            issues,
         )
         actions.extend(gateway_actions)
-        actions.extend(self._serial_transit_actions(
-            enterprise, devices, links, issues,
-        ))
+        actions.extend(
+            self._serial_transit_actions(
+                enterprise,
+                devices,
+                links,
+                issues,
+            )
+        )
 
         trunk_actions, switch_trunk_vlans = self._trunk_actions(
-            topology, devices, links, site_segments, segment_vlans, switch_local_vlans,
-            router_trunk_links, policy,
+            topology,
+            devices,
+            links,
+            site_segments,
+            segment_vlans,
+            switch_local_vlans,
+            router_trunk_links,
+            policy,
         )
         actions.extend(trunk_actions)
 
@@ -267,33 +319,52 @@ class ConfigurationCompiler:
                 participating_vlans[action.device_id].add(action.vlan_id)
 
         vlan_actions = self._vlan_actions(
-            devices, participating_vlans, site_segments, segment_vlans,
+            devices,
+            participating_vlans,
+            site_segments,
+            segment_vlans,
         )
         actions.extend(vlan_actions)
-        vlan_ids = {(action.device_id, action.vlan_id): action.id for action in vlan_actions}
+        vlan_ids = {
+            (action.device_id, action.vlan_id): action.id for action in vlan_actions
+        }
         for action in actions:
             if isinstance(action, ConfigureAccessPort):
                 required = [action.data_vlan_id]
                 if action.voice_vlan_id is not None:
                     required.append(action.voice_vlan_id)
-                action.depends_on = sorted({
-                    vlan_ids[(action.device_id, vlan_id)] for vlan_id in required
-                })
+                action.depends_on = sorted(
+                    {vlan_ids[(action.device_id, vlan_id)] for vlan_id in required}
+                )
             elif isinstance(action, ConfigureTrunk):
                 action.depends_on = sorted(
-                    vlan_ids[(action.device_id, vlan_id)] for vlan_id in action.allowed_vlans
+                    vlan_ids[(action.device_id, vlan_id)]
+                    for vlan_id in action.allowed_vlans
                 )
             elif isinstance(action, ConfigureSvi):
                 action.depends_on = [vlan_ids[(action.device_id, action.vlan_id)]]
 
         endpoint_actions, static_by_segment, pending_dhcp = self._endpoint_actions(
-            topology, devices, links, endpoint_segments, allocations,
-            endpoint_access, policy, issues,
+            topology,
+            devices,
+            links,
+            endpoint_segments,
+            allocations,
+            endpoint_access,
+            policy,
+            issues,
         )
         actions.extend(endpoint_actions)
         pool_actions, pool_by_segment = self._dhcp_actions(
-            devices, site_segments, allocations, pending_dhcp,
-            static_by_segment, gateway_action_by_segment, gateway_devices, policy, issues,
+            devices,
+            site_segments,
+            allocations,
+            pending_dhcp,
+            static_by_segment,
+            gateway_action_by_segment,
+            gateway_devices,
+            policy,
+            issues,
         )
         actions.extend(pool_actions)
         delegated_dhcp = set(policy.delegated_dhcp_segment_ids)
@@ -308,33 +379,45 @@ class ConfigurationCompiler:
             dependencies = [] if delegated else [pool.id]
             if access_dependency:
                 dependencies.append(access_dependency)
-            actions.append(SetEndpointDhcp(
-                id=_action_id("endpoint-dhcp", _device_key(endpoint), segment.name),
-                phase=ConfigurationPhase.ENDPOINT_ADDRESSING,
-                device_id=_device_key(endpoint),
-                device_name=endpoint.name,
-                site_id=endpoint.site_id,
-                interface=interface,
-                segment_id=segment.name,
-                network=allocation.network,
-                prefix=allocation.prefix,
-                netmask=allocation.netmask,
-                gateway=allocation.gateway,
-                dns_server=policy.dns_server,
-                depends_on=sorted(set(dependencies)),
-                required_capability="endpoint_dhcp",
-            ))
+            actions.append(
+                SetEndpointDhcp(
+                    id=_action_id("endpoint-dhcp", _device_key(endpoint), segment.name),
+                    phase=ConfigurationPhase.ENDPOINT_ADDRESSING,
+                    device_id=_device_key(endpoint),
+                    device_name=endpoint.name,
+                    site_id=endpoint.site_id,
+                    interface=interface,
+                    segment_id=segment.name,
+                    network=allocation.network,
+                    prefix=allocation.prefix,
+                    netmask=allocation.netmask,
+                    gateway=allocation.gateway,
+                    dns_server=policy.dns_server,
+                    depends_on=sorted(set(dependencies)),
+                    required_capability="endpoint_dhcp",
+                )
+            )
 
         # Se pasa `actions` tal cual esta: la clasificacion enrutado/conmutado
         # sale de lo que el plan ya decidio para cada interfaz.
-        actions.extend(self._link_performance_actions(
-            topology, devices, links, names_to_ids, policy, actions, issues,
-            deployment_manifest=deployment_manifest,
-            traffic_by_link=traffic_by_link or {},
-        ))
+        actions.extend(
+            self._link_performance_actions(
+                topology,
+                devices,
+                links,
+                names_to_ids,
+                policy,
+                actions,
+                issues,
+                deployment_manifest=deployment_manifest,
+                traffic_by_link=traffic_by_link or {},
+            )
+        )
 
         issues.extend(validate_configuration_actions(actions))
-        if not any(issue.severity is ConfigurationIssueSeverity.ERROR for issue in issues):
+        if not any(
+            issue.severity is ConfigurationIssueSeverity.ERROR for issue in issues
+        ):
             try:
                 actions = order_configuration_actions(actions)
             except ConfigurationDependencyError as exc:
@@ -358,10 +441,12 @@ class ConfigurationCompiler:
         for action in actions:
             action.apply_dependencies = list(action.depends_on)
         for expectation in expectations:
-            expectation.verification_prerequisites = [VerificationPrerequisite(
-                kind=PrerequisiteKind.ACTION_APPLIED,
-                reference_id=expectation.action_id,
-            )]
+            expectation.verification_prerequisites = [
+                VerificationPrerequisite(
+                    kind=PrerequisiteKind.ACTION_APPLIED,
+                    reference_id=expectation.action_id,
+                )
+            ]
         device_plans = self._device_plans(actions, devices)
         plan = ConfigurationPlan(
             id=f"cfg_{topology.id or topology.physical_identity_hash[:16]}",
@@ -369,7 +454,8 @@ class ConfigurationCompiler:
             source_topology_hash=topology.physical_identity_hash,
             source_topology_hash_schema=(
                 "physical-topology-v2"
-                if topology.physical_topology_hash else "legacy-full-v1"
+                if topology.physical_topology_hash
+                else "legacy-full-v1"
             ),
             actions=actions,
             devices=device_plans,
@@ -400,33 +486,41 @@ class ConfigurationCompiler:
             endpoint_a = devices.get(link.device_a_id)
             endpoint_b = devices.get(link.device_b_id)
             if endpoint_a is None or endpoint_b is None:
-                issues.append(_error(
-                    ConfigurationIssueCode.TRANSIT_ALLOCATION_MISSING,
-                    f"Serial link {link.id!r} has unresolved semantic endpoints.",
-                    link.id,
-                ))
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.TRANSIT_ALLOCATION_MISSING,
+                        f"Serial link {link.id!r} has unresolved semantic endpoints.",
+                        link.id,
+                    )
+                )
                 continue
-            serial_by_pair[tuple(sorted((endpoint_a.site_id, endpoint_b.site_id)))].append(link)
+            serial_by_pair[
+                tuple(sorted((endpoint_a.site_id, endpoint_b.site_id)))
+            ].append(link)
 
         emitted: list[ConfigurationAction] = []
         for pair, pair_links in sorted(serial_by_pair.items()):
             if len(pair_links) != 1:
-                issues.append(_error(
-                    ConfigurationIssueCode.TRANSIT_ALLOCATION_MISSING,
-                    f"Sites {pair[0]!r} and {pair[1]!r} have {len(pair_links)} serial "
-                    "links but only one semantic transit allocation; explicit per-link "
-                    "allocation is required.",
-                    "/".join(pair),
-                ))
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.TRANSIT_ALLOCATION_MISSING,
+                        f"Sites {pair[0]!r} and {pair[1]!r} have {len(pair_links)} serial "
+                        "links but only one semantic transit allocation; explicit per-link "
+                        "allocation is required.",
+                        "/".join(pair),
+                    )
+                )
                 continue
             link = pair_links[0]
             allocation = allocations.get(pair)
             if allocation is None:
-                issues.append(_error(
-                    ConfigurationIssueCode.TRANSIT_ALLOCATION_MISSING,
-                    f"Serial link {link.id!r} has no deterministic /30 transit allocation.",
-                    link.id,
-                ))
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.TRANSIT_ALLOCATION_MISSING,
+                        f"Serial link {link.id!r} has no deterministic /30 transit allocation.",
+                        link.id,
+                    )
+                )
                 continue
             for device_id, interface in (
                 (link.device_a_id, link.port_a),
@@ -438,19 +532,21 @@ class ConfigurationCompiler:
                     if device.site_id == allocation.source_site_id
                     else allocation.target_ipv4
                 )
-                emitted.append(ConfigureRoutedInterface(
-                    id=_action_id("transit-l3", link.id, device_id, interface),
-                    phase=ConfigurationPhase.L3_INTERFACES,
-                    device_id=device_id,
-                    device_name=device.name,
-                    site_id=device.site_id,
-                    interface=interface,
-                    ipv4=address,
-                    prefix=allocation.prefix,
-                    netmask=allocation.netmask,
-                    segment_id=allocation.id,
-                    required_capability="layer3",
-                ))
+                emitted.append(
+                    ConfigureRoutedInterface(
+                        id=_action_id("transit-l3", link.id, device_id, interface),
+                        phase=ConfigurationPhase.L3_INTERFACES,
+                        device_id=device_id,
+                        device_name=device.name,
+                        site_id=device.site_id,
+                        interface=interface,
+                        ipv4=address,
+                        prefix=allocation.prefix,
+                        netmask=allocation.netmask,
+                        segment_id=allocation.id,
+                        required_capability="layer3",
+                    )
+                )
         return emitted
 
     def _link_performance_actions(
@@ -472,9 +568,7 @@ class ConfigurationCompiler:
         sobre un backend del que no se sabe nada no es un caso por defecto
         aceptable, y el intent sigue compilando igual.
         """
-        endpoint_models = {
-            device.name: device.model for device in topology.devices
-        }
+        endpoint_models = {device.name: device.model for device in topology.devices}
         emitted: list[ConfigurationAction] = []
         for link in sorted(links, key=lambda item: (item.id or "", item.device_a)):
             media = resolve_link_media(link.cable)
@@ -502,11 +596,13 @@ class ConfigurationCompiler:
                 try:
                     binding = deployment_manifest.link_binding_for(link.id)
                 except DeploymentIdentityError as exc:
-                    issues.append(_error(
-                        ConfigurationIssueCode.CAPABILITY_UNVERIFIED,
-                        str(exc),
-                        link.id,
-                    ))
+                    issues.append(
+                        _error(
+                            ConfigurationIssueCode.CAPABILITY_UNVERIFIED,
+                            str(exc),
+                            link.id,
+                        )
+                    )
                     continue
                 endpoints_by_role = {
                     endpoint.orientation: endpoint.semantic_device_id
@@ -514,18 +610,25 @@ class ConfigurationCompiler:
                 }
                 dce_device_id = endpoints_by_role.get(SerialEndpointOrientation.DCE)
                 dte_device_id = endpoints_by_role.get(SerialEndpointOrientation.DTE)
-                if not dce_device_id or not dte_device_id or dce_device_id == dte_device_id:
-                    issues.append(_error(
-                        ConfigurationIssueCode.CAPABILITY_UNVERIFIED,
-                        f"Serial link {link.id!r} requires one freshly observed DCE "
-                        "endpoint and one freshly observed DTE endpoint.",
-                        link.id,
-                    ))
+                if (
+                    not dce_device_id
+                    or not dte_device_id
+                    or dce_device_id == dte_device_id
+                ):
+                    issues.append(
+                        _error(
+                            ConfigurationIssueCode.CAPABILITY_UNVERIFIED,
+                            f"Serial link {link.id!r} requires one freshly observed DCE "
+                            "endpoint and one freshly observed DTE endpoint.",
+                            link.id,
+                        )
+                    )
                     continue
             elif not self._link_capabilities_available:
                 continue
             intent = self._link_performance.intent_for_link(
-                link, endpoint_models=endpoint_models,
+                link,
+                endpoint_models=endpoint_models,
                 sync_routing_bandwidth=policy.sync_routing_bandwidth,
                 traffic=(traffic_by_link or {}).get(link.id, []),
                 dce_endpoint_device_id=dce_device_id,
@@ -534,61 +637,77 @@ class ConfigurationCompiler:
             # Preflight productivo: compilar la intención es una cosa y mutar
             # el runtime otra. Un extremo sin perfil deja la capacidad en
             # UNKNOWN, que no es UNSUPPORTED pero tampoco es permiso.
-            unprofiled = [] if media is LinkMedia.SERIAL else [
-                name for name, capability in (
-                    (link.device_a, intent.local_port_capability),
-                    (link.device_b, intent.peer_port_capability),
-                )
-                if capability is None
-            ]
+            unprofiled = (
+                []
+                if media is LinkMedia.SERIAL
+                else [
+                    name
+                    for name, capability in (
+                        (link.device_a, intent.local_port_capability),
+                        (link.device_b, intent.peer_port_capability),
+                    )
+                    if capability is None
+                ]
+            )
             if unprofiled:
-                issues.append(_warning(
-                    ConfigurationIssueCode.CAPABILITY_UNVERIFIED,
-                    f"Link {link.id or link.device_a}: no measured link-mode profile "
-                    f"for {', '.join(unprofiled)}; leaving the link to "
-                    "autonegotiation instead of mutating an unknown capability.",
-                    link.id or link.device_a,
-                ))
+                issues.append(
+                    _warning(
+                        ConfigurationIssueCode.CAPABILITY_UNVERIFIED,
+                        f"Link {link.id or link.device_a}: no measured link-mode profile "
+                        f"for {', '.join(unprofiled)}; leaving the link to "
+                        "autonegotiation instead of mutating an unknown capability.",
+                        link.id or link.device_a,
+                    )
+                )
                 continue
             decision = self._link_performance.decide(intent)
             if not decision.applicable:
                 for issue in decision.issues:
-                    issues.append(_warning(
-                        ConfigurationIssueCode.CAPABILITY_UNVERIFIED,
-                        f"Link {link.id or link.device_a}: {issue.message}",
-                        link.id or link.device_a,
-                    ))
+                    issues.append(
+                        _warning(
+                            ConfigurationIssueCode.CAPABILITY_UNVERIFIED,
+                            f"Link {link.id or link.device_a}: {issue.message}",
+                            link.id or link.device_a,
+                        )
+                    )
                 continue
             for device_name, interface in (
-                (link.device_a, link.port_a), (link.device_b, link.port_b),
+                (link.device_a, link.port_a),
+                (link.device_b, link.port_b),
             ):
                 device_id = names_to_ids.get(device_name, "")
                 device = devices.get(device_id)
                 if device is None:
                     continue
                 semantics = interface_routing_semantics(
-                    planned_actions, device_id, interface,
+                    planned_actions,
+                    device_id,
+                    interface,
                 )
                 if semantics is InterfaceRoutingSemantics.CONFLICT:
                     # El plan se contradice sobre este puerto. Se dice, no se
                     # resuelve a la brava: quien lo compilo tiene un error.
-                    issues.append(_error(
-                        ConfigurationIssueCode.CAPABILITY_UNVERIFIED,
-                        f"{device.name} {interface} is declared both routed and "
-                        "switched by the configuration plan.",
-                        link.id or link.device_a,
-                    ))
+                    issues.append(
+                        _error(
+                            ConfigurationIssueCode.CAPABILITY_UNVERIFIED,
+                            f"{device.name} {interface} is declared both routed and "
+                            "switched by the configuration plan.",
+                            link.id or link.device_a,
+                        )
+                    )
                     continue
-                emitted.extend(self._link_performance.actions_for(
-                    decision,
-                    device_id=device_id,
-                    device_name=device.name,
-                    site_id=device.site_id,
-                    interface=interface,
-                    interface_is_routed=(
-                        semantics is InterfaceRoutingSemantics.ROUTED
-                    ),
-                ))
+                emitted.extend(
+                    self._link_performance.actions_for(
+                        decision,
+                        device_id=device_id,
+                        device_name=device.name,
+                        site_id=device.site_id,
+                        interface=interface,
+                        interface_is_routed=(
+                            semantics is InterfaceRoutingSemantics.ROUTED
+                        ),
+                    )
+                )
         return emitted
 
     @staticmethod
@@ -608,14 +727,18 @@ class ConfigurationCompiler:
         vlan_by_segment: dict[str, int] = {}
         used: dict[tuple[str, int], str] = {}
         for site in sorted(enterprise.sites, key=lambda item: item.site_id):
-            for segment in sorted(site.segments, key=lambda item: (item.role.value, item.name)):
+            for segment in sorted(
+                site.segments, key=lambda item: (item.role.value, item.name)
+            ):
                 key = (site.site_id, segment.role)
                 if key in by_role and by_role[key].name != segment.name:
-                    issues.append(_error(
-                        ConfigurationIssueCode.SEGMENT_MAPPING_MISSING,
-                        f"Multiple {segment.role.value} segments in {site.site_id} need explicit endpoint mapping.",
-                        site.site_id,
-                    ))
+                    issues.append(
+                        _error(
+                            ConfigurationIssueCode.SEGMENT_MAPPING_MISSING,
+                            f"Multiple {segment.role.value} segments in {site.site_id} need explicit endpoint mapping.",
+                            site.site_id,
+                        )
+                    )
                     continue
                 by_role[key] = segment
                 vlan_id = (
@@ -624,25 +747,32 @@ class ConfigurationCompiler:
                     else policy.vlan_ids_by_role.get(segment.role)
                 )
                 if vlan_id is None:
-                    issues.append(_error(
-                        ConfigurationIssueCode.VLAN_INVALID_ID,
-                        f"No VLAN policy exists for segment {segment.name}.", segment.name,
-                    ))
+                    issues.append(
+                        _error(
+                            ConfigurationIssueCode.VLAN_INVALID_ID,
+                            f"No VLAN policy exists for segment {segment.name}.",
+                            segment.name,
+                        )
+                    )
                     continue
                 if not 1 <= vlan_id <= 4094 or vlan_id in _RESERVED_VLANS:
-                    issues.append(_error(
-                        ConfigurationIssueCode.VLAN_INVALID_ID,
-                        f"VLAN {vlan_id} is invalid or reserved for segment {segment.name}.",
-                        segment.name,
-                    ))
+                    issues.append(
+                        _error(
+                            ConfigurationIssueCode.VLAN_INVALID_ID,
+                            f"VLAN {vlan_id} is invalid or reserved for segment {segment.name}.",
+                            segment.name,
+                        )
+                    )
                     continue
                 used_key = (site.site_id, vlan_id)
                 if used_key in used and used[used_key] != segment.name:
-                    issues.append(_error(
-                        ConfigurationIssueCode.VLAN_ID_CONFLICT,
-                        f"VLAN {vlan_id} maps both {used[used_key]} and {segment.name} in {site.site_id}.",
-                        site.site_id,
-                    ))
+                    issues.append(
+                        _error(
+                            ConfigurationIssueCode.VLAN_ID_CONFLICT,
+                            f"VLAN {vlan_id} maps both {used[used_key]} and {segment.name} in {site.site_id}.",
+                            site.site_id,
+                        )
+                    )
                     continue
                 used[used_key] = segment.name
                 vlan_by_segment[segment.name] = vlan_id
@@ -663,29 +793,35 @@ class ConfigurationCompiler:
             try:
                 role = DeviceRole(endpoint.enterprise_role)
             except ValueError:
-                issues.append(_warning(
-                    ConfigurationIssueCode.SEGMENT_MAPPING_MISSING,
-                    f"Endpoint {endpoint.name} has no recognized Enterprise role.",
-                    _device_key(endpoint),
-                ))
+                issues.append(
+                    _warning(
+                        ConfigurationIssueCode.SEGMENT_MAPPING_MISSING,
+                        f"Endpoint {endpoint.name} has no recognized Enterprise role.",
+                        _device_key(endpoint),
+                    )
+                )
                 continue
             try:
                 explicit_segment = SegmentRole(endpoint.metadata["segment_role"])
             except (KeyError, ValueError):
                 explicit_segment = None
-            segment_role = assignment.segment_for(EndpointRequirement(
-                role=role,
-                count=1,
-                wireless=endpoint.wireless,
-                segment_role=explicit_segment,
-            ))
+            segment_role = assignment.segment_for(
+                EndpointRequirement(
+                    role=role,
+                    count=1,
+                    wireless=endpoint.wireless,
+                    segment_role=explicit_segment,
+                )
+            )
             segment = segments.get((endpoint.site_id, segment_role))
             if segment is None:
-                issues.append(_warning(
-                    ConfigurationIssueCode.SEGMENT_MAPPING_MISSING,
-                    f"No {segment_role.value} segment exists for endpoint {endpoint.name}.",
-                    _device_key(endpoint),
-                ))
+                issues.append(
+                    _warning(
+                        ConfigurationIssueCode.SEGMENT_MAPPING_MISSING,
+                        f"No {segment_role.value} segment exists for endpoint {endpoint.name}.",
+                        _device_key(endpoint),
+                    )
+                )
                 continue
             result[_device_key(endpoint)] = segment
         return result
@@ -721,14 +857,21 @@ class ConfigurationCompiler:
                 (link.device_b_id, link.port_b, link.device_a_id, link.port_a),
             ]
             switch_side = next(
-                (side for side in sides if devices.get(side[0]) and devices[side[0]].category == "switch"),
+                (
+                    side
+                    for side in sides
+                    if devices.get(side[0]) and devices[side[0]].category == "switch"
+                ),
                 None,
             )
             if switch_side is None:
-                issues.append(_error(
-                    ConfigurationIssueCode.ACCESS_LINK_INVALID,
-                    f"Access link {link.id} has no concrete switch endpoint.", link.id,
-                ))
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.ACCESS_LINK_INVALID,
+                        f"Access link {link.id} has no concrete switch endpoint.",
+                        link.id,
+                    )
+                )
                 continue
             switch_id, switch_port, endpoint_id, endpoint_port = switch_side
             endpoint = devices.get(endpoint_id)
@@ -743,7 +886,8 @@ class ConfigurationCompiler:
                 voice_segment = endpoint_segments.get(endpoint_id)
                 pc = (
                     pairs[pair_id].get(DeviceRole.USER_PC.value)
-                    if pair_id in pairs else None
+                    if pair_id in pairs
+                    else None
                 )
                 data_segment = (
                     endpoint_segments.get(_device_key(pc))
@@ -759,7 +903,9 @@ class ConfigurationCompiler:
                     if pc is not None:
                         endpoint_ids.append(_device_key(pc))
             action = ConfigureAccessPort(
-                id=_action_id("access", switch_id, switch_port, data_vlan, voice_vlan or ""),
+                id=_action_id(
+                    "access", switch_id, switch_port, data_vlan, voice_vlan or ""
+                ),
                 phase=ConfigurationPhase.L2_INTERFACES,
                 device_id=switch_id,
                 device_name=devices[switch_id].name,
@@ -793,7 +939,9 @@ class ConfigurationCompiler:
         allocations: dict[str, SubnetAllocation],
         policy: ConfigurationPolicy,
         issues: list[ConfigurationIssue],
-    ) -> tuple[list[ConfigurationAction], dict[str, str], set[str], dict[str, DevicePlan]]:
+    ) -> tuple[
+        list[ConfigurationAction], dict[str, str], set[str], dict[str, DevicePlan]
+    ]:
         actions: list[ConfigurationAction] = []
         by_segment: dict[str, str] = {}
         router_trunks: set[str] = set()
@@ -806,29 +954,38 @@ class ConfigurationCompiler:
         for site_id, segments in sorted(segments_by_site.items()):
             gateway = self._select_gateway(site_id, devices, policy)
             if gateway is None:
-                issues.append(_warning(
-                    ConfigurationIssueCode.GATEWAY_DEVICE_MISSING,
-                    f"No gateway device was selected for addressed site {site_id}.", site_id,
-                ))
+                issues.append(
+                    _warning(
+                        ConfigurationIssueCode.GATEWAY_DEVICE_MISSING,
+                        f"No gateway device was selected for addressed site {site_id}.",
+                        site_id,
+                    )
+                )
                 continue
             gateway_devices[site_id] = gateway
             if gateway.category == "switch":
                 for segment in sorted(segments, key=lambda item: item.name):
                     allocation = allocations[segment.name]
                     if not self._valid_gateway(allocation):
-                        issues.append(_error(
-                            ConfigurationIssueCode.GATEWAY_INVALID,
-                            f"Gateway {allocation.gateway} is not usable in {allocation.network}/{allocation.prefix}.",
-                            segment.name,
-                        ))
+                        issues.append(
+                            _error(
+                                ConfigurationIssueCode.GATEWAY_INVALID,
+                                f"Gateway {allocation.gateway} is not usable in {allocation.network}/{allocation.prefix}.",
+                                segment.name,
+                            )
+                        )
                         continue
                     action = ConfigureSvi(
                         id=_action_id("svi", _device_key(gateway), segment.name),
                         phase=ConfigurationPhase.L3_INTERFACES,
-                        device_id=_device_key(gateway), device_name=gateway.name,
-                        site_id=site_id, vlan_id=segment_vlans[segment.name],
-                        ipv4=allocation.gateway, prefix=allocation.prefix,
-                        netmask=allocation.netmask, segment_id=segment.name,
+                        device_id=_device_key(gateway),
+                        device_name=gateway.name,
+                        site_id=site_id,
+                        vlan_id=segment_vlans[segment.name],
+                        ipv4=allocation.gateway,
+                        prefix=allocation.prefix,
+                        netmask=allocation.netmask,
+                        segment_id=segment.name,
                         required_capability="supports_svi",
                     )
                     actions.append(action)
@@ -837,43 +994,57 @@ class ConfigurationCompiler:
 
             gateway_links = sorted(
                 (
-                    link for link in links
+                    link
+                    for link in links
                     if _device_key(gateway) in {link.device_a_id, link.device_b_id}
                     and any(
-                        devices.get(device_id) and devices[device_id].category == "switch"
+                        devices.get(device_id)
+                        and devices[device_id].category == "switch"
                         for device_id in {link.device_a_id, link.device_b_id}
                     )
                 ),
                 key=lambda item: item.id,
             )
             if not gateway_links:
-                issues.append(_error(
-                    ConfigurationIssueCode.GATEWAY_INTERFACE_MISSING,
-                    f"Gateway {gateway.name} has no E4 link to a switch.", _device_key(gateway),
-                ))
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.GATEWAY_INTERFACE_MISSING,
+                        f"Gateway {gateway.name} has no E4 link to a switch.",
+                        _device_key(gateway),
+                    )
+                )
                 continue
             gateway_link = gateway_links[0]
             gateway_port = (
-                gateway_link.port_a if gateway_link.device_a_id == _device_key(gateway)
+                gateway_link.port_a
+                if gateway_link.device_a_id == _device_key(gateway)
                 else gateway_link.port_b
             )
             if len(segments) == 1:
                 segment = segments[0]
                 allocation = allocations[segment.name]
                 if not self._valid_gateway(allocation):
-                    issues.append(_error(
-                        ConfigurationIssueCode.GATEWAY_INVALID,
-                        f"Gateway {allocation.gateway} is not usable in {allocation.network}/{allocation.prefix}.",
-                        segment.name,
-                    ))
+                    issues.append(
+                        _error(
+                            ConfigurationIssueCode.GATEWAY_INVALID,
+                            f"Gateway {allocation.gateway} is not usable in {allocation.network}/{allocation.prefix}.",
+                            segment.name,
+                        )
+                    )
                     continue
                 action = ConfigureRoutedInterface(
-                    id=_action_id("routed", _device_key(gateway), gateway_port, segment.name),
+                    id=_action_id(
+                        "routed", _device_key(gateway), gateway_port, segment.name
+                    ),
                     phase=ConfigurationPhase.L3_INTERFACES,
-                    device_id=_device_key(gateway), device_name=gateway.name,
-                    site_id=site_id, interface=gateway_port,
-                    ipv4=allocation.gateway, prefix=allocation.prefix,
-                    netmask=allocation.netmask, segment_id=segment.name,
+                    device_id=_device_key(gateway),
+                    device_name=gateway.name,
+                    site_id=site_id,
+                    interface=gateway_port,
+                    ipv4=allocation.gateway,
+                    prefix=allocation.prefix,
+                    netmask=allocation.netmask,
+                    segment_id=segment.name,
                     required_capability="layer3",
                 )
                 actions.append(action)
@@ -889,32 +1060,52 @@ class ConfigurationCompiler:
                     else gateway_link.port_a
                 )
                 switch = devices[switch_id]
-                actions.append(ConfigureAccessPort(
-                    id=_action_id("gateway-access", switch_id, switch_port, segment.name),
-                    phase=ConfigurationPhase.L2_INTERFACES,
-                    device_id=switch_id, device_name=switch.name, site_id=site_id,
-                    interface=switch_port, data_vlan_id=segment_vlans[segment.name],
-                    endpoint_ids=[], required_capability="supports_vlan",
-                ))
+                actions.append(
+                    ConfigureAccessPort(
+                        id=_action_id(
+                            "gateway-access", switch_id, switch_port, segment.name
+                        ),
+                        phase=ConfigurationPhase.L2_INTERFACES,
+                        device_id=switch_id,
+                        device_name=switch.name,
+                        site_id=site_id,
+                        interface=switch_port,
+                        data_vlan_id=segment_vlans[segment.name],
+                        endpoint_ids=[],
+                        required_capability="supports_vlan",
+                    )
+                )
             else:
                 router_trunks.add(gateway_link.id)
                 for segment in sorted(segments, key=lambda item: item.name):
                     allocation = allocations[segment.name]
                     if not self._valid_gateway(allocation):
-                        issues.append(_error(
-                            ConfigurationIssueCode.GATEWAY_INVALID,
-                            f"Gateway {allocation.gateway} is not usable in {allocation.network}/{allocation.prefix}.",
-                            segment.name,
-                        ))
+                        issues.append(
+                            _error(
+                                ConfigurationIssueCode.GATEWAY_INVALID,
+                                f"Gateway {allocation.gateway} is not usable in {allocation.network}/{allocation.prefix}.",
+                                segment.name,
+                            )
+                        )
                         continue
                     action = ConfigureSubinterface(
-                        id=_action_id("subinterface", _device_key(gateway), gateway_port, segment.name),
+                        id=_action_id(
+                            "subinterface",
+                            _device_key(gateway),
+                            gateway_port,
+                            segment.name,
+                        ),
                         phase=ConfigurationPhase.L3_INTERFACES,
-                        device_id=_device_key(gateway), device_name=gateway.name,
-                        site_id=site_id, parent_interface=gateway_port,
-                        vlan_id=segment_vlans[segment.name], ipv4=allocation.gateway,
-                        prefix=allocation.prefix, netmask=allocation.netmask,
-                        segment_id=segment.name, required_capability="layer3",
+                        device_id=_device_key(gateway),
+                        device_name=gateway.name,
+                        site_id=site_id,
+                        parent_interface=gateway_port,
+                        vlan_id=segment_vlans[segment.name],
+                        ipv4=allocation.gateway,
+                        prefix=allocation.prefix,
+                        netmask=allocation.netmask,
+                        segment_id=segment.name,
+                        required_capability="layer3",
                     )
                     actions.append(action)
                     by_segment[segment.name] = action.id
@@ -922,20 +1113,28 @@ class ConfigurationCompiler:
 
     @staticmethod
     def _select_gateway(
-        site_id: str, devices: dict[str, DevicePlan], policy: ConfigurationPolicy,
+        site_id: str,
+        devices: dict[str, DevicePlan],
+        policy: ConfigurationPolicy,
     ) -> DevicePlan | None:
         explicit = policy.gateway_device_ids.get(site_id)
         if explicit:
             return devices.get(explicit)
         candidates = [
-            device for device in devices.values()
-            if device.site_id == site_id and device.network_layer
-            and (device.category == "router" or device.enterprise_role in _GATEWAY_ROLE_ORDER)
+            device
+            for device in devices.values()
+            if device.site_id == site_id
+            and device.network_layer
+            and (
+                device.category == "router"
+                or device.enterprise_role in _GATEWAY_ROLE_ORDER
+            )
         ]
         return min(
             candidates,
             key=lambda item: (
-                _GATEWAY_ROLE_ORDER.get(item.enterprise_role, 99), _device_key(item),
+                _GATEWAY_ROLE_ORDER.get(item.enterprise_role, 99),
+                _device_key(item),
             ),
             default=None,
         )
@@ -944,7 +1143,10 @@ class ConfigurationCompiler:
     def _valid_gateway(allocation: SubnetAllocation) -> bool:
         network = ipaddress.ip_network(f"{allocation.network}/{allocation.prefix}")
         gateway = ipaddress.ip_address(allocation.gateway)
-        return gateway in network and gateway not in {network.network_address, network.broadcast_address}
+        return gateway in network and gateway not in {
+            network.network_address,
+            network.broadcast_address,
+        }
 
     def _trunk_actions(
         self,
@@ -970,29 +1172,47 @@ class ConfigurationCompiler:
                 site_vlans[devices[device_id].site_id].update(values)
 
         for link in sorted(links, key=lambda item: item.id):
-            endpoint_devices = [devices.get(link.device_a_id), devices.get(link.device_b_id)]
-            switches = [device for device in endpoint_devices if device and device.category == "switch"]
+            endpoint_devices = [
+                devices.get(link.device_a_id),
+                devices.get(link.device_b_id),
+            ]
+            switches = [
+                device
+                for device in endpoint_devices
+                if device and device.category == "switch"
+            ]
             should_trunk = (
                 len(switches) == 2 and link.link_role in _TRUNK_LINK_ROLES
             ) or link.id in router_trunk_links
             if not should_trunk:
                 continue
             access_switch = next(
-                (device for device in switches if device.network_layer == "access"), None,
+                (device for device in switches if device.network_layer == "access"),
+                None,
             )
             del access_switch
             allowed = sorted(site_vlans.get(switches[0].site_id, set()))
             for switch in switches:
                 switch_id = _device_key(switch)
-                interface = link.port_a if link.device_a_id == switch_id else link.port_b
-                peer = link.device_b_id if link.device_a_id == switch_id else link.device_a_id
+                interface = (
+                    link.port_a if link.device_a_id == switch_id else link.port_b
+                )
+                peer = (
+                    link.device_b_id
+                    if link.device_a_id == switch_id
+                    else link.device_a_id
+                )
                 action = ConfigureTrunk(
                     id=_action_id("trunk", switch_id, interface, link.id),
                     phase=ConfigurationPhase.L2_INTERFACES,
-                    device_id=switch_id, device_name=switch.name, site_id=switch.site_id,
-                    interface=interface, allowed_vlans=allowed,
+                    device_id=switch_id,
+                    device_name=switch.name,
+                    site_id=switch.site_id,
+                    interface=interface,
+                    allowed_vlans=allowed,
                     native_vlan_id=policy.native_vlan_id,
-                    peer_device_id=peer, source_link_id=link.id,
+                    peer_device_id=peer,
+                    source_link_id=link.id,
                     required_capability="supports_trunk",
                 )
                 actions.append(action)
@@ -1016,14 +1236,19 @@ class ConfigurationCompiler:
             device = devices[device_id]
             for vlan_id in sorted(vlan_ids):
                 segment = names.get((device.site_id, vlan_id))
-                actions.append(CreateVlan(
-                    id=_action_id("vlan", device_id, vlan_id),
-                    phase=ConfigurationPhase.L2_DEFINITIONS,
-                    device_id=device_id, device_name=device.name, site_id=device.site_id,
-                    vlan_id=vlan_id, name=segment.name if segment else f"VLAN_{vlan_id}",
-                    segment_id=segment.name if segment else "",
-                    required_capability="supports_vlan",
-                ))
+                actions.append(
+                    CreateVlan(
+                        id=_action_id("vlan", device_id, vlan_id),
+                        phase=ConfigurationPhase.L2_DEFINITIONS,
+                        device_id=device_id,
+                        device_name=device.name,
+                        site_id=device.site_id,
+                        vlan_id=vlan_id,
+                        name=segment.name if segment else f"VLAN_{vlan_id}",
+                        segment_id=segment.name if segment else "",
+                        required_capability="supports_vlan",
+                    )
+                )
         return actions
 
     def _endpoint_actions(
@@ -1037,7 +1262,8 @@ class ConfigurationCompiler:
         policy: ConfigurationPolicy,
         issues: list[ConfigurationIssue],
     ) -> tuple[
-        list[SetEndpointStaticAddress], dict[str, list[str]],
+        list[SetEndpointStaticAddress],
+        dict[str, list[str]],
         list[tuple[DevicePlan, NetworkSegment, str, str]],
     ]:
         actions: list[SetEndpointStaticAddress] = []
@@ -1050,11 +1276,13 @@ class ConfigurationCompiler:
             if endpoint and segment.name in allocations:
                 endpoints_by_segment[segment.name].append(endpoint)
             elif endpoint:
-                issues.append(_warning(
-                    ConfigurationIssueCode.SEGMENT_ALLOCATION_MISSING,
-                    f"No IPAM allocation exists for segment {segment.name}; L2 still compiles.",
-                    segment.name,
-                ))
+                issues.append(
+                    _warning(
+                        ConfigurationIssueCode.SEGMENT_ALLOCATION_MISSING,
+                        f"No IPAM allocation exists for segment {segment.name}; L2 still compiles.",
+                        segment.name,
+                    )
+                )
 
         for segment_id, endpoints in sorted(endpoints_by_segment.items()):
             allocation = allocations[segment_id]
@@ -1066,13 +1294,17 @@ class ConfigurationCompiler:
                 segment = endpoint_segments[endpoint_id]
                 interface = endpoint_interfaces.get(endpoint_id, "")
                 is_phone = endpoint.enterprise_role == DeviceRole.IP_PHONE.value
-                preference = endpoint.metadata.get("addressing_preference", "unspecified")
+                preference = endpoint.metadata.get(
+                    "addressing_preference", "unspecified"
+                )
                 use_dhcp = preference == AddressingPreference.DHCP.value or (
-                    preference == AddressingPreference.UNSPECIFIED.value and segment.dhcp
+                    preference == AddressingPreference.UNSPECIFIED.value
+                    and segment.dhcp
                 )
                 access_dependency = endpoint_access.get(endpoint_id, "")
                 signalled_voice_vlan = endpoint_access.get(
-                    f"voice_vlan:{endpoint_id}", "",
+                    f"voice_vlan:{endpoint_id}",
+                    "",
                 )
                 if is_phone and signalled_voice_vlan:
                     # Measured on build 9.0.1.0858. A 7960 enumerates exactly
@@ -1092,13 +1324,15 @@ class ConfigurationCompiler:
                     # gateway and the pool -- and all of that is still compiled.
                     # Option 150 and the call control are E7's, and so is the
                     # claim that the phone acquired.
-                    issues.append(_warning(
-                        ConfigurationIssueCode.ENDPOINT_INTERFACE_MISSING,
-                        f"Phone {endpoint.name} acquires on the voice SVI it "
-                        f"creates itself, so E5 claims no addressing for it on "
-                        f"segment {segment_id}; E7 owns the acquisition.",
-                        endpoint_id,
-                    ))
+                    issues.append(
+                        _warning(
+                            ConfigurationIssueCode.ENDPOINT_INTERFACE_MISSING,
+                            f"Phone {endpoint.name} acquires on the voice SVI it "
+                            f"creates itself, so E5 claims no addressing for it on "
+                            f"segment {segment_id}; E7 owns the acquisition.",
+                            endpoint_id,
+                        )
+                    )
                     if use_dhcp:
                         pending_dhcp.append((endpoint, segment, "", access_dependency))
                     continue
@@ -1117,13 +1351,15 @@ class ConfigurationCompiler:
                     # was never claimed either, and its VLAN still exists
                     # structurally. For a wired one it is -- something that owns
                     # a cable should own an interface.
-                    issues.append((_warning if endpoint.wireless else _error)(
-                        ConfigurationIssueCode.ENDPOINT_INTERFACE_MISSING,
-                        f"Endpoint {endpoint.name} exposes no addressable network "
-                        f"interface, so no addressing is claimed for it on "
-                        f"segment {segment_id}.",
-                        endpoint_id,
-                    ))
+                    issues.append(
+                        (_warning if endpoint.wireless else _error)(
+                            ConfigurationIssueCode.ENDPOINT_INTERFACE_MISSING,
+                            f"Endpoint {endpoint.name} exposes no addressable network "
+                            f"interface, so no addressing is claimed for it on "
+                            f"segment {segment_id}.",
+                            endpoint_id,
+                        )
+                    )
                     if use_dhcp:
                         # The segment still asked for DHCP. Withdrawing the pool
                         # too would quietly delete a designed router service
@@ -1131,60 +1367,81 @@ class ConfigurationCompiler:
                         pending_dhcp.append((endpoint, segment, "", access_dependency))
                     continue
                 if use_dhcp:
-                    pending_dhcp.append((endpoint, segment, interface, access_dependency))
+                    pending_dhcp.append(
+                        (endpoint, segment, interface, access_dependency)
+                    )
                     continue
                 explicit = endpoint.metadata.get("requirement.ipv4", "")
                 if explicit:
                     try:
                         address = ipaddress.ip_address(explicit)
                     except ValueError:
-                        issues.append(_error(
-                            ConfigurationIssueCode.DUPLICATE_IPV4,
-                            f"Endpoint {endpoint.name} carries invalid explicit IPv4 {explicit}.",
-                            endpoint_id,
-                        ))
+                        issues.append(
+                            _error(
+                                ConfigurationIssueCode.DUPLICATE_IPV4,
+                                f"Endpoint {endpoint.name} carries invalid explicit IPv4 {explicit}.",
+                                endpoint_id,
+                            )
+                        )
                         continue
                     if address not in network or address in {
-                        network.network_address, network.broadcast_address,
+                        network.network_address,
+                        network.broadcast_address,
                     }:
-                        issues.append(_error(
-                            ConfigurationIssueCode.ADDRESS_SPACE_EXHAUSTED,
-                            f"Explicit IPv4 {address} is outside usable segment {segment_id}.",
-                            endpoint_id,
-                        ))
+                        issues.append(
+                            _error(
+                                ConfigurationIssueCode.ADDRESS_SPACE_EXHAUSTED,
+                                f"Explicit IPv4 {address} is outside usable segment {segment_id}.",
+                                endpoint_id,
+                            )
+                        )
                         continue
                 else:
                     try:
                         address = next(next_hosts)
                     except StopIteration:
-                        issues.append(_error(
-                            ConfigurationIssueCode.ADDRESS_SPACE_EXHAUSTED,
-                            f"Segment {segment_id} has no free static address for {endpoint.name}.",
-                            segment_id,
-                        ))
+                        issues.append(
+                            _error(
+                                ConfigurationIssueCode.ADDRESS_SPACE_EXHAUSTED,
+                                f"Segment {segment_id} has no free static address for {endpoint.name}.",
+                                segment_id,
+                            )
+                        )
                         continue
                 static_by_segment[segment_id].append(str(address))
                 dependencies = [access_dependency] if access_dependency else []
-                actions.append(SetEndpointStaticAddress(
-                    id=_action_id("endpoint-static", endpoint_id, segment_id),
-                    phase=ConfigurationPhase.ENDPOINT_ADDRESSING,
-                    device_id=endpoint_id, device_name=endpoint.name, site_id=endpoint.site_id,
-                    interface=interface, ipv4=str(address), netmask=allocation.netmask,
-                    gateway=allocation.gateway, dns_server=policy.dns_server,
-                    segment_id=segment_id, depends_on=dependencies,
-                    required_capability="endpoint_static_ipv4",
-                ))
+                actions.append(
+                    SetEndpointStaticAddress(
+                        id=_action_id("endpoint-static", endpoint_id, segment_id),
+                        phase=ConfigurationPhase.ENDPOINT_ADDRESSING,
+                        device_id=endpoint_id,
+                        device_name=endpoint.name,
+                        site_id=endpoint.site_id,
+                        interface=interface,
+                        ipv4=str(address),
+                        netmask=allocation.netmask,
+                        gateway=allocation.gateway,
+                        dns_server=policy.dns_server,
+                        segment_id=segment_id,
+                        depends_on=dependencies,
+                        required_capability="endpoint_static_ipv4",
+                    )
+                )
         return actions, static_by_segment, pending_dhcp
 
     @staticmethod
     def _endpoint_interfaces(
-        links: list[LinkPlan], devices: dict[str, DevicePlan],
+        links: list[LinkPlan],
+        devices: dict[str, DevicePlan],
     ) -> dict[str, str]:
         interfaces: dict[str, str] = {}
         priorities = {"endpoint_access": 0, "server_access": 0, "phone_passthrough": 1}
-        for link in sorted(links, key=lambda item: (priorities.get(item.link_role, 9), item.id)):
+        for link in sorted(
+            links, key=lambda item: (priorities.get(item.link_role, 9), item.id)
+        ):
             for device_id, port in (
-                (link.device_a_id, link.port_a), (link.device_b_id, link.port_b),
+                (link.device_a_id, link.port_a),
+                (link.device_b_id, link.port_b),
             ):
                 device = devices.get(device_id)
                 if device and not device.network_layer:
@@ -1226,44 +1483,68 @@ class ConfigurationCompiler:
                 )
                 continue
             server_id = policy.dhcp_server_device_ids.get(segment.site)
-            server = devices.get(server_id) if server_id else gateway_devices.get(segment.site)
+            server = (
+                devices.get(server_id)
+                if server_id
+                else gateway_devices.get(segment.site)
+            )
             if server is None:
-                issues.append(_error(
-                    ConfigurationIssueCode.DHCP_SERVER_MISSING,
-                    f"No DHCP server device exists for segment {segment.name}.", segment.name,
-                ))
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.DHCP_SERVER_MISSING,
+                        f"No DHCP server device exists for segment {segment.name}.",
+                        segment.name,
+                    )
+                )
                 continue
             allocation = allocations[segment.name]
             network = ipaddress.ip_network(f"{allocation.network}/{allocation.prefix}")
-            excluded_values = sorted({
-                ipaddress.ip_address(allocation.gateway),
-                *(ipaddress.ip_address(value) for value in static_by_segment.get(segment.name, [])),
-            })
+            excluded_values = sorted(
+                {
+                    ipaddress.ip_address(allocation.gateway),
+                    *(
+                        ipaddress.ip_address(value)
+                        for value in static_by_segment.get(segment.name, [])
+                    ),
+                }
+            )
             excluded_ranges = self._collapse_ranges(excluded_values)
             dynamic = [
-                host for host in network.hosts()
+                host
+                for host in network.hosts()
                 if not any(
-                    ipaddress.ip_address(item.start) <= host <= ipaddress.ip_address(item.end)
+                    ipaddress.ip_address(item.start)
+                    <= host
+                    <= ipaddress.ip_address(item.end)
                     for item in excluded_ranges
                 )
             ]
             if not dynamic:
-                issues.append(_error(
-                    ConfigurationIssueCode.ADDRESS_SPACE_EXHAUSTED,
-                    f"DHCP segment {segment.name} has no dynamic address left.", segment.name,
-                ))
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.ADDRESS_SPACE_EXHAUSTED,
+                        f"DHCP segment {segment.name} has no dynamic address left.",
+                        segment.name,
+                    )
+                )
                 continue
             dependency = gateway_actions.get(segment.name, "")
             action = ConfigureDhcpPool(
                 id=_action_id("dhcp", _device_key(server), segment.name),
                 phase=ConfigurationPhase.SERVICES,
-                device_id=_device_key(server), device_name=server.name, site_id=segment.site,
+                device_id=_device_key(server),
+                device_name=server.name,
+                site_id=segment.site,
                 pool_name=f"{segment.site}_{segment.role.value}".upper(),
-                segment_id=segment.name, network=allocation.network,
-                prefix=allocation.prefix, netmask=allocation.netmask,
-                gateway=allocation.gateway, dns_server=policy.dns_server,
+                segment_id=segment.name,
+                network=allocation.network,
+                prefix=allocation.prefix,
+                netmask=allocation.netmask,
+                gateway=allocation.gateway,
+                dns_server=policy.dns_server,
                 excluded_ranges=excluded_ranges,
-                lease_start=str(dynamic[0]), lease_end=str(dynamic[-1]),
+                lease_start=str(dynamic[0]),
+                lease_end=str(dynamic[-1]),
                 depends_on=[dependency] if dependency else [],
                 required_capability="supports_dhcp_server",
             )
@@ -1295,11 +1576,17 @@ class ConfigurationCompiler:
         issues: list[ConfigurationIssue] = []
         reported: set[tuple[str, str]] = set()
         for action in actions:
-            if not action.required_capability or action.required_capability.startswith("endpoint_"):
+            if not action.required_capability or action.required_capability.startswith(
+                "endpoint_"
+            ):
                 continue
             device = devices.get(action.device_id)
             profile = capabilities.get(device.model) if device else None
-            status = getattr(profile, action.required_capability, CapabilityStatus.UNKNOWN) if profile else CapabilityStatus.UNKNOWN
+            status = (
+                getattr(profile, action.required_capability, CapabilityStatus.UNKNOWN)
+                if profile
+                else CapabilityStatus.UNKNOWN
+            )
             key = (action.device_id, action.required_capability)
             if key in reported or status is CapabilityStatus.SUPPORTED:
                 continue
@@ -1309,11 +1596,13 @@ class ConfigurationCompiler:
                 if status is CapabilityStatus.UNSUPPORTED
                 else ConfigurationIssueCode.CAPABILITY_UNVERIFIED
             )
-            issues.append(_warning(
-                code,
-                f"{action.device_name}: runtime capability {action.required_capability} is {status.value}.",
-                action.device_id,
-            ))
+            issues.append(
+                _warning(
+                    code,
+                    f"{action.device_name}: runtime capability {action.required_capability} is {status.value}.",
+                    action.device_id,
+                )
+            )
         return issues
 
     @staticmethod
@@ -1336,7 +1625,10 @@ class ConfigurationCompiler:
                 expected = {"vlan_id": action.vlan_id}
             elif isinstance(action, ConfigureAccessPort):
                 kind = VerificationKind.ACCESS_PORT
-                expected = {"interface": action.interface, "vlan_id": action.data_vlan_id}
+                expected = {
+                    "interface": action.interface,
+                    "vlan_id": action.data_vlan_id,
+                }
                 # Un puerto que mira a un telefono reclama DOS VLANs. La que no
                 # entra en la expectativa no puede ser ni verificada ni
                 # contradicha: queda APLICADA e invisible, que es exactamente
@@ -1347,13 +1639,20 @@ class ConfigurationCompiler:
             elif isinstance(action, ConfigureTrunk):
                 kind = VerificationKind.TRUNK
                 query = "show_interfaces_trunk"
-                expected = {"interface": action.interface, "allowed_vlans": action.allowed_vlans}
-            elif isinstance(action, (ConfigureRoutedInterface, ConfigureSvi, ConfigureSubinterface)):
+                expected = {
+                    "interface": action.interface,
+                    "allowed_vlans": action.allowed_vlans,
+                }
+            elif isinstance(
+                action, (ConfigureRoutedInterface, ConfigureSvi, ConfigureSubinterface)
+            ):
                 kind = VerificationKind.L3_INTERFACE
                 query = "show_ip_interface_brief"
                 interface = (
-                    action.interface if isinstance(action, ConfigureRoutedInterface)
-                    else f"Vlan{action.vlan_id}" if isinstance(action, ConfigureSvi)
+                    action.interface
+                    if isinstance(action, ConfigureRoutedInterface)
+                    else f"Vlan{action.vlan_id}"
+                    if isinstance(action, ConfigureSvi)
                     else f"{action.parent_interface}.{action.vlan_id}"
                 )
                 expected = {
@@ -1388,25 +1687,34 @@ class ConfigurationCompiler:
                     "interface": action.interface,
                 }
                 if isinstance(action, SetEndpointDhcp):
-                    expected.update({
-                        "network": action.network,
-                        "prefix": action.prefix,
-                        "netmask": action.netmask,
-                        "gateway": action.gateway,
-                        "dns": action.dns_server or "",
-                    })
+                    expected.update(
+                        {
+                            "network": action.network,
+                            "prefix": action.prefix,
+                            "netmask": action.netmask,
+                            "gateway": action.gateway,
+                            "dns": action.dns_server or "",
+                        }
+                    )
                 elif isinstance(action, SetEndpointStaticAddress):
                     expected.update({"ipv4": action.ipv4, "netmask": action.netmask})
-            expectations.append(VerificationExpectation(
-                id=_action_id("verify", action.id), action_id=action.id, kind=kind,
-                device_id=action.device_id, device_name=action.device_name,
-                expected=expected, required_query=query,
-            ))
+            expectations.append(
+                VerificationExpectation(
+                    id=_action_id("verify", action.id),
+                    action_id=action.id,
+                    kind=kind,
+                    device_id=action.device_id,
+                    device_name=action.device_name,
+                    expected=expected,
+                    required_query=query,
+                )
+            )
         return expectations
 
     @staticmethod
     def _device_plans(
-        actions: list[ConfigurationAction], devices: dict[str, DevicePlan],
+        actions: list[ConfigurationAction],
+        devices: dict[str, DevicePlan],
     ) -> list[DeviceConfigurationPlan]:
         grouped: dict[str, list[ConfigurationAction]] = defaultdict(list)
         for action in actions:
@@ -1418,17 +1726,28 @@ class ConfigurationCompiler:
                 model=devices[device_id].model,
                 site_id=items[0].site_id,
                 action_ids=[item.id for item in items],
-                required_capabilities=sorted({
-                    item.required_capability for item in items if item.required_capability
-                }),
+                required_capabilities=sorted(
+                    {
+                        item.required_capability
+                        for item in items
+                        if item.required_capability
+                    }
+                ),
             )
             for device_id, items in sorted(grouped.items())
         ]
 
     @staticmethod
-    def _deduplicate_issues(issues: list[ConfigurationIssue]) -> list[ConfigurationIssue]:
+    def _deduplicate_issues(
+        issues: list[ConfigurationIssue],
+    ) -> list[ConfigurationIssue]:
         unique = {
-            (issue.severity.value, issue.code.value, issue.subject, issue.message): issue
+            (
+                issue.severity.value,
+                issue.code.value,
+                issue.subject,
+                issue.message,
+            ): issue
             for issue in issues
         }
         return [unique[key] for key in sorted(unique)]
@@ -1447,18 +1766,28 @@ class ConfigurationCompiler:
             source_topology_hash=topology.physical_identity_hash,
             source_topology_hash_schema=(
                 "physical-topology-v2"
-                if topology.physical_topology_hash else "legacy-full-v1"
+                if topology.physical_topology_hash
+                else "legacy-full-v1"
             ),
             devices=len({action.device_id for action in actions}),
-            endpoint_devices=len({
-                action.device_id for action in actions
-                if isinstance(action, (SetEndpointStaticAddress, SetEndpointDhcp))
-            }),
+            endpoint_devices=len(
+                {
+                    action.device_id
+                    for action in actions
+                    if isinstance(action, (SetEndpointStaticAddress, SetEndpointDhcp))
+                }
+            ),
             action_count=len(actions),
             actions_by_type=counts,
-            verification_expectations=len(plan.verification_expectations) if plan else 0,
-            warnings=sum(issue.severity is ConfigurationIssueSeverity.WARNING for issue in issues),
-            errors=sum(issue.severity is ConfigurationIssueSeverity.ERROR for issue in issues),
+            verification_expectations=len(plan.verification_expectations)
+            if plan
+            else 0,
+            warnings=sum(
+                issue.severity is ConfigurationIssueSeverity.WARNING for issue in issues
+            ),
+            errors=sum(
+                issue.severity is ConfigurationIssueSeverity.ERROR for issue in issues
+            ),
         )
         return ConfigurationCompileResult(
             plan=plan,
@@ -1474,6 +1803,9 @@ def configuration_plan_semantic_hash(plan: ConfigurationPlan) -> str:
     payload = plan.model_dump(mode="json")
     payload["semantic_hash"] = ""
     canonical = json.dumps(
-        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
