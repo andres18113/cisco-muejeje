@@ -680,10 +680,11 @@ def _q1_executor(h: _Harness, max_operations: int = 60, **overrides):
 def test_q1_measures_all_three_and_stays_inside_its_planned_worst_case(harness):
     """The nominal trace is cheaper than the plan, because the plan is the worst case.
 
-    M-HTTPS-2 runs and concludes INCONCLUSIVE against a stub that behaves
-    exactly as the model predicts: the reader has no observation that
-    establishes a refusal, so the negative half of the model stays open however
-    well the engine behaves. That is the measurement, not a defect.
+    M-HTTPS-2 runs both same-mode positives and both negatives and concludes
+    INCONCLUSIVE against a stub that behaves exactly as the model predicts:
+    the reader has no observation that establishes a refusal, so the negative
+    half of the model stays open however well the engine behaves. That is the
+    measurement, not a defect.
     """
     h = harness()
     record, ledger = _q1_executor(h)
@@ -691,15 +692,21 @@ def test_q1_measures_all_three_and_stays_inside_its_planned_worst_case(harness):
     assert statuses["M-HTTPS-1"] == ("ran", "supported_in_sample")
     assert statuses["M-DNS-3"] == ("ran", "supported_in_sample")
     assert statuses["M-HTTPS-2"] == ("ran", "inconclusive")
+    tables = next(
+        item for item in record.measurements if item.experiment_id == "M-HTTPS-1"
+    )
+    assert tables.facts["page_table_model"] == "separate"
     listener = next(
         item for item in record.measurements if item.experiment_id == "M-HTTPS-2"
     )
-    assert listener.facts["positive_https_only"]["conclusion"] == "supported_in_sample"
+    for key in ("positive_http_mode_both_enabled", "positive_https_only"):
+        assert listener.facts[key]["conclusion"] == "supported_in_sample"
+    assert listener.facts["readiness_before"]["observed"] is True
     assert json.dumps(listener.facts).count("negative_observed") == 0
-    assert ledger.used == 45 < Q1.planned_minimum_operations == 46
+    assert ledger.used == 52 < Q1.planned_minimum_operations == 54
     assert ledger.refused_calls == 0
     clients = [item for item in record.releases if item.kind == "client"]
-    assert [item.outcome for item in clients] == ["released"] * 3
+    assert [item.outcome for item in clients] == ["released"] * 4
     snapshot = h.engine.snapshot()
     assert snapshot["devices"] == [] and snapshot["live_clients"] == 0
     assert record.restoration_proven is True and record.dirty_state is DirtyState.CLEAN
@@ -749,11 +756,11 @@ def test_an_unread_listener_toggle_admits_no_fetch_and_no_second_toggle(harness)
     base = h.boundaries()
 
     class _LostToggle(_Wrapped):
-        def prepare_https_only(self, server, marker):
+        def prepare_marker_page(self, server, marker):
             # The effect still reaches the engine; only the answer is lost.
-            self.inner.prepare_https_only(server, marker)
+            self.inner.prepare_marker_page(server, marker)
             return ProbeReading(
-                "https_only",
+                "marker_page",
                 DispatchFact.ACCEPTED,
                 ResultFact.NOT_OBSERVED,
                 False,
@@ -771,8 +778,9 @@ def test_an_unread_listener_toggle_admits_no_fetch_and_no_second_toggle(harness)
     )
     assert listener.conclusion is MeasurementConclusion.INCONCLUSIVE
     assert listener.outcome_unknown is True
-    assert "setup_unobserved:positive_setup" in listener.causes
+    assert "setup_unobserved:marker_page" in listener.causes
     assert h.scripts("createClient") == []
+    assert h.scripts("setEnable(false)") == []
     assert h.scripts("setHttpsEnable(false)") == []
     assert record.primary_failure == "outcome_unknown:M-HTTPS-2"
     assert h.engine.snapshot()["devices"] == []
@@ -788,14 +796,17 @@ def test_wrong_positive_page_is_classified_before_any_negative_effect(harness):
         item for item in record.measurements if item.experiment_id == "M-HTTPS-2"
     )
     assert listener.conclusion is MeasurementConclusion.CONTRADICTED
-    assert listener.facts["positive_https_only"]["fetch"] == "fresh_without_marker"
+    positive = listener.facts["positive_http_mode_both_enabled"]
+    assert positive["fetch"] == "fresh_without_marker"
+    assert listener.facts["positive_https_only"]["fetch"] == "not_run"
     assert listener.facts["negative_http_mode_http_disabled"]["fetch"] == "not_run"
     assert listener.facts["negative_https_mode_https_disabled"]["fetch"] == "not_run"
     assert len(h.scripts("createClient()")) == 1
+    assert h.scripts("setEnable(false)") == []
     assert h.scripts("setHttpsEnable(false)") == []
     assert h.scripts("getServerIp()") == []
     assert [item.resource for item in record.releases if item.kind == "client"] == [
-        "client:https-positive"
+        "client:http-positive"
     ]
     dns = next(item for item in record.measurements if item.experiment_id == "M-DNS-3")
     assert dns.status is MeasurementStatus.NOT_RUN
@@ -826,16 +837,54 @@ def test_q1_https_success_with_https_disabled_stops_the_stage(harness):
 
 
 def test_q1_timeouts_are_never_negative_controls(harness):
-    """A refused fetch that leaves the page unchanged is inconclusive."""
-    h = harness({"fetch_failure": "unchanged"})
+    """A positive that times out leaves every negative unrun and uninterpreted.
+
+    No wait or timeout is added to force it: the procedure spends one readiness
+    read instead, so the record says what the fixture looked like when the
+    positive failed, and it creates no second client and toggles nothing.
+    """
+    h = harness({"fetch_failure": "unchanged", "serve_nothing": True})
     record, _ledger = _q1_executor(h)
     https2 = next(
         item for item in record.measurements if item.experiment_id == "M-HTTPS-2"
     )
     assert https2.conclusion is MeasurementConclusion.INCONCLUSIVE
     controls = https2.facts
-    assert controls["negative_http_mode_http_disabled"]["conclusion"] == "inconclusive"
+    assert controls["positive_http_mode_both_enabled"]["fetch"].startswith(
+        "unestablished:inconclusive:no_response_within_deadline"
+    )
+    assert controls["negative_http_mode_http_disabled"]["fetch"] == "not_run"
+    assert "negative_http:no_same_mode_positive_control" in https2.causes
+    assert controls["readiness_after_failed_positive"]["observed"] is True
     assert json.dumps(controls).count("negative_observed") == 0
+    assert len(h.scripts("createClient()")) == 1
+    assert h.scripts("setEnable(false)") == []
+
+
+def test_the_page_procedure_never_names_a_new_page(harness):
+    """Q1R-1: every page write targets the existing index page."""
+    h = harness()
+    _q1_executor(h)
+    assert h.scripts("mcpq-") == []
+    writes = h.scripts("setPageContents(")
+    assert writes and all('setPageContents("index.html"' in item for item in writes)
+
+
+def test_a_retained_backend_device_is_named_and_not_hidden(harness):
+    """Q1R-6: CLEAN in its semantic scope, with the raw difference stated."""
+    h = harness()
+    h.transport.before[51] = lambda: h.engine.seed_device(
+        "Power Distribution Device0", "Power Distribution Device"
+    )
+    record, ledger = _q1_executor(h)
+    assert ledger.used == 52
+    assert record.restoration_proven is True
+    assert "restoration_scope:semantic_devices_and_links" in record.limitations
+    assert "backend_managed_devices_changed:0->1" in record.limitations
+    assert [item["backend_managed_device_count"] for item in record.restoration] == [
+        1,
+        1,
+    ]
 
 
 def test_q1_passes_the_real_stage_gate_and_finalizes_inside_its_ceiling(harness):
@@ -846,7 +895,7 @@ def test_q1_passes_the_real_stage_gate_and_finalizes_inside_its_ceiling(harness)
     assert result.refusals == []
     assert h.opened == ["file"]
     assert record.budget.max_operations == 60
-    assert record.budget.planned_minimum_operations == 46
+    assert record.budget.planned_minimum_operations == 54
     assert record.budget.used_operations <= Q1.planned_minimum_operations
     assert record.budget.refused_calls == 0
     assert record.restoration_proven is True
@@ -860,7 +909,7 @@ def test_a_budget_below_the_worst_case_refuses_before_any_channel(harness):
     h = harness()
     request = replace(
         _q1_request(),
-        authorization=replace(_q1_request().authorization, max_operations=45),
+        authorization=replace(_q1_request().authorization, max_operations=53),
     )
     result = h.run(request, capabilities=frozenset(Q1.experimental_capabilities))
     assert [(item.kind, item.subject) for item in result.refusals] == [
@@ -894,10 +943,10 @@ def test_a_secondary_cleanup_failure_never_replaces_the_primary(harness):
 
 
 def test_q1_executor_at_exactly_its_planned_worst_case_completes(harness):
-    """A ceiling equal to the planned 46 admits the stage and is never exceeded."""
+    """A ceiling equal to the planned 54 admits the stage and is never exceeded."""
     h = harness()
-    record, ledger = _q1_executor(h, max_operations=46)
-    assert ledger.used <= 46 and ledger.refused_calls == 0
+    record, ledger = _q1_executor(h, max_operations=54)
+    assert ledger.used <= 54 and ledger.refused_calls == 0
     assert record.primary_failure == ""
     assert record.restoration_proven is True
 
@@ -905,7 +954,7 @@ def test_q1_executor_at_exactly_its_planned_worst_case_completes(harness):
 def test_q1_executor_one_below_its_worst_case_creates_nothing(harness):
     """The pre-check refuses the stage work; finalization still reads twice."""
     h = harness()
-    record, ledger = _q1_executor(h, max_operations=45)
+    record, ledger = _q1_executor(h, max_operations=53)
     assert record.primary_failure == "budget:Q1"
     assert h.scripts("lwAddDevice") == []
     assert [item.purpose for item in ledger.entries][-2:] == [
@@ -915,23 +964,22 @@ def test_q1_executor_one_below_its_worst_case_creates_nothing(harness):
 
 
 def test_a_lost_inspection_is_exactly_what_the_worst_case_budget_pays_for(harness):
-    """Call 24 is the positive fetch's first inspection; losing it costs a fourth.
+    """Calls 27 and 32 are the two positives' first inspections.
 
-    That fetch used to be budgeted at three operations, so this trace exceeded
-    the stage total and the run stopped before M-DNS-3 -- on the luckiest
-    trace, the plan simply did not cover it. Budgeted at its worst case the
-    same trace fits exactly, nothing is refused, every owned client is still
-    released, and the finalization reserve is untouched.
+    Losing each costs that fetch its fourth operation, which is exactly the
+    worst case both positives are budgeted at. The trace then fits the plan
+    exactly: nothing is refused, every owned client is still released, and
+    the finalization reserve is untouched.
     """
-    h = harness(lose={24})
-    record, ledger = _q1_executor(h, max_operations=46)
+    h = harness(lose={27, 32})
+    record, ledger = _q1_executor(h, max_operations=54)
     assert record.primary_failure == ""
-    assert ledger.used == 46 == Q1.planned_minimum_operations
+    assert ledger.used == 54 == Q1.planned_minimum_operations
     assert ledger.refused_calls == 0
     statuses = _status(record)
     assert statuses["M-DNS-3"] == ("ran", "supported_in_sample")
     clients = [item for item in record.releases if item.kind == "client"]
-    assert [item.outcome for item in clients] == ["released"] * 3
+    assert [item.outcome for item in clients] == ["released"] * 4
     assert record.restoration_proven is True
     snapshot = h.engine.snapshot()
     assert snapshot["live_clients"] == 0 and snapshot["devices"] == []

@@ -108,6 +108,9 @@ from ...domain.enterprise.services.service_qualification_evidence import (
     assess_observer_release,
     assess_page_tables,
     listener_toggle_established,
+    marker_page_established,
+    page_read_admits_second_write,
+    page_write_established,
 )
 from ...domain.models.plans import DevicePlan, LinkPlan
 from ..ports.service_qualification import (
@@ -1364,9 +1367,7 @@ def _run_q1(execution: _Execution) -> None:
     ids = ("M-HTTPS-1",)
     if execution.begin(ids, "HTTPS1"):
         with execution.procedure(ids):
-            write = probes.write_page_markers(Q1_SERVER)
-            read = probes.cross_read_page_markers(Q1_SERVER) if write.observed else None
-            execution.conclude("M-HTTPS-1", assess_page_tables(write, read))
+            execution.conclude("M-HTTPS-1", _page_tables(execution))
         execution.finish("HTTPS1")
     ids = ("M-HTTPS-2",)
     if execution.begin(ids, "HTTPS2"):
@@ -1546,46 +1547,116 @@ def _fetch(
     return row
 
 
+def _page_tables(execution: _Execution) -> Assessment:
+    """Write the existing index page through each handle, reading between.
+
+    Four evaluations, each admitted only after the previous one was
+    interpreted: write H through `HttpServer` (bracketed by a complete read of
+    both handles), an independent read of both, write S through
+    `HttpsServer` (bracketed again), and a final independent read. Nothing is
+    written under a new page name, and a step that could not be read stops
+    the procedure rather than guessing.
+    """
+    probes = execution.probes
+    texts = probes.page_marker_texts()
+    write_http = probes.write_index_marker(Q1_SERVER, "http")
+    read_http = write_https = read_https = None
+    if page_write_established(write_http):
+        read_http = probes.read_index_cells(Q1_SERVER)
+    if page_read_admits_second_write(read_http, texts["http_marker"]):
+        write_https = probes.write_index_marker(Q1_SERVER, "https")
+    if page_write_established(write_https):
+        read_https = probes.read_index_cells(Q1_SERVER)
+    return assess_page_tables(
+        write_http,
+        read_http,
+        write_https,
+        read_https,
+        http_marker=texts["http_marker"],
+        https_marker=texts["https_marker"],
+    )
+
+
+def _fixture_endpoints(execution: _Execution) -> tuple[tuple[str, str], ...]:
+    """Return both ends of every fixture link, in declaration order."""
+    return tuple(
+        endpoint
+        for link in execution.definition.links
+        for endpoint in ((link.device_a, link.port_a), (link.device_b, link.port_b))
+    )
+
+
 def _https_listener(execution: _Execution) -> Assessment:
     """Run the listener procedure, admitting each effect only after the last one.
 
-    Every fetch creates an owned client on a fixture and every toggle changes a
-    listener, so each is an effect. A toggle whose read-back nobody obtained
-    leaves the listener in an unknown state, and an experiment that starts from
-    an unknown state measures nothing while adding more unknown state.
+    A same-mode working positive comes before every negative: an HTTP-mode
+    fetch with both listeners enabled, then HTTP off and an HTTPS-mode fetch.
+    A negative whose positive did not retrieve the marker is not run, because
+    it could not discriminate anything; a failed positive instead spends one
+    read of listener and endpoint readiness, so the record says what the
+    fixture looked like when it failed. No wait, timeout or status-code
+    meaning is added to force a positive.
     """
     probes = execution.probes
     marker = f"MCPQ-{execution.nonce[:16]}-INDEX"
-    positive_setup = probes.prepare_https_only(Q1_SERVER, marker)
-    if not listener_toggle_established(positive_setup, http=False, https=True):
-        return assess_https_listener(positive_setup, None, None, None, None)
-    positive = _fetch(execution, "https-positive", "https", marker)
-    positive_assessment = assess_https_listener(
-        positive_setup, positive, None, None, None
-    )
-    if (
-        execution.stopped
-        or positive_assessment.conclusion is MeasurementConclusion.CONTRADICTED
-    ):
-        return positive_assessment
-    http_negative = _fetch(execution, "http-negative", "http", marker)
-    partial = assess_https_listener(positive_setup, positive, http_negative, None, None)
-    if partial.conclusion is MeasurementConclusion.CONTRADICTED:
-        return partial
-    https_setup = None
-    if not execution.stopped:
-        if execution.ledger.can_afford(1 + FETCH_OPERATIONS):
-            https_setup = probes.disable_https(Q1_SERVER)
-        else:
-            execution.stop("budget:https_negative")
-    https_negative = (
-        _fetch(execution, "https-negative", "https", marker)
-        if listener_toggle_established(https_setup, http=False, https=False)
-        else None
-    )
-    return assess_https_listener(
-        positive_setup, positive, http_negative, https_setup, https_negative
-    )
+    endpoints = _fixture_endpoints(execution)
+    urls = {scheme: f"{scheme}://{Q1_SERVER_IPV4}/" for scheme in ("http", "https")}
+    steps: dict[str, Any] = {
+        "readiness": probes.read_listener_readiness(Q1_SERVER, endpoints),
+        "marker_page": None,
+        "http_positive": None,
+        "http_off": None,
+        "https_positive": None,
+        "http_negative": None,
+        "https_off": None,
+        "https_negative": None,
+    }
+
+    def assessed(readiness_after: ProbeReading | None = None) -> Assessment:
+        return assess_https_listener(
+            **steps, request_urls=urls, readiness_after=readiness_after
+        )
+
+    def failed_positive() -> Assessment:
+        after = (
+            probes.read_listener_readiness(Q1_SERVER, endpoints)
+            if not execution.stopped and execution.ledger.can_afford(1)
+            else None
+        )
+        return assessed(after)
+
+    if execution.stopped:
+        return assessed()
+    steps["marker_page"] = probes.prepare_marker_page(Q1_SERVER, marker)
+    if not marker_page_established(steps["marker_page"]):
+        return assessed()
+    steps["http_positive"] = _fetch(execution, "http-positive", "http", marker)
+    current = assessed()
+    if execution.stopped or current.conclusion is MeasurementConclusion.CONTRADICTED:
+        return current
+    if current.facts["positive_http_mode_both_enabled"]["fetch"] != "marker_retrieved":
+        return failed_positive()
+    steps["http_off"] = probes.disable_http(Q1_SERVER)
+    if not listener_toggle_established(steps["http_off"], http=False, https=True):
+        return assessed()
+    steps["https_positive"] = _fetch(execution, "https-positive", "https", marker)
+    current = assessed()
+    if execution.stopped or current.conclusion is MeasurementConclusion.CONTRADICTED:
+        return current
+    https_worked = current.facts["positive_https_only"]["fetch"] == "marker_retrieved"
+    steps["http_negative"] = _fetch(execution, "http-negative", "http", marker)
+    current = assessed()
+    if execution.stopped or current.conclusion is MeasurementConclusion.CONTRADICTED:
+        return current
+    if not https_worked:
+        return failed_positive()
+    if not execution.ledger.can_afford(1 + FETCH_OPERATIONS):
+        execution.stop("budget:https_negative")
+        return assessed()
+    steps["https_off"] = probes.disable_https(Q1_SERVER)
+    if listener_toggle_established(steps["https_off"], http=False, https=False):
+        steps["https_negative"] = _fetch(execution, "https-negative", "https", marker)
+    return assessed()
 
 
 # -- finalization ----------------------------------------------------------------
@@ -1657,6 +1728,7 @@ def _finalize(execution: _Execution) -> None:
         item.compact_summary() if item is not None else {"observed": False}
         for item in observations
     ]
+    _restoration_scope(execution, observations)
     record.restoration_proven = all(
         item is not None
         and physical_workspace_restoration_matches(execution.baseline, item)
@@ -1666,6 +1738,37 @@ def _finalize(execution: _Execution) -> None:
         record.engine_residue.append(f"observer:{name}")
     record.dirty_state = _dirty_state(execution, observations)
     execution.run.transition("finalization:completed")
+
+
+def _restoration_scope(
+    execution: _Execution,
+    observations: Sequence[PhysicalWorkspaceObservation | None],
+) -> None:
+    """State what restoration compares, and name a changed raw count.
+
+    Restoration compares semantic devices and links and permits Packet
+    Tracer's own backend-managed devices. That is not equality of the whole
+    workspace, so a record whose backend-managed count differs from the
+    baseline says so -- the raw reads stay unchanged beside it.
+    """
+    if execution.baseline is None or not execution.baseline.observed:
+        return
+    baseline = len(execution.baseline.backend_managed_devices)
+    counts = sorted(
+        {
+            len(item.backend_managed_devices)
+            for item in observations
+            if item is not None and item.observed
+        }
+    )
+    if not counts:
+        return
+    limitations = execution.record.limitations
+    if "restoration_scope:semantic_devices_and_links" not in limitations:
+        limitations.append("restoration_scope:semantic_devices_and_links")
+    for count in counts:
+        if count != baseline:
+            limitations.append(f"backend_managed_devices_changed:{baseline}->{count}")
 
 
 def _release_engine_state(execution: _Execution) -> None:

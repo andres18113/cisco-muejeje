@@ -158,7 +158,7 @@ def test_declarative_and_unknown_stages_refuse_before_contact(
 
 
 def test_q1_is_admitted_at_its_reviewed_ceiling_and_finalizes(simulation, capsys):
-    """Q1's 60/600 design ceiling covers its planned worst case of 46 operations.
+    """Q1's 60/600 design ceiling covers its planned worst case of 54 operations.
 
     The stage used to refuse before contact because its executable definition
     exceeded a 30-operation ceiling. It now runs end to end through the
@@ -170,10 +170,10 @@ def test_q1_is_admitted_at_its_reviewed_ceiling_and_finalizes(simulation, capsys
     assert code == 0
     assert summary["refusals"] == []
     assert sim.opened == ["file"]
-    assert summary["operations_used"] <= 46
+    assert summary["operations_used"] <= 54
     (record,) = sim.records()
     assert record.budget.max_operations == 60
-    assert record.budget.planned_minimum_operations == 46
+    assert record.budget.planned_minimum_operations == 54
     assert record.budget.refused_calls == 0
     assert record.restoration_proven is True
     snapshot = sim.engine.snapshot()

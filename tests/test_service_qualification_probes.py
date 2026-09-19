@@ -526,6 +526,51 @@ def test_the_finalizer_removes_only_its_own_run_key(engine_factory):
 # -- Q1 private probes ---------------------------------------------------------
 
 
+def _index(engine: NodeEngine, handle: str = "HttpServer") -> str:
+    """Read the index page straight out of the stub, bypassing the probes."""
+    return engine.evaluate(
+        f"reportResult(String(ipc.network().getDevice({json.dumps(SERVER)})"
+        f".getProcess({json.dumps(handle)}).getPage('index.html')));"
+    )
+
+
+def _page_procedure(probes):
+    """Run the four M-HTTPS-1 steps the coordinator runs, in its order."""
+    texts = probes.page_marker_texts()
+    write_http = probes.write_index_marker(SERVER, "http")
+    read_http = probes.read_index_cells(SERVER)
+    write_https = probes.write_index_marker(SERVER, "https")
+    read_https = probes.read_index_cells(SERVER)
+    return (
+        assess_page_tables(
+            write_http,
+            read_http,
+            write_https,
+            read_https,
+            http_marker=texts["http_marker"],
+            https_marker=texts["https_marker"],
+        ),
+        (write_http, read_http, write_https, read_https),
+    )
+
+
+def test_the_stub_only_updates_pages_that_exist(engine_factory):
+    """The measured semantics: `setPageContents` never creates a page."""
+    engine = engine_factory()
+    engine.seed_device(SERVER, "Server-PT")
+    reported = engine.evaluate(
+        f"var p=ipc.network().getDevice({json.dumps(SERVER)}).getProcess('HttpServer');"
+        "var out={};try{p.setPageContents('mcpq-new.html','x');out.created=true;}"
+        "catch(e){out.error=String(e.message);}"
+        "p.setPageContents('index.html','updated');out.index=String(p.getPage('index.html'));"
+        "reportResult(JSON.stringify(out));"
+    )
+    assert json.loads(reported) == {
+        "error": "File not exist: mcpq-new.html",
+        "index": "updated",
+    }
+
+
 @pytest.mark.parametrize(
     ("config", "model", "identity"),
     [
@@ -534,71 +579,143 @@ def test_the_finalizer_removes_only_its_own_run_key(engine_factory):
         ({"https_identity": "same"}, "shared", True),
     ],
 )
-def test_cross_reads_decide_the_page_table_model(
+def test_the_repaired_procedure_decides_the_table_model(
     engine_factory, config, model, identity
 ):
-    """The stub's table layout is recovered from reads, not from references."""
+    """Q1R-1/2: the table layout is recovered by writing the existing page only."""
     engine = engine_factory(**config)
     engine.seed_device(SERVER, "Server-PT")
     probes, _transport = _probes(engine)
-    write = probes.write_page_markers(SERVER)
-    result = assess_page_tables(write, probes.cross_read_page_markers(SERVER))
-    assert result.conclusion is SUPPORTED
+
+    result, _readings = _page_procedure(probes)
+
+    assert result.conclusion is SUPPORTED, result.causes
     assert result.facts["page_table_model"] == model
     assert result.facts["object_identity_equal"] is identity
     pages = engine.snapshot()["servers"][SERVER]
-    names = probes.page_marker_names()
-    assert names["http_page"] in pages["http_pages"]
-
-
-def test_two_failed_cross_reads_never_look_like_two_separate_tables(
-    engine_factory,
-):
-    """Shared tables whose cross getters throw must not read as separate ones."""
-    engine = engine_factory(
-        page_tables="shared",
-        getpage_throws_http=["-s.html"],
-        getpage_throws_https=["-h.html"],
+    assert (pages["http_pages"], pages["https_pages"]) == (
+        ["index.html"],
+        ["index.html"],
     )
+
+
+def test_an_unreadable_baseline_writes_nothing(engine_factory):
+    """A failed read is not a separate table, and no mutation follows it."""
+    engine = engine_factory(getpage_throws_https=["index"])
     engine.seed_device(SERVER, "Server-PT")
     probes, _transport = _probes(engine)
-    write = probes.write_page_markers(SERVER)
-    read = probes.cross_read_page_markers(SERVER)
-    assert (read.payload["hs"], read.payload["sh"]) == (None, None)
-    assert read.payload["read_errors"] == 2
-    result = assess_page_tables(write, read)
+    before = _index(engine)
+
+    write = probes.write_index_marker(SERVER, "http")
+
+    assert write.payload["written"] is False
+    assert _index(engine) == before
+    result = assess_page_tables(
+        write,
+        None,
+        None,
+        None,
+        http_marker=probes.page_marker_texts()["http_marker"],
+        https_marker=probes.page_marker_texts()["https_marker"],
+    )
     assert result.conclusion is INCONCLUSIVE
     assert "page_table_model" not in result.facts
-    assert "cross_read_unobserved:hs,sh" in result.causes
-    assert any("page read refused" in cause for cause in result.causes)
+    assert any(item.startswith("baseline_unreadable:https:") for item in result.causes)
 
 
-def test_one_failed_cross_read_is_not_an_asymmetry_anybody_measured(engine_factory):
-    """An unreadable cell is unobserved; it never manufactures a contradiction."""
-    engine = engine_factory(page_tables="shared", getpage_throws_http=["-s.html"])
+def test_a_refused_write_to_an_existing_page_is_inconclusive(engine_factory):
+    """An exception is a cause, never an observed absence."""
+    engine = engine_factory(setpage_throws_http=["index"])
     engine.seed_device(SERVER, "Server-PT")
     probes, _transport = _probes(engine)
-    write = probes.write_page_markers(SERVER)
-    read = probes.cross_read_page_markers(SERVER)
-    assert (read.payload["hs"], read.payload["sh"]) == (None, True)
-    result = assess_page_tables(write, read)
+
+    result, (write_http, *_rest) = _page_procedure(probes)
+
+    assert write_http.payload["written"] is False
+    assert "page write refused" in write_http.payload["write_error"]
     assert result.conclusion is INCONCLUSIVE
-    assert "cross_read_unobserved:hs" in result.causes
+    assert result.causes[0] == "marker_write_failed:http"
 
 
-def test_listener_toggles_are_read_back_in_the_same_evaluation(engine_factory):
-    """HTTP off with HTTPS on, then HTTPS off; the stub state agrees."""
+def test_one_unreadable_cell_after_a_write_is_not_an_asymmetry(engine_factory):
+    """A cell that stops reading between steps decides nothing."""
+    engine = engine_factory(page_tables="shared")
+    engine.seed_device(SERVER, "Server-PT")
+    probes, _transport = _probes(engine)
+    texts = probes.page_marker_texts()
+    write_http = probes.write_index_marker(SERVER, "http")
+    engine.configure(getpage_throws_https=["index"])
+    read_http = probes.read_index_cells(SERVER)
+
+    result = assess_page_tables(
+        write_http,
+        read_http,
+        None,
+        None,
+        http_marker=texts["http_marker"],
+        https_marker=texts["https_marker"],
+    )
+
+    assert result.conclusion is INCONCLUSIVE
+    assert any(
+        item.startswith("read_after_http_write_unreadable:https:")
+        for item in result.causes
+    )
+    assert "page_table_model" not in result.facts
+
+
+def test_the_marker_page_and_the_toggles_are_read_back_in_their_evaluation(
+    engine_factory,
+):
+    """Both handles serve the marker, then HTTP off, then HTTPS off."""
     engine = engine_factory()
     engine.seed_device(SERVER, "Server-PT")
     probes, _transport = _probes(engine)
-    prepared = probes.prepare_https_only(SERVER, "MARK-1")
-    assert prepared.payload["http_enabled"] is False
-    assert prepared.payload["https_enabled"] is True
+
+    prepared = probes.prepare_marker_page(SERVER, "MARK-1")
+
+    assert (prepared.payload["http_enabled"], prepared.payload["https_enabled"]) == (
+        True,
+        True,
+    )
     assert prepared.payload["index_written"] == {"http": True, "https": True}
+    assert all(
+        prepared.payload["readback"][name]["contains_marker"] is True
+        for name in ("http", "https")
+    )
+    http_off = probes.disable_http(SERVER)
+    assert (http_off.payload["http_enabled"], http_off.payload["https_enabled"]) == (
+        False,
+        True,
+    )
     disabled = probes.disable_https(SERVER)
     assert disabled.payload["https_enabled"] is False
     state = engine.snapshot()["servers"][SERVER]
     assert (state["http_enabled"], state["https_enabled"]) == (False, False)
+    assert state["http_pages"] == ["index.html"]
+
+
+def test_readiness_reads_documented_port_state_only(engine_factory):
+    """Q1R-3: port and link state where a documented reader exists."""
+    engine = engine_factory(protocol_up=False)
+    engine.seed_device(SERVER, "Server-PT")
+    engine.seed_device("__MCP_E6Q_SW", "2960-24TT")
+    probes, _transport = _probes(engine)
+
+    reading = probes.read_listener_readiness(
+        SERVER,
+        [(SERVER, "FastEthernet0"), ("__MCP_E6Q_SW", "FastEthernet0/1"), ("X", "Y")],
+    )
+
+    assert reading.observed
+    ports = reading.payload["ports"]
+    server = ports[f"{SERVER}/FastEthernet0"]
+    assert server["found"] is True and server["linked"] is False
+    assert server["port_up"] is False and server["ip"] == ""
+    switch = ports["__MCP_E6Q_SW/FastEthernet0/1"]
+    assert switch["found"] is True and switch["ip"] is None
+    assert ports["X/Y"]["found"] is False
+    assert reading.payload["listeners"]["http_enabled"] is True
 
 
 def test_client_resolver_reader_reports_raw_values(engine_factory):

@@ -31,7 +31,7 @@ qualify anything.
 | Stage | Status in S4a | Fixtures | Ceiling | Planned worst case | Measurements |
 | --- | --- | --- | --- | --- | --- |
 | Q0 | executable | `__MCP_E6Q_PC1` (PC-PT) | 20 operations / 300 s | 19 | M-ENG-1, ATOM-1, M-UNREG-1, M-UNREG-2 (M-HTTP-1 omitted: no HTTP server in the fixture) |
-| Q1 | executable | `__MCP_E6Q_SRV`, `__MCP_E6Q_PC1`, `__MCP_E6Q_PC2`, `__MCP_E6Q_SW` | 60 operations / 600 s | 46 | M-HTTPS-1, M-HTTPS-2, M-DNS-3 (M-DNS-1/2 omitted) |
+| Q1 | executable | `__MCP_E6Q_SRV`, `__MCP_E6Q_PC1`, `__MCP_E6Q_PC2`, `__MCP_E6Q_SW` | 60 operations / 600 s | 54 | M-HTTPS-1, M-HTTPS-2, M-DNS-3 (M-DNS-1/2 omitted: optional, no reviewed probe) |
 | Q2 | declarative only | none | 60 / 900 s | not planned | requires S2 and a Q0 record |
 | Q3 | declarative only | none | 60 / 1200 s | not planned | requires S3 and a Q0 record |
 
@@ -40,19 +40,30 @@ trace: every production fetch is budgeted at its start, both inspections and
 the release of its owned client. A stage whose worst case exceeds its ceiling
 is refused before contact, with the arithmetic in the refusal.
 
-Q1's 60 / 600 is a reviewed design ceiling for the offline correction, decided
-against the worst case of 46 with the 10-operation finalization reserve intact.
-It authorizes no LIVE run, and it changes neither Q0's 20 / 300 nor the
-declarative Q2/Q3. The runner never raises a ceiling by itself.
+Q1's 60 / 600 is the reviewed design ceiling. The repaired procedure's worst
+case is 54 with the 10-operation finalization reserve intact (the `0850de3`
+run used 46). It authorizes no LIVE run, and it changes neither Q0's 20 / 300
+nor the declarative Q2/Q3. The runner never raises a ceiling by itself.
+
+M-HTTPS-1 writes only the existing `index.html` of the owned server, with
+run-specific content: Cisco documents setting a page's contents, not creating
+one, and the `0850de3` record measured `File not exist` for two newly named
+pages. Each write is bracketed by a complete read through both handles and
+followed by an independent read; a failed, empty or truncated read, an
+exception or a mixed result is INCONCLUSIVE, never a separate table.
 
 M-HTTPS-2 cannot be SUPPORTED with the readers this build has. Its model says a
 listener *fails* when it is disabled, and the web reader reports a refused
 request exactly as it reports a slow or lost one -- `no_response_within_deadline`
 -- while fresh non-marker content proves a marker mismatch rather than a
 refusal. A negative control can therefore contradict the model (the marker was
-retrieved while the listener read back as disabled) but never establish it, and
-the HTTP-mode negative has no HTTP-mode positive control in this stage. The
-measurement records its observations and stays INCONCLUSIVE.
+retrieved while the listener read back as disabled) but never establish it.
+Each negative runs only after a working positive in its own mode (an HTTP-mode
+fetch with both listeners enabled, then HTTPS-only); a failed positive leaves
+its negatives unrun and spends one read of listener flags and fixture-port
+readiness instead. The record names what no documented reader provides: the
+client's request URL, the HTTP reader's mode, and a switch port's STP state.
+The measurement records its observations and stays INCONCLUSIVE.
 
 **Counting unit.** One operation is one command dispatched to the engine
 through the fixed transport (`send`, `send_and_wait` or `dispatch_and_wait`),

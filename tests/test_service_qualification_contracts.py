@@ -143,11 +143,12 @@ def test_q0_fits_its_ceiling_with_the_reserve_counted():
 
 
 def test_q1_fits_its_reviewed_ceiling_on_its_bounded_worst_case():
-    """19 setup + 17 required + 10 reserve = 46 worst-case operations <= 60.
+    """19 setup + 25 required + 10 reserve = 54 worst-case operations <= 60.
 
-    Every planned figure is its step's worst case, including three production
-    fetches at four operations each. The luckiest trace is cheaper; the stage
-    is admitted on the expensive one, and the reserve is not part of the slack.
+    Every planned figure is its step's worst case: four page steps, and a
+    readiness read, the marked page, two toggles and four production fetches
+    at four operations each. The luckiest trace is cheaper; the stage is
+    admitted on the expensive one, and the reserve is not part of the slack.
     """
     q1 = STAGE_DEFINITIONS[QualificationStage.Q1]
     assert q1.fixture_names == (
@@ -156,10 +157,11 @@ def test_q1_fits_its_reviewed_ceiling_on_its_bounded_worst_case():
         "__MCP_E6Q_PC2",
         "__MCP_E6Q_SW",
     )
-    assert q1.experiment("M-HTTPS-2").planned_operations == 14
-    assert (q1.setup_operations, q1.required_experiment_operations) == (19, 17)
+    assert q1.experiment("M-HTTPS-1").planned_operations == 4
+    assert q1.experiment("M-HTTPS-2").planned_operations == 20
+    assert (q1.setup_operations, q1.required_experiment_operations) == (19, 25)
     assert q1.reserve_operations == 10
-    assert q1.planned_minimum_operations == 46
+    assert q1.planned_minimum_operations == 54
     assert q1.planned_minimum_operations <= q1.budget.max_operations == 60
     assert request_refusals(_request("Q1")) == ()
 
@@ -167,13 +169,13 @@ def test_q1_fits_its_reviewed_ceiling_on_its_bounded_worst_case():
 def test_a_stage_whose_worst_case_exceeds_its_ceiling_is_refused_before_contact():
     """The infeasibility gate survives the raised ceiling, with its arithmetic."""
     q1 = STAGE_DEFINITIONS[QualificationStage.Q1]
-    narrow = replace(q1, budget=replace(q1.budget, max_operations=45))
+    narrow = replace(q1, budget=replace(q1.budget, max_operations=53))
     with mock.patch.dict(
         STAGE_DEFINITIONS, {QualificationStage.Q1: narrow}, clear=False
     ):
         refusals = request_refusals(_request("Q1"))
     assert _pairs(refusals) == {(RefusalKind.INFEASIBLE, RefusalSubject.BUDGET)}
-    assert "46" in refusals[0].detail and "45" in refusals[0].detail
+    assert "54" in refusals[0].detail and "53" in refusals[0].detail
 
 
 @pytest.mark.parametrize("stage", ["Q2", "Q3"])
@@ -190,9 +192,11 @@ def test_optional_measurements_carry_their_omission_reason():
     q1 = STAGE_DEFINITIONS[QualificationStage.Q1]
     assert q0.experiment("M-HTTP-1").omission_reason.startswith("prerequisite_absent")
     for identifier in ("M-DNS-1", "M-DNS-2"):
-        assert q1.experiment(identifier).omission_reason.startswith(
-            "not_admitted_by_budget"
-        )
+        reason = q1.experiment(identifier).omission_reason
+        # The stale reason claimed the required set exceeded the ceiling; the
+        # delivered bounded set used 46 and the repaired worst case is 54.
+        assert reason.startswith("optional_without_reviewed_probe")
+        assert "not a budget refusal" in reason
     assert "M-HTTP-1" not in {
         item.id for item in q0.experiments if item.planned_operations
     }
@@ -767,71 +771,139 @@ def test_no_delivered_event_means_no_identity_and_no_release_attempt():
     assert "release_not_attempted:identity_unobserved" in first.causes
 
 
-def _pages(**cross) -> tuple[ProbeReading, ProbeReading]:
-    write = _reading(
+BASE = "<html><body>Cisco Packet Tracer</body></html>"
+HTTP_MARK, HTTPS_MARK = "MCPQ-1-H", "MCPQ-1-S"
+HTTP_PAGE = f"<html><body>{HTTP_MARK}</body></html>"
+HTTPS_PAGE = f"<html><body>{HTTPS_MARK}</body></html>"
+
+
+def _cell(content=BASE, *, read=True, error="", truncated=False) -> dict:
+    return {
+        "read": read,
+        "error": error,
+        "length": len(content),
+        "content": content,
+        "truncated": truncated,
+    }
+
+
+def _page_write(http=None, https=None, *, written=True, error="") -> ProbeReading:
+    return _reading(
         "page_write",
         {
             "http_found": True,
             "https_found": True,
             "reference_equal": False,
-            "http_write_error": "",
-            "https_write_error": "",
+            "before": {"http": http or _cell(), "https": https or _cell()},
+            "written": written,
+            "write_error": error,
         },
     )
-    values = {
-        "hh": True,
-        "hs": False,
-        "sh": False,
-        "ss": True,
-        "read_errors": 0,
-        "errors": {},
+
+
+def _page_read(http, https) -> ProbeReading:
+    return _reading("page_read", {"cells": {"http": http, "https": https}})
+
+
+def _procedure(model: str = "separate", **overrides):
+    """Return the four readings a table of `model` produces, then override."""
+    shared = model == "shared"
+    after_http = (_cell(HTTP_PAGE), _cell(HTTP_PAGE if shared else BASE))
+    after_https = (
+        _cell(HTTPS_PAGE if shared else HTTP_PAGE),
+        _cell(HTTPS_PAGE),
+    )
+    steps = {
+        "write_http": _page_write(),
+        "read_http": _page_read(*after_http),
+        "write_https": _page_write(*after_http),
+        "read_https": _page_read(*after_https),
     }
-    values.update(cross)
-    return write, _reading("page_read", values)
+    steps.update(overrides)
+    return assess_page_tables(
+        steps["write_http"],
+        steps["read_http"],
+        steps["write_https"],
+        steps["read_https"],
+        http_marker=HTTP_MARK,
+        https_marker=HTTPS_MARK,
+    )
 
 
-def test_page_tables_are_decided_by_cross_reads_not_reference_equality():
-    """Symmetric cross-visibility is shared, symmetric absence separate."""
-    separate = assess_page_tables(*_pages())
+def test_page_tables_are_decided_by_both_directions_of_visibility():
+    """Q1R-2: coherent cross-visibility is shared; unchanged opposites separate."""
+    separate = _procedure("separate")
+    assert separate.conclusion is SUPPORTED
     assert separate.facts["page_table_model"] == "separate"
-    shared = assess_page_tables(*_pages(hs=True, sh=True))
+    shared = _procedure("shared")
+    assert shared.conclusion is SUPPORTED
     assert shared.facts["page_table_model"] == "shared"
     assert "reference_equality_is_not_page_ownership" in shared.limitations
-    assert assess_page_tables(*_pages(hs=True)).conclusion is CONTRADICTED
-    assert assess_page_tables(*_pages(ss=False)).conclusion is INCONCLUSIVE
+    assert "existing_page_content_only" in shared.limitations
 
 
-def test_an_unreadable_cross_cell_decides_nothing_in_either_direction():
-    """A cell nobody could read is unobserved: not an absence, not an asymmetry."""
-    both = assess_page_tables(
-        *_pages(
-            hs=None,
-            sh=None,
-            read_errors=2,
-            errors={"hs": "page read refused", "sh": "page read refused"},
-        )
+def test_a_mixed_result_is_inconclusive_not_a_third_model():
+    """One-way visibility is recorded; it establishes neither model."""
+    result = _procedure(
+        "separate",
+        read_http=_page_read(_cell(HTTP_PAGE), _cell(HTTP_PAGE)),
+        write_https=_page_write(_cell(HTTP_PAGE), _cell(HTTP_PAGE)),
+        read_https=_page_read(_cell(HTTP_PAGE), _cell(HTTPS_PAGE)),
     )
-    assert both.conclusion is INCONCLUSIVE
-    assert "page_table_model" not in both.facts
-    assert "cross_read_unobserved:hs,sh" in both.causes
-    assert "cross_read_failed:hs:page read refused" in both.causes
-    one = assess_page_tables(
-        *_pages(hs=None, sh=True, read_errors=1, errors={"hs": "refused"})
+    assert result.conclusion is INCONCLUSIVE
+    assert result.causes == ["mixed_visibility"]
+    assert "page_table_model" not in result.facts
+    assert result.facts["visibility"]["http_write_visible_via_https"] is True
+    assert result.facts["visibility"]["https_write_visible_via_http"] is False
+
+
+@pytest.mark.parametrize(
+    ("baseline", "cause"),
+    [
+        (_cell(read=False, error="page read refused"), "baseline_unreadable:https:"),
+        (_cell(""), "baseline_page_empty:https"),
+        (_cell(truncated=True), "baseline_truncated:https"),
+    ],
+    ids=["refused", "empty", "truncated"],
+)
+def test_a_baseline_that_is_not_a_complete_read_decides_nothing(baseline, cause):
+    """Q1R-1: failure, emptiness or truncation is not a separate table."""
+    result = _procedure(write_http=_page_write(https=baseline, written=False))
+    assert result.conclusion is INCONCLUSIVE
+    assert any(item.startswith(cause) for item in result.causes)
+    assert "page_table_model" not in result.facts
+
+
+def test_a_failed_or_lost_step_stops_without_a_conclusion():
+    """A refused write, a lost read or a lost second write decides nothing."""
+    refused = _procedure(write_http=_page_write(written=False, error="refused"))
+    assert refused.conclusion is INCONCLUSIVE
+    assert refused.causes[:2] == ["marker_write_failed:http", "refused"]
+    lost_read = _procedure(read_http=_reading("page_read", observed=False))
+    assert lost_read.conclusion is INCONCLUSIVE
+    assert lost_read.outcome_unknown is False
+    lost_write = _procedure(write_https=_reading("page_write", observed=False))
+    assert lost_write.conclusion is INCONCLUSIVE
+    assert lost_write.outcome_unknown is True
+    first_lost = _procedure(write_http=_reading("page_write", observed=False))
+    assert first_lost.outcome_unknown is True
+
+
+def test_an_unreadable_cell_after_a_write_is_never_an_absence():
+    """A throwing cell between steps decides nothing in either direction."""
+    result = _procedure(
+        read_https=_page_read(_cell(read=False, error="refused"), _cell(HTTPS_PAGE))
     )
-    assert one.conclusion is INCONCLUSIVE
-    assert "cross_read_unobserved:hs" in one.causes
-    own = assess_page_tables(*_pages(hh=None, read_errors=1, errors={"hh": "refused"}))
-    assert own.conclusion is INCONCLUSIVE
+    assert result.conclusion is INCONCLUSIVE
+    assert result.causes == ["read_after_https_write_unreadable:http:refused"]
 
 
-def test_a_cross_read_that_contradicts_its_own_error_count_decides_nothing():
-    """`read_errors` and the unobserved cells must agree, or the reading is unusable."""
-    inflated = assess_page_tables(*_pages(read_errors=2))
-    assert inflated.conclusion is INCONCLUSIVE
-    assert "cross_read_count_contradicts_cells" in inflated.causes
-    silent = assess_page_tables(*_pages(hs=None, read_errors=0))
-    assert silent.conclusion is INCONCLUSIVE
-    assert "cross_read_count_contradicts_cells" in silent.causes
+def test_the_own_write_and_the_bracket_must_both_hold():
+    """An invisible own write, or a page changed between steps, decides nothing."""
+    unseen = _procedure(read_http=_page_read(_cell(BASE), _cell(BASE)))
+    assert unseen.causes == ["own_write_not_visible:http"]
+    moved = _procedure(write_https=_page_write(_cell("other"), _cell(BASE)))
+    assert moved.causes == ["page_changed_between_steps"]
 
 
 def _row(observation: ObservationFact, cause: str = "") -> RuntimeServiceVerification:
@@ -846,12 +918,11 @@ def _row(observation: ObservationFact, cause: str = "") -> RuntimeServiceVerific
     )
 
 
-def _toggle(http: bool | None, https: bool | None, error: str = "") -> ProbeReading:
+def _toggle(step: str, http: bool | None, https: bool | None, error="") -> ProbeReading:
     return _reading(
-        "https_only",
+        step,
         {
             "error": error,
-            "index_written": {"http": True, "https": True},
             "http_enabled": http,
             "https_enabled": https,
             "https_process_enabled": True,
@@ -859,118 +930,172 @@ def _toggle(http: bool | None, https: bool | None, error: str = "") -> ProbeRead
     )
 
 
-def test_a_coherent_positive_with_fresh_negatives_still_cannot_support_the_model():
-    """The reader has no refusal observable, so the isolation model stays open.
-
-    Fresh content without the marker proves a marker mismatch. It is not an
-    observation that a disabled listener refused the request, and this reader
-    reports an actual refusal as a deadline, so no run of this shape can
-    establish the negative half of the model.
-    """
-    result = assess_https_listener(
-        _toggle(False, True),
-        _row(ObservationFact.OBSERVED),
-        _row(ObservationFact.CONTRADICTED),
-        _toggle(False, False),
-        _row(ObservationFact.CONTRADICTED),
+def _marker_page(contains: bool = True) -> ProbeReading:
+    readback = {"read": True, "contains_marker": contains, "length": 40, "error": ""}
+    return _reading(
+        "marker_page",
+        {
+            "error": "",
+            "index_written": {"http": True, "https": True},
+            "readback": {"http": dict(readback), "https": dict(readback)},
+            "http_enabled": True,
+            "https_enabled": True,
+            "https_process_enabled": True,
+        },
     )
+
+
+def _readiness(**port) -> ProbeReading:
+    return _reading(
+        "readiness",
+        {
+            "listeners": {
+                "http_enabled": True,
+                "https_enabled": True,
+                "https_process_enabled": True,
+            },
+            "ports": {
+                "SRV/FastEthernet0": {
+                    "found": True,
+                    "port_up": True,
+                    "protocol_up": True,
+                    "linked": True,
+                    "ip": "192.0.2.10",
+                    "mask": "255.255.255.0",
+                    "error": "",
+                    **port,
+                }
+            },
+        },
+    )
+
+
+URLS = {"http": "http://192.0.2.10/", "https": "https://192.0.2.10/"}
+
+
+def _listener(**steps):
+    values = {
+        "readiness": _readiness(),
+        "marker_page": _marker_page(),
+        "http_positive": _row(ObservationFact.OBSERVED),
+        "http_off": _toggle("http_disable", False, True),
+        "https_positive": _row(ObservationFact.OBSERVED),
+        "http_negative": _row(
+            ObservationFact.INCONCLUSIVE, "no_response_within_deadline"
+        ),
+        "https_off": _toggle("https_disable", False, False),
+        "https_negative": _row(
+            ObservationFact.INCONCLUSIVE, "no_response_within_deadline"
+        ),
+    }
+    values.update(steps)
+    return assess_https_listener(**values, request_urls=URLS)
+
+
+def test_same_mode_positives_cannot_make_the_negative_half_supported():
+    """Q1R-4: both positives work; no refusal observable, so INCONCLUSIVE."""
+    result = _listener()
     assert result.conclusion is INCONCLUSIVE
     assert result.outcome_unknown is False
-    positive = result.facts["positive_https_only"]
-    assert positive["conclusion"] == "supported_in_sample"
+    facts = result.facts
+    for key in ("positive_http_mode_both_enabled", "positive_https_only"):
+        assert facts[key]["conclusion"] == "supported_in_sample"
     for key in (
         "negative_http_mode_http_disabled",
         "negative_https_mode_https_disabled",
     ):
-        assert result.facts[key]["conclusion"] == "inconclusive"
-        assert result.facts[key]["fetch"] == "fresh_without_marker"
-    assert NO_QUALIFIED_NEGATIVE_OBSERVABLE in result.limitations
+        assert facts[key]["same_mode_positive_control"] is True
+        assert facts[key]["conclusion"] == "inconclusive"
     assert f"negative_https:{NO_QUALIFIED_NEGATIVE_OBSERVABLE}" in result.causes
-    # The HTTP-mode negative has no HTTP-mode positive; the HTTPS one does.
-    assert "negative_http:no_same_mode_positive_control" in result.causes
-    assert "negative_https:no_same_mode_positive_control" not in result.causes
-    assert (
-        result.facts["negative_http_mode_http_disabled"]["same_mode_positive_control"]
-        is False
+    assert "negative_http:no_same_mode_positive_control" not in result.causes
+
+
+def test_every_fetch_names_its_url_and_what_is_known_of_its_mode():
+    """Q1R-3: constructed URL, confirmed HTTPS mode, unread HTTP mode."""
+    facts = _listener().facts
+    assert facts["positive_https_only"]["request_url"] == URLS["https"]
+    assert facts["positive_https_only"]["client_mode"] == "https_confirmed_by_isHttps"
+    assert facts["positive_http_mode_both_enabled"]["client_mode"] == "not_read_back"
+    unconfirmed = _listener(
+        https_positive=_row(ObservationFact.CONTRADICTED, "https_mode_not_confirmed")
     )
-
-
-def test_wrong_content_on_the_marked_positive_page_contradicts_the_expectation():
-    """A completed read of this run's marked page that returns other content."""
-    result = assess_https_listener(
-        _toggle(False, True),
-        _row(ObservationFact.CONTRADICTED),
-        None,
-        None,
-        None,
+    assert unconfirmed.facts["positive_https_only"]["client_mode"] == (
+        "https_not_confirmed"
     )
-    assert result.conclusion is CONTRADICTED
-    assert "positive:marked_page_returned_other_content" in result.causes
-
-
-def test_an_unread_listener_toggle_is_an_unknown_outcome_not_a_negative():
-    """A setup that was dispatched and never read back stops the procedure."""
-    lost = _reading("https_only", observed=False)
-    result = assess_https_listener(lost, None, None, None, None)
-    assert result.conclusion is INCONCLUSIVE
-    assert result.outcome_unknown is True
-    assert "setup_unobserved:positive_setup" in result.causes
-    assert result.facts["positive_https_only"]["setup_established"] is False
-    not_dispatched = assess_https_listener(_toggle(False, True), None, None, None, None)
-    assert not_dispatched.outcome_unknown is False
-
-
-def test_https_retrieval_with_https_disabled_contradicts_the_model():
-    """The plan's stop condition: a marker fetched in HTTPS mode with HTTPS off."""
-    result = assess_https_listener(
-        _toggle(False, True),
-        _row(ObservationFact.OBSERVED),
-        _row(ObservationFact.CONTRADICTED),
-        _toggle(False, False),
-        _row(ObservationFact.OBSERVED),
+    assert any(
+        item.startswith("switch_port_stp_state")
+        for item in facts["unavailable_observations"]
     )
-    assert result.conclusion is CONTRADICTED
-    assert "negative_https:listener_served_while_read_back_as_disabled" in result.causes
+    assert facts["readiness_before"]["ports"]["SRV/FastEthernet0"]["port_up"] is True
 
 
-def test_timeouts_and_unconfirmed_states_are_never_negatives():
-    """A deadline, an unconfirmed mode or an unconfirmed toggle is inconclusive."""
+def test_a_failed_positive_leaves_its_negative_unrun_and_uninterpreted():
+    """A timeout in the positive: the negatives have no discriminating power."""
     timeout = _row(ObservationFact.INCONCLUSIVE, "no_response_within_deadline")
-    mode = _row(ObservationFact.CONTRADICTED, "https_mode_not_confirmed")
-    result = assess_https_listener(
-        _toggle(False, True),
-        _row(ObservationFact.OBSERVED),
-        timeout,
-        _toggle(False, False),
-        mode,
+    result = _listener(
+        http_positive=timeout,
+        http_off=None,
+        https_positive=None,
+        http_negative=None,
+        https_off=None,
+        https_negative=None,
+        readiness=_readiness(port_up=False),
     )
     assert result.conclusion is INCONCLUSIVE
-    controls = result.facts
-    assert controls["negative_http_mode_http_disabled"]["conclusion"] == "inconclusive"
-    assert (
-        controls["negative_https_mode_https_disabled"]["conclusion"] == "inconclusive"
-    )
-    unconfirmed = assess_https_listener(
-        _toggle(False, True),
-        _row(ObservationFact.OBSERVED),
-        _row(ObservationFact.CONTRADICTED),
-        _toggle(False, True),
-        _row(ObservationFact.OBSERVED),
-    )
-    assert unconfirmed.conclusion is INCONCLUSIVE
+    facts = result.facts
+    assert facts["negative_http_mode_http_disabled"]["fetch"] == "not_run"
+    assert "negative_http:no_same_mode_positive_control" in result.causes
+    assert "negative_https:no_same_mode_positive_control" in result.causes
+    assert facts["readiness_before"]["ports"]["SRV/FastEthernet0"]["port_up"] is False
 
 
-def test_negatives_without_a_positive_control_have_no_discriminating_power():
-    """If the positive never retrieved the marker, fresh failures prove nothing."""
-    result = assess_https_listener(
-        _toggle(False, True),
-        _row(ObservationFact.CONTRADICTED),
-        _row(ObservationFact.CONTRADICTED),
-        _toggle(False, False),
-        _row(ObservationFact.CONTRADICTED),
+def test_wrong_content_on_a_marked_positive_page_contradicts_it():
+    """A completed read of the marked page returning other content."""
+    result = _listener(
+        http_positive=_row(ObservationFact.CONTRADICTED),
+        http_off=None,
+        https_positive=None,
+        http_negative=None,
+        https_off=None,
+        https_negative=None,
     )
     assert result.conclusion is CONTRADICTED
-    assert "positive:marked_page_returned_other_content" in result.causes
+    assert "positive_http:marked_page_returned_other_content" in result.causes
+
+
+def test_a_listener_serving_while_read_back_disabled_contradicts_the_model():
+    """The stop condition in either mode."""
+    served = _listener(https_negative=_row(ObservationFact.OBSERVED))
+    assert served.conclusion is CONTRADICTED
+    assert "negative_https:listener_served_while_read_back_as_disabled" in served.causes
+    http_served = _listener(http_negative=_row(ObservationFact.OBSERVED))
+    assert http_served.conclusion is CONTRADICTED
+
+
+def test_an_unread_setup_is_an_unknown_outcome_and_never_a_negative():
+    """A toggle or marked page that was dispatched and never read back."""
+    lost = _listener(
+        marker_page=_reading("marker_page", observed=False),
+        http_positive=None,
+        http_off=None,
+        https_positive=None,
+        http_negative=None,
+        https_off=None,
+        https_negative=None,
+    )
+    assert lost.conclusion is INCONCLUSIVE
+    assert lost.outcome_unknown is True
+    assert "setup_unobserved:marker_page" in lost.causes
+    unconfirmed = _listener(https_off=_toggle("https_disable", False, True))
+    assert unconfirmed.conclusion is INCONCLUSIVE
+    assert "negative_https:listener_state_not_read_back" in unconfirmed.causes
+
+
+def test_a_page_without_the_marker_is_not_a_prepared_positive():
+    """The read-back is what the listener would serve; no marker, no control."""
+    result = _listener(marker_page=_marker_page(contains=False))
+    assert result.facts["marker_page"]["established"] is False
+    assert "positive_http:listener_state_not_read_back" in result.causes
 
 
 def _resolvers(value, unset="0.0.0.0") -> ProbeReading:

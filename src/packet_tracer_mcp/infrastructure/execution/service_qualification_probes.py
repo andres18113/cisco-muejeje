@@ -29,7 +29,14 @@ Vendor surface, checked against Cisco's local reference
   terminal command: it needs no terminal-dispatch seam, and no pager or busy
   prompt can swallow it;
 - `HttpServer::setEnable/isEnabled/setPageContents/getPage`,
-  `HttpsServer::setHttpsEnable/isHttpsEnabled` (plus the inherited members);
+  `HttpsServer::setHttpsEnable/isHttpsEnabled` (plus the inherited members).
+  Cisco documents `setPageContents` as setting the contents of a page, not as
+  creating one: the Q1 record at `0850de3` measured `File not exist` for two
+  newly named pages. The page probes therefore only ever write `index.html`,
+  a page both handles must first read back non-empty on the owned server;
+- `Port::isPortUp/isProtocolUp/getLink` and
+  `HostPort::getIpAddress/getSubnetMask` for endpoint readiness. No documented
+  reader exposes a switch port's STP state or a readable light status;
 - `DnsClient::getServerIp()`;
 - `_ScriptModule.unregisterIpcEventByID(...)` is NOT documented: it is the
   maintained extension's existing usage (`EXTENSION/script-engine/main.js`).
@@ -67,6 +74,12 @@ TRIGGER_MASK = "255.255.255.0"
 TRIGGER_ADDRESSES = ("192.0.2.201", "192.0.2.202")
 OBSERVED_EVENT = "ipChanged"
 _MAX_CAUSE = 200
+#: The one page the Q1 page probes write: it exists on a fresh Server-PT, and
+#: Cisco documents no call that creates a page.
+INDEX_PAGE = "index.html"
+#: The bound on page text one cell returns. A longer page is reported as
+#: truncated, and a truncated page can never prove "unchanged".
+PAGE_CONTENT_LIMIT = 4096
 
 _BOOL = (bool,)
 _INT = (int,)
@@ -147,20 +160,22 @@ _SPECS: dict[str, dict[str, tuple[type, ...]]] = {
         "http_found": _BOOL,
         "https_found": _BOOL,
         "reference_equal": _BOOL,
-        "http_write_error": _STR,
-        "https_write_error": _STR,
+        "before": _DICT,
+        "written": _BOOL,
+        "write_error": _STR,
     },
-    "page_read": {
-        "hh": _OPTIONAL_BOOL,
-        "hs": _OPTIONAL_BOOL,
-        "sh": _OPTIONAL_BOOL,
-        "ss": _OPTIONAL_BOOL,
-        "read_errors": _INT,
-        "errors": _DICT,
-    },
-    "https_only": {
+    "page_read": {"cells": _DICT},
+    "readiness": {"listeners": _DICT, "ports": _DICT},
+    "marker_page": {
         "error": _STR,
         "index_written": _DICT,
+        "readback": _DICT,
+        "http_enabled": _OPTIONAL_BOOL,
+        "https_enabled": _OPTIONAL_BOOL,
+        "https_process_enabled": _OPTIONAL_BOOL,
+    },
+    "http_disable": {
+        "error": _STR,
         "http_enabled": _OPTIONAL_BOOL,
         "https_enabled": _OPTIONAL_BOOL,
         "https_process_enabled": _OPTIONAL_BOOL,
@@ -566,16 +581,18 @@ class PacketTracerQualificationProbes:
     def _marker(self, label: str) -> str:
         return f"{self._marker_root}-{label}"
 
-    def _page(self, label: str) -> str:
-        return f"<html><body>{self._marker(label)}</body></html>"
+    def page_marker_texts(self) -> dict[str, str]:
+        """Return this run's page texts and markers for the two page writes.
 
-    def page_marker_names(self) -> dict[str, str]:
-        """Return the run-specific page names and markers the M-HTTPS-1 probes use."""
+        The run-specific part is the CONTENT. The page itself is always the
+        existing `index.html`: writing a new name is exactly what failed LIVE.
+        """
+        http, https = self._marker("H"), self._marker("S")
         return {
-            "http_page": f"mcpq-{self._marker_root[5:]}-h.html",
-            "https_page": f"mcpq-{self._marker_root[5:]}-s.html",
-            "http_marker": self._marker("H"),
-            "https_marker": self._marker("S"),
+            "http_marker": http,
+            "https_marker": https,
+            "http_page": f"<html><body>{http}</body></html>",
+            "https_page": f"<html><body>{https}</body></html>",
         }
 
     @staticmethod
@@ -586,51 +603,64 @@ class PacketTracerQualificationProbes:
             "var __s=__d?__d.getProcess('HttpsServer'):null;"
         )
 
-    def write_page_markers(self, server: str) -> ProbeReading:
-        """Write distinct run pages through the HTTP and HTTPS handles."""
-        names = self.page_marker_names()
+    @staticmethod
+    def _cell() -> str:
+        """Define `__cell(p)`: one bounded, typed read of the index page.
+
+        A throwing getter, an absent process or a null page is `read:false`
+        with its cause -- unobserved, never an empty page.
+        """
+        page = json.dumps(INDEX_PAGE)
+        return (
+            "var __cell=function(p){var c={read:false,error:'',length:0,"
+            "content:'',truncated:false};if(!p){c.error='process_absent';return c;}"
+            f"try{{var v=p.getPage({page});if(v===null||v===undefined){{"
+            "c.error='null_page';return c;}var t=String(v);c.read=true;"
+            f"c.length=t.length;c.truncated=t.length>{PAGE_CONTENT_LIMIT};"
+            f"c.content=t.substring(0,{PAGE_CONTENT_LIMIT});}}"
+            "catch(x){c.error=__er(x);}return c;};"
+        )
+
+    def write_index_marker(self, server: str, handle: str) -> ProbeReading:
+        """Bracket the index page through both handles, then write one marker.
+
+        One evaluation reads the page through both handles and writes this
+        run's marker page through `handle` only when both reads completed
+        with non-empty, untruncated content. A failed or empty read is no
+        evidence of a separate table, so nothing is written on it.
+        """
+        texts = self.page_marker_texts()
+        target, page = (
+            ("__h", texts["http_page"])
+            if handle == "http"
+            else (
+                "__s",
+                texts["https_page"],
+            )
+        )
         return self._read(
             "page_write",
-            self._server(server) + "var __he='',__se='';"
-            "if(__h){try{__h.setPageContents("
-            f"{json.dumps(names['http_page'])},{json.dumps(self._page('H'))});}}"
-            "catch(__x){__he=__er(__x);}}"
-            "if(__s){try{__s.setPageContents("
-            f"{json.dumps(names['https_page'])},{json.dumps(self._page('S'))});}}"
-            "catch(__x){__se=__er(__x);}}"
+            self._server(server)
+            + self._cell()
+            + "var __b={http:__cell(__h),https:__cell(__s)};var __w=false,__we='';"
+            "var __ok=__b.http.read&&__b.https.read&&__b.http.length>0&&"
+            "__b.https.length>0&&!__b.http.truncated&&!__b.https.truncated;"
+            f"if(__h&&__s&&__ok){{try{{{target}.setPageContents("
+            f"{json.dumps(INDEX_PAGE)},{json.dumps(page)});__w=true;}}"
+            "catch(__x){__we=__er(__x);}}"
             "reportResult(JSON.stringify({http_found:!!__h,https_found:!!__s,"
-            "reference_equal:(!!__h&&__h===__s),http_write_error:__he,"
-            "https_write_error:__se}));",
+            "reference_equal:(!!__h&&__h===__s),before:__b,written:__w,"
+            "write_error:__we}));",
         )
 
-    def cross_read_page_markers(self, server: str) -> ProbeReading:
-        """Read every handle/page combination in a separate evaluation.
-
-        A getter that throws yields `null` for that cell and keeps its cause:
-        a cell nobody could read is unobserved, not an observed absence. It
-        used to report `false`, which made two failed cross reads look exactly
-        like two separate page tables.
-        """
-        names = self.page_marker_names()
-        page_h, page_s = json.dumps(names["http_page"]), json.dumps(names["https_page"])
-        mark_h, mark_s = (
-            json.dumps(names["http_marker"]),
-            json.dumps(names["https_marker"]),
-        )
+    def read_index_cells(self, server: str) -> ProbeReading:
+        """Read the index page through both handles, in its own evaluation."""
         return self._read(
             "page_read",
             self._server(server)
-            + "if(!__h||!__s){reportResult(JSON.stringify({step:'page_read',"
-            "probe_error:'process_absent'}));}else{var __n=0,__c={};"
-            "var __f=function(k,p,u,m){try{"
-            "return String(p.getPage(u)).indexOf(m)>=0;}"
-            "catch(__x){__n++;__c[k]=__er(__x);return null;}};"
-            f"var __o={{hh:__f('hh',__h,{page_h},{mark_h}),"
-            f"hs:__f('hs',__h,{page_s},{mark_s}),"
-            f"sh:__f('sh',__s,{page_h},{mark_h}),"
-            f"ss:__f('ss',__s,{page_s},{mark_s})}};"
-            "__o.read_errors=__n;__o.errors=__c;"
-            "reportResult(JSON.stringify(__o));}",
+            + self._cell()
+            + "reportResult(JSON.stringify({cells:{http:__cell(__h),"
+            "https:__cell(__s)}}));",
         )
 
     @staticmethod
@@ -642,26 +672,82 @@ class PacketTracerQualificationProbes:
             "try{__sp=__s?!!__s.isEnabled():null;}catch(__x){}"
         )
 
-    def prepare_https_only(self, server: str, marker: str) -> ProbeReading:
-        """Write the marked index through both handles and disable HTTP.
+    def read_listener_readiness(
+        self, server: str, endpoints: Sequence[tuple[str, str]]
+    ) -> ProbeReading:
+        """Read listener flags and the fixture links' endpoint readiness.
 
-        Writing the page through both handles keeps this condition independent
-        of M-HTTPS-1: whichever table the HTTPS listener serves holds the
-        marker. It chooses no S1b content contract.
+        Documented readers only: `isPortUp`, `isProtocolUp`, `getLink` on every
+        named port and `getIpAddress/getSubnetMask` where the port has them.
+        Every reader is guarded on its own, so one refusal is a named cause
+        and never a missing port. The switch's STP state has no documented
+        reader and is not read.
+        """
+        named = json.dumps([list(item) for item in endpoints])
+        return self._read(
+            "readiness",
+            self._server(server)
+            + self._listener_states()
+            + f"var __ports={{}};var __n={named};"
+            "for(var __i=0;__i<__n.length;__i++){"
+            "var __c={found:false,port_up:null,protocol_up:null,linked:null,"
+            "ip:null,mask:null,error:''};"
+            "try{var __dv=ipc.network().getDevice(__n[__i][0]);"
+            "var __pt=__dv?__dv.getPort(__n[__i][1]):null;if(__pt){__c.found=true;"
+            "try{__c.port_up=!!__pt.isPortUp();}catch(__x){__c.error='isPortUp:'+__er(__x);}"
+            "try{__c.protocol_up=!!__pt.isProtocolUp();}"
+            "catch(__x){__c.error=__c.error||('isProtocolUp:'+__er(__x));}"
+            "try{__c.linked=!!__pt.getLink();}"
+            "catch(__x){__c.error=__c.error||('getLink:'+__er(__x));}"
+            "if(typeof __pt.getIpAddress==='function'){try{"
+            "__c.ip=String(__pt.getIpAddress()).substring(0,64);"
+            "__c.mask=String(__pt.getSubnetMask()).substring(0,64);}"
+            "catch(__x){__c.error=__c.error||('getIpAddress:'+__er(__x));}}}}"
+            "catch(__x){__c.error=__er(__x);}"
+            "__ports[__n[__i][0]+'/'+__n[__i][1]]=__c;}"
+            "reportResult(JSON.stringify({listeners:{http_enabled:__he,"
+            "https_enabled:__se,https_process_enabled:__sp},ports:__ports}));",
+        )
+
+    def prepare_marker_page(self, server: str, marker: str) -> ProbeReading:
+        """Write the marked index through both handles and read both back.
+
+        Both listeners stay as E6 enabled them, so the first fetch is an
+        HTTP-mode positive control. The read-back is what the listener would
+        serve: whether each handle's page now contains the marker.
         """
         page = json.dumps(f"<html><body>{marker}</body></html>")
+        index = json.dumps(INDEX_PAGE)
+        mark = json.dumps(marker)
         return self._read(
-            "https_only",
+            "marker_page",
             self._server(server) + "var __err='',__iw={http:false,https:false};"
             "if(!__h||!__s){__err='process_absent';}else{"
-            f"try{{__h.setPageContents('index.html',{page});__iw.http=true;}}"
+            f"try{{__h.setPageContents({index},{page});__iw.http=true;}}"
             "catch(__x){__err='index_http:'+__er(__x);}"
-            f"try{{__s.setPageContents('index.html',{page});__iw.https=true;}}"
-            "catch(__x){__err='index_https:'+__er(__x);}"
-            "try{__h.setEnable(false);}catch(__x){__err='disable_http:'+__er(__x);}}"
+            f"try{{__s.setPageContents({index},{page});__iw.https=true;}}"
+            "catch(__x){__err=__err||('index_https:'+__er(__x));}}"
+            "var __mk=function(p){var c={read:false,contains_marker:false,length:0,"
+            "error:''};if(!p){c.error='process_absent';return c;}"
+            f"try{{var t=String(p.getPage({index}));c.read=true;c.length=t.length;"
+            f"c.contains_marker=t.indexOf({mark})>=0;}}catch(__x){{c.error=__er(__x);}}"
+            "return c;};var __rb={http:__mk(__h),https:__mk(__s)};"
             + self._listener_states()
             + "reportResult(JSON.stringify({error:__err,index_written:__iw,"
-            "http_enabled:__he,https_enabled:__se,https_process_enabled:__sp}));",
+            "readback:__rb,http_enabled:__he,https_enabled:__se,"
+            "https_process_enabled:__sp}));",
+        )
+
+    def disable_http(self, server: str) -> ProbeReading:
+        """Disable the HTTP listener and read both states back."""
+        return self._read(
+            "http_disable",
+            self._server(server) + "var __err='';"
+            "if(!__h){__err='process_absent';}else{try{__h.setEnable(false);}"
+            "catch(__x){__err='disable_http:'+__er(__x);}}"
+            + self._listener_states()
+            + "reportResult(JSON.stringify({error:__err,http_enabled:__he,"
+            "https_enabled:__se,https_process_enabled:__sp}));",
         )
 
     def disable_https(self, server: str) -> ProbeReading:

@@ -26,10 +26,19 @@ Behaviour switches (`config`) select the engine facts under test:
   `ipChanged`);
 - `https_identity` (`distinct`/`same`) and `page_tables` (`separate`/`shared`);
 - `getpage_throws_http` / `getpage_throws_https`: URL substrings whose
-  `getPage` the HTTP or HTTPS handle refuses, so a cross read can fail on one
-  cell without failing the others;
+  `getPage` the HTTP or HTTPS handle refuses, so a read can fail on one cell
+  without failing the others;
+- `setpage_throws_http` / `setpage_throws_https`: URL substrings whose
+  `setPageContents` the handle refuses although the page exists. Independently
+  of these, `setPageContents` only UPDATES a page: an unknown URL throws
+  `File not exist: <url>`, which is what the Q1 record at `0850de3` measured
+  for two newly named pages. The stub never creates a page;
+- `ports_up` / `protocol_up`: what a linked port's `isPortUp()` and
+  `isProtocolUp()` report (an unlinked port reports false);
 - `fetch_failure`: `error_page` renders fresh non-marker content for a refused
   fetch; `unchanged` leaves the client page as it was (a timeout);
+- `serve_nothing`: no fetch is served whatever the listeners say, which with
+  `fetch_failure=unchanged` is the all-timeouts trace Q1 recorded at `0850de3`;
 - `fetch_content_override`: when set to a string, a served fetch returns that
   fresh content instead of the server page, modelling a wrong completed read;
 - `serve_https_when_disabled` / `serve_http_when_disabled`: contradict the
@@ -69,6 +78,8 @@ const config = Object.assign({
   unset_dns: '0.0.0.0', reset_claim_between_queued: false, go_returns: true,
   create_throws: false, remove_throws: false, readdress_throws: false,
   getpage_throws_http: [], getpage_throws_https: [],
+  setpage_throws_http: [], setpage_throws_https: [],
+  ports_up: true, protocol_up: true, serve_nothing: false,
 }, JSON.parse(process.argv[2] || '{}'));
 
 const guardPage = (patterns, url) => {
@@ -77,6 +88,17 @@ const guardPage = (patterns, url) => {
       throw new Error('page read refused: ' + pattern);
     }
   }
+};
+const updatePage = (table, patterns, url, contents) => {
+  for (const pattern of (patterns || [])) {
+    if (String(url).indexOf(pattern) >= 0) {
+      throw new Error('page write refused: ' + pattern);
+    }
+  }
+  if (!Object.prototype.hasOwnProperty.call(table, String(url))) {
+    throw new Error('File not exist: ' + url);
+  }
+  table[String(url)] = String(contents);
 };
 
 let uuidSeq = 0;
@@ -136,7 +158,9 @@ const httpServer = (dev) => {
     web.httpApi = {
       setEnable: (v) => { web.httpEnabled = !!v; },
       isEnabled: () => web.httpEnabled,
-      setPageContents: (url, contents) => { web.tables.http[String(url)] = String(contents); },
+      setPageContents: (url, contents) => {
+        updatePage(web.tables.http, config.setpage_throws_http, url, contents);
+      },
       getPage: (url) => {
         guardPage(config.getpage_throws_http, url);
         return web.tables.http[String(url)] || '';
@@ -160,7 +184,9 @@ const httpsServer = (dev) => {
       isEnabled: () => web.httpsProcessEnabled,
       setHttpsEnable: (v) => { web.httpsEnabled = !!v; },
       isHttpsEnabled: () => web.httpsEnabled,
-      setPageContents: (url, contents) => { web.tables.https[String(url)] = String(contents); },
+      setPageContents: (url, contents) => {
+        updatePage(web.tables.https, config.setpage_throws_https, url, contents);
+      },
       getPage: (url) => {
         guardPage(config.getpage_throws_https, url);
         return web.tables.https[String(url)] || '';
@@ -183,7 +209,7 @@ const makeClient = () => {
       const host = String(url).replace(/^https?:\/\//, '').split('/')[0];
       const server = byAddress(host);
       let served = false;
-      if (server && server.model === 'Server-PT') {
+      if (server && server.model === 'Server-PT' && !config.serve_nothing) {
         const web = serverState(server);
         served = c.https
           ? (web.httpsEnabled || config.serve_https_when_disabled)
@@ -240,6 +266,8 @@ const makeDevice = (name, model) => {
       getName: () => port.name,
       getOwnerDevice: () => api,
       getLink: () => (port.link ? port.link.api : null),
+      isPortUp: () => !!port.link && !!config.ports_up,
+      isProtocolUp: () => !!port.link && !!config.protocol_up,
       registerEvent: (event, obj, cb) => {
         if (config.register_throws) { throw new Error('registration refused'); }
         registrations.push({uuid: port.uuid, event: String(event), obj: obj, cb: cb,
@@ -260,6 +288,10 @@ const makeDevice = (name, model) => {
       setDnsServerIp: (value) => { port.dns = String(value); },
       setDefaultGateway: (value) => { port.gateway = String(value); },
     };
+    if (dev.model !== '2960-24TT') {
+      port.api.getIpAddress = () => port.ip;
+      port.api.getSubnetMask = () => port.mask;
+    }
     dev.ports.push(port);
   }
   return dev;

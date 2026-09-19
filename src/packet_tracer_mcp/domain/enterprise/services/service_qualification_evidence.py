@@ -469,75 +469,229 @@ def _second_conclusion(
 # -- M-HTTPS-1 -----------------------------------------------------------------
 
 
-def assess_page_tables(write: ProbeReading, read: ProbeReading | None) -> Assessment:
+#: What the page probes cannot establish, on every M-HTTPS-1 record.
+_PAGE_LIMITATIONS = (
+    "reference_equality_is_not_page_ownership",
+    "existing_page_content_only",
+)
+
+
+def _page_cell(value: Any) -> dict[str, Any] | None:
+    """Validate one bounded page read; `None` when it is not the typed shape."""
+    if not isinstance(value, Mapping):
+        return None
+    spec = {"read": bool, "error": str, "content": str, "truncated": bool}
+    for key, kind in spec.items():
+        if not isinstance(value.get(key), kind):
+            return None
+    length = value.get("length")
+    if isinstance(length, bool) or not isinstance(length, int):
+        return None
+    return {**{key: value[key] for key in spec}, "length": length}
+
+
+def _page_cells(
+    reading: ProbeReading, key: str
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    cells = reading.payload.get(key)
+    if not isinstance(cells, Mapping):
+        return None, None
+    return _page_cell(cells.get("http")), _page_cell(cells.get("https"))
+
+
+def _unreadable(
+    step: str, cells: tuple[dict[str, Any] | None, dict[str, Any] | None]
+) -> list[str]:
+    """Name every cell of one step that is not a complete, untruncated read."""
+    causes: list[str] = []
+    for name, cell in zip(("http", "https"), cells, strict=True):
+        if cell is None:
+            causes.append(f"{step}_malformed:{name}")
+        elif not cell["read"]:
+            causes.append(f"{step}_unreadable:{name}:{cell['error'][:120]}")
+        elif cell["truncated"]:
+            causes.append(f"{step}_truncated:{name}")
+    return causes
+
+
+def page_read_admits_second_write(read: ProbeReading | None, http_marker: str) -> bool:
+    """Whether the first write was independently seen and the next may run.
+
+    The second write is admitted only after both handles were read completely
+    and the HTTP handle shows its own marker; otherwise the procedure has
+    nothing coherent to compare the second write with.
+    """
+    if read is None or not read.observed:
+        return False
+    cells = _page_cells(read, "cells")
+    if _unreadable("read", cells):
+        return False
+    return http_marker in cells[0]["content"]
+
+
+def page_write_established(write: ProbeReading | None) -> bool:
+    """Whether one page write was observed to complete in its evaluation."""
+    return bool(write is not None and write.observed and write.payload["written"])
+
+
+def assess_page_tables(
+    write_http: ProbeReading,
+    read_http: ProbeReading | None,
+    write_https: ProbeReading | None,
+    read_https: ProbeReading | None,
+    *,
+    http_marker: str,
+    https_marker: str,
+) -> Assessment:
     """Distinguish one shared page table from two separate ones.
 
-    Reference equality between the two process handles is recorded as a fact
-    and deliberately decides nothing: equal references still need the
-    cross-read to say whose pages are visible, and unequal ones can still share
-    a table.
+    The procedure writes a run marker to the existing `index.html` through
+    `HttpServer`, reads the page independently through both handles, then does
+    the same through `HttpsServer`. Each write is bracketed by a complete read
+    of both handles in its own evaluation.
+
+    Shared is supported only by coherent cross-visibility in both directions.
+    Separate is supported only when both own writes are visible and the
+    opposite handle is unchanged both times. A failed, empty or truncated
+    read, an exception, a lost answer or a mixed result is INCONCLUSIVE:
+    none of them is the absence of a table. Reference equality is recorded
+    and decides nothing.
     """
-    limitations = ["reference_equality_is_not_page_ownership"]
-    if not write.observed:
+    limitations = list(_PAGE_LIMITATIONS)
+    if not write_http.observed:
         return Assessment(
-            INCONCLUSIVE, {}, [_unobserved(write)], limitations, outcome_unknown=True
+            INCONCLUSIVE,
+            {},
+            [_unobserved(write_http)],
+            limitations,
+            outcome_unknown=True,
         )
+    payload = write_http.payload
     facts: dict[str, Any] = {
-        "http_process_found": write.payload["http_found"],
-        "https_process_found": write.payload["https_found"],
-        "object_identity_equal": write.payload["reference_equal"],
+        "page": "index.html",
+        "http_process_found": payload["http_found"],
+        "https_process_found": payload["https_found"],
+        "object_identity_equal": payload["reference_equal"],
     }
-    errors = [
-        str(write.payload[key])
-        for key in ("http_write_error", "https_write_error")
-        if write.payload[key]
-    ]
-    if not write.payload["http_found"] or not write.payload["https_found"]:
+    if not payload["http_found"] or not payload["https_found"]:
         return Assessment(INCONCLUSIVE, facts, ["process_absent"], limitations)
-    if errors:
-        return Assessment(
-            INCONCLUSIVE, facts, ["marker_write_failed", *errors], limitations
-        )
-    if read is None or not read.observed:
-        cause = _unobserved(read) if read else "cross_read_not_run"
-        return Assessment(INCONCLUSIVE, facts, [cause], limitations)
-    cross = {key: read.payload[key] for key in ("hh", "hs", "sh", "ss")}
-    facts["visibility"] = cross
-    facts["cross_read_errors"] = read.payload["read_errors"]
-    causes = [
-        f"cross_read_failed:{key}:{str(value)[:120]}"
-        for key, value in sorted(read.payload["errors"].items())
+    baseline = _page_cells(write_http, "before")
+    causes = _unreadable("baseline", baseline)
+    causes += [
+        f"baseline_page_empty:{name}"
+        for name, cell in zip(("http", "https"), baseline, strict=True)
+        if cell is not None and cell["read"] and cell["length"] == 0
     ]
-    # A cell nobody could read is unobserved, never an observed absence. Two
-    # such cells would otherwise be indistinguishable from two separate page
-    # tables, and one would manufacture an asymmetry that nobody measured.
-    unobserved = sorted(key for key, value in cross.items() if value is None)
-    if len(unobserved) != read.payload["read_errors"]:
+    if causes:
+        if payload["written"]:
+            causes.append("written_without_a_readable_baseline")
+        return Assessment(INCONCLUSIVE, facts, causes, limitations)
+    if not payload["written"]:
         return Assessment(
             INCONCLUSIVE,
             facts,
-            ["cross_read_count_contradicts_cells", *causes],
+            ["marker_write_failed:http", str(payload["write_error"])[:200]],
             limitations,
         )
-    if unobserved:
+    if read_http is None or not read_http.observed:
+        cause = _unobserved(read_http) if read_http else "read_not_run:http"
+        return Assessment(INCONCLUSIVE, facts, [cause], limitations)
+    after_http = _page_cells(read_http, "cells")
+    causes = _unreadable("read_after_http_write", after_http)
+    if causes:
+        return Assessment(INCONCLUSIVE, facts, causes, limitations)
+    visibility: dict[str, bool] = {
+        "http_write_visible_via_http": http_marker in after_http[0]["content"],
+        "http_write_visible_via_https": http_marker in after_http[1]["content"],
+        "https_unchanged_after_http_write": (
+            after_http[1]["content"] == baseline[1]["content"]
+        ),
+    }
+    facts["visibility"] = visibility
+    if not visibility["http_write_visible_via_http"]:
+        return Assessment(
+            INCONCLUSIVE, facts, ["own_write_not_visible:http"], limitations
+        )
+    if write_https is None:
+        return Assessment(INCONCLUSIVE, facts, ["write_not_run:https"], limitations)
+    if not write_https.observed:
         return Assessment(
             INCONCLUSIVE,
             facts,
-            ["cross_read_unobserved:" + ",".join(unobserved), *causes],
+            [_unobserved(write_https)],
+            limitations,
+            outcome_unknown=True,
+        )
+    bracket = _page_cells(write_https, "before")
+    causes = _unreadable("bracket", bracket)
+    if causes:
+        return Assessment(INCONCLUSIVE, facts, causes, limitations)
+    if (bracket[0]["content"], bracket[1]["content"]) != (
+        after_http[0]["content"],
+        after_http[1]["content"],
+    ):
+        return Assessment(
+            INCONCLUSIVE, facts, ["page_changed_between_steps"], limitations
+        )
+    if not write_https.payload["written"]:
+        return Assessment(
+            INCONCLUSIVE,
+            facts,
+            [
+                "marker_write_failed:https",
+                str(write_https.payload["write_error"])[:200],
+            ],
             limitations,
         )
-    if not (cross["hh"] and cross["ss"]):
-        return Assessment(INCONCLUSIVE, facts, ["own_marker_not_readable"], limitations)
-    if cross["hs"] and cross["sh"]:
+    if read_https is None or not read_https.observed:
+        cause = _unobserved(read_https) if read_https else "read_not_run:https"
+        return Assessment(INCONCLUSIVE, facts, [cause], limitations)
+    after_https = _page_cells(read_https, "cells")
+    causes = _unreadable("read_after_https_write", after_https)
+    if causes:
+        return Assessment(INCONCLUSIVE, facts, causes, limitations)
+    visibility.update(
+        {
+            "https_write_visible_via_https": https_marker in after_https[1]["content"],
+            "https_write_visible_via_http": https_marker in after_https[0]["content"],
+            "http_unchanged_after_https_write": (
+                after_https[0]["content"] == after_http[0]["content"]
+            ),
+        }
+    )
+    if not visibility["https_write_visible_via_https"]:
+        return Assessment(
+            INCONCLUSIVE, facts, ["own_write_not_visible:https"], limitations
+        )
+    if (
+        visibility["http_write_visible_via_https"]
+        and visibility["https_write_visible_via_http"]
+    ):
         facts["page_table_model"] = "shared"
         return Assessment(SUPPORTED, facts, [], limitations)
-    if not cross["hs"] and not cross["sh"]:
+    if (
+        not visibility["http_write_visible_via_https"]
+        and visibility["https_unchanged_after_http_write"]
+        and not visibility["https_write_visible_via_http"]
+        and visibility["http_unchanged_after_https_write"]
+    ):
         facts["page_table_model"] = "separate"
         return Assessment(SUPPORTED, facts, [], limitations)
-    return Assessment(CONTRADICTED, facts, ["asymmetric_page_visibility"], limitations)
+    return Assessment(INCONCLUSIVE, facts, ["mixed_visibility"], limitations)
 
 
 # -- M-HTTPS-2 -----------------------------------------------------------------
+
+#: Observations the repaired listener procedure names instead of inventing.
+LISTENER_UNAVAILABLE_OBSERVATIONS = (
+    "request_url_not_read_back:no_documented_http_client_url_getter",
+    "http_client_mode_not_read_back:http_reader_does_not_call_isHttps",
+    "switch_port_stp_state:no_documented_reader",
+    "port_light_status:undocumented_enum",
+)
+_MODE_CONFIRMED_CAUSES = frozenset(
+    {"no_response_within_deadline", "client_go_false", "marker_present_before_request"}
+)
 
 
 def fetch_outcome(row: RuntimeServiceVerification | None) -> str:
@@ -561,6 +715,32 @@ def fetch_outcome(row: RuntimeServiceVerification | None) -> str:
     return f"unestablished:{row.observation.value}:{row.cause}"
 
 
+def fetch_client_mode(row: RuntimeServiceVerification | None, scheme: str) -> str:
+    """Name what the production reader established about the client's mode.
+
+    The HTTPS start payload is validated in a fixed order -- client
+    ownership, shape, `isHttps()` after `setHttps(true)`, then `go()` -- so a
+    row that reached a later exit has had its mode confirmed. The HTTP reader
+    does not read the mode at all, and its golden script is not changed to
+    make it.
+    """
+    if scheme != "https":
+        return "not_read_back"
+    if row is None:
+        return "not_run"
+    if row.observation is ObservationFact.CONTRADICTED and row.cause:
+        return "https_not_confirmed"
+    past_mode_check = (
+        row.observation is ObservationFact.OBSERVED
+        or (row.observation is ObservationFact.CONTRADICTED and not row.cause)
+        or (
+            row.observation is ObservationFact.INCONCLUSIVE
+            and row.cause in _MODE_CONFIRMED_CAUSES
+        )
+    )
+    return "https_confirmed_by_isHttps" if past_mode_check else "unobserved"
+
+
 def listener_toggle_established(
     reading: ProbeReading | None, *, http: bool, https: bool
 ) -> bool:
@@ -579,10 +759,30 @@ def listener_toggle_established(
     )
 
 
+def marker_page_established(reading: ProbeReading | None) -> bool:
+    """Whether the marked page was written and read back through both handles.
+
+    Both listeners must still read back enabled, because the first fetch is
+    the HTTP-mode positive control and needs the HTTP listener serving.
+    """
+    if not listener_toggle_established(reading, http=True, https=True):
+        return False
+    written = reading.payload["index_written"]
+    readback = reading.payload["readback"]
+    return all(
+        isinstance(written.get(name), bool)
+        and written[name]
+        and isinstance(readback.get(name), Mapping)
+        and readback[name].get("read") is True
+        and readback[name].get("contains_marker") is True
+        for name in ("http", "https")
+    )
+
+
 def _positive_control(
     outcome: str, *, setup_established: bool
 ) -> tuple[MeasurementConclusion, list[str]]:
-    """Classify the declared positive condition of the listener model."""
+    """Classify one declared positive control."""
     if not setup_established:
         return INCONCLUSIVE, ["listener_state_not_read_back"]
     if outcome == "marker_retrieved":
@@ -602,10 +802,14 @@ def _negative_control(
 
     A retrieval contradicts the model when the listener was read back as
     disabled. Nothing here establishes the model: see
-    `NO_QUALIFIED_NEGATIVE_OBSERVABLE`. The same-mode positive control is
-    recorded because a negative in one mode is not qualified by a positive in
-    another.
+    `NO_QUALIFIED_NEGATIVE_OBSERVABLE`. A negative whose same-mode positive
+    did not work was not run, and would have had no discriminating power.
     """
+    if outcome == "not_run":
+        causes = ["not_run"]
+        if not same_mode_positive:
+            causes.insert(0, "no_same_mode_positive_control")
+        return INCONCLUSIVE, causes
     if not disabled_confirmed:
         return INCONCLUSIVE, ["listener_state_not_read_back"]
     if outcome == "marker_retrieved":
@@ -616,80 +820,172 @@ def _negative_control(
     return INCONCLUSIVE, causes
 
 
+def _readiness_facts(reading: ProbeReading | None) -> dict[str, Any]:
+    """Copy the typed readiness fields; name an unobserved reading."""
+    if reading is None:
+        return {"observed": False, "cause": "not_run"}
+    if not reading.observed:
+        return {"observed": False, "cause": _unobserved(reading)}
+    listeners = reading.payload["listeners"]
+    ports: dict[str, Any] = {}
+    for name, value in sorted(reading.payload["ports"].items()):
+        if not isinstance(value, Mapping):
+            ports[str(name)[:80]] = {"malformed": True}
+            continue
+        ports[str(name)[:80]] = {
+            key: value.get(key)
+            for key in ("found", "port_up", "protocol_up", "linked", "ip", "mask")
+            if isinstance(value.get(key), (bool, str)) or value.get(key) is None
+        } | {"error": str(value.get("error") or "")[:120]}
+    return {
+        "observed": True,
+        "listeners": {
+            key: listeners.get(key)
+            for key in ("http_enabled", "https_enabled", "https_process_enabled")
+            if isinstance(listeners.get(key), bool) or listeners.get(key) is None
+        },
+        "ports": ports,
+    }
+
+
 def assess_https_listener(
-    positive_setup: ProbeReading | None,
-    positive: RuntimeServiceVerification | None,
+    *,
+    readiness: ProbeReading | None,
+    marker_page: ProbeReading | None,
+    http_positive: RuntimeServiceVerification | None,
+    http_off: ProbeReading | None,
+    https_positive: RuntimeServiceVerification | None,
     http_negative: RuntimeServiceVerification | None,
-    https_setup: ProbeReading | None,
+    https_off: ProbeReading | None,
     https_negative: RuntimeServiceVerification | None,
+    request_urls: Mapping[str, str],
+    readiness_after: ProbeReading | None = None,
 ) -> Assessment:
-    """Judge the positive condition and both declared negative controls.
+    """Judge both same-mode positives and both declared negative controls.
+
+    The order is fixed by the coordinator: an HTTP-mode positive with both
+    listeners enabled, then HTTP off and an HTTPS-mode positive, then the
+    HTTP-mode negative, then HTTPS off and the HTTPS-mode negative. A negative
+    is interpreted only against a working positive in its own mode.
 
     The model claims that a listener *fails* when it is disabled, and this
-    reader has no observation that establishes a refusal, so a supported
-    conclusion is unreachable here by construction. The measurement records
-    every descriptive observation, contradicts the model when a listener that
-    was read back as disabled still served the marker or when the marked
-    positive page returned other content, and is otherwise INCONCLUSIVE.
+    reader has no observation that establishes a refusal, so SUPPORTED is
+    unreachable here by construction. The measurement records every
+    descriptive observation, contradicts the model when a marked positive
+    page returned other content or a listener read back as disabled still
+    served the marker, and is otherwise INCONCLUSIVE.
     """
-    p_setup = listener_toggle_established(positive_setup, http=False, https=True)
-    n1_setup = listener_toggle_established(https_setup, http=False, https=False)
-    p_outcome = fetch_outcome(positive)
-    n2_outcome = fetch_outcome(http_negative)
-    n1_outcome = fetch_outcome(https_negative)
-    positive_conclusion, p_causes = _positive_control(
-        p_outcome, setup_established=p_setup
-    )
-    positive_ok = positive_conclusion is SUPPORTED
-    # The HTTP-mode negative has no HTTP-mode positive control in this stage:
-    # the positive condition is measured in HTTPS mode only.
-    n2, n2_causes = _negative_control(
-        n2_outcome, disabled_confirmed=p_setup, same_mode_positive=False
-    )
-    n1, n1_causes = _negative_control(
-        n1_outcome, disabled_confirmed=n1_setup, same_mode_positive=positive_ok
-    )
-    facts: dict[str, Any] = {
-        "positive_https_only": {
-            "setup_established": p_setup,
-            "fetch": p_outcome,
-            "conclusion": positive_conclusion.value,
-        },
-        "negative_http_mode_http_disabled": {
-            "same_mode_positive_control": False,
-            "fetch": n2_outcome,
-            "conclusion": n2.value,
-        },
-        "negative_https_mode_https_disabled": {
-            "setup_established": n1_setup,
-            "same_mode_positive_control": positive_ok,
-            "fetch": n1_outcome,
-            "conclusion": n1.value,
-        },
+    page_ready = marker_page_established(marker_page)
+    https_only = listener_toggle_established(http_off, http=False, https=True)
+    both_off = listener_toggle_established(https_off, http=False, https=False)
+    outcomes = {
+        "http_positive": fetch_outcome(http_positive),
+        "https_positive": fetch_outcome(https_positive),
+        "http_negative": fetch_outcome(http_negative),
+        "https_negative": fetch_outcome(https_negative),
     }
+    http_p, http_p_causes = _positive_control(
+        outcomes["http_positive"], setup_established=page_ready
+    )
+    https_p, https_p_causes = _positive_control(
+        outcomes["https_positive"], setup_established=page_ready and https_only
+    )
+    http_n, http_n_causes = _negative_control(
+        outcomes["http_negative"],
+        disabled_confirmed=https_only,
+        same_mode_positive=http_p is SUPPORTED,
+    )
+    https_n, https_n_causes = _negative_control(
+        outcomes["https_negative"],
+        disabled_confirmed=both_off,
+        same_mode_positive=https_p is SUPPORTED,
+    )
+
+    def fetch(name: str, scheme: str, row, conclusion, **extra) -> dict[str, Any]:
+        return {
+            **extra,
+            "fetch": outcomes[name],
+            "request_url": request_urls.get(scheme, ""),
+            "client_mode": fetch_client_mode(row, scheme),
+            "conclusion": conclusion.value,
+        }
+
+    facts: dict[str, Any] = {
+        "readiness_before": _readiness_facts(readiness),
+        "marker_page": (
+            {
+                "established": page_ready,
+                "index_written": dict(marker_page.payload["index_written"]),
+                "readback": {
+                    name: {
+                        key: value
+                        for key, value in dict(
+                            marker_page.payload["readback"].get(name) or {}
+                        ).items()
+                        if key in ("read", "contains_marker", "length", "error")
+                    }
+                    for name in ("http", "https")
+                },
+            }
+            if marker_page is not None and marker_page.observed
+            else {"established": False}
+        ),
+        "positive_http_mode_both_enabled": fetch(
+            "http_positive", "http", http_positive, http_p, setup_established=page_ready
+        ),
+        "positive_https_only": fetch(
+            "https_positive",
+            "https",
+            https_positive,
+            https_p,
+            setup_established=page_ready and https_only,
+        ),
+        "negative_http_mode_http_disabled": fetch(
+            "http_negative",
+            "http",
+            http_negative,
+            http_n,
+            same_mode_positive_control=http_p is SUPPORTED,
+        ),
+        "negative_https_mode_https_disabled": fetch(
+            "https_negative",
+            "https",
+            https_negative,
+            https_n,
+            setup_established=both_off,
+            same_mode_positive_control=https_p is SUPPORTED,
+        ),
+        "unavailable_observations": list(LISTENER_UNAVAILABLE_OBSERVATIONS),
+    }
+    if readiness_after is not None:
+        facts["readiness_after_failed_positive"] = _readiness_facts(readiness_after)
     limitations = [
-        "no_http_mode_positive_control_in_run",
         "fresh_content_not_retained",
         NO_QUALIFIED_NEGATIVE_OBSERVABLE,
+        "request_url_not_read_back",
     ]
     causes = (
-        [f"positive:{item}" for item in p_causes]
-        + [f"negative_http:{item}" for item in n2_causes]
-        + [f"negative_https:{item}" for item in n1_causes]
+        [f"positive_http:{item}" for item in http_p_causes]
+        + [f"positive_https:{item}" for item in https_p_causes]
+        + [f"negative_http:{item}" for item in http_n_causes]
+        + [f"negative_https:{item}" for item in https_n_causes]
     )
-    # A setup toggle that was dispatched and never read back is an effect with
-    # an unknown outcome, which the coordinator must treat as a stop signal.
+    # A setup that was dispatched and never read back is an effect with an
+    # unknown outcome, which the coordinator must treat as a stop signal.
     unknown_setup = [
         name
         for name, reading in (
-            ("positive_setup", positive_setup),
-            ("https_negative_setup", https_setup),
+            ("marker_page", marker_page),
+            ("http_off", http_off),
+            ("https_off", https_off),
         )
         if reading is not None and not reading.observed
     ]
     causes += [f"setup_unobserved:{name}" for name in unknown_setup]
     conclusion = (
-        CONTRADICTED if CONTRADICTED in (positive_conclusion, n1, n2) else INCONCLUSIVE
+        CONTRADICTED
+        if CONTRADICTED in (http_p, https_p, http_n, https_n)
+        else INCONCLUSIVE
     )
     return Assessment(
         conclusion, facts, causes, limitations, outcome_unknown=bool(unknown_setup)

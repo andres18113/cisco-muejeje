@@ -214,10 +214,10 @@ class StageDefinition:
 
 
 #: Plan 5.8 ceilings, with the reviewed Q1 design ceiling. Q0 and Q1 are the
-#: ones S4a can execute. Q1's 60/600 was approved for the offline correction
-#: against the proven worst case of 46 operations with its 10-operation
-#: finalization reserve intact; it authorizes no LIVE run, and it changes
-#: neither Q0 nor the declarative Q2/Q3.
+#: ones S4a can execute. Q1 keeps the reviewed 60/600; the repaired procedure's
+#: worst case is 54 operations with its 10-operation finalization reserve
+#: intact. It authorizes no LIVE run, and it changes neither Q0 nor the
+#: declarative Q2/Q3.
 STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.Q0: (20, 300),
     QualificationStage.Q1: (60, 600),
@@ -372,28 +372,28 @@ def _q1() -> StageDefinition:
                 ),
                 required=True,
                 procedure="HTTPS1",
-                planned_operations=2,
+                # Write H, read both, write S, read both: the existing index
+                # page only, each step admitted after the previous one.
+                planned_operations=4,
                 capabilities=("https.page_table",),
             ),
             ExperimentSpec(
                 id="M-HTTPS-2",
                 hypothesis=(
-                    "An HTTPS-mode client retrieves the page when only HTTPS is "
+                    "With a working same-mode positive in each mode, an "
+                    "HTTPS-mode client retrieves the page when only HTTPS is "
                     "enabled and fails when HTTPS is disabled; an HTTP-mode "
                     "client fails when HTTP is disabled."
                 ),
                 required=True,
                 procedure="HTTPS2",
-                # Two listener toggles and three production fetches, each
-                # budgeted at its worst case of 4 operations: the start, both
-                # inspections and the release of the owned client. A negative
-                # always spends the second inspection, because freshness
-                # requires the marker and the reader polls to its deadline; a
-                # positive can spend it too, whenever the first inspection is
-                # lost or the page has not changed yet. Budgeting the positive
-                # at 3 made the stage total the luckiest trace rather than the
-                # bounded one.
-                planned_operations=14,
+                # A readiness read, the marked page, two listener toggles and
+                # four production fetches, each budgeted at its worst case of
+                # 4 operations: the start, both inspections and the release of
+                # the owned client. A failed positive stops the negatives it
+                # would qualify and spends one readiness read instead, so every
+                # early exit costs less than this complete path.
+                planned_operations=20,
                 capabilities=("https.listener_toggle", "https.client_mode"),
             ),
             ExperimentSpec(
@@ -415,8 +415,9 @@ def _q1() -> StageDefinition:
                 procedure="DNS1",
                 planned_operations=0,
                 omission_reason=(
-                    "not_admitted_by_budget: the required Q1 set alone exceeds "
-                    "the stage ceiling"
+                    "optional_without_reviewed_probe: omitted explicitly; the "
+                    "required set's planned worst case is 54 of 60 operations, "
+                    "so this is not a budget refusal"
                 ),
             ),
             ExperimentSpec(
@@ -426,8 +427,9 @@ def _q1() -> StageDefinition:
                 procedure="DNS2",
                 planned_operations=0,
                 omission_reason=(
-                    "not_admitted_by_budget: the required Q1 set alone exceeds "
-                    "the stage ceiling"
+                    "optional_without_reviewed_probe: omitted explicitly; the "
+                    "required set's planned worst case is 54 of 60 operations, "
+                    "so this is not a budget refusal"
                 ),
             ),
         ),
