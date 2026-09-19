@@ -201,17 +201,23 @@ _ERROR_NAMES = (
     "TypeError",
     "URIError",
 )
+_ERROR_TEXT_HELPER = (
+    "function __er(e){var s='';try{s=String(e&&e.message?e.message:e);}"
+    "catch(x){s='error';}return s.length>200?s.substring(0,200):s;}"
+)
+_ERROR_CATEGORY_HELPER = (
+    "function __ec(e){var n='';try{n=String(e&&e.name?e.name:'');}catch(x){n='';}"
+    f"var k={json.dumps(list(_ERROR_NAMES), separators=(',', ':'))};"
+    "for(var i=0;i<k.length;i++){if(n===k[i]){return 'engine_error:'+k[i];}}"
+    "return 'engine_error:other';}"
+)
 _SCRIPT_HELPERS = (
     "function __dg(v){if(typeof v==='boolean'){return v?'1':'0';}"
     "var s=String(v);var h=0x811c9dc5;for(var i=0;i<s.length;i++){"
     "h^=s.charCodeAt(i);h=(h+((h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24)))>>>0;}"
     "return ('0000000'+h.toString(16)).slice(-8)+':'+s.length;}"
-    "function __er(e){var s='';try{s=String(e&&e.message?e.message:e);}"
-    "catch(x){s='error';}return s.length>200?s.substring(0,200):s;}"
-    "function __ec(e){var n='';try{n=String(e&&e.name?e.name:'');}catch(x){n='';}"
-    f"var k={json.dumps(list(_ERROR_NAMES), separators=(',', ':'))};"
-    "for(var i=0;i<k.length;i++){if(n===k[i]){return 'engine_error:'+k[i];}}"
-    "return 'engine_error:other';}"
+    + _ERROR_TEXT_HELPER
+    + _ERROR_CATEGORY_HELPER
 )
 
 #: The exact keys the row contract requires. An omitted key is invalid: it is
@@ -695,7 +701,13 @@ class PacketTracerEnterpriseServiceRuntime:
                 "if(!d){reportResult(JSON.stringify({results:[]}));}else{",
             ]
             for action in ready:
-                lines.extend(self._mutation_lines(action, secrets))
+                lines.extend(
+                    self._mutation_lines(
+                        action,
+                        secrets,
+                        category_errors=self._sanitizer.holds_values,
+                    )
+                )
             lines.append("reportResult(JSON.stringify({results:results}));}")
             observation = self._observe("".join(lines), 10.0)
             rows.update(
@@ -1159,6 +1171,8 @@ class PacketTracerEnterpriseServiceRuntime:
     def _mutation_lines(
         action: ServiceAction,
         secrets: dict[str, str] | None = None,
+        *,
+        category_errors: bool = False,
     ) -> list[str]:
         """Generate one action's pre-read, setter and unconditional post-read.
 
@@ -1181,7 +1195,7 @@ class PacketTracerEnterpriseServiceRuntime:
             + ',attempted:false,skip_reason:"",call_error:"",call_result:null,'
             "pre_read:false,post_read:false,ok:null,changed:null,pre:null,post:null};"
         )
-        reader = "__ec" if secrets else "__er"
+        reader = "__ec" if category_errors else "__er"
         runtime = PacketTracerEnterpriseServiceRuntime
         if isinstance(action, EnsureEmailAccount):
             return runtime._account_lines(row, action, secrets or {}, reader)
@@ -2561,7 +2575,12 @@ class PacketTracerEnterpriseServiceRuntime:
         )
 
     @staticmethod
-    def _background_http_release(expectation_id: str, client_json: str) -> str:
+    def _background_http_release(
+        expectation_id: str,
+        client_json: str,
+        *,
+        category_errors: bool = False,
+    ) -> str:
         """Delete the client this expectation owns and report what it saw.
 
         It reports what it FOUND and what it DID, not whether a slot happens
@@ -2573,15 +2592,16 @@ class PacketTracerEnterpriseServiceRuntime:
         stay named.
         """
         key = json.dumps(expectation_id)
+        error_helper = _ERROR_CATEGORY_HELPER if category_errors else _ERROR_TEXT_HELPER
+        error_reader = "__ec" if category_errors else "__er"
         return (
-            f"var d=ipc.network().getDevice({client_json});"
+            error_helper + f"var d=ipc.network().getDevice({client_json});"
             "var bag=this.__mcpE6HttpClients||{};"
             f"var slot=bag[{key}];"
             "var found=!!(slot&&slot.manager&&slot.client);"
             "var deleted=false;var error='';"
             "if(found){try{slot.manager.deleteClient(slot.client);deleted=true;}"
-            "catch(e){try{error=String(e&&e.message?e.message:e).substring(0,200);}"
-            "catch(x){error='release_error';}}}"
+            f"catch(e){{error={error_reader}(e);}}}}"
             f"if(deleted){{delete bag[{key}];}}"
             "reportResult(JSON.stringify({found:found,deleted:deleted,"
             f"present:!!bag[{key}],error:error}}));"
@@ -2603,7 +2623,11 @@ class PacketTracerEnterpriseServiceRuntime:
         client = json.dumps(expectation.client_device_name)
         try:
             observation = self._observe(
-                self._background_http_release(expectation.id, client),
+                self._background_http_release(
+                    expectation.id,
+                    client,
+                    category_errors=self._sanitizer.holds_values,
+                ),
                 3.0,
             )
         except Exception as error:

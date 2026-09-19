@@ -28,30 +28,47 @@ import json
 import os
 import shutil
 import subprocess
+from datetime import UTC, datetime
+from urllib.parse import quote
 
 import pytest
 
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
+    ConfigurationApplicationStatus,
 )
 from packet_tracer_mcp.domain.enterprise.models.execution import (
     DispatchFact,
     ResultFact,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
+    EnsureEmailAccount,
     ServiceEvidenceKind,
+    ServicePhase,
+    ServiceType,
     ServiceVerificationExpectation,
     ServiceVerificationKind,
+)
+from packet_tracer_mcp.domain.enterprise.models.service_run_record import (
+    ServiceRunRecord,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_runtime import (
     ObservationFact,
     RuntimeServiceVerification,
+    ServiceApplicationResult,
+    ServiceVerificationResult,
 )
 from packet_tracer_mcp.infrastructure.execution.enterprise_service_runtime import (
     PacketTracerEnterpriseServiceRuntime,
 )
+from packet_tracer_mcp.infrastructure.execution.secret_resolver import (
+    EnvironmentSecretResolver,
+)
 from packet_tracer_mcp.infrastructure.execution.transport_outcome import (
     BridgeDispatchOutcome,
+)
+from packet_tracer_mcp.infrastructure.persistence.service_run_record_store import (
+    ServiceRunRecordStore,
 )
 
 #: The stub network, driven one script per stdin line. `new Function(...)()` is
@@ -71,11 +88,12 @@ const guard = (name, detail) => {
   log.push(detail === undefined ? name : name + ':' + detail);
   seen[name] = (seen[name] || 0) + 1;
   const after = state.throw_after[name];
+  const message = state.throw_message[name] || ('stub failure: ' + name);
   if (state.throw_on.indexOf(name) >= 0) {
-    throw new Error('stub failure: ' + name);
+    throw new Error(message);
   }
   if (after !== undefined && seen[name] > after) {
-    throw new Error('stub failure after ' + after + ': ' + name);
+    throw new Error(state.throw_message[name] || ('stub failure after ' + after + ': ' + name));
   }
 };
 
@@ -190,6 +208,7 @@ class _ClientStub:
             "manager_missing": False,
             "throw_on": [],
             "throw_after": {},
+            "throw_message": {},
         }
         self.state.update(overrides)
         self.transport: dict[str, str] = {}
@@ -309,12 +328,13 @@ def stub(tmp_path):
         instance.close()
 
 
-def _runtime(stub_instance):
+def _runtime(stub_instance, *, secret_resolver=None):
     """Bind the real runtime to the stub's typed channel, polling once."""
     return PacketTracerEnterpriseServiceRuntime(
         lambda: [],
         lambda js, timeout: None,
         dispatch_and_wait=stub_instance.dispatch_and_wait,
+        secret_resolver=secret_resolver,
         http_timeout_seconds=0.0,
         convergence_interval_seconds=0.0,
     )
@@ -339,6 +359,127 @@ def _expectation(
         client_device_name="__MCP_E6_PC",
         expected={"address": "198.18.160.10", "marker": marker, "scheme": scheme},
     )
+
+
+_C0_SECRET = 'S3C0-"credential\\value % ñ tail'
+_C0_ENVIRON = {"PT_MCP_SECRET_MAIL_RELEASE": _C0_SECRET}
+
+
+def _resolve_c0_secret(runtime) -> None:
+    """Resolve the credential through an earlier real runtime batch."""
+    runtime.apply_actions(
+        [
+            EnsureEmailAccount(
+                id="account-release",
+                phase=ServicePhase.CONTENT,
+                service_id="service/hq/mail",
+                service_type=ServiceType.SMTP,
+                host_device_id="srv-1",
+                host_device_name="__MCP_E6_PC",
+                host_model="Server-PT",
+                site_id="hq",
+                required_capability="service_smtp_application",
+                username="user1",
+                secret_ref="mail.release",
+            )
+        ]
+    )
+
+
+def _persisted_release(row, tmp_path) -> str:
+    """Round-trip one real runtime row through the production record store."""
+    verification = ServiceVerificationResult(
+        **row.model_dump(),
+        service_id="service/hq/http",
+    )
+    result = ServiceApplicationResult(
+        service_plan_id="services-c0",
+        service_semantic_hash="service-hash",
+        source_topology_hash="topology-hash",
+        source_configuration_hash="configuration-hash",
+        status=ConfigurationApplicationStatus.PARTIAL,
+        verification_results=[verification],
+    )
+    record = ServiceRunRecord(
+        run_id="c0-release",
+        created_at=datetime.now(UTC),
+        service_result=result,
+    )
+    store = ServiceRunRecordStore(tmp_path)
+    store.begin(record)
+    return store.load("", record.run_id).model_dump_json()
+
+
+@pytest.mark.parametrize(
+    "error_text",
+    [
+        "deleteClient refused " + _C0_SECRET,
+        "deleteClient refused " + json.dumps(_C0_SECRET)[1:-1],
+        "deleteClient refused " + quote(_C0_SECRET, safe=""),
+    ],
+    ids=["raw", "json", "url"],
+)
+def test_generated_release_removes_complete_secret_forms(stub, tmp_path, error_text):
+    """C0 control: complete forms remain absent after the persisted round trip."""
+    engine = stub(
+        throw_after={"deleteClient": 0},
+        throw_message={"deleteClient": error_text},
+    )
+    runtime = _runtime(
+        engine,
+        secret_resolver=EnvironmentSecretResolver(_C0_ENVIRON),
+    )
+    _resolve_c0_secret(runtime)
+
+    row = runtime.verify(_expectation())
+    persisted = _persisted_release(row, tmp_path)
+
+    assert _C0_SECRET not in persisted
+    assert json.dumps(_C0_SECRET)[1:-1] not in persisted
+    assert quote(_C0_SECRET, safe="") not in persisted
+
+
+def test_generated_release_removes_a_secret_fragment_created_by_its_crop(
+    stub, tmp_path
+):
+    """C0 RED: originating categorization must precede the 200-char crop."""
+    prefix = "x" * 195
+    engine = stub(
+        throw_after={"deleteClient": 0},
+        throw_message={"deleteClient": prefix + _C0_SECRET},
+    )
+    runtime = _runtime(
+        engine,
+        secret_resolver=EnvironmentSecretResolver(_C0_ENVIRON),
+    )
+    _resolve_c0_secret(runtime)
+
+    row = runtime.verify(_expectation())
+    persisted = _persisted_release(row, tmp_path)
+
+    assert _C0_SECRET[:5] not in persisted
+    assert "engine_error:Error" in persisted
+
+
+def test_generated_release_uses_a_closed_category_after_secret_resolution(
+    stub, tmp_path
+):
+    """Even a safe engine message is reduced at a secret-bearing boundary."""
+    engine = stub(
+        throw_after={"deleteClient": 0},
+        throw_message={"deleteClient": "safe device-busy diagnostic"},
+    )
+    runtime = _runtime(
+        engine,
+        secret_resolver=EnvironmentSecretResolver(_C0_ENVIRON),
+    )
+    _resolve_c0_secret(runtime)
+
+    row = runtime.verify(_expectation())
+    persisted = _persisted_release(row, tmp_path)
+
+    assert "safe device-busy diagnostic" not in persisted
+    assert "engine_error:Error" in persisted
 
 
 def _unresolved(row) -> list[str]:

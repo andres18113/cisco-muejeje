@@ -43,6 +43,7 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     AddDnsRecord,
     EnableDnsService,
     EnableHttpService,
+    EnsureEmailAccount,
     ServicePhase,
     ServiceType,
     SetHttpContent,
@@ -52,6 +53,9 @@ from packet_tracer_mcp.domain.enterprise.models.service_runtime import (
 )
 from packet_tracer_mcp.infrastructure.execution.enterprise_service_runtime import (
     PacketTracerEnterpriseServiceRuntime,
+)
+from packet_tracer_mcp.infrastructure.execution.secret_resolver import (
+    EnvironmentSecretResolver,
 )
 
 
@@ -232,6 +236,16 @@ def _enable_http(identifier="enable-http"):
         id=identifier,
         phase=ServicePhase.ENABLE,
         **_common("service/hq/http", ServiceType.HTTP),
+    )
+
+
+def _secret_account():
+    return EnsureEmailAccount(
+        id="account-release",
+        phase=ServicePhase.CONTENT,
+        username="user1",
+        secret_ref="mail.release",
+        **_common("service/hq/mail", ServiceType.SMTP),
     )
 
 
@@ -963,6 +977,32 @@ def test_the_stored_setter_error_is_bounded_and_carries_no_payload():
     for row in restored.action_results:
         if row.received_mutation is not None:
             assert len(row.received_mutation.call_error) <= 200
+
+
+def test_a_later_nonsecret_batch_categorizes_errors_after_secret_resolution():
+    """C0: every later generated emitter shares the invocation boundary."""
+    _needs_node()
+    secret = "S3C0-mutation-secret-tail"
+    stub = _StubPacketTracer()
+    runtime = PacketTracerEnterpriseServiceRuntime(
+        lambda: [],
+        stub.send_and_wait,
+        secret_resolver=EnvironmentSecretResolver(
+            {"PT_MCP_SECRET_MAIL_RELEASE": secret}
+        ),
+    )
+    runtime.apply_actions([_secret_account()])
+    stub.state.update(
+        failing=["setEnable"],
+        failure_detail="x" * 165 + secret,
+    )
+
+    mutation = runtime.apply_actions([_enable_http()])[0]
+    _, restored = _round_tripped(mutation)
+    rendered = restored.model_dump_json()
+
+    assert secret[:8] not in rendered
+    assert "engine_error:Error" in rendered
 
 
 def test_no_stored_record_drops_the_setter_error_it_was_given():
