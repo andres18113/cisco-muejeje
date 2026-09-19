@@ -1687,6 +1687,16 @@ class ServiceCompiler:
                             "server_device_name": service.host_device_name,
                             "pool_name": pool.pool_name,
                             "max_users": pool.max_users,
+                            "lease_start": pool.lease_start,
+                            "lease_end": pool.lease_end,
+                            "excluded_ranges_json": json.dumps(
+                                [
+                                    item.model_dump(mode="json")
+                                    for item in pool.excluded_ranges
+                                ],
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ),
                         },
                     )
                     expectations.append(lease)

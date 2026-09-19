@@ -20,6 +20,7 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 from enum import Enum, StrEnum
 from ipaddress import ip_address, ip_network
+from math import isfinite
 from time import monotonic, sleep
 
 from ...application.ports.secret_resolver import SecretResolver, SecretUnavailable
@@ -146,6 +147,53 @@ _MAC_TEXT = re.compile(
     r"^(?:[0-9A-Fa-f]{4}\.){2}[0-9A-Fa-f]{4}$|"
     r"^(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$"
 )
+
+
+def _expected_dhcp_allocation(expected: dict[str, object]):
+    """Parse one compiler-owned allocation without deriving a replacement."""
+    try:
+        network = ip_network(
+            f"{expected.get('network')}/{expected.get('prefix')}", strict=True
+        )
+        lease_start = ip_address(str(expected.get("lease_start") or ""))
+        lease_end = ip_address(str(expected.get("lease_end") or ""))
+        raw_ranges = json.loads(str(expected.get("excluded_ranges_json") or ""))
+        ranges = [
+            (ip_address(item["start"]), ip_address(item["end"])) for item in raw_ranges
+        ]
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if (
+        network.version != 4
+        or lease_start.version != 4
+        or lease_end.version != 4
+        or lease_start > lease_end
+        or lease_start not in network
+        or lease_end not in network
+        or not isinstance(raw_ranges, list)
+        or any(
+            not isinstance(item, dict)
+            or set(item) != {"start", "end"}
+            or not all(isinstance(item[key], str) for key in ("start", "end"))
+            for item in raw_ranges
+        )
+        or any(
+            start.version != 4
+            or end.version != 4
+            or start > end
+            or start not in network
+            or end not in network
+            for start, end in ranges
+        )
+    ):
+        return None
+    return network, lease_start, lease_end, tuple(ranges)
+
+
+def _in_address_ranges(address, ranges) -> bool:
+    """Return whether an address is inside one compiler-carried compact range."""
+    return any(start <= address <= end for start, end in ranges)
+
 
 #: The bound on one mailbox scan, newest first. A mailbox holding more mail
 #: than this can prove presence but never absence.
@@ -2093,6 +2141,7 @@ class PacketTracerEnterpriseServiceRuntime:
             or payload["interface"] != expectation.expected.get("interface")
             or not payload["mode_channel"]
             or not payload["address_channel"]
+            or not payload["mac_channel"]
         ):
             return self._observed(
                 expectation,
@@ -2105,6 +2154,7 @@ class PacketTracerEnterpriseServiceRuntime:
             "dhcp_mode": bool(payload["dhcp_mode"]),
             "ipv4": payload["ipv4"],
             "netmask": payload["netmask"],
+            "mac": payload["mac"],
             "lease_time": payload["lease_time"],
         }
         if payload["dhcp_mode"] is not True:
@@ -2115,7 +2165,10 @@ class PacketTracerEnterpriseServiceRuntime:
                 cause="dhcp_mode_disabled",
                 observed=observed,
             )
-        if not payload["ipv4"] and not payload["netmask"]:
+        if payload["ipv4"] in {"", "0.0.0.0"} and payload["netmask"] in {
+            "",
+            "0.0.0.0",
+        }:
             return self._observed(
                 expectation,
                 observation=ObservationFact.INCONCLUSIVE,
@@ -2131,12 +2184,18 @@ class PacketTracerEnterpriseServiceRuntime:
                 cause="address_mask_incomplete",
                 observed=observed,
             )
+        allocation = _expected_dhcp_allocation(expectation.expected)
+        if allocation is None:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_client_readback",
+                cause="dhcp_expected_allocation_invalid",
+                observed=observed,
+            )
+        network, lease_start, lease_end, excluded_ranges = allocation
         try:
             address = ip_address(payload["ipv4"])
-            network = ip_network(
-                f"{expectation.expected.get('network')}/{expectation.expected.get('prefix')}",
-                strict=True,
-            )
         except ValueError:
             return self._observed(
                 expectation,
@@ -2145,21 +2204,53 @@ class PacketTracerEnterpriseServiceRuntime:
                 cause="address_not_parsable",
                 observed=observed,
             )
-        compatible = (
-            address in network
-            and address not in {network.network_address, network.broadcast_address}
-            and payload["netmask"] == expectation.expected.get("netmask")
-        )
+        if address.version != 4 or not _MAC_TEXT.fullmatch(payload["mac"]):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_client_readback",
+                cause="dhcp_client_identity_invalid",
+                observed=observed,
+            )
+        compatible = address in network and address not in {
+            network.network_address,
+            network.broadcast_address,
+        }
+        if not compatible or payload["netmask"] != expectation.expected.get("netmask"):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.CONTRADICTED,
+                method="dhcp_client_readback",
+                cause="foreign_lease",
+                observed=observed,
+                limitations=("lease_time_causality_unqualified",),
+            )
+        if _in_address_ranges(address, excluded_ranges):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.CONTRADICTED,
+                method="dhcp_client_readback",
+                cause="address_excluded_from_allocation",
+                observed=observed,
+                limitations=("lease_time_causality_unqualified",),
+            )
+        in_window = lease_start <= address <= lease_end
         return self._observed(
             expectation,
             observation=(
                 ObservationFact.INCONCLUSIVE
-                if compatible
+                if in_window
                 else ObservationFact.CONTRADICTED
             ),
             method="dhcp_client_readback",
-            claim_level="fresh_address_readback" if compatible else "",
-            cause="acquisition_unattributed" if compatible else "foreign_lease",
+            claim_level=(
+                "fresh_address_within_intended_allocation" if in_window else ""
+            ),
+            cause=(
+                "acquisition_unattributed"
+                if in_window
+                else "address_outside_intended_allocation"
+            ),
             observed=observed,
             limitations=("lease_time_causality_unqualified",),
         )
@@ -2174,7 +2265,14 @@ class PacketTracerEnterpriseServiceRuntime:
             str(expected.get("server_interface") or expected.get("interface") or "")
         )
         pool_name = json.dumps(str(expected.get("pool_name") or ""))
-        declared = int(expected.get("max_users") or 0)
+        declared = expected.get("max_users")
+        if isinstance(declared, bool) or not isinstance(declared, int) or declared <= 0:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_intended_pool_lease_scan",
+                cause="lease_scan_bound_invalid",
+            )
         bound = min(max(declared, 0), DHCP_LEASE_SCAN_LIMIT)
         bound_js = json.dumps(bound)
         reader = "__ec" if self._sanitizer.holds_values else "__er"
@@ -2191,21 +2289,24 @@ class PacketTracerEnterpriseServiceRuntime:
             f"var sd=ipc.network().getDevice({server});var sm=sd&&sd.getProcess('DhcpServer');"
             f"var sp=sm&&sm.getDhcpServerProcessByPortName({server_interface});"
             f"var pool=sp&&sp.getPool({pool_name});var rows=[];var repeated=false;"
-            "var seen={};var scan_error='';if(pool){for(var j=0;j<"
+            "var seen={};var scan_error='',termination='not_started';if(pool){"
+            "termination='bound';for(var j=0;j<"
             + bound_js
-            + ";j++){try{var r=pool.getLeaseAt(j);if(!r){break;}"
+            + ";j++){try{var r=pool.getLeaseAt(j);if(!r){termination='null';break;}"
             "var row={ipAddress:String(r.ipAddress),macAddress:String(r.macAddress),"
             "leaseTime:r.leaseTime,port:String(r.port)};var key=JSON.stringify(row);"
-            "if(seen[key]){repeated=true;break;}seen[key]=true;rows.push(row);"
-            f"}}catch(e){{scan_error={reader}(e);break;}}}}"
+            "if(seen[key]){repeated=true;termination='repeat';break;}"
+            "seen[key]=true;rows.push(row);"
+            f"}}catch(e){{scan_error={reader}(e);termination='error';break;}}}}"
             "}reportResult(JSON.stringify({client_found:!!cd,port_found:!!cp,"
             "interface:want,ipv4:cp?String(cp.getIpAddress()):'',"
             "netmask:cp?String(cp.getSubnetMask()):'',mac:cp?String(cp.getMacAddress()):'',"
             f"server_found:!!sd,process_found:!!sp,pool_found:!!pool,pool_name:pool?String(pool.getDhcpPoolName()):'',"
-            "rows:rows,repeated:repeated,scan_error:scan_error,error:''}));}catch(e){"
+            "rows:rows,repeated:repeated,scan_error:scan_error,"
+            f"scan_bound:{bound_js},rows_scanned:rows.length,termination:termination,error:''}}));}}catch(e){{"
             "reportResult(JSON.stringify({client_found:false,port_found:false,"
             f"interface:{client_interface},ipv4:'',netmask:'',mac:'',server_found:false,"
-            f"process_found:false,pool_found:false,pool_name:'',rows:[],repeated:false,scan_error:'',error:{reader}(e)}}));}}"
+            f"process_found:false,pool_found:false,pool_name:'',rows:[],repeated:false,scan_error:'',scan_bound:{bound_js},rows_scanned:0,termination:'error',error:{reader}(e)}}));}}"
         )
         observation = self._observe(script, 5.0)
         if observation.kind is not BridgeObservationKind.PAYLOAD:
@@ -2231,41 +2332,58 @@ class PacketTracerEnterpriseServiceRuntime:
                 "pool_name": str,
                 "repeated": bool,
                 "scan_error": str,
+                "termination": str,
                 "error": str,
             },
         )
         rows = payload.get("rows")
-        if shape or not isinstance(rows, list):
+        if (
+            shape
+            or isinstance(payload.get("scan_bound"), bool)
+            or not isinstance(payload.get("scan_bound"), int)
+            or isinstance(payload.get("rows_scanned"), bool)
+            or not isinstance(payload.get("rows_scanned"), int)
+            or not isinstance(rows, list)
+        ):
             return self._observed(
                 expectation,
                 observation=ObservationFact.MALFORMED,
                 method="dhcp_intended_pool_lease_scan",
                 cause=f"lease_scan_shape:{shape or 'rows'}",
             )
-        for row in rows:
-            if (
-                not isinstance(row, dict)
-                or set(row) != {"ipAddress", "macAddress", "leaseTime", "port"}
-                or not all(
-                    isinstance(row[key], str)
-                    for key in ("ipAddress", "macAddress", "port")
-                )
-                or isinstance(row["leaseTime"], bool)
-                or not isinstance(row["leaseTime"], (int, float))
-            ):
-                return self._observed(
-                    expectation,
-                    observation=ObservationFact.MALFORMED,
-                    method="dhcp_intended_pool_lease_scan",
-                    cause="lease_row_shape",
-                )
-        if payload["error"] or payload["scan_error"]:
+        if payload["error"]:
             return self._observed(
                 expectation,
                 observation=ObservationFact.ENGINE_ERROR,
                 method="dhcp_intended_pool_lease_scan",
-                cause=payload["error"] or payload["scan_error"],
+                cause=payload["error"],
             )
+        termination = payload["termination"]
+        scan_coherent = (
+            payload["scan_bound"] == bound
+            and payload["rows_scanned"] == len(rows)
+            and len(rows) <= bound
+            and termination in {"not_started", "null", "repeat", "error", "bound"}
+            and payload["repeated"] is (termination == "repeat")
+            and bool(payload["scan_error"]) is (termination == "error")
+            and (termination != "bound" or len(rows) == bound)
+        )
+        if not scan_coherent:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_intended_pool_lease_scan",
+                cause="lease_scan_metadata_incoherent",
+            )
+        allocation = _expected_dhcp_allocation(expected)
+        if allocation is None:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_intended_pool_lease_scan",
+                cause="dhcp_expected_allocation_invalid",
+            )
+        network, lease_start, lease_end, excluded_ranges = allocation
         if not (
             payload["client_found"]
             and payload["port_found"]
@@ -2281,17 +2399,108 @@ class PacketTracerEnterpriseServiceRuntime:
                 method="dhcp_intended_pool_lease_scan",
                 cause="lease_scan_subject_not_found",
             )
+        try:
+            client_address = ip_address(payload["ipv4"])
+        except ValueError:
+            client_address = None
+        if (
+            client_address is None
+            or client_address.version != 4
+            or client_address in {network.network_address, network.broadcast_address}
+            or payload["netmask"] != expected.get("netmask")
+            or not _MAC_TEXT.fullmatch(payload["mac"])
+        ):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_intended_pool_lease_scan",
+                cause="lease_client_identity_invalid",
+            )
+        if _in_address_ranges(client_address, excluded_ranges):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.CONTRADICTED,
+                method="dhcp_intended_pool_lease_scan",
+                cause="address_excluded_from_allocation",
+                observed={"ipv4": payload["ipv4"], "mac": payload["mac"]},
+            )
+        if not lease_start <= client_address <= lease_end:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.CONTRADICTED,
+                method="dhcp_intended_pool_lease_scan",
+                cause="address_outside_intended_allocation",
+                observed={"ipv4": payload["ipv4"], "mac": payload["mac"]},
+            )
+        for row in rows:
+            if (
+                not isinstance(row, dict)
+                or set(row) != {"ipAddress", "macAddress", "leaseTime", "port"}
+                or not all(
+                    isinstance(row[key], str)
+                    for key in ("ipAddress", "macAddress", "port")
+                )
+                or isinstance(row["leaseTime"], bool)
+                or not isinstance(row["leaseTime"], (int, float))
+                or not isfinite(float(row["leaseTime"]))
+            ):
+                return self._observed(
+                    expectation,
+                    observation=ObservationFact.MALFORMED,
+                    method="dhcp_intended_pool_lease_scan",
+                    cause="lease_row_shape",
+                )
+            try:
+                row_address = ip_address(row["ipAddress"])
+            except ValueError:
+                row_address = None
+            if (
+                row_address is None
+                or row_address.version != 4
+                or row_address in {network.network_address, network.broadcast_address}
+                or not _MAC_TEXT.fullmatch(row["macAddress"])
+                or not row["port"]
+            ):
+                return self._observed(
+                    expectation,
+                    observation=ObservationFact.MALFORMED,
+                    method="dhcp_intended_pool_lease_scan",
+                    cause="lease_row_identity_invalid",
+                )
         same_ip = [row for row in rows if row["ipAddress"] == payload["ipv4"]]
         exact = [row for row in same_ip if row["macAddress"] == payload["mac"]]
+        conflicts = [row for row in same_ip if row["macAddress"] != payload["mac"]]
+        truncated = declared > bound or termination == "bound"
         observed = {
             "interface": payload["interface"],
             "ipv4": payload["ipv4"],
             "mac": payload["mac"],
-            "rows_scanned": len(rows),
+            "rows_scanned": payload["rows_scanned"],
             "scan_limit": bound,
-            "truncated": declared > bound,
+            "termination": termination,
+            "truncated": truncated,
             "repeated": payload["repeated"],
+            "matching_row_observed": bool(exact),
+            "conflicting_same_ip_rows": len(conflicts),
         }
+        limitations = ["lease_table_end_condition_unqualified"]
+        if payload["scan_error"]:
+            limitations.append("lease_scan_error")
+        if payload["repeated"]:
+            limitations.append("lease_row_repeated")
+        if truncated:
+            limitations.append("lease_scan_truncated")
+        if conflicts:
+            if exact:
+                limitations.append("matching_row_also_observed")
+            return self._observed(
+                expectation,
+                observation=ObservationFact.CONTRADICTED,
+                method="dhcp_intended_pool_lease_scan",
+                cause="foreign_lease_row",
+                observed=observed,
+                limitations=limitations,
+            )
         if exact:
             return self._observed(
                 expectation,
@@ -2299,25 +2508,21 @@ class PacketTracerEnterpriseServiceRuntime:
                 method="dhcp_intended_pool_lease_scan",
                 claim_level="attributed_to_intended_server",
                 observed=observed,
-                limitations=("not_acquisition_in_this_run", "not_sole_authority"),
+                limitations=(
+                    "not_acquisition_in_this_run",
+                    "not_sole_authority",
+                    *limitations,
+                ),
             )
-        if (
-            same_ip
-            and _MAC_TEXT.fullmatch(payload["mac"])
-            and any(_MAC_TEXT.fullmatch(row["macAddress"]) for row in same_ip)
-        ):
+        if payload["scan_error"]:
             return self._observed(
                 expectation,
-                observation=ObservationFact.CONTRADICTED,
+                observation=ObservationFact.ENGINE_ERROR,
                 method="dhcp_intended_pool_lease_scan",
-                cause="foreign_lease_row",
+                cause=payload["scan_error"],
                 observed=observed,
+                limitations=limitations,
             )
-        limitations = ["lease_table_end_condition_unqualified"]
-        if payload["repeated"]:
-            limitations.append("lease_row_repeated")
-        if declared > bound:
-            limitations.append("lease_scan_truncated")
         return self._observed(
             expectation,
             observation=ObservationFact.INCONCLUSIVE,

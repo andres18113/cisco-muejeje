@@ -183,6 +183,42 @@ def test_candidate_path_persists_separate_mode_configuration_and_lease_rows(tmp_
     )
 
 
+def test_attribution_does_not_erase_acquisition_uncertainty_in_the_store(tmp_path):
+    """Keep a positive direct row separate from the unobserved acquisition."""
+    harness = _candidate_harness(tmp_path)
+    harness.services.behavior_status = ActionExecutionStatus.UNKNOWN
+    harness.services.behavior_observation = ObservationFact.INCONCLUSIVE
+
+    result = harness.run(capability_catalog=lambda _version: _candidate_catalog())
+
+    stored = ServiceRunRecordStore(tmp_path).load(result.deployment_id, result.run_id)
+    assert stored.service_result is not None
+    check_ids = {
+        check.kind: check.expectation_id
+        for client in result.clients
+        for outcome in client.results.values()
+        for check in outcome.checks
+        if check.kind
+        in {
+            ServiceVerificationKind.DHCP_LEASE,
+            ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED,
+        }
+    }
+    stored_by_id = {
+        item.expectation_id: item for item in stored.service_result.verification_results
+    }
+    by_kind = {kind: stored_by_id[identifier] for kind, identifier in check_ids.items()}
+    assert by_kind[ServiceVerificationKind.DHCP_LEASE].status is (
+        ActionExecutionStatus.UNKNOWN
+    )
+    assert by_kind[ServiceVerificationKind.DHCP_LEASE].observation is (
+        ObservationFact.INCONCLUSIVE
+    )
+    assert by_kind[ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED].status is (
+        ActionExecutionStatus.VERIFIED
+    )
+
+
 def test_configure_only_needs_no_acquisition_capability_and_reports_not_attempted(
     tmp_path,
 ):

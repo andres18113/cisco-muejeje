@@ -35,6 +35,9 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceVerificationKind,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_runtime import ObservationFact
+from packet_tracer_mcp.infrastructure.execution import (
+    enterprise_service_runtime as service_runtime_module,
+)
 from packet_tracer_mcp.infrastructure.execution.endpoint_dhcp_mode_observer import (
     PacketTracerEndpointDhcpModeObserver,
 )
@@ -109,7 +112,11 @@ const poolObject = (pool) => ({
     before('getLeaseAt:' + index);
     if (state.repeat_lease && pool.leases.length) { return pool.leases[0]; }
     if (state.lease_throw_at === index) { throw new Error('lease read failed'); }
-    return index < pool.leases.length ? pool.leases[index] : null;
+    if (index >= pool.leases.length) { return null; }
+    if (state.nonfinite_lease_at === index) {
+      return {...pool.leases[index], leaseTime: Infinity};
+    }
+    return pool.leases[index];
   },
 });
 
@@ -287,6 +294,7 @@ class _DhcpEngine:
             "acquire_mask": "255.255.255.0",
             "repeat_lease": False,
             "lease_throw_at": -1,
+            "nonfinite_lease_at": -1,
         }
         for key, value in overrides.items():
             self.state[key] = value
@@ -335,6 +343,7 @@ class _DhcpEngine:
                 detail="stub_deadline",
             )
         body = "PT_ERROR:" + reply["failure"] if reply["failure"] else reply["reported"]
+        body = self.transport.get(f"{phase}_body", body)
         return BridgeDispatchOutcome(
             dispatch=DispatchFact.ACCEPTED,
             result=ResultFact.CORRELATED,
@@ -726,6 +735,13 @@ def _lease_expectation(kind: ServiceVerificationKind):
             "server_device_name": SERVER,
             "pool_name": POOL,
             "max_users": 10,
+            "lease_start": "192.0.2.10",
+            "lease_end": "192.0.2.19",
+            "excluded_ranges_json": json.dumps(
+                [{"start": "192.0.2.1", "end": "192.0.2.2"}],
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
         },
     )
 
@@ -863,6 +879,41 @@ def test_fresh_in_range_address_is_unattributed_and_foreign_address_contradicts(
     assert row.cause == "foreign_lease"
 
 
+@pytest.mark.parametrize(
+    ("address", "cause"),
+    [
+        ("192.0.2.20", "address_outside_intended_allocation"),
+        ("192.0.2.2", "address_excluded_from_allocation"),
+    ],
+)
+def test_same_subnet_address_outside_the_intended_allocation_is_negative(
+    engine, address, cause
+):
+    """Reject subnet-compatible addresses outside the compiled pool window."""
+    item = engine()
+    item.state["client"]["port"].update(ip=address, mask="255.255.255.0")
+    item.sync()
+
+    row = _runtime(item).verify(_lease_expectation(ServiceVerificationKind.DHCP_LEASE))
+
+    assert row.status is ActionExecutionStatus.FAILED
+    assert row.observation is ObservationFact.CONTRADICTED
+    assert row.cause == cause
+
+
+def test_zero_address_sentinel_is_not_an_acquired_foreign_lease(engine):
+    """Keep the native unset sentinel distinct from a valid foreign assignment."""
+    item = engine()
+    item.state["client"]["port"].update(ip="0.0.0.0", mask="0.0.0.0")
+    item.sync()
+
+    row = _runtime(item).verify(_lease_expectation(ServiceVerificationKind.DHCP_LEASE))
+
+    assert row.status is ActionExecutionStatus.UNKNOWN
+    assert row.observation is ObservationFact.INCONCLUSIVE
+    assert row.cause == "acquisition_not_observed"
+
+
 def test_absent_address_is_unknown_and_false_mode_is_a_contradiction(engine):
     """Keep absence inconclusive while preserving a fresh false-mode conflict."""
     absent = engine()
@@ -949,6 +1000,136 @@ def test_lease_table_match_is_attributed_but_no_match_stays_incomplete(engine):
     assert row.cause == "lease_table_incomplete"
 
 
+def test_unset_client_and_row_identities_cannot_verify_attribution(engine):
+    """Reject an empty-IP/empty-MAC equality before it becomes authority."""
+    item = engine()
+    _prime_pool(item)
+    item.state["client"]["port"].update(ip="", mask="", mac="")
+    item.state["server"]["pools"][POOL]["leases"] = [
+        {"ipAddress": "", "macAddress": "", "leaseTime": 0, "port": INTERFACE}
+    ]
+    item.sync()
+
+    row = _runtime(item).verify(
+        _lease_expectation(ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED)
+    )
+
+    assert row.observation is ObservationFact.MALFORMED
+    assert row.cause == "lease_client_identity_invalid"
+
+
+def test_matching_prefix_survives_a_later_scan_exception(engine):
+    """Retain an observed exact row while reporting the later read limitation."""
+    item = engine(lease_throw_at=1)
+    _prime_pool(item)
+    item.state["client"]["port"].update(ip="192.0.2.10", mask="255.255.255.0")
+    item.state["server"]["pools"][POOL]["leases"] = [
+        {
+            "ipAddress": "192.0.2.10",
+            "macAddress": "0011.2233.4455",
+            "leaseTime": 3600,
+            "port": INTERFACE,
+        }
+    ]
+    item.sync()
+
+    row = _runtime(item).verify(
+        _lease_expectation(ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED)
+    )
+
+    assert row.status is ActionExecutionStatus.VERIFIED
+    assert row.claim_level == "attributed_to_intended_server"
+    assert "lease_scan_error" in row.limitations
+
+
+def test_valid_conflicting_mac_is_not_hidden_by_an_exact_row(engine):
+    """Give a fresh same-IP foreign-MAC contradiction conservative precedence."""
+    item = engine()
+    _prime_pool(item)
+    item.state["client"]["port"].update(ip="192.0.2.10", mask="255.255.255.0")
+    item.state["server"]["pools"][POOL]["leases"] = [
+        {
+            "ipAddress": "192.0.2.10",
+            "macAddress": "0011.2233.4455",
+            "leaseTime": 3600,
+            "port": INTERFACE,
+        },
+        {
+            "ipAddress": "192.0.2.10",
+            "macAddress": "AAAA.BBBB.CCCC",
+            "leaseTime": 3600,
+            "port": INTERFACE,
+        },
+    ]
+    item.sync()
+
+    row = _runtime(item).verify(
+        _lease_expectation(ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED)
+    )
+
+    assert row.status is ActionExecutionStatus.FAILED
+    assert row.cause == "foreign_lease_row"
+    assert row.observed["matching_row_observed"] is True
+    assert row.observed["conflicting_same_ip_rows"] == 1
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        {
+            "ipAddress": "not-an-ip",
+            "macAddress": "0011.2233.4455",
+            "leaseTime": 3600,
+            "port": INTERFACE,
+        },
+        {
+            "ipAddress": "192.0.2.10",
+            "macAddress": "not-a-mac",
+            "leaseTime": 3600,
+            "port": INTERFACE,
+        },
+    ],
+    ids=["invalid-ip", "invalid-mac"],
+)
+def test_invalid_lease_row_identities_are_malformed(engine, row):
+    """Validate every bounded row rather than treating invalid text as a miss."""
+    item = engine()
+    _prime_pool(item)
+    item.state["client"]["port"].update(ip="192.0.2.11", mask="255.255.255.0")
+    item.state["server"]["pools"][POOL]["leases"] = [row]
+    item.sync()
+
+    observed = _runtime(item).verify(
+        _lease_expectation(ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED)
+    )
+
+    assert observed.observation is ObservationFact.MALFORMED
+    assert observed.cause == "lease_row_identity_invalid"
+
+
+def test_nonfinite_lease_time_is_malformed(engine):
+    """Reject nonfinite native lease time without assigning timing semantics."""
+    item = engine(nonfinite_lease_at=0)
+    _prime_pool(item)
+    item.state["client"]["port"].update(ip="192.0.2.11", mask="255.255.255.0")
+    item.state["server"]["pools"][POOL]["leases"] = [
+        {
+            "ipAddress": "192.0.2.10",
+            "macAddress": "0011.2233.4455",
+            "leaseTime": 3600,
+            "port": INTERFACE,
+        }
+    ]
+    item.sync()
+
+    row = _runtime(item).verify(
+        _lease_expectation(ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED)
+    )
+
+    assert row.observation is ObservationFact.MALFORMED
+    assert row.cause == "lease_row_shape"
+
+
 def test_same_ip_with_different_valid_mac_is_a_foreign_lease_row(engine):
     """Contradict attribution when the same IP belongs to another valid MAC."""
     item = engine()
@@ -972,7 +1153,7 @@ def test_same_ip_with_different_valid_mac_is_a_foreign_lease_row(engine):
     assert row.cause == "foreign_lease_row"
 
 
-def test_repeated_rows_and_scan_truncation_never_invent_completion(engine):
+def test_repeated_rows_and_scan_truncation_never_invent_completion(engine, monkeypatch):
     """Report repeated or bounded scans without manufacturing an end condition."""
     repeated = engine(repeat_lease=True)
     _prime_pool(repeated)
@@ -997,19 +1178,113 @@ def test_repeated_rows_and_scan_truncation_never_invent_completion(engine):
 
     truncated = engine()
     _prime_pool(truncated)
+    truncated.state["client"]["port"].update(ip="192.0.2.11", mask="255.255.255.0")
+    truncated.state["server"]["pools"][POOL]["leases"] = [
+        {
+            "ipAddress": "192.0.2.10",
+            "macAddress": "AAAA.BBBB.CCCC",
+            "leaseTime": 3600,
+            "port": INTERFACE,
+        },
+        {
+            "ipAddress": "192.0.2.11",
+            "macAddress": "0011.2233.4455",
+            "leaseTime": 3600,
+            "port": INTERFACE,
+        },
+    ]
+    truncated.sync()
+    monkeypatch.setattr(service_runtime_module, "DHCP_LEASE_SCAN_LIMIT", 1)
     expectation = _lease_expectation(ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED)
-    expectation.expected["max_users"] = 300
 
     row = _runtime(truncated).verify(expectation)
 
     assert row.status is ActionExecutionStatus.UNKNOWN
     assert "lease_scan_truncated" in row.limitations
+    assert "getLeaseAt:1" not in truncated.log
+
+
+def test_truncated_scan_preserves_a_match_observed_within_the_bound(
+    engine, monkeypatch
+):
+    """Keep a bounded positive while disclosing that later rows were not read."""
+    item = engine()
+    _prime_pool(item)
+    item.state["client"]["port"].update(ip="192.0.2.10", mask="255.255.255.0")
+    item.state["server"]["pools"][POOL]["leases"] = [
+        {
+            "ipAddress": "192.0.2.10",
+            "macAddress": "0011.2233.4455",
+            "leaseTime": 3600,
+            "port": INTERFACE,
+        },
+        {
+            "ipAddress": "192.0.2.11",
+            "macAddress": "AAAA.BBBB.CCCC",
+            "leaseTime": 3600,
+            "port": INTERFACE,
+        },
+    ]
+    item.sync()
+    monkeypatch.setattr(service_runtime_module, "DHCP_LEASE_SCAN_LIMIT", 1)
+
+    row = _runtime(item).verify(
+        _lease_expectation(ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED)
+    )
+
+    assert row.status is ActionExecutionStatus.VERIFIED
+    assert row.observed["matching_row_observed"] is True
+    assert "lease_scan_truncated" in row.limitations
+    assert "getLeaseAt:1" not in item.log
+
+
+def test_oversize_or_incoherent_scan_payload_is_rejected(engine):
+    """Reject rows and metadata that claim more than the generated bound measured."""
+    item = engine()
+    _prime_pool(item)
+    item.state["client"]["port"].update(ip="192.0.2.10", mask="255.255.255.0")
+    item.sync()
+    row = {
+        "ipAddress": "192.0.2.10",
+        "macAddress": "0011.2233.4455",
+        "leaseTime": 3600,
+        "port": INTERFACE,
+    }
+    item.transport["lease_body"] = json.dumps(
+        {
+            "client_found": True,
+            "port_found": True,
+            "interface": INTERFACE,
+            "ipv4": "192.0.2.10",
+            "netmask": "255.255.255.0",
+            "mac": "0011.2233.4455",
+            "server_found": True,
+            "process_found": True,
+            "pool_found": True,
+            "pool_name": POOL,
+            "rows": [row, row],
+            "repeated": False,
+            "scan_error": "",
+            "scan_bound": 1,
+            "rows_scanned": 2,
+            "termination": "bound",
+            "error": "",
+        }
+    )
+    expectation = _lease_expectation(ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED)
+    expectation.expected["max_users"] = 1
+
+    observed = _runtime(item).verify(expectation)
+
+    assert observed.observation is ObservationFact.MALFORMED
+    assert observed.cause == "lease_scan_metadata_incoherent"
 
 
 def test_unparseable_lease_row_is_malformed_not_absent(engine):
     """Reject a structurally invalid row instead of treating it as no lease."""
     item = engine()
     _prime_pool(item)
+    item.state["client"]["port"].update(ip="192.0.2.11", mask="255.255.255.0")
     item.state["server"]["pools"][POOL]["leases"] = [
         {
             "ipAddress": "192.0.2.10",

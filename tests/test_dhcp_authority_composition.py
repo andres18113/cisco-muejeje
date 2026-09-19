@@ -30,6 +30,7 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ConfigureServerDhcpPool,
     EnableServerDhcp,
     ServiceType,
+    ServiceVerificationKind,
 )
 from packet_tracer_mcp.domain.enterprise.services.service_policy import (
     derive_service_policy,
@@ -129,6 +130,22 @@ def test_real_composition_delegates_one_segment_and_keeps_its_dhcp_clients():
     assert [item.model_dump() for item in pool.excluded_ranges] == [
         {"start": "198.18.160.1", "end": "198.18.160.2"}
     ]
+    lease_expectations = [
+        item
+        for item in composition.services.verification_expectations
+        if item.kind
+        in {
+            ServiceVerificationKind.DHCP_LEASE,
+            ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED,
+        }
+    ]
+    assert len(lease_expectations) == 2 * len(CLIENT_IDS)
+    for expectation in lease_expectations:
+        assert expectation.expected["lease_start"] == pool.lease_start
+        assert expectation.expected["lease_end"] == pool.lease_end
+        assert json.loads(expectation.expected["excluded_ranges_json"]) == [
+            {"start": "198.18.160.1", "end": "198.18.160.2"}
+        ]
 
 
 def test_two_server_authorities_for_one_segment_are_a_typed_refusal():
