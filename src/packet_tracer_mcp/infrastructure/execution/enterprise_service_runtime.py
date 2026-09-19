@@ -65,7 +65,7 @@ from ...domain.enterprise.models.service_runtime import (
 from .command_dispatch import PAGER_GUARD_JS
 from .runtime_inventory import normalize_runtime_inventory
 from .secret_resolver import EvidenceSanitizer
-from .transport_outcome import BridgeDispatchOutcome, sanitized_detail
+from .transport_outcome import BridgeDispatchOutcome
 
 _HOSTNAME = re.compile(
     r"(?=^.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*"
@@ -2609,10 +2609,11 @@ class PacketTracerEnterpriseServiceRuntime:
                 f"exception:{type(error).__name__}",
             )
         if observation.kind is not BridgeObservationKind.PAYLOAD:
+            # `_with_release` carries this cause into the row's limitations
+            # without passing `_observed`, so the boundary is crossed here.
             return ReleaseOutcome(
                 _RELEASE_FAILED,
-                sanitized_detail(observation.outcome.detail)
-                or "release_not_correlated",
+                self._safe(observation.outcome.detail) or "release_not_correlated",
             )
         payload = observation.payload or {}
         shape = _typed_payload(
@@ -2634,7 +2635,7 @@ class PacketTracerEnterpriseServiceRuntime:
         if payload["found"]:
             return ReleaseOutcome(
                 _RELEASE_UNVERIFIED,
-                sanitized_detail(payload["error"]) or "delete_not_confirmed",
+                self._safe(payload["error"]) or "delete_not_confirmed",
             )
         if payload["present"]:
             # The slot survives without a manager or a client, so there is

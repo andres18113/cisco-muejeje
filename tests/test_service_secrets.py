@@ -396,3 +396,56 @@ def test_a_safe_diagnostic_survives_the_boundary_unchanged():
 
     assert row.cause == "PT_ERROR: EmailClient process is absent"
     assert row.claim_level == "direct_client_state"
+
+
+def _web_fetch() -> ServiceVerificationExpectation:
+    return ServiceVerificationExpectation(
+        id="verify-fetch",
+        service_id="svc/mail",
+        action_id="client-PC",
+        kind=ServiceVerificationKind.HTTP_FETCH,
+        evidence_kind=ServiceEvidenceKind.BEHAVIORAL,
+        host_device_id=SERVER,
+        host_device_name=SERVER,
+        client_device_id=CLIENT,
+        client_device_name=CLIENT,
+        host_model="Server-PT",
+        client_model="PC-PT",
+        expected={"scheme": "http", "address": "192.0.2.10", "marker": "MARK"},
+    )
+
+
+def test_an_owned_client_release_error_crosses_the_boundary_too():
+    """S2-12: `_with_release` writes limitations without passing `_observed`.
+
+    The start owns a client and then reports a shape the reader refuses, so
+    the bounded finalization runs and its payload carries the value. That
+    text becomes a limitation on the row, which is outbound evidence like any
+    other.
+    """
+    channel = _Scripted(
+        _added_row("account-mail.alpha"),
+        json.dumps({"owned": True, "started": "nope", "content_before": "x"}),
+        json.dumps(
+            {
+                "found": True,
+                "deleted": False,
+                "present": True,
+                "error": "deleteClient refused " + ALPHA,
+            }
+        ),
+    )
+    runtime = _runtime(channel)
+
+    runtime.apply_actions([_account()])
+    row = runtime.verify(_web_fetch())
+    rendered = _rendered(row)
+
+    assert any(
+        item.startswith("client_ownership_unresolved:release_unverified:")
+        for item in row.limitations
+    )
+    assert "deleteClient refused" in rendered
+    for form in _forms(ALPHA):
+        assert form not in rendered
+    assert " ".join(ALPHA.split()) not in rendered
