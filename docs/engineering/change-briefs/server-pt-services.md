@@ -90,14 +90,19 @@ One governed correction and qualification campaign on
   integrity, coherent bounded lease evidence, bounded exclusion reads, an
   executable Q3 stage, and the exact-SHA Q3-file then repaired-Q1-file campaign
   authorized by `SERVER-PT-D02-Q3-Q1-AUTOFIX-01`.
+- **Block F — amendment 01.** Typed native-default coexistence for Q3, one
+  bounded readiness gate before any network attempt, the E5-before-E6 effect
+  classification, the explicit M-DHCP-3 omission, and S1b implemented offline
+  on the measured `shared_content` branch, authorized by
+  `SERVER-PT-D02-Q3-Q1-AUTOFIX-01-AMENDMENT-01`.
 
 Still excluded: capability promotion, a public experimental switch, claim
 reset or deletion, product `dhcpRelease`/`resetDhcpConfOn`, a new MCP tool or
-argument, relay/routed/wireless DHCP, Q0/Q2, S1b/Q1b, `EXTENSION/` or `.pts`
+argument, relay/routed/wireless DHCP, Q0/Q2, Q1b, `EXTENSION/` or `.pts`
 changes, transport/protocol changes, merge to main and force publication. The
-campaign authorizes only ordinary fast-forward publication of this feature
-branch for exact-SHA CI and the bounded Q3-file then repaired-Q1-file attempts
-defined in Block E. It does not authorize unrelated GUI work or contact with
+campaign and its amendment authorize only ordinary fast-forward publication of
+this feature branch for exact-SHA CI and the bounded attempts defined in Block
+E and in Block F. They do not authorize unrelated GUI work or contact with
 foreign/user state.
 
 ## Where each stable contract lives
@@ -433,6 +438,230 @@ and the CLI only composes existing production boundaries.
     run id, nonce, process identity and authorization; failed evidence remains
     indexed beside any successor.
 
+## Block F — amendment 01: coexistence, readiness and S1b (risk L)
+
+Risk stays **L**: this block changes effect admission, adds a precondition
+before network attempts, removes a measurement from an executable LIVE profile,
+and gives the product a new content contract. The binding authority is
+amendment `SERVER-PT-D02-Q3-Q1-AUTOFIX-01-AMENDMENT-01` to campaign
+`SERVER-PT-D02-Q3-Q1-AUTOFIX-01`. The amendment authorizes exactly these
+contract changes, S1b offline, fast-forward publication of this feature branch
+for exact-SHA CI, and the two successor attempts in its section 7. It resets no
+attempt counter, promotes no capability and accepts nothing.
+
+### What the campaign measured, and its exact scope
+
+Three LIVE records were produced under the original work order and are accepted
+only within the scope stated here. The input package is
+`SERVER-PT-D02-Q3-Q1-AUTOFIX-01.zip` (127,800 bytes, SHA-256
+`1b71018a…dfa2f`), whose 80 files total 318,993 bytes. The original Windows
+before/after filesystem snapshot was not available to the reviewer and is not
+claimed to have been reproduced.
+
+| Record | Hash | Accepted scope |
+| --- | --- | --- |
+| Q3 ordinal 1, `71fc1aa`, run `2026-09-19T21-55-45Z-1efec675` | `c3aa5707…4166a6` | process binding absent; the stage stopped before any setter |
+| Q3 ordinal 2, `c0307ca`, run `2026-09-19T22-52-28Z-6d12894c` | `b303bd9d…f38d79b` | `DhcpServerMain` resolves; a disabled process and one native pool observed; no product setters and no acquisition |
+| Q1 ordinal 1, `c0307ca`, run `2026-09-19T23-00-53Z-b17240ad` | `7f7a4d91…54a54cf` | bidirectional visibility for the existing `index.html` through distinct handles over one shared page store; listener behavior inconclusive |
+
+Q3's MAC and mode rows prove the actual sampled getters, including a `false`
+mode and the `0.0.0.0` address and mask. They are not a successful true-mode
+bootstrap and not a DHCP acquisition. Q1 never executed the HTTPS positive or
+either negative, because its HTTP positive failed first. The down-before and
+up-after port readings suggest a readiness problem; they do not establish the
+unique cause of the timeout or the exact port state at `go`. Q3 ordinal 1's
+process-exit observation stays unconfirmed at its original deadline, and a
+later process disappearance does not rewrite that artifact.
+
+### F-Q3-DEFAULT — qualification-only, non-destructive coexistence
+
+**Problem.** The Q3 runner admitted only an empty pool inventory. Stock
+Server-PT on build 9.0.1.0858 ships one native pool, so the stage stopped at
+admission twice and measured nothing past M-DHCP-1. Removing or rewriting that
+pool is forbidden, and relaxing the predicate into "any baseline" would admit
+an unknown server state.
+
+**Outcome.** One typed admission policy that admits exactly two baselines on
+the disposable fixture, exact build `9.0.1.0858` and the fixed file channel:
+
+- a coherently observed empty inventory under a disabled process, or
+- exactly one complete, exact native row under a disabled process:
+  `{"name":"serverPool","network":"0.0.0.0","mask":"0.0.0.0","gateway":"0.0.0.0","dns":"0.0.0.0","start":"0.0.0.0","end":"0.0.2.0","max":512}`.
+
+Both require the owned newly created Server-PT by true subject identity, exact
+`FastEthernet0`, an actual boolean `enabled=false`, a complete bounded
+inventory, no error, no duplicate or extra pool and absence of `MCP_E6Q_DHCP`.
+A matching name alone is not authority: every field is compared by value and by
+type. Unknown, malformed, incomplete and truncated baselines still refuse
+before any effect.
+
+**Scope and exclusions.** `serverPool` is never deleted, renamed, reset,
+replaced, per-pool disabled or worked around in the GUI, and its options are
+never rewritten. Enabling the DHCP process is process-wide, so the authorized
+experiment may also activate the native pool's behavior; this brief does not
+describe the default as remaining disabled or inert afterwards, and infers
+nothing about harmlessness from its numeric range or zero mask. The public
+admission and capability records are unchanged: this policy is private to the
+Q3 qualification profile.
+
+**Preservation.** The observed default configuration is snapshotted three
+times with bounded reads — before E5 (the admission read itself), after setup,
+and before cleanup — and every snapshot is kept in the record with any
+difference between them. An unexpected default change, an extra pool, a
+conflicting assignment or an unresolved effect stops subsequent experimental
+effects. A newly observed default is never learned and whitelisted.
+
+**Intended pool.** Unchanged: `MCP_E6Q_DHCP`, one address `192.0.2.100`,
+capacity one, the exact existing fixtures and exclusions. Intended-pool
+attribution and the two clients are observed separately. An intended-pool row
+is not sole-authority and not same-run acquisition proof; a timeout on client 2
+is not pool exhaustion; unknown table termination stays unknown with its
+positive prefix preserved; and no qualified end-of-table predicate exists, so
+the default lease table is never required or claimed to be empty.
+
+### F-READY — bounded precondition before network attempts
+
+**Problem.** Q1 dispatched its HTTP positive while all six fixture ports read
+`port_up=false` and `protocol_up=false`, and read them up afterwards. The stage
+had no precondition, and the existing readiness probe coerced native returns
+with `!!`, so a non-boolean was indistinguishable from `false`.
+
+**Outcome.** One reusable readiness check — not another transport or executor
+— over the exact six fixture ports. It retains raw typed `found`, `linked`,
+`port_up`, `protocol_up`, the port and device identity and safe error text, and
+keeps missing, invalid and false distinct: a value is a boolean only when
+`typeof value === "boolean"`. Network attempts are admitted only from a fresh
+complete reading whose required link and protocol booleans are all true. These
+fields prove readiness of the measured links; they prove nothing about STP
+forwarding, reachability or HTTP success.
+
+**Bounds.** At most four aggregate read attempts and a 30-second monotonic
+deadline, capped by the stage's unspent time and its finalization reserve,
+stopping at the first complete ready sample. No unconditional sleep, no busy
+loop and no extended fetch deadline. The read count, elapsed time, first and
+last observations and the precise failure reason are recorded. No background
+client and no requested DHCP acquisition is created or dispatched before the
+gate passes.
+
+**Per stage.** Q1 gates before its initial positive and keeps the same-mode
+positive prerequisites, the owned-client release and the immediate
+contradiction stop; a failure to become ready is a readiness result, never
+evidence that HTTP or HTTPS is broken, and a started fetch is never retried
+inside one experiment. Q3 gates the physical path before activating DHCP
+clients and keeps that distinct from the clients' addressing. A topology change
+forces a recheck; no topology change is invented to obtain `up`.
+
+### F-Q3-SAFETY — fix the active path, defer unsafe event probing
+
+Neither LIVE Q3 record reached the code after the old baseline gate, so those
+stops qualify none of it.
+
+**A. Classify E5 before E6.** `_run_q3` now classifies the complete E5
+configuration result and the derived foundational statuses before any E6 server
+mutation, reusing the domain's mutation and contradiction semantics rather than
+a new subset of raw-field tests. Missing rows, unknown dispatch or results,
+exceptions and contradictory foundations grant no permission. The same rule
+applies before the intentional same-claim guard control, which is now also
+blocked by a contradicted product verification, not only by an unknown effect.
+Stage stop rules never weaken product semantics for independent work elsewhere,
+and primary and cleanup causes stay separate. Persistence already closes the
+effect gate through `OperationLedger.close_effects` from `_Run.transition`; that
+protection is retained and covered by a regression. The old code is not accused
+of dispatching after a failed record write merely because control flow reached
+another wrapper.
+
+**B. M-DHCP-3 is OMITTED / NOT_EVALUATED** in the amended Q3 profile, reason
+`qualification_event_source_and_release_not_qualified`. It is not marked
+supported and it is not silently removed. No private DHCP event registration or
+unregistration executes in the remaining Q3 slot, and a regression proves the
+amended profile registers zero observers. Its measured operation allowance is
+reallocated to readiness and native-default preservation, never to extra
+acquisitions. The stage definition, the executable path, the recorded
+capability scope and the budget tests change together, and R-EVT-05 production
+gating is unchanged.
+
+The reason is bounded and specific. `register_dhcp_observers` subscribes on
+`d.getPort(...)`, while Cisco documents `dhcpSucceed`/`dhcpFailed` on
+`DhcpClientProcess`; the Node stub emits them as `HostPort`, which masks the
+mismatch. `_q3_event_assessment` also called detachment *observed* from an
+unregister attempt that merely did not throw, and `_q3_record_observer_releases`
+then omitted that unresolved resource — an attempt is not observed detachment.
+Those two classifiers are removed rather than left unreachable and wrong; the
+probes stay, documented as unqualified, until a separately reviewed event
+change fixes source identity, correlation and release evidence. No new event
+framework is built here.
+
+**C. No rebuilt plans.** Server mutations are not repeated to reconstruct a
+plan setup already applied. The real coordinator and applicator stages and
+their established results are reused where their contracts permit; no
+fabricated VERIFIED row is injected and no copied probe replaces the product
+runtime. Native primitive samples stay distinguishable from integrated product
+evidence, and any setup uncertainty blocks the next effect.
+
+### F-S1B — the measured shared-content branch, offline
+
+Q1 ordinal 1 measured distinct `HttpServer` and `HttpsServer` process objects
+over **one shared page store** for the existing `index.html` on Server-PT,
+build 9.0.1.0858, file channel, at `c0307ca`. S1b therefore implements
+`shared_content`, not an invented independent HTTPS page store. The sample
+demonstrates neither arbitrary page creation nor protocol isolation. The
+repaired Q1 is not a prerequisite for this offline block.
+
+- E6 and its current content writer are reused. One content payload and one
+  marker are bound to the canonical server page, and the action carries only
+  the metadata that shared ownership and its source record need:
+  `shared_service_ids` and `content_source_record` on `SetHttpContent`.
+- HTTP and HTTPS requirements for one shared page must agree. Incompatible
+  content is a compile **error** with zero effects — it refuses before E5
+  rather than resolving last-writer-wins — and the runtime is not touched
+  while the conflict is discovered.
+- HTTPS-only content setup writes through `HttpsServer` and never requires
+  enabling the HTTP listener. When both protocols are required on one host,
+  the single surviving action is owned by the HTTP service and depends on both
+  enables, so the large payload is never duplicated in two actions or two
+  record rows purely for representation.
+- Pre/post reads, effect footprints, the exact client HTTPS mode and per-client
+  rows are preserved. The MCP surface keeps its four arguments. Capabilities
+  resolve on the actual model and operation. `SET_HTTP_CONTENT` is an existing
+  replay family, so no new replay registration is added.
+- Default application and verification support stays UNKNOWN/UNMEASURED, and
+  probe metadata never sets behavioral readiness READY. A Q1 run at a commit
+  that also contains S1b is still not Q1b if it exercises only the probe path;
+  no promotion is authorized here.
+
+### Requirements and acceptance
+
+| ID | Requirement | Acceptance |
+| --- | --- | --- |
+| F1 (amd) | A typed Q3 baseline admission policy admits the coherently observed empty disabled process and the one exact observed native `serverPool` row, and refuses everything else before any effect. | Domain tests admit the real native fixture and the empty control; arbitrary `DEFAULT`, a changed field, an enabled process, an extra or duplicate pool, a foreign subject, malformed types and a truncated inventory all refuse. CLI and coordinator runs prove no setter is dispatched on a refusal. |
+| F2 (amd) | The observed default is snapshotted before E5, after setup and before cleanup, and every snapshot and difference is preserved. A changed default stops later experimental effects. | Coordinator tests read the three snapshots out of the record, prove an equal-snapshot run proceeds, and prove a mutated default stops before the next effect with the difference recorded. The default configuration is unchanged in the engine after the run. |
+| F3 (amd) | Readiness is a bounded reusable gate: at most four aggregate reads, a 30-second monotonic deadline capped by unspent stage time and the reserve, first-complete-ready wins, raw typed booleans, recorded read count, elapsed time, first and last samples and a precise failure reason. | Real coordinator and generated-probe tests cover initially ready, delayed up, persistently down, a wrong or missing port, a non-boolean return, late budget exhaustion and persistence failure. A failed gate produces no fetch, no created client and no `dhcpRun`, and finalization still runs. |
+| F4 (amd) | The amended Q3 profile registers zero DHCP observers, records M-DHCP-3 as OMITTED / NOT_EVALUATED with its reason, and drops `engine.dhcp_event_delivery` from the recorded experimental scope. | A regression asserts zero `registerEvent` dispatches in a full Q3 run, the omitted measurement row and its reason, and the recorded capability list. |
+| F5 (amd) | E5 and its derived foundations are classified before any E6 server mutation, and a contradicted product verification blocks the same-claim guard control. | Coordinator tests with an unaccepted E5 batch and with an unverifiable foundation prove no E6 server dispatch; a contradicted read-back proves the guard is not dispatched. The persistence gate regression proves no effect follows a failed record write. |
+| F6 (amd) | Q3 stays 60/1200 with at least its 11-operation and 180-second finalization reserve; Q1 stays 60/600 with at least 10/120, and readiness is charged to the trace, not to unlogged preparation. | Definition tests pin Q3 at 17 + 32 + 11 = 60 and Q1 at 19 + 27 + 10 = 56, prove each shared procedure is counted once, and prove a stage whose worst case exceeds its ceiling refuses before contact. |
+| F7 (S1b) | The compiler binds one shared content payload per host page, owned by HTTP when present and by HTTPS otherwise, exposes `shared_service_ids` and `content_source_record`, and refuses incompatible content as an error with zero effects. | Compiler tests cover the same payload through both protocols, the conflicting payload refusal, HTTPS-only with HTTP off, absence of a duplicate content mutation, and the unchanged existing HTTP-only path. Use-case tests prove a conflicting plan applies nothing. |
+| F8 (S1b) | Both protocols' verification expectations resolve the shared marker, the runtime writes it through the owning process only, and no capability or readiness is promoted. | Runtime and expectation tests cover the fresh marker, the exact client HTTPS mode, the no-marker negative, optional-service coexistence, record round trip, and unknown-build or unknown-capability refusal. Catalog tests keep application and verification support UNKNOWN/UNMEASURED and readiness not READY. |
+
+### Invariants added by this block
+
+19. A qualification baseline is admitted only by exact typed value equality
+    against a reviewed named shape. A matching pool name, a plausible range or
+    a zero mask grants nothing.
+20. An observed native default is preserved, never removed, rewritten or
+    learned. Enabling a process is process-wide and is recorded as such.
+21. Readiness is a property of the measured links at the moment it was read.
+    It never implies forwarding, reachability or a successful request, and a
+    failure to become ready is a readiness result, not a service verdict.
+22. A native boolean exists only when the engine returned `typeof "boolean"`.
+    Coercion never manufactures one, so missing, invalid and false stay
+    distinct at the boundary and in the record.
+23. An unregister attempt that did not throw is not observed detachment. A
+    measurement whose release evidence is unqualified is OMITTED with its
+    reason, never silently skipped and never SUPPORTED.
+24. One page store means one content action. Two protocols that disagree about
+    the same page are a compile error before any effect, never a resolved
+    conflict and never a second write.
+
 ## Test design
 
 | Level | Scope | Files |
@@ -447,6 +676,8 @@ and the CLI only composes existing production boundaries.
 | S3 integration/system | intent through composition, E5/E6, stage-aware application, persistence, unchanged MCP schema and reporting budgets | `tests/test_service_dhcp_integration.py`, `tests/test_apply_enterprise_services.py`, `tests/test_service_product_scale.py`, surface tests |
 | S3 audit corrections | actual generated strict-boolean, allocation/attribution and exclusion-bound counterexamples plus real applicator/store preservation | `tests/test_endpoint_dhcp_mode_observer.py`, `tests/test_service_dhcp_script_harness.py`, `tests/test_dhcp_authority_composition.py`, `tests/test_service_dhcp_integration.py` |
 | Q3 qualification system | exact definition/budget, private real composition, generated probes, CLI/coordinator admission, persistence, stop rules, guard and record round trip | `tests/test_service_qualification_contracts.py`, `tests/test_service_qualification_probes.py`, `tests/test_service_qualification_coordinator.py`, `tests/test_service_qualification_cli.py` |
+| Block F qualification | typed baseline admission, the three default snapshots, the bounded readiness gate, zero observers in the amended profile and the E5-before-E6 gate | `tests/test_service_qualification_contracts.py`, `tests/test_service_qualification_probes.py`, `tests/test_service_qualification_coordinator.py`, `tests/test_service_qualification_cli.py` |
+| Block F S1b | shared page-store binding, conflict refusal with zero effects, HTTPS-only ownership, expectation markers, generated writer and unchanged capability defaults | `tests/test_service_https_content.py`, `tests/test_enterprise_services.py`, `tests/test_service_runtime.py`, `tests/test_apply_enterprise_services.py` |
 
 Acceptance testing is offline through the product use case and the runner. A
 positive runtime test with a private candidate catalog is not product
@@ -529,20 +760,25 @@ subagents.
 | 3 | **Mail evidence under the fallback.** | `SMTP_DELIVERED` is supporting evidence only. Promotion of any mail operation needs a Q2 record at its own SHA; an event path needs a safe zero-event release first. |
 | 4 | **Claim scope on HTTP.** | The claim bounds duplicates only within one evaluation. HTTP separate-evaluation atomicity is INCONCLUSIVE, so the claim is a candidate mechanism, not a qualified one. |
 | 5 | **R-QUAL-05/06.** | A repaired-Q1 sample would be attributed to its own SHA and can never be relabeled as S1b/Q1b evidence. |
+| 6 | **S1b content contract.** | Decided by the Q1 ordinal-1 record: `shared_content`. Implemented offline in Block F. Promotion still needs Q1b at the S1b SHA or a reviewer-approved exact-equivalence argument; neither exists. |
+| 7 | **Q3 native default.** | `serverPool` coexists under the Block F admission policy for this disposable fixture, build and channel only. Whether Packet Tracer serves from the native pool or from `MCP_E6Q_DHCP` when the process is enabled is unqualified and is not assumed either way. |
 
 Deferred, with its consumers identified in the `0850de3` archive: reducing root
 `handoff.md` to a route.
 
 ## Next authorized offline work
 
-1. Complete F1/F2/F3 and executable Q3 as separate reviewable commits, then
-   run focused, affected, full, documentation, namespace and whitespace gates.
+1. Deliver Block F as two separately reviewable commits — the qualification
+   changes, then S1b — with causal RED first at every boundary whose behavior
+   changes, then run focused, affected, full, documentation, namespace and
+   whitespace gates.
 2. From a clean exact delivery commit, run the delivery gate, fast-forward
    publish only this feature branch and require exact-SHA CI green.
-3. Materialize campaign-bound authorization and lifecycle evidence, then run
-   Q3-file before repaired-Q1-file within Block E's attempt ceilings. Each
-   failed attempt remains immutable and any corrected successor gets a new
-   commit, run id, nonce and dedicated process.
+3. Only after that, and only if the recomputed worst case fits, use the two
+   remaining attempts in the amendment: Q3 ordinal 3 of the original 3, then
+   the independent Q1 ordinal 2 of the original 2, each with its own immutable
+   attempt authorization, process, session and nonce. A correct terminal
+   inconclusive result is an acceptable outcome; exceeding a cap is not.
 4. Deliver `READY_FOR_REVIEW`. Author self-review and campaign measurements do
    not provide independent acceptance, merge authority or capability promotion.
 
