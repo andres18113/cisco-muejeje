@@ -60,6 +60,9 @@ from packet_tracer_mcp.domain.enterprise.mutation_replay import (
     ReplayClassification,
     ReplayContainment,
 )
+from packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
+    InterfaceRoutingSemantics,
+)
 from packet_tracer_mcp.infrastructure.execution.file_bridge import RequestDisposition
 
 # -- 1. presentation equivalence of the StrEnum conversion ---------------
@@ -94,6 +97,8 @@ _CONVERTED_ENUMS = (
     ReplayContainment,
     # Converted in S2, which extends the service requirement model.
     AddressingPreference,
+    # Converted while S3 took ownership of the E5 compiler's Ruff state.
+    InterfaceRoutingSemantics,
 )
 
 

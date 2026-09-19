@@ -13,11 +13,11 @@ from ...models.plans import DevicePlan, TopologyPlan
 from ..models.capabilities import CapabilityStatus
 from ..models.configuration import (
     AddressRange,
-    ConfigureDhcpPool,
     ConfigurationIssue,
     ConfigurationIssueCode,
     ConfigurationIssueSeverity,
     ConfigurationPlan,
+    ConfigureDhcpPool,
     ConfigureRoutedInterface,
     ConfigureSubinterface,
     ConfigureSvi,
@@ -37,8 +37,8 @@ from ..models.service_plan import (
     EnableHttpService,
     EnableHttpsService,
     EnablePop3Service,
-    EnableSmtpService,
     EnableServerDhcp,
+    EnableSmtpService,
     EnableTftpService,
     EnsureEmailAccount,
     FoundationalServiceRequirement,

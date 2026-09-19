@@ -256,6 +256,7 @@ def test_fresh_true_dhcp_mode_satisfies_without_an_address():
 
 
 def test_applied_alone_never_satisfies_dhcp_mode():
+    """Require the fresh mode row in addition to an applied action."""
     statuses = derive_service_foundational_statuses(
         _plan(_dhcp_mode_requirement()),
         _config(action_results=[_applied_dhcp_mode()]),
@@ -265,6 +266,7 @@ def test_applied_alone_never_satisfies_dhcp_mode():
 
 
 def test_false_dhcp_mode_is_a_fresh_contradiction():
+    """Preserve a fresh false mode reading as FAILED foundation evidence."""
     statuses = derive_service_foundational_statuses(
         _plan(_dhcp_mode_requirement()),
         _config(
@@ -277,6 +279,7 @@ def test_false_dhcp_mode_is_a_fresh_contradiction():
 
 
 def test_dhcp_mode_on_another_interface_grants_nothing():
+    """Reject a mode reading attributed to another interface."""
     statuses = derive_service_foundational_statuses(
         _plan(_dhcp_mode_requirement()),
         _config(
@@ -289,6 +292,7 @@ def test_dhcp_mode_on_another_interface_grants_nothing():
 
 
 def test_uncertain_dhcp_mode_dispatch_cannot_found_e6():
+    """Refuse a VERIFIED reader when the corresponding effect is uncertain."""
     statuses = derive_service_foundational_statuses(
         _plan(_dhcp_mode_requirement()),
         _config(

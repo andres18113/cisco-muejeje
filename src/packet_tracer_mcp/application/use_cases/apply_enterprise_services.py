@@ -45,6 +45,7 @@ from datetime import UTC, datetime
 from time import monotonic
 from typing import Any
 
+from ...domain.enterprise.models.capabilities import CapabilityStatus
 from ...domain.enterprise.models.configuration import (
     ConfigurationIssueCode,
     ConfigurationIssueSeverity,
@@ -62,7 +63,6 @@ from ...domain.enterprise.models.configuration_runtime import (
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
 )
-from ...domain.enterprise.models.capabilities import CapabilityStatus
 from ...domain.enterprise.models.deployment import (
     DeploymentIdentityError,
     DeploymentManifest,

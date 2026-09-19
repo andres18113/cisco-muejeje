@@ -35,6 +35,7 @@ def _expectation(interface: str = "FastEthernet0") -> VerificationExpectation:
 
 
 def test_mode_script_names_the_exact_interface_and_only_the_documented_getter():
+    """Generate only the exact documented mode read for the bound port."""
     script = endpoint_dhcp_mode_read_js('PC "quoted"', "FastEthernet0")
 
     assert json.dumps('PC "quoted"') in script
@@ -45,6 +46,7 @@ def test_mode_script_names_the_exact_interface_and_only_the_documented_getter():
 
 
 def test_observer_accepts_only_a_typed_fresh_mode_payload():
+    """Preserve a coherent correlated mode result as fresh evidence."""
     raw = json.dumps(
         {
             "found": True,
@@ -105,6 +107,7 @@ def _observation(**updates) -> DhcpModeObservation:
 
 
 def test_true_mode_is_verified_without_waiting_for_an_address():
+    """Treat true mode as bootstrap evidence without an address claim."""
     row = _runtime(_observation())._verify_endpoint_dhcp_mode(_expectation())
 
     assert row.status is ActionExecutionStatus.VERIFIED
@@ -114,6 +117,7 @@ def test_true_mode_is_verified_without_waiting_for_an_address():
 
 
 def test_false_mode_is_a_fresh_contradiction():
+    """Treat a fresh false flag as a contradiction, not an absence."""
     row = _runtime(_observation(dhcp_mode=False))._verify_endpoint_dhcp_mode(
         _expectation()
     )
@@ -123,6 +127,7 @@ def test_false_mode_is_a_fresh_contradiction():
 
 
 def test_wrong_interface_and_unreadable_mode_are_unobservable():
+    """Fail closed when subject identity or the getter channel is missing."""
     wrong = _runtime(
         _observation(interface="FastEthernet1")
     )._verify_endpoint_dhcp_mode(_expectation())

@@ -53,6 +53,7 @@ class PacketTracerEndpointDhcpModeObserver:
         *,
         timeout_seconds: float = 3.0,
     ) -> None:
+        """Bind the correlated reader and its finite timeout."""
         self._send_and_wait = send_and_wait
         self._timeout = timeout_seconds
 
@@ -61,6 +62,7 @@ class PacketTracerEndpointDhcpModeObserver:
         runtime_device_name: str,
         interface: str,
     ) -> DhcpModeObservation:
+        """Read DHCP mode from one exact runtime device and interface."""
         try:
             raw = self._send_and_wait(
                 endpoint_dhcp_mode_read_js(runtime_device_name, interface),

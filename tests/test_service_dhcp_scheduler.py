@@ -39,7 +39,6 @@ from packet_tracer_mcp.infrastructure.catalog.service_capabilities import (
     packet_tracer_service_capabilities,
 )
 
-
 SERVER_ID = "endpoint/hq/default/server/001"
 CLIENT_IDS = [
     "endpoint/hq/default/user_pc/001",
@@ -222,6 +221,7 @@ def _apply(lease_status: ActionExecutionStatus):
 
 
 def test_unknown_lease_blocks_the_actual_mail_client_call_but_not_static_work():
+    """Block actual dependent calls while independent services still run."""
     plan, runtime, result = _apply(ActionExecutionStatus.UNKNOWN)
     called = {identifier for batch in runtime.applied for identifier in batch}
     mail_clients = {
@@ -266,6 +266,7 @@ def test_unknown_lease_blocks_the_actual_mail_client_call_but_not_static_work():
 
 
 def test_synthetic_verified_lease_admits_each_dependent_call_once():
+    """Admit each dependent once at the explicit test-only VERIFIED seam."""
     plan, runtime, _result = _apply(ActionExecutionStatus.VERIFIED)
     called = [identifier for batch in runtime.applied for identifier in batch]
     mail_clients = [
@@ -277,6 +278,7 @@ def test_synthetic_verified_lease_admits_each_dependent_call_once():
 
 
 def test_action_verification_cycle_makes_no_dependent_call():
+    """Stop a mixed action/verification cycle without dispatching its action."""
     composition, manifest, inventory, capabilities = _composition()
     plan = composition.services.model_copy(deep=True)
     client_action = next(

@@ -38,6 +38,7 @@ from ...domain.enterprise.models.configuration_runtime import (
     RuntimeVerification,
 )
 from ...domain.enterprise.models.discovery import DeviceInitializationState
+from ...shared.utils import same_interface_name
 from ..generator.configuration_renderer import PacketTracerIosRenderer
 from .configuration_runtime import PacketTracerConfigurationRuntime
 from .device_lifecycle import StateConvergenceWaiter
@@ -48,11 +49,11 @@ from .ios_terminal import (
     DeviceIdentityProvenance,
     IosCommandResult,
     OperationalQueryId,
+    parse_serial_controller,
     parse_show_interfaces_trunk,
     parse_show_ip_dhcp_pool,
     parse_show_ip_interface_brief,
     parse_show_spanning_tree,
-    parse_serial_controller,
 )
 from .runtime_inventory import normalize_runtime_inventory
 from .simulation_time_convergence import (
@@ -64,8 +65,6 @@ from .simulation_trace_runtime import (
     SimulationStateObservation,
     SimulationTraceRuntime,
 )
-from ...shared.utils import same_interface_name
-
 
 # Acciones que se aplican por el canal IOS. Faltaban aqui las tres de
 # rendimiento de enlace, de modo que el runtime las descartaba antes
@@ -228,6 +227,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         endpoint_address_observer=None,
         endpoint_dhcp_mode_observer=None,
     ) -> None:
+        """Bind inventory, mutation and observation channels for one run."""
         self._query_inventory = query_inventory
         self._send = send
         self._send_and_wait = send_and_wait
@@ -259,6 +259,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         self._ready_ios_devices: set[str] = set()
 
     def inventory(self) -> list[RuntimeConfigurationTarget]:
+        """Return and index the normalized runtime inventory."""
         targets = normalize_runtime_inventory(self._query_inventory())
         self._targets = {item.device_name: item for item in targets}
         return targets
@@ -755,6 +756,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         self,
         actions: Sequence[ConfigurationAction],
     ) -> list[RuntimeActionMutation]:
+        """Apply one preflighted configuration batch through its owning channel."""
         results: dict[str, RuntimeActionMutation] = {}
         ios_by_device: dict[str, list[ConfigurationAction]] = defaultdict(list)
         endpoints: list[SetEndpointStaticAddress | SetEndpointDhcp] = []
@@ -798,8 +800,6 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 )
 
         for device_name, device_actions in sorted(ios_by_device.items()):
-            target = self._targets.get(device_name)
-            model = target.model if target else ""
             if device_name not in self._ready_ios_devices:
                 if not self._ios_readiness(device_name):
                     for action in device_actions:
@@ -906,6 +906,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         self,
         expectations: Sequence[VerificationExpectation],
     ) -> list[RuntimeVerification]:
+        """Verify each E5 expectation through its typed reader."""
         ios_cache: dict[tuple[str, OperationalQueryId], object] = {}
         trunk_results = {
             item.expectation_id: item
@@ -971,7 +972,6 @@ class PacketTracerEnterpriseConfigurationRuntime:
         expectations: Sequence[VerificationExpectation],
     ) -> list[RuntimeVerification]:
         """Observe all trunks round-robin and retain every state transition."""
-
         ordered = list(expectations)
         if not ordered:
             return []
@@ -2723,14 +2723,18 @@ def _voice_vlan_evidence_message(observation: dict, expected: int) -> str:
 
 
 def _as_text(value: object) -> str | None:
-    """Un nombre es una cadena. Un número o un objeto no es un nombre ilegible:
-    es algo que no se puede leer como nombre."""
+    """Coerce only a non-empty string to observable text.
+
+    Un número o un objeto no se puede leer como nombre.
+    """
     return value if isinstance(value, str) and value else None
 
 
 def _as_vlan_id(value: object) -> int | None:
-    """Un id de VLAN es un entero. Un float íntegro es el mismo número; una
-    cadena, un booleano o un objeto no son un id que se pueda comparar."""
+    """Coerce only an integer-valued number to a VLAN id.
+
+    Una cadena, un booleano o un objeto no son un id comparable.
+    """
     if isinstance(value, bool):
         return None
     if isinstance(value, int):

@@ -7,10 +7,10 @@ import ipaddress
 import json
 from collections import defaultdict
 from collections.abc import Callable
-from enum import Enum
+from enum import Enum, StrEnum
 
-from ...models.plans import DevicePlan, LinkPlan, TopologyPlan
 from ....shared.utils import safe_ios_identifier
+from ...models.plans import DevicePlan, LinkPlan, TopologyPlan
 from ..models.addressing import SubnetAllocation, WanTransitAllocation
 from ..models.capabilities import CapabilityStatus, DeviceCapabilities
 from ..models.configuration import (
@@ -40,12 +40,12 @@ from ..models.configuration import (
     VerificationKind,
     action_type_counts,
 )
-from ..models.enterprise_plan import EnterprisePlan
 from ..models.deployment import (
     DeploymentIdentityError,
     DeploymentManifest,
     SerialEndpointOrientation,
 )
+from ..models.enterprise_plan import EnterprisePlan
 from ..models.link_performance import (
     EthernetLinkModeCapability,
     LinkMedia,
@@ -59,11 +59,10 @@ from .configuration_dependencies import (
     ConfigurationDependencyError,
     order_configuration_actions,
 )
+from .configuration_validator import validate_configuration_actions
 from .link_performance_integration import LinkPerformanceIntegration, resolve_link_media
 from .link_performance_planner import LinkPerformancePlanner
-from .configuration_validator import validate_configuration_actions
 from .segment_assignment import SegmentAssignmentPolicy
-
 
 _RESERVED_VLANS = {1002, 1003, 1004, 1005}
 #: Categorias cuyo modo de enlace se configura por IOS. Los endpoints quedan
@@ -117,11 +116,11 @@ def _device_key(device: DevicePlan) -> str:
 
 
 def _phone_addressing_interface(voice_vlan: str) -> str:
-    """The SVI a 7960 actually addresses on, given what its port signals."""
+    """Return the SVI a 7960 addresses on from what its port signals."""
     return f"Vlan{voice_vlan}" if voice_vlan else "Vlan1"
 
 
-class InterfaceRoutingSemantics(str, Enum):
+class InterfaceRoutingSemantics(StrEnum):
     """Que dice el plan sobre esta interfaz. Cuatro respuestas, no dos.
 
     "Nadie la configuro" y "esta conmutada" llevan a la misma accion -- no
@@ -129,6 +128,8 @@ class InterfaceRoutingSemantics(str, Enum):
     interfaz que se quedo fuera del plan. `CONFLICT` es peor todavia: el plan
     se contradice, y llamarlo conmutado esconderia el error.
     """
+
+    __str__ = Enum.__str__
 
     ROUTED = "routed"
     SWITCHED = "switched"
@@ -186,10 +187,11 @@ class ConfigurationCompiler:
     def __init__(
         self,
         link_mode_capability_resolver: (
-            "Callable[[str, str], EthernetLinkModeCapability | None] | None"
+            Callable[[str, str], EthernetLinkModeCapability | None] | None
         ) = None,
         link_performance_planner: LinkPerformancePlanner | None = None,
     ) -> None:
+        """Bind the optional link-performance collaborators."""
         # Quién sabe qué backend hay debajo lo aporta quien construye el
         # compilador. Sin resolver, los enlaces quedan sin perfil y la política
         # de rendimiento no emite nada, que es el comportamiento previo.
@@ -203,12 +205,14 @@ class ConfigurationCompiler:
         self,
         enterprise: EnterprisePlan,
         topology: TopologyPlan,
-        policy: ConfigurationPolicy = ConfigurationPolicy(),
+        policy: ConfigurationPolicy | None = None,
         capabilities: dict[str, DeviceCapabilities] | None = None,
         *,
         deployment_manifest: DeploymentManifest | None = None,
         traffic_by_link: dict[str, list[TrafficContribution]] | None = None,
     ) -> ConfigurationCompileResult:
+        """Compile one E5 plan without contacting a runtime."""
+        policy = policy or ConfigurationPolicy()
         issues: list[ConfigurationIssue] = []
         actions: list[ConfigurationAction] = []
         if not topology.physical_identity_hash:
@@ -1799,7 +1803,6 @@ class ConfigurationCompiler:
 
 def configuration_plan_semantic_hash(plan: ConfigurationPlan) -> str:
     """Return the canonical identity for a product-owned E5 plan projection."""
-
     payload = plan.model_dump(mode="json")
     payload["semantic_hash"] = ""
     canonical = json.dumps(

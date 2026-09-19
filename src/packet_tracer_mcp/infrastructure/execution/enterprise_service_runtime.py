@@ -37,8 +37,8 @@ from ...domain.enterprise.models.execution import (
     TransitionFact,
 )
 from ...domain.enterprise.models.service_plan import (
-    AcquireDhcpLease,
     SECRET_BEARING_ACTIONS,
+    AcquireDhcpLease,
     AddDnsRecord,
     ConfigureEmailClient,
     ConfigureNtpService,
@@ -47,8 +47,8 @@ from ...domain.enterprise.models.service_plan import (
     EnableHttpService,
     EnableHttpsService,
     EnablePop3Service,
-    EnableSmtpService,
     EnableServerDhcp,
+    EnableSmtpService,
     EnableTftpService,
     EnsureEmailAccount,
     PublishTftpFile,

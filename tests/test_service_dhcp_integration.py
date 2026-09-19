@@ -32,11 +32,11 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceType,
     ServiceVerificationKind,
 )
-from packet_tracer_mcp.infrastructure.persistence.service_run_record_store import (
-    ServiceRunRecordStore,
-)
 from packet_tracer_mcp.infrastructure.catalog.service_capabilities import (
     packet_tracer_service_capabilities,
+)
+from packet_tracer_mcp.infrastructure.persistence.service_run_record_store import (
+    ServiceRunRecordStore,
 )
 
 
@@ -133,6 +133,7 @@ def _candidate_harness(tmp_path):
 
 
 def test_default_catalog_refuses_required_dhcp_before_the_first_e5_effect(tmp_path):
+    """Keep documented but unqualified DHCP unavailable in the product."""
     harness = _harness(tmp_path, _payload())
 
     result = harness.run()
@@ -142,6 +143,7 @@ def test_default_catalog_refuses_required_dhcp_before_the_first_e5_effect(tmp_pa
 
 
 def test_candidate_path_persists_separate_mode_configuration_and_lease_rows(tmp_path):
+    """Exercise the real product path with only external seams synthesized."""
     harness = _candidate_harness(tmp_path)
 
     result = harness.run(capability_catalog=lambda _version: _candidate_catalog())
@@ -181,6 +183,7 @@ def test_candidate_path_persists_separate_mode_configuration_and_lease_rows(tmp_
 def test_unqualified_mode_reader_refuses_before_e5_even_with_other_dhcp_support(
     tmp_path,
 ):
+    """Require M-DHCP-5 separately from every server/acquisition operation."""
     harness = _candidate_harness(tmp_path)
     records = _candidate_catalog()
     key = "PC-PT:endpoint_dhcp_mode"
@@ -195,6 +198,7 @@ def test_unqualified_mode_reader_refuses_before_e5_even_with_other_dhcp_support(
 def test_optional_unknown_dhcp_is_excluded_without_reactivating_ios_or_clients(
     tmp_path,
 ):
+    """Exclude optional DHCP while preserving an independent static service."""
     payload = _optional_with_independent_static_service()
     harness = _harness(tmp_path, payload)
 
@@ -213,6 +217,8 @@ def test_optional_unknown_dhcp_is_excluded_without_reactivating_ios_or_clients(
 
 
 def test_persistence_loss_after_mode_bootstrap_blocks_acquisition(tmp_path):
+    """Close the mutation gate before acquisition when the record is lost."""
+
     class FailAtFoundation(ServiceRunRecordStore):
         def advance(self, record):
             if record.persisted_stage is ServiceStage.FOUNDATIONAL_EVIDENCE:

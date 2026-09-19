@@ -19,8 +19,10 @@ from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
 )
 from packet_tracer_mcp.domain.enterprise.models.execution import (
+    DispatchFact,
     FootprintFact,
     PostconditionFact,
+    ResultFact,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     AcquireDhcpLease,
@@ -39,11 +41,6 @@ from packet_tracer_mcp.infrastructure.execution.enterprise_service_runtime impor
 from packet_tracer_mcp.infrastructure.execution.transport_outcome import (
     BridgeDispatchOutcome,
 )
-from packet_tracer_mcp.domain.enterprise.models.execution import (
-    DispatchFact,
-    ResultFact,
-)
-
 
 SERVER = "SRV"
 CLIENT = "PC"
@@ -334,6 +331,7 @@ class _DhcpEngine:
 
 @pytest.fixture
 def engine(tmp_path):
+    """Create persistent Node engines and close each after the test."""
     made: list[_DhcpEngine] = []
 
     def factory(**overrides):
@@ -433,6 +431,7 @@ def _prime_pool(item: _DhcpEngine, *, network="192.0.2.0") -> None:
 
 
 def test_pool_creation_uses_void_add_then_get_and_preserves_unrelated_state(engine):
+    """Create through void addPool, reacquire the pool and preserve other state."""
     item = engine()
     runtime = _runtime(item)
 
@@ -464,6 +463,7 @@ def test_pool_creation_uses_void_add_then_get_and_preserves_unrelated_state(engi
 
 
 def test_matching_pool_is_a_noop_and_conflicting_pool_is_refused(engine):
+    """Leave an exact pool alone and never overwrite a conflicting identity."""
     matching = engine()
     _prime_pool(matching)
     [same] = _runtime(matching).apply_actions([_pool()])
@@ -484,6 +484,7 @@ def test_matching_pool_is_a_noop_and_conflicting_pool_is_refused(engine):
 
 
 def test_unreadable_pool_identity_refuses_without_any_setter(engine):
+    """Treat a failed pool pre-read as unknown rather than absence."""
     item = engine(throw_before=["getPool:HQ_DATA"])
     before = json.dumps(item.state["server"], sort_keys=True)
 
@@ -496,6 +497,7 @@ def test_unreadable_pool_identity_refuses_without_any_setter(engine):
 
 
 def test_setter_effect_then_throw_still_runs_the_post_read(engine):
+    """Retain the observed stored fields when a void setter throws afterwards."""
     item = engine(throw_after=["setMaxUsers"])
 
     [mutation] = _runtime(item).apply_actions([_pool()])
@@ -508,6 +510,7 @@ def test_setter_effect_then_throw_still_runs_the_post_read(engine):
 
 
 def test_missing_post_read_never_claims_the_pool_was_stored(engine):
+    """Keep the postcondition unobserved when the mandatory post-read fails."""
     item = engine(throw_after_calls={"getPool:HQ_DATA": 2})
 
     [mutation] = _runtime(item).apply_actions([_pool()])
@@ -520,6 +523,7 @@ def test_missing_post_read_never_claims_the_pool_was_stored(engine):
     "held", [None, False, 0, ""], ids=["null", "false", "zero", "empty"]
 )
 def test_every_present_malformed_claim_refuses_without_dhcp_run(engine, held):
+    """Preserve every falsey claim entry and refuse a new acquisition."""
     item = engine(claims={CLAIM_KEY: held})
     before = json.dumps(item.state["claims"], sort_keys=True)
 
@@ -532,6 +536,7 @@ def test_every_present_malformed_claim_refuses_without_dhcp_run(engine, held):
 
 
 def test_acquisition_claim_precedes_one_void_dhcp_run_and_replay_sends_nothing(engine):
+    """Write the claim before one void call and suppress an own replay."""
     item = engine()
     runtime = _runtime(item)
 
@@ -548,6 +553,7 @@ def test_acquisition_claim_precedes_one_void_dhcp_run_and_replay_sends_nothing(e
 
 
 def test_effect_then_throw_and_lost_reply_both_quarantine_without_retry(engine):
+    """Keep ambiguity sticky whether the call throws or its answer is lost."""
     throwing = engine(throw_after=["dhcpRun"])
     runtime = _runtime(throwing)
     [mutation] = runtime.apply_actions([_acquire()])
@@ -633,6 +639,7 @@ def _server_expectation():
 
 
 def test_server_state_reads_every_stored_field_but_not_lease_cleanliness(engine):
+    """Verify stored configuration without claiming unchanged allocation state."""
     item = engine()
     _prime_pool(item)
     item.state["server"]["enabled"] = True
@@ -653,6 +660,7 @@ def test_server_state_reads_every_stored_field_but_not_lease_cleanliness(engine)
 
 
 def test_fresh_in_range_address_is_unattributed_and_foreign_address_contradicts(engine):
+    """Separate compatible address read-back from incompatible assignment."""
     item = engine()
     item.state["client"]["port"].update(ip="192.0.2.10", mask="255.255.255.0")
     item.sync()
@@ -675,6 +683,7 @@ def test_fresh_in_range_address_is_unattributed_and_foreign_address_contradicts(
 
 
 def test_configure_only_returns_typed_not_attempted_without_a_client_read(engine):
+    """Return NOT_ATTEMPTED without performing an acquisition-side read."""
     item = engine()
     expectation = _lease_expectation(ServiceVerificationKind.DHCP_LEASE)
     expectation.expected["configure_only"] = True
@@ -688,6 +697,7 @@ def test_configure_only_returns_typed_not_attempted_without_a_client_read(engine
 
 
 def test_lease_table_match_is_attributed_but_no_match_stays_incomplete(engine):
+    """Accept a positive exact row while keeping an uncalibrated miss unknown."""
     matched = engine()
     _prime_pool(matched)
     matched.state["client"]["port"].update(ip="192.0.2.10", mask="255.255.255.0")
@@ -721,6 +731,7 @@ def test_lease_table_match_is_attributed_but_no_match_stays_incomplete(engine):
 
 
 def test_same_ip_with_different_valid_mac_is_a_foreign_lease_row(engine):
+    """Contradict attribution when the same IP belongs to another valid MAC."""
     item = engine()
     _prime_pool(item)
     item.state["client"]["port"].update(ip="192.0.2.10", mask="255.255.255.0")
@@ -743,6 +754,7 @@ def test_same_ip_with_different_valid_mac_is_a_foreign_lease_row(engine):
 
 
 def test_repeated_rows_and_scan_truncation_never_invent_completion(engine):
+    """Report repeated or bounded scans without manufacturing an end condition."""
     repeated = engine(repeat_lease=True)
     _prime_pool(repeated)
     repeated.state["client"]["port"].update(ip="192.0.2.11", mask="255.255.255.0")
@@ -776,6 +788,7 @@ def test_repeated_rows_and_scan_truncation_never_invent_completion(engine):
 
 
 def test_unparseable_lease_row_is_malformed_not_absent(engine):
+    """Reject a structurally invalid row instead of treating it as no lease."""
     item = engine()
     _prime_pool(item)
     item.state["server"]["pools"][POOL]["leases"] = [

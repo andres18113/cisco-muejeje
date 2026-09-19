@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ...models.plans import DevicePlan, TopologyPlan
 from ..models.configuration import (
     ConfigurationIssue,
     ConfigurationIssueCode,
@@ -42,7 +43,6 @@ from ..models.requirements import EndpointRequirement, ServiceRequirement
 from ..models.roles import DeviceRole
 from ..models.segments import SegmentRole
 from ..models.service_plan import ServiceType
-from ...models.plans import DevicePlan, TopologyPlan
 from .segment_assignment import SegmentAssignmentPolicy
 
 

@@ -11,14 +11,17 @@ from service_entry_fixture import (
     intent_payload,
 )
 
+from packet_tracer_mcp.application.use_cases.compile_services import (
+    compile_enterprise_services,
+)
 from packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
     compose_enterprise_reference,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration import (
-    ConfigureDhcpPool,
     ConfigurationIssueCode,
-    ConfigurationPolicy,
     ConfigurationPhase,
+    ConfigurationPolicy,
+    ConfigureDhcpPool,
     SetEndpointDhcp,
 )
 from packet_tracer_mcp.domain.enterprise.models.intent import EnterpriseIntent
@@ -28,10 +31,6 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     EnableServerDhcp,
     ServiceType,
 )
-from packet_tracer_mcp.application.use_cases.compile_services import (
-    compile_enterprise_services,
-)
-
 
 SERVER_ID = "endpoint/hq/default/server/001"
 CLIENT_IDS = [
@@ -130,6 +129,7 @@ def test_real_composition_delegates_one_segment_and_keeps_its_dhcp_clients():
 
 
 def test_two_server_authorities_for_one_segment_are_a_typed_refusal():
+    """Reject two Server-PT authorities for one canonical segment."""
     composition = _compose(_dhcp_payload(duplicate=True))
 
     assert composition.services is None
@@ -139,6 +139,7 @@ def test_two_server_authorities_for_one_segment_are_a_typed_refusal():
 
 
 def test_an_explicit_ios_authority_conflicts_with_service_delegation():
+    """Keep an explicit IOS owner distinct from Server-PT delegation."""
     policy = ConfigurationPolicy(dhcp_server_device_ids={"hq": "router/hq/1"})
 
     composition = _compose(_dhcp_payload(), policy=policy)
@@ -150,6 +151,7 @@ def test_an_explicit_ios_authority_conflicts_with_service_delegation():
 
 
 def test_a_server_on_another_segment_is_not_silently_used_as_a_relay():
+    """Refuse same-site cross-segment service instead of inventing relay."""
     composition = _compose(_dhcp_payload(server_segment="servers"))
 
     assert composition.services is None
@@ -159,6 +161,7 @@ def test_a_server_on_another_segment_is_not_silently_used_as_a_relay():
 
 
 def test_a_wrong_explicit_server_interface_is_refused():
+    """Bind pool configuration to the server's addressed interface."""
     payload = _dhcp_payload()
     payload["sites"][0]["services"][-1]["dhcp_pool"]["interface"] = "FastEthernet9"
 
@@ -169,6 +172,7 @@ def test_a_wrong_explicit_server_interface_is_refused():
 
 
 def test_configure_only_keeps_acquisition_rows_but_compiles_no_effect():
+    """Report acquisition as not attempted when configure-only was requested."""
     payload = _dhcp_payload()
     payload["sites"][0]["services"][-1]["verification_mode"] = "configure_only"
 
@@ -188,6 +192,7 @@ def test_configure_only_keeps_acquisition_rows_but_compiles_no_effect():
 
 
 def test_invalid_offsets_capacity_and_pool_name_are_domain_issues():
+    """Validate pool business rules in the compiler rather than Pydantic."""
     cases = [
         {"start_offset": -1},
         {"start_offset": 99},
@@ -205,6 +210,7 @@ def test_invalid_offsets_capacity_and_pool_name_are_domain_issues():
 
 
 def test_e6_rejects_a_delegated_segment_that_still_contains_an_ios_pool():
+    """Reject contradictory E5 authority even when policy intended delegation."""
     composition = _compose(_dhcp_payload())
     configuration = composition.configuration.model_copy(deep=True)
     configuration.actions.append(
