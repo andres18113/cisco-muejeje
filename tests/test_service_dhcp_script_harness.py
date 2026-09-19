@@ -205,7 +205,7 @@ const clientProcess = {
 const serverDevice = {
   getPortCount: () => 1,
   getPortAt: () => portObject(state.server.port),
-  getProcess: (name) => name === 'DhcpServer' ? serverMain : null,
+  getProcess: (name) => name === 'DhcpServerMain' ? serverMain : null,
 };
 const clientDevice = {
   getPortCount: () => 1,

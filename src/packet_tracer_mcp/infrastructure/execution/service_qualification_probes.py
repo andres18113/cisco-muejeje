@@ -819,7 +819,7 @@ class PacketTracerQualificationProbes:
         return self._read(
             "dhcp_server_baseline",
             f"var __d=ipc.network().getDevice({json.dumps(server)});"
-            "var __m=__d?__d.getProcess('DhcpServer'):null;"
+            "var __m=__d?__d.getProcess('DhcpServerMain'):null;"
             f"var __if={json.dumps(interface)};"
             "var __p=__m&&__m.getDhcpServerProcessByPortName(__if);"
             "var __enabled=null,__etype='absent',__count=0,__pools=[],"
@@ -873,7 +873,7 @@ class PacketTracerQualificationProbes:
         return self._read(
             "dhcp_table",
             f"var __d=ipc.network().getDevice({json.dumps(server)});"
-            "var __m=__d?__d.getProcess('DhcpServer'):null;"
+            "var __m=__d?__d.getProcess('DhcpServerMain'):null;"
             f"var __p=__m&&__m.getDhcpServerProcessByPortName({json.dumps(interface)});"
             f"var __q=__p&&__p.getPool({json.dumps(pool_name)});"
             "var __rows=[],__term='not_started',__error='';if(__q){"

@@ -116,7 +116,7 @@ _PROCESS = {
     ServiceType.TFTP: "TftpServer",
     ServiceType.SMTP: "SmtpServer",
     ServiceType.POP3: "Pop3Server",
-    ServiceType.DHCP: "DhcpServer",
+    ServiceType.DHCP: "DhcpServerMain",
 }
 
 #: Stateful mail and DHCP families. Their batches and reads run one at a time
@@ -1577,7 +1577,7 @@ class PacketTracerEnterpriseServiceRuntime:
         interface = json.dumps(action.interface)
         return [
             row,
-            'var m=d.getProcess("DhcpServer");var p=null;var pv=null,qv=null;',
+            'var m=d.getProcess("DhcpServerMain");var p=null;var pv=null,qv=null;',
             f"try{{p=m&&m.getDhcpServerProcessByPortName({interface});}}catch(e){{p=null;}}",
             f'if(!p){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}else{{',
             "var __pe='';try{var __pr=p.isEnable();if(typeof __pr==='boolean'){"
@@ -1633,7 +1633,7 @@ class PacketTracerEnterpriseServiceRuntime:
         )
         return [
             row,
-            'var m=d.getProcess("DhcpServer");var p=null;var pv=null,qv=null;',
+            'var m=d.getProcess("DhcpServerMain");var p=null;var pv=null,qv=null;',
             f"var __want=JSON.parse({wanted_js});var __ranges={ranges_js};",
             "function __xs(){var out=[];var n=p.getExcludedAddressCount();"
             "if(typeof n!=='number'||!isFinite(n)||n<0||Math.floor(n)!==n||n>"
@@ -1874,7 +1874,7 @@ class PacketTracerEnterpriseServiceRuntime:
         )
         script = (
             helper + f"try{{var d=ipc.network().getDevice({host});"
-            'var m=d&&d.getProcess("DhcpServer");'
+            'var m=d&&d.getProcess("DhcpServerMain");'
             f"var p=m&&m.getDhcpServerProcessByPortName({interface});"
             f"var q=p&&p.getPool({pool_name});var xs=[];"
             "if(p){var n=p.getExcludedAddressCount();"
@@ -2339,7 +2339,7 @@ class PacketTracerEnterpriseServiceRuntime:
             + f"try{{var cd=ipc.network().getDevice({client});var want={client_interface};var cp=null;"
             "if(cd){for(var i=0;i<cd.getPortCount();i++){var c=cd.getPortAt(i);"
             "if(c&&typeof c.getName==='function'&&String(c.getName())===want){cp=c;break;}}}"
-            f"var sd=ipc.network().getDevice({server});var sm=sd&&sd.getProcess('DhcpServer');"
+            f"var sd=ipc.network().getDevice({server});var sm=sd&&sd.getProcess('DhcpServerMain');"
             f"var sp=sm&&sm.getDhcpServerProcessByPortName({server_interface});"
             f"var pool=sp&&sp.getPool({pool_name});var rows=[];var repeated=false;"
             "var seen={};var scan_error='',termination='not_started';if(pool){"

@@ -360,7 +360,7 @@ const processFor = (dev, name) => {
   }
   if (dev.model === 'Server-PT' && name === 'HttpServer') { return httpServer(dev); }
   if (dev.model === 'Server-PT' && name === 'HttpsServer') { return httpsServer(dev); }
-  if (dev.model === 'Server-PT' && name === 'DhcpServer') {
+  if (dev.model === 'Server-PT' && name === 'DhcpServerMain') {
     return {getDhcpServerProcessByPortName: (portName) => (
       dev.ports.some((port) => port.name === String(portName))
         ? dhcpServerProcess(dev) : null
