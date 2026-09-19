@@ -677,7 +677,7 @@ def _q1_executor(h: _Harness, max_operations: int = 60, **overrides):
     return record, ledger
 
 
-def test_q1_measures_all_three_and_stays_inside_its_planned_worst_case(harness):
+def test_q1_measures_both_experiments_inside_its_planned_worst_case(harness):
     """The nominal trace is cheaper than the plan, because the plan is the worst case.
 
     M-HTTPS-2 runs both same-mode positives and both negatives and concludes
@@ -690,8 +690,10 @@ def test_q1_measures_all_three_and_stays_inside_its_planned_worst_case(harness):
     record, ledger = _q1_executor(h)
     statuses = _status(record)
     assert statuses["M-HTTPS-1"] == ("ran", "supported_in_sample")
-    assert statuses["M-DNS-3"] == ("ran", "supported_in_sample")
     assert statuses["M-HTTPS-2"] == ("ran", "inconclusive")
+    # Q1R-5.1: declared omitted with its reason, and never dispatched.
+    assert statuses["M-DNS-3"][0] == "omitted"
+    assert h.scripts("getServerIp()") == []
     tables = next(
         item for item in record.measurements if item.experiment_id == "M-HTTPS-1"
     )
@@ -703,7 +705,7 @@ def test_q1_measures_all_three_and_stays_inside_its_planned_worst_case(harness):
         assert listener.facts[key]["conclusion"] == "supported_in_sample"
     assert listener.facts["readiness_before"]["observed"] is True
     assert json.dumps(listener.facts).count("negative_observed") == 0
-    assert ledger.used == 52 < Q1.planned_minimum_operations == 54
+    assert ledger.used == 51 < Q1.planned_minimum_operations == 53
     assert ledger.refused_calls == 0
     clients = [item for item in record.releases if item.kind == "client"]
     assert [item.outcome for item in clients] == ["released"] * 4
@@ -809,8 +811,8 @@ def test_wrong_positive_page_is_classified_before_any_negative_effect(harness):
         "client:http-positive"
     ]
     dns = next(item for item in record.measurements if item.experiment_id == "M-DNS-3")
-    assert dns.status is MeasurementStatus.NOT_RUN
-    assert dns.reason == "stopped:contradiction:M-HTTPS-2"
+    assert dns.status is MeasurementStatus.OMITTED
+    assert dns.reason.startswith("already_measured")
     assert record.primary_failure == "contradiction:M-HTTPS-2"
     assert [item.step for item in record.transitions][-2:] == [
         "finalization:started",
@@ -827,12 +829,11 @@ def test_wrong_positive_page_is_classified_before_any_negative_effect(harness):
 
 
 def test_q1_https_success_with_https_disabled_stops_the_stage(harness):
-    """The declared contradiction: M-DNS-3 does not run afterwards."""
+    """The declared contradiction stops the stage at its own boundary."""
     h = harness({"serve_https_when_disabled": True})
     record, _ledger = _q1_executor(h)
     assert _status(record)["M-HTTPS-2"] == ("ran", "contradicted")
-    dns = next(item for item in record.measurements if item.experiment_id == "M-DNS-3")
-    assert dns.reason == "stopped:contradiction:M-HTTPS-2"
+    assert record.primary_failure == "contradiction:M-HTTPS-2"
     assert h.engine.snapshot()["devices"] == []
 
 
@@ -861,6 +862,71 @@ def test_q1_timeouts_are_never_negative_controls(harness):
     assert h.scripts("setEnable(false)") == []
 
 
+def test_an_unresolved_page_effect_admits_no_further_experimental_effect(harness):
+    """Q1R-7: the setter changed the page and threw, so the stage stops there.
+
+    The probe reports `written=false` because it sets that flag only after
+    `setPageContents` returns. The page moved anyway, and no read followed it,
+    so the effect is unresolved: no second page setter, no listener toggle, no
+    fetch and no unrelated measurement may run. Only the owned finalization
+    continues, and it completes in full.
+    """
+    h = harness({"setpage_throws_after_http": ["index"]})
+
+    record, _ledger = _q1_executor(h)
+
+    tables = next(
+        item for item in record.measurements if item.experiment_id == "M-HTTPS-1"
+    )
+    assert tables.conclusion is MeasurementConclusion.INCONCLUSIVE
+    assert tables.causes[0] == "marker_write_failed:http"
+    assert tables.facts["page_effect"] == "unresolved"
+    assert tables.outcome_unknown is True
+    assert record.primary_failure == "outcome_unknown:M-HTTPS-1"
+    assert len(h.scripts("setPageContents(")) == 1
+    assert h.scripts("setEnable(false)") == []
+    assert h.scripts("setHttpsEnable(false)") == []
+    assert h.scripts("createClient") == []
+    assert h.scripts("getServerIp()") == []
+    listener = next(
+        item for item in record.measurements if item.experiment_id == "M-HTTPS-2"
+    )
+    assert listener.status is MeasurementStatus.NOT_RUN
+    assert listener.reason == "stopped:outcome_unknown:M-HTTPS-1"
+    assert record.restoration_proven is True
+    assert h.engine.snapshot()["devices"] == []
+    assert [item.step for item in record.transitions][-2:] == [
+        "finalization:started",
+        "finalization:completed",
+    ]
+
+
+def test_a_baseline_read_failure_attributes_no_unresolved_effect(harness):
+    """Q1R-7: the guard stopped before the setter, so nothing is unknown.
+
+    The page procedure decides nothing about the table model, which is a
+    conclusion about its subject and not a loose effect. The stage therefore
+    goes on to the listener procedure instead of being stopped by an unknown
+    outcome that never happened.
+    """
+    h = harness({"getpage_throws_https": ["index"]})
+
+    record, _ledger = _q1_executor(h)
+
+    tables = next(
+        item for item in record.measurements if item.experiment_id == "M-HTTPS-1"
+    )
+    assert tables.conclusion is MeasurementConclusion.INCONCLUSIVE
+    assert tables.facts["page_effect"] == "not_attempted"
+    assert tables.outcome_unknown is False
+    # The procedure stopped after its first step, and the stop was the
+    # measurement, not this stage.
+    assert len(h.scripts('step:"page_write"')) == 1
+    assert "M-HTTPS-1" not in record.primary_failure
+    assert _status(record)["M-HTTPS-2"][0] == "ran"
+    assert record.restoration_proven is True
+
+
 def test_the_page_procedure_never_names_a_new_page(harness):
     """Q1R-1: every page write targets the existing index page."""
     h = harness()
@@ -873,11 +939,11 @@ def test_the_page_procedure_never_names_a_new_page(harness):
 def test_a_retained_backend_device_is_named_and_not_hidden(harness):
     """Q1R-6: CLEAN in its semantic scope, with the raw difference stated."""
     h = harness()
-    h.transport.before[51] = lambda: h.engine.seed_device(
+    h.transport.before[50] = lambda: h.engine.seed_device(
         "Power Distribution Device0", "Power Distribution Device"
     )
     record, ledger = _q1_executor(h)
-    assert ledger.used == 52
+    assert ledger.used == 51
     assert record.restoration_proven is True
     assert "restoration_scope:semantic_devices_and_links" in record.limitations
     assert "backend_managed_devices_changed:0->1" in record.limitations
@@ -895,7 +961,7 @@ def test_q1_passes_the_real_stage_gate_and_finalizes_inside_its_ceiling(harness)
     assert result.refusals == []
     assert h.opened == ["file"]
     assert record.budget.max_operations == 60
-    assert record.budget.planned_minimum_operations == 54
+    assert record.budget.planned_minimum_operations == 53
     assert record.budget.used_operations <= Q1.planned_minimum_operations
     assert record.budget.refused_calls == 0
     assert record.restoration_proven is True
@@ -909,7 +975,7 @@ def test_a_budget_below_the_worst_case_refuses_before_any_channel(harness):
     h = harness()
     request = replace(
         _q1_request(),
-        authorization=replace(_q1_request().authorization, max_operations=53),
+        authorization=replace(_q1_request().authorization, max_operations=52),
     )
     result = h.run(request, capabilities=frozenset(Q1.experimental_capabilities))
     assert [(item.kind, item.subject) for item in result.refusals] == [
@@ -943,10 +1009,10 @@ def test_a_secondary_cleanup_failure_never_replaces_the_primary(harness):
 
 
 def test_q1_executor_at_exactly_its_planned_worst_case_completes(harness):
-    """A ceiling equal to the planned 54 admits the stage and is never exceeded."""
+    """A ceiling equal to the planned 53 admits the stage and is never exceeded."""
     h = harness()
-    record, ledger = _q1_executor(h, max_operations=54)
-    assert ledger.used <= 54 and ledger.refused_calls == 0
+    record, ledger = _q1_executor(h, max_operations=53)
+    assert ledger.used <= 53 and ledger.refused_calls == 0
     assert record.primary_failure == ""
     assert record.restoration_proven is True
 
@@ -954,7 +1020,7 @@ def test_q1_executor_at_exactly_its_planned_worst_case_completes(harness):
 def test_q1_executor_one_below_its_worst_case_creates_nothing(harness):
     """The pre-check refuses the stage work; finalization still reads twice."""
     h = harness()
-    record, ledger = _q1_executor(h, max_operations=53)
+    record, ledger = _q1_executor(h, max_operations=52)
     assert record.primary_failure == "budget:Q1"
     assert h.scripts("lwAddDevice") == []
     assert [item.purpose for item in ledger.entries][-2:] == [
@@ -972,12 +1038,10 @@ def test_a_lost_inspection_is_exactly_what_the_worst_case_budget_pays_for(harnes
     the finalization reserve is untouched.
     """
     h = harness(lose={27, 32})
-    record, ledger = _q1_executor(h, max_operations=54)
+    record, ledger = _q1_executor(h, max_operations=53)
     assert record.primary_failure == ""
-    assert ledger.used == 54 == Q1.planned_minimum_operations
+    assert ledger.used == 53 == Q1.planned_minimum_operations
     assert ledger.refused_calls == 0
-    statuses = _status(record)
-    assert statuses["M-DNS-3"] == ("ran", "supported_in_sample")
     clients = [item for item in record.releases if item.kind == "client"]
     assert [item.outcome for item in clients] == ["released"] * 4
     assert record.restoration_proven is True

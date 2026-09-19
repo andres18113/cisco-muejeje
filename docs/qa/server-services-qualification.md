@@ -31,7 +31,7 @@ qualify anything.
 | Stage | Status in S4a | Fixtures | Ceiling | Planned worst case | Measurements |
 | --- | --- | --- | --- | --- | --- |
 | Q0 | executable | `__MCP_E6Q_PC1` (PC-PT) | 20 operations / 300 s | 19 | M-ENG-1, ATOM-1, M-UNREG-1, M-UNREG-2 (M-HTTP-1 omitted: no HTTP server in the fixture) |
-| Q1 | executable | `__MCP_E6Q_SRV`, `__MCP_E6Q_PC1`, `__MCP_E6Q_PC2`, `__MCP_E6Q_SW` | 60 operations / 600 s | 54 | M-HTTPS-1, M-HTTPS-2, M-DNS-3 (M-DNS-1/2 omitted: optional, no reviewed probe) |
+| Q1 | executable | `__MCP_E6Q_SRV`, `__MCP_E6Q_PC1`, `__MCP_E6Q_PC2`, `__MCP_E6Q_SW` | 60 operations / 600 s | 53 | M-HTTPS-1, M-HTTPS-2 (M-DNS-1/2 omitted: optional, no reviewed probe; M-DNS-3 omitted: already measured at `0850de3`) |
 | Q2 | declarative only | none | 60 / 900 s | not planned | requires S2 and a Q0 record |
 | Q3 | declarative only | none | 60 / 1200 s | not planned | requires S3 and a Q0 record |
 
@@ -41,9 +41,26 @@ the release of its owned client. A stage whose worst case exceeds its ceiling
 is refused before contact, with the arithmetic in the refusal.
 
 Q1's 60 / 600 is the reviewed design ceiling. The repaired procedure's worst
-case is 54 with the 10-operation finalization reserve intact (the `0850de3`
+case is 53 with the 10-operation finalization reserve intact (the `0850de3`
 run used 46). It authorizes no LIVE run, and it changes neither Q0's 20 / 300
 nor the declarative Q2/Q3. The runner never raises a ceiling by itself.
+
+M-DNS-3 is declared OMITTED rather than run again. The Q1-file run at
+`0850de3` recorded `DnsClient.getServerIp` for its exact reader, model, build
+and channel; nothing in the repaired stage depends on that reading, and a
+second run would produce a second sample attributed to its own SHA, never
+further support for the first. The probe and its rule stay in the runner for a
+future authorized measurement.
+
+M-HTTPS-1 also states what happened to its own effect, as `page_effect`. The
+probe sets `written` only after `setPageContents` returns, and the setter can
+change `index.html` and then throw, so a caught exception is not evidence that
+nothing happened. `not_attempted` means the probe's guard stopped before the
+setter; `reconciled` means a setter ran and both handles were read completely
+afterwards; `unresolved` means a setter may have run with no complete read
+after it. Only `unresolved` ends the experimental phase, leaving the owned
+finalization and persistence to complete. Deciding nothing about shared versus
+separate tables is a conclusion about the subject and stops nothing.
 
 M-HTTPS-1 writes only the existing `index.html` of the owned server, with
 run-specific content: Cisco documents setting a page's contents, not creating

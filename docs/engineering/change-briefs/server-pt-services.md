@@ -242,7 +242,7 @@ may conclude. S1b stays gated and no model is selected.
 | Q1R-2 | The procedure is write H through `HttpServer`, independent read through both handles, write S through `HttpsServer`, independent read through both handles, each step admitted only after the previous one was interpreted. Shared requires coherent cross-visibility both ways; separate requires both own writes visible and the opposite handle unchanged. Anything mixed, unread or thrown is INCONCLUSIVE with per-cell causes. | Domain tests for shared, separate, mixed, per-cell errors, truncation and lost answers; harness runs under both stub table models. |
 | Q1R-3 | M-HTTPS-2 records bounded, sanitized observations where documented readers exist: page read-back through both handles, HTTP/HTTPS/inherited enable flags, the request URL and client mode, and endpoint readiness on the fixture links (`Port.isPortUp`, `isProtocolUp`, `getLink`, `HostPort.getIpAddress/getSubnetMask`). Unavailable observations are named: no documented `HttpClient` URL getter, no mode read in the HTTP reader, no documented STP or light-status reader. | Stage facts carry each observation or its named absence; the production fetch scripts stay byte-identical. |
 | Q1R-4 | A negative is interpreted only after a same-mode working positive: an HTTP-mode positive with both listeners enabled precedes the HTTP-mode negative, and the HTTPS-only positive precedes the HTTPS-mode negative. A failed positive stops the negatives it would qualify and triggers one readiness read. No sleep, timeout or status-code semantics is added; a declared negative without a qualified refusal observable stays INCONCLUSIVE. | Coordinator tests for timed-out positives, wrong content, lost answers, unobserved toggles and the nominal path, each ending in authorized finalization. |
-| Q1R-5 | Q1 keeps the reviewed 60-operation / 600-second ceiling and its 10-operation reserve. Optional M-DNS-1/2 are omitted explicitly as optional measurements without a reviewed probe, not as a budget refusal, and M-DNS-3 is not repeated. | Stage-definition test pins the new worst case; a coordinator run at the ceiling with every extra poll forced refuses nothing and never borrows the reserve. |
+| Q1R-5 | Q1 keeps the reviewed 60-operation / 600-second ceiling and its 10-operation reserve. Optional M-DNS-1/2 are omitted explicitly as optional measurements without a reviewed probe, not as a budget refusal, and M-DNS-3 is not repeated (Q1R-5.1 records its declared omission and its accounting). | Stage-definition test pins the new worst case; a coordinator run at the ceiling with every extra poll forced refuses nothing and never borrows the reserve. |
 | Q1R-6 | Restoration keeps comparing semantic devices and links; the record states that scope and names a changed backend-managed count instead of implying whole-workspace equality. | Finalization test with a retained backend-managed device: CLEAN in scope, limitation present, raw reads unchanged. |
 
 ### Planned worst case
@@ -254,12 +254,12 @@ may conclude. S1b stays gated and no model is selected.
 | setup | E5 endpoints, E6 enable HTTP and HTTPS | 2 |
 | experiment | M-HTTPS-1: write H, read both, write S, read both | 4 |
 | experiment | M-HTTPS-2: readiness, marker page, HTTP positive (4), HTTP off, HTTPS positive (4), HTTP negative (4), HTTPS off, HTTPS negative (4) | 20 |
-| experiment | M-DNS-3 client resolvers | 1 |
 | finalization reserve | 4 device removals at 2 each, 2 restoration reads | 10 |
-| | **planned worst case** | **54** |
+| | **planned worst case** | **53** |
 
 A failed positive spends one readiness read instead of the steps it stops, so
-every early exit costs less than the complete path. Six operations of slack
+every early exit costs less than the complete path. Block C drops M-DNS-3's
+operation and adds no reconciliation read, so seven operations of slack
 remain; they are not a retry entitlement.
 
 ## Block C — review correction delta on `6e78e74` (risk L)
@@ -310,7 +310,7 @@ authorization that this brief does not grant.
 
 | # | Decision | Current disposition |
 | --- | --- | --- |
-| 1 | **Q1 budget.** | 60 / 600 with the 10-operation reserve; the repaired worst case is 54. No LIVE authorization follows from it. |
+| 1 | **Q1 budget.** | 60 / 600 with the 10-operation reserve; the repaired worst case is 53 once Block C stops repeating M-DNS-3. No LIVE authorization follows from it. |
 | 2 | **Q0 slack.** | Unchanged: 20 / 300; one spare operation is not a retry entitlement. |
 | 3 | **Mail evidence under the fallback.** | `SMTP_DELIVERED` is supporting evidence only. Promotion of any mail operation needs a Q2 record at its own SHA; an event path needs a safe zero-event release first. |
 | 4 | **Claim scope on HTTP.** | The claim bounds duplicates only within one evaluation. HTTP separate-evaluation atomicity is INCONCLUSIVE, so the claim is a candidate mechanism, not a qualified one. |

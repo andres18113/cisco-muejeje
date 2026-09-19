@@ -143,12 +143,13 @@ def test_q0_fits_its_ceiling_with_the_reserve_counted():
 
 
 def test_q1_fits_its_reviewed_ceiling_on_its_bounded_worst_case():
-    """19 setup + 25 required + 10 reserve = 54 worst-case operations <= 60.
+    """19 setup + 24 required + 10 reserve = 53 worst-case operations <= 60.
 
     Every planned figure is its step's worst case: four page steps, and a
     readiness read, the marked page, two toggles and four production fetches
     at four operations each. The luckiest trace is cheaper; the stage is
     admitted on the expensive one, and the reserve is not part of the slack.
+    M-DNS-3 costs nothing because the repaired stage does not repeat it.
     """
     q1 = STAGE_DEFINITIONS[QualificationStage.Q1]
     assert q1.fixture_names == (
@@ -159,9 +160,10 @@ def test_q1_fits_its_reviewed_ceiling_on_its_bounded_worst_case():
     )
     assert q1.experiment("M-HTTPS-1").planned_operations == 4
     assert q1.experiment("M-HTTPS-2").planned_operations == 20
-    assert (q1.setup_operations, q1.required_experiment_operations) == (19, 25)
+    assert q1.experiment("M-DNS-3").planned_operations == 0
+    assert (q1.setup_operations, q1.required_experiment_operations) == (19, 24)
     assert q1.reserve_operations == 10
-    assert q1.planned_minimum_operations == 54
+    assert q1.planned_minimum_operations == 53
     assert q1.planned_minimum_operations <= q1.budget.max_operations == 60
     assert request_refusals(_request("Q1")) == ()
 
@@ -169,13 +171,13 @@ def test_q1_fits_its_reviewed_ceiling_on_its_bounded_worst_case():
 def test_a_stage_whose_worst_case_exceeds_its_ceiling_is_refused_before_contact():
     """The infeasibility gate survives the raised ceiling, with its arithmetic."""
     q1 = STAGE_DEFINITIONS[QualificationStage.Q1]
-    narrow = replace(q1, budget=replace(q1.budget, max_operations=53))
+    narrow = replace(q1, budget=replace(q1.budget, max_operations=52))
     with mock.patch.dict(
         STAGE_DEFINITIONS, {QualificationStage.Q1: narrow}, clear=False
     ):
         refusals = request_refusals(_request("Q1"))
     assert _pairs(refusals) == {(RefusalKind.INFEASIBLE, RefusalSubject.BUDGET)}
-    assert "54" in refusals[0].detail and "53" in refusals[0].detail
+    assert "53" in refusals[0].detail and "52" in refusals[0].detail
 
 
 @pytest.mark.parametrize("stage", ["Q2", "Q3"])
@@ -187,16 +189,23 @@ def test_declarative_stages_refuse_before_any_reader(stage):
 
 
 def test_optional_measurements_carry_their_omission_reason():
-    """M-HTTP-1 and M-DNS-1/2 are omitted with a reason, never silently."""
+    """M-HTTP-1, M-DNS-1/2 and M-DNS-3 are omitted with a reason, never silently."""
     q0 = STAGE_DEFINITIONS[QualificationStage.Q0]
     q1 = STAGE_DEFINITIONS[QualificationStage.Q1]
     assert q0.experiment("M-HTTP-1").omission_reason.startswith("prerequisite_absent")
     for identifier in ("M-DNS-1", "M-DNS-2"):
         reason = q1.experiment(identifier).omission_reason
         # The stale reason claimed the required set exceeded the ceiling; the
-        # delivered bounded set used 46 and the repaired worst case is 54.
+        # delivered bounded set used 46 and the repaired worst case is 53.
         assert reason.startswith("optional_without_reviewed_probe")
         assert "not a budget refusal" in reason
+    # Q1R-5.1: the reader already has a sample, so the repaired stage neither
+    # repeats it nor counts an operation for it.
+    resolver = q1.experiment("M-DNS-3")
+    assert resolver.omission_reason.startswith("already_measured")
+    assert "0850de3" in resolver.omission_reason
+    assert resolver.required is False and resolver.planned_operations == 0
+    assert "client.dns_server_reader" not in q1.experimental_capabilities
     assert "M-HTTP-1" not in {
         item.id for item in q0.experiments if item.planned_operations
     }
@@ -881,12 +890,86 @@ def test_a_failed_or_lost_step_stops_without_a_conclusion():
     assert refused.causes[:2] == ["marker_write_failed:http", "refused"]
     lost_read = _procedure(read_http=_reading("page_read", observed=False))
     assert lost_read.conclusion is INCONCLUSIVE
-    assert lost_read.outcome_unknown is False
     lost_write = _procedure(write_https=_reading("page_write", observed=False))
     assert lost_write.conclusion is INCONCLUSIVE
-    assert lost_write.outcome_unknown is True
     first_lost = _procedure(write_http=_reading("page_write", observed=False))
-    assert first_lost.outcome_unknown is True
+    assert first_lost.conclusion is INCONCLUSIVE
+
+
+def test_a_guard_that_stopped_before_the_setter_attributes_no_effect():
+    """Q1R-7: an unreadable baseline runs no setter, so nothing is unknown."""
+    for baseline in (
+        _cell(read=False, error="page read refused"),
+        _cell(""),
+        _cell(truncated=True),
+    ):
+        result = _procedure(write_http=_page_write(https=baseline, written=False))
+        assert result.facts["page_effect"] == "not_attempted"
+        assert result.outcome_unknown is False
+
+
+def test_a_setter_that_may_have_run_leaves_this_effect_unresolved():
+    """Q1R-7: past the guard, `written=false` is not proof of no effect.
+
+    `write_index_marker` sets the flag only AFTER `setPageContents` returns,
+    and the setter can change `index.html` and then throw. A caught exception
+    and a thrown value with no message are the same reading here.
+    """
+    refused = _procedure(write_http=_page_write(written=False, error="refused"))
+    assert refused.facts["page_effect"] == "unresolved"
+    assert refused.outcome_unknown is True
+    silent = _procedure(write_http=_page_write(written=False, error=""))
+    assert silent.facts["page_effect"] == "unresolved"
+    assert silent.outcome_unknown is True
+    lost = _procedure(write_http=_reading("page_write", observed=False))
+    assert lost.facts["page_effect"] == "unresolved"
+    assert lost.outcome_unknown is True
+
+
+def test_a_necessary_read_lost_after_a_write_stops_conservatively():
+    """Q1R-7: a setter that returned is still not an observed final page."""
+    lost = _procedure(read_http=_reading("page_read", observed=False))
+    assert lost.facts["page_effect"] == "unresolved"
+    assert lost.outcome_unknown is True
+    unreadable = _procedure(
+        read_http=_page_read(_cell(read=False, error="refused"), _cell(HTTP_PAGE))
+    )
+    assert unreadable.outcome_unknown is True
+    second = _procedure(read_https=_reading("page_read", observed=False))
+    assert second.facts["page_effect"] == "unresolved"
+    assert second.outcome_unknown is True
+    second_write = _procedure(write_https=_reading("page_write", observed=False))
+    assert second_write.outcome_unknown is True
+
+
+def test_a_page_that_moved_between_the_steps_leaves_the_second_write_unresolved():
+    """The bracket read admitted the setter and nothing was read after it."""
+    result = _procedure(write_https=_page_write(_cell(BASE), _cell(BASE)))
+
+    assert result.causes == ["page_changed_between_steps"]
+    assert result.facts["page_effect"] == "unresolved"
+    assert result.outcome_unknown is True
+
+
+def test_a_reconciled_write_never_stops_the_stage_for_its_own_effect():
+    """Deciding nothing about the table model is not a loose effect."""
+    for model in ("separate", "shared"):
+        result = _procedure(model)
+        assert result.facts["page_effect"] == "reconciled"
+        assert result.outcome_unknown is False
+    mixed = _procedure(
+        "separate",
+        read_http=_page_read(_cell(HTTP_PAGE), _cell(HTTP_PAGE)),
+        write_https=_page_write(_cell(HTTP_PAGE), _cell(HTTP_PAGE)),
+        read_https=_page_read(_cell(HTTP_PAGE), _cell(HTTPS_PAGE)),
+    )
+    assert mixed.causes == ["mixed_visibility"]
+    assert mixed.facts["page_effect"] == "reconciled"
+    assert mixed.outcome_unknown is False
+    invisible = _procedure(read_http=_page_read(_cell(BASE), _cell(BASE)))
+    assert invisible.causes == ["own_write_not_visible:http"]
+    assert invisible.facts["page_effect"] == "reconciled"
+    assert invisible.outcome_unknown is False
 
 
 def test_an_unreadable_cell_after_a_write_is_never_an_absence():

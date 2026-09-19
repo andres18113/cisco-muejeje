@@ -29,6 +29,8 @@ from packet_tracer_mcp.domain.enterprise.services.service_qualification_evidence
     assess_bag_persistence,
     assess_observer_release,
     assess_page_tables,
+    page_read_admits_second_write,
+    page_write_established,
 )
 from packet_tracer_mcp.infrastructure.execution import service_environment
 from packet_tracer_mcp.infrastructure.execution.service_environment import (
@@ -535,12 +537,20 @@ def _index(engine: NodeEngine, handle: str = "HttpServer") -> str:
 
 
 def _page_procedure(probes):
-    """Run the four M-HTTPS-1 steps the coordinator runs, in its order."""
+    """Run M-HTTPS-1 exactly as the coordinator admits it, step by step.
+
+    Each step runs only when the previous one was interpreted, so a skipped
+    step is reported as `None` here the same way the coordinator reports it.
+    """
     texts = probes.page_marker_texts()
     write_http = probes.write_index_marker(SERVER, "http")
-    read_http = probes.read_index_cells(SERVER)
-    write_https = probes.write_index_marker(SERVER, "https")
-    read_https = probes.read_index_cells(SERVER)
+    read_http = write_https = read_https = None
+    if page_write_established(write_http):
+        read_http = probes.read_index_cells(SERVER)
+    if page_read_admits_second_write(read_http, texts["http_marker"]):
+        write_https = probes.write_index_marker(SERVER, "https")
+    if page_write_established(write_https):
+        read_https = probes.read_index_cells(SERVER)
     return (
         assess_page_tables(
             write_http,
@@ -621,6 +631,9 @@ def test_an_unreadable_baseline_writes_nothing(engine_factory):
     assert result.conclusion is INCONCLUSIVE
     assert "page_table_model" not in result.facts
     assert any(item.startswith("baseline_unreadable:https:") for item in result.causes)
+    # No setter ran, so nothing is attributed to an effect of this step.
+    assert result.facts["page_effect"] == "not_attempted"
+    assert result.outcome_unknown is False
 
 
 def test_a_refused_write_to_an_existing_page_is_inconclusive(engine_factory):
@@ -629,12 +642,38 @@ def test_a_refused_write_to_an_existing_page_is_inconclusive(engine_factory):
     engine.seed_device(SERVER, "Server-PT")
     probes, _transport = _probes(engine)
 
-    result, (write_http, *_rest) = _page_procedure(probes)
+    result, (write_http, *rest) = _page_procedure(probes)
 
     assert write_http.payload["written"] is False
     assert "page write refused" in write_http.payload["write_error"]
     assert result.conclusion is INCONCLUSIVE
     assert result.causes[0] == "marker_write_failed:http"
+    # The setter was reached, so the effect is unresolved and no further step
+    # of the procedure may run.
+    assert rest == [None, None, None]
+    assert result.facts["page_effect"] == "unresolved"
+    assert result.outcome_unknown is True
+
+
+def test_a_setter_that_changed_the_page_and_threw_is_unresolved(engine_factory):
+    """Q1R-7: the page moved while the probe reported `written=false`."""
+    engine = engine_factory(setpage_throws_after_http=["index"])
+    engine.seed_device(SERVER, "Server-PT")
+    probes, _transport = _probes(engine)
+    before = _index(engine)
+
+    result, readings = _page_procedure(probes)
+
+    write_http = readings[0]
+    assert write_http.payload["written"] is False
+    assert "after the change" in write_http.payload["write_error"]
+    # The stub's own state, not the reported flag: the page really did change.
+    assert _index(engine) != before
+    assert probes.page_marker_texts()["http_marker"] in _index(engine)
+    assert list(readings[1:]) == [None, None, None]
+    assert result.conclusion is INCONCLUSIVE
+    assert result.facts["page_effect"] == "unresolved"
+    assert result.outcome_unknown is True
 
 
 def test_one_unreadable_cell_after_a_write_is_not_an_asymmetry(engine_factory):

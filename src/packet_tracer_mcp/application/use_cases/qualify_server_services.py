@@ -68,7 +68,6 @@ from ...domain.enterprise.models.service_plan import (
 )
 from ...domain.enterprise.models.service_qualification import (
     Q1_PC1,
-    Q1_PC2,
     Q1_SERVER,
     Q1_SERVER_IPV4,
     BudgetRecord,
@@ -103,7 +102,6 @@ from ...domain.enterprise.services.service_qualification_evidence import (
     ProbeReading,
     assess_atomicity,
     assess_bag_persistence,
-    assess_client_resolver,
     assess_https_listener,
     assess_observer_release,
     assess_page_tables,
@@ -1352,6 +1350,13 @@ def _observer_releases(
 
 
 def _run_q1(execution: _Execution) -> None:
+    """Run the repaired Q1 scope: the page tables, then the listeners.
+
+    M-DNS-3 is declared OMITTED, not scheduled. Its reader was measured by the
+    Q1-file run at `0850de3`, nothing in this stage depends on that reading,
+    and a second sample would be a second sample attributed to its own SHA --
+    never additional support for the first one.
+    """
     required = [item.id for item in execution.definition.experiments if item.required]
     if not execution.ledger.can_afford(
         execution.definition.fixture_operations
@@ -1363,7 +1368,6 @@ def _run_q1(execution: _Execution) -> None:
     if not _setup_fixtures(execution) or not _configure_q1(execution):
         execution.not_run(required, "fixture_setup_failed")
         return
-    probes = execution.probes
     ids = ("M-HTTPS-1",)
     if execution.begin(ids, "HTTPS1"):
         with execution.procedure(ids):
@@ -1374,21 +1378,6 @@ def _run_q1(execution: _Execution) -> None:
         with execution.procedure(ids):
             execution.conclude("M-HTTPS-2", _https_listener(execution))
         execution.finish("HTTPS2")
-    ids = ("M-DNS-3",)
-    if execution.begin(ids, "DNS3"):
-        with execution.procedure(ids):
-            read = probes.read_client_resolvers((Q1_PC1, Q1_PC2))
-            execution.conclude(
-                "M-DNS-3",
-                assess_client_resolver(
-                    read,
-                    configured_client=Q1_PC1,
-                    unset_client=Q1_PC2,
-                    intended=Q1_SERVER_IPV4,
-                    e5_dispatch_accepted=execution.e5_accepted,
-                ),
-            )
-        execution.finish("DNS3")
 
 
 def _configure_q1(execution: _Execution) -> bool:

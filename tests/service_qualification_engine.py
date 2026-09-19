@@ -33,6 +33,9 @@ Behaviour switches (`config`) select the engine facts under test:
   of these, `setPageContents` only UPDATES a page: an unknown URL throws
   `File not exist: <url>`, which is what the Q1 record at `0850de3` measured
   for two newly named pages. The stub never creates a page;
+- `setpage_throws_after_http` / `setpage_throws_after_https`: URL substrings
+  whose `setPageContents` writes the contents and THEN throws, so a caught
+  exception coincides with a page that did change;
 - `ports_up` / `protocol_up`: what a linked port's `isPortUp()` and
   `isProtocolUp()` report (an unlinked port reports false);
 - `fetch_failure`: `error_page` renders fresh non-marker content for a refused
@@ -79,6 +82,7 @@ const config = Object.assign({
   create_throws: false, remove_throws: false, readdress_throws: false,
   getpage_throws_http: [], getpage_throws_https: [],
   setpage_throws_http: [], setpage_throws_https: [],
+  setpage_throws_after_http: [], setpage_throws_after_https: [],
   ports_up: true, protocol_up: true, serve_nothing: false,
 }, JSON.parse(process.argv[2] || '{}'));
 
@@ -89,7 +93,7 @@ const guardPage = (patterns, url) => {
     }
   }
 };
-const updatePage = (table, patterns, url, contents) => {
+const updatePage = (table, patterns, url, contents, afterPatterns) => {
   for (const pattern of (patterns || [])) {
     if (String(url).indexOf(pattern) >= 0) {
       throw new Error('page write refused: ' + pattern);
@@ -99,6 +103,11 @@ const updatePage = (table, patterns, url, contents) => {
     throw new Error('File not exist: ' + url);
   }
   table[String(url)] = String(contents);
+  for (const pattern of (afterPatterns || [])) {
+    if (String(url).indexOf(pattern) >= 0) {
+      throw new Error('page write failed after the change: ' + pattern);
+    }
+  }
 };
 
 let uuidSeq = 0;
@@ -159,7 +168,8 @@ const httpServer = (dev) => {
       setEnable: (v) => { web.httpEnabled = !!v; },
       isEnabled: () => web.httpEnabled,
       setPageContents: (url, contents) => {
-        updatePage(web.tables.http, config.setpage_throws_http, url, contents);
+        updatePage(web.tables.http, config.setpage_throws_http, url, contents,
+          config.setpage_throws_after_http);
       },
       getPage: (url) => {
         guardPage(config.getpage_throws_http, url);
@@ -185,7 +195,8 @@ const httpsServer = (dev) => {
       setHttpsEnable: (v) => { web.httpsEnabled = !!v; },
       isHttpsEnabled: () => web.httpsEnabled,
       setPageContents: (url, contents) => {
-        updatePage(web.tables.https, config.setpage_throws_https, url, contents);
+        updatePage(web.tables.https, config.setpage_throws_https, url, contents,
+          config.setpage_throws_after_https);
       },
       getPage: (url) => {
         guardPage(config.getpage_throws_https, url);

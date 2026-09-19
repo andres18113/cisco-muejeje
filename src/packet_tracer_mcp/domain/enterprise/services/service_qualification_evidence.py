@@ -475,6 +475,64 @@ _PAGE_LIMITATIONS = (
     "existing_page_content_only",
 )
 
+#: What this procedure established about its OWN effect on the page, which is
+#: a different question from what it established about the table model.
+#:
+#: NOT_ATTEMPTED means the probe's guard stopped before `setPageContents`.
+#: RECONCILED means a setter ran and both handles were then read completely,
+#: so the page is known. UNRESOLVED means a setter may have run and the page
+#: was not read after it: the setter can change `index.html` and then throw,
+#: and a caught exception is no more an observation of the final page than a
+#: return value is. Only UNRESOLVED stops the rest of the stage; an
+#: inconclusive table model is a conclusion about the subject, not a loose
+#: effect.
+_EFFECT_NOT_ATTEMPTED = "not_attempted"
+_EFFECT_RECONCILED = "reconciled"
+_EFFECT_UNRESOLVED = "unresolved"
+
+
+def _page_assessment(
+    conclusion: MeasurementConclusion,
+    facts: dict[str, Any],
+    causes: list[str],
+    limitations: list[str],
+    effect: str,
+) -> Assessment:
+    """Record one page-procedure outcome together with its own effect state."""
+    return Assessment(
+        conclusion,
+        {**facts, "page_effect": effect},
+        causes,
+        limitations,
+        outcome_unknown=effect == _EFFECT_UNRESOLVED,
+    )
+
+
+def _write_blocked(step: str, cells) -> list[str]:
+    """Name every reading that proves the probe stopped before its setter.
+
+    `write_index_marker` calls `setPageContents` only when both handles read
+    the page completely, non-empty and untruncated in that same evaluation.
+    So an empty list here means the setter was reached, whatever the reported
+    `written` flag says afterwards.
+    """
+    return _unreadable(step, cells) + [
+        f"{step}_page_empty:{name}"
+        for name, cell in zip(("http", "https"), cells, strict=True)
+        if cell is not None and cell["read"] and cell["length"] == 0
+    ]
+
+
+def _page_effect_unresolved(write: ProbeReading, blocked: Sequence[str]) -> bool:
+    """Whether one write may have changed the page without being read after.
+
+    A reported write, a caught setter exception and a reached setter all mean
+    the page may differ now. Only the probe's own guard, which `blocked`
+    reports, excludes the effect.
+    """
+    payload = write.payload
+    return bool(payload["written"] or payload["write_error"] or not blocked)
+
 
 def _page_cell(value: Any) -> dict[str, Any] | None:
     """Validate one bounded page read; `None` when it is not the typed shape."""
@@ -556,15 +614,22 @@ def assess_page_tables(
     read, an exception, a lost answer or a mixed result is INCONCLUSIVE:
     none of them is the absence of a table. Reference equality is recorded
     and decides nothing.
+
+    Every exit also states what happened to this procedure's own effect, as
+    `page_effect`. That is a separate question from the table model, and only
+    `unresolved` -- a setter that may have run with no complete read after it
+    -- sets `outcome_unknown` and ends the experimental phase. Deciding
+    nothing about shared versus separate is not, by itself, a reason to stop.
     """
     limitations = list(_PAGE_LIMITATIONS)
     if not write_http.observed:
-        return Assessment(
+        # A lost answer says nothing about the setter: it may have run.
+        return _page_assessment(
             INCONCLUSIVE,
             {},
             [_unobserved(write_http)],
             limitations,
-            outcome_unknown=True,
+            _EFFECT_UNRESOLVED,
         )
     payload = write_http.payload
     facts: dict[str, Any] = {
@@ -574,32 +639,46 @@ def assess_page_tables(
         "object_identity_equal": payload["reference_equal"],
     }
     if not payload["http_found"] or not payload["https_found"]:
-        return Assessment(INCONCLUSIVE, facts, ["process_absent"], limitations)
+        return _page_assessment(
+            INCONCLUSIVE, facts, ["process_absent"], limitations, _EFFECT_NOT_ATTEMPTED
+        )
     baseline = _page_cells(write_http, "before")
-    causes = _unreadable("baseline", baseline)
-    causes += [
-        f"baseline_page_empty:{name}"
-        for name, cell in zip(("http", "https"), baseline, strict=True)
-        if cell is not None and cell["read"] and cell["length"] == 0
-    ]
+    causes = _write_blocked("baseline", baseline)
     if causes:
+        # The guard stopped before the setter, so nothing was attributed to a
+        # write here -- unless the payload contradicts itself by reporting one.
+        unresolved = _page_effect_unresolved(write_http, causes)
         if payload["written"]:
             causes.append("written_without_a_readable_baseline")
-        return Assessment(INCONCLUSIVE, facts, causes, limitations)
+        return _page_assessment(
+            INCONCLUSIVE,
+            facts,
+            causes,
+            limitations,
+            _EFFECT_UNRESOLVED if unresolved else _EFFECT_NOT_ATTEMPTED,
+        )
+    # Past the guard the setter was reached, so from here every exit before a
+    # complete read of both handles leaves this write unresolved.
     if not payload["written"]:
-        return Assessment(
+        return _page_assessment(
             INCONCLUSIVE,
             facts,
             ["marker_write_failed:http", str(payload["write_error"])[:200]],
             limitations,
+            _EFFECT_UNRESOLVED,
         )
     if read_http is None or not read_http.observed:
         cause = _unobserved(read_http) if read_http else "read_not_run:http"
-        return Assessment(INCONCLUSIVE, facts, [cause], limitations)
+        return _page_assessment(
+            INCONCLUSIVE, facts, [cause], limitations, _EFFECT_UNRESOLVED
+        )
     after_http = _page_cells(read_http, "cells")
     causes = _unreadable("read_after_http_write", after_http)
     if causes:
-        return Assessment(INCONCLUSIVE, facts, causes, limitations)
+        return _page_assessment(
+            INCONCLUSIVE, facts, causes, limitations, _EFFECT_UNRESOLVED
+        )
+    # Both handles were read completely after the write: the page is known.
     visibility: dict[str, bool] = {
         "http_write_visible_via_http": http_marker in after_http[0]["content"],
         "http_write_visible_via_https": http_marker in after_http[1]["content"],
@@ -609,32 +688,55 @@ def assess_page_tables(
     }
     facts["visibility"] = visibility
     if not visibility["http_write_visible_via_http"]:
-        return Assessment(
-            INCONCLUSIVE, facts, ["own_write_not_visible:http"], limitations
+        return _page_assessment(
+            INCONCLUSIVE,
+            facts,
+            ["own_write_not_visible:http"],
+            limitations,
+            _EFFECT_RECONCILED,
         )
     if write_https is None:
-        return Assessment(INCONCLUSIVE, facts, ["write_not_run:https"], limitations)
+        return _page_assessment(
+            INCONCLUSIVE,
+            facts,
+            ["write_not_run:https"],
+            limitations,
+            _EFFECT_RECONCILED,
+        )
     if not write_https.observed:
-        return Assessment(
+        return _page_assessment(
             INCONCLUSIVE,
             facts,
             [_unobserved(write_https)],
             limitations,
-            outcome_unknown=True,
+            _EFFECT_UNRESOLVED,
         )
     bracket = _page_cells(write_https, "before")
-    causes = _unreadable("bracket", bracket)
+    causes = _write_blocked("bracket", bracket)
     if causes:
-        return Assessment(INCONCLUSIVE, facts, causes, limitations)
+        return _page_assessment(
+            INCONCLUSIVE,
+            facts,
+            causes,
+            limitations,
+            _EFFECT_UNRESOLVED
+            if _page_effect_unresolved(write_https, causes)
+            else _EFFECT_RECONCILED,
+        )
+    # The second setter was reached too, so the same rule applies to it.
     if (bracket[0]["content"], bracket[1]["content"]) != (
         after_http[0]["content"],
         after_http[1]["content"],
     ):
-        return Assessment(
-            INCONCLUSIVE, facts, ["page_changed_between_steps"], limitations
+        return _page_assessment(
+            INCONCLUSIVE,
+            facts,
+            ["page_changed_between_steps"],
+            limitations,
+            _EFFECT_UNRESOLVED,
         )
     if not write_https.payload["written"]:
-        return Assessment(
+        return _page_assessment(
             INCONCLUSIVE,
             facts,
             [
@@ -642,14 +744,19 @@ def assess_page_tables(
                 str(write_https.payload["write_error"])[:200],
             ],
             limitations,
+            _EFFECT_UNRESOLVED,
         )
     if read_https is None or not read_https.observed:
         cause = _unobserved(read_https) if read_https else "read_not_run:https"
-        return Assessment(INCONCLUSIVE, facts, [cause], limitations)
+        return _page_assessment(
+            INCONCLUSIVE, facts, [cause], limitations, _EFFECT_UNRESOLVED
+        )
     after_https = _page_cells(read_https, "cells")
     causes = _unreadable("read_after_https_write", after_https)
     if causes:
-        return Assessment(INCONCLUSIVE, facts, causes, limitations)
+        return _page_assessment(
+            INCONCLUSIVE, facts, causes, limitations, _EFFECT_UNRESOLVED
+        )
     visibility.update(
         {
             "https_write_visible_via_https": https_marker in after_https[1]["content"],
@@ -659,16 +766,22 @@ def assess_page_tables(
             ),
         }
     )
+    # Both writes are reconciled from here: each was followed by a complete
+    # read of both handles, so the page is known whatever the model is.
     if not visibility["https_write_visible_via_https"]:
-        return Assessment(
-            INCONCLUSIVE, facts, ["own_write_not_visible:https"], limitations
+        return _page_assessment(
+            INCONCLUSIVE,
+            facts,
+            ["own_write_not_visible:https"],
+            limitations,
+            _EFFECT_RECONCILED,
         )
     if (
         visibility["http_write_visible_via_https"]
         and visibility["https_write_visible_via_http"]
     ):
         facts["page_table_model"] = "shared"
-        return Assessment(SUPPORTED, facts, [], limitations)
+        return _page_assessment(SUPPORTED, facts, [], limitations, _EFFECT_RECONCILED)
     if (
         not visibility["http_write_visible_via_https"]
         and visibility["https_unchanged_after_http_write"]
@@ -676,8 +789,10 @@ def assess_page_tables(
         and visibility["http_unchanged_after_https_write"]
     ):
         facts["page_table_model"] = "separate"
-        return Assessment(SUPPORTED, facts, [], limitations)
-    return Assessment(INCONCLUSIVE, facts, ["mixed_visibility"], limitations)
+        return _page_assessment(SUPPORTED, facts, [], limitations, _EFFECT_RECONCILED)
+    return _page_assessment(
+        INCONCLUSIVE, facts, ["mixed_visibility"], limitations, _EFFECT_RECONCILED
+    )
 
 
 # -- M-HTTPS-2 -----------------------------------------------------------------

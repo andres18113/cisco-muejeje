@@ -215,8 +215,10 @@ class StageDefinition:
 
 #: Plan 5.8 ceilings, with the reviewed Q1 design ceiling. Q0 and Q1 are the
 #: ones S4a can execute. Q1 keeps the reviewed 60/600; the repaired procedure's
-#: worst case is 54 operations with its 10-operation finalization reserve
-#: intact. It authorizes no LIVE run, and it changes neither Q0 nor the
+#: worst case is 53 operations with its 10-operation finalization reserve
+#: intact. M-DNS-3 is not repeated, so no operation is spent on a measurement
+#: the 0850de3 record already carries, and no reconciliation read was added to
+#: replace it. It authorizes no LIVE run, and it changes neither Q0 nor the
 #: declarative Q2/Q3.
 STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.Q0: (20, 300),
@@ -403,10 +405,16 @@ def _q1() -> StageDefinition:
                     "returns the configured resolver; its unset value is "
                     "recorded as measured."
                 ),
-                required=True,
+                required=False,
                 procedure="DNS3",
-                planned_operations=1,
+                planned_operations=0,
                 capabilities=("client.dns_server_reader",),
+                omission_reason=(
+                    "already_measured: the Q1-file run at 0850de3 recorded "
+                    "this reader's sample, and nothing in the repaired stage "
+                    "depends on it. Re-running it would add a second sample "
+                    "attributed to its own SHA, not new support for the first"
+                ),
             ),
             ExperimentSpec(
                 id="M-DNS-1",
@@ -416,7 +424,7 @@ def _q1() -> StageDefinition:
                 planned_operations=0,
                 omission_reason=(
                     "optional_without_reviewed_probe: omitted explicitly; the "
-                    "required set's planned worst case is 54 of 60 operations, "
+                    "required set's planned worst case is 53 of 60 operations, "
                     "so this is not a budget refusal"
                 ),
             ),
@@ -428,7 +436,7 @@ def _q1() -> StageDefinition:
                 planned_operations=0,
                 omission_reason=(
                     "optional_without_reviewed_probe: omitted explicitly; the "
-                    "required set's planned worst case is 54 of 60 operations, "
+                    "required set's planned worst case is 53 of 60 operations, "
                     "so this is not a budget refusal"
                 ),
             ),
