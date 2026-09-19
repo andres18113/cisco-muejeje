@@ -23,6 +23,7 @@ permission, and a LIVE permission recorded in one never applies to a new run.
 | S0 — observation integrity | `0bddc9a` | accepted | archived brief `9973f66`, sections 8 and 9 |
 | S1 — product entry point (`pt_apply_enterprise_services`) | `1f08afa` | accepted, offline only | archived brief `9973f66`, sections 10 and 11 |
 | S4a — qualification runner and Q0/Q1 probes | `0850de3` (tree `acc6caf`) | accepted | archived brief `0850de3`; archived brief `9973f66`, section 12 |
+| S2 — mail and repaired Q1 candidate | `cdc30cd` (tree `629573e`) | offline candidate; S2-R1 remains open as C0 below | this brief, Blocks A to C |
 
 Authoritative main observed by delivery CI:
 `6263344e31ba3b0de6539d652f2cd06fc73a3562` (`cisco/main` in the maintainer
@@ -72,20 +73,22 @@ three execution authorizations are consumed.
 
 ## Active scope
 
-One review package with independently reviewable commits, offline only, on
-`feature/server-pt-s2-mail` cut from `0850de3`:
+One offline S3 package on `feature/server-pt-s3-dhcp`, cut from exact commit
+`cdc30cd65fcf677989f8b763780b58eb1e39e1ba` (tree `629573e`):
 
-- **Block A — S2 mail under the measured fallback.** R-MAIL-01..06 and the
-  applicable R-SEC, R-OBS, R-COV and R-REG requirements, with R-EVT-05
-  constraining which verification paths may exist. R-MAIL-07 belongs to Q2.
-- **Block B — the Q1 experiment repair.** The marker-write defect and the
-  listener observations, inside the existing runner, ledger and transport.
+- **C0 — close S2-R1 at the source.** A generated owned-client release script
+  that may execute after credential resolution returns only a closed error
+  category, never cropped engine text.
+- **Block D — Server-PT DHCP.** R-DHCP-01..08 under the measured R-EVT-05
+  fallback: canonical per-segment authority, delegated E5 bootstrap, typed
+  Server-PT pool actions, one claimed acquisition action, bounded read-back,
+  stage-aware lease prerequisites, admission, persistence and reporting.
 
-Explicitly excluded: Packet Tracer contact, a product bridge start, any Q stage
-execution (no Q0 rerun, no Q1 retry, no Q1b/Q2/Q3), capability promotion, claim
-reset, a new MCP tool or argument, an observer framework, S1b model selection,
-S3, `EXTENSION/` or `.pts` changes, a transport or protocol change, and any push
-or merge.
+Explicitly excluded: Packet Tracer contact, a product bridge start, GUI
+automation, any Q-stage execution or runner implementation, capability
+promotion, claim reset or deletion, automatic DHCP release/reset, a new MCP
+tool or argument, relay/routed/wireless DHCP, `EXTENSION/` or `.pts` changes,
+transport/protocol changes, push, merge and remote branch operations.
 
 ## Where each stable contract lives
 
@@ -105,7 +108,8 @@ or merge.
 | R-COV-01/02 — complete, honestly labelled per-client results | `apply_enterprise_services.py`, `service_compiler.py`; `tests/test_apply_enterprise_services.py` |
 | **R-MAIL-01..06, R-SEC-01/03/05/06, R-OBS-04, R-EVT-04..07, R-REG-02 — S2 mail** | **this brief (active), then** [E6 architecture, *Mail under the event fallback*](../../architecture/enterprise-services.md#mail-under-the-event-fallback) |
 | R-QUAL-05/06 — re-qualification after a content or protocol change | this brief, **Open decisions** |
-| R-HTTPS-01/04, R-DNS-04, R-MAIL-07, R-DHCP-01..08, R-EVT-01..03, R-OBS-05 | **not active.** Their text stays in the [archived brief](../../reference/server-pt/server-pt-services-brief-9973f66.md). R-EVT-01..03 and R-OBS-05 describe observer registration, which the fallback forbids in production |
+| **R-DHCP-01..08, R-EVT-05/06/07, R-REG-02 — S3 DHCP** | **this brief (active), then** [E6 architecture](../../architecture/enterprise-services.md#server-pt-dhcp-under-the-event-fallback) |
+| R-HTTPS-01/04, R-DNS-04, R-MAIL-07, R-EVT-01..03, R-OBS-05 | **not active.** Their text stays in the [archived brief](../../reference/server-pt/server-pt-services-brief-9973f66.md). R-EVT-01..03 and R-OBS-05 describe observer registration, which the measured fallback forbids in production |
 
 Supersessions that still bind: TD-12.1 (the classifier reads the original
 runtime input), TD-12.2 (a missing list item never synthesizes channel
@@ -291,6 +295,75 @@ historical records and the `0850de3` attributions are untouched. Risk stays
 8. An experimental effect whose outcome is unresolved ends the experimental
    phase; only the owned finalization and persistence continue.
 
+## Block D — S3 DHCP design delta (risk L)
+
+Risk is **L**: this block changes addressing authority, shared E5/E6
+orchestration, execute-once effects, evidence and persistence. It extends the
+existing `pt_apply_enterprise_services` flow and its fixed four-argument MCP
+surface. There is no second executor, alternate DHCP tool, public capability
+override or LIVE claim.
+
+### C0 prerequisite
+
+`_background_http_release` currently crops arbitrary `deleteClient` exception
+text inside JavaScript before `_finalize_client` redacts it. A value spanning
+that crop can therefore leave a credential fragment. Once an invocation has
+resolved any credential, every generated adapter error emitter uses the closed
+`__ec` category vocabulary before folding or truncation. The owned-client
+lifecycle remains one bounded finalization with primary and cleanup facts kept
+separate. The causal test executes the real generated release script in the
+long-lived Node harness and carries its result through the real runtime and
+record serialization; it covers complete, crop-crossing, earlier-batch,
+raw/JSON/URL forms and a safe non-secret control.
+
+### Requirements and acceptance
+
+| ID | Requirement | Acceptance |
+| --- | --- | --- |
+| S3-01 | `ServiceRequirement` adds `dhcp_pool` with `ServerDhcpPoolRequirement(interface="", pool_name="", start_offset=0, max_users=0)`. One derivation runs inside canonical composition, after site, segment and device identities exist and before E5. It preserves DNS and the caller policy, records `delegated_dhcp_segment_ids`, rejects duplicate/conflicting/ambiguous/foreign-segment authority, and suppresses only an implicit IOS default on the delegated segment. E5 records `DHCP_DELEGATED_TO_SERVICE`, emits no IOS pool there and retains `SetEndpointDhcp` with only its access/VLAN prerequisites; E6 refuses a delegated segment that still has an IOS pool. | Real intent-to-plan tests cover separate segment authorities, a same-segment conflict, missing/ambiguous interface, same display names across sites, retained DHCP clients and byte-equivalent router-only semantics. |
+| S3-02 | Delegated `SetEndpointDhcp` uses the new `endpoint_dhcp_mode` foundation. It requires a nonfailed/nonuncertain E5 row plus a fresh, manifest-bound `HostPort.isDhcpClientOn() is true`; it never treats APPLIED alone or an address as mode proof. The default catalog leaves this reader UNKNOWN, so only explicitly injected candidate evidence can admit a mutation. | The real E5 verifier and foundation derivation distinguish true mode with no address, false mode, wrong interface, malformed/unreadable output and uncertain dispatch. Ordinary router-served clients keep address foundations. |
+| S3-03 | E6 adds `EnableServerDhcp(interface)` and `ConfigureServerDhcpPool(...)`. Domain validation derives or refuses structural defaults; validates IPv4 network/mask/range/capacity without materializing the subnet; excludes server, gateway and static clients as compact ranges; and never invents optional TFTP/WLC values. Generated scripts resolve the exact server interface, use documented getters and setters, bracket before/after state, post-read after a setter throws, preserve unrelated pools/exclusions, leave a matching pool unchanged and refuse missing/unreadable/mismatched identity rather than delete or overwrite it. | Unit validation plus Node state/call-log tests cover matching no-op, create then `getPool`, conflict, getter failure, setter effect-then-throw, missing post-read, unrelated state and partial/unknown footprint. |
+| S3-04 | `AcquireDhcpLease` is a client/interface `EXECUTE_ONCE` action. Under a pre-effect claim keyed to that device/interface, it calls documented `dhcpRun(port)` at most once per invocation. Any existing key, including falsey or malformed values, refuses unchanged; own replay never resends; lost or post-effect failure stays sticky and quarantined. Product code never releases, resets or deletes the claim. | Persistent Node harness tests the call log and claim bytes for missing, own, foreign, falsey/malformed, throw-after-effect, lost response and replay cases. |
+| S3-05 | Mode, current address/mask/lease-time and intended-pool lease lookup are separate bounded readers. Exact types, interface subject, IP/mask relationships and pool identity are checked. An in-range address or lease-time change is only UNKNOWN `acquisition_unattributed`; a well-observed incompatible address contradicts. A coherent matching lease row supports only `attributed_to_intended_server`; same IP/different valid MAC is `foreign_lease_row`; without qualified M-DHCP-2 termination a no-match is UNKNOWN `lease_table_incomplete`. Scans are capped by declared capacity and an implementation limit, and repeated/unparseable rows never establish completion. | Reader and harness cases cover null/throw/malformed, in/out of range, matching/foreign MAC, repeated rows, bound truncation, unqualified termination and a retained positive row. |
+| S3-06 | An additive action field carries verification prerequisites. The existing applicator advances the action DAG once, evaluates only prerequisites whose producers have run, and admits a dependent action only after the named verification is VERIFIED. It detects cycles, makes bounded progress and never redispatches an uncertain action. Every client-side service action for a delegated client depends on that client's `DHCP_LEASE`; server enable/pool actions and independent static-client work do not. | Integration proves the actual dependent runtime call is absent under UNKNOWN/FAILED lease evidence, independent work runs, and a synthetic test-bound VERIFIED lease admits the call without creating a product evidence path. |
+| S3-07 | Admission freezes one manifest-directed inventory including the access switch, resolves optional dependency closure before E5, and refuses required ineligible DHCP or unavailable required dependents before the first E5 mutation. Optional DHCP exclusion retains complete rows and cannot reactivate an IOS pool, convert clients to static or admit dependents. The supported path is one site/segment, static Server-PT, wired PC-PT clients and one access-switch path; relay/routed clients receive `DHCP_RELAY_REQUIRED`. Typed policy codes reach the entry unchanged. | Default catalog tests prove zero effects for required UNKNOWN DHCP and complete exclusions for optional work; candidate tests inject records only at existing nonpublic seams. Mixed static DHCP/DNS/HTTP/mail cases keep independent successes. |
+| S3-08 | Existing write-ahead records, effect gate and retained-result rules persist authority, exact interfaces, action/expectation identity, observations, claims, limitations and effect scope. Persistence loss blocks the next mode/acquisition mutation while bounded reads and owned cleanup remain allowed. Mode, configuration, acquisition and attribution are distinct additive rows with legacy defaults; retained evidence is never borrowed to replay acquisition. Response rows remain complete and within the existing budget or compilation refuses explicitly. | Store round trips, loss-before-effect, loss-after-effect, retention and 2/20/200/1000-client offline reporting tests; no limit is raised and no row is sampled away. |
+
+### Architecture and vendor contract
+
+The domain owns DHCP authority, pool arithmetic, validation, typed actions and
+evidence meanings. Application owns the one canonical derivation, dependency
+closure, E5/E6 admission, the stage-aware prerequisite loop and persistence.
+Infrastructure alone names Cisco members and emits JavaScript; all data enters
+that source through `json.dumps`.
+
+The installed 9.0.1 IpcAPI was inspected locally before implementation. The
+candidate uses exactly `getDhcpServerProcessByPortName(string)`,
+`isEnable()`/`setEnable(bool)`, `addPool(string)` (void) followed by
+`getPool(string)`, the documented pool getters and void setters including
+`setNetworkMask(network, mask)`, `addExcludedAddress(start, end)`,
+`getExcludedAddressCount/At`, `DhcpClientProcess.dhcpRun(port)` (void),
+`getDataOfPort(port).getLeaseTimeStr()`, `HostPort.isDhcpClientOn()`, its
+IP/mask/MAC getters, and `DhcpPool.getLeaseAt(index)` with public
+`ipAddress`, `macAddress`, `leaseTime` and `port`. The reference documents no
+lease count/end condition, no lease-time semantics, no MAC representation
+equivalence and no serving effect for the setter sequence; those remain
+M-DHCP-1/2/4/6 and every corresponding capability remains UNKNOWN.
+
+### Invariants
+
+9. Exactly one policy derivation precedes E5; no display-name guess creates a
+   semantic identity, and delegation never disables a real DHCP server.
+10. DHCP mode, acquisition, attribution and sole authority are different
+    claims. No APPLIED row, setter return, digest, timeout or unqualified scan
+    promotes one into another.
+11. `dhcpRun` is called at most once under a subject claim; no cleanup path
+    deletes that claim and no read is a retry entitlement.
+12. Dependent client effects require VERIFIED `DHCP_LEASE`; mode or an
+    intended-pool row is insufficient. Independent static work remains live.
+13. Default product capability stays UNKNOWN/UNMEASURED. Offline Node and
+    integration tests prove code paths, never Packet Tracer support.
+
 ## Test design
 
 | Level | Scope | Files |
@@ -300,6 +373,9 @@ historical records and the `0850de3` attributions are untouched. Risk stays
 | integration | the real composition, compiler, applicators, runtime and store with only external seams injected | `tests/test_service_mail_integration.py`, `tests/test_service_qualification_coordinator.py` |
 | system | the public tool surface and the Q1 stage gate an operator meets | `tests/test_service_tools_surface.py`, `tests/test_service_qualification_cli.py` |
 | regression | S1 entry, S0 decision, S4a runner and the containment gates | the existing modules, unchanged except where a delta above names them |
+| S3 unit/domain | canonical authority, compact range arithmetic, mode foundations, IDs/hashes, capability/replay defaults | `tests/test_dhcp_authority_composition.py`, `tests/test_service_dhcp_compiler.py`, `tests/test_service_foundational_evidence.py`, capability and replay suites |
+| S3 generated-script harness | real generated pool, mode, acquisition and lease-reader scripts executed by persistent Node stubs; stub state and call log are the oracle | `tests/test_service_dhcp_script_harness.py`; the C0 case in `tests/test_service_client_ownership_harness.py` |
+| S3 integration/system | intent through composition, E5/E6, stage-aware application, persistence, unchanged MCP schema and reporting budgets | `tests/test_service_dhcp_integration.py`, `tests/test_apply_enterprise_services.py`, `tests/test_service_product_scale.py`, surface tests |
 
 Acceptance testing is offline through the product use case and the runner. A
 positive runtime test with an injected catalog is not product acceptance, and
