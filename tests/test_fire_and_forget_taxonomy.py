@@ -41,6 +41,7 @@ def _families() -> list[str]:
 
 # -- invariantes duros de la taxonomia ------------------------------------
 
+
 def test_every_family_has_exactly_one_classification():
     families = _families()
 
@@ -62,9 +63,7 @@ def test_no_subsystem_is_empty():
 
 
 def test_the_counts_are_stated_explicitly():
-    counts = {
-        subsystem: len(group) for subsystem, group in TAXONOMY.items()
-    }
+    counts = {subsystem: len(group) for subsystem, group in TAXONOMY.items()}
 
     assert counts == {
         "Enterprise Configuration": 13,
@@ -88,7 +87,8 @@ def test_the_taxonomy_still_contains_families_that_are_not_safe():
     """Si algun dia no queda ninguna, que sea por evidencia y no por descuido."""
     classifications = {
         classification
-        for group in TAXONOMY.values() for classification in group.values()
+        for group in TAXONOMY.values()
+        for classification in group.values()
     }
 
     assert TREAT_UNSAFE in classifications
