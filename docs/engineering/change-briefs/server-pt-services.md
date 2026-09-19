@@ -24,6 +24,7 @@ permission, and a LIVE permission recorded in one never applies to a new run.
 | S1 — product entry point (`pt_apply_enterprise_services`) | `1f08afa` | accepted, offline only | archived brief `9973f66`, sections 10 and 11 |
 | S4a — qualification runner and Q0/Q1 probes | `0850de3` (tree `acc6caf`) | accepted | archived brief `0850de3`; archived brief `9973f66`, section 12 |
 | S2 — mail and repaired Q1 candidate | `cdc30cd` (tree `629573e`) | offline candidate; S2-R1 C0 closed on the S3 branch, independent review pending | this brief, Blocks A to C and C0 below |
+| S3 — DHCP candidate reviewed for correction | `d02ddac` (tree `2e62042`) | `REQUIRES_CHANGES`; bounded correction and qualification campaign active | this brief, Blocks D and E |
 
 Authoritative main observed by delivery CI:
 `6263344e31ba3b0de6539d652f2cd06fc73a3562` (`cisco/main` in the maintainer
@@ -73,8 +74,10 @@ three execution authorizations are consumed.
 
 ## Active scope
 
-One offline S3 package on `feature/server-pt-s3-dhcp`, cut from exact commit
-`cdc30cd65fcf677989f8b763780b58eb1e39e1ba` (tree `629573e`):
+One governed correction and qualification campaign on
+`feature/server-pt-s3-dhcp`, starting from audited commit
+`d02ddac37864e2b390219d5c30eee4045f3d146e` (tree
+`2e62042ab032b913f522033615b6e138bf3c1bf7`):
 
 - **C0 — close S2-R1 at the source.** A generated owned-client release script
   that may execute after credential resolution returns only a closed error
@@ -83,12 +86,19 @@ One offline S3 package on `feature/server-pt-s3-dhcp`, cut from exact commit
   fallback: canonical per-segment authority, delegated E5 bootstrap, typed
   Server-PT pool actions, one claimed acquisition action, bounded read-back,
   stage-aware lease prerequisites, admission, persistence and reporting.
+- **Block E — audited corrections and qualification.** Strict native boolean
+  integrity, coherent bounded lease evidence, bounded exclusion reads, an
+  executable Q3 stage, and the exact-SHA Q3-file then repaired-Q1-file campaign
+  authorized by `SERVER-PT-D02-Q3-Q1-AUTOFIX-01`.
 
-Explicitly excluded: Packet Tracer contact, a product bridge start, GUI
-automation, any Q-stage execution or runner implementation, capability
-promotion, claim reset or deletion, automatic DHCP release/reset, a new MCP
-tool or argument, relay/routed/wireless DHCP, `EXTENSION/` or `.pts` changes,
-transport/protocol changes, push, merge and remote branch operations.
+Still excluded: capability promotion, a public experimental switch, claim
+reset or deletion, product `dhcpRelease`/`resetDhcpConfOn`, a new MCP tool or
+argument, relay/routed/wireless DHCP, Q0/Q2, S1b/Q1b, `EXTENSION/` or `.pts`
+changes, transport/protocol changes, merge to main and force publication. The
+campaign authorizes only ordinary fast-forward publication of this feature
+branch for exact-SHA CI and the bounded Q3-file then repaired-Q1-file attempts
+defined in Block E. It does not authorize unrelated GUI work or contact with
+foreign/user state.
 
 ## Where each stable contract lives
 
@@ -363,6 +373,65 @@ M-DHCP-1/2/4/6 and every corresponding capability remains UNKNOWN.
     intended-pool row is insufficient. Independent static work remains live.
 13. Default product capability stays UNKNOWN/UNMEASURED. Offline Node and
     integration tests prove code paths, never Packet Tracer support.
+
+## Block E — S3 audit correction and bounded qualification campaign (risk L)
+
+Risk remains **L** because the correction changes effect admission, evidence
+classification, native-loop bounds and LIVE qualification. The binding work
+order is campaign `SERVER-PT-D02-Q3-Q1-AUTOFIX-01`; it authorizes routine
+in-scope autofix, clean fast-forward feature-branch publication and the
+enumerated exact-SHA attempts, but it does not accept the product or promote a
+capability.
+
+### Problem, outcome and scope
+
+The audited candidate coerces several native DHCP getters with JavaScript
+truthiness, admits malformed lease identities and incoherent scan payloads,
+and lets exclusion getters drive unbounded native loops. Q3 also remains
+declarative, so none of those product claims can be measured through the
+governed runner. The outcome is four separately reviewable units: F1, F2, F3,
+then executable Q3. Q1 keeps its repaired definition and is run only after Q3
+is safely finalized or archived.
+
+The owning files are the DHCP observer/compiler/runtime and their real Node
+harnesses, plus the existing qualification model, evidence rules, probes,
+coordinator, CLI, record store tests and maintained QA/architecture projection.
+No alternate executor, endpoint, transport, `.pts`, extension or public
+capability path is introduced.
+
+### Requirements and acceptance
+
+| ID | Requirement | Acceptance |
+| --- | --- | --- |
+| F1 | Read every new DHCP boolean exactly once and accept it only when `typeof value === "boolean"`. Preserve true, false, missing, invalid and throwing outcomes separately; acquisition requires observed true and cannot write/adopt a claim first. Apply the same rule to Server-PT `isEnable()` reads. | Actual generated observer, acquisition, client read-back and server read-back scripts execute in persistent Node for true, false, numeric/string/null/undefined and throw cases. Invalid values cause no `dhcpRun`, no claim change and no satisfied mode foundation; true and false remain positive and real-negative controls. |
+| F2 | Validate the client subject, usable IPv4/mask, measured MAC text, intended pool identity, finite lease-time fields and coherent scan metadata before attribution. Carry the compiled lease window and compact exclusions into both client expectations. Preserve a valid positive prefix alongside a later scan limitation, give a fresh valid same-IP/different-MAC contradiction precedence, and reject oversize/malformed rows. Address compatibility means membership in the intended non-excluded allocation, not merely the subnet. | Generated-script and runtime-to-result tests cover valid/no-match, unset and malformed identities, conflicting rows, oversize payloads, same-subnet outside-window, excluded address, null/throw/repeat/end, matching-prefix-then-error, and truncated scans with and without a match. The real applicator/store retain acquisition uncertainty and no capability changes. |
+| F3 | Both mutation bracketing and direct Server-PT state reads enforce one internal finite exclusion ceiling of 4096 rows, validating a finite nonnegative integer count before any iteration. A refused pre-read performs no setter; a failed/oversize post-read preserves outcome uncertainty. Payload validation is conditional on error and subject state so correlated errors stay `ENGINE_ERROR`, coherent missing subjects retain their category, and impossible success payloads stay `MALFORMED`. | Real Node tests cover negative, fractional, nonfinite, boundary and oversized counts, before/after getter failures, no setters after refused pre-read, uncertain post-effect state, and retained missing-subject/engine-error categories. Infinity is refused by a finite stub without looping. |
+| Q3-1 | Make Q3 executable with only `__MCP_E6Q_SRV`, `__MCP_E6Q_PC1`, `__MCP_E6Q_PC2` and `__MCP_E6Q_SW`, exact ports/links, TEST-NET-1 addressing, pool `MCP_E6Q_DHCP`, one usable lease (`192.0.2.100`) and private recorded candidate capabilities. Q2 remains declarative and the public catalog remains UNKNOWN/UNMEASURED. | Contract and CLI tests pin the exact fixture, fixed file channel, stage admission and absence of public promotion. The runner refuses before contact on authorization, identity, fixture or budget mismatch. |
+| Q3-2 | Use the real service compiler, E5/E6 runtimes and application-owned scheduling for configuration, mode bootstrap, one acquisition per client, read-back and the declared same-action guard control. Native-only probes establish only their named facts. M-DHCP-3 uses at most four owned registrations and never becomes a product observer. | Offline CLI/coordinator tests drive the real generated scripts and product components for setup, expected-negative/inconclusive/contradicted outcomes, duplicate guard, persistence failure, exception cleanup and record round trip. No reset, release, pool removal or hidden backend action exists. |
+| Q3-3 | Keep Q3 at 60 operations / 1200 seconds. The worst case is 17 admission/fixture operations, at most 32 required application/measurement operations and an untouchable 11-operation finalization reserve (run-bag release, four owned removals and two restoration reads). Reserve 180 seconds for finalization. | Definition tests prove `17 + 32 + 11 = 60`, every shared procedure is counted once, optional unobservable work is explicitly recorded, and calls after a stop can only be finalization. |
+| CAMPAIGN | Each LIVE attempt is a clean published descendant of `d02ddac`, exact-SHA/tree/build/channel authorized, CI-green, isolated from pytest, and run in a freshly owned disposable Packet Tracer process. Q3-file has at most three attempts; repaired-Q1-file then has at most two. | Immutable authorization/record/stdout/stderr/exit-code hashes, append-only correction ledger, process identity and mailbox disposition, two restoration reads where observable, and final `READY_FOR_REVIEW` indexing. A blocker or inconclusive row remains truthful evidence, never a forced green result. |
+
+### Architecture and invariants
+
+Boolean and count validation stay at the JavaScript/native boundary; Python
+classifies only typed payloads. Allocation semantics stay in the compiler and
+are copied into expectations rather than recomputed from observations. The
+qualification domain owns definitions and pure conclusions, probes own only
+bounded Cisco calls, the coordinator owns ordering/budget/stop/finalization,
+and the CLI only composes existing production boundaries.
+
+14. Invalid native truthy/falsy values never become booleans and never admit an
+    effect. Getter exceptions are observations, not default false values.
+15. A matching lease row, completed scan, acquisition in this run and sole
+    authority remain separate claims. One does not imply another.
+16. No native count controls a loop until it passes the internal finite bound;
+    incomplete post-effect state is UNKNOWN, never a clean/no-residue claim.
+17. Q3 candidate authority is private to its record. It cannot mutate the
+    product catalog, survive a new process, or authorize a retry after an
+    uncertain effect.
+18. Historical records are immutable. Every corrected attempt gets a new SHA,
+    run id, nonce, process identity and authorization; failed evidence remains
+    indexed beside any successor.
 
 ## Test design
 
