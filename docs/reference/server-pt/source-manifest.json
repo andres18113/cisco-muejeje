@@ -54,6 +54,110 @@
       "archive_path": "server-pt-services-brief-9973f66.md",
       "bytes": 391435,
       "sha256": "6488711b9febc4a3b2556719f8125f21b5773dfb1ed9eee6aafbba33156cb63f"
+    },
+    {
+      "source_name": "server-pt-q-batch-0850de3.zip",
+      "archive_path": "evidence/q-batch-0850de3/server-pt-q-batch-0850de3.zip",
+      "bytes": 21509,
+      "sha256": "e93b130a997c7f9a6363446373d744ef4feba54731dcc5571db4da969b8adfdc"
+    },
+    {
+      "source_name": "server-pt-q-batch-0850de3.zip:BATCH-STATUS.md",
+      "archive_path": "evidence/q-batch-0850de3/BATCH-STATUS.md",
+      "bytes": 9224,
+      "sha256": "4d2a8a9020d1249c9d2bbe38a5a473d8d8fe67d5ee3984db91844b123378a3ae"
+    },
+    {
+      "source_name": "server-pt-q-batch-0850de3.zip:MANIFEST.sha256",
+      "archive_path": "evidence/q-batch-0850de3/MANIFEST.sha256",
+      "bytes": 1363,
+      "sha256": "9c4ef7ed658965363c0e917841c5d74ac90694e9606e37f718cfd8889724192f"
+    },
+    {
+      "source_name": "server-pt-q-batch-0850de3.zip:q0-file/Q0-preparation-record.md",
+      "archive_path": "evidence/q-batch-0850de3/q0-file/Q0-preparation-record.md",
+      "bytes": 5546,
+      "sha256": "5e938317534644377e2167d36a5ca3d4000318c1776c4083ae57f682f671653c"
+    },
+    {
+      "source_name": "server-pt-q-batch-0850de3.zip:q0-file/q0-2026-09-18T23-39-18Z-b68e4a7b.json",
+      "archive_path": "evidence/q-batch-0850de3/q0-file/q0-2026-09-18T23-39-18Z-b68e4a7b.json",
+      "bytes": 17348,
+      "sha256": "1a6ee0811c2df36e841a1eec73f8885b20ec892c6f23f3f94cb90f59c517c955"
+    },
+    {
+      "source_name": "server-pt-q-batch-0850de3.zip:q0-file/q0-file-exit-code.txt",
+      "archive_path": "evidence/q-batch-0850de3/q0-file/q0-file-exit-code.txt",
+      "bytes": 3,
+      "sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354"
+    },
+    {
+      "source_name": "server-pt-q-batch-0850de3.zip:q0-file/q0-file-stderr.txt",
+      "archive_path": "evidence/q-batch-0850de3/q0-file/q0-file-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source_name": "server-pt-q-batch-0850de3.zip:q0-file/q0-file-stdout.txt",
+      "archive_path": "evidence/q-batch-0850de3/q0-file/q0-file-stdout.txt",
+      "bytes": 1032,
+      "sha256": "3debb7d3ed89f9f12979275c8e869dec3387dcc56c589c602a345580cc6cac15"
+    },
+    {
+      "source_name": "server-pt-q-batch-0850de3.zip:q0-http/q0-2026-09-19T00-20-05Z-edbbc347.json",
+      "archive_path": "evidence/q-batch-0850de3/q0-http/q0-2026-09-19T00-20-05Z-edbbc347.json",
+      "bytes": 17435,
+      "sha256": "5d0b919f04a83e516fcbefa0a41c59b77539e73334738b3780a05723cb4b40aa"
+    },
+    {
+      "source_name": "server-pt-q-batch-0850de3.zip:q0-http/q0-http-exit-code.txt",
+      "archive_path": "evidence/q-batch-0850de3/q0-http/q0-http-exit-code.txt",
+      "bytes": 3,
+      "sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354"
+    },
+    {
+      "source_name": "server-pt-q-batch-0850de3.zip:q0-http/q0-http-stderr.txt",
+      "archive_path": "evidence/q-batch-0850de3/q0-http/q0-http-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source_name": "server-pt-q-batch-0850de3.zip:q0-http/q0-http-stdout.txt",
+      "archive_path": "evidence/q-batch-0850de3/q0-http/q0-http-stdout.txt",
+      "bytes": 1025,
+      "sha256": "8c001f56d000ea1f1365ecacb76ab230d65b2a672b8510923a51990a671c8d2a"
+    },
+    {
+      "source_name": "server-pt-q-batch-0850de3.zip:q1-file/q1-2026-09-19T00-13-08Z-985c1368.json",
+      "archive_path": "evidence/q-batch-0850de3/q1-file/q1-2026-09-19T00-13-08Z-985c1368.json",
+      "bytes": 27504,
+      "sha256": "a0e2f93820d980e98551b0106615d86a89f8fb08e422b82ca01c09692fc5b005"
+    },
+    {
+      "source_name": "server-pt-q-batch-0850de3.zip:q1-file/q1-file-exit-code.txt",
+      "archive_path": "evidence/q-batch-0850de3/q1-file/q1-file-exit-code.txt",
+      "bytes": 3,
+      "sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354"
+    },
+    {
+      "source_name": "server-pt-q-batch-0850de3.zip:q1-file/q1-file-stderr.txt",
+      "archive_path": "evidence/q-batch-0850de3/q1-file/q1-file-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source_name": "server-pt-q-batch-0850de3.zip:q1-file/q1-file-stdout.txt",
+      "archive_path": "evidence/q-batch-0850de3/q1-file/q1-file-stdout.txt",
+      "bytes": 984,
+      "sha256": "f38db59a8885d4d15c0d00fd5f329d8c458eebd0fd1938c786a00e40338baf34"
+    },
+    {
+      "source_name": "docs/engineering/change-briefs/server-pt-services.md",
+      "source_commit": "0850de3dd94c8ada25c5b493e5638e6b0ce0351d",
+      "source_blob_sha1": "8861375c9a3ca39049d4d7548c24f4099b34994f",
+      "archive_path": "server-pt-services-brief-0850de3.md",
+      "bytes": 28438,
+      "sha256": "9526ca920375eb3747fffa3d1e7a4b3d732e771a8c24355a35e71202d6cc03e7"
     }
   ]
 }

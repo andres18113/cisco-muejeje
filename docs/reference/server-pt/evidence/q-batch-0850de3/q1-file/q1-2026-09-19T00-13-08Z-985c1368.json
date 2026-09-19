@@ -1,0 +1,966 @@
+{
+  "schema_version": 1,
+  "record_kind": "server_services_qualification",
+  "run_id": "2026-09-19T00-13-08Z-985c1368",
+  "stage": "Q1",
+  "execution_mode": "live",
+  "created_at": "2026-09-19T00:13:08.787537Z",
+  "completed_at": "2026-09-19T00:13:48.611480Z",
+  "authorization": {
+    "authorization_id": "Q1-file-0850de3-01",
+    "stage": "Q1",
+    "sha": "0850de3dd94c8ada25c5b493e5638e6b0ce0351d",
+    "targets": [
+      "__MCP_E6Q_SRV",
+      "__MCP_E6Q_PC1",
+      "__MCP_E6Q_PC2",
+      "__MCP_E6Q_SW"
+    ],
+    "channel": "file",
+    "build": "9.0.1.0858",
+    "max_operations": 60,
+    "max_seconds": 600
+  },
+  "source": {
+    "expected_head": "0850de3dd94c8ada25c5b493e5638e6b0ce0351d",
+    "executed_sha": "0850de3dd94c8ada25c5b493e5638e6b0ce0351d",
+    "executed_tree": "acc6caf6f45bfe7afcaf3a08531993703d28eebf",
+    "clean": true,
+    "branch": "feature/server-pt-s4a-qualification-runner",
+    "upstream": "cisco/feature/server-pt-s4a-qualification-runner",
+    "upstream_head": "0850de3dd94c8ada25c5b493e5638e6b0ce0351d"
+  },
+  "environment": {
+    "python_executable": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-s4a\\.venv\\Scripts\\python.exe",
+    "package_file": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-s4a\\src\\packet_tracer_mcp\\__init__.py",
+    "isolation_state": "ISOLATED",
+    "requested_build": "9.0.1.0858",
+    "observed_build": "9.0.1.0858",
+    "build_reader_id": "AppWindow.getVersion",
+    "build_reader_sha256": "c3a9b240898a89007111c4397eb4cb5464da69551021484d4bc6b7d0fc7f5935",
+    "build_observation": "{\"found\":true,\"backend\":\"packet_tracer\",\"backend_version\":\"9.0.1.0858\",\"extension_version\":\"\",\"runtime_mode\":\"logical-workspace\"}",
+    "build_reason": ""
+  },
+  "transport": {
+    "channel": "file",
+    "fixed_at": "2026-09-19T00:13:08.790520Z",
+    "liveness": "heartbeat_fresh"
+  },
+  "fixtures": [
+    {
+      "name": "__MCP_E6Q_SRV",
+      "model": "Server-PT",
+      "ipv4": "192.0.2.10",
+      "netmask": "255.255.255.0",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "__MCP_E6Q_PC1",
+      "model": "PC-PT",
+      "ipv4": "192.0.2.11",
+      "netmask": "255.255.255.0",
+      "dns_server": "192.0.2.10",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "__MCP_E6Q_PC2",
+      "model": "PC-PT",
+      "ipv4": "192.0.2.12",
+      "netmask": "255.255.255.0",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "__MCP_E6Q_SW",
+      "model": "2960-24TT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    }
+  ],
+  "links": [
+    {
+      "device_a": "__MCP_E6Q_SRV",
+      "port_a": "FastEthernet0",
+      "device_b": "__MCP_E6Q_SW",
+      "port_b": "FastEthernet0/1"
+    },
+    {
+      "device_a": "__MCP_E6Q_PC1",
+      "port_a": "FastEthernet0",
+      "device_b": "__MCP_E6Q_SW",
+      "port_b": "FastEthernet0/2"
+    },
+    {
+      "device_a": "__MCP_E6Q_PC2",
+      "port_a": "FastEthernet0",
+      "device_b": "__MCP_E6Q_SW",
+      "port_b": "FastEthernet0/3"
+    }
+  ],
+  "budget": {
+    "max_operations": 60,
+    "max_seconds": 600,
+    "reserve_operations": 10,
+    "reserve_seconds": 120,
+    "planned_minimum_operations": 46,
+    "used_operations": 46,
+    "refused_calls": 0,
+    "elapsed_seconds": 39.812
+  },
+  "experimental_capabilities": [
+    "client.dns_server_reader",
+    "https.client_mode",
+    "https.listener_toggle",
+    "https.page_table"
+  ],
+  "operations": [
+    {
+      "seq": 1,
+      "phase": "admission",
+      "call": "send_and_wait",
+      "purpose": "read:executable_build",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 0.0,
+      "elapsed_seconds": 1.406,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 2,
+      "phase": "admission",
+      "call": "send_and_wait",
+      "purpose": "read:workspace_baseline",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 1.406,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 3,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_SRV",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 1.718,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 4,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_SRV",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 1.921,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 5,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_PC1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 2.218,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 6,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_PC1",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 2.515,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 7,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_PC2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 2.718,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 8,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_PC2",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 3.031,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 9,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_SW",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 3.328,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 10,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_SW",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 3.531,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 11,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 3.843,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 12,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:1",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 4.046,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 13,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 4.343,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 14,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:2",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 4.656,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 15,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:3",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 4.859,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 16,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:3",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 5.156,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 17,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "read:fixture_identity",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 5.359,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 18,
+      "phase": "setup",
+      "call": "send",
+      "purpose": "apply:e5_endpoints",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 5.671,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 19,
+      "phase": "setup",
+      "call": "dispatch_and_wait",
+      "purpose": "apply:e6_enable_http_https",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 5.671,
+      "elapsed_seconds": 0.204,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 20,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "experiment:HTTPS1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 5.875,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 21,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "experiment:HTTPS1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 6.187,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 22,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "experiment:HTTPS2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 6.39,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 23,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "fetch:https-positive",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 6.687,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 24,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "fetch:https-positive",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 6.89,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 25,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "fetch:https-positive",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 15.203,
+      "elapsed_seconds": 1.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 26,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "fetch:https-positive",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 16.406,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 27,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "fetch:http-negative",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 16.718,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 28,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "fetch:http-negative",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 17.015,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 29,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "fetch:http-negative",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 25.218,
+      "elapsed_seconds": 1.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 30,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "fetch:http-negative",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 26.531,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 31,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "experiment:HTTPS2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 26.734,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 32,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "fetch:https-negative",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 27.046,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 33,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "fetch:https-negative",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 27.343,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 34,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "fetch:https-negative",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 35.546,
+      "elapsed_seconds": 1.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 35,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "fetch:https-negative",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 36.859,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 36,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "experiment:DNS3",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 37.062,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 37,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_SW",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 37.375,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 38,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_SW",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 37.578,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 39,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_PC2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 37.89,
+      "elapsed_seconds": 0.188,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 40,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_PC2",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 38.078,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 41,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_PC1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 38.39,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 42,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_PC1",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 38.593,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 43,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_SRV",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 38.89,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 44,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_SRV",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 39.093,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 45,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "read:restoration:1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 39.406,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 46,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "read:restoration:2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 39.609,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    }
+  ],
+  "transitions": [
+    {
+      "step": "admitted",
+      "at": "2026-09-19T00:13:10.504153Z",
+      "outcome": ""
+    },
+    {
+      "step": "fixtures:started",
+      "at": "2026-09-19T00:13:10.505657Z",
+      "outcome": ""
+    },
+    {
+      "step": "fixtures:ready",
+      "at": "2026-09-19T00:13:14.465566Z",
+      "outcome": ""
+    },
+    {
+      "step": "fixtures:configured",
+      "at": "2026-09-19T00:13:14.672544Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:HTTPS1:started",
+      "at": "2026-09-19T00:13:14.673556Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:HTTPS1:concluded",
+      "at": "2026-09-19T00:13:15.183292Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:HTTPS2:started",
+      "at": "2026-09-19T00:13:15.184820Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:HTTPS2:concluded",
+      "at": "2026-09-19T00:13:45.860144Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:DNS3:started",
+      "at": "2026-09-19T00:13:45.862138Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:DNS3:concluded",
+      "at": "2026-09-19T00:13:46.168341Z",
+      "outcome": ""
+    },
+    {
+      "step": "finalization:started",
+      "at": "2026-09-19T00:13:46.169342Z",
+      "outcome": ""
+    },
+    {
+      "step": "finalization:completed",
+      "at": "2026-09-19T00:13:48.608479Z",
+      "outcome": ""
+    }
+  ],
+  "persisted_step": "finalization:completed",
+  "admission_reads": [
+    "isolation:ISOLATED",
+    "repository:0850de3dd94c8ada25c5b493e5638e6b0ce0351d:acc6caf6f45bfe7afcaf3a08531993703d28eebf",
+    "build:9.0.1.0858",
+    "workspace:semantic=0,links=0,engine_managed=0"
+  ],
+  "workspace_baseline": {
+    "observed": true,
+    "semantic_device_count": 0,
+    "backend_managed_device_count": 0,
+    "link_count": 0,
+    "devices": [],
+    "links": [],
+    "message": "fresh_complete_workspace_inventory"
+  },
+  "refusals": [],
+  "measurements": [
+    {
+      "experiment_id": "M-HTTPS-1",
+      "hypothesis": "HttpServer and HttpsServer page tables are either one shared table or two separate tables.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "inconclusive",
+      "facts": {
+        "http_process_found": true,
+        "https_process_found": true,
+        "object_identity_equal": false
+      },
+      "causes": [
+        "marker_write_failed",
+        "File not exist: mcpq-525aba9800c94c78-h.html",
+        "File not exist: mcpq-525aba9800c94c78-s.html"
+      ],
+      "limitations": [
+        "reference_equality_is_not_page_ownership"
+      ],
+      "reason": "",
+      "outcome_unknown": false
+    },
+    {
+      "experiment_id": "M-HTTPS-2",
+      "hypothesis": "An HTTPS-mode client retrieves the page when only HTTPS is enabled and fails when HTTPS is disabled; an HTTP-mode client fails when HTTP is disabled.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "inconclusive",
+      "facts": {
+        "positive_https_only": {
+          "setup_established": true,
+          "fetch": "unestablished:inconclusive:no_response_within_deadline",
+          "conclusion": "inconclusive"
+        },
+        "negative_http_mode_http_disabled": {
+          "same_mode_positive_control": false,
+          "fetch": "unestablished:inconclusive:no_response_within_deadline",
+          "conclusion": "inconclusive"
+        },
+        "negative_https_mode_https_disabled": {
+          "setup_established": true,
+          "same_mode_positive_control": false,
+          "fetch": "unestablished:inconclusive:no_response_within_deadline",
+          "conclusion": "inconclusive"
+        }
+      },
+      "causes": [
+        "positive:observed:unestablished:inconclusive:no_response_within_deadline",
+        "negative_http:no_same_mode_positive_control",
+        "negative_http:observed:unestablished:inconclusive:no_response_within_deadline",
+        "negative_http:no_qualified_listener_refusal_observable",
+        "negative_https:no_same_mode_positive_control",
+        "negative_https:observed:unestablished:inconclusive:no_response_within_deadline",
+        "negative_https:no_qualified_listener_refusal_observable"
+      ],
+      "limitations": [
+        "no_http_mode_positive_control_in_run",
+        "fresh_content_not_retained",
+        "no_qualified_listener_refusal_observable"
+      ],
+      "reason": "",
+      "outcome_unknown": false
+    },
+    {
+      "experiment_id": "M-DNS-3",
+      "hypothesis": "DnsClient.getServerIp on a PC configured through E5 returns the configured resolver; its unset value is recorded as measured.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "supported_in_sample",
+      "facts": {
+        "intended_resolver": "192.0.2.10",
+        "configured_client": {
+          "name": "__MCP_E6Q_PC1",
+          "found": true,
+          "value": "192.0.2.10",
+          "error": ""
+        },
+        "unset_client_representation": {
+          "name": "__MCP_E6Q_PC2",
+          "found": true,
+          "value": "0.0.0.0",
+          "error": ""
+        },
+        "e5_dispatch_accepted": true
+      },
+      "causes": [],
+      "limitations": [
+        "one_client_one_value"
+      ],
+      "reason": "",
+      "outcome_unknown": false
+    },
+    {
+      "experiment_id": "M-DNS-1",
+      "hypothesis": "nslookup output lines (optional).",
+      "required": false,
+      "status": "omitted",
+      "conclusion": "not_evaluated",
+      "facts": {},
+      "causes": [],
+      "limitations": [],
+      "reason": "not_admitted_by_budget: the required Q1 set alone exceeds the stage ceiling",
+      "outcome_unknown": false
+    },
+    {
+      "experiment_id": "M-DNS-2",
+      "hypothesis": "getIpOfHost cache behavior (optional).",
+      "required": false,
+      "status": "omitted",
+      "conclusion": "not_evaluated",
+      "facts": {},
+      "causes": [],
+      "limitations": [],
+      "reason": "not_admitted_by_budget: the required Q1 set alone exceeds the stage ceiling",
+      "outcome_unknown": false
+    }
+  ],
+  "primary_failure": "",
+  "secondary_failures": [],
+  "releases": [
+    {
+      "resource": "client:https-positive",
+      "kind": "client",
+      "outcome": "released",
+      "detail": ""
+    },
+    {
+      "resource": "client:http-negative",
+      "kind": "client",
+      "outcome": "released",
+      "detail": ""
+    },
+    {
+      "resource": "client:https-negative",
+      "kind": "client",
+      "outcome": "released",
+      "detail": ""
+    },
+    {
+      "resource": "device:__MCP_E6Q_SW",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:__MCP_E6Q_PC2",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:__MCP_E6Q_PC1",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:__MCP_E6Q_SRV",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    }
+  ],
+  "restoration": [
+    {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 1,
+      "link_count": 0,
+      "devices": [
+        {
+          "name": "Power Distribution Device0",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        }
+      ],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    },
+    {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 1,
+      "link_count": 0,
+      "devices": [
+        {
+          "name": "Power Distribution Device0",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        }
+      ],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    }
+  ],
+  "restoration_proven": true,
+  "engine_residue": [],
+  "dirty_state": "clean",
+  "persist_error": "",
+  "limitations": [
+    "e5_endpoint_dispatch:accepted"
+  ],
+  "outcome": "completed"
+}

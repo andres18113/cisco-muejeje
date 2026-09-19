@@ -32,10 +32,32 @@ are not restated here; read them in the current brief.
 | `assignments/S1_Implementer_Prompt.md` | the historical S1 assignment, Downloads, 2026-09-17 | the accepted S1 baseline in the current brief |
 | `reviews/S1_0bddc9a_Review.md` | the independent review of S1 `0bddc9a`, Downloads, 2026-09-17 | closed; see the accepted S1 baseline |
 | `server-pt-services-brief-9973f66.md` | `docs/engineering/change-briefs/server-pt-services.md` at commit `9973f66` | the current brief, which projects it; sections 8–12 hold the S0, S1 and S4a narratives |
+| `server-pt-services-brief-0850de3.md` | the same brief at the accepted S4a commit `0850de3` | the current brief; it holds the S4A-C1..C4 correction delta and its verification evidence |
+| `evidence/q-batch-0850de3/` | the operator batch `server-pt-q-batch-0850de3.zip` and its 15 extracted files, 2026-09-19 | nothing: LIVE evidence is immutable. The current brief states which conclusions each record permits |
 
 The companion overlay ZIP named by the S1 review was not present, so the
 individually supplied source files were used and hash-verified without
 modifying or removing them.
+
+## Q-batch evidence at `0850de3`
+
+The three LIVE qualification records executed at
+`0850de3dd94c8ada25c5b493e5638e6b0ce0351d` (tree `acc6caf`), build
+9.0.1.0858. The ZIP is the accepted input (21,509 bytes, SHA-256
+`e93b130a997c7f9a6363446373d744ef4feba54731dcc5571db4da969b8adfdc`); its
+`MANIFEST.sha256` covers the other 14 files, and `source-manifest.json` covers
+all 16, the ZIP included. Every record stays attributed to its own SHA, build
+and channel.
+
+| Run | Channel | Record | Record SHA-256 |
+| --- | --- | --- | --- |
+| Q0 `2026-09-18T23-39-18Z-b68e4a7b` | file | `q0-file/q0-2026-09-18T23-39-18Z-b68e4a7b.json` | `1a6ee0811c2df36e841a1eec73f8885b20ec892c6f23f3f94cb90f59c517c955` |
+| Q1 `2026-09-19T00-13-08Z-985c1368` | file | `q1-file/q1-2026-09-19T00-13-08Z-985c1368.json` | `a0e2f93820d980e98551b0106615d86a89f8fb08e422b82ca01c09692fc5b005` |
+| Q0 `2026-09-19T00-20-05Z-edbbc347` | http | `q0-http/q0-2026-09-19T00-20-05Z-edbbc347.json` | `5d0b919f04a83e516fcbefa0a41c59b77539e73334738b3780a05723cb4b40aa` |
+
+`BATCH-STATUS.md` is the operator's handoff for the batch, preserved as
+received. Its eligibility section was an input to a later decision, not an
+authorization.
 
 ## Adding a record
 

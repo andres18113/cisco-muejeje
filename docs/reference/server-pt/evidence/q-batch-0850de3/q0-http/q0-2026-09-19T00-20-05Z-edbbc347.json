@@ -1,0 +1,605 @@
+{
+  "schema_version": 1,
+  "record_kind": "server_services_qualification",
+  "run_id": "2026-09-19T00-20-05Z-edbbc347",
+  "stage": "Q0",
+  "execution_mode": "live",
+  "created_at": "2026-09-19T00:20:05.765611Z",
+  "completed_at": "2026-09-19T00:20:14.235865Z",
+  "authorization": {
+    "authorization_id": "Q0-http-0850de3-01",
+    "stage": "Q0",
+    "sha": "0850de3dd94c8ada25c5b493e5638e6b0ce0351d",
+    "targets": [
+      "__MCP_E6Q_PC1"
+    ],
+    "channel": "http",
+    "build": "9.0.1.0858",
+    "max_operations": 20,
+    "max_seconds": 300
+  },
+  "source": {
+    "expected_head": "0850de3dd94c8ada25c5b493e5638e6b0ce0351d",
+    "executed_sha": "0850de3dd94c8ada25c5b493e5638e6b0ce0351d",
+    "executed_tree": "acc6caf6f45bfe7afcaf3a08531993703d28eebf",
+    "clean": true,
+    "branch": "feature/server-pt-s4a-qualification-runner",
+    "upstream": "cisco/feature/server-pt-s4a-qualification-runner",
+    "upstream_head": "0850de3dd94c8ada25c5b493e5638e6b0ce0351d"
+  },
+  "environment": {
+    "python_executable": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-s4a\\.venv\\Scripts\\python.exe",
+    "package_file": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-s4a\\src\\packet_tracer_mcp\\__init__.py",
+    "isolation_state": "ISOLATED",
+    "requested_build": "9.0.1.0858",
+    "observed_build": "9.0.1.0858",
+    "build_reader_id": "AppWindow.getVersion",
+    "build_reader_sha256": "c3a9b240898a89007111c4397eb4cb5464da69551021484d4bc6b7d0fc7f5935",
+    "build_observation": "{\"found\":true,\"backend\":\"packet_tracer\",\"backend_version\":\"9.0.1.0858\",\"extension_version\":\"\",\"runtime_mode\":\"logical-workspace\"}",
+    "build_reason": ""
+  },
+  "transport": {
+    "channel": "http",
+    "fixed_at": "2026-09-19T00:20:07.799169Z",
+    "liveness": "webview_polling"
+  },
+  "fixtures": [
+    {
+      "name": "__MCP_E6Q_PC1",
+      "model": "PC-PT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    }
+  ],
+  "links": [],
+  "budget": {
+    "max_operations": 20,
+    "max_seconds": 300,
+    "reserve_operations": 5,
+    "reserve_seconds": 60,
+    "planned_minimum_operations": 19,
+    "used_operations": 19,
+    "refused_calls": 0,
+    "elapsed_seconds": 6.437
+  },
+  "experimental_capabilities": [
+    "engine.bag_persistence",
+    "engine.evaluation_atomicity",
+    "engine.event_registration",
+    "engine.event_unregister_by_id"
+  ],
+  "operations": [
+    {
+      "seq": 1,
+      "phase": "admission",
+      "call": "send_and_wait",
+      "purpose": "read:executable_build",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 0.0,
+      "elapsed_seconds": 0.062,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 2,
+      "phase": "admission",
+      "call": "send_and_wait",
+      "purpose": "read:workspace_baseline",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 0.062,
+      "elapsed_seconds": 0.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 3,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "experiment:ENG",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 0.078,
+      "elapsed_seconds": 0.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 4,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "experiment:ENG",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 0.093,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 5,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "experiment:ATOM",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 0.093,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 6,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "experiment:ATOM",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 0.093,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 7,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "experiment:ATOM",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 2.109,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 8,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_PC1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 2.125,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 9,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_PC1",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 2.125,
+      "elapsed_seconds": 0.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 10,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "read:fixture_identity",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 2.14,
+      "elapsed_seconds": 0.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 11,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "experiment:UNREG",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 2.171,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 12,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "experiment:UNREG",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 4.171,
+      "elapsed_seconds": 0.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 13,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "experiment:UNREG",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 4.187,
+      "elapsed_seconds": 0.031,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 14,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "experiment:UNREG",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 6.218,
+      "elapsed_seconds": 0.047,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 15,
+      "phase": "finalization",
+      "call": "dispatch_and_wait",
+      "purpose": "release:run_bag",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 6.265,
+      "elapsed_seconds": 0.047,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 16,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_PC1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 6.312,
+      "elapsed_seconds": 0.031,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 17,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_PC1",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 6.343,
+      "elapsed_seconds": 0.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 18,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "read:restoration:1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 6.359,
+      "elapsed_seconds": 0.031,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 19,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "read:restoration:2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 6.39,
+      "elapsed_seconds": 0.047,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    }
+  ],
+  "transitions": [
+    {
+      "step": "admitted",
+      "at": "2026-09-19T00:20:07.876963Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:ENG:started",
+      "at": "2026-09-19T00:20:07.878967Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:ENG:concluded",
+      "at": "2026-09-19T00:20:07.892060Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:ATOM:started",
+      "at": "2026-09-19T00:20:07.894059Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:ATOM:concluded",
+      "at": "2026-09-19T00:20:09.911063Z",
+      "outcome": ""
+    },
+    {
+      "step": "fixtures:started",
+      "at": "2026-09-19T00:20:09.912047Z",
+      "outcome": ""
+    },
+    {
+      "step": "fixtures:ready",
+      "at": "2026-09-19T00:20:09.958576Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:UNREG:started",
+      "at": "2026-09-19T00:20:09.960575Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:UNREG:concluded",
+      "at": "2026-09-19T00:20:14.055768Z",
+      "outcome": ""
+    },
+    {
+      "step": "finalization:started",
+      "at": "2026-09-19T00:20:14.057768Z",
+      "outcome": ""
+    },
+    {
+      "step": "finalization:completed",
+      "at": "2026-09-19T00:20:14.233782Z",
+      "outcome": ""
+    }
+  ],
+  "persisted_step": "finalization:completed",
+  "admission_reads": [
+    "isolation:ISOLATED",
+    "repository:0850de3dd94c8ada25c5b493e5638e6b0ce0351d:acc6caf6f45bfe7afcaf3a08531993703d28eebf",
+    "build:9.0.1.0858",
+    "workspace:semantic=0,links=0,engine_managed=0"
+  ],
+  "workspace_baseline": {
+    "observed": true,
+    "semantic_device_count": 0,
+    "backend_managed_device_count": 0,
+    "link_count": 0,
+    "devices": [],
+    "links": [],
+    "message": "fresh_complete_workspace_inventory"
+  },
+  "refusals": [],
+  "measurements": [
+    {
+      "experiment_id": "M-ENG-1",
+      "hypothesis": "A value written under the evaluation receiver persists to a later, separate evaluation on the same fixed channel.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "supported_in_sample",
+      "facts": {
+        "channel": "http",
+        "receiver_is_global_at_write": true,
+        "run_key_written": true,
+        "run_key_owned": true,
+        "receiver_is_global_at_read": true,
+        "owned_at_read": true,
+        "found": true,
+        "nonce_matches": true,
+        "sentinel_released": true
+      },
+      "causes": [],
+      "limitations": [],
+      "reason": "",
+      "outcome_unknown": false
+    },
+    {
+      "experiment_id": "ATOM-1",
+      "hypothesis": "One script evaluation is not interleaved with another queued evaluation (candidate invariant, plan 3.7).",
+      "required": true,
+      "status": "ran",
+      "conclusion": "inconclusive",
+      "facts": {
+        "channel": "http",
+        "evaluation_scope": "unknown",
+        "queued": {
+          "contender_A": true,
+          "contender_B": true
+        },
+        "log": [
+          {
+            "c": "A",
+            "s": "check",
+            "n": 1
+          },
+          {
+            "c": "A",
+            "s": "claimed",
+            "n": 2
+          },
+          {
+            "c": "B",
+            "s": "check",
+            "n": 3
+          },
+          {
+            "c": "B",
+            "s": "refused",
+            "n": 4
+          }
+        ],
+        "released": true
+      },
+      "causes": [
+        "separate_evaluations_not_observed"
+      ],
+      "limitations": [
+        "bounded_sample:one_pair",
+        "not_universal_atomicity",
+        "not_cross_channel_mutual_exclusion",
+        "not_exactly_once_delivery",
+        "http_channel_may_join_queued_commands_into_one_batch"
+      ],
+      "reason": "",
+      "outcome_unknown": false
+    },
+    {
+      "experiment_id": "M-UNREG-1",
+      "hypothesis": "A HostPort ipChanged callback receives an event, and unregistering it with the event-supplied source identity stops later invocations.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "supported_in_sample",
+      "facts": {
+        "release_call_label": "undocumented_existing_usage:_ScriptModule.unregisterIpcEventByID",
+        "registration": {
+          "device_found": true,
+          "acknowledged": true,
+          "error": ""
+        },
+        "event": "ipChanged",
+        "callback_evidence": {
+          "delivered": true,
+          "events_after_trigger": 1,
+          "source": {
+            "className": "HostPort",
+            "objectUuid": "{02a8a50f-6a1e-0ec5-fc34-0763080aa4ad}",
+            "eventName": "ipChanged",
+            "arg_keys": [
+              "newIp",
+              "newMask",
+              "oldIp",
+              "oldMask"
+            ]
+          }
+        },
+        "release_attempt": {
+          "attempted": true,
+          "available": true,
+          "threw": "",
+          "return_type": "boolean"
+        },
+        "post_release": {
+          "cb1_invocations_after_release": 0,
+          "control_invocations_after_trigger": 1
+        },
+        "release_conclusion": "supported_in_sample",
+        "delivery_conclusion": "supported_in_sample"
+      },
+      "causes": [],
+      "limitations": [
+        "one_source_object_one_event_kind",
+        "release_proven_only_by_absence_after_a_control_event"
+      ],
+      "reason": "",
+      "outcome_unknown": false
+    },
+    {
+      "experiment_id": "M-UNREG-2",
+      "hypothesis": "An observer that has received no event has no identity-free release; the inert fallback keeps it attached while bounding what it records.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "supported_in_sample",
+      "facts": {
+        "safe_zero_event_release_established": false,
+        "release_path": "inert_fallback",
+        "unregister_attempted": false,
+        "reason": "no source identity exists without an event; none is invented",
+        "event": "ipChanged",
+        "cb2_registered": true,
+        "zero_event_precondition": true,
+        "post_release": {
+          "cb2_invocations_after_inert": 1,
+          "cb2_events_recorded_after_inert": 0,
+          "control_invocations_after_trigger": 1
+        }
+      },
+      "causes": [],
+      "limitations": [
+        "fallback_set_of_R-EVT-05_applies"
+      ],
+      "reason": "",
+      "outcome_unknown": false
+    },
+    {
+      "experiment_id": "M-HTTP-1",
+      "hypothesis": "onDone argument semantics of HttpClient (optional).",
+      "required": false,
+      "status": "omitted",
+      "conclusion": "not_evaluated",
+      "facts": {},
+      "causes": [],
+      "limitations": [],
+      "reason": "prerequisite_absent: the Q0 fixture is one PC-PT and has no HTTP server; no dependency is added for an optional measurement",
+      "outcome_unknown": false
+    }
+  ],
+  "primary_failure": "",
+  "secondary_failures": [],
+  "releases": [
+    {
+      "resource": "observer:cb1",
+      "kind": "observer",
+      "outcome": "released_in_sample",
+      "detail": "no invocation after a control event"
+    },
+    {
+      "resource": "observer:cb2",
+      "kind": "observer",
+      "outcome": "release_attempted_unverified",
+      "detail": "marked inert; detachment is not observed"
+    },
+    {
+      "resource": "observer:cb3",
+      "kind": "observer",
+      "outcome": "release_attempted_unverified",
+      "detail": "marked inert; detachment is not observed"
+    },
+    {
+      "resource": "bag:run",
+      "kind": "bag",
+      "outcome": "released",
+      "detail": "keys=owner"
+    },
+    {
+      "resource": "device:__MCP_E6Q_PC1",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    }
+  ],
+  "restoration": [
+    {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 0,
+      "link_count": 0,
+      "devices": [],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    },
+    {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 0,
+      "link_count": 0,
+      "devices": [],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    }
+  ],
+  "restoration_proven": true,
+  "engine_residue": [
+    "observer:cb2",
+    "observer:cb3"
+  ],
+  "dirty_state": "unknown",
+  "persist_error": "",
+  "limitations": [],
+  "outcome": "completed"
+}
