@@ -37,14 +37,43 @@ from typing import Any
 from uuid import uuid4
 
 from ...application.ports.service_qualification import OpenedTransport
+from ...application.use_cases.compile_configuration import (
+    compile_enterprise_configuration,
+)
+from ...application.use_cases.compile_services import compile_enterprise_services
+from ...application.use_cases.compose_enterprise_reference import (
+    compose_enterprise_reference,
+)
 from ...application.use_cases.qualify_server_services import (
     IsolationObservation,
     LedgeredTransport,
+    Q3ProductContract,
     QualificationBoundaries,
     RuntimeIdentity,
     qualify_server_services,
 )
+from ...domain.enterprise.models.capabilities import CapabilityStatus
+from ...domain.enterprise.models.configuration import ConfigurationPolicy
+from ...domain.enterprise.models.configuration_runtime import RuntimeConfigurationTarget
+from ...domain.enterprise.models.deployment import (
+    EnvironmentFingerprint,
+    build_deployment_manifest,
+)
+from ...domain.enterprise.models.intent import EnterpriseIntent
+from ...domain.enterprise.models.service_plan import (
+    ServiceActionType,
+    ServiceType,
+    ServiceVerificationKind,
+)
 from ...domain.enterprise.models.service_qualification import (
+    Q3_DNS_IPV4,
+    Q3_GATEWAY_IPV4,
+    Q3_PC1,
+    Q3_PC2,
+    Q3_POOL,
+    Q3_SERVER,
+    Q3_SERVER_IPV4,
+    Q3_SWITCH,
     ExecutionMode,
     QualificationAuthorization,
     QualificationRequest,
@@ -56,8 +85,16 @@ from ...domain.enterprise.models.service_qualification import (
     stage_definition,
 )
 from ...domain.enterprise.models.service_run_record import generate_run_id
+from ...domain.enterprise.services.service_policy import derive_service_policy
+from ...domain.enterprise.services.topology_identity import stamp_topology_hashes
 from ...domain.models.plans import DevicePlan, LinkPlan
 from ...infrastructure.catalog.devices import ALL_MODELS
+from ...infrastructure.catalog.enterprise_capabilities import (
+    EnterpriseCapabilityAdapter,
+)
+from ...infrastructure.catalog.service_capabilities import (
+    packet_tracer_service_capabilities,
+)
 from ...infrastructure.execution.enterprise_configuration_runtime import (
     PacketTracerEnterpriseConfigurationRuntime,
 )
@@ -89,6 +126,241 @@ HTTP_TIMEOUT_SECONDS = 8.0
 MUTATION_TIMEOUT_SECONDS = 15.0
 OBSERVATION_TIMEOUT_SECONDS = 10.0
 RECORD_DIRECTORY = ("data", "services", "qualification")
+Q3_PACKET_TRACER_BUILD = "9.0.1.0858"
+
+_Q3_SERVER_ID = "endpoint/q3/default/server/001"
+_Q3_PC1_ID = "endpoint/q3/default/user_pc/001"
+_Q3_PC2_ID = "endpoint/q3/default/user_pc/002"
+_Q3_SWITCH_ID = "sw-acc-q3-default-01"
+_Q3_RUNTIME_NAMES = {
+    _Q3_SERVER_ID: Q3_SERVER,
+    _Q3_PC1_ID: Q3_PC1,
+    _Q3_PC2_ID: Q3_PC2,
+    _Q3_SWITCH_ID: Q3_SWITCH,
+}
+_Q3_SWITCH_PORTS = {
+    _Q3_SERVER_ID: "FastEthernet0/1",
+    _Q3_PC1_ID: "FastEthernet0/2",
+    _Q3_PC2_ID: "FastEthernet0/3",
+}
+
+
+class _Q3HardwareCatalog(EnterpriseCapabilityAdapter):
+    """Keep real catalog evidence while selecting the work-order's 2960 fixture."""
+
+    def hardware_candidates(self, category, packet_tracer_version=None):
+        candidates = super().hardware_candidates(category, packet_tracer_version)
+        if category != "switch":
+            return candidates
+        return [item for item in candidates if item.model == "2960-24TT"]
+
+
+def _q3_intent() -> EnterpriseIntent:
+    """Return the exact one-segment product intent the Q3 fixture measures."""
+    return EnterpriseIntent.model_validate(
+        {
+            "name": "MCP-E6Q",
+            "address_space": "192.0.2.0/24",
+            "sites": [
+                {
+                    "name": "Q3",
+                    "type": "hq",
+                    "address_block": "192.0.2.0/24",
+                    "segments": [
+                        {
+                            "role": "data",
+                            "hosts": 4,
+                            "dhcp": True,
+                            "subnet": "192.0.2.0/24",
+                            "gateway": Q3_GATEWAY_IPV4,
+                        }
+                    ],
+                    "endpoints": [
+                        {
+                            "role": "user_pc",
+                            "count": 2,
+                            "addressing_preference": "dhcp",
+                            "segment_role": "data",
+                        },
+                        {
+                            "role": "server",
+                            "count": 1,
+                            "addressing_preference": "static",
+                            "segment_role": "data",
+                            "metadata": {"ipv4": Q3_SERVER_IPV4},
+                        },
+                    ],
+                    "services": [
+                        {
+                            "name": "q3-dhcp",
+                            "service_type": "dhcp",
+                            "host_device_id": _Q3_SERVER_ID,
+                            "segment_id": "q3-data",
+                            "client_device_ids": [_Q3_PC1_ID, _Q3_PC2_ID],
+                            "dhcp_pool": {
+                                "interface": "FastEthernet0",
+                                "pool_name": Q3_POOL,
+                                "start_offset": 99,
+                                "max_users": 1,
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+
+def _q3_service_capabilities(build: str):
+    """Return a private candidate copy; never mutate the product catalog."""
+    records = dict(packet_tracer_service_capabilities(build))
+    server_key = f"Server-PT:{ServiceType.DHCP.value}"
+    profile = records[server_key]
+    records[server_key] = profile.model_copy(
+        update={
+            "application_support": CapabilityStatus.SUPPORTED,
+            "direct_readback_support": CapabilityStatus.SUPPORTED,
+            "behavioral_verification_support": CapabilityStatus.SUPPORTED,
+            "action_application_support": {
+                ServiceActionType.ENABLE_SERVER_DHCP.value: CapabilityStatus.SUPPORTED,
+                ServiceActionType.CONFIGURE_SERVER_DHCP_POOL.value: (
+                    CapabilityStatus.SUPPORTED
+                ),
+            },
+        }
+    )
+    for model, operation in (
+        ("PC-PT", ServiceActionType.ACQUIRE_DHCP_LEASE.value),
+        ("PC-PT", ServiceVerificationKind.ENDPOINT_DHCP_MODE.value),
+        ("PC-PT", ServiceVerificationKind.DHCP_LEASE.value),
+        ("Server-PT", ServiceVerificationKind.DHCP_SERVER_STATE.value),
+        ("Server-PT", ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED.value),
+    ):
+        key = f"{model}:{operation}"
+        records[key] = records[key].model_copy(
+            update={"support": CapabilityStatus.SUPPORTED}
+        )
+    return records
+
+
+def q3_product_contract(build: str, run_id: str) -> Q3ProductContract:
+    """Compose real E4/E5/E6 plans and bind them to the exact Q3 names/ports."""
+    if build != Q3_PACKET_TRACER_BUILD:
+        raise ValueError("Q3 has no reviewed native contract for this build.")
+    intent = _q3_intent()
+    catalog = _Q3HardwareCatalog()
+    base = compose_enterprise_reference(
+        intent,
+        packet_tracer_version=build,
+        capability_catalog=catalog,
+    )
+    if (
+        base.issues
+        or base.enterprise is None
+        or base.topology is None
+        or base.traffic is None
+    ):
+        raise ValueError("Q3 base composition failed: " + "; ".join(base.issues))
+    topology = base.topology.model_copy(deep=True)
+    devices = {item.id or item.name: item for item in topology.devices}
+    if set(devices) != set(_Q3_RUNTIME_NAMES):
+        raise ValueError("Q3 composition did not produce the exact semantic fixtures.")
+    for identifier, runtime_name in _Q3_RUNTIME_NAMES.items():
+        devices[identifier].name = runtime_name
+    for link in topology.links:
+        a_id = link.device_a_id or link.device_a
+        b_id = link.device_b_id or link.device_b
+        if _Q3_SWITCH_ID not in {a_id, b_id}:
+            raise ValueError("Q3 composition produced a non-access fixture link.")
+        endpoint_id = b_id if a_id == _Q3_SWITCH_ID else a_id
+        if endpoint_id not in _Q3_SWITCH_PORTS:
+            raise ValueError("Q3 composition produced an unexpected endpoint link.")
+        if a_id == _Q3_SWITCH_ID:
+            link.port_a = _Q3_SWITCH_PORTS[endpoint_id]
+            link.port_b = "FastEthernet0"
+        else:
+            link.port_a = "FastEthernet0"
+            link.port_b = _Q3_SWITCH_PORTS[endpoint_id]
+        link.device_a = _Q3_RUNTIME_NAMES[a_id]
+        link.device_b = _Q3_RUNTIME_NAMES[b_id]
+    stamp_topology_hashes(topology)
+
+    ports: dict[str, set[str]] = {identifier: set() for identifier in devices}
+    for link in topology.links:
+        ports[link.device_a_id].add(link.port_a)
+        ports[link.device_b_id].add(link.port_b)
+    inventory = tuple(
+        RuntimeConfigurationTarget(
+            device_name=device.name,
+            model=device.model,
+            interfaces=sorted(ports[identifier]),
+        )
+        for identifier, device in devices.items()
+    )
+    fingerprint = EnvironmentFingerprint(backend="packet_tracer", backend_version=build)
+    manifest = build_deployment_manifest(
+        topology,
+        list(inventory),
+        fingerprint=fingerprint,
+        deployment_id=f"qualification/{run_id}",
+    )
+    derived = derive_service_policy(
+        intent,
+        base_policy=ConfigurationPolicy(dns_server=Q3_DNS_IPV4),
+        enterprise=base.enterprise,
+        topology=topology,
+    )
+    if not derived.is_valid:
+        raise ValueError(
+            "Q3 service policy failed: "
+            + "; ".join(item.message for item in derived.issues)
+        )
+    device_capabilities = {
+        model: catalog.capabilities_for(model, build)
+        for model in sorted({item.model for item in topology.devices})
+    }
+    if any(value is None for value in device_capabilities.values()):
+        raise ValueError("Q3 device capability resolution was incomplete.")
+    typed_device_capabilities = {
+        model: value
+        for model, value in device_capabilities.items()
+        if value is not None
+    }
+    configured = compile_enterprise_configuration(
+        base.enterprise,
+        topology,
+        derived.policy,
+        typed_device_capabilities,
+        deployment_manifest=manifest,
+        traffic_by_link=base.traffic.contributions_by_link,
+        packet_tracer_version=build,
+    )
+    if not configured.is_valid or configured.plan is None:
+        raise ValueError(
+            "Q3 configuration composition failed: "
+            + "; ".join(item.message for item in configured.issues)
+        )
+    service_capabilities = _q3_service_capabilities(build)
+    services = compile_enterprise_services(
+        base.enterprise,
+        topology,
+        configured.plan,
+        capabilities=service_capabilities,
+    )
+    if not services.is_valid or services.plan is None:
+        raise ValueError(
+            "Q3 service composition failed: "
+            + "; ".join(item.message for item in services.issues)
+        )
+    return Q3ProductContract(
+        topology=topology,
+        manifest=manifest,
+        inventory=inventory,
+        configuration_plan=configured.plan,
+        service_plan=services.plan,
+        device_capabilities=typed_device_capabilities,
+        service_capabilities=service_capabilities,
+    )
 
 
 def fixture_plans(
@@ -255,6 +527,8 @@ def production_boundaries(governed_root: Path) -> QualificationBoundaries:
         now=lambda: datetime.now(UTC),
         new_run_id=generate_run_id,
         new_nonce=lambda: uuid4().hex,
+        q3_product_contract=q3_product_contract,
+        q3_required_build=Q3_PACKET_TRACER_BUILD,
     )
 
 

@@ -84,6 +84,9 @@ const config = Object.assign({
   setpage_throws_http: [], setpage_throws_https: [],
   setpage_throws_after_http: [], setpage_throws_after_https: [],
   ports_up: true, protocol_up: true, serve_nothing: false,
+  dhcp_table_end: 'null', dhcp_acquire_throws: false,
+  dhcp_emit_events: true, dhcp_lease_time: '3600',
+  dhcp_client_address_override: null, dhcp_default_pool: false,
 }, JSON.parse(process.argv[2] || '{}'));
 
 const guardPage = (patterns, url) => {
@@ -119,6 +122,7 @@ const queue = [];
 const registrations = [];
 const unregisterCalls = [];
 const clients = {};
+const dhcpRuns = [];
 let clientSeq = 0;
 
 const PORTS = {
@@ -239,6 +243,111 @@ const makeClient = () => {
   return c.api;
 };
 
+const dhcpState = (dev) => {
+  if (!dev.dhcpServer) {
+    dev.dhcpServer = {enabled: false, exclusions: [], pools: {}};
+    if (config.dhcp_default_pool) {
+      dev.dhcpServer.pools.DEFAULT = {name: 'DEFAULT', network: '10.0.0.0',
+        mask: '255.255.255.0', gateway: '10.0.0.1', dns: '', start: '10.0.0.10',
+        end: '10.0.0.20', max: 11, leases: []};
+    }
+  }
+  return dev.dhcpServer;
+};
+
+const dhcpPool = (dev, pool) => ({
+  getDhcpPoolName: () => pool.name,
+  getNetworkAddress: () => pool.network,
+  getSubnetMask: () => pool.mask,
+  getDefaultRouter: () => pool.gateway,
+  getDnsServerIp: () => pool.dns,
+  getStartIp: () => pool.start,
+  getEndIp: () => pool.end,
+  getMaxUsers: () => pool.max,
+  setNetworkMask: (network, mask) => {
+    pool.network = String(network); pool.mask = String(mask);
+  },
+  setDefaultRouter: (value) => { pool.gateway = String(value); },
+  setDnsServerIp: (value) => { pool.dns = String(value); },
+  setStartIp: (value) => { pool.start = String(value); },
+  setEndIp: (value) => { pool.end = String(value); },
+  setMaxUsers: (value) => { pool.max = Number(value); },
+  getLeaseAt: (index) => {
+    if (index < pool.leases.length) { return pool.leases[index]; }
+    if (config.dhcp_table_end === 'throw') { throw new Error('lease table end'); }
+    if (config.dhcp_table_end === 'repeat' && pool.leases.length) {
+      return pool.leases[pool.leases.length - 1];
+    }
+    return null;
+  },
+});
+
+const dhcpServerProcess = (dev) => {
+  const state = dhcpState(dev);
+  return {
+    isEnable: () => state.enabled,
+    setEnable: (value) => { state.enabled = !!value; },
+    getPoolCount: () => Object.keys(state.pools).length,
+    getPoolAt: (index) => {
+      const name = Object.keys(state.pools).sort()[index];
+      return name === undefined ? null : dhcpPool(dev, state.pools[name]);
+    },
+    getPool: (name) => {
+      const pool = state.pools[String(name)];
+      return pool ? dhcpPool(dev, pool) : null;
+    },
+    addPool: (name) => {
+      state.pools[String(name)] = {name: String(name), network: '', mask: '',
+        gateway: '', dns: '', start: '', end: '', max: 0, leases: []};
+    },
+    getExcludedAddressCount: () => state.exclusions.length,
+    getExcludedAddressAt: (index) => {
+      const item = state.exclusions[index];
+      return item ? {first: item.start, second: item.end} : null;
+    },
+    addExcludedAddress: (start, end) => {
+      state.exclusions.push({start: String(start), end: String(end)});
+    },
+  };
+};
+
+const emitDhcp = (port, eventName, args) => {
+  if (!config.dhcp_emit_events) { return; }
+  const event = {uuid: port.uuid, className: 'HostPort', event: eventName, args: args};
+  if (config.deliver_events === 'sync') { deliver(event); }
+  else if (config.deliver_events === 'after_eval') { pending.push(event); }
+};
+
+const dhcpClientProcess = (dev) => ({
+  dhcpRun: (portName) => {
+    if (config.dhcp_acquire_throws) { throw new Error('dhcp acquisition failed'); }
+    const port = dev.ports.find((item) => item.name === String(portName));
+    dhcpRuns.push({device: dev.name, port: String(portName)});
+    if (!port) { throw new Error('dhcp client port missing'); }
+    const server = devices.find((item) => item.model === 'Server-PT' && item.dhcpServer);
+    const state = server ? dhcpState(server) : null;
+    const pool = state && (state.pools.MCP_E6Q_DHCP
+      || state.pools[Object.keys(state.pools).sort()[0]]);
+    const existing = pool && pool.leases.find((row) => row.macAddress === port.mac);
+    if (state && state.enabled && pool && (existing || pool.leases.length < pool.max)) {
+      const leaseAddress = existing ? existing.ipAddress : pool.start;
+      const address = config.dhcp_client_address_override || leaseAddress;
+      const row = existing || {ipAddress: leaseAddress, macAddress: port.mac,
+        leaseTime: 3600, port: port.name};
+      if (!existing) { pool.leases.push(row); }
+      port.ip = address; port.mask = pool.mask; port.leaseTime = config.dhcp_lease_time;
+      emitDhcp(port, 'dhcpSucceed', {deviceName: dev.name, portName: port.name,
+        newip: port.ip, newmask: port.mask});
+      return;
+    }
+    emitDhcp(port, 'dhcpFailed', {deviceName: dev.name, portName: port.name});
+  },
+  getDataOfPort: (portName) => {
+    const port = dev.ports.find((item) => item.name === String(portName));
+    return port ? {getLeaseTimeStr: () => port.leaseTime} : null;
+  },
+});
+
 const processFor = (dev, name) => {
   if (name === 'HttpBackgroundClientManager' && dev.model !== '2960-24TT') {
     return {
@@ -251,11 +360,21 @@ const processFor = (dev, name) => {
   }
   if (dev.model === 'Server-PT' && name === 'HttpServer') { return httpServer(dev); }
   if (dev.model === 'Server-PT' && name === 'HttpsServer') { return httpsServer(dev); }
+  if (dev.model === 'Server-PT' && name === 'DhcpServer') {
+    return {getDhcpServerProcessByPortName: (portName) => (
+      dev.ports.some((port) => port.name === String(portName))
+        ? dhcpServerProcess(dev) : null
+    )};
+  }
+  if (dev.model === 'PC-PT' && name === 'DhcpClient') {
+    return dhcpClientProcess(dev);
+  }
   return null;
 };
 
 const makeDevice = (name, model) => {
-  const dev = {name: String(name), model: String(model), ports: [], web: null};
+  const dev = {name: String(name), model: String(model), ports: [], web: null,
+    dhcpServer: null};
   const api = {
     getName: () => dev.name,
     setName: (value) => { dev.name = String(value); },
@@ -267,12 +386,18 @@ const makeDevice = (name, model) => {
       return p ? p.api : null;
     },
     getPorts: () => dev.ports.map((p) => p.name),
-    setDhcpFlag: (v) => { dev.dhcp = !!v; },
+    setDhcpFlag: (v) => {
+      dev.dhcp = !!v;
+      for (const port of dev.ports) { port.dhcpMode = !!v; }
+    },
     getProcess: (value) => processFor(dev, String(value)),
   };
   dev.api = api;
   for (const portName of PORTS[dev.model] || []) {
-    const port = {name: portName, link: null, ip: '', mask: '', dns: '', uuid: newUuid()};
+    const port = {name: portName, link: null, ip: '', mask: '', dns: '',
+      uuid: newUuid(), dhcpMode: false,
+      mac: ('0000.0000.' + String(uuidSeq).padStart(4, '0')).slice(-14),
+      leaseTime: ''};
     port.api = {
       getName: () => port.name,
       getOwnerDevice: () => api,
@@ -298,6 +423,8 @@ const makeDevice = (name, model) => {
       },
       setDnsServerIp: (value) => { port.dns = String(value); },
       setDefaultGateway: (value) => { port.gateway = String(value); },
+      isDhcpClientOn: () => port.dhcpMode,
+      getMacAddress: () => port.mac,
     };
     if (dev.model !== '2960-24TT') {
       port.api.getIpAddress = () => port.ip;
@@ -363,6 +490,7 @@ global.lwAddLink = (d1, p1, d2, p2, cable) => {
 global.configurePcIp = (name, dhcp, ip, mask, gateway, dns, iface) => {
   const port = findPort(String(name), String(iface || 'FastEthernet0'));
   if (!port) { return false; }
+  port.dhcpMode = !!dhcp;
   if (ip && mask) { port.ip = String(ip); port.mask = String(mask); }
   if (dns) { port.dns = String(dns); }
   return true;
@@ -412,22 +540,34 @@ const snapshot = () => {
   const runs = {};
   for (const key of Object.keys(bag)) { runs[key] = Object.keys(bag[key] || {}); }
   const servers = {};
+  const dhcpServers = {};
   for (const d of devices) {
     if (d.web) {
       servers[d.name] = {http_enabled: d.web.httpEnabled, https_enabled: d.web.httpsEnabled,
         http_pages: Object.keys(d.web.tables.http), https_pages: Object.keys(d.web.tables.https)};
     }
+    if (d.dhcpServer) {
+      dhcpServers[d.name] = {enabled: d.dhcpServer.enabled,
+        exclusions: d.dhcpServer.exclusions.slice(),
+        pools: Object.fromEntries(Object.entries(d.dhcpServer.pools).map(
+          ([name, pool]) => [name, Object.assign({}, pool, {leases: pool.leases.slice()})]
+        ))};
+    }
   }
   return {
     devices: devices.map((d) => ({name: d.name, model: d.model,
       ports: d.ports.filter((p) => p.ip || p.dns || p.link)
-        .map((p) => ({name: p.name, ip: p.ip, dns: p.dns, linked: !!p.link}))})),
+        .map((p) => ({name: p.name, ip: p.ip, mask: p.mask, dns: p.dns,
+          mac: p.mac, dhcp_mode: p.dhcpMode, lease_time: p.leaseTime,
+          linked: !!p.link}))})),
     links: links.length,
     run_bags: runs,
     registrations: registrations.map((r) => ({device: r.device, event: r.event,
       active: r.active})),
     unregister_calls: unregisterCalls.slice(),
     servers: servers,
+    dhcp_servers: dhcpServers,
+    dhcp_runs: dhcpRuns.slice(),
     live_clients: Object.keys(clients).length,
     queued: queue.length,
     production_globals: ['__mcpE6Claims', '__mcpE6Inert', '__mcpE6HttpClients']

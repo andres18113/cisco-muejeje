@@ -1,6 +1,6 @@
 """Governed Server-PT qualification runner: one authorized stage per invocation.
 
-The runner measures Packet Tracer engine and HTTPS facts that S2, S3 and S1b
+The runner measures Packet Tracer engine, HTTPS and DHCP facts that S2, S3 and S1b
 depend on. It is not a product operation, and it never runs by default: a
 stage runs only when explicitly requested, under a complete stage- and
 SHA-specific authorization, from the exact clean published checkout that the
@@ -42,10 +42,21 @@ from datetime import datetime
 from enum import Enum, StrEnum
 from typing import Any
 
+from ...domain.enterprise.models.capabilities import DeviceCapabilities
 from ...domain.enterprise.models.configuration import (
     ConfigurationPhase,
+    ConfigurationPlan,
+    SetEndpointDhcp,
     SetEndpointStaticAddress,
 )
+from ...domain.enterprise.models.configuration_runtime import (
+    ActionExecutionStatus,
+    ConfigurationApplicationResult,
+    ConfigurationRuntimeContext,
+    RuntimeActionMutation,
+    RuntimeConfigurationTarget,
+)
+from ...domain.enterprise.models.deployment import DeploymentManifest
 from ...domain.enterprise.models.execution import (
     DirtyState,
     DispatchFact,
@@ -58,10 +69,15 @@ from ...domain.enterprise.models.physical_deployment import (
     physical_workspace_restoration_matches,
 )
 from ...domain.enterprise.models.service_plan import (
+    AcquireDhcpLease,
+    ConfigureServerDhcpPool,
     EnableHttpService,
     EnableHttpsService,
+    EnableServerDhcp,
+    ServiceCapabilityRecords,
     ServiceEvidenceKind,
     ServicePhase,
+    ServicePlan,
     ServiceType,
     ServiceVerificationExpectation,
     ServiceVerificationKind,
@@ -70,6 +86,11 @@ from ...domain.enterprise.models.service_qualification import (
     Q1_PC1,
     Q1_SERVER,
     Q1_SERVER_IPV4,
+    Q3_LEASE_IPV4,
+    Q3_PC1,
+    Q3_PC2,
+    Q3_POOL,
+    Q3_SERVER,
     BudgetRecord,
     EnvironmentIdentity,
     ExecutionMode,
@@ -96,7 +117,14 @@ from ...domain.enterprise.models.service_qualification import (
     request_refusals,
     stage_definition,
 )
-from ...domain.enterprise.models.service_runtime import RuntimeServiceVerification
+from ...domain.enterprise.models.service_runtime import (
+    ObservationFact,
+    RuntimeServiceVerification,
+    ServiceApplicationResult,
+)
+from ...domain.enterprise.services.configuration_compiler import (
+    configuration_plan_semantic_hash,
+)
 from ...domain.enterprise.services.service_qualification_evidence import (
     Assessment,
     ProbeReading,
@@ -110,7 +138,7 @@ from ...domain.enterprise.services.service_qualification_evidence import (
     page_read_admits_second_write,
     page_write_established,
 )
-from ...domain.models.plans import DevicePlan, LinkPlan
+from ...domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
 from ..ports.service_qualification import (
     BuildReader,
     DispatchOutcome,
@@ -119,12 +147,13 @@ from ..ports.service_qualification import (
     QualificationTransport,
 )
 from ..ports.service_run_record import RunRecordPersistenceError
-from .apply_configuration import ConfigurationRuntime
-from .apply_services import ServiceRuntime
+from .apply_configuration import ConfigurationApplicator, ConfigurationRuntime
+from .apply_services import ServiceApplicator, ServiceRuntime
 from .deploy_enterprise_topology import (
     PhysicalTopologyRuntime,
     disposable_workspace_error,
 )
+from .foundational_evidence import derive_service_foundational_statuses
 
 SendAndWait = Callable[[str, float], str | None]
 MAX_DETAIL = 240
@@ -418,6 +447,103 @@ class RuntimeIdentity:
 
 
 @dataclass(frozen=True)
+class Q3ProductContract:
+    """The real privately-capable product plans bound to the exact Q3 fixture."""
+
+    topology: TopologyPlan
+    manifest: DeploymentManifest
+    inventory: tuple[RuntimeConfigurationTarget, ...]
+    configuration_plan: ConfigurationPlan
+    service_plan: ServicePlan
+    device_capabilities: dict[str, DeviceCapabilities]
+    service_capabilities: ServiceCapabilityRecords
+
+
+@dataclass
+class _Q3ConfigurationRuntime:
+    """Give the product E5 runtime the exact manifest-directed Q3 inventory."""
+
+    inner: ConfigurationRuntime
+    inventory_rows: tuple[RuntimeConfigurationTarget, ...]
+
+    def inventory(self) -> list[RuntimeConfigurationTarget]:
+        return [item.model_copy(deep=True) for item in self.inventory_rows]
+
+    def apply_actions(self, actions) -> list[RuntimeActionMutation]:
+        return self.inner.apply_actions(actions)
+
+    def verify(self, expectations):
+        return self.inner.verify(expectations)
+
+    def wait_for_voice_access_forwarding(self, expectations):
+        return self.inner.wait_for_voice_access_forwarding(expectations)
+
+
+@dataclass
+class _Q3ServiceRuntime:
+    """Give the product E6 runtime the same exact Q3 inventory."""
+
+    inner: ServiceRuntime
+    inventory_rows: tuple[RuntimeConfigurationTarget, ...]
+
+    def inventory(self) -> list[RuntimeConfigurationTarget]:
+        return [item.model_copy(deep=True) for item in self.inventory_rows]
+
+    def apply_actions(self, actions) -> list[RuntimeActionMutation]:
+        return self.inner.apply_actions(actions)
+
+    def verify(self, expectation) -> RuntimeServiceVerification:
+        return self.inner.verify(expectation)
+
+
+def _q3_endpoint_plan(contract: Q3ProductContract) -> ConfigurationPlan:
+    """Project the real E5 plan to endpoint bootstrap on the prebuilt fixture.
+
+    Q3 creates and verifies the exact physical links itself. Switch VLAN/port
+    configuration is not a DHCP native claim, so this projection removes only
+    those already-owned fixture dependencies; the endpoint action and reader
+    identities remain the ones the real compiler produced.
+    """
+    action_types = (SetEndpointStaticAddress, SetEndpointDhcp)
+    actions = [
+        item.model_copy(update={"depends_on": [], "apply_dependencies": []})
+        for item in contract.configuration_plan.actions
+        if isinstance(item, action_types)
+    ]
+    action_ids = {item.id for item in actions}
+    device_ids = {item.device_id for item in actions}
+    plan = ConfigurationPlan(
+        id=contract.configuration_plan.id + "/q3-endpoints",
+        source_topology_id=contract.configuration_plan.source_topology_id,
+        source_topology_hash=contract.configuration_plan.source_topology_hash,
+        source_topology_hash_schema=(
+            contract.configuration_plan.source_topology_hash_schema
+        ),
+        actions=actions,
+        devices=[
+            item.model_copy(deep=True)
+            for item in contract.configuration_plan.devices
+            if item.device_id in device_ids
+        ],
+        verification_expectations=[
+            item.model_copy(deep=True)
+            for item in contract.configuration_plan.verification_expectations
+            if item.action_id in action_ids
+        ],
+    )
+    plan.semantic_hash = configuration_plan_semantic_hash(plan)
+    return plan
+
+
+def _q3_context(contract: Q3ProductContract) -> ConfigurationRuntimeContext:
+    return ConfigurationRuntimeContext(
+        backend=contract.manifest.backend,
+        backend_version=contract.manifest.backend_version,
+        environment_fingerprint=contract.manifest.environment_fingerprint,
+    )
+
+
+@dataclass(frozen=True)
 class QualificationBoundaries:
     """Every external boundary one invocation reaches, injected.
 
@@ -446,6 +572,8 @@ class QualificationBoundaries:
     now: Callable[[], datetime]
     new_run_id: Callable[[datetime], str]
     new_nonce: Callable[[], str]
+    q3_product_contract: Callable[[str, str], Q3ProductContract] | None = None
+    q3_required_build: str = ""
     settle_seconds: float = 2.0
 
 
@@ -577,6 +705,55 @@ def qualify_server_services(
     if refusals:
         return _refused(refusals)
 
+    moment = boundaries.now()
+    run_id = boundaries.new_run_id(moment)
+    product_contract: Q3ProductContract | None = None
+    if definition.stage is QualificationStage.Q3:
+        if not boundaries.q3_required_build:
+            return _refused(
+                [
+                    refusal(
+                        RefusalKind.NOT_PERMITTED,
+                        RefusalSubject.BUILD,
+                        "The Q3 Packet Tracer build policy is not composed.",
+                    )
+                ]
+            )
+        if request.packet_tracer_build != boundaries.q3_required_build:
+            return _refused(
+                [
+                    refusal(
+                        RefusalKind.NOT_PERMITTED,
+                        RefusalSubject.BUILD,
+                        "Q3 is not implemented for the requested Packet Tracer build.",
+                    )
+                ]
+            )
+        if boundaries.q3_product_contract is None:
+            return _refused(
+                [
+                    refusal(
+                        RefusalKind.NOT_PERMITTED,
+                        RefusalSubject.FIXTURE,
+                        "The executable Q3 product contract is not composed.",
+                    )
+                ]
+            )
+        try:
+            product_contract = boundaries.q3_product_contract(
+                request.packet_tracer_build, run_id
+            )
+        except Exception as exc:
+            return _refused(
+                [
+                    refusal(
+                        RefusalKind.MALFORMED,
+                        RefusalSubject.FIXTURE,
+                        f"q3_product_contract:{type(exc).__name__}:{_bounded(exc)}",
+                    )
+                ]
+            )
+
     record = _initial_record(
         request,
         definition,
@@ -584,6 +761,8 @@ def qualify_server_services(
         isolation,
         repository,
         experimental_capabilities,
+        moment=moment,
+        run_id=run_id,
     )
     record.links = [
         {
@@ -638,6 +817,7 @@ def qualify_server_services(
             links,
             bound,
             experimental_capabilities,
+            product_contract,
         )
     finally:
         if opened is not None and opened.transport is not None:
@@ -670,8 +850,11 @@ def _initial_record(
     isolation: IsolationObservation,
     repository: RepositoryIdentity,
     capabilities: frozenset[str],
+    *,
+    moment: datetime | None = None,
+    run_id: str = "",
 ) -> QualificationRecord:
-    moment = boundaries.now()
+    moment = moment or boundaries.now()
     try:
         runtime = boundaries.runtime_identity()
     except Exception:
@@ -692,7 +875,7 @@ def _initial_record(
         for item in definition.experiments
     ]
     return QualificationRecord(
-        run_id=boundaries.new_run_id(moment),
+        run_id=run_id or boundaries.new_run_id(moment),
         stage=definition.stage,
         execution_mode=boundaries.execution_mode,
         created_at=moment,
@@ -821,6 +1004,7 @@ def _admitted(
     links: tuple[LinkPlan, ...],
     bound: LedgeredTransport,
     capabilities: frozenset[str],
+    product_contract: Q3ProductContract | None = None,
 ) -> QualificationResult:
     record = run.record
     ledger = run.ledger
@@ -921,13 +1105,16 @@ def _admitted(
         channel=request.channel,
         capabilities=capabilities,
         probes=boundaries.probes(bound, record.run_id, nonce),
+        product_contract=product_contract,
     )
     cancelled: BaseException | None = None
     try:
         if definition.stage is QualificationStage.Q0:
             _run_q0(execution)
-        else:
+        elif definition.stage is QualificationStage.Q1:
             _run_q1(execution)
+        else:
+            _run_q3(execution)
     except KeyboardInterrupt as exc:
         execution.stop("cancelled")
         cancelled = exc
@@ -980,6 +1167,7 @@ class _Execution:
     channel: str
     capabilities: frozenset[str]
     probes: Any
+    product_contract: Q3ProductContract | None = None
     removal_candidates: list[DevicePlan] = field(default_factory=list)
     fixtures_ready: bool = False
     #: Run-bag state the finalizer must release. A collision means the run key
@@ -1646,6 +1834,728 @@ def _https_listener(execution: _Execution) -> Assessment:
     if listener_toggle_established(steps["https_off"], http=False, https=False):
         steps["https_negative"] = _fetch(execution, "https-negative", "https", marker)
     return assessed()
+
+
+# -- Q3 ------------------------------------------------------------------------
+
+
+def _q3_client_rows(reading: ProbeReading | None) -> list[dict[str, Any]] | None:
+    """Return the exact two bounded client rows, or None when shape is unusable."""
+    if reading is None or not reading.observed:
+        return None
+    rows = reading.payload.get("clients")
+    if not isinstance(rows, list) or len(rows) != 2:
+        return None
+    expected = {(Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0")}
+    observed: set[tuple[str, str]] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            return None
+        required = {
+            "device": str,
+            "interface": str,
+            "found": bool,
+            "port_found": bool,
+            "mode_type": str,
+            "mac": str,
+            "ipv4": str,
+            "netmask": str,
+            "lease_time": str,
+            "error": str,
+        }
+        if any(
+            key not in row or not isinstance(row[key], kind)
+            for key, kind in required.items()
+        ):
+            return None
+        if row.get("mode") is not None and not isinstance(row.get("mode"), bool):
+            return None
+        observed.add((row["device"], row["interface"]))
+    return rows if observed == expected else None
+
+
+def _q3_client_assessments(
+    before: ProbeReading | None, after: ProbeReading | None
+) -> tuple[Assessment, Assessment]:
+    """Judge native MAC and DHCP-mode readers without assigning semantics."""
+    before_rows = _q3_client_rows(before)
+    after_rows = _q3_client_rows(after)
+    facts = {
+        "before": before_rows or [],
+        "after": after_rows or [],
+    }
+    if before_rows is None or after_rows is None:
+        causes = [
+            value
+            for value in (
+                _bounded(before.cause)
+                if before is not None and not before.observed
+                else "",
+                _bounded(after.cause)
+                if after is not None and not after.observed
+                else "",
+                "dhcp_client_rows_malformed"
+                if before_rows is None or after_rows is None
+                else "",
+            )
+            if value
+        ]
+        inconclusive = Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=causes,
+            limitations=["exact_client_reader_sample_not_completed"],
+        )
+        return inconclusive, inconclusive
+    mac_ok = all(
+        row["found"]
+        and row["port_found"]
+        and not row["error"]
+        and bool(row["mac"])
+        and len(row["mac"]) <= 64
+        for row in [*before_rows, *after_rows]
+    )
+    mode_ok = all(
+        row["found"]
+        and row["port_found"]
+        and not row["error"]
+        and row["mode_type"] == "boolean"
+        and isinstance(row["mode"], bool)
+        for row in [*before_rows, *after_rows]
+    )
+    mac = Assessment(
+        MeasurementConclusion.SUPPORTED_IN_SAMPLE
+        if mac_ok
+        else MeasurementConclusion.CONTRADICTED,
+        facts=facts,
+        causes=[] if mac_ok else ["native_mac_reader_invalid"],
+        limitations=[
+            "native_mac_representation_sample_only",
+            "no_equivalence_inferred",
+        ],
+    )
+    mode = Assessment(
+        MeasurementConclusion.SUPPORTED_IN_SAMPLE
+        if mode_ok
+        else MeasurementConclusion.CONTRADICTED,
+        facts=facts,
+        causes=[] if mode_ok else ["native_dhcp_mode_not_boolean"],
+        limitations=["native_mode_reader_sample_only"],
+    )
+    return mac, mode
+
+
+def _q3_server_baseline_admits(reading: ProbeReading | None) -> bool:
+    if reading is None or not reading.observed:
+        return False
+    payload = reading.payload
+    return bool(
+        payload.get("found")
+        and payload.get("process_found")
+        and payload.get("interface") == "FastEthernet0"
+        and payload.get("enabled_type") == "boolean"
+        and not payload.get("error")
+        and payload.get("truncated") is False
+        and payload.get("pool_count") == 0
+        and payload.get("pools") == []
+    )
+
+
+def _q3_setup_assessment(
+    baseline: ProbeReading,
+    configuration: ConfigurationApplicationResult,
+    foundations: dict[str, ActionExecutionStatus],
+    server_mutations: Sequence[RuntimeActionMutation],
+    server_readback: RuntimeServiceVerification,
+    contract: Q3ProductContract,
+) -> Assessment:
+    """Judge the product configuration path without promoting native support."""
+    mutation_facts = [
+        {
+            "action_id": item.action_id,
+            "dispatch": item.dispatch.value,
+            "result": item.result.value,
+            "postcondition": item.postcondition.value,
+            "attempted": item.attempted,
+        }
+        for item in server_mutations
+    ]
+    facts = {
+        "initial_server": dict(baseline.payload),
+        "configuration_plan": configuration.config_plan_id,
+        "configuration_hash": configuration.config_semantic_hash,
+        "service_plan": contract.service_plan.id,
+        "service_hash": contract.service_plan.semantic_hash,
+        "foundation_statuses": {
+            key: value.value for key, value in sorted(foundations.items())
+        },
+        "server_mutations": mutation_facts,
+        "server_readback": {
+            "status": server_readback.status.value,
+            "observation": server_readback.observation.value,
+            "cause": server_readback.cause,
+        },
+    }
+    expected_actions = {
+        item.id
+        for item in contract.service_plan.actions
+        if isinstance(item, EnableServerDhcp | ConfigureServerDhcpPool)
+    }
+    complete_mutations = {
+        item.action_id for item in server_mutations
+    } == expected_actions and all(
+        item.dispatch is DispatchFact.ACCEPTED
+        and item.result is ResultFact.CORRELATED
+        and item.postcondition is PostconditionFact.SATISFIED
+        for item in server_mutations
+    )
+    foundations_ready = bool(foundations) and all(
+        item is ActionExecutionStatus.VERIFIED for item in foundations.values()
+    )
+    readback_ready = (
+        server_readback.status is ActionExecutionStatus.VERIFIED
+        and server_readback.observation is ObservationFact.OBSERVED
+    )
+    unknown_effect = any(
+        item.dispatch is DispatchFact.ACCEPTANCE_UNKNOWN
+        or item.result is ResultFact.NOT_OBSERVED
+        for item in server_mutations
+    )
+    if complete_mutations and foundations_ready and readback_ready:
+        return Assessment(
+            MeasurementConclusion.SUPPORTED_IN_SAMPLE,
+            facts=facts,
+            limitations=[
+                "stored_configuration_sample_only",
+                "serving_behavior_not_inferred",
+                "default_pool_inventory_observed_empty",
+            ],
+        )
+    contradicted = server_readback.observation is ObservationFact.CONTRADICTED or any(
+        item.postcondition is PostconditionFact.UNSATISFIED for item in server_mutations
+    )
+    return Assessment(
+        MeasurementConclusion.CONTRADICTED
+        if contradicted
+        else MeasurementConclusion.INCONCLUSIVE,
+        facts=facts,
+        causes=["q3_product_configuration_not_established"],
+        limitations=["no_serving_claim"],
+        outcome_unknown=unknown_effect,
+    )
+
+
+def _q3_table_assessment(
+    empty: ProbeReading | None, full: ProbeReading | None
+) -> Assessment:
+    facts = {
+        "empty": dict(empty.payload) if empty is not None and empty.observed else {},
+        "capacity_one": (
+            dict(full.payload) if full is not None and full.observed else {}
+        ),
+    }
+    if empty is None or full is None or not empty.observed or not full.observed:
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=["bounded_lease_table_sample_unobserved"],
+            limitations=["no_absence_or_completion_claim"],
+        )
+    empty_rows = empty.payload.get("rows")
+    full_rows = full.payload.get("rows")
+    coherent = (
+        empty.payload.get("pool_name") == Q3_POOL
+        and full.payload.get("pool_name") == Q3_POOL
+        and isinstance(empty_rows, list)
+        and isinstance(full_rows, list)
+        and len(empty_rows) == 0
+        and any(
+            isinstance(row, dict) and row.get("ipAddress") == Q3_LEASE_IPV4
+            for row in full_rows
+        )
+    )
+    return Assessment(
+        MeasurementConclusion.SUPPORTED_IN_SAMPLE
+        if coherent
+        else MeasurementConclusion.INCONCLUSIVE,
+        facts=facts,
+        causes=[] if coherent else ["empty_or_capacity_one_sample_not_discriminating"],
+        limitations=[
+            "bounded_sample:empty_and_capacity_one",
+            "termination_behavior_not_generalized",
+            "no_pool_exhaustion_claim",
+        ],
+    )
+
+
+def _q3_event_assessment(
+    registration: ProbeReading | None, collected: ProbeReading | None
+) -> Assessment:
+    facts = {
+        "registration": (
+            dict(registration.payload)
+            if registration is not None and registration.observed
+            else {}
+        ),
+        "collection": (
+            dict(collected.payload)
+            if collected is not None and collected.observed
+            else {}
+        ),
+    }
+    if (
+        registration is None
+        or collected is None
+        or not registration.observed
+        or not collected.observed
+    ):
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=["dhcp_event_lifecycle_unobserved"],
+            limitations=["no_product_event_path"],
+            outcome_unknown=registration is not None and not registration.observed,
+        )
+    events = collected.payload.get("events")
+    names = (
+        {item.get("event") for item in events if isinstance(item, dict)}
+        if isinstance(events, list)
+        else set()
+    )
+    releases = collected.payload.get("releases")
+    setup_complete = (
+        registration.payload.get("owned") is True
+        and registration.payload.get("registered") == 4
+        and registration.payload.get("errors") == []
+        and collected.payload.get("owned") is True
+        and collected.payload.get("dropped") is True
+        and isinstance(releases, list)
+        and len(releases) == 4
+        and all(not item.get("threw") for item in releases if isinstance(item, dict))
+    )
+    delivered = {"dhcpSucceed", "dhcpFailed"} <= names
+    detachment_observed = bool(
+        setup_complete
+        and all(
+            isinstance(item, dict) and item.get("attempted") is True
+            for item in releases
+        )
+    )
+    supported = setup_complete and delivered and detachment_observed
+    causes = []
+    if not setup_complete or not delivered:
+        causes.append("dhcp_event_sample_incomplete")
+    if delivered and not detachment_observed:
+        causes.append("observer_detachment_unverified")
+    return Assessment(
+        MeasurementConclusion.SUPPORTED_IN_SAMPLE
+        if supported
+        else MeasurementConclusion.INCONCLUSIVE,
+        facts=facts,
+        causes=causes,
+        limitations=[
+            "qualification_only_observer",
+            "bounded_to_owned_clients",
+            "no_product_event_path",
+        ],
+    )
+
+
+def _q3_timing_assessment(
+    before_one: ProbeReading | None,
+    before_two: ProbeReading | None,
+    after_one: ProbeReading | None,
+    after_two: ProbeReading | None,
+    service_result: ServiceApplicationResult | None,
+    guard: RuntimeActionMutation | None,
+) -> Assessment:
+    readings = (before_one, before_two, after_one, after_two)
+    rows = [_q3_client_rows(item) for item in readings]
+    facts = {
+        "before_1": rows[0] or [],
+        "before_2": rows[1] or [],
+        "after_1": rows[2] or [],
+        "after_2": rows[3] or [],
+        "service_status": service_result.status.value if service_result else "absent",
+        "service_actions": (
+            [
+                {
+                    "action_id": item.action_id,
+                    "status": item.status.value,
+                    "dispatch": item.dispatch.value,
+                    "result": item.result.value,
+                    "postcondition": item.postcondition.value,
+                    "attempted": item.attempted,
+                    "cause": item.cause,
+                }
+                for item in service_result.action_results
+            ]
+            if service_result is not None
+            else []
+        ),
+        "guard": (
+            {
+                "attempted": guard.attempted,
+                "cause": guard.cause,
+                "dispatch": guard.dispatch.value,
+            }
+            if guard is not None
+            else {}
+        ),
+    }
+    guard_refused = (
+        guard is not None
+        and guard.attempted is not True
+        and guard.cause == "own_claim_replayed"
+    )
+    product_contradictions = (
+        [
+            item.expectation_id
+            for item in service_result.verification_results
+            if item.observation is ObservationFact.CONTRADICTED
+        ]
+        if service_result is not None
+        else []
+    )
+    facts["product_contradictions"] = product_contradictions
+    product_outcome_unknown = bool(
+        service_result
+        and any(
+            item.dispatch is DispatchFact.ACCEPTANCE_UNKNOWN
+            or item.result is ResultFact.NOT_OBSERVED
+            or (
+                item.received_mutation is not None
+                and bool(item.received_mutation.call_error)
+            )
+            for item in service_result.action_results
+            if item.attempted is True
+        )
+    )
+    facts["product_outcome_unknown"] = product_outcome_unknown
+    if product_contradictions:
+        return Assessment(
+            MeasurementConclusion.CONTRADICTED,
+            facts=facts,
+            causes=["product_dhcp_readback_contradicted"],
+            limitations=["contradiction_preserved_from_real_product_runtime"],
+        )
+    if product_outcome_unknown:
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=["product_dhcp_effect_outcome_unknown"],
+            limitations=["no_guard_or_later_mutation_authorized"],
+            outcome_unknown=True,
+        )
+    if not guard_refused:
+        return Assessment(
+            MeasurementConclusion.CONTRADICTED,
+            facts=facts,
+            causes=["same_action_guard_control_dispatched_or_unreadable"],
+            outcome_unknown=guard is None or guard.attempted is None,
+        )
+    if any(item is None for item in rows):
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=["lease_time_window_unobserved"],
+            limitations=["lease_time_semantics_unqualified"],
+        )
+    return Assessment(
+        MeasurementConclusion.INCONCLUSIVE,
+        facts=facts,
+        causes=["automatic_renewal_not_discriminated_in_fixed_window"],
+        limitations=[
+            "lease_time_semantics_unqualified",
+            "no_clock_or_lease_manipulation",
+            "same_action_guard_refused_without_redispatch",
+        ],
+    )
+
+
+def _q3_record_observer_releases(
+    execution: _Execution, collected: ProbeReading | None
+) -> None:
+    if collected is None or not collected.observed:
+        execution.observers_unresolved.add("q3-dhcp")
+        return
+    for index, item in enumerate(collected.payload.get("releases", []), start=1):
+        if not isinstance(item, dict):
+            execution.observers_unresolved.add(f"q3-dhcp-{index}")
+            continue
+        resolved = item.get("attempted") is True and not item.get("threw")
+        inert = item.get("inert") is True
+        outcome = (
+            "release_attempted_unverified"
+            if resolved
+            else "inert_attached"
+            if inert
+            else "release_unverified"
+        )
+        execution.record.releases.append(
+            ReleaseRecord(
+                resource=f"observer:q3-dhcp-{index}",
+                kind="observer",
+                outcome=outcome,
+                detail=f"device={item.get('device', '')};event={item.get('event', '')}",
+            )
+        )
+        if not resolved:
+            execution.observers_unresolved.add(f"q3-dhcp-{index}")
+
+
+def _run_q3(execution: _Execution) -> None:
+    """Run the exact Q3 setup, product path and bounded native measurements."""
+    required = [item.id for item in execution.definition.experiments if item.required]
+    if not execution.ledger.can_afford(
+        execution.definition.fixture_operations
+        + execution.definition.required_experiment_operations
+    ):
+        execution.not_run(required, "budget_insufficient_for:Q3")
+        execution.stop("budget:Q3")
+        return
+    if not _setup_fixtures(execution):
+        execution.not_run(required, "fixture_setup_failed")
+        return
+    contract = execution.product_contract
+    if contract is None:
+        execution.not_run(required, "q3_product_contract_absent")
+        execution.stop("q3_product_contract_absent")
+        return
+    configuration_runtime = _Q3ConfigurationRuntime(
+        execution.run.boundaries.configuration_runtime(execution.bound),
+        contract.inventory,
+    )
+    service_runtime = _Q3ServiceRuntime(
+        execution.run.boundaries.service_runtime(execution.bound),
+        contract.inventory,
+    )
+    endpoint_plan = _q3_endpoint_plan(contract)
+    execution.record.limitations.extend(
+        [
+            "q3_private_candidate_capabilities:no_public_catalog_mutation",
+            "q3_endpoint_projection:physical_fixture_dependencies_owned_by_runner",
+        ]
+    )
+    foundation_plan = contract.service_plan.model_copy(
+        update={
+            "source_configuration_id": endpoint_plan.id,
+            "source_configuration_hash": endpoint_plan.semantic_hash,
+        },
+        deep=True,
+    )
+    context = _q3_context(contract)
+
+    setup_ids = ("M-DHCP-1", "M-DHCP-4", "M-DHCP-5")
+    if not execution.begin(setup_ids, "Q3_SETUP"):
+        return
+    with execution.procedure(setup_ids):
+        baseline = execution.probes.read_dhcp_server_baseline(
+            Q3_SERVER, "FastEthernet0"
+        )
+        clients_before = execution.probes.read_dhcp_clients(
+            ((Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0"))
+        )
+        if not _q3_server_baseline_admits(baseline):
+            mac, mode = _q3_client_assessments(clients_before, clients_before)
+            execution.conclude(
+                "M-DHCP-1",
+                Assessment(
+                    MeasurementConclusion.INCONCLUSIVE,
+                    facts=(dict(baseline.payload) if baseline.observed else {}),
+                    causes=["initial_dhcp_server_state_not_admissible"],
+                    limitations=["no_setter_dispatched"],
+                ),
+            )
+            execution.conclude("M-DHCP-4", mac)
+            execution.conclude("M-DHCP-5", mode)
+            execution.stop("q3_initial_server_state_not_admissible")
+        else:
+            if not execution.run.transition("experiment:Q3_SETUP:e5_started"):
+                execution.stop("persistence:q3_e5_not_announced")
+            with execution.ledger.purpose_of("q3:product:e5_endpoints"):
+                configuration = ConfigurationApplicator(configuration_runtime).apply(
+                    endpoint_plan,
+                    actual_source_topology_hash=contract.manifest.physical_topology_hash,
+                    capabilities=contract.device_capabilities,
+                    runtime_context=context,
+                    deployment_manifest=contract.manifest,
+                )
+            foundations = derive_service_foundational_statuses(
+                foundation_plan, configuration
+            )
+            if not execution.run.transition("experiment:Q3_SETUP:e6_started"):
+                execution.stop("persistence:q3_e6_not_announced")
+            server_actions = [
+                item
+                for item in contract.service_plan.actions
+                if isinstance(item, EnableServerDhcp | ConfigureServerDhcpPool)
+            ]
+            with execution.ledger.purpose_of("q3:product:e6_server"):
+                server_mutations = service_runtime.apply_actions(server_actions)
+            server_expectation = next(
+                item
+                for item in contract.service_plan.verification_expectations
+                if item.kind is ServiceVerificationKind.DHCP_SERVER_STATE
+            )
+            with execution.ledger.purpose_of("q3:product:server_readback"):
+                server_readback = service_runtime.verify(server_expectation)
+            clients_after = execution.probes.read_dhcp_clients(
+                ((Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0"))
+            )
+            mac, mode = _q3_client_assessments(clients_before, clients_after)
+            execution.conclude(
+                "M-DHCP-1",
+                _q3_setup_assessment(
+                    baseline,
+                    configuration,
+                    foundations,
+                    server_mutations,
+                    server_readback,
+                    contract,
+                ),
+            )
+            execution.conclude("M-DHCP-4", mac)
+            execution.conclude("M-DHCP-5", mode)
+    execution.finish("Q3_SETUP")
+    if execution.stopped:
+        return
+
+    measurement_ids = ("M-DHCP-2", "M-DHCP-3", "M-DHCP-6")
+    if not execution.begin(measurement_ids, "Q3_DHCP"):
+        return
+    with execution.procedure(measurement_ids):
+        claim = execution.probes.write_bag_sentinel()
+        if claim.observed and claim.payload.get("run_bag_preexisting"):
+            execution.bag_collision = True
+        elif (
+            claim.observed
+            and claim.payload.get("written")
+            and claim.payload.get("owned")
+        ):
+            execution.bag_touched = True
+            execution.bag_unreleased.add("sentinel")
+        else:
+            execution.stop("q3_run_bag_not_owned")
+        registration = None
+        if not execution.stopped:
+            registration = execution.probes.register_dhcp_observers(
+                ((Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0"))
+            )
+            if registration.observed and registration.payload.get("owned"):
+                execution.bag_unreleased.add("dhcp")
+            if registration is None or not registration.observed:
+                execution.stop("q3_event_registration_unobserved")
+        before_one = before_two = empty_table = None
+        service_result = None
+        guard = None
+        after_one = after_two = full_table = collected = None
+        if not execution.stopped:
+            before_one = execution.probes.read_dhcp_clients(
+                ((Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0"))
+            )
+            execution.settle()
+            before_two = execution.probes.read_dhcp_clients(
+                ((Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0"))
+            )
+            empty_table = execution.probes.read_dhcp_table(
+                Q3_SERVER, "FastEthernet0", Q3_POOL
+            )
+            nonces = {
+                reference: f"{execution.nonce}:{index}"
+                for index, reference in enumerate(
+                    contract.service_plan.operation_nonce_refs(), start=1
+                )
+            }
+            bound_plan = contract.service_plan.with_operation_nonces(nonces)
+            if not execution.run.transition("experiment:Q3_DHCP:product_started"):
+                execution.stop("persistence:q3_product_not_announced")
+            if not execution.stopped:
+                with execution.ledger.purpose_of("q3:product:service_apply"):
+                    service_result = ServiceApplicator(service_runtime).apply(
+                        bound_plan,
+                        actual_source_topology_hash=(
+                            contract.manifest.physical_topology_hash
+                        ),
+                        actual_source_configuration_hash=(
+                            contract.service_plan.source_configuration_hash
+                        ),
+                        foundational_statuses=foundations,
+                        capabilities=contract.service_capabilities,
+                        runtime_context=context,
+                        deployment_manifest=contract.manifest,
+                    )
+                if any(
+                    item.dispatch is DispatchFact.ACCEPTANCE_UNKNOWN
+                    or item.result is ResultFact.NOT_OBSERVED
+                    or (
+                        item.received_mutation is not None
+                        and bool(item.received_mutation.call_error)
+                    )
+                    for item in service_result.action_results
+                    if item.attempted is True
+                ):
+                    execution.stop("outcome_unknown:q3_product_service")
+                else:
+                    first_acquisition = next(
+                        item
+                        for item in bound_plan.actions
+                        if isinstance(item, AcquireDhcpLease)
+                        and item.host_device_name == Q3_PC1
+                    )
+                    with execution.ledger.purpose_of("q3:guard:acquisition_replay"):
+                        [guard] = service_runtime.apply_actions([first_acquisition])
+                after_one = execution.probes.read_dhcp_clients(
+                    ((Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0"))
+                )
+                execution.settle()
+                after_two = execution.probes.read_dhcp_clients(
+                    ((Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0"))
+                )
+                full_table = execution.probes.read_dhcp_table(
+                    Q3_SERVER, "FastEthernet0", Q3_POOL
+                )
+                collected = execution.probes.collect_dhcp_observers()
+                if collected.observed and collected.payload.get("dropped"):
+                    execution.bag_unreleased.discard("dhcp")
+        _q3_record_observer_releases(execution, collected)
+        if service_result is not None:
+            for action in contract.service_plan.actions:
+                if isinstance(action, AcquireDhcpLease):
+                    execution.record.releases.append(
+                        ReleaseRecord(
+                            resource=f"claim:{action.host_device_name}:FastEthernet0",
+                            kind="claim",
+                            outcome="retained_until_process_retirement",
+                            detail="product claims are never reset or deleted",
+                        )
+                    )
+                    execution.record.engine_residue.append(
+                        f"claim:{action.host_device_name}:retained"
+                    )
+        if service_result is None:
+            execution.interrupt_in_flight(
+                execution.record.primary_failure or "q3_product_application_not_run"
+            )
+        else:
+            execution.conclude(
+                "M-DHCP-2", _q3_table_assessment(empty_table, full_table)
+            )
+            execution.conclude(
+                "M-DHCP-3", _q3_event_assessment(registration, collected)
+            )
+            execution.conclude(
+                "M-DHCP-6",
+                _q3_timing_assessment(
+                    before_one,
+                    before_two,
+                    after_one,
+                    after_two,
+                    service_result,
+                    guard,
+                ),
+            )
+    execution.finish("Q3_DHCP")
 
 
 # -- finalization ----------------------------------------------------------------

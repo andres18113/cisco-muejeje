@@ -11,13 +11,16 @@ channel, repository reader or record exists.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from service_qualification_engine import (
     SIM_SHA,
     NodeEngine,
     NodeEngineTransport,
+    RecordingStore,
     authorization_args,
     request_args,
     simulated_boundaries,
@@ -26,6 +29,8 @@ from service_qualification_engine import (
 import packet_tracer_mcp
 from packet_tracer_mcp.adapters.cli import service_qualification as cli
 from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
+    STAGE_CEILINGS,
+    STAGE_DEFINITIONS,
     ExecutionMode,
     QualificationRecord,
     QualificationStage,
@@ -141,14 +146,13 @@ def test_an_unauthorized_request_never_opens_a_channel(simulation, capsys):
     ("stage", "expected"),
     [
         ("Q2", ("not_permitted", "stage")),
-        ("Q3", ("not_permitted", "stage")),
         ("Q9", ("malformed", "stage")),
     ],
 )
 def test_declarative_and_unknown_stages_refuse_before_contact(
     simulation, capsys, stage, expected
 ):
-    """Q2/Q3 have unmet prerequisites; an unknown stage is named."""
+    """Q2 has unmet prerequisites; an unknown stage is named."""
     sim = simulation()
     code, summary = sim.main(
         ["--execute", "--stage", stage, "--expected-head", SIM_SHA], capsys
@@ -178,6 +182,206 @@ def test_q1_is_admitted_at_its_reviewed_ceiling_and_finalizes(simulation, capsys
     assert record.restoration_proven is True
     snapshot = sim.engine.snapshot()
     assert snapshot["devices"] == [] and snapshot["run_bags"] == {}
+
+
+def test_q3_runs_the_real_bounded_dhcp_stage_and_round_trips_its_record(
+    simulation, capsys
+):
+    """Drive Q3 through the operator CLI, real coordinator and generated scripts."""
+    sim = simulation()
+
+    code, summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
+
+    assert code == 0
+    assert summary["refusals"] == []
+    assert summary["operations_used"] <= 60
+    assert {item["id"] for item in summary["measurements"]} == {
+        "M-DHCP-1",
+        "M-DHCP-2",
+        "M-DHCP-3",
+        "M-DHCP-4",
+        "M-DHCP-5",
+        "M-DHCP-6",
+    }
+    assert all(item["status"] == "ran" for item in summary["measurements"])
+    assert {item["id"]: item["conclusion"] for item in summary["measurements"]} == {
+        "M-DHCP-1": "supported_in_sample",
+        "M-DHCP-2": "supported_in_sample",
+        "M-DHCP-3": "inconclusive",
+        "M-DHCP-4": "supported_in_sample",
+        "M-DHCP-5": "supported_in_sample",
+        "M-DHCP-6": "inconclusive",
+    }
+    (record,) = sim.records()
+    assert record.stage is QualificationStage.Q3
+    assert record.budget.planned_minimum_operations == 60
+    assert record.restoration_proven is True
+    assert record.source.executed_sha == SIM_SHA
+    assert record.budget.refused_calls == 0
+    assert record.dirty_state.value == "unknown"
+    assert {item.kind for item in record.releases} >= {"claim", "observer", "device"}
+    assert any(
+        "lease_time_semantics_unqualified" in item.limitations
+        for item in record.measurements
+    )
+    snapshot = sim.engine.snapshot()
+    assert snapshot["devices"] == []
+    assert snapshot["run_bags"] == {}
+    assert snapshot["dhcp_runs"] == [
+        {"device": "__MCP_E6Q_PC1", "port": "FastEthernet0"},
+        {"device": "__MCP_E6Q_PC2", "port": "FastEthernet0"},
+    ]
+    assert snapshot["production_globals"] == ["__mcpE6Claims"]
+
+
+def test_q3_unreviewed_build_refuses_before_opening_the_file_channel(
+    simulation, capsys
+):
+    """Apply the backend-specific Q3 build policy at the application boundary."""
+    sim = simulation()
+
+    code, summary = sim.main(
+        request_args("Q3", build="9.0.1.9999")
+        + authorization_args("Q3", build="9.0.1.9999"),
+        capsys,
+    )
+
+    assert code == 2
+    assert _subjects(summary) == {("not_permitted", "build")}
+    assert sim.opened == []
+
+
+def test_q3_missing_build_policy_refuses_before_contact(simulation, capsys):
+    """Do not infer a backend contract when composition omitted its build policy."""
+    sim = simulation()
+    sim.overrides["q3_required_build"] = ""
+
+    code, summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
+
+    assert code == 2
+    assert _subjects(summary) == {("not_permitted", "build")}
+    assert sim.opened == []
+
+
+def test_q3_persistence_loss_before_acquisition_halts_effects_and_cleans_fixtures(
+    simulation, capsys
+):
+    """Close the product effect gate when the acquisition boundary is not durable."""
+    sim = simulation()
+    sim.overrides["record_store"] = RecordingStore(
+        sim.directory / "records",
+        fail_from="experiment:Q3_DHCP:product_started",
+    )
+
+    code, summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
+
+    assert code == 1
+    assert summary["primary_failure"] == "persistence:q3_product_not_announced"
+    snapshot = sim.engine.snapshot()
+    assert snapshot["dhcp_runs"] == []
+    assert snapshot["devices"] == []
+    assert snapshot["run_bags"] == {}
+
+
+def test_q3_preserves_a_product_address_contradiction_and_still_finalizes(
+    simulation, capsys
+):
+    """Do not relabel a same-subnet address outside the one-address pool as success."""
+    sim = simulation(dhcp_client_address_override="192.0.2.101")
+
+    code, summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
+
+    assert code == 1
+    assert summary["primary_failure"] == "contradiction:M-DHCP-6"
+    conclusions = {item["id"]: item["conclusion"] for item in summary["measurements"]}
+    assert conclusions["M-DHCP-6"] == "contradicted"
+    snapshot = sim.engine.snapshot()
+    assert snapshot["devices"] == []
+    assert snapshot["run_bags"] == {}
+
+
+def test_q3_unknown_acquisition_stops_guard_mutation_but_keeps_bounded_cleanup(
+    simulation, capsys
+):
+    """Do not retry or run the duplicate control after an effect throws unknown."""
+    sim = simulation(dhcp_acquire_throws=True)
+
+    code, summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
+
+    assert code == 1
+    assert summary["primary_failure"] == "outcome_unknown:q3_product_service"
+    snapshot = sim.engine.snapshot()
+    assert snapshot["dhcp_runs"] == []
+    assert snapshot["devices"] == []
+    assert snapshot["run_bags"] == {}
+
+
+def test_q3_event_registration_refusal_is_inconclusive_not_a_product_failure(
+    simulation, capsys
+):
+    """Continue independent DHCP reads only after all refused callbacks are inert."""
+    sim = simulation(register_throws=True)
+
+    code, summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
+
+    assert code == 0
+    conclusions = {item["id"]: item["conclusion"] for item in summary["measurements"]}
+    assert conclusions["M-DHCP-3"] == "inconclusive"
+    assert sim.engine.snapshot()["dhcp_runs"] == [
+        {"device": "__MCP_E6Q_PC1", "port": "FastEthernet0"},
+        {"device": "__MCP_E6Q_PC2", "port": "FastEthernet0"},
+    ]
+
+
+def test_q3_runtime_budget_refusal_stops_experiments_and_preserves_finalization(
+    simulation, capsys
+):
+    """Exercise the Q3 ledger stop independently of its reviewed 60-op arithmetic."""
+    q3 = STAGE_DEFINITIONS[QualificationStage.Q3]
+    experiments = tuple(
+        replace(item, planned_operations=3) if item.id == "M-DHCP-6" else item
+        for item in q3.experiments
+    )
+    narrow = replace(
+        q3,
+        experiments=experiments,
+        budget=replace(q3.budget, max_operations=55),
+    )
+    sim = simulation()
+
+    with (
+        mock.patch.dict(
+            STAGE_DEFINITIONS, {QualificationStage.Q3: narrow}, clear=False
+        ),
+        mock.patch.dict(
+            STAGE_CEILINGS, {QualificationStage.Q3: (55, 1200)}, clear=False
+        ),
+    ):
+        code, summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
+
+    assert code == 1
+    assert "operation_budget_exhausted" in summary["primary_failure"]
+    assert summary["operations_used"] == 55
+    snapshot = sim.engine.snapshot()
+    assert snapshot["devices"] == []
+    assert snapshot["run_bags"] == {}
+
+
+def test_q3_records_an_initial_default_pool_and_stops_before_product_setters(
+    simulation, capsys
+):
+    """Never remove or silently coexist with an unreviewed native default pool."""
+    sim = simulation(dhcp_default_pool=True)
+
+    code, summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
+
+    assert code == 1
+    assert summary["primary_failure"] == "q3_initial_server_state_not_admissible"
+    conclusions = {item["id"]: item["conclusion"] for item in summary["measurements"]}
+    assert conclusions["M-DHCP-1"] == "inconclusive"
+    snapshot = sim.engine.snapshot()
+    assert snapshot["dhcp_runs"] == []
+    assert snapshot["devices"] == []
 
 
 def test_a_budget_below_the_planned_worst_case_never_reaches_a_channel(

@@ -15,10 +15,15 @@ from unittest import mock
 
 import pytest
 
+from packet_tracer_mcp.adapters.cli.service_qualification import q3_product_contract
 from packet_tracer_mcp.application.use_cases.qualify_server_services import (
     LedgerPhase,
     OperationLedger,
     OperationRefused,
+)
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
+    SetEndpointDhcp,
+    SetEndpointStaticAddress,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
@@ -28,7 +33,11 @@ from packet_tracer_mcp.domain.enterprise.models.execution import (
     ResultFact,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
+    AcquireDhcpLease,
+    ConfigureServerDhcpPool,
+    EnableServerDhcp,
     ServiceEvidenceKind,
+    ServiceType,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     STAGE_CEILINGS,
@@ -65,6 +74,9 @@ from packet_tracer_mcp.domain.enterprise.services.service_qualification_evidence
     assess_https_listener,
     assess_observer_release,
     assess_page_tables,
+)
+from packet_tracer_mcp.infrastructure.catalog.service_capabilities import (
+    packet_tracer_service_capabilities,
 )
 from packet_tracer_mcp.infrastructure.execution.service_environment import (
     observe_service_environment,
@@ -168,6 +180,49 @@ def test_q1_fits_its_reviewed_ceiling_on_its_bounded_worst_case():
     assert request_refusals(_request("Q1")) == ()
 
 
+def test_q3_exact_fixture_and_complete_worst_case_fit_the_hard_ceiling():
+    """Q3 pins 17 setup + 32 experiment + 11 reserve operations to 60."""
+    q3 = STAGE_DEFINITIONS[QualificationStage.Q3]
+
+    assert q3.executable is True
+    assert q3.fixture_names == (
+        "__MCP_E6Q_SRV",
+        "__MCP_E6Q_PC1",
+        "__MCP_E6Q_PC2",
+        "__MCP_E6Q_SW",
+    )
+    assert [item.model for item in q3.fixtures] == [
+        "Server-PT",
+        "PC-PT",
+        "PC-PT",
+        "2960-24TT",
+    ]
+    assert q3.fixtures[0].ipv4 == "192.0.2.10"
+    assert q3.fixtures[0].netmask == "255.255.255.0"
+    assert [
+        (item.device_a, item.port_a, item.device_b, item.port_b) for item in q3.links
+    ] == [
+        ("__MCP_E6Q_SRV", "FastEthernet0", "__MCP_E6Q_SW", "FastEthernet0/1"),
+        ("__MCP_E6Q_PC1", "FastEthernet0", "__MCP_E6Q_SW", "FastEthernet0/2"),
+        ("__MCP_E6Q_PC2", "FastEthernet0", "__MCP_E6Q_SW", "FastEthernet0/3"),
+    ]
+    assert [item.id for item in q3.experiments] == [
+        "M-DHCP-1",
+        "M-DHCP-4",
+        "M-DHCP-5",
+        "M-DHCP-2",
+        "M-DHCP-3",
+        "M-DHCP-6",
+    ]
+    assert [item.planned_operations for item in q3.experiments] == [8, 4, 0, 8, 4, 8]
+    assert (q3.setup_operations, q3.required_experiment_operations) == (17, 32)
+    assert q3.reserve_operations == 11
+    assert q3.planned_minimum_operations == 60
+    assert q3.budget.reserve_seconds == 180
+    assert q3.allowed_channels == ("file",)
+    assert request_refusals(_request("Q3")) == ()
+
+
 def test_a_stage_whose_worst_case_exceeds_its_ceiling_is_refused_before_contact():
     """The infeasibility gate survives the raised ceiling, with its arithmetic."""
     q1 = STAGE_DEFINITIONS[QualificationStage.Q1]
@@ -180,12 +235,101 @@ def test_a_stage_whose_worst_case_exceeds_its_ceiling_is_refused_before_contact(
     assert "53" in refusals[0].detail and "52" in refusals[0].detail
 
 
-@pytest.mark.parametrize("stage", ["Q2", "Q3"])
+@pytest.mark.parametrize("stage", ["Q2"])
 def test_declarative_stages_refuse_before_any_reader(stage):
-    """Q2/Q3 carry metadata and unmet prerequisites only."""
+    """Q2 carries metadata and unmet prerequisites only."""
     refusals = request_refusals(_request(stage=stage))
     assert _pairs(refusals) == {(RefusalKind.NOT_PERMITTED, RefusalSubject.STAGE)}
     assert "not implemented" in refusals[0].detail
+
+
+def test_q3_refuses_a_non_file_channel_before_contact():
+    """Keep the DHCP qualification transport fixed to the authorized file channel."""
+    refusals = request_refusals(_request("Q3", channel="http"))
+
+    assert _pairs(refusals) == {(RefusalKind.NOT_PERMITTED, RefusalSubject.CHANNEL)}
+
+
+def test_q3_product_contract_refuses_an_unreviewed_build():
+    """Keep the backend build binding outside the neutral domain model."""
+    with pytest.raises(ValueError, match="no reviewed native contract"):
+        q3_product_contract("9.0.1.9999", "q3-wrong-build")
+
+
+def test_q3_private_product_contract_uses_real_composition_and_exact_fixture():
+    """Compile the Q3 DHCP plan without changing the public capability catalog."""
+    before = {
+        key: value.model_dump(mode="json")
+        for key, value in packet_tracer_service_capabilities(BUILD).items()
+    }
+
+    contract = q3_product_contract(BUILD, "q3-offline-contract")
+
+    assert [item.name for item in contract.topology.devices] == [
+        "__MCP_E6Q_SRV",
+        "__MCP_E6Q_PC1",
+        "__MCP_E6Q_PC2",
+        "__MCP_E6Q_SW",
+    ]
+    by_endpoint = {
+        frozenset((item.device_a, item.device_b)): (item.port_a, item.port_b)
+        for item in contract.topology.links
+    }
+    assert by_endpoint[frozenset(("__MCP_E6Q_SRV", "__MCP_E6Q_SW"))] in {
+        ("FastEthernet0", "FastEthernet0/1"),
+        ("FastEthernet0/1", "FastEthernet0"),
+    }
+    endpoints = [
+        item
+        for item in contract.configuration_plan.actions
+        if isinstance(item, SetEndpointStaticAddress | SetEndpointDhcp)
+    ]
+    assert len(endpoints) == 3
+    server = next(
+        item for item in endpoints if isinstance(item, SetEndpointStaticAddress)
+    )
+    assert (server.device_name, server.interface, server.ipv4) == (
+        "__MCP_E6Q_SRV",
+        "FastEthernet0",
+        "192.0.2.10",
+    )
+    assert {
+        item.device_name for item in endpoints if isinstance(item, SetEndpointDhcp)
+    } == {"__MCP_E6Q_PC1", "__MCP_E6Q_PC2"}
+    assert [type(item) for item in contract.service_plan.actions] == [
+        EnableServerDhcp,
+        ConfigureServerDhcpPool,
+        AcquireDhcpLease,
+        AcquireDhcpLease,
+    ]
+    pool = next(
+        item
+        for item in contract.service_plan.actions
+        if isinstance(item, ConfigureServerDhcpPool)
+    )
+    assert (
+        pool.pool_name,
+        pool.gateway,
+        pool.dns_server,
+        pool.lease_start,
+        pool.lease_end,
+        pool.max_users,
+    ) == (
+        "MCP_E6Q_DHCP",
+        "192.0.2.1",
+        "192.0.2.10",
+        "192.0.2.100",
+        "192.0.2.100",
+        1,
+    )
+    assert [item.service_type for item in contract.service_plan.services] == [
+        ServiceType.DHCP
+    ]
+    after = {
+        key: value.model_dump(mode="json")
+        for key, value in packet_tracer_service_capabilities(BUILD).items()
+    }
+    assert after == before
 
 
 def test_optional_measurements_carry_their_omission_reason():

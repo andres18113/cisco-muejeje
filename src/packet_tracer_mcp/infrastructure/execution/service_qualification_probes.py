@@ -1,4 +1,4 @@
-"""Generated Q0/Q1 qualification probes and their strict shape parsers.
+"""Generated Q0/Q1/Q3 qualification probes and their strict shape parsers.
 
 Every script is one line, has no `//` comment and serializes every datum with
 `json.dumps`, because Packet Tracer evaluates it with `new Function()` and a
@@ -187,6 +187,39 @@ _SPECS: dict[str, dict[str, tuple[type, ...]]] = {
         "https_process_enabled": _OPTIONAL_BOOL,
     },
     "client_resolvers": {"clients": _DICT},
+    "dhcp_server_baseline": {
+        "found": _BOOL,
+        "process_found": _BOOL,
+        "interface": _STR,
+        "enabled": _OPTIONAL_BOOL,
+        "enabled_type": _STR,
+        "pool_count": _INT,
+        "pools": _LIST,
+        "truncated": _BOOL,
+        "error": _STR,
+    },
+    "dhcp_clients": {"clients": _LIST},
+    "dhcp_table": {
+        "found": _BOOL,
+        "process_found": _BOOL,
+        "pool_found": _BOOL,
+        "pool_name": _STR,
+        "rows": _LIST,
+        "termination": _STR,
+        "error": _STR,
+    },
+    "dhcp_events_register": {
+        "owned": _BOOL,
+        "registered": _INT,
+        "errors": _LIST,
+        "made_inert": _INT,
+    },
+    "dhcp_events_collect": {
+        "owned": _BOOL,
+        "events": _LIST,
+        "releases": _LIST,
+        "dropped": _BOOL,
+    },
 }
 
 #: Bounded error text from inside the engine. It is defined once per script.
@@ -262,7 +295,7 @@ def parse_probe_reading(step: str, outcome: DispatchOutcome) -> ProbeReading:
 
 
 class PacketTracerQualificationProbes:
-    """The Q0 engine probes and the Q1 private probes for one run.
+    """The Q0 engine and Q1/Q3 private probes for one run.
 
     The instance is bound to one run identity and to the invocation's counted
     callables; it has no channel of its own and never chooses one.
@@ -570,6 +603,9 @@ class PacketTracerQualificationProbes:
             "var __B=__r.unreg;if(__B){var __n=['cb1','cb2','cb3'];"
             "for(var __i=0;__i<3;__i++){if(__B[__n[__i]]){"
             "__B[__n[__i]].released=true;__inert++;}}}"
+            "var __D=__r.dhcp;if(__D&&__D.entries){for(var __j=0;"
+            "__j<__D.entries.length;__j++){if(!__D.entries[__j].released){"
+            "__D.entries[__j].released=true;__inert++;}}}"
             f"delete __q[{run}];__del=!__has(__q,{run});}}"
             "reportResult(JSON.stringify({had_run_bag:__had,owned:__own,"
             "keys:__keys,observers_marked_inert:__inert,deleted:__del,"
@@ -774,4 +810,132 @@ class PacketTracerQualificationProbes:
             "var __v=__p.getServerIp();__c.value=(__v===null||__v===undefined)"
             "?null:String(__v).substring(0,64);}}catch(__x){__c.error=__er(__x);}"
             "__o[__n[__i]]=__c;}reportResult(JSON.stringify({clients:__o}));",
+        )
+
+    # -- Q3 private probes on owned DHCP fixtures --------------------------
+
+    def read_dhcp_server_baseline(self, server: str, interface: str) -> ProbeReading:
+        """Read the exact interface binding and a bounded initial pool inventory."""
+        return self._read(
+            "dhcp_server_baseline",
+            f"var __d=ipc.network().getDevice({json.dumps(server)});"
+            "var __m=__d?__d.getProcess('DhcpServer'):null;"
+            f"var __if={json.dumps(interface)};"
+            "var __p=__m&&__m.getDhcpServerProcessByPortName(__if);"
+            "var __enabled=null,__etype='absent',__count=0,__pools=[],"
+            "__tr=false,__error='';if(__p){try{var __ev=__p.isEnable();"
+            "__etype=typeof __ev;if(__etype==='boolean'){__enabled=__ev;}"
+            "var __n=__p.getPoolCount();if(typeof __n!=='number'||!isFinite(__n)||"
+            "__n<0||Math.floor(__n)!==__n){throw new Error('pool_count');}"
+            "__count=__n;__tr=__n>16;for(var __i=0;__i<Math.min(__n,16);__i++){"
+            "var __q=__p.getPoolAt(__i);if(!__q){throw new Error('pool_row');}"
+            "__pools.push({name:String(__q.getDhcpPoolName()).substring(0,64),"
+            "network:String(__q.getNetworkAddress()).substring(0,64),"
+            "mask:String(__q.getSubnetMask()).substring(0,64),"
+            "gateway:String(__q.getDefaultRouter()).substring(0,64),"
+            "dns:String(__q.getDnsServerIp()).substring(0,64),"
+            "start:String(__q.getStartIp()).substring(0,64),"
+            "end:String(__q.getEndIp()).substring(0,64),max:__q.getMaxUsers()});}}"
+            "catch(__x){__error=__er(__x);}}"
+            "reportResult(JSON.stringify({found:!!__d,process_found:!!__p,"
+            "interface:__if,enabled:__enabled,enabled_type:__etype,"
+            "pool_count:__count,pools:__pools,truncated:__tr,error:__error}));",
+        )
+
+    def read_dhcp_clients(self, clients: Sequence[tuple[str, str]]) -> ProbeReading:
+        """Read exact client ports, preserving raw mode/MAC/address/lease text."""
+        return self._read(
+            "dhcp_clients",
+            f"var __n={json.dumps([list(item) for item in clients])},__rows=[];"
+            "for(var __i=0;__i<__n.length;__i++){var __name=__n[__i][0],"
+            "__if=__n[__i][1],__d=null,__p=null,__mode=null,__mt='absent',"
+            "__mac='',__ip='',__mask='',__lease='',__error='';try{"
+            "__d=ipc.network().getDevice(__name);if(__d){for(var __j=0;"
+            "__j<__d.getPortCount();__j++){var __c=__d.getPortAt(__j);"
+            "if(__c&&String(__c.getName())===__if){__p=__c;break;}}}"
+            "if(__p){var __mv=__p.isDhcpClientOn();__mt=typeof __mv;"
+            "if(__mt==='boolean'){__mode=__mv;}__mac=String(__p.getMacAddress())"
+            ".substring(0,64);__ip=String(__p.getIpAddress()).substring(0,64);"
+            "__mask=String(__p.getSubnetMask()).substring(0,64);"
+            "var __cp=__d.getProcess('DhcpClient');var __data=__cp&&"
+            "__cp.getDataOfPort(__if);if(__data){__lease=String("
+            "__data.getLeaseTimeStr()).substring(0,64);}}}catch(__x){"
+            "__error=__er(__x);}__rows.push({device:__name,interface:__if,"
+            "found:!!__d,port_found:!!__p,mode:__mode,mode_type:__mt,mac:__mac,"
+            "ipv4:__ip,netmask:__mask,lease_time:__lease,error:__error});}"
+            "reportResult(JSON.stringify({clients:__rows}));",
+        )
+
+    def read_dhcp_table(
+        self, server: str, interface: str, pool_name: str
+    ) -> ProbeReading:
+        """Read at most four raw lease rows and name the observed termination."""
+        return self._read(
+            "dhcp_table",
+            f"var __d=ipc.network().getDevice({json.dumps(server)});"
+            "var __m=__d?__d.getProcess('DhcpServer'):null;"
+            f"var __p=__m&&__m.getDhcpServerProcessByPortName({json.dumps(interface)});"
+            f"var __q=__p&&__p.getPool({json.dumps(pool_name)});"
+            "var __rows=[],__term='not_started',__error='';if(__q){"
+            "__term='bound';for(var __i=0;__i<4;__i++){try{var __r="
+            "__q.getLeaseAt(__i);if(!__r){__term='null';break;}__rows.push({"
+            "ipAddress:String(__r.ipAddress).substring(0,64),macAddress:String("
+            "__r.macAddress).substring(0,64),leaseTime:__r.leaseTime,port:String("
+            "__r.port).substring(0,64)});}catch(__x){__term='throw';__error="
+            "__er(__x);break;}}}reportResult(JSON.stringify({found:!!__d,"
+            "process_found:!!__p,pool_found:!!__q,pool_name:__q?String("
+            "__q.getDhcpPoolName()).substring(0,64):'',rows:__rows,"
+            "termination:__term,error:__error}));",
+        )
+
+    def register_dhcp_observers(
+        self, clients: Sequence[tuple[str, str]]
+    ) -> ProbeReading:
+        """Register two bounded event callbacks on each owned client port."""
+        return self._read(
+            "dhcp_events_register",
+            self._owned_bag()
+            + f"var __n={json.dumps([list(item) for item in clients])},__ok=0,"
+            "__errors=[],__inert=0;if(__own){var __B=__r.dhcp={seq:0,entries:[]};"
+            "var __events=['dhcpSucceed','dhcpFailed'];for(var __i=0;"
+            "__i<__n.length;__i++){var __d=ipc.network().getDevice(__n[__i][0]);"
+            "var __p=__d?__d.getPort(__n[__i][1]):null;for(var __j=0;"
+            "__j<__events.length;__j++){var __e={device:__n[__i][0],"
+            "interface:__n[__i][1],event:__events[__j],calls:0,events:[],"
+            "released:false,ident:null};__e.fn=(function(e){return function(src,args){"
+            "e.calls++;if(e.released){return;}try{if(!e.ident&&src){e.ident={"
+            "className:String(src.className||''),uuid:String(src.objectUuid||'')};}}"
+            "catch(__z){}if(e.events.length<8){var __a={};try{for(var __k in args){"
+            "if(Object.keys(__a).length<8){__a[String(__k).substring(0,32)]="
+            "String(args[__k]).substring(0,64);}}}catch(__z){}e.events.push({"
+            "seq:++__B.seq,event:e.event,args:__a});}};})(__e);__B.entries.push(__e);"
+            "try{if(!__p){throw new Error('port_absent');}__p.registerEvent("
+            "__e.event,null,__e.fn);__ok++;}catch(__x){__errors.push({device:"
+            "__e.device,event:__e.event,error:__er(__x)});}}}if(__errors.length){"
+            "for(var __x=0;__x<__B.entries.length;__x++){if(!__B.entries[__x].released){"
+            "__B.entries[__x].released=true;__inert++;}}}}reportResult(JSON.stringify({"
+            "owned:__own,registered:__ok,errors:__errors,made_inert:__inert}));",
+        )
+
+    def collect_dhcp_observers(self) -> ProbeReading:
+        """Read bounded event rows, release by identity where possible, then drop."""
+        return self._read(
+            "dhcp_events_collect",
+            self._owned_bag()
+            + "var __events=[],__releases=[],__dropped=false;if(__own&&__r.dhcp){"
+            "var __B=__r.dhcp;for(var __i=0;__i<__B.entries.length;__i++){"
+            "var __e=__B.entries[__i];for(var __j=0;__j<__e.events.length;__j++){"
+            "if(__events.length<32){__events.push({device:__e.device,interface:"
+            "__e.interface,event:__e.events[__j].event,seq:__e.events[__j].seq,"
+            "args:__e.events[__j].args});}}var __o={device:__e.device,event:"
+            "__e.event,attempted:false,threw:'',return_type:'',inert:false};"
+            "var __av=typeof _ScriptModule!=='undefined'&&_ScriptModule&&typeof "
+            "_ScriptModule.unregisterIpcEventByID==='function';if(__e.ident&&"
+            "__e.ident.className&&__e.ident.uuid&&__av){__o.attempted=true;try{"
+            "var __rv=_ScriptModule.unregisterIpcEventByID(__e.ident.className,"
+            "__e.ident.uuid,__e.event,null,__e.fn);__o.return_type=typeof __rv;}"
+            "catch(__x){__o.threw=__er(__x);}}else{__o.inert=true;}__e.released=true;"
+            "__releases.push(__o);}delete __r.dhcp;__dropped=!__has(__r,'dhcp');}"
+            "reportResult(JSON.stringify({owned:__own,events:__events,releases:"
+            "__releases,dropped:__dropped}));",
         )

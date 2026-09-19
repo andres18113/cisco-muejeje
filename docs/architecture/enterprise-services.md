@@ -208,8 +208,8 @@ E5 foundation.
 | server | `EnableServerDhcp(interface)` | `getDhcpServerProcessByPortName`, `isEnable` and `setEnable`; before/after reads are separate from setter return |
 | server | `ConfigureServerDhcpPool(...)` | ensure-present; `addPool` is void and is followed by `getPool`; matching state is a no-op, conflicts/getter failures refuse, unrelated pools/exclusions are preserved |
 | client effect | `AcquireDhcpLease(interface)` | one void `dhcpRun(port)` under `dhcp_client:<device>:<interface>`; any existing claim refuses and product code never releases, resets or deletes it |
-| client read | `dhcp_lease` | mode plus fresh address/mask/lease-time; compatible read-back is only UNKNOWN `acquisition_unattributed`; incompatible assignment contradicts |
-| server read | `dhcp_lease_attributed` | bounded intended-pool scan; exact IP/MAC row supports only `attributed_to_intended_server`; no match stays UNKNOWN without M-DHCP-2 |
+| client read | `dhcp_lease` | exact-boolean mode plus fresh address/mask/MAC/lease-time; only an address inside the compiled lease window and outside its compact exclusions is compatible, and it remains UNKNOWN `acquisition_unattributed`; a subnet-compatible address outside that allocation contradicts |
+| server read | `dhcp_lease_attributed` | bounded intended-pool scan with coherent metadata, usable client/row identities and finite lease-time numbers; an exact IP/MAC row supports only `attributed_to_intended_server`, survives a later scan limitation, and loses aggregate precedence to a valid same-IP foreign-MAC contradiction |
 
 Acquisition and verification are deliberately different phases. The existing
 applicator may evaluate a named verification prerequisite after its producing
@@ -228,12 +228,20 @@ row, timeout or reaching `max_users` never proves completion, absence or pool
 exhaustion. `configure_only` emits no acquisition action and keeps a typed
 NOT_ATTEMPTED acquisition row.
 
+Every new DHCP boolean is accepted only when the native return is an actual
+boolean; invalid truthy/falsy values never admit an effect. Server exclusion
+enumeration validates a finite integral count and refuses above the internal
+4096-row ceiling before iterating or setting anything. A failed post-effect
+read preserves uncertainty, and missing subjects, engine errors and malformed
+success payloads remain separate categories.
+
 Every DHCP operation and reader is UNKNOWN/UNMEASURED in the default catalog,
 including the separate mode-reader gate. Required DHCP therefore refuses
 before E5, while optional DHCP is excluded with complete rows and cannot
 reactivate IOS authority or admit a dependent service. Offline Node and
-integration tests exercise candidate paths but promote nothing; Q3 remains the
-only route to a measured capability.
+integration tests exercise candidate paths but promote nothing. Q3 is now an
+executable, file-only qualification stage for build 9.0.1.0858; until a LIVE
+record is interpreted independently it changes no product capability.
 
 ## Qualification boundary
 
@@ -250,6 +258,15 @@ A stage record is promotion evidence only when it is a LIVE record completed at
 the exact SHA, build, channel and stage it was authorized for. An offline
 simulation is marked as one and can never promote a capability, and a completed
 stage supports its bounded sample rather than universal behavior.
+
+Q3 composes the exact one-segment DHCP product plan through the real compiler,
+applies manifest-bound endpoint bootstrap and E6 scheduling through existing
+application/runtime boundaries, and keeps native table, timing and event
+probes explicitly qualification-only. Its capacity-one negative control does
+not prove exhaustion without a qualified completed scan. Product acquisition
+claims and observers without event identity are intentionally retained/inert;
+workspace restoration and later dedicated-process retirement are different
+cleanup facts.
 
 ## Packet Tracer runtime boundary
 

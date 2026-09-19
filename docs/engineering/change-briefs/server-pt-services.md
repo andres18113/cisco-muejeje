@@ -445,11 +445,14 @@ and the CLI only composes existing production boundaries.
 | S3 unit/domain | canonical authority, compact range arithmetic, mode foundations, IDs/hashes, capability/replay defaults | `tests/test_dhcp_authority_composition.py`, `tests/test_endpoint_dhcp_mode_observer.py`, `tests/test_service_foundational_evidence.py`, capability and replay suites |
 | S3 generated-script harness | real generated pool, mode, acquisition and lease-reader scripts executed by persistent Node stubs; stub state and call log are the oracle | `tests/test_service_dhcp_script_harness.py`; the C0 case in `tests/test_service_client_ownership_harness.py` |
 | S3 integration/system | intent through composition, E5/E6, stage-aware application, persistence, unchanged MCP schema and reporting budgets | `tests/test_service_dhcp_integration.py`, `tests/test_apply_enterprise_services.py`, `tests/test_service_product_scale.py`, surface tests |
+| S3 audit corrections | actual generated strict-boolean, allocation/attribution and exclusion-bound counterexamples plus real applicator/store preservation | `tests/test_endpoint_dhcp_mode_observer.py`, `tests/test_service_dhcp_script_harness.py`, `tests/test_dhcp_authority_composition.py`, `tests/test_service_dhcp_integration.py` |
+| Q3 qualification system | exact definition/budget, private real composition, generated probes, CLI/coordinator admission, persistence, stop rules, guard and record round trip | `tests/test_service_qualification_contracts.py`, `tests/test_service_qualification_probes.py`, `tests/test_service_qualification_coordinator.py`, `tests/test_service_qualification_cli.py` |
 
 Acceptance testing is offline through the product use case and the runner. A
-positive runtime test with an injected catalog is not product acceptance, and
-LIVE acceptance of S2 (Q2), S3 (Q3) or of the repaired Q1 requires a new
-exact-SHA authorization that this brief does not grant.
+positive runtime test with a private candidate catalog is not product
+acceptance. Block E's campaign authorizes only its clean, published, CI-green
+exact-SHA Q3-file and repaired-Q1-file attempts; it grants nothing to Q2 and
+does not promote or independently accept S3.
 
 ## S3 implementation evidence
 
@@ -532,14 +535,16 @@ Deferred, with its consumers identified in the `0850de3` archive: reducing root
 
 ## Next authorized offline work
 
-1. Independent review of the S3 branch, including C0 and Block D. Author
-   self-review does not accept it; the package stays `READY_FOR_REVIEW`.
-2. S2 exact-SHA CI remains attributed to `8ae2d60`. S3 exact-SHA CI is
-   pending because this assignment authorizes no push; no earlier run is
-   relabeled onto S3.
-3. A new Q1 authorization, Q2 for mail and Q3 for DHCP each remain separate
-   future scopes after review. Nothing here authorizes one or promotes a
-   capability.
+1. Complete F1/F2/F3 and executable Q3 as separate reviewable commits, then
+   run focused, affected, full, documentation, namespace and whitespace gates.
+2. From a clean exact delivery commit, run the delivery gate, fast-forward
+   publish only this feature branch and require exact-SHA CI green.
+3. Materialize campaign-bound authorization and lifecycle evidence, then run
+   Q3-file before repaired-Q1-file within Block E's attempt ceilings. Each
+   failed attempt remains immutable and any corrected successor gets a new
+   commit, run id, nonce and dedicated process.
+4. Deliver `READY_FOR_REVIEW`. Author self-review and campaign measurements do
+   not provide independent acceptance, merge authority or capability promotion.
 
 ## Verification evidence
 

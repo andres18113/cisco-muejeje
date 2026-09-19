@@ -146,6 +146,7 @@ class StageDefinition:
     reserve: tuple[PlannedStep, ...]
     budget: StageBudget
     unmet_prerequisites: tuple[str, ...] = ()
+    allowed_channels: tuple[str, ...] = ALLOWED_CHANNELS
 
     @property
     def fixture_names(self) -> tuple[str, ...]:
@@ -214,12 +215,12 @@ class StageDefinition:
 
 
 #: Plan 5.8 ceilings, with the reviewed Q1 design ceiling. Q0 and Q1 are the
-#: ones S4a can execute. Q1 keeps the reviewed 60/600; the repaired procedure's
+#: executable stages. Q1 keeps the reviewed 60/600; the repaired procedure's
 #: worst case is 53 operations with its 10-operation finalization reserve
 #: intact. M-DNS-3 is not repeated, so no operation is spent on a measurement
 #: the 0850de3 record already carries, and no reconciliation read was added to
 #: replace it. It authorizes no LIVE run, and it changes neither Q0 nor the
-#: declarative Q2/Q3.
+#: declarative Q2 or executable Q3.
 STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.Q0: (20, 300),
     QualificationStage.Q1: (60, 600),
@@ -238,6 +239,16 @@ Q1_NETMASK = "255.255.255.0"
 Q1_SERVER_IPV4 = "192.0.2.10"
 Q1_PC1_IPV4 = "192.0.2.11"
 Q1_PC2_IPV4 = "192.0.2.12"
+Q3_SERVER = "__MCP_E6Q_SRV"
+Q3_PC1 = "__MCP_E6Q_PC1"
+Q3_PC2 = "__MCP_E6Q_PC2"
+Q3_SWITCH = "__MCP_E6Q_SW"
+Q3_NETMASK = "255.255.255.0"
+Q3_SERVER_IPV4 = "192.0.2.10"
+Q3_GATEWAY_IPV4 = "192.0.2.1"
+Q3_DNS_IPV4 = Q3_SERVER_IPV4
+Q3_LEASE_IPV4 = "192.0.2.100"
+Q3_POOL = "MCP_E6Q_DHCP"
 
 
 def _q0() -> StageDefinition:
@@ -330,6 +341,124 @@ def _q0() -> StageDefinition:
             PlannedStep("read:restoration:2", 1),
         ),
         budget=StageBudget(ceiling_operations, ceiling_seconds, reserve_seconds=60),
+    )
+
+
+def _q3() -> StageDefinition:
+    """Return the exact bounded Server-PT DHCP qualification stage."""
+    ceiling_operations, ceiling_seconds = STAGE_CEILINGS[QualificationStage.Q3]
+    fixtures = (
+        FixtureDevice(Q3_SERVER, "Server-PT", Q3_SERVER_IPV4, Q3_NETMASK),
+        FixtureDevice(Q3_PC1, "PC-PT"),
+        FixtureDevice(Q3_PC2, "PC-PT"),
+        FixtureDevice(Q3_SWITCH, "2960-24TT"),
+    )
+    return StageDefinition(
+        stage=QualificationStage.Q3,
+        executable=True,
+        purpose=(
+            "Server-PT DHCP binding, mode, bounded lease-table, acquisition, "
+            "event-delivery and lease-time facts on one owned local segment."
+        ),
+        fixtures=fixtures,
+        links=(
+            FixtureLink(Q3_SERVER, "FastEthernet0", Q3_SWITCH, "FastEthernet0/1"),
+            FixtureLink(Q3_PC1, "FastEthernet0", Q3_SWITCH, "FastEthernet0/2"),
+            FixtureLink(Q3_PC2, "FastEthernet0", Q3_SWITCH, "FastEthernet0/3"),
+        ),
+        setup=(
+            PlannedStep("read:executable_build", 1),
+            PlannedStep("read:workspace_baseline", 1),
+            *(PlannedStep(f"create:{item.name}", 2) for item in fixtures),
+            PlannedStep("create:link:1", 2),
+            PlannedStep("create:link:2", 2),
+            PlannedStep("create:link:3", 2),
+            PlannedStep("read:fixture_identity", 1),
+        ),
+        experiments=(
+            ExperimentSpec(
+                id="M-DHCP-1",
+                hypothesis=(
+                    "The exact Server-PT interface binds a DHCP process and "
+                    "the product ensure-present pool path stores the one-user pool."
+                ),
+                required=True,
+                procedure="Q3_SETUP",
+                planned_operations=8,
+                capabilities=(
+                    "server.dhcp_process_binding",
+                    "server.dhcp_pool_configuration",
+                ),
+            ),
+            ExperimentSpec(
+                id="M-DHCP-4",
+                hypothesis=(
+                    "The two exact PC-PT ports expose bounded native MAC text."
+                ),
+                required=True,
+                procedure="Q3_SETUP",
+                planned_operations=4,
+                capabilities=("client.dhcp_mac_reader",),
+            ),
+            ExperimentSpec(
+                id="M-DHCP-5",
+                hypothesis=(
+                    "HostPort.isDhcpClientOn returns an actual boolean on each "
+                    "manifest-bound client interface."
+                ),
+                required=True,
+                procedure="Q3_SETUP",
+                planned_operations=0,
+                capabilities=("client.dhcp_mode_reader",),
+            ),
+            ExperimentSpec(
+                id="M-DHCP-2",
+                hypothesis=(
+                    "Bounded empty and capacity-one getLeaseAt samples preserve "
+                    "their observed termination and positive rows separately."
+                ),
+                required=True,
+                procedure="Q3_DHCP",
+                planned_operations=8,
+                prerequisites=("M-DHCP-1",),
+                capabilities=("server.dhcp_lease_table",),
+            ),
+            ExperimentSpec(
+                id="M-DHCP-3",
+                hypothesis=(
+                    "Qualification-only dhcpSucceed/dhcpFailed observers receive "
+                    "bounded events and are released or made inert."
+                ),
+                required=True,
+                procedure="Q3_DHCP",
+                planned_operations=4,
+                prerequisites=("M-DHCP-1",),
+                capabilities=("engine.dhcp_event_delivery",),
+            ),
+            ExperimentSpec(
+                id="M-DHCP-6",
+                hypothesis=(
+                    "Raw lease-time observations distinguish no-request, one "
+                    "requested acquisition and any naturally observed renewal."
+                ),
+                required=True,
+                procedure="Q3_DHCP",
+                planned_operations=8,
+                prerequisites=("M-DHCP-1", "M-DHCP-5"),
+                capabilities=(
+                    "client.dhcp_acquisition",
+                    "client.dhcp_lease_time_reader",
+                ),
+            ),
+        ),
+        reserve=(
+            PlannedStep("release:run_bag", 1),
+            *(PlannedStep(f"remove:{item.name}", 2) for item in fixtures),
+            PlannedStep("read:restoration:1", 1),
+            PlannedStep("read:restoration:2", 1),
+        ),
+        budget=StageBudget(ceiling_operations, ceiling_seconds, reserve_seconds=180),
+        allowed_channels=("file",),
     )
 
 
@@ -476,11 +605,7 @@ STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
         "Mail engine facts (declarative only in S4a).",
         ("S2 is not implemented", "a Q0 record is required"),
     ),
-    QualificationStage.Q3: _declarative(
-        QualificationStage.Q3,
-        "Server-PT DHCP facts (declarative only in S4a).",
-        ("S3 is not implemented", "a Q0 record is required"),
-    ),
+    QualificationStage.Q3: _q3(),
 }
 
 
@@ -687,6 +812,15 @@ def request_refusals(
                 RefusalSubject.CHANNEL,
                 f"Channel must be one of {list(ALLOWED_CHANNELS)}.",
             )
+        )
+    elif request.channel not in definition.allowed_channels:
+        return (
+            refusal(
+                RefusalKind.NOT_PERMITTED,
+                RefusalSubject.CHANNEL,
+                f"Stage {definition.stage.value} permits only "
+                f"{list(definition.allowed_channels)}.",
+            ),
         )
     if not request.packet_tracer_build:
         found.append(refusal(RefusalKind.MISSING, RefusalSubject.BUILD))

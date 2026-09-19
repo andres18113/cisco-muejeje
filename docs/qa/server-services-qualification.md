@@ -1,10 +1,10 @@
 # Server-PT services qualification (Q stages)
 
-This page is the operator-facing template for the staged Packet Tracer
-qualification that S4a prepared. It holds **no active authorization and no
-measurement**. As of this revision, no qualification stage has run against
-Packet Tracer, so no stage record exists and no capability has been promoted
-by one.
+This page is the operator-facing template for staged Packet Tracer
+qualification. It holds **no authorization by itself**. Historical Q0/Q1
+records remain archived and attributed to their executed SHA; this revision
+makes Q3 executable offline but contains no Q3 LIVE result and promotes no
+capability.
 
 The design, contracts and oracles are in section 12 of the
 [Server-PT services brief](../engineering/change-briefs/server-pt-services.md).
@@ -28,12 +28,12 @@ qualify anything.
 
 ## Stage matrix
 
-| Stage | Status in S4a | Fixtures | Ceiling | Planned worst case | Measurements |
+| Stage | Current runner state | Fixtures | Ceiling | Planned worst case | Measurements |
 | --- | --- | --- | --- | --- | --- |
 | Q0 | executable | `__MCP_E6Q_PC1` (PC-PT) | 20 operations / 300 s | 19 | M-ENG-1, ATOM-1, M-UNREG-1, M-UNREG-2 (M-HTTP-1 omitted: no HTTP server in the fixture) |
 | Q1 | executable | `__MCP_E6Q_SRV`, `__MCP_E6Q_PC1`, `__MCP_E6Q_PC2`, `__MCP_E6Q_SW` | 60 operations / 600 s | 53 | M-HTTPS-1, M-HTTPS-2 (M-DNS-1/2 omitted: optional, no reviewed probe; M-DNS-3 omitted: already measured at `0850de3`) |
 | Q2 | declarative only | none | 60 / 900 s | not planned | requires S2 and a Q0 record |
-| Q3 | declarative only | none | 60 / 1200 s | not planned | requires S3 and a Q0 record |
+| Q3 | executable; file channel only on build 9.0.1.0858 | Server-PT `192.0.2.10/24`, two DHCP PC-PT clients, 2960-24TT on exact Fa0/1..3 links | 60 / 1200 s | 60 (17 setup + 32 measurement/application + 11 reserve) | M-DHCP-1..6; one-address pool `MCP_E6Q_DHCP`; guarded acquisitions and qualification-only events |
 
 The planned figure is the stage's **bounded worst case**, not its luckiest
 trace: every production fetch is budgeted at its start, both inspections and
@@ -43,7 +43,32 @@ is refused before contact, with the arithmetic in the refusal.
 Q1's 60 / 600 is the reviewed design ceiling. The repaired procedure's worst
 case is 53 with the 10-operation finalization reserve intact (the `0850de3`
 run used 46). It authorizes no LIVE run, and it changes neither Q0's 20 / 300
-nor the declarative Q2/Q3. The runner never raises a ceiling by itself.
+nor declarative Q2. The runner never raises a ceiling by itself.
+
+Q3's exact worst case consumes its whole reviewed ceiling on paper: 17
+admission/fixture operations, 32 product/native measurement operations and an
+untouchable 11-operation reserve for the run bag, four owned removals and two
+restoration reads. The product path is compiled through the real E4/E5/E6
+composition with a private candidate capability copy. It applies only the
+endpoint bootstrap needed on the already owned physical fixture, then drives
+the real service applicator and generated runtime scripts. The public catalog
+stays UNKNOWN/UNMEASURED.
+
+The fixture has no router. Gateway option `192.0.2.1` and DNS option
+`192.0.2.10` are stored DHCP options, not reachability or DNS-service evidence.
+The pool has one usable address, `192.0.2.100`. Any initial/default native pool
+is recorded and stops before setters; it is never deleted. Each client action
+runs once under its product claim, and the declared same-action control must
+refuse without another `dhcpRun`.
+
+M-DHCP-2 records bounded empty and capacity-one table samples. Null, throw,
+repeat and bound termination remain sample facts; none is generalized into a
+lease-count API, table completion or pool exhaustion. M-DHCP-3 registers at
+most four qualification-only callbacks on the two owned clients. Missing
+event identity leaves an inert attached observer and UNKNOWN cleanup until the
+dedicated process is retired; it never creates a product event path. M-DHCP-6
+uses fixed observation windows without clock or lease manipulation, so absent
+natural renewal remains INCONCLUSIVE.
 
 M-DNS-3 is declared OMITTED rather than run again. The Q1-file run at
 `0850de3` recorded `DnsClient.getServerIp` for its exact reader, model, build
@@ -100,11 +125,11 @@ mismatched or unobservable value.
 | Field | Runner argument | Rule |
 | --- | --- | --- |
 | Authorization identity | `--authorization-id` | printable, at most 128 characters; recorded in the stage record |
-| Stage | `--authorized-stage` and `--stage` | one of Q0..Q3; Q2/Q3 and an infeasible stage refuse |
+| Stage | `--authorized-stage` and `--stage` | one of Q0..Q3; Q2 and an infeasible stage refuse |
 | Executed SHA | `--authorized-sha` and `--expected-head` | 40 lowercase hex; equal to each other, to observed `HEAD`, and to its published upstream; clean worktree |
 | Fixture targets | `--authorized-target` and `--target` (repeat) | exactly the stage fixtures, no duplicates |
-| Channel | `--authorized-channel` and `--channel` | `http` or `file`; one per authorization, fixed for the whole run |
-| Build | `--authorized-build` and `--packet-tracer-build` | one exact four-component build; must equal the running application's `AppWindow.getVersion()` |
+| Channel | `--authorized-channel` and `--channel` | `http` or `file`; one per authorization, fixed for the whole run; Q3 accepts only `file` |
+| Build | `--authorized-build` and `--packet-tracer-build` | one exact four-component build; must equal `AppWindow.getVersion()`; Q3 is fixed to `9.0.1.0858` |
 | Budget | `--authorized-max-operations`, `--authorized-max-seconds` | exactly the stage ceiling |
 | Explicit execution | `--execute` | without it nothing is read or contacted |
 | Governed checkout | environment `PT_MCP_GOVERNED_ROOT` | declared by the operator; never derived |
