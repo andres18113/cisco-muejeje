@@ -324,7 +324,8 @@ Deferred, with its consumers identified in the `0850de3` archive: reducing root
 1. Independent review of this package. Blocks A, B and the Block C review
    correction are landed with their regressions; the package stays
    `READY_FOR_REVIEW`.
-2. Exact-SHA CI once a push is authorized; no earlier run is relabeled.
+2. Exact-SHA CI is recorded above for `8ae2d60`; no earlier run is
+   relabeled onto it, and it is relabeled onto nothing later.
 3. Only after that review may a new exact-SHA Q1 authorization be requested,
    and a Q2 authorization for mail; neither sample can become S1b/Q1b
    evidence, and nothing here promotes a capability.
@@ -357,10 +358,46 @@ reset a claim.
 | `ec3dc24` | `d804d8b` | results of the three commits above |
 | `26b1015` | `a60166c` | Block C: the owned-client release diagnostics, found by self-review of the same boundary |
 | `897242f` | `3698880` | results of the two commits above |
-| this commit | — | the coherence rule's input contract, and this line |
+| `9a09cf2` | `dc17ce5` | the coherence rule's input contract |
+| `8ae2d60` | `64b579b` | risk S: the two bridge wait bounds, measured soundly after a CI failure |
+| this commit | — | results only: this line and the rows above |
 
-Successful CI run `35414623111` is evidence for `6e78e74` and for nothing
-else. The three commits above it have no CI run, and none may be inherited.
+CI runs are attributed to their exact SHA and never inherited. Run
+`35414623111` is evidence for `6e78e74`. Run `35449378228` on `9a09cf2`
+failed one job of six; the risk-S note below is its correction. Run
+`35450975803` on `8ae2d60` is green on all six, and `8ae2d60` carries every
+executable change in this package — this commit changes documentation only,
+and its own run is verified at delivery rather than quoted here.
+
+**Risk S — the CI clock measurement.** CI run `35449378228` on `9a09cf2`
+failed one job of six, `pytest (windows-latest, 3.11)`, on
+`assert 9.249999999999972 >= 9.25` in
+`test_governed_wait_longer_than_the_old_fixed_window_is_honored` — a test
+this package does not touch, in a module it does not import.
+
+The deficit is exactly one ulp of `time.monotonic()` at an uptime of
+128-256 s, which a fresh runner has. The clock returns seconds-since-boot as
+a float, `GetTickCount64` in milliseconds on that platform, so each endpoint
+carries up to half an ulp of representation error and their difference can
+read below the interval that actually elapsed. The bound left no margin for
+it. The same test also read its start point AFTER starting the responder
+thread, so the sleep being measured could begin before the measurement did;
+the two microsecond-scale terms nearly cancelled and the rounding decided the
+comparison.
+
+Both bounds now read `time.monotonic_ns`, which has no representation error,
+and allow the clock's own resolution — one tick is the most a pair of samples
+can under-report, so this is the measurement's own uncertainty and not slack.
+The governed wait measures from before the thread starts, making the observed
+window a true superset of the sleep. A wait genuinely short by more than one
+tick still fails. `test_file_bridge.py` carried the same unsound float bound
+without ever firing and is corrected with it rather than left as a known
+latent flake.
+
+No production code changes. Touching both files takes ownership of their Ruff
+state, so their 25 pre-existing findings are cleared here — eleven docstrings,
+two import blocks and one `zip(..., strict=True)` over two lists the same
+assertion already requires to be parallel — and the gated set grows 73 -> 75.
 
 ### Causal RED and GREEN
 
@@ -426,7 +463,12 @@ defect; the Q stub gains `setpage_throws_after_http/https`.
 | full offline suite | `26b1015` | 6317 passed, 3 skipped, the same 3 warnings |
 | quality gate, delivery mode | `4b45039`, clean tree | base `cisco/main` → `6263344`, merge base identical; 73 changed Python files gated, 0 mechanical exemptions, Ruff lint and format clean |
 | quality gate, delivery mode | `26b1015`, clean tree | the same base and merge base, the same 73 files, clean |
-| quality gate, delivery mode | this commit, clean tree | the same 73 files, clean. This commit changes one docstring and one table row, so the `26b1015` suite result above stands for its executable content |
+| quality gate, delivery mode | `9a09cf2`, clean tree | the same 73 files, clean. That commit changed one docstring and one table row, so the `26b1015` suite result stands for its executable content |
+| full offline suite | `8ae2d60` | 6317 passed, 3 skipped, the same 3 pre-existing Pytest warnings |
+| quality gate, delivery mode | `8ae2d60`, clean tree | 75 changed Python files gated, 0 mechanical exemptions, Ruff lint and format clean |
+| the two corrected wait bounds, repeated | `8ae2d60` | 3 consecutive runs, 2 passed each |
+| exact-SHA CI, run `35450975803` | `8ae2d60` | 6 of 6 green: `pytest` on windows-latest and ubuntu-latest × Python 3.11 and 3.13, plus `quality` and `docs`. The `windows-latest, 3.11` job that failed on `9a09cf2` is among them |
+| quality gate, delivery mode | this commit, clean tree | the same 75 files, clean; this commit changes documentation only |
 | namespace inventory | this commit | 0 active imports, 0 active strings, 0 unreviewed inert mentions |
 | documentation build | this commit | built; only the two pre-existing `handoff.md` link warnings, none introduced |
 | whitespace | this commit | `git diff --check` clean |
@@ -444,9 +486,11 @@ re-run on this commit.
 ## Residual limitations
 
 - **READY_FOR_REVIEW, never self-approved.** Only an independent reviewer can
-  accept this package. Exact-SHA CI is **pending** for every Block C commit:
-  nothing here has been pushed, and run `35414623111` stays attributed to
-  `6e78e74` alone.
+  accept this package. CI being green is not acceptance: it is six offline
+  jobs, and every limitation below survives it.
+- **CI covers `8ae2d60`, not each commit behind it.** Run `35450975803` is
+  attributed to that SHA alone. The Block C commits below it were never run
+  individually, so the package is green as delivered, not commit by commit.
 - **The Q1 page effect is bounded, not reconciled.** Block C adds no
   reconciliation read. An attempted write that was not read back stops the
   experimental phase instead of being resolved, so a repaired-Q1 run can end
