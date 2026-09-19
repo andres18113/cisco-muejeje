@@ -465,6 +465,11 @@ def _dns_window_reading(window: str) -> DnsWindowReading:
 def mailbox_scan_incoherence(payload: dict) -> str:
     """Name the first relation one mailbox scan breaks, or "" when coherent.
 
+    `payload` must already carry every counter of the scan's typed shape;
+    the caller establishes that first, and this rule raises `KeyError` rather
+    than reading a missing key as a zero, which is the mistake it exists to
+    prevent.
+
     The relations are the bounded scanner's own, read off the script
     `_verify_smtp_delivered` generates: it reads `count` once, walks the
     mailbox newest first while `scanned < MAILBOX_SCAN_LIMIT`, increments

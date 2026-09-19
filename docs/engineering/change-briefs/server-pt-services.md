@@ -355,8 +355,9 @@ reset a claim.
 | `5313eb0` | `ab95747` | Block C: the S2 secret boundary, both effect admissions and the mailbox coherence rule |
 | `4b45039` | `2cf89ce` | Block C: the unresolved Q1 page effect and the M-DNS-3 scope alignment |
 | `ec3dc24` | `d804d8b` | results of the three commits above |
-| `26b1015` | — | Block C: the owned-client release diagnostics, found by self-review of the same boundary |
-| this commit | — | results only: this section |
+| `26b1015` | `a60166c` | Block C: the owned-client release diagnostics, found by self-review of the same boundary |
+| `897242f` | `3698880` | results of the two commits above |
+| this commit | — | the coherence rule's input contract, and this line |
 
 Successful CI run `35414623111` is evidence for `6e78e74` and for nothing
 else. The three commits above it have no CI run, and none may be inherited.
@@ -425,7 +426,7 @@ defect; the Q stub gains `setpage_throws_after_http/https`.
 | full offline suite | `26b1015` | 6317 passed, 3 skipped, the same 3 warnings |
 | quality gate, delivery mode | `4b45039`, clean tree | base `cisco/main` → `6263344`, merge base identical; 73 changed Python files gated, 0 mechanical exemptions, Ruff lint and format clean |
 | quality gate, delivery mode | `26b1015`, clean tree | the same base and merge base, the same 73 files, clean |
-| quality gate, delivery mode | this commit, clean tree | the same 73 files, clean |
+| quality gate, delivery mode | this commit, clean tree | the same 73 files, clean. This commit changes one docstring and one table row, so the `26b1015` suite result above stands for its executable content |
 | namespace inventory | this commit | 0 active imports, 0 active strings, 0 unreviewed inert mentions |
 | documentation build | this commit | built; only the two pre-existing `handoff.md` link warnings, none introduced |
 | whitespace | this commit | `git diff --check` clean |
