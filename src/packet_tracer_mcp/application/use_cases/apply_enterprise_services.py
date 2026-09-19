@@ -136,8 +136,9 @@ _MISSING_RESULT_MESSAGE = "Runtime returned no mutation result."
 # Match the authenticated bridge's existing 1 MiB body ceiling so the product
 # never presents a larger intent as a workload the runtime path can support.
 MAX_INTENT_JSON_BYTES = 1 << 20
-# Offline scale acceptance exercises the largest requested reporting workload:
-# 1000 clients and the current bounded DNS+HTTP schema's five client checks.
+# Offline scale acceptance exercises 1000 clients. The fixed response budget
+# remains five checks per client: DHCP-only uses two, while a combined
+# DNS/HTTP/DHCP seven-row workload is refused explicitly rather than sampled.
 # These are response-composition budgets, not Packet Tracer capacity claims.
 MAX_REPORTING_CLIENTS = 1000
 MAX_CLIENT_CHECK_ROWS = MAX_REPORTING_CLIENTS * 5
@@ -681,7 +682,9 @@ def _drift_conflicts(
     unreadable: list[str] = []
     confirmed: set[str] = set()
     for action in configuration_plan.actions:
-        if action.id not in scope or not isinstance(action, SetEndpointStaticAddress):
+        if action.id not in scope or not isinstance(
+            action, SetEndpointStaticAddress | SetEndpointDhcp
+        ):
             continue
         device_name = deployed_names.get(action.device_id, action.device_name)
         if observer is None:
@@ -700,9 +703,11 @@ def _drift_conflicts(
             )
             continue
         current = (observation.ipv4 or "").strip()
-        if current and current != action.ipv4:
+        if isinstance(action, SetEndpointDhcp) and current:
+            conflicts.append(f"{action.id}:{current}:dhcp_mode_requested")
+        elif current and current != action.ipv4:
             conflicts.append(f"{action.id}:{current}!={action.ipv4}")
-        elif current == action.ipv4:
+        elif isinstance(action, SetEndpointStaticAddress) and current == action.ipv4:
             confirmed.add(action.id)
     return conflicts, unreadable, confirmed
 
@@ -1738,9 +1743,10 @@ def _execute(
     # ahead with the stage record, so an earlier run's message can never
     # satisfy this run's rows and the compiled plan's hash is untouched.
     run.record.nonces = {
-        reference: message_nonce_factory() for reference in eligible_plan.message_refs()
+        reference: message_nonce_factory()
+        for reference in eligible_plan.operation_nonce_refs()
     }
-    eligible_plan = eligible_plan.with_message_nonces(run.record.nonces)
+    eligible_plan = eligible_plan.with_operation_nonces(run.record.nonces)
     run.transition(ServiceStage.SERVICE_APPLY, outcome="started")
     service_result: ServiceApplicationResult | None = None
     halted_detail = ""

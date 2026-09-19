@@ -31,6 +31,9 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     EnableServerDhcp,
     ServiceType,
 )
+from packet_tracer_mcp.domain.enterprise.services.service_policy import (
+    derive_service_policy,
+)
 
 SERVER_ID = "endpoint/hq/default/server/001"
 CLIENT_IDS = [
@@ -239,6 +242,104 @@ def test_e6_rejects_a_delegated_segment_that_still_contains_an_ios_pool():
 
     assert result.plan is None
     assert ConfigurationIssueCode.DHCP_AUTHORITY_CONFLICT in {
+        item.code for item in result.issues
+    }
+
+
+def test_two_sites_may_delegate_distinct_segments_without_competing():
+    """Allow one canonical Server-PT authority on each independent segment."""
+    sites = []
+    for name, site_type in (("HQ", "hq"), ("Branch", "branch")):
+        site_id = name.casefold()
+        sites.append(
+            {
+                "name": name,
+                "type": site_type,
+                "endpoints": [
+                    {
+                        "role": "user_pc",
+                        "count": 1,
+                        "addressing_preference": "dhcp",
+                    },
+                    {
+                        "role": "server",
+                        "count": 1,
+                        "addressing_preference": "static",
+                        "segment_role": "data",
+                    },
+                ],
+                "services": [
+                    {
+                        "name": f"dhcp-{site_id}",
+                        "service_type": "dhcp",
+                        "host_device_id": f"endpoint/{site_id}/default/server/001",
+                        "segment_id": f"{site_id}-data",
+                        "client_device_ids": [
+                            f"endpoint/{site_id}/default/user_pc/001"
+                        ],
+                        "dhcp_pool": {},
+                    }
+                ],
+            }
+        )
+    payload = {"name": "MULTI", "address_space": "198.18.0.0/16", "sites": sites}
+
+    composition = _compose(payload)
+
+    assert composition.issues == []
+    assert composition.configuration_policy.delegated_dhcp_segment_ids == [
+        "branch-data",
+        "hq-data",
+    ]
+
+
+def test_policy_uses_canonical_ids_when_server_display_names_collide():
+    """Resolve authority by semantic id even if two sites show the same name."""
+    payload = _dhcp_payload()
+    intent = EnterpriseIntent.model_validate(payload)
+    initial = compose_enterprise_reference(
+        intent, packet_tracer_version=BACKEND_VERSION
+    )
+    topology = initial.topology.model_copy(deep=True)
+    for device in topology.devices:
+        if device.model == "Server-PT":
+            device.name = "DUPLICATE-DISPLAY-NAME"
+
+    derived = derive_service_policy(
+        intent,
+        enterprise=initial.enterprise,
+        topology=topology,
+    )
+
+    assert derived.is_valid
+    assert derived.policy.delegated_dhcp_server_device_ids == {SEGMENT_ID: SERVER_ID}
+
+
+def test_ambiguous_server_interfaces_are_refused_instead_of_choosing_first():
+    """Reject a server with two candidate addressed links when none was named."""
+    composition = _compose(_dhcp_payload())
+    topology = composition.topology.model_copy(deep=True)
+    link = next(
+        item
+        for item in topology.links
+        if SERVER_ID in {item.device_a_id, item.device_b_id}
+    )
+    duplicate = link.model_copy(deep=True)
+    duplicate.id = link.id + "/duplicate"
+    if duplicate.device_a_id == SERVER_ID:
+        duplicate.port_a = "FastEthernet1"
+    else:
+        duplicate.port_b = "FastEthernet1"
+    topology.links.append(duplicate)
+
+    result = compile_enterprise_services(
+        composition.enterprise,
+        topology,
+        composition.configuration,
+    )
+
+    assert result.plan is None
+    assert ConfigurationIssueCode.DHCP_INTERFACE_MISSING in {
         item.code for item in result.issues
     }
 

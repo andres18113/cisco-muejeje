@@ -135,7 +135,7 @@ Packet Tracer.
 
 | Tool | What it does |
 |------|--------------|
-| `pt_apply_enterprise_services` | Apply and verify DNS and HTTP for the selected PC-PT clients of one Server-PT, against a deployment `pt_live_deploy` already produced. |
+| `pt_apply_enterprise_services` | Apply governed Server-PT services for selected clients against a deployment `pt_live_deploy` already produced. DNS/HTTP are available on the documentary baseline; mail and DHCP remain capability-gated candidates. |
 
 ```text
 pt_apply_enterprise_services(
@@ -151,10 +151,11 @@ does not clean up when it finishes: the only thing it releases is the temporary
 background clients its own verification created, and it reports the outcome of
 every one of those releases, including the ones that did not resolve.
 
-**Supported path.** One site, one segment, a static Server-PT and static PC-PT
+**Supported path.** One site, one segment, a static Server-PT and wired PC-PT
 clients whose required access-port foundations terminate on one access switch.
-DHCP, routed, foreign-site and ungoverned inter-switch paths are refused before
-the first service-related configuration effect; they are not part of S1.
+The accepted DNS/HTTP baseline uses static clients. S3 also compiles a
+same-segment delegated DHCP candidate with a mode-only E5 bootstrap; relay,
+routed, wireless, foreign-site and ungoverned inter-switch paths are refused.
 
 **Inputs.**
 
@@ -229,6 +230,22 @@ candidate runtime behind it -- credential references resolved from
 mailbox presence as supporting evidence only, and no send or retrieval event
 observed -- is described in the
 [E6 architecture](architecture/enterprise-services.md#mail-under-the-event-fallback).
+
+**Server-PT DHCP is accepted in the intent and never executed by the default
+catalog.** A `dhcp` service names the canonical `host_device_id`, `segment_id`
+and selected wired PC-PT clients. Its optional `dhcp_pool` object carries
+`interface`, `pool_name`, `start_offset` and `max_users`; empty/zero values are
+derived from the resolved allocation or refused. `configure_only` configures
+the server candidate but emits no explicit acquisition and reports acquisition
+as NOT_ATTEMPTED.
+
+Every DHCP operation is `unknown`: exact-interface mode read, server enable,
+pool ensure-present, claimed `dhcpRun`, address read-back and intended-pool
+attribution. A required DHCP service is therefore refused before E5; an
+optional one is excluded with complete rows, and dependent services are also
+excluded or refused rather than borrowing an IOS pool. There is no MCP
+override. The candidate contract and its evidence limits are described in the
+[E6 architecture](architecture/enterprise-services.md#server-pt-dhcp-under-the-event-fallback).
 
 ## Live-state inspection
 

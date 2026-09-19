@@ -449,6 +449,8 @@ class AcquireDhcpLease(BaseServiceAction):
     network: str
     prefix: int
     netmask: str
+    claim_ref: str
+    nonce: str = ""
 
 
 ServiceAction = Annotated[
@@ -607,6 +609,19 @@ class ServicePlan(BaseModel):
             if isinstance(item, SendMailMessage)
         ]
 
+    def operation_nonce_refs(self) -> list[str]:
+        """Return every execute-once reference that needs a per-run nonce."""
+        return sorted(
+            {
+                *self.message_refs(),
+                *(
+                    item.claim_ref
+                    for item in self.actions
+                    if isinstance(item, AcquireDhcpLease)
+                ),
+            }
+        )
+
     def with_message_nonces(self, nonces: Mapping[str, str]) -> ServicePlan:
         """Return a copy whose messages and message rows carry this run's nonces.
 
@@ -621,6 +636,14 @@ class ServicePlan(BaseModel):
             reference = expectation.expected.get("message_ref")
             if isinstance(reference, str) and reference in nonces:
                 expectation.expected["nonce"] = nonces[reference]
+        return bound
+
+    def with_operation_nonces(self, nonces: Mapping[str, str]) -> ServicePlan:
+        """Bind mail and DHCP claim nonces without changing plan identity."""
+        bound = self.with_message_nonces(nonces)
+        for action in bound.actions:
+            if isinstance(action, AcquireDhcpLease):
+                action.nonce = nonces.get(action.claim_ref, "")
         return bound
 
 

@@ -135,3 +135,117 @@ def test_reporting_budget_is_the_measured_1000_by_5_boundary():
     assert MAX_CLIENT_CHECK_ROWS == MAX_REPORTING_CLIENTS * _CHECKS_PER_CLIENT
     assert not _reporting_budget_exceeded(admitted)
     assert _reporting_budget_exceeded(too_many_clients)
+
+
+def _dhcp_reporting_fixture(client_count: int):
+    """Build the two distinct DHCP claims retained for every selected client."""
+    clients = [f"dhcp-client-{index:04d}" for index in range(client_count)]
+    service = ServiceDefinition(
+        id="service/hq/dhcp",
+        name="dhcp",
+        service_type=ServiceType.DHCP,
+        site_id="hq",
+        host_device_id="server-1",
+        host_device_name="SERVER-1",
+        host_model="Server-PT",
+        address="198.18.0.2",
+        segment_id="hq-data",
+        client_device_ids=clients,
+        protocol="udp",
+        ports=[67, 68],
+    )
+    expectations = [
+        ServiceVerificationExpectation(
+            id=f"expectation/{kind.value}/{client_id}",
+            service_id=service.id,
+            action_id="action/dhcp",
+            kind=kind,
+            evidence_kind=(
+                ServiceEvidenceKind.BEHAVIORAL
+                if kind is ServiceVerificationKind.DHCP_LEASE
+                else ServiceEvidenceKind.DIRECT_STATE
+            ),
+            host_device_id="server-1",
+            host_device_name="SERVER-1",
+            host_model="Server-PT",
+            client_device_id=client_id,
+            client_device_name=client_id.upper(),
+            client_model="PC-PT",
+        )
+        for client_id in clients
+        for kind in (
+            ServiceVerificationKind.DHCP_LEASE,
+            ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED,
+        )
+    ]
+    plan = ServicePlan(
+        id="dhcp-plan",
+        source_topology_id="topology",
+        source_topology_hash="topology-hash",
+        source_configuration_id="configuration",
+        source_configuration_hash="configuration-hash",
+        services=[service],
+        verification_expectations=expectations,
+    )
+    result = ServiceApplicationResult(
+        service_plan_id=plan.id,
+        service_semantic_hash="service-hash",
+        source_topology_hash=plan.source_topology_hash,
+        source_configuration_hash=plan.source_configuration_hash,
+        status=ConfigurationApplicationStatus.PARTIAL,
+        verification_results=[
+            ServiceVerificationResult(
+                expectation_id=item.id,
+                service_id=service.id,
+                status=ActionExecutionStatus.UNKNOWN,
+                evidence_kind=item.evidence_kind,
+                observation=ObservationFact.INCONCLUSIVE,
+                cause="offline_scale_fixture",
+            )
+            for item in expectations
+        ],
+    )
+    return clients, service, plan, result
+
+
+@pytest.mark.parametrize("client_count", [2, 20, 200, MAX_REPORTING_CLIENTS])
+def test_dhcp_reporting_retains_both_claims_at_every_admitted_scale(client_count):
+    """Keep acquisition and attribution rows complete through 1000 clients."""
+    clients, service, plan, result = _dhcp_reporting_fixture(client_count)
+    metrics = ClientRowAssemblyMetrics()
+
+    rows = _client_rows(
+        plan,
+        result,
+        [service],
+        {client_id: client_id.upper() for client_id in clients},
+        {client_id: "PC-PT" for client_id in clients},
+        metrics=metrics,
+    )
+
+    assert not _reporting_budget_exceeded(plan)
+    assert len(rows) == client_count
+    assert all(len(item.results[service.id].checks) == 2 for item in rows)
+    assert metrics.expectations_indexed == client_count * 2
+    assert metrics.check_lookups == client_count * 2
+
+
+def test_combined_seven_row_workload_is_explicitly_refused_at_1000_clients():
+    """Do not raise the five-row budget or silently drop DHCP rows."""
+    clients, dns, baseline, _result = _reporting_fixture(MAX_REPORTING_CLIENTS)
+    _clients, dhcp, dhcp_plan, _dhcp_result = _dhcp_reporting_fixture(
+        MAX_REPORTING_CLIENTS
+    )
+    combined = baseline.model_copy(
+        update={
+            "services": [dns, dhcp],
+            "verification_expectations": [
+                *baseline.verification_expectations,
+                *dhcp_plan.verification_expectations,
+            ],
+        }
+    )
+
+    assert len(clients) == MAX_REPORTING_CLIENTS
+    assert len(combined.verification_expectations) == MAX_REPORTING_CLIENTS * 7
+    assert _reporting_budget_exceeded(combined)

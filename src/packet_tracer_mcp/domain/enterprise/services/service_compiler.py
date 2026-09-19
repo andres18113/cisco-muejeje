@@ -407,6 +407,7 @@ class ServiceCompiler:
                     client_ids,
                     foundations,
                     configuration,
+                    topology,
                     devices,
                     issues,
                 )
@@ -1091,13 +1092,25 @@ class ServiceCompiler:
         client_ids: list[str],
         foundations: dict[str, object],
         configuration: ConfigurationPlan,
+        topology: TopologyPlan,
         devices: dict[str, DevicePlan],
         issues: list[ConfigurationIssue],
     ) -> list[ServiceAction]:
         """Compile one validated same-segment Server-PT DHCP service."""
         requested = requirement.dhcp_pool or ServerDhcpPoolRequirement()
+        host_id = host.id or host.name
+        candidate_interfaces = {
+            link.port_a if link.device_a_id == host_id else link.port_b
+            for link in topology.links
+            if host_id in {link.device_a_id, link.device_b_id}
+        }
         interface = requested.interface.strip() or host_foundation.interface
-        if not interface or interface != host_foundation.interface:
+        if (
+            not interface
+            or interface != host_foundation.interface
+            or interface not in candidate_interfaces
+            or (not requested.interface.strip() and len(candidate_interfaces) != 1)
+        ):
             issues.append(
                 _error(
                     ConfigurationIssueCode.DHCP_INTERFACE_MISSING,
@@ -1279,6 +1292,7 @@ class ServiceCompiler:
                     network=str(network.network_address),
                     prefix=network.prefixlen,
                     netmask=str(network.netmask),
+                    claim_ref=_stable_id("dhcp-claim", service_id, client_id),
                 )
             )
         return actions

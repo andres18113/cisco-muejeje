@@ -22,7 +22,7 @@ before contacting a runtime.
 
 The existing `ServiceRequirement` is extended instead of introducing a second
 intent hierarchy. It identifies one of the closed service types DNS, HTTP,
-HTTPS, NTP, TFTP, SMTP or POP3; an optional explicit E4 host; client scope; and
+HTTPS, NTP, TFTP, SMTP, POP3 or DHCP; an optional explicit E4 host; client scope; and
 only the service-specific data needed by that type. Host selection is deterministic:
 an explicit device wins, then a matching service role, then a generic server,
 all within the requested site and ordered by stable device identity. E6 never
@@ -42,6 +42,8 @@ The action set is closed and backend-neutral:
 - `EnableSmtpService`, `EnablePop3Service`, `EnsureEmailAccount`,
   `ConfigureEmailClient` and `SendMailMessage` (see
   [Mail under the event fallback](#mail-under-the-event-fallback))
+- `EnableServerDhcp`, `ConfigureServerDhcpPool` and `AcquireDhcpLease`
+  (see [Server-PT DHCP under the event fallback](#server-pt-dhcp-under-the-event-fallback))
 
 There is no raw server command, arbitrary JavaScript, host-file import, or
 generic client shell command. DNS currently compiles only A records. HTTP test
@@ -66,10 +68,13 @@ enter it.
 ## Apply, observe, and accept
 
 `COMPILED`, `APPLIED`, and `VERIFIED` remain separate. The applicator requires
-every referenced E5 endpoint-address action to have independent `VERIFIED`
-status. A merely applied foundational action is insufficient, and E6 never
-tries to repair it. Runtime target name/model identity and per-service
-application capability are also checked before mutation.
+every referenced E5 foundation to have independent `VERIFIED` status. Static
+endpoints use the attributable IPv4/netmask core; delegated DHCP clients use a
+distinct mode-only foundation from a fresh `HostPort.isDhcpClientOn()` read on
+the manifest-bound interface. A merely applied action is insufficient, an
+address is not mode proof, and E6 never tries to repair either foundation.
+Runtime target name/model identity and per-service application capability are
+also checked before mutation.
 
 The capability matrix records compile support, application support, direct
 read-back, and behavioral verification independently. Unknown application
@@ -179,6 +184,57 @@ record exists. Secret-bearing actions are admitted only on the authenticated
 HTTP channel, after every reference resolved, and every resolved value is
 redacted from runtime rows in raw, JSON-escaped and URL-encoded form.
 
+## Server-PT DHCP under the event fallback
+
+DHCP authority is decided once inside canonical composition, after site,
+segment and device identities exist and before E5 compilation. A delegated
+segment carries one explicit Server-PT owner. E5 emits no IOS pool for that
+segment, records `DHCP_DELEGATED_TO_SERVICE`, and still emits each client's
+`SetEndpointDhcp` with its access/VLAN prerequisite. An explicit IOS owner,
+two Server-PT owners, a foreign-segment server/client or a remaining E5 IOS
+pool is a typed refusal; product code disables no existing DHCP server.
+
+`ServerDhcpPoolRequirement` carries only operator choices: interface, pool
+name, start offset and maximum users. Empty/zero structural defaults are
+derived from the resolved E5 allocation or refused. Pool arithmetic validates
+the IPv4 network, mask, usable window and bounded capacity without
+materializing the subnet. Server, gateway and static-client exclusions are
+stored as compact ranges. The exact Server-PT interface comes from its static
+E5 foundation.
+
+| Step | Action or expectation | Contract |
+| --- | --- | --- |
+| E5 bootstrap | `endpoint_dhcp_mode` | nonfailed/nonuncertain `SetEndpointDhcp` plus a fresh true mode read on the exact interface; no address is required |
+| server | `EnableServerDhcp(interface)` | `getDhcpServerProcessByPortName`, `isEnable` and `setEnable`; before/after reads are separate from setter return |
+| server | `ConfigureServerDhcpPool(...)` | ensure-present; `addPool` is void and is followed by `getPool`; matching state is a no-op, conflicts/getter failures refuse, unrelated pools/exclusions are preserved |
+| client effect | `AcquireDhcpLease(interface)` | one void `dhcpRun(port)` under `dhcp_client:<device>:<interface>`; any existing claim refuses and product code never releases, resets or deletes it |
+| client read | `dhcp_lease` | mode plus fresh address/mask/lease-time; compatible read-back is only UNKNOWN `acquisition_unattributed`; incompatible assignment contradicts |
+| server read | `dhcp_lease_attributed` | bounded intended-pool scan; exact IP/MAC row supports only `attributed_to_intended_server`; no match stays UNKNOWN without M-DHCP-2 |
+
+Acquisition and verification are deliberately different phases. The existing
+applicator may evaluate a named verification prerequisite after its producing
+action and before a dependent action. Every effect or behavior on a delegated
+client waits for that client's `DHCP_LEASE` to be VERIFIED; mode and an
+intended-pool row are insufficient. Server configuration and independent
+static-client work do not wait on a lease. Each action is classified once,
+uncertainty is never redispatched, and a mixed action/verification cycle closes
+without a call.
+
+The measured R-EVT-05 fallback registers no DHCP observer. `getLeaseTimeStr()`
+has no qualified causality; `getLeaseAt(i)` has no documented count or end
+condition; MAC representation equivalence and the pool setter interaction are
+also unmeasured. A positive row may be retained, but a null, throw, repeated
+row, timeout or reaching `max_users` never proves completion, absence or pool
+exhaustion. `configure_only` emits no acquisition action and keeps a typed
+NOT_ATTEMPTED acquisition row.
+
+Every DHCP operation and reader is UNKNOWN/UNMEASURED in the default catalog,
+including the separate mode-reader gate. Required DHCP therefore refuses
+before E5, while optional DHCP is excluded with complete rows and cannot
+reactivate IOS authority or admit a dependent service. Offline Node and
+integration tests exercise candidate paths but promote nothing; Q3 remains the
+only route to a measured capability.
+
 ## Qualification boundary
 
 Support for a Packet Tracer behavior that the bundled reference only documents
@@ -224,6 +280,8 @@ conservative baseline for `Server-PT`:
 | TFTP file publication | unknown | unknown | unobservable |
 | SMTP/POP3 enable, accounts, clients | unknown | unknown | unknown; supporting mailbox presence only |
 | SMTP send, POP3 retrieval | unknown | unknown | gated by the event fallback |
+| Server-PT DHCP enable/pool | unknown | unknown | Q3 not run |
+| DHCP acquisition/attribution | unknown | unknown | read-back at most UNKNOWN under R-EVT-05 |
 
 DNS uses `addARecordToNameServerDb` and `getARecordWithAddress`. The older
 `addIpAddress` path updates a legacy table but did not produce a wire-operational

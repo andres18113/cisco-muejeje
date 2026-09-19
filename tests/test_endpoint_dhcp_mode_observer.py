@@ -5,13 +5,30 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from packet_tracer_mcp.application.use_cases.apply_configuration import (
+    ConfigurationApplicator,
+)
+from packet_tracer_mcp.application.use_cases.foundational_evidence import (
+    derive_service_foundational_statuses,
+)
 from packet_tracer_mcp.domain.enterprise.models.configuration import (
+    ConfigurationPhase,
+    ConfigurationPlan,
+    SetEndpointDhcp,
     VerificationExpectation,
     VerificationKind,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     FieldVerificationStatus,
+    RuntimeConfigurationTarget,
+)
+from packet_tracer_mcp.domain.enterprise.models.service_plan import (
+    FoundationalServiceRequirement,
+    ServicePlan,
+)
+from packet_tracer_mcp.domain.enterprise.services.configuration_compiler import (
+    configuration_plan_semantic_hash,
 )
 from packet_tracer_mcp.infrastructure.execution.endpoint_dhcp_mode_observer import (
     DhcpModeObservation,
@@ -137,3 +154,83 @@ def test_wrong_interface_and_unreadable_mode_are_unobservable():
 
     assert wrong.status is ActionExecutionStatus.UNOBSERVABLE
     assert unreadable.status is ActionExecutionStatus.UNOBSERVABLE
+
+
+def test_real_e5_route_founds_e6_on_mode_true_with_no_address():
+    """Carry the actual E5 reader result into the E6 foundation predicate."""
+    action = SetEndpointDhcp(
+        id="endpoint-dhcp",
+        phase=ConfigurationPhase.ENDPOINT_ADDRESSING,
+        device_id="client-1",
+        device_name="PC-01",
+        site_id="hq",
+        interface="FastEthernet0",
+        segment_id="hq-data",
+        network="192.0.2.0",
+        prefix=24,
+        netmask="255.255.255.0",
+        gateway="192.0.2.1",
+        required_capability="endpoint_dhcp",
+    )
+    expectation = _expectation()
+    plan = ConfigurationPlan(
+        id="cfg-dhcp-mode",
+        source_topology_id="topology",
+        source_topology_hash="topology-hash",
+        actions=[action],
+        verification_expectations=[expectation],
+    )
+    plan.semantic_hash = configuration_plan_semantic_hash(plan)
+    payload = json.dumps(
+        {
+            "found": True,
+            "port_found": True,
+            "interface": "FastEthernet0",
+            "mode_channel": True,
+            "dhcp_mode": True,
+        }
+    )
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        lambda: [
+            RuntimeConfigurationTarget(
+                device_name="PC-01",
+                model="PC-PT",
+                interfaces=["FastEthernet0"],
+            ).model_dump(mode="json")
+        ],
+        lambda _script: True,
+        lambda _script, _timeout: payload,
+        endpoint_timeout_seconds=0.0,
+        convergence_interval_seconds=0.0,
+    )
+
+    applied = ConfigurationApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash="topology-hash",
+        capabilities={},
+    )
+    service_plan = ServicePlan(
+        id="services",
+        source_topology_id="topology",
+        source_topology_hash="topology-hash",
+        source_configuration_id=plan.id,
+        source_configuration_hash=plan.semantic_hash,
+        foundational_requirements=[
+            FoundationalServiceRequirement(
+                id="foundation-mode",
+                device_id="client-1",
+                device_name="PC-01",
+                model="PC-PT",
+                ipv4="",
+                segment_id="hq-data",
+                configuration_action_id=action.id,
+                kind="endpoint_dhcp_mode",
+            )
+        ],
+    )
+
+    statuses = derive_service_foundational_statuses(service_plan, applied)
+
+    assert applied.action_results[0].status is ActionExecutionStatus.APPLIED
+    assert applied.verification_results[0].status is ActionExecutionStatus.VERIFIED
+    assert statuses == {action.id: ActionExecutionStatus.VERIFIED}

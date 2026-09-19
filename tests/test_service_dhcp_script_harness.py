@@ -286,6 +286,7 @@ class _DhcpEngine:
             bufsize=1,
         )
         self.log: list[str] = []
+        self.scripts: list[str] = []
         self.transport: dict[str, str] = {}
 
     def close(self) -> None:
@@ -301,6 +302,7 @@ class _DhcpEngine:
         return json.loads(self.process.stdout.readline())
 
     def dispatch_and_wait(self, script: str, _timeout: float):
+        self.scripts.append(script)
         phase = (
             "acquire"
             if "dhcpRun" in script
@@ -408,6 +410,8 @@ def _acquire():
         network="192.0.2.0",
         prefix=24,
         netmask="255.255.255.0",
+        claim_ref="claim/client-1",
+        nonce="nonce-1",
         **_common(host_id=CLIENT_ID, host_name=CLIENT, model="PC-PT"),
     )
 
@@ -460,6 +464,25 @@ def test_pool_creation_uses_void_add_then_get_and_preserves_unrelated_state(engi
     assert item.log.count("getPool:HQ_DATA") >= 2
     assert mutation.footprint is FootprintFact.PARTIAL
     assert mutation.postcondition is PostconditionFact.SATISFIED
+
+
+def test_external_dhcp_names_are_json_serialized_before_javascript(engine):
+    """Keep quotes, newlines and script text as data rather than source."""
+    item = engine()
+    device_name = 'SRV "quoted"\n</script>'
+    interface = 'FastEthernet "0"\n'
+    item.state["server"]["name"] = device_name
+    item.state["server"]["interface"] = interface
+    item.sync()
+    action = _enable().model_copy(
+        update={"host_device_name": device_name, "interface": interface}
+    )
+
+    [mutation] = _runtime(item).apply_actions([action])
+
+    assert mutation.postcondition is PostconditionFact.SATISFIED
+    assert json.dumps(device_name) in item.scripts[0]
+    assert json.dumps(interface) in item.scripts[0]
 
 
 def test_matching_pool_is_a_noop_and_conflicting_pool_is_refused(engine):
@@ -574,6 +597,22 @@ def test_effect_then_throw_and_lost_reply_both_quarantine_without_retry(engine):
     assert replay.cause == "own_claim_replayed"
 
 
+def test_a_new_invocation_nonce_cannot_adopt_the_previous_claim(engine):
+    """Treat the same action id under another run nonce as a foreign claim."""
+    item = engine()
+    runtime = _runtime(item)
+    runtime.apply_actions([_acquire()])
+    held = json.dumps(item.state["claims"][CLAIM_KEY], sort_keys=True)
+    later = _acquire().model_copy(update={"nonce": "nonce-2"})
+
+    [mutation] = runtime.apply_actions([later])
+
+    assert item.state["client"]["runs"] == 1
+    assert json.dumps(item.state["claims"][CLAIM_KEY], sort_keys=True) == held
+    assert mutation.attempted is False
+    assert mutation.cause == "subject_claimed"
+
+
 def _lease_expectation(kind: ServiceVerificationKind):
     return ServiceVerificationExpectation(
         id=f"verify-{kind.value}",
@@ -680,6 +719,27 @@ def test_fresh_in_range_address_is_unattributed_and_foreign_address_contradicts(
     assert row.status is ActionExecutionStatus.FAILED
     assert row.observation is ObservationFact.CONTRADICTED
     assert row.cause == "foreign_lease"
+
+
+def test_absent_address_is_unknown_and_false_mode_is_a_contradiction(engine):
+    """Keep absence inconclusive while preserving a fresh false-mode conflict."""
+    absent = engine()
+    row = _runtime(absent).verify(
+        _lease_expectation(ServiceVerificationKind.DHCP_LEASE)
+    )
+
+    assert row.status is ActionExecutionStatus.UNKNOWN
+    assert row.cause == "acquisition_not_observed"
+
+    disabled = engine()
+    disabled.state["client"]["port"]["mode"] = False
+    disabled.sync()
+    row = _runtime(disabled).verify(
+        _lease_expectation(ServiceVerificationKind.DHCP_LEASE)
+    )
+
+    assert row.status is ActionExecutionStatus.FAILED
+    assert row.cause == "dhcp_mode_disabled"
 
 
 def test_configure_only_returns_typed_not_attempted_without_a_client_read(engine):
@@ -807,3 +867,43 @@ def test_unparseable_lease_row_is_malformed_not_absent(engine):
 
     assert row.observation is ObservationFact.MALFORMED
     assert row.cause == "lease_row_shape"
+
+
+def test_generated_corpus_uses_only_the_reviewed_non_destructive_dhcp_surface(engine):
+    """Pin the generated vendor-call surface, including forbidden shortcuts."""
+    item = engine()
+    runtime = _runtime(item)
+    runtime.apply_actions([_enable()])
+    runtime.apply_actions([_pool()])
+    runtime.apply_actions([_acquire()])
+    runtime.verify(_lease_expectation(ServiceVerificationKind.DHCP_LEASE))
+    runtime.verify(_lease_expectation(ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED))
+    corpus = "\n".join(item.scripts)
+
+    for required in (
+        "getDhcpServerProcessByPortName",
+        "isEnable",
+        "setEnable",
+        "addPool",
+        "getPool",
+        "setNetworkMask",
+        "addExcludedAddress",
+        "isDhcpClientOn",
+        "dhcpRun",
+        "getDataOfPort",
+        "getLeaseTimeStr",
+        "getLeaseAt",
+    ):
+        assert required in corpus
+    for forbidden in (
+        "dhcpRelease",
+        "resetDhcpConfOn",
+        "removePool",
+        "getLeaseCount",
+        "registerEvent",
+        "dhcpSucceed",
+        "dhcpFailed",
+        "ipconfig /release",
+        "ipconfig /renew",
+    ):
+        assert forbidden not in corpus

@@ -118,12 +118,12 @@ _PROCESS = {
     ServiceType.DHCP: "DhcpServer",
 }
 
-#: The mail families. Their batches and their reads run one at a time per
-#: process behind `_MAIL_LOCK` (R-OBS-04): the applicator already dispatches
+#: Stateful mail and DHCP families. Their batches and reads run one at a time
+#: per process behind `_STATEFUL_LOCK`: the applicator already dispatches
 #: one batch at a time within an invocation, and this closes the gap between
 #: two invocations in one MCP process. Across processes only the engine claim
 #: remains.
-_MAIL_ACTIONS = (
+_SERIALIZED_ACTIONS = (
     EnableSmtpService,
     EnablePop3Service,
     EnsureEmailAccount,
@@ -133,7 +133,7 @@ _MAIL_ACTIONS = (
     ConfigureServerDhcpPool,
     AcquireDhcpLease,
 )
-_MAIL_LOCK = threading.RLock()
+_STATEFUL_LOCK = threading.RLock()
 
 #: The production claim global and the per-client subject key (R-EVT-06/07).
 _CLAIMS = "this.__mcpE6Claims"
@@ -675,8 +675,8 @@ class PacketTracerEnterpriseServiceRuntime:
                 )
                 for item in actions
             ]
-        serialized = any(isinstance(item, _MAIL_ACTIONS) for item in actions)
-        with _MAIL_LOCK if serialized else nullcontext():
+        serialized = any(isinstance(item, _SERIALIZED_ACTIONS) for item in actions)
+        with _STATEFUL_LOCK if serialized else nullcontext():
             return self._apply_batch(actions, next(iter(host_names)))
 
     def _apply_batch(
@@ -701,6 +701,11 @@ class PacketTracerEnterpriseServiceRuntime:
             if isinstance(action, SendMailMessage) and not action.nonce:
                 refused[action.id] = self._not_submitted(
                     action, "message_nonce_unbound"
+                )
+                continue
+            if isinstance(action, AcquireDhcpLease) and not action.nonce:
+                refused[action.id] = self._not_submitted(
+                    action, "acquisition_nonce_unbound"
                 )
                 continue
             if not isinstance(action, SECRET_BEARING_ACTIONS):
@@ -1541,6 +1546,7 @@ class PacketTracerEnterpriseServiceRuntime:
         wanted_json = json.dumps(wanted, sort_keys=True, separators=(",", ":"))
         wanted_js = json.dumps(wanted_json)
         ranges_js = json.dumps(wanted_ranges, separators=(",", ":"))
+        max_users_js = json.dumps(action.max_users)
         setters = (
             f"pool.setNetworkMask({json.dumps(action.network)},{json.dumps(action.netmask)});"
             f"pool.setDefaultRouter({json.dumps(action.gateway)});"
@@ -1551,7 +1557,7 @@ class PacketTracerEnterpriseServiceRuntime:
             )
             + f"pool.setStartIp({json.dumps(action.lease_start)});"
             f"pool.setEndIp({json.dumps(action.lease_end)});"
-            f"pool.setMaxUsers({action.max_users});"
+            f"pool.setMaxUsers({max_users_js});"
         )
         return [
             row,
@@ -1607,19 +1613,21 @@ class PacketTracerEnterpriseServiceRuntime:
     ) -> list[str]:
         """Call documented void `dhcpRun(port)` once under a subject claim."""
         action_id = json.dumps(action.id)
+        nonce = json.dumps(action.nonce)
         interface = json.dumps(action.interface)
         key = json.dumps(
             f"{_DHCP_CLAIM_PREFIX}{action.host_device_id}:{action.interface}"
         )
         return [
             row,
-            f"var __key={key},__aid={action_id},__if={interface};",
+            f"var __key={key},__aid={action_id},__if={interface},__nonce={nonce};",
             f"var __c={_CLAIMS}={_CLAIMS}||{{}};",
             "var __has=Object.prototype.hasOwnProperty.call(__c,__key);",
             "if(__has){var __v=__c[__key];if(!__v||typeof __v!=='object'||"
-            "typeof __v.op_id!=='string'||typeof __v.interface!=='string'){"
+            "typeof __v.op_id!=='string'||typeof __v.interface!=='string'||"
+            "typeof __v.nonce!=='string'){"
             f'r.skip_reason="{_SKIP_SUBJECT_CLAIM_UNREADABLE}";}}'
-            "else if(__v.op_id===__aid&&__v.interface===__if){"
+            "else if(__v.op_id===__aid&&__v.interface===__if&&__v.nonce===__nonce){"
             f'r.skip_reason="{_SKIP_OWN_CLAIM_REPLAYED}";}}else{{'
             f'r.skip_reason="{_SKIP_SUBJECT_CLAIMED}";}}}}else{{',
             "var port=null;for(var i=0;i<d.getPortCount();i++){var q=d.getPortAt(i);"
@@ -1629,7 +1637,7 @@ class PacketTracerEnterpriseServiceRuntime:
             f'if(mode===false){{r.pre_read=true;r.pre=__dg(mode);r.skip_reason="{_SKIP_DHCP_MODE_NOT_ENABLED}";}}'
             f'else if(mode!==true||!p){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}else{{',
             "r.pre_read=true;r.pre=__dg(mode);"
-            "__c[__key]={state:'in_progress',op_id:__aid,interface:__if};",
+            "__c[__key]={state:'in_progress',op_id:__aid,interface:__if,nonce:__nonce};",
             f"try{{r.attempted=true;p.dhcpRun(__if);__c[__key].state='completed';}}"
             f"catch(e){{__c[__key].state='unknown';r.call_error={reader}(e);}}",
             "}}results.push(r);",
@@ -1670,19 +1678,19 @@ class PacketTracerEnterpriseServiceRuntime:
         if expectation.kind in _GATED_EVENT_KINDS:
             return self._gated_event_row(expectation)
         if expectation.kind is ServiceVerificationKind.EMAIL_CLIENT_STATE:
-            with _MAIL_LOCK:
+            with _STATEFUL_LOCK:
                 return self._verify_email_client(expectation)
         if expectation.kind is ServiceVerificationKind.SMTP_DELIVERED:
-            with _MAIL_LOCK:
+            with _STATEFUL_LOCK:
                 return self._verify_smtp_delivered(expectation)
         if expectation.kind is ServiceVerificationKind.DHCP_SERVER_STATE:
-            with _MAIL_LOCK:
+            with _STATEFUL_LOCK:
                 return self._verify_dhcp_server_state(expectation)
         if expectation.kind is ServiceVerificationKind.DHCP_LEASE:
-            with _MAIL_LOCK:
+            with _STATEFUL_LOCK:
                 return self._verify_dhcp_lease(expectation)
         if expectation.kind is ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED:
-            with _MAIL_LOCK:
+            with _STATEFUL_LOCK:
                 return self._verify_dhcp_lease_attributed(expectation)
         if expectation.evidence_kind is ServiceEvidenceKind.DIRECT_STATE:
             return self._verify_direct(expectation)
@@ -2084,6 +2092,7 @@ class PacketTracerEnterpriseServiceRuntime:
         pool_name = json.dumps(str(expected.get("pool_name") or ""))
         declared = int(expected.get("max_users") or 0)
         bound = min(max(declared, 0), DHCP_LEASE_SCAN_LIMIT)
+        bound_js = json.dumps(bound)
         reader = "__ec" if self._sanitizer.holds_values else "__er"
         helper = (
             _ERROR_CATEGORY_HELPER
@@ -2099,7 +2108,7 @@ class PacketTracerEnterpriseServiceRuntime:
             f"var sp=sm&&sm.getDhcpServerProcessByPortName({server_interface});"
             f"var pool=sp&&sp.getPool({pool_name});var rows=[];var repeated=false;"
             "var seen={};var scan_error='';if(pool){for(var j=0;j<"
-            + str(bound)
+            + bound_js
             + ";j++){try{var r=pool.getLeaseAt(j);if(!r){break;}"
             "var row={ipAddress:String(r.ipAddress),macAddress:String(r.macAddress),"
             "leaseTime:r.leaseTime,port:String(r.port)};var key=JSON.stringify(row);"

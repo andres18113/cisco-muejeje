@@ -70,6 +70,16 @@ _MUTATING_PT_APIS = {
     "setMailId",
     "setSmtpServer",
     "setPop3Server",
+    # S3 DHCP: pool ensure-present setters and the claimed acquisition effect.
+    "addPool",
+    "addExcludedAddress",
+    "setNetworkMask",
+    "setDefaultRouter",
+    "setDnsServerIp",
+    "setStartIp",
+    "setEndIp",
+    "setMaxUsers",
+    "dhcpRun",
 }
 
 #: Cada familia, con la contención que la cubre y el techo de lo que puede
@@ -239,6 +249,10 @@ CONTAINED_MUTATION_FAMILIES = {
 PAYLOAD_BUILDERS_AND_PROSE = {
     "shared/ios_config.py": "returns the configureIosDevice call as text",
     "infrastructure/generator/ptbuilder_generator.py": "generates a PTBuilder script",
+    "domain/enterprise/mutation_replay.py": (
+        "names dhcpRun only as replay-policy evidence; dispatch lives in the "
+        "classified service runtime"
+    ),
 }
 
 

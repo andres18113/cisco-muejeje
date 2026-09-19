@@ -174,6 +174,8 @@ def test_candidate_path_persists_separate_mode_configuration_and_lease_rows(tmp_
     assert authority.client_device_ids == CLIENT_IDS
     assert authority.action_ids
     assert authority.expectation_ids
+    assert len(stored.nonces) == len(CLIENT_IDS)
+    assert all(stored.nonces.values())
     assert any(
         item.kind is ServiceVerificationKind.DHCP_LEASE
         for item in result.clients[0].results["service/hq/lab-dhcp"].checks
@@ -240,3 +242,26 @@ def test_persistence_loss_after_mode_bootstrap_blocks_acquisition(tmp_path):
         for batch in harness.services.applied
         for identifier in batch
     )
+
+
+def test_foreign_static_client_address_is_preserved_before_mode_mutation(tmp_path):
+    """Refuse rather than replacing a selected client's pre-existing address."""
+    harness = _candidate_harness(tmp_path)
+    harness.observer.addresses["HQ-DEFAULT-PC-01"] = "203.0.113.10"
+
+    result = harness.run(capability_catalog=lambda _version: _candidate_catalog())
+
+    assert result.refusal_code is ServiceEntryRefusal.EXISTING_CONFIGURATION_CONFLICT
+    assert harness.configuration.applied == []
+    assert harness.services.applied == []
+
+
+def test_unreadable_dhcp_client_state_is_not_treated_as_free_to_replace(tmp_path):
+    """Refuse mode mutation when the selected client's current state is unknown."""
+    harness = _candidate_harness(tmp_path)
+    harness.observer.readable = False
+
+    result = harness.run(capability_catalog=lambda _version: _candidate_catalog())
+
+    assert result.refusal_code is ServiceEntryRefusal.DRIFT_UNREADABLE
+    assert harness.configuration.applied == []
