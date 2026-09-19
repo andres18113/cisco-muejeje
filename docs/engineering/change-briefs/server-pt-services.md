@@ -354,6 +354,8 @@ reset a claim.
 | `7d37db9` | `675fc96` | design: the Block C requirements above, recorded before any behavior change |
 | `5313eb0` | `ab95747` | Block C: the S2 secret boundary, both effect admissions and the mailbox coherence rule |
 | `4b45039` | `2cf89ce` | Block C: the unresolved Q1 page effect and the M-DNS-3 scope alignment |
+| `ec3dc24` | `d804d8b` | results of the three commits above |
+| `26b1015` | — | Block C: the owned-client release diagnostics, found by self-review of the same boundary |
 | this commit | — | results only: this section |
 
 Successful CI run `35414623111` is evidence for `6e78e74` and for nothing
@@ -372,6 +374,7 @@ else. The three commits above it have no CI run, and none may be inherited.
 | C — S2-02.1 and S2-05.1 over the real scripts | 7 failed / 48 passed: the mismatched identity ran `addUser`, each of `null`, `false`, `0` and `""` under an own claim key sent a message, and a credential-bearing script returned engine text | 42 passed |
 | C — S2-12 through the applicator and the store | 1 failed: the response and the stored record carried the whole credential from a verification `ENGINE_ERROR`, and a second occurrence left the cropped prefix `pa\"ss\\w` behind | 13 passed |
 | C — Q1R-7 assessor, probe and coordinator | 1 failed on the assertion that encoded the defect (`lost_read.outcome_unknown is False`); the stub setter that changes the page and then throws reproduced it against the real probe | 87, 43 and 45 passed |
+| C — the owned-client release path | 1 failed: the folded value `top secret value` reached the row's limitations through `_with_release`, which bypasses `_observed` | 21 passed |
 
 One defect surfaced during GREEN and was fixed in the layer that caused it: a
 VERIFIED mailbox-presence recovery read made the SMTP service's usability
@@ -419,7 +422,9 @@ defect; the Q stub gains `setpage_throws_after_http/https`.
 | mail, secrets, observation and integration suites | `4b45039` | 20, 13, 42 and 13 passed |
 | qualification contracts, coordinator, probes and CLI | `4b45039` | 87, 45, 43 and 19 passed |
 | full offline suite | `4b45039` | 6316 passed, 3 skipped, the same 3 pre-existing Pytest warnings |
+| full offline suite | `26b1015` | 6317 passed, 3 skipped, the same 3 warnings |
 | quality gate, delivery mode | `4b45039`, clean tree | base `cisco/main` → `6263344`, merge base identical; 73 changed Python files gated, 0 mechanical exemptions, Ruff lint and format clean |
+| quality gate, delivery mode | `26b1015`, clean tree | the same base and merge base, the same 73 files, clean |
 | quality gate, delivery mode | this commit, clean tree | the same 73 files, clean |
 | namespace inventory | this commit | 0 active imports, 0 active strings, 0 unreviewed inert mentions |
 | documentation build | this commit | built; only the two pre-existing `handoff.md` link warnings, none introduced |
@@ -450,6 +455,10 @@ re-run on this commit.
   now reports `engine_error:<Name>` instead of the engine's own message, so a
   mail setter failure is diagnosed by category and by the surrounding typed
   facts. Batches with no resolved value keep their bounded diagnostic.
+- **The boundary is this adapter's, not the whole process's.** Every outbound
+  string of `enterprise_service_runtime.py` crosses it, and `sanitized_detail`
+  has no caller left there. The channels keep calling it for socket and OS
+  errors, which carry no resolved value and never see one.
 - **M-DNS-3 is not re-measured.** Its only sample remains the Q1-file run at
   `0850de3`, with that run's reader, model, build and channel. The probe and
   its rule stay in the runner and in their own tests, unscheduled.
