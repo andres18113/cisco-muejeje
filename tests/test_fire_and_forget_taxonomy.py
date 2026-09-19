@@ -43,6 +43,7 @@ def _families() -> list[str]:
 
 
 def test_every_family_has_exactly_one_classification():
+    """The taxonomy is a partition: no family is classified twice."""
     families = _families()
 
     assert len(families) == len(set(families)), (
@@ -52,17 +53,20 @@ def test_every_family_has_exactly_one_classification():
 
 
 def test_every_classification_is_from_the_declared_vocabulary():
+    """Every classification is one of the three declared values."""
     for subsystem, group in TAXONOMY.items():
         for family, classification in group.items():
             assert classification in VALID, f"{subsystem}/{family}"
 
 
 def test_no_subsystem_is_empty():
+    """A surface listed in the taxonomy registers at least one family."""
     for subsystem, group in TAXONOMY.items():
         assert group, subsystem
 
 
 def test_the_counts_are_stated_explicitly():
+    """The registered family counts are pinned, so a change is a stated delta."""
     counts = {subsystem: len(group) for subsystem, group in TAXONOMY.items()}
 
     assert counts == {
@@ -80,6 +84,7 @@ def test_the_counts_are_stated_explicitly():
 
 
 def test_non_product_paths_cannot_masquerade_as_registered_product_families():
+    """A non-product path never appears as a registered product family."""
     assert NON_PRODUCT_PATHS.isdisjoint(_families())
 
 
@@ -110,6 +115,7 @@ def test_the_live_qualification_gate_is_not_claimed():
 
 
 def test_transport_safety_is_not_absolute_ready():
+    """Transport safety for RIPv2 stays pending LIVE qualification."""
     assert RIPV2_GATES["RIPV2_CURRENT_TRANSPORT_SAFETY"].endswith(
         "PENDING_LIVE_QUALIFICATION",
     )
@@ -130,6 +136,7 @@ R2_ZERO_LIVE_GATE = (
 
 @pytest.mark.parametrize("step", R2_ZERO_LIVE_GATE)
 def test_the_r2_zero_live_gate_is_written_down(step):
+    """Every R2-0 LIVE gate step is declared before any RIP class exists."""
     assert step in R2_ZERO_LIVE_GATE
 
 
@@ -158,10 +165,12 @@ R2_TRANSPORT_CONTRACT = (
 
 @pytest.mark.parametrize("rule", R2_TRANSPORT_CONTRACT)
 def test_every_r2_transport_rule_is_predeclared(rule):
+    """Every R2 transport rule is declared before implementation."""
     assert rule in R2_TRANSPORT_CONTRACT
 
 
 def test_the_contract_forbids_both_bypass_paths():
+    """The transport contract names both bypass paths it forbids."""
     joined = " | ".join(R2_TRANSPORT_CONTRACT)
 
     assert "pt_send_raw" in joined

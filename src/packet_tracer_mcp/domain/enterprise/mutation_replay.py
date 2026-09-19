@@ -12,7 +12,7 @@ family cannot become REPLAY_SAFE because somebody wrote a convincing sentence.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import get_args
 
 from .models.configuration import (
@@ -32,7 +32,6 @@ from .models.configuration import (
     SetEndpointStaticAddress,
 )
 from .models.control_plane import (
-    ControlPlaneAction,
     ConfigureEigrpIpv4,
     ConfigureEtherChannel,
     ConfigureHsrp,
@@ -40,6 +39,7 @@ from .models.control_plane import (
     ConfigureRipv2,
     ConfigureSpanningTree,
     ConfigureStpEdgePort,
+    ControlPlaneAction,
 )
 from .models.security_plan import (
     AddSecurityAclRule,
@@ -75,7 +75,11 @@ from .models.voice_plan import (
 )
 
 
-class MutationSurface(str, Enum):
+class MutationSurface(StrEnum):
+    """The product surface one mutation family belongs to."""
+
+    __str__ = Enum.__str__
+
     CONFIGURATION = "Enterprise Configuration"
     CONTROL_PLANE = "Control Plane"
     SECURITY = "Security"
@@ -85,13 +89,17 @@ class MutationSurface(str, Enum):
     LEGACY_RAW = "Legacy / raw CLI"
 
 
-class ReplayClassification(str, Enum):
+class ReplayClassification(StrEnum):
+    """Whether one repeated payload is known to be harmless."""
+
+    __str__ = Enum.__str__
+
     REPLAY_SAFE = "REPLAY_SAFE"
     TREAT_AS_REPLAY_UNSAFE = "TREAT_AS_REPLAY_UNSAFE"
     UNKNOWN = "UNKNOWN"
 
 
-class EvidenceBasis(str, Enum):
+class EvidenceBasis(StrEnum):
     """How the classification was established -- never how well it was argued.
 
     The states are ordered by strength and are NOT interchangeable. UNKNOWN
@@ -99,6 +107,8 @@ class EvidenceBasis(str, Enum):
     MEASURED_CONTROLLED_REPEAT_UNOBSERVABLE can never carry REPLAY_SAFE.
     Both rules are enforced in `_validate_registry`, not merely written here.
     """
+
+    __str__ = Enum.__str__
 
     #: Repetición controlada sobre Packet Tracer real, con relectura semántica.
     MEASURED_CONTROLLED_REPEAT = "measured_controlled_repeat"
@@ -117,7 +127,11 @@ class EvidenceBasis(str, Enum):
     UNMEASURED = "unmeasured"
 
 
-class ReplayContainment(str, Enum):
+class ReplayContainment(StrEnum):
+    """A structural control that bounds what a repeated payload can do."""
+
+    __str__ = Enum.__str__
+
     DECLARATIVE_REAPPLICATION = "declarative_reapplication"
     STRUCTURED_SETTER = "structured_setter"
     CAPABILITY_GATE = "capability_gate"
@@ -146,6 +160,8 @@ _SUFFICIENT_FOR_SAFE = frozenset(
 
 @dataclass(frozen=True)
 class MutationReplayPolicy:
+    """The explicit replay classification of one product mutation family."""
+
     surface: MutationSurface
     family: str
     entrypoint: str
@@ -449,7 +465,7 @@ PRODUCT_MUTATION_REPLAY_REGISTRY: tuple[MutationReplayPolicy, ...] = (
         _CONTROL_PLANE_ENTRYPOINT,
         ReplayClassification.REPLAY_SAFE,
         EvidenceBasis.MEASURED_CONTROLLED_REPEAT,
-        _GATED_DECLARATIVE + (ReplayContainment.CONTROLLED_REPEAT_QUALIFIED,),
+        (*_GATED_DECLARATIVE, ReplayContainment.CONTROLLED_REPEAT_QUALIFIED),
         "An exact 2911/PT 9.0.1.0858 qualification repeated the typed payload.",
     ),
     _action_policy(
@@ -856,7 +872,6 @@ for _policy in PRODUCT_MUTATION_REPLAY_REGISTRY:
 
 def policy_for_action_type(action_type: type) -> MutationReplayPolicy:
     """Return an explicit policy; never assign an unknown family a default."""
-
     try:
         return _POLICY_BY_ACTION_TYPE[action_type]
     except KeyError as exc:
@@ -867,7 +882,6 @@ def policy_for_action_type(action_type: type) -> MutationReplayPolicy:
 
 def policies_for_entrypoint(entrypoint: str) -> tuple[MutationReplayPolicy, ...]:
     """Return all families dispatched by one product mutation entrypoint."""
-
     try:
         return _POLICIES_BY_ENTRYPOINT[entrypoint]
     except KeyError as exc:
@@ -878,7 +892,6 @@ def policies_for_entrypoint(entrypoint: str) -> tuple[MutationReplayPolicy, ...]
 
 def taxonomy_by_surface() -> dict[str, dict[str, str]]:
     """Compatibility view for reports and the historical E9.5 taxonomy tests."""
-
     taxonomy: dict[str, dict[str, str]] = {}
     for surface in MutationSurface:
         records = {
@@ -892,10 +905,10 @@ def taxonomy_by_surface() -> dict[str, dict[str, str]]:
 
 
 __all__ = [
+    "PRODUCT_MUTATION_REPLAY_REGISTRY",
     "EvidenceBasis",
     "MutationReplayPolicy",
     "MutationSurface",
-    "PRODUCT_MUTATION_REPLAY_REGISTRY",
     "ReplayClassification",
     "ReplayContainment",
     "UnclassifiedProductMutation",

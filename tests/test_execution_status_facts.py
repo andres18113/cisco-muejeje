@@ -53,6 +53,12 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceType,
     ServiceVerificationKind,
 )
+from packet_tracer_mcp.domain.enterprise.mutation_replay import (
+    EvidenceBasis,
+    MutationSurface,
+    ReplayClassification,
+    ReplayContainment,
+)
 from packet_tracer_mcp.infrastructure.execution.file_bridge import RequestDisposition
 
 # -- 1. presentation equivalence of the StrEnum conversion ---------------
@@ -79,6 +85,12 @@ _CONVERTED_ENUMS = (
     ServiceActionType,
     ServiceEvidenceKind,
     ServiceVerificationKind,
+    # Converted in S2, which must extend the replay registry and so owns
+    # its Ruff state. Its members are interpolated into registry errors.
+    MutationSurface,
+    ReplayClassification,
+    EvidenceBasis,
+    ReplayContainment,
 )
 
 
