@@ -22,8 +22,8 @@ before contacting a runtime.
 
 The existing `ServiceRequirement` is extended instead of introducing a second
 intent hierarchy. It identifies one of the closed service types DNS, HTTP,
-HTTPS, NTP, or TFTP; an optional explicit E4 host; client scope; and only the
-service-specific data needed by that type. Host selection is deterministic:
+HTTPS, NTP, TFTP, SMTP or POP3; an optional explicit E4 host; client scope; and
+only the service-specific data needed by that type. Host selection is deterministic:
 an explicit device wins, then a matching service role, then a generic server,
 all within the requested site and ordered by stable device identity. E6 never
 reselects the concrete model chosen upstream.
@@ -39,6 +39,9 @@ The action set is closed and backend-neutral:
 - `EnableHttpService`, `SetHttpContent`, and `EnableHttpsService`
 - `ConfigureNtpService`
 - `EnableTftpService` and `PublishTftpFile`
+- `EnableSmtpService`, `EnablePop3Service`, `EnsureEmailAccount`,
+  `ConfigureEmailClient` and `SendMailMessage` (see
+  [Mail under the event fallback](#mail-under-the-event-fallback))
 
 There is no raw server command, arbitrary JavaScript, host-file import, or
 generic client shell command. DNS currently compiles only A records. HTTP test
@@ -136,6 +139,46 @@ not the caller — decides whether a repeat is admissible:
 | user-state, execute-once | `sendMail`, `dhcpRelease`/`dhcpRun` | never after ambiguity; one claim per subject per session | none |
 | disposable qualification fixture | device creation and removal in a Q stage | none | owned devices removed, then two fresh restoration observations |
 
+## Mail under the event fallback
+
+Mail is compiled from one SMTP requirement that owns its accounts, its email
+clients and its message pairs, plus an optional POP3 requirement on the same
+host that owns only its enable and direct read-back. Accounts carry an opaque
+`secret_ref`; a password never enters an intent, plan, hash, record or
+response.
+
+| Step | Action or expectation | Contract |
+| --- | --- | --- |
+| server | `EnableSmtpService(domain_name)`, `EnablePop3Service` | enable flag and SMTP domain set and read back in one bracketed evaluation |
+| server | `EnsureEmailAccount(username, secret_ref)` | ensure-present: `addUser` only after a completed pre-read proved absence; an existing account is never changed and its credential stays unverified; an unreadable pre-read refuses rather than adding |
+| client | `ConfigureEmailClient` | every field except the password is read back; refused while any claim is held on that client |
+| message | `SendMailMessage` (execute-once) | one `sendMail` per pair per run under a pre-effect claim; never reported successful, because no same-evaluation observation of `mailSent` is qualified |
+| server read | `smtp_delivered` | bounded read-only scan of the intended recipient's mailbox for the pair's nonce; presence only, returned as counts and flags |
+| gated | `smtp_send`, `pop3_retrieve`, `email_end_to_end` | optional rows that register no observer and never call `getMailIpc` |
+
+Pairs are explicit, else a ring over the sorted selected clients (a self-send
+for one client), never all pairs. Each pair has one stable `message_ref`, and a
+fresh nonce per run is bound into subject and body before application and kept
+in the run record, so an earlier run's message can never satisfy a later one.
+
+Dispatch, server-mailbox presence and client retrieval are three different
+claims. Mailbox presence is not a `mailSent` success and not POP3 evidence, and
+a read-only recovery read after the unresolved send never clears that send's
+uncertainty. Under the measured fallback (no safe zero-event release on either
+channel), event-dependent verification does not exist in production; its rows
+report a typed blocked result instead.
+
+Claims live in `__mcpE6Claims` under `email_client:<device>`. A claim is
+written `in_progress` in the same evaluation before the effect and becomes
+`completed` or `unknown`; a foreign claim refuses, this operation's own claim
+reports the earlier effect as unknown, and product code never resets one. The
+claim bounds duplicates only within one evaluation, an inference the HTTP
+channel has not qualified, so every mail operation stays UNKNOWN in the
+capability catalog and UNKNOWN/UNMEASURED in the replay registry until a Q2
+record exists. Secret-bearing actions are admitted only on the authenticated
+HTTP channel, after every reference resolved, and every resolved value is
+redacted from runtime rows in raw, JSON-escaped and URL-encoded form.
+
 ## Qualification boundary
 
 Support for a Packet Tracer behavior that the bundled reference only documents
@@ -179,6 +222,8 @@ conservative baseline for `Server-PT`:
 | NTP enable | supported | supported | synchronization unobservable |
 | TFTP enable | supported | supported | transfer unobservable |
 | TFTP file publication | unknown | unknown | unobservable |
+| SMTP/POP3 enable, accounts, clients | unknown | unknown | unknown; supporting mailbox presence only |
+| SMTP send, POP3 retrieval | unknown | unknown | gated by the event fallback |
 
 DNS uses `addARecordToNameServerDb` and `getARecordWithAddress`. The older
 `addIpAddress` path updates a legacy table but did not produce a wire-operational

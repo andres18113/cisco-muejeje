@@ -1,12 +1,14 @@
 # Server-PT services: current workstream brief
 
 This is the **current projection** of the Server-PT services workstream: what is
-accepted, what is in scope now, which decisions are open, and where each stable
-contract lives. It is not a history. The chronological record it replaced —
-revision 2.2 planning, the S0/S1/S4a implementation narratives and their review
-resolutions — is preserved byte-for-byte under
-[`docs/reference/server-pt/`](../../reference/server-pt/README.md) and is read
-only to answer a named unresolved question.
+accepted, what was measured, what is in scope now, which decisions are open, and
+where each stable contract lives. It is not a history. The chronological record
+it replaced is preserved byte-for-byte under
+[`docs/reference/server-pt/`](../../reference/server-pt/README.md): revision 2.2
+planning, the S0/S1/S4a narratives (`server-pt-services-brief-9973f66.md`), the
+S4A-C1..C4 correction delta (`server-pt-services-brief-0850de3.md`) and the
+LIVE Q-batch evidence (`evidence/q-batch-0850de3/`). An archived record is read
+only to answer a named question.
 
 Authority order: `AGENTS.md` and `docs/engineering/standards.md` first, then the
 approved active requirements and design recorded in this brief, then the owning
@@ -18,342 +20,284 @@ permission, and a LIVE permission recorded in one never applies to a new run.
 
 | Slice | Commit | State | Record |
 | --- | --- | --- | --- |
-| S0 — observation integrity | `0bddc9a` | accepted | archived brief, sections 8 and 9 |
-| S1 — product entry point (`pt_apply_enterprise_services`) | `1f08afa` | accepted, offline only | archived brief, sections 10 and 11 |
-| S4a — qualification runner and Q0/Q1 probes | `9973f66` (tree `6c8af15`) | **REQUIRES_CHANGES**, not LIVE-ready | archived brief, section 12; the review's three findings are the active scope below |
+| S0 — observation integrity | `0bddc9a` | accepted | archived brief `9973f66`, sections 8 and 9 |
+| S1 — product entry point (`pt_apply_enterprise_services`) | `1f08afa` | accepted, offline only | archived brief `9973f66`, sections 10 and 11 |
+| S4a — qualification runner and Q0/Q1 probes | `0850de3` (tree `acc6caf`) | accepted | archived brief `0850de3`; archived brief `9973f66`, section 12 |
 
 Authoritative main observed by delivery CI:
 `6263344e31ba3b0de6539d652f2cd06fc73a3562` (`cisco/main` in the maintainer
 checkout). It contains none of the slices above.
 
-Nothing in this workstream has contacted Packet Tracer. Q0, Q1, Q1b, Q2, Q3 and
-the S1 LIVE acceptance are all unexecuted. Every capability claim in the catalog
-stays at its documentary or offline level.
+## Measured limits: the Q batch at `0850de3`
+
+Three authorized LIVE stages ran at `0850de3` on build 9.0.1.0858, each in its
+own Packet Tracer process. The accepted input is
+`server-pt-q-batch-0850de3.zip` (21,509 bytes, SHA-256
+`e93b130a997c7f9a6363446373d744ef4feba54731dcc5571db4da969b8adfdc`), archived
+with its records and checksums in
+[`evidence/q-batch-0850de3/`](../../reference/server-pt/README.md#q-batch-evidence-at-0850de3).
+
+| Run | Record SHA-256 | Permitted use |
+| --- | --- | --- |
+| Q0-file `2026-09-18T23-39-18Z-b68e4a7b` | `1a6ee081…c955` | bag persistence and one event-source experiment on file; one finite ordered contender sample; cleanup UNKNOWN |
+| Q1-file `2026-09-19T00-13-08Z-985c1368` | `a0e2f938…b005` | failed marker-write diagnosis; unresolved listener behavior; the exact PC resolver-reader sample; semantic restoration CLEAN |
+| Q0-http `2026-09-19T00-20-05Z-edbbc347` | `5d0b919f…5b40aa` | bag persistence and a `HostPort.ipChanged` sample on HTTP; separate-evaluation atomicity INCONCLUSIVE; cleanup UNKNOWN |
+
+What these records establish, and what they do not:
+
+- Every record stays attributed to `0850de3`, build 9.0.1.0858 and its own
+  channel. The file ATOM-1 sample is finite and does not qualify HTTP, whose
+  ATOM-1 is INCONCLUSIVE with `evaluation_scope: unknown`.
+- M-UNREG-2 supports the **inert** fallback only.
+  `safe_zero_event_release_established=false` on both channels, which activates
+  R-EVT-05's fallback set: `SMTP_DELIVERED` as supporting evidence, no POP3
+  claim, DHCP read-back at most UNKNOWN.
+- Q1's M-HTTPS-1 failed at the marker write (`File not exist` for the two
+  newly named pages) and decides nothing about page tables. Its M-HTTPS-2
+  timed out on the positive control and both negatives, so it decides nothing
+  about the listeners either. M-DNS-3 supports its exact reader sample:
+  `DnsClient.getServerIp` returned the configured resolver and the unset
+  representation `0.0.0.0`.
+- Q1's baseline had zero backend-managed devices; both final reads held one
+  `Power Distribution Device0`. Restoration compares semantic devices and links
+  and permits retained backend-managed devices, so the run is CLEAN in that
+  scope and **not** literal equality of the whole workspace. The raw difference
+  stays in the record.
+- Q0 observer cleanup (`cb2`, `cb3`) stays UNKNOWN whatever happened to the
+  process afterwards. The handoff reported pid 28652 still running; any later
+  LIVE work needs a fresh, operator-confirmed dedicated process.
+
+No inconclusive row is deleted or rewritten, no capability is promoted, and the
+three execution authorizations are consumed.
 
 ## Active scope
 
-Complete, offline, the existing S4A-C1..C4 correction contract after review of
-`405f293`, and keep S4a unaccepted until the remaining continuation ownership,
-effect-ordering, evidence-scope and projection defects close. The reviewed
-commit, not main, is the base of this focused correction.
+One review package with independently reviewable commits, offline only, on
+`feature/server-pt-s2-mail` cut from `0850de3`:
 
-In scope:
+- **Block A — S2 mail under the measured fallback.** R-MAIL-01..06 and the
+  applicable R-SEC, R-OBS, R-COV and R-REG requirements, with R-EVT-05
+  constraining which verification paths may exist. R-MAIL-07 belongs to Q2.
+- **Block B — the Q1 experiment repair.** The marker-write defect and the
+  listener observations, inside the existing runner, ledger and transport.
 
-- `infrastructure/execution/service_qualification_probes.py` — run-bag ownership,
-  and the observability of a cross-read cell that threw;
-- `application/use_cases/qualify_server_services.py` — the order in which a stop
-  rule is applied relative to the next effect, and the Q1 budget trace;
-- `domain/enterprise/services/service_qualification_evidence.py` — the strength
-  of each conclusion relative to what was actually observed;
-- `domain/enterprise/models/service_qualification.py` — the Q1 design ceiling and
-  its planned worst case;
-- `docs/qa/server-services-qualification.md` — the stage row that states it;
-- the tests named under **Test design**.
-
-Explicitly excluded: S1b, S2, S3, Q2/Q3 beyond their declarative metadata, any
-Packet Tracer contact, a new `.pts`, any `EXTENSION/` change, a replacement
-transport or protocol, a `tool_registry.py` refactor, catalog or capability
-promotion, CP-LIVE reconciliation, and any push, merge or LIVE authorization.
+Explicitly excluded: Packet Tracer contact, a product bridge start, any Q stage
+execution (no Q0 rerun, no Q1 retry, no Q1b/Q2/Q3), capability promotion, claim
+reset, a new MCP tool or argument, an observer framework, S1b model selection,
+S3, `EXTENSION/` or `.pts` changes, a transport or protocol change, and any push
+or merge.
 
 ## Where each stable contract lives
-
-Every requirement family the replaced document carried is listed here with its
-authoritative destination — the artifact a reviewer must read to decide that
-requirement today. The archived record is a destination only for clauses that
-were already superseded, rejected or not yet activated there.
 
 | Requirement family | Authoritative destination today |
 | --- | --- |
 | R-OBS-01 — transport facts | `infrastructure/execution/transport_outcome.py`, `live_bridge.py`, `file_bridge.py`; `tests/test_transport_dispatch_facts.py` |
-| R-OBS-02, 06, 07, 08; RD-10 — mutation decision, script contract, effect footprint | `domain/enterprise/models/execution.py` (`decide_mutation` and its fact enums), `enterprise_configuration_runtime.py`, `enterprise_service_runtime.py`; [E6 architecture](../../architecture/enterprise-services.md#mutation-and-observation-vocabulary); `tests/test_execution_status_facts.py`, `tests/test_service_mutation_script_harness.py`, `tests/test_service_application_uncertainty.py` |
+| R-OBS-02, 06, 07, 08; RD-10 — mutation decision, script contract, effect footprint | `domain/enterprise/models/configuration_runtime.py` (`decide_mutation`), `enterprise_service_runtime.py`; [E6 architecture](../../architecture/enterprise-services.md#mutation-and-observation-vocabulary); `tests/test_execution_status_facts.py`, `tests/test_service_mutation_script_harness.py`, `tests/test_service_application_uncertainty.py` |
 | R-OBS-03, R-HTTPS-02/03, R-ENTRY-08, R-CAP-05 — observation limits | `enterprise_service_runtime.py`; `tests/test_service_runtime_observation.py`, `tests/test_service_runtime.py` |
-| R-EVD-01 — evidence separated from status | `domain/enterprise/models/service_runtime.py` (`ObservationFact`); `tests/test_service_application_uncertainty.py` |
-| R-ENTRY-01..11, R-NET-01/02, R-RET-01/02 — product entry, admission, run records | `adapters/mcp/service_tools.py`, [apply_enterprise_services.py](https://github.com/andres18113/cisco-muejeje/blob/cb2b1fb12978d5050546f31ee51d0918dc5ee38c/src/packet_tracer_mcp/application/use_cases/apply_enterprise_services.py), `infrastructure/persistence/service_run_record_store.py`, `docs/tools.md`; [test_apply_enterprise_services.py](https://github.com/andres18113/cisco-muejeje/blob/cb2b1fb12978d5050546f31ee51d0918dc5ee38c/tests/test_apply_enterprise_services.py), `tests/test_service_tools_surface.py`, `tests/test_service_run_record_store.py`. R-ENTRY-07 is active for S1: the product path removes no user topology, service, account or message; future S2 coverage is an extension, not activation of the existing S1 obligation |
+| R-EVD-01 — evidence separated from status | `domain/enterprise/models/service_runtime.py`; `tests/test_service_application_uncertainty.py` |
+| R-ENTRY-01..11, R-NET-01/02, R-RET-01/02 — product entry, admission, run records | `adapters/mcp/service_tools.py`, `application/use_cases/apply_enterprise_services.py`, `infrastructure/persistence/service_run_record_store.py`, `docs/tools.md`; `tests/test_apply_enterprise_services.py`, `tests/test_service_tools_surface.py`, `tests/test_service_run_record_store.py` |
 | R-ENTRY-04 — foundational evidence | `application/use_cases/foundational_evidence.py`; `tests/test_service_foundational_evidence.py` |
-| R-CAP-01..07 — capability authority and provenance | `infrastructure/catalog/service_capabilities.py`, `domain/enterprise/services/service_capability_resolution.py`; [E6 architecture](../../architecture/enterprise-services.md#packet-tracer-9010858-baseline); `tests/test_service_capabilities.py`, `tests/test_service_client_capabilities.py` |
-| R-QUAL-01..04 — the governed qualification runner | `domain/enterprise/models/service_qualification.py`, `application/use_cases/qualify_server_services.py`, `adapters/cli/service_qualification.py`, `docs/qa/server-services-qualification.md`; the S4a tests below |
-| R-SEC-02/04, R-REG-01/03 — secret handling, registry hygiene, enum presentation | `docs/engineering/standards.md`, the Ruff configuration in `pyproject.toml`, `scripts/quality_gate.py`; `tests/test_execution_status_facts.py` |
-| R-TEST-01 — test-inventory discipline | `docs/engineering/standards.md`, *Architecture and test design*. It is a general rule, not an S0-only one |
-| R-HTTP-01..03, R-DNS-01..03 — DNS and HTTP service contracts | [E6 architecture](../../architecture/enterprise-services.md); `domain/enterprise/services/service_compiler.py`; `tests/test_enterprise_services.py` |
-| R-COV-01/02 — complete, honestly labelled per-client product results | [apply_enterprise_services.py](https://github.com/andres18113/cisco-muejeje/blob/cb2b1fb12978d5050546f31ee51d0918dc5ee38c/src/packet_tracer_mcp/application/use_cases/apply_enterprise_services.py), [service_compiler.py](https://github.com/andres18113/cisco-muejeje/blob/cb2b1fb12978d5050546f31ee51d0918dc5ee38c/src/packet_tracer_mcp/domain/enterprise/services/service_compiler.py); [test_apply_enterprise_services.py](https://github.com/andres18113/cisco-muejeje/blob/cb2b1fb12978d5050546f31ee51d0918dc5ee38c/tests/test_apply_enterprise_services.py), including skipped, blocked, recovery and unsampled-result assertions. These obligations are active in S1; later slices extend their service coverage |
-| R-QUAL-05/06 — re-qualification after a content or protocol change | this brief, **Open decisions**; unimplemented until S1b, S2 or S3 is authorized |
-| R-HTTPS-01/04, R-DNS-04, R-MAIL-01..07, R-DHCP-01..08, R-EVT-01..07, R-SEC-01/03/05/06, R-OBS-04/05 | **not active.** Their text stays in the [archived brief](../../reference/server-pt/server-pt-services-brief-9973f66.md); each becomes active only when its slice (S1b, S2, S3, S5) is authorized, and must be restated here at that point |
+| R-CAP-01..07 — capability authority and provenance | `infrastructure/catalog/service_capabilities.py`, `domain/enterprise/services/service_capability_resolution.py`; `tests/test_service_capabilities.py`, `tests/test_service_client_capabilities.py` |
+| R-QUAL-01..04 — the governed qualification runner | `domain/enterprise/models/service_qualification.py`, `application/use_cases/qualify_server_services.py`, `adapters/cli/service_qualification.py`, `docs/qa/server-services-qualification.md`; the `tests/test_service_qualification_*.py` modules |
+| R-SEC-02/04, R-REG-01/03 — serialization, registry hygiene, enum presentation | `docs/engineering/standards.md`, `pyproject.toml`, `scripts/quality_gate.py`; `tests/test_execution_status_facts.py` |
+| R-TEST-01 — test-inventory discipline | `docs/engineering/standards.md`, *Architecture and test design* |
+| R-HTTP-01..03, R-DNS-01..03 — DNS and HTTP service contracts | [E6 architecture](../../architecture/enterprise-services.md); `service_compiler.py`; `tests/test_enterprise_services.py` |
+| R-COV-01/02 — complete, honestly labelled per-client results | `apply_enterprise_services.py`, `service_compiler.py`; `tests/test_apply_enterprise_services.py` |
+| **R-MAIL-01..06, R-SEC-01/03/05/06, R-OBS-04, R-EVT-04..07, R-REG-02 — S2 mail** | **this brief (active), then** [E6 architecture, *Mail under the event fallback*](../../architecture/enterprise-services.md#mail-under-the-event-fallback) |
+| R-QUAL-05/06 — re-qualification after a content or protocol change | this brief, **Open decisions** |
+| R-HTTPS-01/04, R-DNS-04, R-MAIL-07, R-DHCP-01..08, R-EVT-01..03, R-OBS-05 | **not active.** Their text stays in the [archived brief](../../reference/server-pt/server-pt-services-brief-9973f66.md). R-EVT-01..03 and R-OBS-05 describe observer registration, which the fallback forbids in production |
 
-Supersessions that still bind: TD-12.1 — the classifier reads the original
-runtime input, never a repaired copy — and TD-12.2 — a missing list item never
-synthesizes channel acceptance. Both are implemented in `execution.py` and
-pinned by `tests/test_execution_status_facts.py`. RD-11 — digests are bounded
-diagnostics with no authority over `ok`, `changed` or CLEAN — is implemented in
-the mutation script contract and pinned by
-`tests/test_service_mutation_script_harness.py`.
+Supersessions that still bind: TD-12.1 (the classifier reads the original
+runtime input), TD-12.2 (a missing list item never synthesizes channel
+acceptance) and RD-11 (digests are bounded diagnostics with no authority).
 
-## S4a correction: design delta (risk L)
+## Block A — S2 design delta (risk L)
 
-Risk stays **L**: the change touches the authorization of a write, the order in
-which an effect is admitted, and the strength of an evidence claim. It is a
-delta on the S4a design in the archived record, section 12; only what changes is
-restated here.
+Risk is **L**: the slice introduces credentials, an execute-once user-state
+effect, a claim/quarantine mechanism and new evidence claims. It reuses the E6
+models, compiler, applicator, entry coordinator, run records, fixed transport
+and TD-12 fact preservation. There is no second service subsystem and no new
+tool. Primary vendor references: Cisco's `class_smtp_client`,
+`class_pop3_client`, `class_email_server`, `class_email_user`,
+`class_mail_box`, `struct_mail`, `class_smtp_server` and `class_pop3_server`
+pages, read from the local 9.0.1 install (`help/default/IpcAPI`, labelled 8.1.0).
+
+### Requirements and acceptance
+
+| ID | Requirement (active form) | Acceptance |
+| --- | --- | --- |
+| S2-01 (R-MAIL-01) | `EnableSmtpService(domain_name)` and `EnablePop3Service` set and read back the enable flag and the SMTP domain in one bracketed evaluation. The server direct read-back (`DIRECT_SERVICE_STATE` for `smtp`/`pop3`, the plan's MAIL_SERVER_STATE) reads the flags, the domain and each planned account's existence. | Node-harness scenarios over the real generated scripts: changed, reasserted, wrong stored domain and throwing setter reach the documented decision rows; the direct reader contradicts a wrong domain and reports an unreadable account as unobserved. |
+| S2-02 (R-MAIL-02, R-SEC-05) | `EnsureEmailAccount(username, secret_ref)` is ENSURE_PRESENT. Existence is `getEmailUser(name)` non-null with `getUser()` equal to the name. `addUser` runs only after a completed pre-read proved absence; a present account is never changed and reports `account_preexisting` with `credential_claim:unverified`; a failed pre-read refuses (`precondition_unobserved`) and is never read as absence. An attempted add is PARTIAL footprint: existence never proves the credential. | Harness: account missing → one `addUser`, PARTIAL footprint, run `dirty_state=unknown`; account present → no call, NO_OP, cause names the unverified credential; getter throws → no call, typed refusal. The script corpus never names `getPassword`, `getAllEmailAcctAsStrings`, `changePassword`, `updateAllAccounts`, `deleteUser` or `deleteMailAt`. |
+| S2-03 (R-MAIL-03, R-OBS-04) | `ConfigureEmailClient` on each selected client sets name, user, mail id, SMTP and POP3 server and password, and reads back every field except the password (PARTIAL footprint). It is refused while any claim exists on that client, so an `EmailClient` is never reconfigured while an operation on it is unresolved. Unselected clients are never touched. | Harness: read-back compares every non-secret field; a foreign claim refuses with zero setter calls; the stub shows no change on an unselected client. |
+| S2-04 (R-MAIL-06, R-EVT-04, R-COV-01) | Pairs are deterministic: explicit `email_pairs`, else a ring over the sorted selected clients for n≥2 and a self-send for n=1; never all pairs. Each pair has one `message_ref`; its nonce is generated per run, is shared by subject and body and by every row of the pair, and is recorded in the run record. Every selected client and pair keeps a result row when skipped, blocked or unobserved. | Compiler tests for 0, 1, 2 and n clients, explicit and duplicate pairs, missing account, stable ids; the plan and its hash carry `secret_ref` strings only and no nonce; integration shows every pair row present under refusal, exclusion and blocking. |
+| S2-05 (R-MAIL-04, R-EVT-06/07) | `SendMailMessage` is a typed EXECUTE_ONCE action on the sender, dispatched at most once per run under a pre-effect claim written in the same evaluation: an absent claim is written `in_progress` before `sendMail`, then `completed` or `unknown`; an existing foreign claim refuses with no call; this operation's own claim (same op id and run nonce) reports the earlier evaluation's effect as unknown rather than as not attempted. No claim is ever reset or deleted by product code. The row is never successful: no qualified observation of `mailSent` exists under the fallback. | Harness: claim written before the call; throw after the effect leaves `unknown` and sticky uncertainty; a replayed script sends nothing more; a foreign claim sends nothing; a lost response is UNKNOWN and is never redispatched. |
+| S2-06 (R-MAIL-04 supporting, R-SEC-06) | `SMTP_DELIVERED` is a read-only, bounded scan of the intended recipient's server mailbox for the pair's nonce subject, checking sender, recipient and body. It reports presence (`claim_level=server_mailbox_presence`) and only presence: it is not a `mailSent` success, not POP3 evidence, and it never rewrites the send row or clears its uncertainty. Unrelated mailbox content is never returned. | Harness: matching, wrong (nonce with other fields), missing within the deadline, truncated scan, absent account; payload carries counts and flags only; a recovery read after the unresolved send keeps the send UNKNOWN and sticky. |
+| S2-07 (R-MAIL-05, R-EVT-05) | No event-dependent product verification exists. `SMTP_SEND`, `POP3_RETRIEVE` and `EMAIL_END_TO_END` compile as optional, typed blocked expectations; the reader registers no observer and never calls `getMailIpc`. | Catalog and runtime tests: the three kinds are UNKNOWN, their reader returns NOT_ATTEMPTED without dispatch, and the script corpus never contains `getMailIpc` or `registerEvent`. |
+| S2-08 (R-CAP-03, R-REG-02) | The new action families are registered explicitly in the replay registry and the catalog. SMTP/POP3 operations and send/retrieve readiness stay UNKNOWN/UNMEASURED; required unknown services refuse before E5 (`SERVICE_INELIGIBLE`), optional ones are excluded and reported, and the applicator dispatches no unknown operation. Positive runtime tests use explicit test-bound catalogs passed to the use case, never a public override. | Registry completeness test; catalog tests; default-catalog admission tests with zero mutating calls; applicator test keeps every mail action SKIPPED under UNKNOWN. |
+| S2-09 (R-SEC-01, R-SEC-02) | Secret-bearing actions (`EnsureEmailAccount`, `ConfigureEmailClient`, `SendMailMessage`) are admitted only on the authenticated HTTP channel fixed at A5, with no file fallback (`SECRET_TRANSPORT_UNAVAILABLE`), and every `secret_ref` resolves before any user-state mutation (`SECRET_UNRESOLVED`). Secrets reach JavaScript only through `json.dumps`, never enter a plan, hash, record or response, and are redacted in raw, JSON-escaped and URL-encoded form from every runtime row, TD-12 snapshot and persisted record. No secret-bearing script is written to disk. | Admission tests with a file channel and a failing resolver (zero mutating calls, nothing leaked); a round trip through the real applicator, snapshot and record store with an adversarial secret in an engine error; a file-bridge spy proves no secret-bearing request was written. |
+| S2-10 (R-ENTRY-06, R-RET-02, R-COV-02) | The existing entry controls bind mail: E5 failure or uncertainty prevents mail effects, a lost record rewrite stops further mutation, and successful unrelated DNS/HTTP never upgrades an unobserved mail row. | Integration tests through the real composition, compiler, applicators and store with only external seams injected. |
+| S2-11 (public surface) | No additional MCP tool and no experimental-profile argument; the default catalog prevents live mail effects; S1 DNS/HTTP behavior is unchanged. | Surface test on the registered tools and the tool signature; the S1 suites pass unchanged. |
+
+### Design
+
+**Intent.** `ServiceRequirement` gains `domain_name`, `email_accounts`
+(`EmailAccountRequirement(username, secret_ref, display_name)`),
+`email_clients` (`EmailClientRequirement(client_device_id, username)`),
+`email_pairs` (`EmailPairRequirement(sender_device_id, recipient_device_id)`)
+and `verification_mode` (`effectful`, the default, or `configure_only`, which
+compiles no message). An SMTP service selects exactly its email clients; a POP3
+service selects none and owns only its enable and direct read-back.
+
+**Plan.** `ServiceType` gains `smtp` and `pop3`; `ServicePhase` gains
+`CLIENT = 40` and `MESSAGE = 50`. Actions: `EnableSmtpService`,
+`EnablePop3Service` (server, ENABLE), `EnsureEmailAccount` (server, CONTENT),
+`ConfigureEmailClient` (client host, CLIENT) and `SendMailMessage` (sender host,
+MESSAGE, EXECUTE_ONCE). Verification kinds: `email_client_state` (client direct
+read-back), `smtp_send` (optional, gated), `smtp_delivered` (performed on the
+server, reported on the recipient), `pop3_retrieve` and `email_end_to_end`
+(optional, gated, compiled only when a POP3 service shares the host). All pair
+rows belong to the SMTP service so that no expectation depends across services.
+
+**Why the send is an action, not a verification.** A verification passes the
+mutation gate unchecked because reads and owned releases must continue after a
+persistence loss. `sendMail` is a user-state effect, so it is dispatched by the
+applicator as an action: the gate, the capability check, the replay registry and
+the no-redispatch rule then apply to it without new machinery. This matches the
+revision 2.1 DHCP correction (acquisition by an action, never by a
+verification).
+
+**Decision table.** Two rows are added to `decide_mutation`:
+
+| Row | Facts | Decision |
+| --- | --- | --- |
+| 21 | ACCEPTED, CORRELATED, UNOBSERVED, NOT_APPLICABLE, COVERED, attempted=False | FAILED, disposition FAILED, residue NONE, frontier closed, not sticky; cause `not_attempted:refused:<reason>` |
+| 22 | ACCEPTED, CORRELATED, UNOBSERVED, NOT_APPLICABLE, PARTIAL, attempted ∈ {True, None} | APPLIED, disposition UNKNOWN, OUTCOME_UNKNOWN, residue UNKNOWN, frontier closed, sticky; cause `effect_unobservable:<reason>` |
+
+Row 21 is a correlated refusal before any setter: nothing was called, so there
+is no residue and nothing to doubt. Row 22 is an execute-once effect with no
+qualified same-evaluation observation: the effect may have happened, so it is
+sticky and never opens the frontier. Both tuples were `inconsistent` before, so
+no existing producer changes meaning.
+
+**Claims and serialization (R-EVT-06/07, R-OBS-04).** Claims live in the
+production global `__mcpE6Claims`, keyed `email_client:<device>`, as
+`{state, op_id, message_ref, nonce, seq}`. Within one invocation the applicator
+dispatches one batch at a time and never runs a verification concurrently;
+across invocations in one MCP process the runtime serializes mail batches and
+mail reads behind one process lock; across processes only the engine claim
+remains. The claim bounds duplicates **only** under the single-evaluation
+atomicity inference, which the file sample supports for its sample and the HTTP
+sample left INCONCLUSIVE, so no dispatch path is admitted on it: the family is
+UNKNOWN in the catalog and in the replay registry, and execution stays blocked
+pending Q2 evidence.
+
+**Secrets.** A `SecretResolver` port (`application/ports/secret_resolver.py`)
+returns an opaque `SecretValue` whose representation never shows the value. The
+local adapter reads `PT_MCP_SECRET_<REF>` from the process environment, refuses
+refs outside `[A-Za-z0-9_.-]{1,64}` and values shorter than four characters
+(redaction of a shorter value would be unsound), and memoizes per invocation so
+admission and dispatch see one value. Admission resolves every ref; the runtime
+resolves again from the same instance while building a script, and redacts
+every value it resolved from every string it returns.
+
+**Nonces.** The compiled plan carries `message_ref` only, so its semantic hash
+is stable across runs. Before E4 the coordinator binds one fresh nonce per
+`message_ref` into a copy of the eligible plan and records the mapping in the
+run record. Nonces are not secrets.
+
+**Catalog and registry.** `Server-PT:smtp` and `Server-PT:pop3` profiles and
+every new operation record are UNKNOWN with `documentary_baseline` provenance.
+Registry: the two enables are REPLAY_SAFE on payload shape (declarative setters
+read back in the payload, like the existing enables); `EnsureEmailAccount`,
+`ConfigureEmailClient` and `SendMailMessage` are UNKNOWN/UNMEASURED. The
+mutation-containment inventory gains the mail mutators.
+
+**Not implemented, by design.** Observer registration, `mailSent`/`mailReceived`
+parsers, `getMailIpc`, POP3 mailbox ownership checks (R-SEC-06 is unreachable
+because no retrieval exists) and any claim reset.
+
+### Invariants
+
+1. No mail effect is dispatched by the default catalog, and no dispatch path
+   depends on an unmeasured concurrency guarantee.
+2. A secret never appears in a plan, hash, record, response, journal, snapshot
+   or file-channel request.
+3. An execute-once effect is dispatched at most once per run and never after an
+   ambiguous outcome; a claim is never reset by product code.
+4. Dispatch, server-mailbox presence and client retrieval remain three claims;
+   none is inferred from another.
+5. S1's manifest, E5 closure, foundation, persistence, retained-result and
+   per-client coverage invariants hold unchanged.
+
+## Block B — Q1 repair design delta (risk L)
+
+Risk stays **L**: the change alters what a future LIVE stage writes and what it
+may conclude. S1b stays gated and no model is selected.
 
 ### Requirements and acceptance
 
 | ID | Requirement | Acceptance |
 | --- | --- | --- |
-| S4A-C1 | A pre-existing run key is rejected **without writing anything**. Every later read/write continuation that can mutate the run bag or an owned resource, and the final release, is permitted only by ownership this invocation proves inside that same evaluation through its nonce — never by the key's name or an earlier successful claim. A collided, absent or ownership-replaced key is not adopted, overwritten, reclaimed or deleted, and foreign logs are not reclassified as this run's evidence. | Node-harness tests execute the real generated scripts with a foreign complete atom log and with observer bookkeeping at every continuation branch. Foreign and ownership-replaced state is unchanged; registration, unregistration, trigger and deletion call counts remain zero. Directly absent and foreign keys stay distinguishable, while a fresh owned key keeps the positive collection, observer and bounded finalization paths. Assertions read the stub's independent snapshot, never a response field. |
-| S4A-C2 | The outcome of the preceding effect is evaluated before the next effect is admitted: E5 is classified before any E6 enable is dispatched, the second atomicity contender is queued only after the first receipt is interpreted, an unestablished listener setup admits no fetch, and the positive HTTPS fetch is classified before the HTTP-negative fetch. An incomplete result set or unreleased client is unknown, not success. | Coordinator tests through the real runtimes and generated readers: empty, short and unknown E5 result sets put zero E6 enable scripts on the channel; an unaccepted first contender leaves exactly one queued contender; a lost `prepare_https_only` produces no fetch and no `setHttpsEnable`; and fresh wrong positive content with a released client preserves the contradiction while the channel shows no later negative client, listener toggle or DNS3 effect. Authorized finalization and persistence still run. The nominal successful paths still complete. |
-| S4A-C3 | A conclusion is never stronger than its observation. A cross-read cell that threw is unobserved, not `false`, and keeps its cause; two failed cross reads can never yield the separate-table model, and one failed cross read can never manufacture a contradiction. The listener-isolation model is supported only by a coherent, correlated negative observable with a positive control **in the same mode**; where the implementation has no such observable the measurement is INCONCLUSIVE, and no HTTP code, `onDone` semantics or timeout is invented to replace it. Wrong content on the marked positive page still contradicts that positive expectation. An ordered ATOM-1 log is retained as an observation, but a sample whose evaluations were coalesced or whose separation is unknown is INCONCLUSIVE for the separate-evaluation claim. | Domain tests over generated shared and separate table reads with per-cell exceptions and with missing or contradictory fields; listener tests for a wrong-page response while the listener still serves, an absent same-mode positive, a timeout, and the coherent positive; and the existing coalesced HTTP harness test expecting INCONCLUSIVE while retaining its ordered log and scope limitation. Sample, build and channel limitations stay in the record. |
-| S4A-C4 | Q1 fits its ceiling on its **bounded worst case**, not on its luckiest trace, with the cleanup reserve intact. | A stage-definition test pins the planned worst case against the ceiling; a coordinator test drives the Q1 executor at the production ceiling with the responses that force every extra poll, and asserts that no call was refused, that the finalization reserve was never borrowed, and that both restoration reads ran. |
+| Q1R-1 | M-HTTPS-1 writes only a page already observed to exist on the owned disposable server (`index.html`), with run-specific **content**, never a new filename. Both handles must read the page successfully and non-empty before it is mutated; a read failure, empty content or truncated representation is INCONCLUSIVE, never a separate table. | Node stub whose `setPageContents` is update-only (`File not exist` for an unknown URL, as recorded LIVE): the repaired probe never creates a page and the stub's page keys are unchanged; baseline read failures stop before any write. |
+| Q1R-2 | The procedure is write H through `HttpServer`, independent read through both handles, write S through `HttpsServer`, independent read through both handles, each step admitted only after the previous one was interpreted. Shared requires coherent cross-visibility both ways; separate requires both own writes visible and the opposite handle unchanged. Anything mixed, unread or thrown is INCONCLUSIVE with per-cell causes. | Domain tests for shared, separate, mixed, per-cell errors, truncation and lost answers; harness runs under both stub table models. |
+| Q1R-3 | M-HTTPS-2 records bounded, sanitized observations where documented readers exist: page read-back through both handles, HTTP/HTTPS/inherited enable flags, the request URL and client mode, and endpoint readiness on the fixture links (`Port.isPortUp`, `isProtocolUp`, `getLink`, `HostPort.getIpAddress/getSubnetMask`). Unavailable observations are named: no documented `HttpClient` URL getter, no mode read in the HTTP reader, no documented STP or light-status reader. | Stage facts carry each observation or its named absence; the production fetch scripts stay byte-identical. |
+| Q1R-4 | A negative is interpreted only after a same-mode working positive: an HTTP-mode positive with both listeners enabled precedes the HTTP-mode negative, and the HTTPS-only positive precedes the HTTPS-mode negative. A failed positive stops the negatives it would qualify and triggers one readiness read. No sleep, timeout or status-code semantics is added; a declared negative without a qualified refusal observable stays INCONCLUSIVE. | Coordinator tests for timed-out positives, wrong content, lost answers, unobserved toggles and the nominal path, each ending in authorized finalization. |
+| Q1R-5 | Q1 keeps the reviewed 60-operation / 600-second ceiling and its 10-operation reserve. Optional M-DNS-1/2 are omitted explicitly as optional measurements without a reviewed probe, not as a budget refusal, and M-DNS-3 is not repeated. | Stage-definition test pins the new worst case; a coordinator run at the ceiling with every extra poll forced refuses nothing and never borrows the reserve. |
+| Q1R-6 | Restoration keeps comparing semantic devices and links; the record states that scope and names a changed backend-managed count instead of implying whole-workspace equality. | Finalization test with a retained backend-managed device: CLEAN in scope, limitation present, raw reads unchanged. |
 
-### S4A-C1 — ownership before a run key write
-
-`write_bag_sentinel` computed `run_bag_preexisting` and then wrote the sentinel
-unconditionally, so the later refusal could not undo the write; `release_run_bag`
-deleted `this.__mcpE6Q[<run>]` behind a Python-side flag, so a lost
-acknowledgement could let the finalizer delete a key that was never ours. The
-run bag now carries an `owner` field set to this invocation's nonce when it is
-created:
-
-- the claim writes only when the run key is absent, and reports `written` and
-  `owned` as separate facts;
-- every probe that writes under the run key (`atom`, `unreg`) first proves
-  `owner === <nonce>` in the same evaluation, and otherwise does nothing and
-  says so;
-- the release proves the same before deleting, and reports `owned` and `deleted`
-  separately from `had_run_bag`.
-
-A proven collision means nothing was written: the run stops, the collision is
-recorded, and the finalizer touches nothing. An unobserved claim leaves ownership
-undecided in Python, and the engine-side check — not a name — then decides
-whether the release may delete.
-
-The same-evaluation proof applies to every existing continuation, not only
-the initial claim, the first observer registration and final release.
-`collect_atomicity` must not read or delete a foreign `atom`; each observer
-continuation must stop before copying evidence, creating callbacks, changing
-callback state, unregistering, triggering or deleting when the run bag is
-absent or no longer owned. Lost ownership remains distinct from absent observer
-bookkeeping, and foreign data never becomes this run's measured evidence.
-
-### S4A-C2 — stop rules before the next effect
-
-`_configure_q1` dispatched the E6 enables and only then read its E5 flag, and
-both classifications accepted a short result list. E5 is now classified — every
-requested action present exactly once, and applied — before the E6 batch is
-constructed, and the same completeness rule applies to E6. `_run_q0` interprets
-contender A's receipt before queueing contender B. `_https_listener` starts no
-fetch and no second toggle unless the first toggle was read back in the same
-evaluation, and a fetch whose owned client could not be proven released stops
-further experiments. `e5_accepted` keeps its meaning — channel acceptance of a
-fire-and-forget batch, never an observed effect — and the record still says so.
-
-The positive HTTPS fetch is itself a stop boundary: its completed reading is
-assessed immediately, before the HTTP-negative client is created. A wrong fresh
-page preserves the positive contradiction, leaves all later experimental rows
-NOT_RUN with their causal stop, and proceeds only to the already-authorized
-finalization and persistence path.
-
-### S4A-C3 — conclusions no stronger than observations
-
-`cross_read_page_markers` returns `true`, `false` or `null` per cell and carries
-the per-cell cause. `assess_page_tables` decides nothing while any cell is
-unobserved, and refuses a reading whose `read_errors` count disagrees with the
-unobserved cells.
-
-For M-HTTPS-2 the production reader has **no qualified failure observable**: a
-refused request and a slow or lost one both surface as
-`no_response_within_deadline`, and fresh non-marker content proves a marker
-mismatch rather than a refusal. A declared negative control can therefore only
-*contradict* the model — the marker was retrieved while the listener was read
-back as disabled — and can never establish it; the HTTP-mode negative
-additionally has no HTTP-mode positive control in this stage. M-HTTPS-2 is
-consequently INCONCLUSIVE unless something contradicts it, with every
-descriptive observation and both limitations preserved. Fresh content without
-the marker on the marked positive page contradicts that positive expectation and
-stops the stage.
-
-ATOM-1 similarly separates what was observed from what is claimed. Its ordered
-log remains evidence about the executed sample, but an HTTP sample that was
-coalesced, or any sample whose evaluation separation is unknown, cannot support
-non-interleaving between separate evaluations. Such a sample is INCONCLUSIVE
-for that claim; an observed counterexample remains CONTRADICTED, and the finite
-file-channel sample remains explicitly non-universal.
-
-### S4A-C4 — the Q1 budget
-
-The reviewed design ceiling for Q1 is **60 operations and 600 seconds**,
-approved for this offline correction only. It is not a LIVE authorization and it
-does not change Q0, Q2 or Q3. The planned figure is now the bounded worst case,
-in which every production fetch spends its start, both inspections and its
-release:
+### Planned worst case
 
 | Phase | Step | Operations |
 | --- | --- | --- |
 | admission | executable build, workspace baseline | 2 |
 | setup | 4 fixture devices at 2 each, 3 links at 2 each, fixture identity | 15 |
 | setup | E5 endpoints, E6 enable HTTP and HTTPS | 2 |
-| experiment | M-HTTPS-1 page write and cross read | 2 |
-| experiment | M-HTTPS-2: HTTP-off toggle, 3 fetches at 4 each, HTTPS-off toggle | 14 |
+| experiment | M-HTTPS-1: write H, read both, write S, read both | 4 |
+| experiment | M-HTTPS-2: readiness, marker page, HTTP positive (4), HTTP off, HTTPS positive (4), HTTP negative (4), HTTPS off, HTTPS negative (4) | 20 |
 | experiment | M-DNS-3 client resolvers | 1 |
 | finalization reserve | 4 device removals at 2 each, 2 restoration reads | 10 |
-| | **planned worst case** | **46** |
+| | **planned worst case** | **54** |
 
-Fourteen operations of slack remain above the worst case, and the ten reserved
-operations stay untouchable outside finalization. Q0 keeps **20 / 300**: its one
-spare operation is slack, not a retry entitlement, and a Q0 experiment may still
-stop inconclusively.
+A failed positive spends one readiness read instead of the steps it stops, so
+every early exit costs less than the complete path. Six operations of slack
+remain; they are not a retry entitlement.
 
-### Invariants that must remain true
-
-1. No call reaches Packet Tracer outside the `OperationLedger`.
-2. No probe writes a production global (`__mcpE6Claims`, `__mcpE6Inert`,
-   `__mcpE6HttpClients`), and no probe touches a run key it has not proven it
-   owns.
-3. A mutation is never repeated after an ambiguous outcome. A refusal before
-   dispatch is the only proof that one call did not run.
-4. `DOCUMENTED` never implies `SUPPORTED`, an offline record is never promotion
-   evidence, and `COMPLETED` is not universal support.
-5. Finalization always runs once an effect was admitted, its failures stay
-   secondary, and its reserve is never borrowed by an experiment.
-
-### Test design
+## Test design
 
 | Level | Scope | Files |
 | --- | --- | --- |
-| unit (domain) | the pure assessment rules behind every changed conclusion | `tests/test_service_qualification_contracts.py` |
-| harness (generated scripts) | the real probe JavaScript executed by the Node stub engine, with the stub's snapshot as the oracle | `tests/test_service_qualification_probes.py` |
-| integration (coordinator) | the real coordinator, runtimes, probes and record store over a controlled channel | `tests/test_service_qualification_coordinator.py` |
-| system (CLI) | the stage gate an operator actually meets | `tests/test_service_qualification_cli.py` |
+| unit (domain) | pairing, ids, hash content, decision rows 21/22, secret value and redaction, Q1 page-table and listener rules | `tests/test_service_mail_compiler.py`, `tests/test_execution_status_facts.py`, `tests/test_service_secrets.py`, `tests/test_service_qualification_contracts.py` |
+| harness (generated scripts) | the real mail and Q1 JavaScript executed by Node stubs whose state, not the reported row, is the oracle | `tests/test_service_mail_script_harness.py`, `tests/test_service_qualification_probes.py` |
+| integration | the real composition, compiler, applicators, runtime and store with only external seams injected | `tests/test_service_mail_integration.py`, `tests/test_service_qualification_coordinator.py` |
+| system | the public tool surface and the Q1 stage gate an operator meets | `tests/test_service_tools_surface.py`, `tests/test_service_qualification_cli.py` |
+| regression | S1 entry, S0 decision, S4a runner and the containment gates | the existing modules, unchanged except where a delta above names them |
 
-Offline acceptance testing of the runner applies through the coordinator and
-CLI contracts above. LIVE acceptance of Q0 or Q1 requires a separately
-authorized observed run at an exact SHA and is not performed here; its absence
-does not make the offline acceptance controls N/A.
+Acceptance testing is offline through the product use case and the runner. A
+positive runtime test with an injected catalog is not product acceptance, and
+LIVE acceptance of S2 (Q2) or of the repaired Q1 requires a new exact-SHA
+authorization that this brief does not grant.
 
 ## Open decisions
 
 | # | Decision | Current disposition |
 | --- | --- | --- |
-| 1 | **Q1 budget.** The stage refused before contact because its executable definition exceeded its ceiling. | A design ceiling of 60 operations / 600 seconds is approved for this offline correction, against the proven worst case of 46 with the 10-operation reserve intact. It is **not** LIVE authorization. If a future change no longer fits, the arithmetic is reported and the refusal is retained; no unlimited retry and no stage split is implicitly approved. |
-| 2 | **Q0 slack.** Q0 fits with one spare operation. | Keep 20 / 300. One spare operation is not a retry entitlement, the finalization reserve stays whole, and the adverse paths — not only the 19-call positive — are proven. |
-| 3 | **M-UNREG event source.** Is `HostPort.ipChanged` on the owned temporary PC an acceptable engine-generic subject? | Accepted as an engine experiment, triggered through `setIpSubnetMask` on the owned fixture. It qualifies nothing about mail or DHCP callbacks, their argument shapes, or safe zero-event detachment; those gates stay open. |
-| 4 | **ATOM-1 evaluation scope.** The HTTP channel may join the two queued contenders into one `runCode`. | A coalesced sample is not evidence of non-interleaving between *separate* evaluations, and two queued strings never imply two evaluations. The record states the observed or unknown evaluation scope and keeps a scoped result or INCONCLUSIVE. File-channel sampling is finite too: it proves neither universal atomicity nor exactly-once delivery. No transport or extension change follows from this. |
+| 1 | **Q1 budget.** | 60 / 600 with the 10-operation reserve; the repaired worst case is 54. No LIVE authorization follows from it. |
+| 2 | **Q0 slack.** | Unchanged: 20 / 300; one spare operation is not a retry entitlement. |
+| 3 | **Mail evidence under the fallback.** | `SMTP_DELIVERED` is supporting evidence only. Promotion of any mail operation needs a Q2 record at its own SHA; an event path needs a safe zero-event release first. |
+| 4 | **Claim scope on HTTP.** | The claim bounds duplicates only within one evaluation. HTTP separate-evaluation atomicity is INCONCLUSIVE, so the claim is a candidate mechanism, not a qualified one. |
+| 5 | **R-QUAL-05/06.** | A repaired-Q1 sample would be attributed to its own SHA and can never be relabeled as S1b/Q1b evidence. |
 
-Deferred, with its consumers identified: reducing root `handoff.md` to a route.
-It is the authoritative CP-SCALE projection, with a machine-parsed state block
-(`tests/handoff_state.py`) and roughly 220 prose assertions across
-`tests/test_cp_scale_current_state.py`,
-`tests/test_cp_scale_realtime_stp_observation.py`,
-`tests/test_cp_scale_sim_time_diagnostic.py`,
-`tests/test_cp_scale_canonical_voice_evidence_ledger.py`,
-`tests/test_positive_voice_handoff.py`, `tests/test_positive_voice_slice.py` and
-`tests/test_voice_root_cause_retrospective.py`. Reducing it means rewriting
-those pinned CP-LIVE evidence assertions, which this delivery excludes. A route
-header was added to it instead; the reduction is a separate change with this
-consumer list as its input.
+Deferred, with its consumers identified in the `0850de3` archive: reducing root
+`handoff.md` to a route.
 
 ## Next authorized offline work
 
-1. Land the S4A-C1..C4 corrections with their regressions, and keep S4a
-   `READY_FOR_REVIEW`, not accepted.
-2. Obtain exact-SHA CI for the resulting commit once a push is authorized. No
-   earlier green run may be relabelled onto it.
-3. Independent review of the corrected S4a. Only after that review may a Q0 LIVE
-   authorization be *requested*; this brief grants none.
-4. S1b, S2 and S3 stay blocked on their Q stages. Nothing here promotes a
-   capability, and no offline record is promotion evidence.
+1. Land Block A and Block B with their regressions and keep the package
+   `READY_FOR_REVIEW`.
+2. Exact-SHA CI once a push is authorized; no earlier run is relabeled.
+3. Independent review. Only after it may a new exact-SHA Q1 authorization be
+   requested; its sample cannot become S1b/Q1b evidence.
 
 ## Verification evidence
 
-The prior-delivery figures through **Measured result of the corrections** were
-observed in the sibling worktree `Cisco-MCP-s4a` on
-branch `feature/server-pt-s4a-qualification-runner`, with its own `.venv`
-(CPython 3.12.10) and `packet_tracer_mcp` resolving inside that worktree.
-Instruction loading: this session loaded `CLAUDE.md`, `AGENTS.md` and
-`docs/engineering/standards.md` from the primary checkout, and the three files
-in this worktree are byte-identical to them (same Git blob identities). A fresh
-session started inside this worktree was not observed, so its effective loading
-remains **pending**, not passed. Nothing in that delivery contacted Packet
-Tracer. This block is historical evidence preserved from `405f293`; the
-focused-correction evidence follows it and does not relabel these earlier runs.
-
-| Commit | Tree | Scope |
-| --- | --- | --- |
-| `b311657` | `0e16fdd` | Part A: documentation projection, no runtime or test behavior |
-| `78fdb91` | `dfe8858` | Part B: the S4A-C1..C4 corrections and their regressions |
-
-The documentation-only commit `405f293` added this historical section. It
-changed no Python file, so the Ruff gate, the namespace inventory and the suite
-below were unaffected by it; the exact-commit delivery gate, the MkDocs build
-and the whitespace check were re-run on it.
-
-Checks, against `78fdb91` unless stated:
-
-| Check | Command | Result |
-| --- | --- | --- |
-| causal regressions | `pytest -q` on the four S4a modules | 115 + 33 + 40 + 19 passed |
-| affected S4a and S1 area | `pytest -q` on the S4a, run-record, product-entry and service-runtime modules | 455 passed |
-| full offline suite | `pytest -q` | 6166 passed, 3 skipped, 3 pre-existing warnings |
-| quality gate, delivery mode | `scripts\quality_gate.py --base cisco/main --delivery-commit HEAD` | clean tree at the exact commit; 63 changed Python files gated, 0 mechanical exemptions, Ruff lint and format clean |
-| namespace inventory | `scripts\namespace_inventory.py` | 0 active imports, 0 active strings, 0 unreviewed inert mentions. Markdown is not scanned, so the archival path does not affect its classification |
-| docs | `mkdocs build --site-dir _site` | built; only the two pre-existing `handoff.md` link warnings, none introduced |
-| whitespace | `git diff --check` | clean |
-| archive integrity | SHA-256 of every archived file after deleting and re-checking it out | all eight match `source-manifest.json`; the brief archive's Git blob identity equals its source blob at `9973f66` |
-
-Measured result of the projection, as committed blob bytes:
-
-| File | Before (`9973f66`) | After (`78fdb91`) |
-| --- | --- | --- |
-| `docs/engineering/change-briefs/server-pt-services.md` | 391,435 | 19,052 |
-| `handoff.md` | 267,914 | 269,299 |
-| `AGENTS.md`, `CLAUDE.md`, `docs/engineering/standards.md` | 22,625 | 22,625 |
-| **default reading set** | **681,974** | **310,976** |
-
-No token or cost figure is claimed: none was measured, and none would be
-meaningful without naming its tokenizer.
-
-Measured result of the corrections: the Q1 executor's nominal trace spends 45
-operations and its worst case, with the positive fetch's first inspection lost,
-spends exactly the planned 46 with no refused call and the 10-operation reserve
-untouched. The full Q1 stage now passes its gate and completes through the CLI.
-
-### Focused correction evidence
-
-The focused correction is local commit
-`cb2b1fb12978d5050546f31ee51d0918dc5ee38c`, tree
-`a6b2e9fdb182f31e78ec57bda0537d4a376ee06d`, based directly on reviewed
-`405f29334a514f9323b693f7f5340a62b761bf3a`. It changes no budget, transport,
-protocol, `.pts`, `EXTENSION/` file or capability state and contacted no Packet
-Tracer process.
-
-| Check | Result |
-| --- | --- |
-| causal RED regressions before production edits | 11 failed for the expected ownership, effect-ordering and evaluation-scope causes |
-| focused regressions after the owning-layer fixes | 11 passed |
-| complete S4a domain, Node harness and coordinator files | 156 passed |
-| affected S4a/S1 and coexistence modules | 401 passed |
-| full offline suite | 6174 passed, 3 skipped, 3 pre-existing Pytest deprecation warnings |
-| exact-SHA delivery gate | clean tree at `cb2b1fb`; 63 changed Python files gated, 0 mechanical exemptions, Ruff lint and format clean |
-| namespace inventory | 0 active imports, 0 active strings, 0 unreviewed inert mentions |
-| documentation build | built; only the two pre-existing `handoff.md` link warnings, none introduced |
-| whitespace | `git diff --check` clean |
-
-The repository's pytest-isolation wrapper refused this sibling because
-`worktrees.json` has no S4a assignment. The tests above therefore used this
-checkout's own `.venv` directly, as the active `AGENTS.md` permits; no other
-checkout's interpreter or test artifacts were used.
-
-### Residual limitations
-
-- **Not LIVE-ready, and not accepted.** S4a stays `READY_FOR_REVIEW`. Only an
-  independent reviewer can accept it, and no Q0 or Q1 LIVE authorization exists.
-- **Exact-SHA CI is pending.** Runs for `9973f66` and `405f293` remain historical
-  evidence at those SHAs; run 35396445227 succeeded at `405f293`. Neither
-  `cb2b1fb` nor its documentation-only successor has been pushed, so no CI run
-  has seen this focused correction and no earlier run is relabelled.
-- **Offline only.** Every probe result above comes from the Node stub engine.
-  Whether Packet Tracer behaves the way that stub does is exactly what Q0 and Q1
-  would measure, and no offline run is promotion evidence.
-- **M-HTTPS-2 cannot be supported by this build's readers.** The measurement is
-  INCONCLUSIVE by construction until a qualified listener-refusal observable
-  exists. Adding one is an S1b/Q1b question, not a change to make here.
-- **The `handoff.md` reduction is deferred**, with its consumers listed above.
-- **Instruction loading inside this worktree is unobserved**, as stated above.
+Pending: recorded by the results commit of this package.
