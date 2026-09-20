@@ -1276,6 +1276,64 @@ conditional on the delivery gate, the fast-forward publication and exact-SHA
 CI, and a correct terminal inconclusive result is an acceptable outcome of
 either one.
 
+## Block I — executable diagnostic foundations for a Goal (risk L)
+
+The two prepared profiles become two executable qualification stages,
+`D-DHCP` and `D-WEB`, so a later separately authorized Codex Goal has
+something to run rather than another plan. The design delta, the requirement
+table and the invariants are in
+[`server-pt-goal-foundations.md`](server-pt-goal-foundations.md); the operator
+procedure, the budget arithmetic, the ungranted authorization templates and
+the inactive `/goal` draft are in
+[`../../qa/server-services-goal-contract.md`](../../qa/server-services-goal-contract.md).
+This block authorizes no LIVE run, starts no bridge, contacts no Packet Tracer
+instance, promotes no capability, continues no exhausted campaign and edits no
+archived record.
+
+What it changes in this workstream, and nothing else:
+
+- **Two false maintained claims are corrected.** A usable registered STP
+  observation does exist (`OperationalQueryId.SHOW_SPANNING_TREE` with the
+  maintained parser), and `Port::getLightStatus()` is documented with its
+  enumeration (`off=0, amber=1, green=2, blink=3`). The D-WEB profile's
+  limitation, the listener evidence tokens and the probe module's documented
+  surface said otherwise; they now say which procedure reads them instead. The
+  light is auxiliary evidence and never a forwarding or reachability claim.
+- **The D-DHCP pool projection is corrected.** Removing the enable edge was
+  not enough: the compiled plan also carried two client `endpoint_dhcp_mode`
+  foundations a server-only E5 can never verify, a `DHCP_SERVER_STATE`
+  expectation written for `enabled=True`, and prerequisites naming actions the
+  projection drops. Every rewrite is now returned explicitly and recorded, the
+  disabled stage verifies `enabled=False` with the exact pool fields, and the
+  enable stage rebinds that read-back so activating the process also verifies
+  the transition it makes. The D-DHCP profile's D3-a step therefore costs two
+  operations, not one, and its proposed worst case is 44 of 60.
+- **The product web reader is instrumented.** It reads `isHttps()` in both
+  modes, binds the observed owner, keeps a coherent native `go()` result with
+  its type instead of coercing it, retains every attempted inspection with its
+  dispatch, result, offset and remaining budgets, accepts a finite explicit
+  inspection schedule without replaying missed slots, and grants one bounded
+  late read before release. The public timeout defaults are unchanged and the
+  default composition reproduces today's behaviour exactly.
+- **One execution authority, not a second framework.** `D-DHCP` and `D-WEB`
+  are stages: the same request rule, repository and process gates, fixed
+  transport, ledger, write-ahead record and CLI. The authority binds, in
+  addition, the profile and version, the exact tree, the exact fixture models
+  and link ports, the ordered step selection, the cleanup reserve, a fresh
+  instance token and a unique attempt identity the record store must confirm is
+  new. Profile version 2 additionally binds the exact Packet Tracer PID and
+  executable path. Before transport construction a read-only local preflight
+  requires exactly that one process at the authorized build and an empty file
+  mailbox; it launches, stops and deletes nothing. The existing empty-workspace
+  read remains the last admission gate before any effect, so a user's document
+  is never accepted as the disposable fixture. `DiagnosticAuthorization` stays
+  planning data that nothing executable reads.
+
+Proposed, reviewable ceilings: D-DHCP 50 / 900 with a planned worst case of 45,
+D-WEB 68 / 900 with a planned worst case of 63. Both are measured from the
+composed call paths. No existing ceiling moves: Q0 stays 20 / 300, Q1 stays
+60 / 600, Q3 stays 60 / 1200.
+
 ## Open decisions
 
 | # | Decision | Current disposition |

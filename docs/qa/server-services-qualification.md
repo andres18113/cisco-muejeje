@@ -34,6 +34,15 @@ qualify anything.
 | Q1 | executable | `__MCP_E6Q_SRV`, `__MCP_E6Q_PC1`, `__MCP_E6Q_PC2`, `__MCP_E6Q_SW` | 60 operations / 600 s | 56 | M-HTTPS-1, M-HTTPS-2 (M-DNS-1/2 omitted: optional, no reviewed probe; M-DNS-3 omitted: already measured at `0850de3`) |
 | Q2 | declarative only | none | 60 / 900 s | not planned | requires S2 and a Q0 record |
 | Q3 | executable; file channel only on build 9.0.1.0858 | Server-PT `192.0.2.10/24`, two DHCP PC-PT clients, 2960-24TT on exact Fa0/1..3 links | 60 / 1200 s | 59 (17 setup + 31 measurement/application + 11 reserve) | M-DHCP-1, 2, 4, 5, 6; one-address pool `MCP_E6Q_DHCP`; guarded acquisitions (M-DHCP-3 omitted: the event source and its release are not qualified) |
+| D-DHCP | executable diagnostic; file channel only on build 9.0.1.0858 | the Q3 fixture, with no client ever activated | 50 / 900 s | 45 (17 setup + 17 measurement + 11 reserve) | M-DDHCP-0..4: the disabled baseline with its drift control, the server's static addressing alone, the intended pool while still disabled, the enable, the pre-cleanup reading |
+| D-WEB | executable diagnostic; file channel only on build 9.0.1.0858 | the Q1 fixture, statically addressed | 68 / 900 s | 63 (19 setup + 34 measurement + 10 reserve) | M-DWEB-0..5: the listener and endpoint boundaries, the per-VLAN forwarding state of the exact switch ports, the marked page, one attributed ping, one instrumented fetch, the same boundaries again |
+
+The two `D-` stages are **diagnostics**: each asks an open question and
+measures a boundary or a transition. What they observe confirms no product
+capability and learns no allowlist from it. They bind a second half of the
+authority that the Q stages do not; the
+[Goal contract](server-services-goal-contract.md) holds it, together with the
+per-stage budget arithmetic and the ungranted authorization templates.
 
 The planned figure is the stage's **bounded worst case**, not its luckiest
 trace: every production fetch is budgeted at its start, both inspections and
@@ -190,7 +199,7 @@ mismatched or unobservable value.
 | Field | Runner argument | Rule |
 | --- | --- | --- |
 | Authorization identity | `--authorization-id` | printable, at most 128 characters; recorded in the stage record |
-| Stage | `--authorized-stage` and `--stage` | one of Q0..Q3; Q2 and an infeasible stage refuse |
+| Stage | `--authorized-stage` and `--stage` | one of Q0..Q3, `D-DHCP` or `D-WEB`; Q2 and an infeasible stage refuse. A `D-` stage binds the further fields in the [Goal contract](server-services-goal-contract.md) |
 | Executed SHA | `--authorized-sha` and `--expected-head` | 40 lowercase hex; equal to each other, to observed `HEAD`, and to its published upstream; clean worktree |
 | Fixture targets | `--authorized-target` and `--target` (repeat) | exactly the stage fixtures, no duplicates |
 | Channel | `--authorized-channel` and `--channel` | `http` or `file`; one per authorization, fixed for the whole run; Q3 accepts only `file` |
