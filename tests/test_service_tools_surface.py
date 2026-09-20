@@ -430,7 +430,23 @@ class _SimulatedProductTransport:
                 )
             return json.dumps({"found": True, "output": output})
         if "content_before:before" in script:
-            return json.dumps({"started": True, "content_before": "", "owned": True})
+            owner = self._json_argument(
+                script,
+                r"getDevice\((\"(?:\\.|[^\"\\])*\")\)",
+            )
+            return json.dumps(
+                {
+                    "started": True,
+                    "go_result": True,
+                    "go_result_type": "boolean",
+                    "content_before": "",
+                    "https_mode": "p.setHttps(true)" in script,
+                    "https_mode_type": "boolean",
+                    "owner_device": owner,
+                    "owner_read": True,
+                    "owned": True,
+                }
+            )
         if "var found=!!(slot&&slot.manager&&slot.client)" in script:
             return json.dumps(
                 {"found": True, "deleted": True, "present": False, "error": ""}

@@ -66,6 +66,12 @@ from ...domain.enterprise.models.execution import (
     PostconditionFact,
     ResultFact,
 )
+from ...domain.enterprise.models.forwarding import (
+    ForwardingAddressMode,
+    ForwardingEndpointSelection,
+    ForwardingKnownAddress,
+    ForwardingRuntimeEndpoint,
+)
 from ...domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceObservation,
     physical_workspace_restoration_matches,
@@ -85,9 +91,12 @@ from ...domain.enterprise.models.service_plan import (
     ServiceVerificationKind,
 )
 from ...domain.enterprise.models.service_qualification import (
+    D_WEB_INSPECTION_SCHEDULE,
+    DIAGNOSTIC_ACCESS_VLAN,
     Q1_PC1,
     Q1_SERVER,
     Q1_SERVER_IPV4,
+    Q1_SWITCH,
     Q3_LEASE_IPV4,
     Q3_PC1,
     Q3_PC2,
@@ -97,13 +106,16 @@ from ...domain.enterprise.models.service_qualification import (
     READINESS_MAX_READS,
     BudgetRecord,
     DefaultPoolObservation,
+    DiagnosticLifecycleObservation,
     EnvironmentIdentity,
     ExecutionMode,
+    FixtureDevice,
     FixtureRecord,
     MeasurementConclusion,
     MeasurementRecord,
     MeasurementStatus,
     OperationEntry,
+    QualificationAuthorization,
     QualificationOutcome,
     QualificationRecord,
     QualificationRefusal,
@@ -117,6 +129,8 @@ from ...domain.enterprise.models.service_qualification import (
     SourceIdentity,
     StageDefinition,
     TransportIdentity,
+    diagnostic_lifecycle_continuity,
+    diagnostic_lifecycle_refusals,
     refusal,
     repository_refusals,
     request_refusals,
@@ -130,16 +144,28 @@ from ...domain.enterprise.models.service_runtime import (
 from ...domain.enterprise.services.configuration_compiler import (
     configuration_plan_semantic_hash,
 )
+from ...domain.enterprise.services.service_diagnostic_profiles import (
+    d_dhcp_enable_only_plan,
+    d_dhcp_pool_only_plan,
+    d_dhcp_static_only_plan,
+)
 from ...domain.enterprise.services.service_qualification_evidence import (
+    ACTIVE_STIMULUS,
     BASELINE_OBSERVED_NATIVE_DEFAULT,
+    DIAGNOSTIC_SCOPE,
     Assessment,
     BaselineAdmission,
     DefaultPoolSnapshot,
     ProbeReading,
+    assess_access_forwarding,
     assess_atomicity,
     assess_bag_persistence,
+    assess_baseline_drift,
+    assess_client_timeline,
     assess_dhcp_baseline_admission,
+    assess_forwarding_probe,
     assess_https_listener,
+    assess_native_default_interval,
     assess_observer_release,
     assess_page_tables,
     assess_port_readiness,
@@ -173,6 +199,13 @@ MAX_DETAIL = 240
 FETCH_OPERATIONS = 4
 #: The ledger purpose prefix every native default reading is dispatched under.
 Q3_DEFAULT_PURPOSE = "q3:native_default"
+#: The same reading under the D-DHCP diagnostic, so a record can never confuse
+#: a Q3 sample with a diagnostic one by its purpose alone.
+D_DHCP_DEFAULT_PURPOSE = "d-dhcp:native_default"
+#: Why a measurement the authority scoped out did not run. It is the one
+#: omission reason that does not keep a stage from completing: the run did
+#: everything it was authorized to do.
+NOT_SELECTED = "not_selected_by_authorization"
 
 
 def _bounded(value: object) -> str:
@@ -634,6 +667,22 @@ class QualificationBoundaries:
     q3_product_contract: Callable[[str, str], Q3ProductContract] | None = None
     q3_required_build: str = ""
     settle_seconds: float = 2.0
+    #: Only the two diagnostic stages compose these. `forwarding_probe` is the
+    #: existing bind-before-ping executor bound to this invocation's ledger,
+    #: and `diagnostic_service_runtime` is the product web reader with the
+    #: explicit inspection schedule, the late read and the ledger's own
+    #: allowance reader. A stage that needs one and does not have it refuses
+    #: before contact rather than running a narrower experiment.
+    forwarding_probe: Callable[[LedgeredTransport], Any] | None = None
+    diagnostic_service_runtime: (
+        Callable[[LedgeredTransport, Callable[[], tuple[int, float]]], ServiceRuntime]
+        | None
+    ) = None
+    #: Read-only local process/mailbox identity for executable diagnostics.
+    #: It runs before a transport is constructed, launches nothing and deletes
+    #: nothing. The workspace gate after contact still proves the active
+    #: document is disposable before the first effect.
+    diagnostic_lifecycle: Callable[[], DiagnosticLifecycleObservation] | None = None
 
 
 @dataclass
@@ -693,6 +742,18 @@ class QualificationResult:
 
 
 # -- the invocation ------------------------------------------------------------
+
+
+#: The boundaries each executable diagnostic requires to have been composed.
+#: A missing one is a refusal before contact, never a quieter experiment.
+_DIAGNOSTIC_BOUNDARIES: dict[QualificationStage, tuple[str, ...]] = {
+    QualificationStage.D_DHCP: ("q3_product_contract", "diagnostic_lifecycle"),
+    QualificationStage.D_WEB: (
+        "forwarding_probe",
+        "diagnostic_service_runtime",
+        "diagnostic_lifecycle",
+    ),
+}
 
 
 def _refused(
@@ -760,14 +821,26 @@ def qualify_server_services(
             ]
         )
     repository = _repository(boundaries)
-    refusals = repository_refusals(repository, request.expected_head)
+    authorization = request.authorization
+    refusals = repository_refusals(
+        repository,
+        request.expected_head,
+        authorization.tree if authorization is not None else "",
+    )
     if refusals:
         return _refused(refusals)
+    diagnostic_lifecycle: DiagnosticLifecycleObservation | None = None
+    if definition.profile_id:
+        refusals, diagnostic_lifecycle = _diagnostic_admission(
+            definition, authorization, boundaries
+        )
+        if refusals:
+            return _refused(refusals)
 
     moment = boundaries.now()
     run_id = boundaries.new_run_id(moment)
     product_contract: Q3ProductContract | None = None
-    if definition.stage is QualificationStage.Q3:
+    if definition.stage in (QualificationStage.Q3, QualificationStage.D_DHCP):
         if not boundaries.q3_required_build:
             return _refused(
                 [
@@ -822,6 +895,7 @@ def qualify_server_services(
         experimental_capabilities,
         moment=moment,
         run_id=run_id,
+        diagnostic_lifecycle=diagnostic_lifecycle,
     )
     record.links = [
         {
@@ -838,7 +912,7 @@ def qualify_server_services(
         return _refused(
             [refusal(RefusalKind.NOT_PERMITTED, RefusalSubject.RECORD, _bounded(exc))]
         )
-    run = _Run(record, boundaries, record_path)
+    run = _Run(record, boundaries, record_path, diagnostic_lifecycle)
 
     opened: OpenedTransport | None = None
     try:
@@ -888,6 +962,85 @@ def qualify_server_services(
                 )
 
 
+def _diagnostic_admission(
+    definition: StageDefinition,
+    authorization: QualificationAuthorization | None,
+    boundaries: QualificationBoundaries,
+) -> tuple[list[QualificationRefusal], DiagnosticLifecycleObservation | None]:
+    """Check what an executable diagnostic needs beyond the shared rule.
+
+    Two things the request rule cannot decide on its own: whether this attempt
+    identity has ever been used before, which only the record store knows, and
+    whether the boundaries this stage's steps require were actually composed.
+    Both fail closed. An attempt whose uniqueness cannot be observed is not a
+    unique attempt, and a stage whose executor is missing refuses rather than
+    running a narrower experiment under the same authority.
+    """
+    if authorization is None:  # pragma: no cover - request_refusals covers it
+        return [refusal(RefusalKind.MISSING, RefusalSubject.AUTHORIZATION)], None
+    found: list[QualificationRefusal] = []
+    seen = getattr(boundaries.record_store, "attempt_exists", None)
+    if not callable(seen):
+        found.append(
+            refusal(
+                RefusalKind.UNOBSERVABLE,
+                RefusalSubject.ATTEMPT_IDENTITY,
+                "The record store cannot state whether this attempt is new.",
+            )
+        )
+    else:
+        try:
+            used = bool(seen(authorization.attempt_id))
+        except Exception as exc:
+            return (
+                [
+                    refusal(
+                        RefusalKind.UNOBSERVABLE,
+                        RefusalSubject.ATTEMPT_IDENTITY,
+                        f"attempt_lookup_failed:{type(exc).__name__}",
+                    )
+                ],
+                None,
+            )
+        if used:
+            found.append(
+                refusal(
+                    RefusalKind.NOT_PERMITTED,
+                    RefusalSubject.ATTEMPT_IDENTITY,
+                    "This attempt identity already has a record; "
+                    "a new SHA or process does not create an attempt.",
+                )
+            )
+    required = _DIAGNOSTIC_BOUNDARIES.get(definition.stage, ())
+    missing = [name for name in required if getattr(boundaries, name, None) is None]
+    if missing:
+        found.append(
+            refusal(
+                RefusalKind.NOT_PERMITTED,
+                RefusalSubject.FIXTURE,
+                f"The executable {definition.stage.value} composition is "
+                f"incomplete: {', '.join(missing)}.",
+            )
+        )
+    observed: DiagnosticLifecycleObservation | None = None
+    lifecycle = boundaries.diagnostic_lifecycle
+    if callable(lifecycle):
+        try:
+            observed = lifecycle()
+        except Exception as exc:
+            observed = DiagnosticLifecycleObservation(
+                error=f"diagnostic_lifecycle_failed:{type(exc).__name__}"
+            )
+        found.extend(
+            diagnostic_lifecycle_refusals(
+                authorization,
+                observed,
+                authorization.build,
+            )
+        )
+    return found, observed
+
+
 def _isolation(boundaries: QualificationBoundaries) -> IsolationObservation:
     try:
         return boundaries.isolation()
@@ -912,6 +1065,7 @@ def _initial_record(
     *,
     moment: datetime | None = None,
     run_id: str = "",
+    diagnostic_lifecycle: DiagnosticLifecycleObservation | None = None,
 ) -> QualificationRecord:
     moment = moment or boundaries.now()
     try:
@@ -981,6 +1135,9 @@ def _initial_record(
             f"isolation:{isolation.state}",
             f"repository:{repository.head}:{repository.tree}",
         ],
+        diagnostic_lifecycle=(
+            asdict(diagnostic_lifecycle) if diagnostic_lifecycle is not None else {}
+        ),
     )
 
 
@@ -992,11 +1149,15 @@ class _Run:
         record: QualificationRecord,
         boundaries: QualificationBoundaries,
         record_path: str,
+        diagnostic_lifecycle: DiagnosticLifecycleObservation | None = None,
     ) -> None:
         self.record = record
         self.boundaries = boundaries
         self.record_path = record_path
         self.ledger: OperationLedger | None = None
+        #: What the admission reading observed, kept so finalization can
+        #: state whether that pairing is still the one it is describing.
+        self.diagnostic_lifecycle = diagnostic_lifecycle
 
     def sync(self) -> None:
         """Copy the ledger into the record before every write."""
@@ -1165,6 +1326,11 @@ def _admitted(
         capabilities=capabilities,
         probes=boundaries.probes(bound, record.run_id, nonce),
         product_contract=product_contract,
+        authorized_steps=(
+            tuple(request.authorization.step_ids)
+            if definition.steps and request.authorization is not None
+            else ()
+        ),
     )
     cancelled: BaseException | None = None
     try:
@@ -1172,6 +1338,10 @@ def _admitted(
             _run_q0(execution)
         elif definition.stage is QualificationStage.Q1:
             _run_q1(execution)
+        elif definition.stage is QualificationStage.D_DHCP:
+            _run_d_dhcp(execution)
+        elif definition.stage is QualificationStage.D_WEB:
+            _run_d_web(execution)
         else:
             _run_q3(execution)
     except KeyboardInterrupt as exc:
@@ -1195,7 +1365,10 @@ def _admitted(
         and all(
             item.status is MeasurementStatus.RAN
             for item in record.measurements
-            if item.required
+            # A measurement the authority deliberately left out of its step
+            # selection is not a measurement this run failed to make. Every
+            # other omission still keeps the stage from completing.
+            if item.required and item.reason != NOT_SELECTED
         )
     )
     run.complete(
@@ -1227,6 +1400,9 @@ class _Execution:
     capabilities: frozenset[str]
     probes: Any
     product_contract: Q3ProductContract | None = None
+    #: The steps this invocation's authority selected, in stage order. Empty
+    #: for a stage that declares none, where every procedure runs.
+    authorized_steps: tuple[str, ...] = ()
     removal_candidates: list[DevicePlan] = field(default_factory=list)
     fixtures_ready: bool = False
     #: Run-bag state the finalizer must release. A collision means the run key
@@ -1268,6 +1444,18 @@ class _Execution:
     def stopped(self) -> bool:
         """Return whether new effects are no longer started."""
         return bool(self.record.primary_failure)
+
+    def selected(self, step_id: str) -> bool:
+        """Return whether the authority selected one diagnostic step.
+
+        A stage that declares no steps selects everything it defines, which is
+        what Q0/Q1/Q3 have always done. Selecting a step is permission to
+        attempt it; it never bypasses the state the run must already have
+        established, which the measurement prerequisites still decide.
+        """
+        if not self.definition.steps:
+            return True
+        return step_id in self.authorized_steps
 
     def stop(self, reason: str) -> None:
         """Keep the first stop reason as the primary failure."""
@@ -1642,23 +1830,39 @@ def _run_q1(execution: _Execution) -> None:
         execution.finish("HTTPS2")
 
 
+def _endpoint_action_id(execution: _Execution, name: str) -> str:
+    """Return the exact E5 action id this stage dispatches for one fixture.
+
+    The id names the stage, so a D-WEB forwarding selection can bind to the
+    action the run actually applied rather than to a Q1 id it never wrote.
+    """
+    return f"{execution.definition.stage.value.lower()}-e5-{name}"
+
+
 def _configure_q1(execution: _Execution) -> bool:
-    """Address the endpoints through E5 and enable HTTP/HTTPS through E6."""
+    """Address the endpoints through E5 and enable HTTP/HTTPS through E6.
+
+    Shared by Q1 and by D-WEB, which measures the same fixture and needs the
+    same two effects before it can ask anything about them. The action and
+    service ids carry the stage's own name, so nothing in either record claims
+    to be the other's row.
+    """
     ledger = execution.ledger
+    scope = execution.definition.stage.value.lower()
     fixtures = {item.name: item for item in execution.definition.fixtures}
     endpoints = [
         SetEndpointStaticAddress(
-            id=f"q1-e5-{name}",
+            id=_endpoint_action_id(execution, name),
             phase=ConfigurationPhase.ENDPOINT_ADDRESSING,
             device_id=name,
             device_name=name,
-            site_id="q1",
+            site_id=scope,
             interface="FastEthernet0",
             ipv4=fixture.ipv4,
             netmask=fixture.netmask,
             gateway="",
             dns_server=fixture.dns_server or None,
-            segment_id="q1",
+            segment_id=scope,
         )
         for name, fixture in fixtures.items()
         if fixture.ipv4
@@ -1669,19 +1873,19 @@ def _configure_q1(execution: _Execution) -> bool:
         "host_device_id": server.name,
         "host_device_name": server.name,
         "host_model": server.model,
-        "site_id": "q1",
-        "required_capability": "qualification:Q1",
+        "site_id": scope,
+        "required_capability": f"qualification:{execution.definition.stage.value}",
     }
     services = [
         EnableHttpService(
-            id="q1-e6-http",
-            service_id="q1-http",
+            id=f"{scope}-e6-http",
+            service_id=f"{scope}-http",
             service_type=ServiceType.HTTP,
             **common,
         ),
         EnableHttpsService(
-            id="q1-e6-https",
-            service_id="q1-https",
+            id=f"{scope}-e6-https",
+            service_id=f"{scope}-https",
             service_type=ServiceType.HTTPS,
             **common,
         ),
@@ -2151,9 +2355,9 @@ def _native_default_facts(execution: _Execution) -> dict[str, Any]:
     }
 
 
-def _q3_default_purpose(label: str) -> str:
+def _q3_default_purpose(label: str, prefix: str = Q3_DEFAULT_PURPOSE) -> str:
     """Return the ledger purpose one default reading is dispatched under."""
-    return f"{Q3_DEFAULT_PURPOSE}:{label}"
+    return f"{prefix}:{label}"
 
 
 def _counted_seq(ledger: OperationLedger, start: int) -> int:
@@ -2228,11 +2432,12 @@ def _q3_default_observed(
     reading: ProbeReading | None,
     *,
     operation_seq: int,
+    prefix: str = Q3_DEFAULT_PURPOSE,
 ) -> DefaultPoolSnapshot:
     """Classify and persist one default reading this run already performed."""
     return _q3_default_persist(
         execution,
-        _q3_default_purpose(label),
+        _q3_default_purpose(label, prefix),
         operation_seq,
         default_pool_snapshot(
             label,
@@ -2244,7 +2449,9 @@ def _q3_default_observed(
     )
 
 
-def _q3_default_read(execution: _Execution, label: str) -> DefaultPoolSnapshot:
+def _q3_default_read(
+    execution: _Execution, label: str, *, prefix: str = Q3_DEFAULT_PURPOSE
+) -> DefaultPoolSnapshot:
     """Dispatch one bounded default reading under its own purpose and persist it.
 
     The purpose is set before the call, so the counted operation states what it
@@ -2253,7 +2460,7 @@ def _q3_default_read(execution: _Execution, label: str) -> DefaultPoolSnapshot:
     explicitly not observed: no operation is added to the stage to repair the
     record, and the budgets are the ones the stage already planned.
     """
-    purpose = _q3_default_purpose(label)
+    purpose = _q3_default_purpose(label, prefix)
     ledger = execution.ledger
     start = len(ledger.entries)
     if not ledger.can_afford(1):
@@ -2278,7 +2485,11 @@ def _q3_default_read(execution: _Execution, label: str) -> DefaultPoolSnapshot:
             ),
         )
     return _q3_default_observed(
-        execution, label, reading, operation_seq=_counted_seq(ledger, start)
+        execution,
+        label,
+        reading,
+        operation_seq=_counted_seq(ledger, start),
+        prefix=prefix,
     )
 
 
@@ -3094,6 +3305,901 @@ def _run_q3(execution: _Execution) -> None:
     execution.finish("Q3_DHCP")
 
 
+# -- executable diagnostics ------------------------------------------------------
+
+
+def _diagnostic_start(execution: _Execution) -> bool:
+    """Admit one diagnostic stage and omit what its authority did not select.
+
+    An unselected measurement is OMITTED with its reason, not silently left
+    NOT_RUN: the record has to say that the authority scoped it out rather
+    than that the run failed to reach it. The stage still needs the whole
+    selected path to afford itself before the first fixture is created.
+    """
+    definition = execution.definition
+    selected_experiments = set(
+        definition.experiments_of_steps(execution.authorized_steps)
+        if definition.steps
+        else [item.id for item in definition.experiments]
+    )
+    for item in execution.record.measurements:
+        if item.experiment_id not in selected_experiments:
+            item.status = MeasurementStatus.OMITTED
+            item.reason = NOT_SELECTED
+    planned = sum(
+        definition.experiment(item).planned_operations for item in selected_experiments
+    )
+    required = [
+        item.id
+        for item in definition.experiments
+        if item.required and item.id in selected_experiments
+    ]
+    if not execution.ledger.can_afford(definition.fixture_operations + planned):
+        execution.not_run(required, f"budget_insufficient_for:{definition.stage.value}")
+        execution.stop(f"budget:{definition.stage.value}")
+        return False
+    if not _setup_fixtures(execution):
+        execution.not_run(required, "fixture_setup_failed")
+        return False
+    return True
+
+
+def _d_dhcp_runtimes(execution: _Execution, contract: Q3ProductContract):
+    """Bind the product E5/E6 runtimes to the exact manifest-directed fixture."""
+    boundaries = execution.run.boundaries
+    return (
+        _Q3ConfigurationRuntime(
+            boundaries.configuration_runtime(execution.bound), contract.inventory
+        ),
+        _Q3ServiceRuntime(
+            boundaries.service_runtime(execution.bound), contract.inventory
+        ),
+    )
+
+
+def _run_d_dhcp(execution: _Execution) -> None:
+    """Run the causal server-only DHCP sequence, one bounded step at a time.
+
+    Disabled baseline, the server's static addressing alone, the intended pool
+    while the process is still disabled, the enable, the terminal reading. No
+    client is activated, no lease is acquired, no default-pool setter is
+    dispatched, and every adjacent pair of native readings is what the record
+    attributes an interval to.
+    """
+    if not _diagnostic_start(execution):
+        return
+    contract = execution.product_contract
+    if contract is None:  # pragma: no cover - admission composes it
+        execution.stop("d_dhcp_product_contract_absent")
+        return
+    configuration_runtime, service_runtime = _d_dhcp_runtimes(execution, contract)
+    static_plan = d_dhcp_static_only_plan(
+        contract.configuration_plan, device_name=Q3_SERVER
+    )
+    executed_ids = frozenset(item.id for item in static_plan.actions)
+    context = _q3_context(contract)
+    execution.record.limitations.extend(
+        [
+            "d_dhcp_private_candidate_capabilities:no_public_catalog_mutation",
+            "d_dhcp_projection:server_static_address_only",
+        ]
+    )
+    state = _DDhcpState()
+
+    ids = ("M-DDHCP-0",)
+    if execution.selected("D0-baseline") and execution.begin(ids, "D_DHCP_BASELINE"):
+        with execution.procedure(ids):
+            _d_dhcp_baseline(execution, state)
+        execution.finish("D_DHCP_BASELINE")
+
+    ids = ("M-DDHCP-1",)
+    if execution.selected("D1-static") and execution.begin(ids, "D_DHCP_E5"):
+        with execution.procedure(ids):
+            _d_dhcp_static(
+                execution, state, configuration_runtime, contract, static_plan, context
+            )
+        execution.finish("D_DHCP_E5")
+
+    ids = ("M-DDHCP-2",)
+    if execution.selected("D2-pool") and execution.begin(ids, "D_DHCP_POOL"):
+        with execution.procedure(ids):
+            _d_dhcp_pool(
+                execution, state, service_runtime, contract, executed_ids, context
+            )
+        execution.finish("D_DHCP_POOL")
+
+    ids = ("M-DDHCP-3",)
+    if execution.selected("D3-enable") and execution.begin(ids, "D_DHCP_ENABLE"):
+        with execution.procedure(ids):
+            _d_dhcp_enable(
+                execution, state, service_runtime, contract, executed_ids, context
+            )
+        execution.finish("D_DHCP_ENABLE")
+
+    ids = ("M-DDHCP-4",)
+    if execution.selected("D4-final") and execution.begin(ids, "D_DHCP_FINAL"):
+        with execution.procedure(ids):
+            final = _q3_default_read(
+                execution, "d4_before_cleanup", prefix=D_DHCP_DEFAULT_PURPOSE
+            )
+            execution.conclude(
+                "M-DDHCP-4",
+                assess_native_default_interval(
+                    label="d4_interval",
+                    before=state.baseline or final,
+                    after=final,
+                    intervention=state.last_intervention,
+                    native_calls=state.native_calls,
+                    fields_written=state.fields_written,
+                ),
+            )
+        execution.finish("D_DHCP_FINAL")
+
+
+@dataclass
+class _DDhcpState:
+    """What one D-DHCP run has established, carried between its procedures."""
+
+    baseline: DefaultPoolSnapshot | None = None
+    control: DefaultPoolSnapshot | None = None
+    after_static: DefaultPoolSnapshot | None = None
+    after_pool: DefaultPoolSnapshot | None = None
+    foundations: dict[str, ActionExecutionStatus] = field(default_factory=dict)
+    last_intervention: str = "none:setup_only"
+    native_calls: tuple[str, ...] = ()
+    fields_written: tuple[str, ...] = ()
+    rewrites: list[str] = field(default_factory=list)
+
+
+def _d_dhcp_baseline(execution: _Execution, state: _DDhcpState) -> None:
+    """Establish a coherent disabled baseline and the drift control beside it."""
+    clients = ((Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0"))
+    # One dispatch serves both the typed admission rule and the run's first
+    # native reading, exactly as Q3 does: the baseline costs one operation.
+    start = len(execution.ledger.entries)
+    with execution.ledger.purpose_of(
+        _q3_default_purpose("d0_baseline", D_DHCP_DEFAULT_PURPOSE)
+    ):
+        reading = execution.probes.read_dhcp_server_baseline(Q3_SERVER, "FastEthernet0")
+    admission = assess_dhcp_baseline_admission(
+        reading,
+        server=Q3_SERVER,
+        interface="FastEthernet0",
+        intended_pool=Q3_POOL,
+        observed_build=execution.record.environment.observed_build,
+        qualified_build=execution.run.boundaries.q3_required_build,
+        observed_channel=execution.channel,
+        qualified_channels=execution.definition.allowed_channels,
+    )
+    state.baseline = _q3_default_observed(
+        execution,
+        "d0_baseline",
+        reading,
+        operation_seq=_counted_seq(execution.ledger, start),
+        prefix=D_DHCP_DEFAULT_PURPOSE,
+    )
+    client_rows = _q3_client_rows(execution.probes.read_dhcp_clients(clients))
+    endpoints = _fixture_endpoints(execution)
+    gate = _await_readiness(
+        execution,
+        endpoints,
+        lambda timeout: execution.probes.read_port_readiness(endpoints, timeout),
+        purpose="readiness:d_dhcp_fixture_links",
+    )
+    drift: Assessment | None = None
+    if execution.selected("D0-control"):
+        state.control = _q3_default_read(
+            execution, "d0_control", prefix=D_DHCP_DEFAULT_PURPOSE
+        )
+        drift = assess_baseline_drift(state.baseline, state.control)
+    activated = [row for row in (client_rows or ()) if row.get("mode") is True]
+    facts: dict[str, Any] = {
+        "native_default": _native_default_facts(execution),
+        "clients": client_rows if client_rows is not None else [],
+        "clients_readable": client_rows is not None,
+        "readiness": gate.facts(),
+        "baseline_admission": {
+            "admitted": admission.admitted,
+            "kind": admission.kind,
+            "causes": list(admission.causes),
+        },
+    }
+    causes: list[str] = []
+    limitations = [
+        DIAGNOSTIC_SCOPE,
+        "client_dhcp_flags_are_never_written_by_this_stage",
+    ]
+    if drift is not None:
+        facts.update(drift.facts)
+        causes.extend(drift.causes)
+        limitations.extend(drift.limitations)
+    if not admission.admitted:
+        causes.extend(["initial_dhcp_server_state_not_admissible", *admission.causes])
+    if state.baseline is not None and not state.baseline.observed:
+        causes.append(f"native_default_unobserved:{state.baseline.cause}")
+    if client_rows is None:
+        causes.append("client_rows_not_readable")
+    if activated:
+        causes.append("client_dhcp_mode_already_on")
+    if not gate.ready:
+        causes.append(f"readiness_not_established:{gate.reason}")
+    conclusion = (
+        MeasurementConclusion.SUPPORTED_IN_SAMPLE
+        if not causes
+        else (
+            MeasurementConclusion.CONTRADICTED
+            if drift is not None
+            and drift.conclusion is MeasurementConclusion.CONTRADICTED
+            else MeasurementConclusion.INCONCLUSIVE
+        )
+    )
+    execution.conclude(
+        "M-DDHCP-0",
+        Assessment(conclusion, facts=facts, causes=causes, limitations=limitations),
+    )
+    if causes:
+        execution.stop(f"d_dhcp_baseline_not_established:{causes[0]}")
+
+
+def _d_dhcp_static(
+    execution: _Execution,
+    state: _DDhcpState,
+    configuration_runtime,
+    contract: Q3ProductContract,
+    static_plan: ConfigurationPlan,
+    context: ConfigurationRuntimeContext,
+) -> None:
+    """Apply the server's static addressing alone and read the default again.
+
+    The applied action is one `configurePcIp` call that writes the address,
+    the netmask, the gateway and the DNS server together. That whole call is
+    the intervention this interval is attributed to; no narrower cause is
+    available from it and none is claimed.
+    """
+    if not execution.run.transition("experiment:D_DHCP_E5:started"):
+        execution.stop("persistence:d_dhcp_e5_not_announced")
+        return
+    with execution.ledger.purpose_of("d-dhcp:product:e5_server_address"):
+        configuration = ConfigurationApplicator(configuration_runtime).apply(
+            static_plan,
+            actual_source_topology_hash=contract.manifest.physical_topology_hash,
+            capabilities=contract.device_capabilities,
+            runtime_context=context,
+            deployment_manifest=contract.manifest,
+        )
+    foundation_plan = contract.service_plan.model_copy(
+        update={
+            "source_configuration_id": static_plan.id,
+            "source_configuration_hash": static_plan.semantic_hash,
+        },
+        deep=True,
+    )
+    state.foundations = derive_service_foundational_statuses(
+        foundation_plan, configuration
+    )
+    cause = _q3_e5_foundation_cause(
+        configuration, state.foundations, {item.id for item in static_plan.actions}
+    )
+    action = next(iter(static_plan.actions), None)
+    state.native_calls = ("configurePcIp",)
+    state.fields_written = (
+        ("ipv4", "netmask", "gateway", "dns_server")
+        if isinstance(action, SetEndpointStaticAddress)
+        else ()
+    )
+    state.last_intervention = "e5:server_static_address:configurePcIp"
+    state.after_static = _q3_default_read(
+        execution, "d1_after_server_address", prefix=D_DHCP_DEFAULT_PURPOSE
+    )
+    assessment = assess_native_default_interval(
+        label="d1_interval",
+        before=state.control or state.baseline or state.after_static,
+        after=state.after_static,
+        intervention=state.last_intervention,
+        native_calls=state.native_calls,
+        fields_written=state.fields_written,
+    )
+    assessment.facts["e5"] = {
+        "plan_id": static_plan.id,
+        "actions": [item.id for item in static_plan.actions],
+        "reported": [item.action_id for item in configuration.action_results],
+        "action_results": [
+            item.model_dump(mode="json") for item in configuration.action_results
+        ],
+        "foundation_cause": cause,
+        "gateway": getattr(action, "gateway", ""),
+        "dns_server": getattr(action, "dns_server", "") or "",
+    }
+    if cause:
+        assessment.causes.append(cause)
+        assessment = Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=assessment.facts,
+            causes=assessment.causes,
+            limitations=assessment.limitations,
+            outcome_unknown=assessment.outcome_unknown,
+        )
+    execution.conclude("M-DDHCP-1", assessment)
+    if cause:
+        execution.stop(cause)
+
+
+def _d_dhcp_service_stage(
+    execution: _Execution,
+    state: _DDhcpState,
+    service_runtime,
+    contract: Q3ProductContract,
+    plan: ServicePlan,
+    rewrites,
+    context: ConfigurationRuntimeContext,
+    *,
+    purpose: str,
+    intervention: str,
+) -> tuple[ServiceApplicationResult | None, str]:
+    """Apply one projected E6 stage through the real product applicator."""
+    state.rewrites.extend(item.as_text() for item in rewrites)
+    with execution.ledger.purpose_of(purpose):
+        result = ServiceApplicator(service_runtime).apply(
+            plan,
+            actual_source_topology_hash=contract.manifest.physical_topology_hash,
+            actual_source_configuration_hash=(
+                contract.service_plan.source_configuration_hash
+            ),
+            foundational_statuses=state.foundations,
+            capabilities=contract.service_capabilities,
+            runtime_context=context,
+            deployment_manifest=contract.manifest,
+        )
+    cause = _q3_service_result_cause(
+        result,
+        {item.id for item in plan.actions},
+        expected_verification_ids={item.id for item in plan.verification_expectations},
+    ) or _d_dhcp_readback_cause(result)
+    state.last_intervention = intervention
+    return result, cause
+
+
+def _d_dhcp_readback_cause(result: ServiceApplicationResult) -> str:
+    """Return why a projected stage's read-back did not observe, or "".
+
+    A stage whose whole point is the stored configuration cannot treat a
+    verification that never ran as a pass. `_q3_service_result_cause` refuses
+    a contradicted or errored row and a short result set, but a row the
+    applicator reported DEPENDENCY_BLOCKED carries `UNSPECIFIED` and slipped
+    through: the process was activated and nothing was read back.
+    """
+    for item in result.verification_results:
+        if item.observation is not ObservationFact.OBSERVED:
+            return (
+                "outcome_unknown:diagnostic_readback_not_observed:"
+                f"{item.expectation_id}:{item.observation.value}"
+            )
+    return ""
+
+
+def _d_dhcp_pool(
+    execution: _Execution,
+    state: _DDhcpState,
+    service_runtime,
+    contract: Q3ProductContract,
+    executed_ids: frozenset[str],
+    context: ConfigurationRuntimeContext,
+) -> None:
+    """Write the intended pool with the process still disabled, and verify it."""
+    plan, rewrites = d_dhcp_pool_only_plan(
+        contract.service_plan, executed_configuration_action_ids=executed_ids
+    )
+    result, cause = _d_dhcp_service_stage(
+        execution,
+        state,
+        service_runtime,
+        contract,
+        plan,
+        rewrites,
+        context,
+        purpose="d-dhcp:product:e6_pool_disabled",
+        intervention="e6:configure_server_dhcp_pool:process_disabled",
+    )
+    state.after_pool = _q3_default_read(
+        execution, "d2_after_pool", prefix=D_DHCP_DEFAULT_PURPOSE
+    )
+    pool_action = next(
+        (item for item in plan.actions if isinstance(item, ConfigureServerDhcpPool)),
+        None,
+    )
+    pool_native_calls = (
+        (
+            "addPool",
+            *(("addExcludedAddress",) if pool_action.excluded_ranges else ()),
+            "setNetworkMask",
+            "setDefaultRouter",
+            *(("setDnsServerIp",) if pool_action.dns_server else ()),
+            "setStartIp",
+            "setEndIp",
+            "setMaxUsers",
+        )
+        if pool_action is not None
+        else ()
+    )
+    assessment = assess_native_default_interval(
+        label="d2_interval",
+        before=state.after_static or state.baseline or state.after_pool,
+        after=state.after_pool,
+        intervention=state.last_intervention,
+        native_calls=pool_native_calls,
+        fields_written=(
+            "pool_name",
+            "excluded_ranges",
+            "network",
+            "netmask",
+            "gateway",
+            "dns_server",
+            "lease_start",
+            "lease_end",
+            "max_users",
+        ),
+    )
+    row = next(iter(result.verification_results), None) if result else None
+    assessment.facts["e6_pool"] = {
+        "plan_id": plan.id,
+        "rewrites": list(state.rewrites),
+        "expected_enabled": False,
+        "action_results": (
+            [item.model_dump(mode="json") for item in result.action_results]
+            if result is not None
+            else []
+        ),
+        "verification": row.model_dump(mode="json") if row is not None else None,
+        "cause": cause,
+    }
+    if cause:
+        assessment.causes.append(cause)
+        assessment = Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=assessment.facts,
+            causes=assessment.causes,
+            limitations=assessment.limitations,
+        )
+    execution.conclude("M-DDHCP-2", assessment)
+    if cause:
+        execution.stop(cause)
+
+
+def _d_dhcp_enable(
+    execution: _Execution,
+    state: _DDhcpState,
+    service_runtime,
+    contract: Q3ProductContract,
+    executed_ids: frozenset[str],
+    context: ConfigurationRuntimeContext,
+) -> None:
+    """Enable the process and verify the transition the projection rebinds."""
+    plan, rewrites = d_dhcp_enable_only_plan(
+        contract.service_plan, executed_configuration_action_ids=executed_ids
+    )
+    result, cause = _d_dhcp_service_stage(
+        execution,
+        state,
+        service_runtime,
+        contract,
+        plan,
+        rewrites,
+        context,
+        purpose="d-dhcp:product:e6_enable",
+        intervention="e6:enable_server_dhcp",
+    )
+    after = _q3_default_read(
+        execution, "d3_after_enable", prefix=D_DHCP_DEFAULT_PURPOSE
+    )
+    assessment = assess_native_default_interval(
+        label="d3_interval",
+        before=state.after_pool or state.baseline or after,
+        after=after,
+        intervention=state.last_intervention,
+        native_calls=("setEnable",),
+    )
+    row = next(iter(result.verification_results), None) if result else None
+    assessment.facts["e6_enable"] = {
+        "plan_id": plan.id,
+        "rewrites": [item.as_text() for item in rewrites],
+        "expected_enabled": True,
+        "action_results": (
+            [item.model_dump(mode="json") for item in result.action_results]
+            if result is not None
+            else []
+        ),
+        "verification": row.model_dump(mode="json") if row is not None else None,
+        "cause": cause,
+    }
+    if cause:
+        assessment.causes.append(cause)
+        assessment = Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=assessment.facts,
+            causes=assessment.causes,
+            limitations=assessment.limitations,
+        )
+    execution.conclude("M-DDHCP-3", assessment)
+    if cause:
+        execution.stop(cause)
+
+
+@dataclass
+class _DWebState:
+    """What one D-WEB run has established, carried between its procedures."""
+
+    endpoints: dict[str, ForwardingRuntimeEndpoint] = field(default_factory=dict)
+    forwarding_admitted: bool = False
+    listeners_before: dict[str, Any] = field(default_factory=dict)
+    marker: str = ""
+
+
+def _d_web_selection(
+    execution: _Execution, fixture: FixtureDevice
+) -> ForwardingRuntimeEndpoint:
+    """Bind one fixture endpoint to the E5 action this stage dispatched.
+
+    The provenance is the stage's own, and it is real: the address comes from
+    the fixture the authorization named, the action id is the one the endpoint
+    batch this run applied actually carried, and the co-observed addresses are
+    the other addressed fixtures of the same segment, so a duplicate address
+    conflicts instead of binding.
+    """
+    definition = execution.definition
+    scope = definition.stage.value.lower()
+    network = ".".join([*fixture.ipv4.split(".")[:3], "0"])
+    known = tuple(
+        ForwardingKnownAddress(
+            item.ipv4, _endpoint_action_id(execution, item.name), item.name
+        )
+        for item in definition.fixtures
+        if item.ipv4
+    )
+    selection = ForwardingEndpointSelection(
+        policy_id=scope,
+        policy_version=definition.profile_version,
+        source_topology_id=definition.stage.value,
+        source_topology_hash="",
+        source_configuration_id=definition.stage.value,
+        source_configuration_hash="",
+        site_id=scope,
+        routing_device_id="",
+        endpoint_device_id=fixture.name,
+        endpoint_device_name=fixture.name,
+        endpoint_model=fixture.model,
+        endpoint_role="fixture",
+        link_id="",
+        endpoint_interface="FastEthernet0",
+        peer_device_id=Q1_SWITCH,
+        peer_interface="",
+        segment_id=scope,
+        address_mode=ForwardingAddressMode.STATIC,
+        configuration_action_id=_endpoint_action_id(execution, fixture.name),
+        planned_ipv4=fixture.ipv4,
+        network=network,
+        prefix_length=24,
+        netmask=fixture.netmask,
+        known_plan_addresses=known,
+    )
+    return ForwardingRuntimeEndpoint(
+        selection=selection,
+        runtime_device_name=fixture.name,
+        identity_method="stage_fixture_binding",
+        deployment_id=execution.record.run_id,
+        deployment_manifest_hash="",
+    )
+
+
+def _run_d_web(execution: _Execution) -> None:
+    """Observe every boundary an unretrieved page can fail at, in order."""
+    if not _diagnostic_start(execution):
+        return
+    if not _configure_q1(execution):
+        execution.not_run(
+            [item.id for item in execution.definition.experiments if item.required],
+            "fixture_setup_failed",
+        )
+        return
+    state = _DWebState()
+    for fixture in execution.definition.fixtures:
+        if fixture.ipv4:
+            state.endpoints[fixture.name] = _d_web_selection(execution, fixture)
+
+    ids = ("M-DWEB-0",)
+    if execution.selected("W0-listeners") and execution.begin(ids, "D_WEB_BOUNDARIES"):
+        with execution.procedure(ids):
+            _d_web_boundaries(execution, state, label="before")
+        execution.finish("D_WEB_BOUNDARIES")
+
+    ids = ("M-DWEB-1",)
+    if execution.selected("W1-forwarding") and execution.begin(ids, "D_WEB_FORWARDING"):
+        with execution.procedure(ids):
+            _d_web_forwarding(execution, state, label="before", samples=2)
+        execution.finish("D_WEB_FORWARDING")
+
+    ids = ("M-DWEB-2",)
+    if execution.selected("W2-page") and execution.begin(ids, "D_WEB_PAGE"):
+        with execution.procedure(ids):
+            _d_web_page(execution, state)
+        execution.finish("D_WEB_PAGE")
+
+    ids = ("M-DWEB-3",)
+    if execution.selected("W3-ping") and execution.begin(ids, "D_WEB_PING"):
+        with execution.procedure(ids):
+            _d_web_ping(execution, state)
+        execution.finish("D_WEB_PING")
+
+    ids = ("M-DWEB-4",)
+    if execution.selected("W4-fetch") and execution.begin(ids, "D_WEB_FETCH"):
+        with execution.procedure(ids):
+            _d_web_fetch(execution, state)
+        execution.finish("D_WEB_FETCH")
+
+    ids = ("M-DWEB-5",)
+    if execution.selected("W5-after") and execution.begin(ids, "D_WEB_AFTER"):
+        with execution.procedure(ids):
+            _d_web_after(execution, state)
+        execution.finish("D_WEB_AFTER")
+
+
+def _d_web_listener_reading(execution: _Execution, label: str) -> dict[str, Any]:
+    """Read both listeners, their port numbers and every fixture endpoint."""
+    endpoints = _fixture_endpoints(execution)
+    with execution.ledger.purpose_of(f"d-web:listeners:{label}"):
+        reading = execution.probes.read_listener_readiness(Q1_SERVER, endpoints)
+    return dict(assess_port_readiness(reading, endpoints).facts)
+
+
+def _d_web_boundaries(execution: _Execution, state: _DWebState, *, label: str) -> None:
+    """Establish the listener and endpoint boundaries before any request."""
+    facts = _d_web_listener_reading(execution, label)
+    state.listeners_before = facts
+    endpoints = _fixture_endpoints(execution)
+    gate = _Readiness(False, 0, 0.0, "readiness_not_selected")
+    if execution.selected("W0-readiness"):
+        gate = _await_readiness(
+            execution,
+            endpoints,
+            lambda timeout: execution.probes.read_port_readiness(endpoints, timeout),
+            purpose="readiness:d_web_fixture_links",
+        )
+    listeners = facts.get("listeners") or {}
+    causes: list[str] = []
+    if not facts.get("observed"):
+        causes.append(f"listener_reading_unobserved:{facts.get('cause', '')}")
+    for key in ("http_enabled", "https_enabled"):
+        if listeners.get(key) is not True:
+            causes.append(f"listener_not_enabled:{key}")
+    for key in ("http_port_number", "https_port_number"):
+        if not isinstance(listeners.get(key), int) or isinstance(
+            listeners.get(key), bool
+        ):
+            causes.append(f"listener_port_not_read_back:{key}")
+    if execution.selected("W0-readiness") and not gate.ready:
+        causes.append(f"readiness_not_established:{gate.reason}")
+    execution.conclude(
+        "M-DWEB-0",
+        Assessment(
+            MeasurementConclusion.SUPPORTED_IN_SAMPLE
+            if not causes
+            else MeasurementConclusion.INCONCLUSIVE,
+            facts={f"listeners_{label}": facts, "readiness": gate.facts()},
+            causes=causes,
+            limitations=[
+                DIAGNOSTIC_SCOPE,
+                "light_status_and_port_up_are_auxiliary_and_grant_no_forwarding",
+            ],
+        ),
+    )
+    if causes:
+        execution.stop(f"d_web_boundaries_not_established:{causes[0]}")
+
+
+def _d_web_switch_ports(execution: _Execution) -> tuple[str, ...]:
+    """Return the exact switch-side access ports of this stage's fixture."""
+    return tuple(
+        item.port_b if item.device_b == Q1_SWITCH else item.port_a
+        for item in execution.definition.links
+        if Q1_SWITCH in (item.device_a, item.device_b)
+    )
+
+
+def _d_web_forwarding(
+    execution: _Execution, state: _DWebState, *, label: str, samples: int
+) -> None:
+    """Observe the exact switch ports' per-VLAN forwarding state, neutrally."""
+    interfaces = _d_web_switch_ports(execution)
+    runtime = execution.run.boundaries.configuration_runtime(execution.bound)
+    with execution.ledger.purpose_of(f"d-web:forwarding:{label}"):
+        observation = runtime.observe_access_forwarding(
+            Q1_SWITCH,
+            DIAGNOSTIC_ACCESS_VLAN,
+            interfaces,
+            max_samples=samples,
+        )
+    lights = {
+        key: {
+            "light_status": value.get("light_status"),
+            "light_status_type": value.get("light_status_type"),
+            "light_status_name": value.get("light_status_name"),
+        }
+        for key, value in (state.listeners_before.get("ports") or {}).items()
+    }
+    assessment = assess_access_forwarding(
+        observation, label=f"forwarding_{label}", lights=lights
+    )
+    state.forwarding_admitted = (
+        assessment.conclusion is MeasurementConclusion.SUPPORTED_IN_SAMPLE
+    )
+    execution.conclude("M-DWEB-1", assessment)
+    if not state.forwarding_admitted:
+        # No permission is granted by an unadmitted sample, and the stage says
+        # so rather than continuing as if it had one.
+        execution.record.limitations.append(
+            f"forwarding_not_admitted:{assessment.causes[0] if assessment.causes else 'unknown'}"
+        )
+
+
+def _d_web_page(execution: _Execution, state: _DWebState) -> None:
+    """Write this run's marker into the existing index page through both handles."""
+    texts = execution.probes.page_marker_texts()
+    state.marker = texts["http_marker"]
+    with execution.ledger.purpose_of("d-web:marker_page"):
+        reading = execution.probes.prepare_marker_page(Q1_SERVER, state.marker)
+    established = marker_page_established(reading)
+    execution.conclude(
+        "M-DWEB-2",
+        Assessment(
+            MeasurementConclusion.SUPPORTED_IN_SAMPLE
+            if established
+            else MeasurementConclusion.INCONCLUSIVE,
+            facts={
+                "marker_page": {
+                    "marker": state.marker,
+                    "observed": reading.observed,
+                    "cause": reading.cause,
+                    "payload": dict(reading.payload) if reading.observed else {},
+                }
+            },
+            causes=[] if established else ["marker_page_not_established"],
+            limitations=[DIAGNOSTIC_SCOPE],
+        ),
+    )
+    if not established:
+        execution.stop("d_web_marker_page_not_established")
+
+
+def _d_web_ping(execution: _Execution, state: _DWebState) -> None:
+    """Take exactly one attributed ping between the two selected bindings."""
+    probe = execution.run.boundaries.forwarding_probe
+    source = state.endpoints.get(Q1_PC1)
+    destination = state.endpoints.get(Q1_SERVER)
+    if probe is None or source is None or destination is None:
+        execution.conclude(
+            "M-DWEB-3",
+            assess_forwarding_probe(
+                None, forwarding_admitted=state.forwarding_admitted
+            ),
+        )
+        execution.stop("d_web_forwarding_probe_not_composed")
+        return
+    execution.record.limitations.append(ACTIVE_STIMULUS)
+    with execution.ledger.purpose_of("d-web:ping"):
+        evidence = probe(execution.bound).probe_once(
+            source_device_name=Q1_PC1,
+            destination_endpoint=destination,
+            source_endpoint=source,
+            expected_reachable=True,
+        )
+    execution.conclude(
+        "M-DWEB-3",
+        assess_forwarding_probe(
+            evidence, forwarding_admitted=state.forwarding_admitted
+        ),
+    )
+
+
+def _d_web_fetch(execution: _Execution, state: _DWebState) -> None:
+    """Instrument one real owned background client, start to release."""
+    factory = execution.run.boundaries.diagnostic_service_runtime
+    if factory is None:
+        execution.conclude(
+            "M-DWEB-4",
+            assess_client_timeline(
+                None, marker=state.marker, schedule=D_WEB_INSPECTION_SCHEDULE
+            ),
+        )
+        execution.stop("d_web_service_runtime_not_composed")
+        return
+    expectation = ServiceVerificationExpectation(
+        id="d-web-http",
+        service_id="d-web-http",
+        action_id="d-web-fixture",
+        kind=ServiceVerificationKind.HTTP_FETCH,
+        evidence_kind=ServiceEvidenceKind.BEHAVIORAL,
+        host_device_id=Q1_SERVER,
+        host_device_name=Q1_SERVER,
+        client_device_id=Q1_PC1,
+        client_device_name=Q1_PC1,
+        expected={
+            "scheme": "http",
+            "address": Q1_SERVER_IPV4,
+            "marker": state.marker,
+        },
+        host_model="Server-PT",
+        client_model="PC-PT",
+    )
+    with execution.ledger.purpose_of("d-web:fetch:http"):
+        row = factory(execution.bound, execution.ledger.allowance).verify(expectation)
+    released = str(row.observed.get("released", ""))
+    execution.record.releases.append(
+        ReleaseRecord(
+            resource="client:d-web-http",
+            kind="client",
+            outcome=released or "unknown",
+            detail="; ".join(row.limitations)[:MAX_DETAIL],
+        )
+    )
+    if released not in ("released", "nothing_owned"):
+        execution.record.engine_residue.append(
+            f"client:d-web-http:{released or 'unknown'}"
+        )
+    execution.conclude(
+        "M-DWEB-4",
+        assess_client_timeline(
+            row, marker=state.marker, schedule=D_WEB_INSPECTION_SCHEDULE
+        ),
+    )
+    if released not in ("released", "nothing_owned"):
+        execution.stop("outcome_unknown:fetch_client:d-web-http")
+
+
+def _d_web_after(execution: _Execution, state: _DWebState) -> None:
+    """Read the same boundaries again and retain whatever moved."""
+    after = _d_web_listener_reading(execution, "after")
+    interfaces = _d_web_switch_ports(execution)
+    runtime = execution.run.boundaries.configuration_runtime(execution.bound)
+    with execution.ledger.purpose_of("d-web:forwarding:after"):
+        observation = runtime.observe_access_forwarding(
+            Q1_SWITCH, DIAGNOSTIC_ACCESS_VLAN, interfaces, max_samples=1
+        )
+    forwarding = assess_access_forwarding(observation, label="forwarding_after")
+    before = state.listeners_before.get("listeners") or {}
+    listeners = after.get("listeners") or {}
+    limitations = [DIAGNOSTIC_SCOPE, ACTIVE_STIMULUS, *forwarding.limitations]
+    causes = list(forwarding.causes)
+    moved: list[str] = []
+    if not before:
+        # Without the earlier reading there is nothing to compare against.
+        # Reporting every field as changed would manufacture a difference out
+        # of an observation that was never taken.
+        limitations.append("listener_comparison_unavailable:no_reading_before")
+        causes.append("listeners_before_not_observed")
+    else:
+        moved = sorted(
+            key
+            for key in set(before) | set(listeners)
+            if before.get(key) != listeners.get(key)
+        )
+        causes.extend(f"listener_changed:{item}" for item in moved)
+    execution.conclude(
+        "M-DWEB-5",
+        Assessment(
+            MeasurementConclusion.SUPPORTED_IN_SAMPLE
+            if not causes
+            else MeasurementConclusion.INCONCLUSIVE,
+            facts={
+                "listeners_after": after,
+                **forwarding.facts,
+                "listener_differences": moved,
+                "listener_comparison_observed": bool(before),
+            },
+            causes=causes,
+            limitations=limitations,
+        ),
+    )
+
+
 # -- finalization ----------------------------------------------------------------
 
 
@@ -3169,10 +4275,54 @@ def _finalize(execution: _Execution) -> None:
         and physical_workspace_restoration_matches(execution.baseline, item)
         for item in observations
     )
+    _lifecycle_postflight(execution)
     for name in sorted(execution.observers_unresolved):
         record.engine_residue.append(f"observer:{name}")
     record.dirty_state = _dirty_state(execution, observations)
     execution.run.transition("finalization:completed")
+
+
+def _lifecycle_postflight(execution: _Execution) -> None:
+    """Read the local process pairing again, after owned finalization.
+
+    The admission reading bound one Packet Tracer before a transport
+    existed. Nothing holds that process for the rest of the run: a crashed
+    instance is replaced by one that polls the same mailbox, and the
+    removals and both restoration reads above would then have been answered
+    by a process this authority never bound. Reading the pairing again is
+    what decides whether that evidence is still about the authorized
+    instance, and whether this run left anything a later one could execute.
+
+    It enumerates local processes and lists one directory. It contacts
+    Packet Tracer through nothing, launches and stops nothing, deletes no
+    artifact and spends no ledger operation, so the cleanup reserve is
+    never borrowed for it and an exhausted budget cannot suppress it. A
+    broken pairing is not a new primary failure -- the run already
+    happened -- but restoration stops being proven, because what was
+    observed is no longer attributable to the process under authority.
+    """
+    record = execution.record
+    lifecycle = execution.run.boundaries.diagnostic_lifecycle
+    if not callable(lifecycle) or execution.run.diagnostic_lifecycle is None:
+        return
+    try:
+        observed = lifecycle()
+    except Exception as exc:
+        observed = DiagnosticLifecycleObservation(
+            error=f"diagnostic_lifecycle_failed:{type(exc).__name__}"
+        )
+    record.diagnostic_lifecycle_postflight = asdict(observed)
+    reasons = diagnostic_lifecycle_continuity(
+        execution.run.diagnostic_lifecycle, observed
+    )
+    if not reasons:
+        return
+    record.engine_residue.extend(reasons)
+    record.secondary_failures.extend(f"lifecycle:{item}" for item in reasons)
+    record.limitations.append(
+        "finalization_evidence_not_paired_to_the_authorized_process"
+    )
+    record.restoration_proven = False
 
 
 def _restoration_scope(

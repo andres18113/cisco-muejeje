@@ -34,9 +34,18 @@ Vendor surface, checked against Cisco's local reference
   creating one: the Q1 record at `0850de3` measured `File not exist` for two
   newly named pages. The page probes therefore only ever write `index.html`,
   a page both handles must first read back non-empty on the owned server;
-- `Port::isPortUp/isProtocolUp/getLink` and
-  `HostPort::getIpAddress/getSubnetMask` for endpoint readiness. No documented
-  reader exposes a switch port's STP state or a readable light status;
+- `Port::isPortUp/isProtocolUp/getLink/getLightStatus` and
+  `HostPort::getIpAddress/getSubnetMask` for endpoint readiness.
+  `getLightStatus` is documented with its enumeration (`eOffLight = 0`,
+  `eAmberLight = 1`, `eGreenLight = 2`, `eBlink = 3`), so the raw value is
+  recorded with its `typeof` and interpreted only through that table. It is
+  auxiliary evidence: a light never stands in for a per-VLAN forwarding row or
+  for IP reachability. No `Port` member exposes a per-VLAN spanning-tree
+  state; that observation exists on the registered `show spanning-tree` query
+  instead, which is a different channel with its own freshness and identity
+  contract;
+- `HttpServer::getPortNumber()` beside the enable flags, so a listener's port
+  is read back rather than assumed;
 - `DnsClient::getServerIp()`;
 - `_ScriptModule.unregisterIpcEventByID(...)` is NOT documented: it is the
   maintained extension's existing usage (`EXTENSION/script-engine/main.js`).
@@ -708,25 +717,46 @@ class PacketTracerQualificationProbes:
 
     @staticmethod
     def _listener_states() -> str:
+        """Read each handle's enable flags and its actual listening port.
+
+        `HttpServer::getPortNumber()` is documented as returning the port
+        number of the HTTP service, so the record carries the port each handle
+        reports instead of the port the caller assumed. The reader is guarded
+        on its own and keeps its `typeof`: a refusal is a named absence, never
+        a silent default.
+        """
         return (
-            "var __he=null,__se=null,__sp=null;"
+            "var __he=null,__se=null,__sp=null,__hp=null,__hpt='absent',"
+            "__spn=null,__spt='absent';"
             "try{__he=__h?!!__h.isEnabled():null;}catch(__x){}"
             "try{__se=__s?!!__s.isHttpsEnabled():null;}catch(__x){}"
             "try{__sp=__s?!!__s.isEnabled():null;}catch(__x){}"
+            "try{if(__h&&typeof __h.getPortNumber==='function'){"
+            "var __hv=__h.getPortNumber();__hpt=typeof __hv;"
+            "if(__hpt==='number'){__hp=__hv;}}}catch(__x){__hpt='threw';}"
+            "try{if(__s&&typeof __s.getPortNumber==='function'){"
+            "var __sv=__s.getPortNumber();__spt=typeof __sv;"
+            "if(__spt==='number'){__spn=__sv;}}}catch(__x){__spt='threw';}"
         )
 
     @staticmethod
     def _ports_block(endpoints: Sequence[tuple[str, str]]) -> str:
         """Return the typed readiness read of the exact named ports.
 
-        Documented readers only: `isPortUp`, `isProtocolUp`, `getLink` on every
-        named port and `getIpAddress/getSubnetMask` where the port has them.
-        Every reader is guarded on its own, so one refusal is a named cause and
-        never a missing port. A boolean is reported only when the engine
-        returned `typeof "boolean"`: the companion `*_type` field keeps a
-        missing reader, a non-boolean return and an actual `false` apart, which
-        `!!` would have collapsed into one observation. The switch's STP state
-        has no documented reader and is not read.
+        Documented readers only: `isPortUp`, `isProtocolUp`, `getLink` and
+        `getLightStatus` on every named port, and `getIpAddress/getSubnetMask`
+        where the port has them. Every reader is guarded on its own, so one
+        refusal is a named cause and never a missing port. A boolean is
+        reported only when the engine returned `typeof "boolean"`: the
+        companion `*_type` field keeps a missing reader, a non-boolean return
+        and an actual `false` apart, which `!!` would have collapsed into one
+        observation. `light_status` follows the same rule with `number`, and
+        its documented meaning is resolved by the domain, never here.
+
+        A switch port's per-VLAN spanning-tree state is not in this block
+        because no Port member exposes it; it is read through the registered
+        `show spanning-tree` query instead, which is a different channel and a
+        different evidence contract, not a missing capability.
         """
         named = json.dumps([list(item) for item in endpoints])
         return (
@@ -735,6 +765,7 @@ class PacketTracerQualificationProbes:
             "var __c={device:__n[__i][0],interface:__n[__i][1],found:false,"
             "port_up:null,port_up_type:'absent',protocol_up:null,"
             "protocol_up_type:'absent',linked:null,link_type:'absent',"
+            "light_status:null,light_status_type:'absent',"
             "ip:null,mask:null,error:''};"
             "try{var __dv=ipc.network().getDevice(__n[__i][0]);"
             "var __pt=__dv?__dv.getPort(__n[__i][1]):null;if(__pt){__c.found=true;"
@@ -750,6 +781,11 @@ class PacketTracerQualificationProbes:
             "__c.link_type=__no?'absent':(typeof __lk);__c.linked=!__no;}"
             "catch(__x){__c.link_type='threw';"
             "__c.error=__c.error||('getLink:'+__er(__x));}"
+            "if(typeof __pt.getLightStatus==='function'){try{"
+            "var __ls=__pt.getLightStatus();__c.light_status_type=typeof __ls;"
+            "if(__c.light_status_type==='number'){__c.light_status=__ls;}}"
+            "catch(__x){__c.light_status_type='threw';"
+            "__c.error=__c.error||('getLightStatus:'+__er(__x));}}"
             "if(typeof __pt.getIpAddress==='function'){try{"
             "__c.ip=String(__pt.getIpAddress()).substring(0,64);"
             "__c.mask=String(__pt.getSubnetMask()).substring(0,64);}"
@@ -771,7 +807,10 @@ class PacketTracerQualificationProbes:
             + self._listener_states()
             + self._ports_block(endpoints)
             + "reportResult(JSON.stringify({listeners:{http_enabled:__he,"
-            "https_enabled:__se,https_process_enabled:__sp},ports:__ports}));",
+            "https_enabled:__se,https_process_enabled:__sp,"
+            "http_port_number:__hp,http_port_number_type:__hpt,"
+            "https_port_number:__spn,https_port_number_type:__spt},"
+            "ports:__ports}));",
             timeout_seconds,
         )
 

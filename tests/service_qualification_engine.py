@@ -51,6 +51,10 @@ Behaviour switches (`config`) select the engine facts under test:
   Nothing measured says which one a native server picks;
 - `default_pool_change_on_enable`: fields merged into every non-intended pool
   when the DHCP process is enabled;
+- `default_pool_drift_reads`: the Nth native inventory read moves every
+  non-intended pool on its own, with no intervention between the readings.
+  It is the autonomous-drift scenario the D-DHCP control observation has to
+  tell apart from an effect;
 - `fetch_failure`: `error_page` renders fresh non-marker content for a refused
   fetch; `unchanged` leaves the client page as it was (a timeout);
 - `serve_nothing`: no fetch is served whatever the listeners say, which with
@@ -102,6 +106,12 @@ const config = Object.assign({
   dhcp_emit_events: true, dhcp_lease_time: '3600',
   dhcp_client_address_override: null, dhcp_default_pool: false,
   dhcp_pool_selection: 'first', default_pool_change_on_enable: null,
+  default_pool_drift_reads: 0,
+  terminals: false, terminal_refuses: false, ping_reachable: true,
+  ping_unsupported: false, stp_unsupported: false, stp_vlan: 1,
+  stp_forward_delay: 15, stp_rows: {}, stp_extra_rows: [],
+  light_status: 2, light_status_return: 'number', port_number_http: 80,
+  port_number_https: 443, port_number_return: 'number',
 }, JSON.parse(process.argv[2] || '{}'));
 
 // What a non-boolean reader returns. Packet Tracer is free to answer with
@@ -162,6 +172,7 @@ const dhcpSetterCalls = {
   setMaxUsers: 0, addExcludedAddress: 0,
 };
 let clientSeq = 0;
+let defaultPoolReads = 0;
 
 const PORTS = {
   'PC-PT': ['FastEthernet0'],
@@ -209,6 +220,8 @@ const httpServer = (dev) => {
     web.httpApi = {
       setEnable: (v) => { web.httpEnabled = !!v; },
       isEnabled: () => web.httpEnabled,
+      getPortNumber: () => (config.port_number_return === 'number'
+        ? config.port_number_http : NON_BOOLEAN[config.port_number_return]),
       setPageContents: (url, contents) => {
         updatePage(web.tables.http, config.setpage_throws_http, url, contents,
           config.setpage_throws_after_http);
@@ -236,6 +249,8 @@ const httpsServer = (dev) => {
       isEnabled: () => web.httpsProcessEnabled,
       setHttpsEnable: (v) => { web.httpsEnabled = !!v; },
       isHttpsEnabled: () => web.httpsEnabled,
+      getPortNumber: () => (config.port_number_return === 'number'
+        ? config.port_number_https : NON_BOOLEAN[config.port_number_return]),
       setPageContents: (url, contents) => {
         updatePage(web.tables.https, config.setpage_throws_https, url, contents,
           config.setpage_throws_after_https);
@@ -249,12 +264,13 @@ const httpsServer = (dev) => {
   return web.httpsApi;
 };
 
-const makeClient = () => {
+const makeClient = (owner) => {
   const id = 'client-' + (++clientSeq);
   const c = {id: id, https: false, page: ''};
   clients[id] = c;
   c.api = {
     id: id,
+    getOwnerDevice: () => (owner ? owner.api : null),
     setHttps: (v) => { c.https = !!v; },
     isHttps: () => c.https,
     getLastPageContent: () => c.page,
@@ -350,7 +366,20 @@ const dhcpServerProcess = (dev) => {
         }
       }
     },
-    getPoolCount: () => Object.keys(state.pools).length,
+    getPoolCount: () => {
+      // Autonomous drift: the workspace moves on its own between two
+      // readings with no intervention between them. It is a scenario the
+      // control observation has to be able to tell from an effect, so the
+      // stub can be told to move the default on the Nth inventory read.
+      defaultPoolReads += 1;
+      const at = config.default_pool_drift_reads;
+      if (at && defaultPoolReads === Number(at)) {
+        for (const name of Object.keys(state.pools)) {
+          if (name !== 'MCP_E6Q_DHCP') { state.pools[name].end = '0.0.7.7'; }
+        }
+      }
+      return Object.keys(state.pools).length;
+    },
     getPoolAt: (index) => {
       const name = Object.keys(state.pools).sort()[index];
       return name === undefined ? null : dhcpPool(dev, state.pools[name]);
@@ -423,7 +452,7 @@ const dhcpClientProcess = (dev) => ({
 const processFor = (dev, name) => {
   if (name === 'HttpBackgroundClientManager' && dev.model !== '2960-24TT') {
     return {
-      createClient: () => makeClient(),
+      createClient: () => makeClient(dev),
       deleteClient: (client) => { if (client && client.id) { delete clients[client.id]; } },
     };
   }
@@ -444,9 +473,104 @@ const processFor = (dev, name) => {
   return null;
 };
 
+// -- terminal ---------------------------------------------------------------
+//
+// One transcript per device, appended to by `enterCommand` exactly as Packet
+// Tracer's own TerminalLine does: the echoed command, the response, and the
+// prompt the session returns to. The real IOS executor and the real typed
+// ping run against this, so their dispatch, freshness, echo, attribution and
+// parsing contracts execute here instead of being mocked away.
+//
+// `stp_rows` maps a switch interface to its reported spanning-tree state;
+// `stp_extra_rows` adds rows that name the SAME interface again, which is the
+// ambiguity the admission rule has to refuse. `ping_reachable` selects the PC
+// statistic line, and `terminal_commands` counts what was typed.
+const SHORT_INTERFACE = (name) => String(name)
+  .replace(/^FastEthernet/, 'Fa')
+  .replace(/^GigabitEthernet/, 'Gi');
+const terminalCommands = [];
+
+const stpBlock = () => {
+  const vlan = Number(config.stp_vlan || 1);
+  const rows = Object.assign({}, config.stp_rows || {});
+  const extra = (config.stp_extra_rows || []);
+  const lines = [
+    'VLAN' + String(vlan).padStart(4, '0'),
+    '  Spanning tree enabled protocol ieee',
+    '  Root ID    Priority    32769',
+    '             Address     0001.0203.0405',
+    '             This bridge is the root',
+    '             Hello Time 2 sec  Max Age 20 sec  Forward Delay ' +
+      String(config.stp_forward_delay || 15) + ' sec',
+    '',
+    '  Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)',
+    '             Address     0001.0203.0405',
+    '             Hello Time 2 sec  Max Age 20 sec  Forward Delay ' +
+      String(config.stp_forward_delay || 15) + ' sec',
+    '             Aging Time 20',
+    '',
+    'Interface        Role Sts Cost      Prio.Nbr Type',
+    '---------------- ---- --- --------- -------- ------------------------',
+  ];
+  const row = (iface, state) => SHORT_INTERFACE(iface).padEnd(16, ' ') +
+    ' Desg ' + String(state) + ' 19        128.1    P2p';
+  for (const iface of Object.keys(rows)) { lines.push(row(iface, rows[iface])); }
+  for (const item of extra) { lines.push(row(item[0], item[1])); }
+  lines.push('');
+  return lines.join('\n') + '\n';
+};
+
+const pingBlock = (target) => {
+  const sent = 4;
+  const received = config.ping_reachable ? 4 : 0;
+  return [
+    'Pinging ' + target + ' with 32 bytes of data:',
+    '',
+    'Ping statistics for ' + target + ':',
+    '    Packets: Sent = ' + sent + ', Received = ' + received +
+      ', Lost = ' + (sent - received) + ' (' +
+      Math.round(((sent - received) / sent) * 100) + '% loss),',
+    '',
+  ].join('\n') + '\n';
+};
+
+const terminalRespond = (dev, command) => {
+  const text = String(command).trim();
+  terminalCommands.push({device: dev.name, command: text});
+  if (text === '') { return ''; }
+  if (/^ping\s+\S+$/.test(text)) {
+    if (config.ping_unsupported) { return '% Invalid input detected.\n'; }
+    return pingBlock(text.split(/\s+/)[1]);
+  }
+  if (text === 'show spanning-tree') {
+    if (config.stp_unsupported) { return '% Invalid input detected.\n'; }
+    return stpBlock();
+  }
+  return '% Invalid input detected at \'^\' marker.\n';
+};
+
+const makeTerminal = (dev) => {
+  if (!dev.terminal) {
+    const prompt = dev.model === '2960-24TT' ? 'Switch>' : 'C:\\>';
+    const state = {prompt: prompt, output: prompt};
+    state.api = {
+      getPrompt: () => state.prompt,
+      getOutput: () => state.output,
+      enterCommand: (command) => {
+        if (config.terminal_refuses) { throw new Error('terminal refused'); }
+        state.output += String(command) + '\n' +
+          terminalRespond(dev, command) + state.prompt;
+        return true;
+      },
+    };
+    dev.terminal = state;
+  }
+  return dev.terminal.api;
+};
+
 const makeDevice = (name, model) => {
   const dev = {name: String(name), model: String(model), ports: [], web: null,
-    dhcpServer: null};
+    dhcpServer: null, terminal: null};
   const api = {
     getName: () => dev.name,
     setName: (value) => { dev.name = String(value); },
@@ -465,6 +589,16 @@ const makeDevice = (name, model) => {
     },
     getProcess: (value) => processFor(dev, String(value)),
   };
+  if (config.terminals) {
+    // A switch answers on `getCommandLine`, an endpoint on
+    // `getCommandPrompt`: the resolver order of the production readers is
+    // exactly what distinguishes them, so the stub keeps them apart.
+    if (dev.model === '2960-24TT') {
+      api.getCommandLine = () => makeTerminal(dev);
+    } else {
+      api.getCommandPrompt = () => makeTerminal(dev);
+    }
+  }
   dev.api = api;
   for (const portName of PORTS[dev.model] || []) {
     const port = {name: portName, link: null, ip: '', mask: '', dns: '',
@@ -512,6 +646,15 @@ const makeDevice = (name, model) => {
       setDefaultGateway: (value) => { port.gateway = String(value); },
       isDhcpClientOn: () => port.dhcpMode,
       getMacAddress: () => port.mac,
+      // Cisco documents `eOffLight = 0, eAmberLight = 1, eGreenLight = 2,
+      // eBlink = 3`. `light_status_return` answers with something that is not
+      // a number so the strict reading can be exercised too.
+      getLightStatus: () => {
+        if (config.light_status_return !== 'number') {
+          return NON_BOOLEAN[config.light_status_return];
+        }
+        return port.link ? config.light_status : 0;
+      },
     };
     if (dev.model !== '2960-24TT') {
       port.api.getIpAddress = () => port.ip;
@@ -546,6 +689,12 @@ global.ipc = {
     getDeviceAt: (i) => (devices[i] ? devices[i].api : null),
     getLinkCount: () => links.length,
     getLinkAt: (i) => (links[i] ? links[i].api : null),
+  }),
+  simulation: () => ({
+    isSimulationMode: () => false,
+    getFrameInstanceCount: () => Number(config.simulation_frames || 0),
+    getCurrentSimTime: () => Number(config.simulation_time || 0),
+    getCurrentFrameInstanceIndex: () => 0,
   }),
   appWindow: () => {
     const app = {
@@ -657,6 +806,9 @@ const snapshot = () => {
     dhcp_servers: dhcpServers,
     dhcp_runs: dhcpRuns.slice(),
     dhcp_setter_calls: Object.assign({}, dhcpSetterCalls),
+    terminal_commands: terminalCommands.slice(),
+    terminals: Object.fromEntries(devices.filter((d) => d.terminal)
+      .map((d) => [d.name, d.terminal.output])),
     live_clients: Object.keys(clients).length,
     queued: queue.length,
     production_globals: ['__mcpE6Claims', '__mcpE6Inert', '__mcpE6HttpClients']
@@ -830,6 +982,8 @@ class NodeEngineTransport:
 SIM_SHA = "a" * 40
 SIM_TREE = "f" * 40
 SIM_BUILD = "9.0.1.0858"
+SIM_PROCESS_ID = 4242
+SIM_PROCESS_PATH = r"C:\Program Files\Cisco Packet Tracer\bin\PacketTracer.exe"
 
 
 class FakeClock:
@@ -899,6 +1053,11 @@ class RecordingStore:
         self._fail("complete")
         return self.inner.complete(record)
 
+    def attempt_exists(self, attempt_id: str) -> bool:
+        """Answer the real store's uniqueness question, unchanged."""
+        self.writes.append("attempt_exists")
+        return self.inner.attempt_exists(attempt_id)
+
 
 def simulated_boundaries(directory: Path, transport: Any, **overrides: Any):
     """Return the production composition with only external boundaries replaced.
@@ -918,6 +1077,7 @@ def simulated_boundaries(directory: Path, transport: Any, **overrides: Any):
         IsolationObservation,
     )
     from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
+        DiagnosticLifecycleObservation,
         ExecutionMode,
         RepositoryIdentity,
     )
@@ -941,9 +1101,27 @@ def simulated_boundaries(directory: Path, transport: Any, **overrides: Any):
         "close_transport": lambda opened: None,
         "clock": clock,
         "sleep": clock.sleep,
+        "diagnostic_lifecycle": lambda: DiagnosticLifecycleObservation(
+            process_id=SIM_PROCESS_ID,
+            process_path=SIM_PROCESS_PATH,
+            product_version=SIM_BUILD,
+        ),
     }
     values.update(overrides)
     return dataclasses.replace(production_boundaries(directory), **values)
+
+
+#: One fresh instance token, plus a distinct attempt identity per stage. The
+#: repository boundary reports `SIM_TREE`, and a diagnostic authorization
+#: binds it, so the two values have to agree here too.
+SIM_INSTANCE_TOKEN = "1" * 32
+
+
+def _attempt_id(stage: str) -> str:
+    """Return a stable, distinct attempt identity for one simulated stage."""
+    import hashlib
+
+    return hashlib.sha256(stage.encode("utf-8")).hexdigest()[:32]
 
 
 def authorization_args(
@@ -955,8 +1133,17 @@ def authorization_args(
     targets: tuple[str, ...] | None = None,
     operations: str | None = None,
     seconds: str | None = None,
+    tree: str = SIM_TREE,
+    steps: tuple[str, ...] | None = None,
+    attempt_id: str | None = None,
 ) -> list[str]:
-    """Return a complete, matching authorization for one stage as CLI arguments."""
+    """Return a complete, matching authorization for one stage as CLI arguments.
+
+    A stage that declares a diagnostic profile also gets its identity half:
+    profile, tree, fixture models, link ports, ordered steps, cleanup reserve,
+    instance token and attempt identity. A stage that declares none gets
+    exactly what it always got.
+    """
     from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
         STAGE_CEILINGS,
         QualificationStage,
@@ -984,6 +1171,31 @@ def authorization_args(
     ]
     for name in names:
         args += ["--authorized-target", name]
+    if definition.profile_id:
+        args += [
+            "--authorized-profile",
+            definition.profile_id,
+            "--authorized-profile-version",
+            definition.profile_version,
+            "--authorized-tree",
+            tree,
+            "--authorized-reserve-operations",
+            str(definition.reserve_operations),
+            "--instance-token",
+            SIM_INSTANCE_TOKEN,
+            "--authorized-process-id",
+            str(SIM_PROCESS_ID),
+            "--authorized-process-path",
+            SIM_PROCESS_PATH,
+            "--attempt-id",
+            attempt_id or _attempt_id(stage),
+        ]
+        for model in definition.fixture_models:
+            args += ["--authorized-model", model]
+        for link in definition.link_bindings:
+            args += ["--authorized-link", link]
+        for step in steps if steps is not None else definition.step_ids:
+            args += ["--authorized-step", step]
     return args
 
 

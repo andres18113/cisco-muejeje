@@ -59,6 +59,30 @@ class QualificationRecordStore:
             raise RunRecordPersistenceError("A completed record needs completed_at.")
         return self._write(record, create_only=False)
 
+    def attempt_exists(self, attempt_id: str) -> bool:
+        """Whether any stored record already names this attempt identity.
+
+        Uniqueness is decided from the records themselves, never from the
+        caller's word. A malformed identity is refused rather than searched
+        for, and a record this store cannot read counts as a match: an
+        unreadable file is not proof that the attempt is new, and this control
+        fails closed.
+        """
+        if not attempt_id or safe_name_component(attempt_id, "") != attempt_id:
+            raise RunRecordPersistenceError("The attempt identity is not a safe name.")
+        if not self.base_dir.exists():
+            return False
+        for path in sorted(self.base_dir.rglob("*.json")):
+            try:
+                stored = QualificationRecord.model_validate_json(
+                    path.read_text(encoding="utf-8")
+                )
+            except (OSError, ValueError):
+                return True
+            if str(stored.authorization.get("attempt_id") or "") == attempt_id:
+                return True
+        return False
+
     def load(self, path: str | Path) -> QualificationRecord:
         """Read one record back and validate it against the typed contract."""
         try:

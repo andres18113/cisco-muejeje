@@ -26,6 +26,29 @@ from packet_tracer_mcp.infrastructure.execution.enterprise_service_runtime impor
 )
 
 
+def _web_start(
+    owner: str,
+    *,
+    content_before: str = "",
+    https_mode: bool = False,
+    started: bool = True,
+) -> str:
+    """Return the complete shape emitted by the maintained start script."""
+    return json.dumps(
+        {
+            "started": started,
+            "go_result": started,
+            "go_result_type": "boolean",
+            "content_before": content_before,
+            "https_mode": https_mode,
+            "https_mode_type": "boolean",
+            "owner_device": owner,
+            "owner_read": True,
+            "owned": True,
+        }
+    )
+
+
 def _row(identifier, *, ok=True, changed=True, call_result=None, pre="0", post="1"):
     """Build one admissible mutation row of the item 4 contract.
 
@@ -305,7 +328,7 @@ def test_http_behavior_uses_a_fresh_background_client_and_releases_it():
     """The owned HTTP client is created for this read and released after it."""
     calls = []
     responses = [
-        json.dumps({"started": True, "content_before": "", "owned": True}),
+        _web_start("__MCP_E6_PC"),
         json.dumps({"found": True, "content": "MCP_E6_FRESH"}),
         json.dumps({"found": True, "deleted": True, "present": False, "error": ""}),
     ]
@@ -357,7 +380,7 @@ def test_http_behavior_rejects_stale_marker_and_accepts_fresh_fetch():
     """
     marker = "MCP_E6_HTTP_OK_FRESH"
     responses = [
-        json.dumps({"started": True, "content_before": "", "owned": True}),
+        _web_start("__MCP_E6_PC"),
         json.dumps({"found": True, "content": marker}),
         json.dumps({"found": True, "deleted": True, "present": False, "error": ""}),
     ]
@@ -389,7 +412,7 @@ def test_http_behavior_rejects_stale_marker_and_accepts_fresh_fetch():
     stale = PacketTracerEnterpriseServiceRuntime(
         lambda: [],
         lambda js, timeout: (
-            json.dumps({"started": True, "content_before": marker, "owned": True})
+            _web_start("__MCP_E6_PC", content_before=marker)
             if "createClient()" in js
             else json.dumps(
                 {"found": True, "deleted": True, "present": False, "error": ""}
@@ -411,7 +434,7 @@ def test_http_behavior_rejects_fresh_content_without_expected_marker():
     (c)).
     """
     responses = [
-        json.dumps({"started": True, "content_before": "", "owned": True}),
+        _web_start("__MCP_E6_PC"),
         json.dumps({"found": True, "content": "WRONG_PAGE"}),
         json.dumps({"found": True, "deleted": True, "present": False, "error": ""}),
     ]
@@ -478,9 +501,7 @@ def test_https_behavior_uses_https_url_and_never_substitutes_http():
     """
     calls = []
     responses = [
-        json.dumps(
-            {"started": True, "content_before": "", "https_mode": True, "owned": True}
-        ),
+        _web_start("client", https_mode=True),
         json.dumps({"found": True, "content": "Packet Tracer secure page"}),
         json.dumps({"found": True, "deleted": True, "present": False, "error": ""}),
     ]

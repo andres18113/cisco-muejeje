@@ -253,6 +253,18 @@ PAYLOAD_BUILDERS_AND_PROSE = {
         "names dhcpRun only as replay-policy evidence; dispatch lives in the "
         "classified service runtime"
     ),
+    "application/use_cases/qualify_server_services.py": (
+        "the D-DHCP procedures name configurePcIp, addPool, setNetworkMask, "
+        "setDefaultRouter and setEnable only as the native call footprint of "
+        "the interval each pair of readings brackets. The stage dispatches "
+        "nothing itself: every effect goes through the classified "
+        "configuration and service runtimes, via the product applicators"
+    ),
+    "domain/enterprise/models/service_qualification.py": (
+        "the D-DHCP hypothesis names configurePcIp as the one call the "
+        "server's static addressing is, so no record can claim an IP-only "
+        "cause for it. The module is pure and reaches no channel"
+    ),
 }
 
 

@@ -19,6 +19,7 @@ silently given more.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, StrEnum
@@ -33,6 +34,9 @@ from .execution import DirtyState
 _EXACT_BUILD = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+")
 MAX_BUILD_LENGTH = 64
 _SHA = re.compile(r"[0-9a-f]{40}")
+#: The shape of a fresh instance token and of an attempt identity: 32
+#: lowercase hexadecimal characters, the same form the runner's own nonce has.
+_HEX_TOKEN = re.compile(r"[0-9a-f]{32}")
 MAX_AUTHORIZATION_ID_LENGTH = 128
 ALLOWED_CHANNELS = ("http", "file")
 #: The two counted reads every executable stage makes before its first effect.
@@ -62,6 +66,12 @@ class QualificationStage(StrEnum):
     Q1 = "Q1"
     Q2 = "Q2"
     Q3 = "Q3"
+    #: The two executable diagnostics. They are stages, not a second
+    #: framework: they pass the same request rule, the same repository and
+    #: process gates, the same fixed transport, the same ledger and the same
+    #: write-ahead record as Q0/Q1/Q3, plus the step binding below.
+    D_WEB = "D-WEB"
+    D_DHCP = "D-DHCP"
 
 
 class ExecutionMode(StrEnum):
@@ -133,6 +143,28 @@ class StageBudget:
 
 
 @dataclass(frozen=True)
+class DiagnosticStageStep:
+    """One separately selectable step of an executable diagnostic stage.
+
+    A step is what an authorization may name. `requires` is the ordered
+    prerequisite closure the selection has to satisfy, and it is not the same
+    thing as the measurement prerequisites the run evaluates: this one decides
+    whether the authority is coherent before contact, that one decides whether
+    the state the run actually established permits the next effect. Neither
+    substitutes for the other.
+    """
+
+    id: str
+    experiment_id: str
+    #: observe | configure | activate | request | release.
+    effect: str
+    requires: tuple[str, ...] = ()
+    #: True when the step activates a process rather than only configuring or
+    #: observing one, so an authorization has to name it deliberately.
+    separately_authorized: bool = False
+
+
+@dataclass(frozen=True)
 class StageDefinition:
     """Everything a stage is allowed to create, run and spend."""
 
@@ -147,11 +179,51 @@ class StageDefinition:
     budget: StageBudget
     unmet_prerequisites: tuple[str, ...] = ()
     allowed_channels: tuple[str, ...] = ALLOWED_CHANNELS
+    #: Non-empty only for an executable diagnostic. Its presence is what makes
+    #: the extended authority binding mandatory, so Q0/Q1/Q3 keep exactly the
+    #: authorization they always had.
+    profile_id: str = ""
+    profile_version: str = ""
+    steps: tuple[DiagnosticStageStep, ...] = ()
 
     @property
     def fixture_names(self) -> tuple[str, ...]:
         """Return the exact fixture names, in creation order."""
         return tuple(item.name for item in self.fixtures)
+
+    @property
+    def fixture_models(self) -> tuple[str, ...]:
+        """Return each fixture bound to its exact model, in creation order."""
+        return tuple(f"{item.name}:{item.model}" for item in self.fixtures)
+
+    @property
+    def link_bindings(self) -> tuple[str, ...]:
+        """Return each link bound to its exact ports, in creation order."""
+        return tuple(
+            f"{item.device_a}:{item.port_a}-{item.device_b}:{item.port_b}"
+            for item in self.links
+        )
+
+    @property
+    def step_ids(self) -> tuple[str, ...]:
+        """Return every selectable step id, in declared sequence order."""
+        return tuple(item.id for item in self.steps)
+
+    def step(self, step_id: str) -> DiagnosticStageStep:
+        """Return one selectable step by id."""
+        for item in self.steps:
+            if item.id == step_id:
+                return item
+        raise KeyError(step_id)
+
+    def experiments_of_steps(self, step_ids: Sequence[str]) -> tuple[str, ...]:
+        """Return the measurements a step selection would run, in order."""
+        chosen = set(step_ids)
+        seen: dict[str, None] = {}
+        for item in self.steps:
+            if item.id in chosen:
+                seen.setdefault(item.experiment_id, None)
+        return tuple(seen)
 
     @property
     def reserve_operations(self) -> int:
@@ -224,11 +296,23 @@ class StageDefinition:
 #: M-DHCP-3 held is reallocated to readiness and to preserving the observed
 #: native default, never to another acquisition. No ceiling is raised, and
 #: none of this authorizes a LIVE run or changes declarative Q2.
+#:
+#: The two diagnostic ceilings are new, proposed limits, not a raise of any
+#: existing one. Each is its stage's measured composed worst case plus a
+#: stated slack for one additional convergence round in every nested terminal
+#: loop it contains: D-DHCP 45 + 5, D-WEB 63 + 5. The measurements come from
+#: the real components running against the engine stub: one endpoint E5 batch
+#: is one `send` plus one verification read per expectation, one E6 service
+#: action is one dispatch plus one read-back per expectation, one native
+#: default reading is one dispatch, one `show spanning-tree` sample is four
+#: calls, one typed ping is three and one bind-before-ping probe is seven.
 STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.Q0: (20, 300),
     QualificationStage.Q1: (60, 600),
     QualificationStage.Q2: (60, 900),
     QualificationStage.Q3: (60, 1200),
+    QualificationStage.D_DHCP: (50, 900),
+    QualificationStage.D_WEB: (68, 900),
 }
 
 Q0_PC = "__MCP_E6Q_PC1"
@@ -624,6 +708,333 @@ def _q1() -> StageDefinition:
     )
 
 
+#: The diagnostic profile identities the extended authority must bind. The
+#: version moves whenever the step sequence, the fixture binding or the budget
+#: arithmetic changes, so an authorization written for an earlier sequence
+#: cannot be replayed against a later one.
+D_DHCP_PROFILE = "D-DHCP"
+D_WEB_PROFILE = "D-WEB"
+DIAGNOSTIC_PROFILE_VERSION = "2"
+
+#: The exact VLAN the access fixture's switch ports belong to on a stock
+#: 2960-24TT: nothing in either diagnostic configures a VLAN, so this is the
+#: default instance the registered STP query reports, never a configured one.
+DIAGNOSTIC_ACCESS_VLAN = 1
+#: The finite inspection schedule of the instrumented fetch, as monotonic
+#: offsets from the request start. It is deliberately decoupled from the HTTP
+#: deadline: three slots, all inside the reader's own 8 s window.
+D_WEB_INSPECTION_SCHEDULE = (1.0, 3.0, 6.0)
+#: One bounded late read, after the deadline and before the release.
+D_WEB_LATE_READ_OFFSET = 10.0
+
+
+def _d_dhcp() -> StageDefinition:
+    """Return the executable D-DHCP diagnostic stage.
+
+    The causal sequence is the contract: a coherent disabled baseline, the
+    server's static addressing alone, the intended pool while the process is
+    still disabled, the enable, the terminal observation and owned cleanup.
+    No client is activated, no lease is acquired, no default-pool setter and
+    no event registration exists anywhere in it.
+    """
+    ceiling_operations, ceiling_seconds = STAGE_CEILINGS[QualificationStage.D_DHCP]
+    fixtures = (
+        FixtureDevice(Q3_SERVER, "Server-PT", Q3_SERVER_IPV4, Q3_NETMASK),
+        FixtureDevice(Q3_PC1, "PC-PT"),
+        FixtureDevice(Q3_PC2, "PC-PT"),
+        FixtureDevice(Q3_SWITCH, "2960-24TT"),
+    )
+    return StageDefinition(
+        stage=QualificationStage.D_DHCP,
+        executable=True,
+        purpose=(
+            "Which operation of a server-only DHCP setup moves the native "
+            "default pool, observed between adjacent counted readings."
+        ),
+        fixtures=fixtures,
+        links=(
+            FixtureLink(Q3_SERVER, "FastEthernet0", Q3_SWITCH, "FastEthernet0/1"),
+            FixtureLink(Q3_PC1, "FastEthernet0", Q3_SWITCH, "FastEthernet0/2"),
+            FixtureLink(Q3_PC2, "FastEthernet0", Q3_SWITCH, "FastEthernet0/3"),
+        ),
+        setup=(
+            PlannedStep("read:executable_build", 1),
+            PlannedStep("read:workspace_baseline", 1),
+            *(PlannedStep(f"create:{item.name}", 2) for item in fixtures),
+            PlannedStep("create:link:1", 2),
+            PlannedStep("create:link:2", 2),
+            PlannedStep("create:link:3", 2),
+            PlannedStep("read:fixture_identity", 1),
+        ),
+        experiments=(
+            ExperimentSpec(
+                id="M-DDHCP-0",
+                hypothesis=(
+                    "A stock Server-PT presents a coherent disabled DHCP "
+                    "process, its native default inventory and two clients "
+                    "whose DHCP flags this stage never touches."
+                ),
+                required=True,
+                procedure="D_DHCP_BASELINE",
+                # One native reading, one client-flag reading, the readiness
+                # gate at its ceiling of four aggregate reads, and the second
+                # adjacent native reading that is the drift control.
+                planned_operations=7,
+                capabilities=(
+                    "server.dhcp_process_binding",
+                    "server.dhcp_default_pool_observation",
+                    "client.dhcp_mode_reader",
+                ),
+            ),
+            ExperimentSpec(
+                id="M-DDHCP-1",
+                hypothesis=(
+                    "The server's static addressing alone is one native "
+                    "`configurePcIp` intervention that also writes gateway "
+                    "and DNS, and the interval around it is attributed to "
+                    "that whole call and to nothing narrower."
+                ),
+                required=True,
+                procedure="D_DHCP_E5",
+                # The endpoint batch is one `send` plus one verification read
+                # for the single addressing expectation, then one reading.
+                planned_operations=3,
+                prerequisites=("M-DDHCP-0",),
+                capabilities=("server.dhcp_default_pool_observation",),
+            ),
+            ExperimentSpec(
+                id="M-DDHCP-2",
+                hypothesis=(
+                    "The intended pool can be written while the process is "
+                    "still disabled, and the stored configuration verifies "
+                    "against `enabled=False` plus its exact pool fields."
+                ),
+                required=True,
+                procedure="D_DHCP_POOL",
+                # One pool dispatch, its fresh server-state read-back, and
+                # one native reading.
+                planned_operations=3,
+                prerequisites=("M-DDHCP-1",),
+                capabilities=("server.dhcp_pool_configuration",),
+            ),
+            ExperimentSpec(
+                id="M-DDHCP-3",
+                hypothesis=(
+                    "Enabling the process is the transition to `enabled=True`, "
+                    "and whatever the native default does across that exact "
+                    "interval is the dependent variable."
+                ),
+                required=True,
+                procedure="D_DHCP_ENABLE",
+                # One enable dispatch, the rebound server-state read-back and
+                # one native reading.
+                planned_operations=3,
+                prerequisites=("M-DDHCP-2",),
+                capabilities=("server.dhcp_process_enable",),
+            ),
+            ExperimentSpec(
+                id="M-DDHCP-4",
+                hypothesis=(
+                    "The pre-cleanup native inventory is preserved whatever "
+                    "the sequence did, including after a stop."
+                ),
+                required=True,
+                procedure="D_DHCP_FINAL",
+                planned_operations=1,
+                prerequisites=("M-DDHCP-0",),
+                capabilities=("server.dhcp_default_pool_observation",),
+            ),
+        ),
+        reserve=(
+            *(PlannedStep(f"remove:{item.name}", 2) for item in fixtures),
+            PlannedStep("read:restoration:1", 1),
+            PlannedStep("read:restoration:2", 1),
+            PlannedStep("release:run_bag", 1),
+        ),
+        budget=StageBudget(ceiling_operations, ceiling_seconds, reserve_seconds=180),
+        allowed_channels=("file",),
+        profile_id=D_DHCP_PROFILE,
+        profile_version=DIAGNOSTIC_PROFILE_VERSION,
+        steps=(
+            DiagnosticStageStep("D0-baseline", "M-DDHCP-0", "observe"),
+            DiagnosticStageStep("D0-control", "M-DDHCP-0", "observe", ("D0-baseline",)),
+            DiagnosticStageStep(
+                "D1-static", "M-DDHCP-1", "configure", ("D0-baseline", "D0-control")
+            ),
+            DiagnosticStageStep("D2-pool", "M-DDHCP-2", "configure", ("D1-static",)),
+            DiagnosticStageStep(
+                "D3-enable",
+                "M-DDHCP-3",
+                "activate",
+                ("D2-pool",),
+                separately_authorized=True,
+            ),
+            DiagnosticStageStep("D4-final", "M-DDHCP-4", "observe", ("D0-baseline",)),
+        ),
+    )
+
+
+def _d_web() -> StageDefinition:
+    """Return the executable D-WEB diagnostic stage.
+
+    It observes the boundaries the unretrieved page could fail at, in order:
+    the endpoint bindings and link readiness, the per-VLAN forwarding state of
+    the exact switch ports, the served page, one attributed ping and one
+    instrumented fetch of the real background client, then the same boundaries
+    again. The ping is an active stimulus and is labelled as one.
+    """
+    ceiling_operations, ceiling_seconds = STAGE_CEILINGS[QualificationStage.D_WEB]
+    fixtures = (
+        FixtureDevice(Q1_SERVER, "Server-PT", Q1_SERVER_IPV4, Q1_NETMASK),
+        FixtureDevice(Q1_PC1, "PC-PT", Q1_PC1_IPV4, Q1_NETMASK, Q1_SERVER_IPV4),
+        FixtureDevice(Q1_PC2, "PC-PT", Q1_PC2_IPV4, Q1_NETMASK),
+        FixtureDevice(Q1_SWITCH, "2960-24TT"),
+    )
+    return StageDefinition(
+        stage=QualificationStage.D_WEB,
+        executable=True,
+        purpose=(
+            "Where an unretrieved HTTP page fails: the forwarding path, the "
+            "listener and request, or the polling and the reader."
+        ),
+        fixtures=fixtures,
+        links=(
+            FixtureLink(Q1_SERVER, "FastEthernet0", Q1_SWITCH, "FastEthernet0/1"),
+            FixtureLink(Q1_PC1, "FastEthernet0", Q1_SWITCH, "FastEthernet0/2"),
+            FixtureLink(Q1_PC2, "FastEthernet0", Q1_SWITCH, "FastEthernet0/3"),
+        ),
+        setup=(
+            PlannedStep("read:executable_build", 1),
+            PlannedStep("read:workspace_baseline", 1),
+            *(PlannedStep(f"create:{item.name}", 2) for item in fixtures),
+            PlannedStep("create:link:1", 2),
+            PlannedStep("create:link:2", 2),
+            PlannedStep("create:link:3", 2),
+            PlannedStep("read:fixture_identity", 1),
+            PlannedStep("apply:e5_endpoints", 1),
+            PlannedStep("apply:e6_enable_http_https", 1),
+        ),
+        experiments=(
+            ExperimentSpec(
+                id="M-DWEB-0",
+                hypothesis=(
+                    "Both listeners report their enable flags and their "
+                    "read-back port numbers, and every fixture endpoint is "
+                    "up with its documented port readers."
+                ),
+                required=True,
+                procedure="D_WEB_BOUNDARIES",
+                # One listener/port reading plus the readiness gate at its
+                # ceiling of four aggregate reads.
+                planned_operations=5,
+                capabilities=("https.listener_port_reader", "port.light_status"),
+            ),
+            ExperimentSpec(
+                id="M-DWEB-1",
+                hypothesis=(
+                    "The exact switch-side access ports are forwarding in the "
+                    "actual fixture VLAN, on a fresh, complete and uniquely "
+                    "attributed registered spanning-tree sample."
+                ),
+                required=True,
+                procedure="D_WEB_FORWARDING",
+                # Two bounded samples at four counted calls each: the terminal
+                # state read, the dispatch, one output convergence read and
+                # the attribution read; plus one read of simulation time after
+                # the bounded sample loop.
+                planned_operations=9,
+                prerequisites=("M-DWEB-0",),
+                capabilities=("switch.access_forwarding_observation",),
+            ),
+            ExperimentSpec(
+                id="M-DWEB-2",
+                hypothesis=(
+                    "The existing index page carries this run's marker through "
+                    "both handles before any request is made."
+                ),
+                required=True,
+                procedure="D_WEB_PAGE",
+                planned_operations=1,
+                prerequisites=("M-DWEB-1",),
+                capabilities=("https.page_table",),
+            ),
+            ExperimentSpec(
+                id="M-DWEB-3",
+                hypothesis=(
+                    "One attributed ping between the selected PC and server "
+                    "bindings establishes ICMP reachability, and nothing "
+                    "about TCP or HTTP."
+                ),
+                required=True,
+                procedure="D_WEB_PING",
+                # The bind-before-ping probe: two endpoint address reads, the
+                # three-call typed ping, two endpoint address reads after it.
+                planned_operations=7,
+                prerequisites=("M-DWEB-2",),
+                capabilities=("forwarding.typed_ping",),
+            ),
+            ExperimentSpec(
+                id="M-DWEB-4",
+                hypothesis=(
+                    "The real owned background client's whole lifecycle is "
+                    "observable: owner, mode, native go result, every "
+                    "scheduled inspection, one late read and the release."
+                ),
+                required=True,
+                procedure="D_WEB_FETCH",
+                # The start, the three scheduled inspections, the late control
+                # read and the release of the owned client.
+                planned_operations=6,
+                prerequisites=("M-DWEB-3",),
+                capabilities=("https.client_mode", "https.client_timeline"),
+            ),
+            ExperimentSpec(
+                id="M-DWEB-5",
+                hypothesis=(
+                    "The listener and forwarding boundaries after the request "
+                    "are the ones observed before it, or the difference is "
+                    "retained."
+                ),
+                required=True,
+                procedure="D_WEB_AFTER",
+                # One listener/port reading, one four-call forwarding sample
+                # and one separate simulation-time read.
+                planned_operations=6,
+                prerequisites=("M-DWEB-4",),
+                capabilities=("switch.access_forwarding_observation",),
+            ),
+        ),
+        reserve=(
+            *(PlannedStep(f"remove:{item.name}", 2) for item in fixtures),
+            PlannedStep("read:restoration:1", 1),
+            PlannedStep("read:restoration:2", 1),
+        ),
+        budget=StageBudget(ceiling_operations, ceiling_seconds, reserve_seconds=180),
+        allowed_channels=("file",),
+        profile_id=D_WEB_PROFILE,
+        profile_version=DIAGNOSTIC_PROFILE_VERSION,
+        steps=(
+            DiagnosticStageStep("W0-listeners", "M-DWEB-0", "observe"),
+            DiagnosticStageStep(
+                "W0-readiness", "M-DWEB-0", "observe", ("W0-listeners",)
+            ),
+            DiagnosticStageStep(
+                "W1-forwarding", "M-DWEB-1", "observe", ("W0-readiness",)
+            ),
+            DiagnosticStageStep("W2-page", "M-DWEB-2", "configure", ("W1-forwarding",)),
+            DiagnosticStageStep(
+                "W3-ping",
+                "M-DWEB-3",
+                "request",
+                ("W2-page",),
+                separately_authorized=True,
+            ),
+            DiagnosticStageStep("W4-fetch", "M-DWEB-4", "request", ("W3-ping",)),
+            DiagnosticStageStep("W5-after", "M-DWEB-5", "observe", ("W4-fetch",)),
+        ),
+    )
+
+
 def _declarative(
     stage: QualificationStage, purpose: str, unmet: tuple[str, ...]
 ) -> StageDefinition:
@@ -651,6 +1062,8 @@ STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
         ("S2 is not implemented", "a Q0 record is required"),
     ),
     QualificationStage.Q3: _q3(),
+    QualificationStage.D_DHCP: _d_dhcp(),
+    QualificationStage.D_WEB: _d_web(),
 }
 
 
@@ -697,8 +1110,23 @@ class RefusalSubject(StrEnum):
     BUILD = "build"
     AUTHORIZED_BUILD = "authorized_build"
     BUDGET = "budget"
+    #: Only an executable diagnostic stage binds these. They are the identity
+    #: half of the execution authority: what is being run, against which exact
+    #: tree, on which exact fixture models and ports, in which order, with
+    #: which reserve, and under which single unrepeatable attempt.
+    AUTHORIZED_PROFILE = "authorized_profile"
+    AUTHORIZED_TREE = "authorized_tree"
+    AUTHORIZED_MODELS = "authorized_models"
+    AUTHORIZED_LINKS = "authorized_links"
+    AUTHORIZED_STEPS = "authorized_steps"
+    AUTHORIZED_RESERVE = "authorized_reserve"
+    AUTHORIZED_PROCESS = "authorized_process"
+    INSTANCE_TOKEN = "instance_token"
+    ATTEMPT_IDENTITY = "attempt_identity"
     GOVERNED_ROOT = "governed_root"
     PROCESS_ISOLATION = "process_isolation"
+    PROCESS_INSTANCE = "process_instance"
+    MAILBOX = "mailbox"
     REPOSITORY_HEAD = "repository_head"
     REPOSITORY_TREE = "repository_tree"
     REPOSITORY_CLEAN = "repository_clean"
@@ -741,6 +1169,40 @@ class QualificationAuthorization:
     build: str
     max_operations: int | None
     max_seconds: int | None
+    #: The diagnostic half. Every field is empty for Q0/Q1/Q3, whose
+    #: authorization is exactly what it always was, and every field is
+    #: required by a stage that declares a profile. None of it is prose: each
+    #: one is compared against a value the stage definition or the observed
+    #: checkout already fixes.
+    profile_id: str = ""
+    profile_version: str = ""
+    tree: str = ""
+    models: tuple[str, ...] = ()
+    links: tuple[str, ...] = ()
+    step_ids: tuple[str, ...] = ()
+    reserve_operations: int | None = None
+    instance_token: str = ""
+    attempt_id: str = ""
+    process_id: int | None = None
+    process_path: str = ""
+
+
+@dataclass(frozen=True)
+class DiagnosticLifecycleObservation:
+    """Read-only local facts that bind one future diagnostic process.
+
+    The reader reports one process only after it established exclusivity. An
+    error represents zero, multiple or unreadable processes. Mailbox entries
+    include request, response and temporary command artifacts but exclude the
+    heartbeat, whose freshness is liveness rather than process identity.
+    """
+
+    process_id: int | None = None
+    process_path: str = ""
+    product_version: str = ""
+    file_version: str = ""
+    mailbox_entries: tuple[str, ...] = ()
+    error: str = ""
 
 
 @dataclass(frozen=True)
@@ -972,6 +1434,317 @@ def _authorization_refusals(
                 f"Authorized budget {budget} is not the stage ceiling {ceiling}.",
             )
         )
+    found.extend(_diagnostic_authorization_refusals(authorization, definition))
+    return found
+
+
+def step_selection_refusals(
+    definition: StageDefinition, selection: Sequence[str]
+) -> list[QualificationRefusal]:
+    """Decide whether one step selection is a coherent thing to authorize.
+
+    Four independent ways to be incoherent, and each refuses on its own: a
+    step the stage does not define, a step named twice, a selection that is
+    not in the stage's declared order, and a selection that omits a step
+    another selected step requires. A selection made only of separately
+    authorized steps refuses too: activating a process without the sequence
+    that establishes what it is being activated on measures nothing, and an
+    authorization that names only the activation is not a decision about the
+    experiment.
+
+    This is admission, not execution. Passing it never means the run may skip
+    state it has not established -- that is still decided, in the run, by the
+    measurement prerequisites.
+    """
+    found: list[QualificationRefusal] = []
+    chosen = list(selection)
+    if not chosen:
+        return [refusal(RefusalKind.MISSING, RefusalSubject.AUTHORIZED_STEPS)]
+    known = definition.step_ids
+    unknown = [item for item in chosen if item not in known]
+    if unknown:
+        found.append(
+            refusal(
+                RefusalKind.MALFORMED,
+                RefusalSubject.AUTHORIZED_STEPS,
+                f"Step {unknown[0]!r} is not defined by {definition.stage.value}.",
+            )
+        )
+        return found
+    if len(set(chosen)) != len(chosen):
+        found.append(
+            refusal(
+                RefusalKind.MALFORMED,
+                RefusalSubject.AUTHORIZED_STEPS,
+                "A step is selected more than once.",
+            )
+        )
+    ordered = [item for item in known if item in set(chosen)]
+    if ordered != chosen:
+        found.append(
+            refusal(
+                RefusalKind.MISMATCH,
+                RefusalSubject.AUTHORIZED_STEPS,
+                "The selection is not in the stage's declared step order.",
+            )
+        )
+    selected = set(chosen)
+    for index, item in enumerate(chosen):
+        missing = [
+            value
+            for value in definition.step(item).requires
+            if value not in selected or chosen.index(value) > index
+        ]
+        if missing:
+            found.append(
+                refusal(
+                    RefusalKind.INFEASIBLE,
+                    RefusalSubject.AUTHORIZED_STEPS,
+                    f"Step {item!r} requires {missing[0]!r} before it.",
+                )
+            )
+            break
+    if all(definition.step(item).separately_authorized for item in chosen):
+        found.append(
+            refusal(
+                RefusalKind.NOT_PERMITTED,
+                RefusalSubject.AUTHORIZED_STEPS,
+                "An activation-only selection authorizes no measurement.",
+            )
+        )
+    return found
+
+
+def _diagnostic_authorization_refusals(
+    authorization: QualificationAuthorization, definition: StageDefinition
+) -> list[QualificationRefusal]:
+    """Check the identity half an executable diagnostic stage binds.
+
+    A stage without a profile binds none of it, and a value supplied for a
+    stage that does not bind it is refused rather than ignored: an
+    authorization carrying scope the stage cannot honour is not a coherent
+    decision about this run.
+    """
+    supplied = (
+        authorization.profile_id
+        or authorization.profile_version
+        or authorization.tree
+        or authorization.models
+        or authorization.links
+        or authorization.step_ids
+        or authorization.reserve_operations is not None
+        or authorization.instance_token
+        or authorization.attempt_id
+        or authorization.process_id is not None
+        or authorization.process_path
+    )
+    if not definition.profile_id:
+        if supplied:
+            return [
+                refusal(
+                    RefusalKind.NOT_PERMITTED,
+                    RefusalSubject.AUTHORIZED_PROFILE,
+                    f"Stage {definition.stage.value} binds no diagnostic profile.",
+                )
+            ]
+        return []
+    found: list[QualificationRefusal] = []
+    if not authorization.profile_id or not authorization.profile_version:
+        found.append(refusal(RefusalKind.MISSING, RefusalSubject.AUTHORIZED_PROFILE))
+    elif (authorization.profile_id, authorization.profile_version) != (
+        definition.profile_id,
+        definition.profile_version,
+    ):
+        found.append(
+            refusal(
+                RefusalKind.MISMATCH,
+                RefusalSubject.AUTHORIZED_PROFILE,
+                f"Authorization names {authorization.profile_id}"
+                f"@{authorization.profile_version}, not "
+                f"{definition.profile_id}@{definition.profile_version}.",
+            )
+        )
+    if not authorization.tree:
+        found.append(refusal(RefusalKind.MISSING, RefusalSubject.AUTHORIZED_TREE))
+    elif not is_full_sha(authorization.tree):
+        found.append(refusal(RefusalKind.MALFORMED, RefusalSubject.AUTHORIZED_TREE))
+    if not authorization.models:
+        found.append(refusal(RefusalKind.MISSING, RefusalSubject.AUTHORIZED_MODELS))
+    elif tuple(authorization.models) != definition.fixture_models:
+        found.append(
+            refusal(
+                RefusalKind.MISMATCH,
+                RefusalSubject.AUTHORIZED_MODELS,
+                "The authorized fixture models are not the stage's exact models.",
+            )
+        )
+    if not authorization.links:
+        found.append(refusal(RefusalKind.MISSING, RefusalSubject.AUTHORIZED_LINKS))
+    elif tuple(authorization.links) != definition.link_bindings:
+        found.append(
+            refusal(
+                RefusalKind.MISMATCH,
+                RefusalSubject.AUTHORIZED_LINKS,
+                "The authorized link ports are not the stage's exact ports.",
+            )
+        )
+    reserve = authorization.reserve_operations
+    if reserve is None:
+        found.append(refusal(RefusalKind.MISSING, RefusalSubject.AUTHORIZED_RESERVE))
+    elif isinstance(reserve, bool) or not isinstance(reserve, int):
+        found.append(refusal(RefusalKind.MALFORMED, RefusalSubject.AUTHORIZED_RESERVE))
+    elif reserve != definition.reserve_operations:
+        found.append(
+            refusal(
+                RefusalKind.MISMATCH,
+                RefusalSubject.AUTHORIZED_RESERVE,
+                f"Authorized cleanup reserve {reserve} is not the stage's "
+                f"{definition.reserve_operations}.",
+            )
+        )
+    process_id = authorization.process_id
+    if process_id is None or not authorization.process_path:
+        found.append(refusal(RefusalKind.MISSING, RefusalSubject.AUTHORIZED_PROCESS))
+    elif isinstance(process_id, bool) or not isinstance(process_id, int):
+        found.append(refusal(RefusalKind.MALFORMED, RefusalSubject.AUTHORIZED_PROCESS))
+    elif process_id <= 0:
+        found.append(refusal(RefusalKind.MALFORMED, RefusalSubject.AUTHORIZED_PROCESS))
+    found.extend(_identity_token_refusals(authorization))
+    found.extend(step_selection_refusals(definition, authorization.step_ids))
+    return found
+
+
+def diagnostic_lifecycle_refusals(
+    authorization: QualificationAuthorization,
+    observed: DiagnosticLifecycleObservation,
+    requested_build: str,
+) -> tuple[QualificationRefusal, ...]:
+    """Bind a diagnostic authorization to one exclusive local PT process.
+
+    This is a read-only, pre-transport gate. It never launches, stops or
+    contacts Packet Tracer and never deletes mailbox artifacts. The later
+    workspace observation remains responsible for proving an empty disposable
+    document before the first effect.
+    """
+    if observed.error:
+        return (
+            refusal(
+                RefusalKind.UNOBSERVABLE,
+                RefusalSubject.PROCESS_INSTANCE,
+                observed.error,
+            ),
+        )
+    found: list[QualificationRefusal] = []
+    if (
+        observed.process_id != authorization.process_id
+        or observed.process_path != authorization.process_path
+    ):
+        found.append(
+            refusal(
+                RefusalKind.MISMATCH,
+                RefusalSubject.PROCESS_INSTANCE,
+                "The observed Packet Tracer PID/path does not match authorization.",
+            )
+        )
+    versions = tuple(
+        value for value in (observed.product_version, observed.file_version) if value
+    )
+    if requested_build not in versions:
+        found.append(
+            refusal(
+                RefusalKind.MISMATCH if versions else RefusalKind.UNOBSERVABLE,
+                RefusalSubject.PROCESS_INSTANCE,
+                "The observed Packet Tracer process does not report the exact build.",
+            )
+        )
+    if observed.mailbox_entries:
+        found.append(
+            refusal(
+                RefusalKind.NOT_PERMITTED,
+                RefusalSubject.MAILBOX,
+                "The file mailbox contains stale command artifacts: "
+                + ", ".join(observed.mailbox_entries[:8]),
+            )
+        )
+    return tuple(found)
+
+
+def diagnostic_lifecycle_continuity(
+    preflight: DiagnosticLifecycleObservation | None,
+    observed: DiagnosticLifecycleObservation,
+) -> tuple[str, ...]:
+    """Name what a second local reading says about the first one, if anything.
+
+    The preflight binds one process before a transport exists. Nothing keeps
+    that process alive for the rest of the run: a Packet Tracer that crashes
+    is replaced by an instance that polls the same mailbox, and every reading
+    taken afterwards, owned cleanup included, would then describe a process
+    this authority never bound. Reading the pairing again after finalization
+    is what turns that into evidence instead of an assumption.
+
+    This is a read-only comparison of two local observations. It contacts
+    nothing, deletes no mailbox artifact and costs no bridge operation, so it
+    stays affordable when the ledger is exhausted. It returns residue reasons
+    rather than refusals: the run already happened, and what is in question is
+    whether its positive claims still describe the authorized instance.
+    """
+    if preflight is None or preflight.error:
+        return ("process_instance:not_paired",)
+    if observed.error:
+        return (f"process_instance:unobservable:{observed.error}",)
+    found: list[str] = []
+    if _process_identity(observed) != _process_identity(preflight):
+        found.append("process_instance:changed")
+    if observed.mailbox_entries:
+        found.append("mailbox:not_drained:" + ",".join(observed.mailbox_entries[:8]))
+    return tuple(found)
+
+
+def _process_identity(
+    observed: DiagnosticLifecycleObservation,
+) -> tuple[int | None, str, str, str]:
+    """Return the four local facts that together name one Packet Tracer."""
+    return (
+        observed.process_id,
+        observed.process_path,
+        observed.product_version,
+        observed.file_version,
+    )
+
+
+def _identity_token_refusals(
+    authorization: QualificationAuthorization,
+) -> list[QualificationRefusal]:
+    """Require one fresh instance token and one distinct attempt identity."""
+    found: list[QualificationRefusal] = []
+    for value, subject in (
+        (authorization.instance_token, RefusalSubject.INSTANCE_TOKEN),
+        (authorization.attempt_id, RefusalSubject.ATTEMPT_IDENTITY),
+    ):
+        if not value:
+            found.append(refusal(RefusalKind.MISSING, subject))
+        elif not _HEX_TOKEN.fullmatch(value):
+            found.append(
+                refusal(
+                    RefusalKind.MALFORMED,
+                    subject,
+                    "A token must be 32 lowercase hexadecimal characters.",
+                )
+            )
+    if (
+        authorization.instance_token
+        and authorization.instance_token == authorization.attempt_id
+    ):
+        # One value cannot be both the process this attempt runs in and the
+        # attempt itself: reusing it would make a second attempt in the same
+        # process indistinguishable from the first.
+        found.append(
+            refusal(
+                RefusalKind.MISMATCH,
+                RefusalSubject.ATTEMPT_IDENTITY,
+                "The attempt identity repeats the instance token.",
+            )
+        )
     return found
 
 
@@ -989,13 +1762,17 @@ class RepositoryIdentity:
 
 
 def repository_refusals(
-    observed: RepositoryIdentity, expected_head: str
+    observed: RepositoryIdentity, expected_head: str, expected_tree: str = ""
 ) -> tuple[QualificationRefusal, ...]:
     """Require the exact, clean, published checkout the authorization names.
 
     A value that could not be observed is unobservable, never a pass: the
     record must be able to name the executed SHA and tree, and a reviewer must
     be able to inspect that SHA, which is why HEAD must be published.
+
+    `expected_tree` is bound only by an authority that names one. A commit
+    identifies a history; the tree identifies the bytes that will actually
+    execute, and a diagnostic authorization binds both.
     """
     found: list[QualificationRefusal] = []
     if observed.error or not observed.head:
@@ -1016,6 +1793,14 @@ def repository_refusals(
         )
     if not observed.tree:
         found.append(refusal(RefusalKind.UNOBSERVABLE, RefusalSubject.REPOSITORY_TREE))
+    elif expected_tree and observed.tree != expected_tree:
+        found.append(
+            refusal(
+                RefusalKind.MISMATCH,
+                RefusalSubject.REPOSITORY_TREE,
+                f"Observed tree {observed.tree!r} is not {expected_tree!r}.",
+            )
+        )
     if observed.clean is None:
         found.append(refusal(RefusalKind.UNOBSERVABLE, RefusalSubject.REPOSITORY_CLEAN))
     elif observed.clean is False:
@@ -1238,6 +2023,16 @@ class QualificationRecord(BaseModel):
     transitions: list[QualificationTransition] = Field(default_factory=list)
     persisted_step: str = ""
     admission_reads: list[str] = Field(default_factory=list)
+    #: Read-only local process and mailbox evidence for executable diagnostics.
+    #: Empty by default so historical schema-1 records remain valid without
+    #: being upgraded or granted authority they never recorded.
+    diagnostic_lifecycle: dict[str, Any] = Field(default_factory=dict)
+    #: The same read-only reading taken again after owned finalization.
+    #: Nothing keeps the bound process alive for the whole run, so the
+    #: cleanup and restoration evidence above is only about the authorized
+    #: instance while this reading still names it. Empty on a historical
+    #: record, which is an absent observation and never a proven one.
+    diagnostic_lifecycle_postflight: dict[str, Any] = Field(default_factory=dict)
     #: The complete pre-creation inventory, engine-managed objects included,
     #: exactly as the restoration reads are later compared against it.
     workspace_baseline: dict[str, Any] = Field(default_factory=dict)
@@ -1294,6 +2089,27 @@ def promotion_evidence_refusal(
         return "The record's observed build differs from the required build."
     if record.transport.channel != channel:
         return "The record's channel differs; no channel authorizes another."
+    if stage in (QualificationStage.D_DHCP, QualificationStage.D_WEB):
+        lifecycle = record.diagnostic_lifecycle
+        if not lifecycle or lifecycle.get("error"):
+            return "The diagnostic record has no coherent local process pairing."
+        if lifecycle.get("mailbox_entries"):
+            return "The diagnostic began with stale file-mailbox artifacts."
+        exit_pairing = record.diagnostic_lifecycle_postflight
+        if not exit_pairing or exit_pairing.get("error"):
+            return (
+                "The diagnostic did not observe its process pairing after finalization."
+            )
+        if exit_pairing.get("mailbox_entries"):
+            return "The diagnostic left stale file-mailbox artifacts behind."
+        if any(
+            exit_pairing.get(name) != lifecycle.get(name)
+            for name in ("process_id", "process_path", "product_version")
+        ):
+            return (
+                "The Packet Tracer process changed during the diagnostic, so "
+                "its cleanup evidence is not about the authorized instance."
+            )
     if not record.restoration_proven:
         return "Restoration was not proven twice."
     return ""

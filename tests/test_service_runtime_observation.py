@@ -647,6 +647,30 @@ def _expectation(kind, evidence_kind, expected, identifier="verify"):
     )
 
 
+def _web_start(
+    *,
+    owner: str = "__MCP_E6_PC",
+    content_before: str = "",
+    https_mode: bool | None = False,
+    https_mode_type: str = "boolean",
+    started: bool = True,
+) -> str:
+    """Return the complete shape emitted by the maintained start script."""
+    return json.dumps(
+        {
+            "started": started,
+            "go_result": started,
+            "go_result_type": "boolean",
+            "content_before": content_before,
+            "https_mode": https_mode,
+            "https_mode_type": https_mode_type,
+            "owner_device": owner,
+            "owner_read": True,
+            "owned": True,
+        }
+    )
+
+
 def test_a_direct_read_that_cannot_find_its_subject_is_unobservable():
     """`found=false` did not contradict anything: it observed nothing."""
     runtime = PacketTracerEnterpriseServiceRuntime(
@@ -766,9 +790,7 @@ def test_a_marker_present_before_the_request_is_inconclusive():
     def send_and_wait(js, timeout):
         calls.append(js)
         if "createClient()" in js:
-            return json.dumps(
-                {"started": True, "content_before": marker, "owned": True}
-            )
+            return _web_start(content_before=marker)
         return json.dumps(
             {"found": True, "deleted": True, "present": False, "error": ""}
         )
@@ -799,7 +821,7 @@ def test_a_marker_present_before_the_request_is_inconclusive():
 def test_no_content_change_by_the_deadline_is_inconclusive():
     """Nothing was retrieved, so nothing about the server was observed."""
     responses = [
-        json.dumps({"started": True, "content_before": "", "owned": True}),
+        _web_start(),
         json.dumps({"found": True, "content": ""}),
         json.dumps({"found": True, "deleted": True, "present": False, "error": ""}),
     ]
@@ -831,7 +853,7 @@ def test_a_client_that_did_not_start_is_inconclusive_and_is_released():
     def send_and_wait(js, timeout):
         calls.append(js)
         if "createClient()" in js:
-            return json.dumps({"started": False, "content_before": "", "owned": True})
+            return _web_start(started=False)
         return json.dumps(
             {"found": True, "deleted": True, "present": False, "error": ""}
         )
@@ -864,14 +886,7 @@ def test_an_https_mode_the_client_denies_is_a_contradiction():
     def send_and_wait(js, timeout):
         calls.append(js)
         if "createClient()" in js:
-            return json.dumps(
-                {
-                    "started": True,
-                    "content_before": "",
-                    "https_mode": False,
-                    "owned": True,
-                }
-            )
+            return _web_start(https_mode=False)
         return json.dumps(
             {"found": True, "deleted": True, "present": False, "error": ""}
         )
@@ -905,7 +920,7 @@ def test_an_absent_https_mode_is_malformed_because_missing_is_not_false():
     def send_and_wait(js, timeout):
         calls.append(js)
         if "createClient()" in js:
-            return json.dumps({"started": True, "content_before": "", "owned": True})
+            return _web_start(https_mode=None, https_mode_type="absent")
         return json.dumps(
             {"found": True, "deleted": True, "present": False, "error": ""}
         )
@@ -938,7 +953,7 @@ def test_a_release_that_did_not_come_back_is_recorded_as_failed():
     def send_and_wait(js, timeout):
         state["calls"] += 1
         if "createClient()" in js:
-            return json.dumps({"started": True, "content_before": "", "owned": True})
+            return _web_start()
         if "getLastPageContent" in js:
             return json.dumps({"found": True, "content": "PAGE"})
         return None
@@ -1054,19 +1069,29 @@ def test_the_http_inspect_payload_is_byte_identical_to_the_baseline():
     assert observed == _GOLDEN_HTTP_INSPECT
 
 
-def test_the_https_start_adds_only_the_mode_calls_to_the_http_start():
-    """The one intended new script, and nothing else changed with it."""
+def test_the_https_start_adds_only_the_mode_write_to_the_http_start():
+    """The HTTPS start differs from the HTTP one by `setHttps` and nothing else.
+
+    The mode READ is now shared: an HTTP-mode record used to say
+    `client_mode: not_read_back` only because this reader never asked, which
+    is a fact about the reader rather than about the client.
+    """
     url = json.dumps("https://198.18.160.10/")
     http = PacketTracerEnterpriseServiceRuntime._background_http_start("v", url)
     https = PacketTracerEnterpriseServiceRuntime._background_https_start("v", url)
 
     assert https == http.replace(
-        "var started=",
-        "if(p){p.setHttps(true);}var https_mode=p?!!p.isHttps():null;var started=",
+        "var owner_device=",
+        "if(p){p.setHttps(true);}var owner_device=",
     )
     assert "p.setHttps(true)" in https
-    assert "p.isHttps()" in https
+    assert "p.isHttps()" in https and "p.isHttps()" in http
     assert https.index("p.setHttps(true)") < https.index("p.go(")
+    # The native result is observed, never coerced: `!!p.go(...)` would have
+    # turned `undefined` into "the client did not start the request".
+    for script in (http, https):
+        assert "!!(p&&p.go(" not in script
+        assert "go_result_type=typeof __g" in script
 
 
 def test_a_bridge_observation_kind_is_never_silently_a_payload():
@@ -1099,7 +1124,7 @@ def _web(responses, **kwargs):
 
 
 _RELEASED = json.dumps({"found": True, "deleted": True, "present": False, "error": ""})
-_STARTED = json.dumps({"started": True, "content_before": "", "owned": True})
+_STARTED = _web_start()
 
 
 def _http(marker="AUDIT_MARKER", identifier="verify-http"):

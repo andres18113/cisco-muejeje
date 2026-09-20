@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 
 from .configuration_runtime import ActionExecutionStatus
 
 
-class ForwardingAddressMode(str, Enum):
+class ForwardingAddressMode(StrEnum):
+    """How the selected endpoint gets the address the plan names."""
+
+    # Keep the qualified repr the `(str, Enum)` form produced, so no
+    # existing message or record changes wording with the base class.
+    __str__ = Enum.__str__
+
     STATIC = "static"
     DHCP = "dhcp"
 
@@ -35,7 +41,12 @@ class ForwardingWorkloadPolicy:
     require_wired: bool = True
 
     def segment_ids_for(self, site_id: str) -> tuple[str, ...]:
-        matches = [segments for site, segments in self.eligible_segment_ids_by_site if site == site_id]
+        """Return the eligible segments of one site, or nothing."""
+        matches = [
+            segments
+            for site, segments in self.eligible_segment_ids_by_site
+            if site == site_id
+        ]
         if len(matches) != 1:
             return ()
         return matches[0]
@@ -72,6 +83,7 @@ class ForwardingEndpointSelection:
 
     @property
     def identity(self) -> tuple[str, str, str, str]:
+        """Return the four values that identify this selection."""
         return (
             self.endpoint_device_id,
             self.endpoint_interface,
@@ -125,10 +137,89 @@ class ForwardingEndpointBinding:
 
 @dataclass(frozen=True)
 class ForwardingBindingDecision:
+    """Whether one observation bound its selection, and why not."""
+
     status: ActionExecutionStatus
     binding: ForwardingEndpointBinding | None = None
     message: str = ""
 
     @property
     def verified(self) -> bool:
-        return self.status is ActionExecutionStatus.VERIFIED and self.binding is not None
+        """Whether this decision produced a usable binding."""
+        return (
+            self.status is ActionExecutionStatus.VERIFIED and self.binding is not None
+        )
+
+
+@dataclass(frozen=True)
+class PortLightReading:
+    """One `Port::getLightStatus()` value, strictly typed, and its meaning.
+
+    `raw` holds the value only when the engine returned an actual integer;
+    `raw_type` keeps what `typeof` reported, so a missing reader, a
+    non-numeric return and an actual `0` stay three different observations.
+    `interpretation` is the documented enum name, or `unknown`, and it is
+    never derived from anything but `raw`.
+    """
+
+    device_name: str
+    interface: str
+    raw: int | None = None
+    raw_type: str = "absent"
+    interpretation: str = "unknown"
+    failure_reason: str = ""
+
+
+@dataclass(frozen=True)
+class AccessForwardingRow:
+    """One switch-side interface as one spanning-tree instance reported it."""
+
+    interface: str
+    #: How many rows of the instance matched this requested interface. Zero is
+    #: a missing row and more than one is an ambiguous one; neither is a state.
+    matches: int = 0
+    state: str = ""
+    role: str = ""
+
+
+@dataclass(frozen=True)
+class AccessForwardingObservation:
+    """One bounded switch/VLAN forwarding sample, with nothing inferred.
+
+    The observation carries the dimensions the registered IOS reader already
+    separates -- execution, freshness, completeness and identity -- beside the
+    per-interface rows, so the admission rule can refuse on each of them
+    independently instead of collapsing them into one boolean.
+    """
+
+    switch_name: str
+    vlan_id: int
+    requested_interfaces: tuple[str, ...]
+    rows: tuple[AccessForwardingRow, ...] = ()
+    executed: bool = False
+    fresh_output_observed: bool = False
+    output_complete: bool = False
+    observed_device_name: str = ""
+    device_identity_provenance: str = ""
+    vlan_present: bool = False
+    samples: int = 0
+    max_samples: int = 0
+    deadline_seconds: float = 0.0
+    elapsed_ms: int = 0
+    deadline_reached: bool = False
+    #: What the simulation-time reader reported, when the composition supplied
+    #: one. `absent` means no such reader was composed, which is a statement
+    #: about this run and never a claim that simulation time did not move.
+    simulation_time: str = "absent"
+    failure_reason: str = ""
+    lights: tuple[PortLightReading, ...] = ()
+
+
+@dataclass(frozen=True)
+class AccessForwardingAdmission:
+    """Whether one sample grants forwarding permission, and why not."""
+
+    admitted: bool
+    dimension: str
+    forwarding_interfaces: tuple[str, ...] = ()
+    causes: tuple[str, ...] = ()

@@ -64,6 +64,7 @@ from ...domain.enterprise.models.service_plan import (
 )
 from ...domain.enterprise.models.service_runtime import (
     ObservationFact,
+    RuntimeObservationStep,
     RuntimeServiceVerification,
 )
 from .command_dispatch import PAGER_GUARD_JS
@@ -587,15 +588,20 @@ def mailbox_scan_incoherence(payload: dict) -> str:
     return ""
 
 
-def _no_client_contradiction(payload: dict, *, secure: bool) -> str:
+def _no_client_contradiction(payload: dict) -> str:
     """Name the field that refutes a start payload's claim of no client.
 
     Derived from what the builder can emit, not from taste. `owned` is
     `!!(m&&p)`, and `p` is `m&&m.createClient()`, so no client means `p` is
-    falsy, which forces `content_before` to `''`, `started` to `false` and
-    `https_mode` to `null`. A payload that denies the client while reporting
-    any of those is not a coherent observation of absence, and absence is the
-    one answer that lets the reader skip its cleanup entirely (V1).
+    falsy, which forces `content_before` to `''`, `started` to `false`,
+    `https_mode` to `null` and the owner read to `false`. A payload that
+    denies the client while reporting any of those is not a coherent
+    observation of absence, and absence is the one answer that lets the
+    reader skip its cleanup entirely (V1).
+
+    The mode check is no longer conditioned on the HTTPS path: the client
+    mode is now read in both modes, so a reported mode contradicts an absent
+    client whichever scheme asked for it.
 
     Returns the empty string when the no-client tuple is coherent.
     """
@@ -603,9 +609,43 @@ def _no_client_contradiction(payload: dict, *, secure: bool) -> str:
         return "started_without_client"
     if payload["content_before"]:
         return "content_without_client"
-    if secure and isinstance(payload.get("https_mode"), bool):
+    if isinstance(payload.get("https_mode"), bool):
         return "https_mode_without_client"
+    if payload.get("owner_read") is True:
+        return "owner_read_without_client"
+    if isinstance(payload.get("go_result_type"), str) and payload[
+        "go_result_type"
+    ] not in ("absent", ""):
+        return "go_dispatched_without_client"
     return ""
+
+
+def _client_identity_facts(payload: dict) -> dict[str, str | int | bool]:
+    """Project what the start payload observed about the client itself.
+
+    Every value is recorded as it came back, with the `typeof` companions
+    that keep a missing reader, a refused one and a real answer apart. The
+    mode is named `not_read_back` only when the payload really did not carry
+    it, which is now a fact about the engine rather than about the reader.
+    """
+    mode = payload.get("https_mode")
+    mode_type = str(payload.get("https_mode_type") or "absent")
+    go_type = str(payload.get("go_result_type") or "absent")
+    go_result = payload.get("go_result")
+    facts: dict[str, str | int | bool] = {
+        "owner_device": str(payload.get("owner_device") or ""),
+        "owner_read": payload.get("owner_read") is True,
+        "client_mode_type": mode_type,
+        "client_mode": (
+            ("https" if mode else "http") if isinstance(mode, bool) else "not_read_back"
+        ),
+        "go_result_type": go_type,
+    }
+    if isinstance(go_result, bool):
+        facts["go_result"] = go_result
+    elif isinstance(go_result, (int, str)):
+        facts["go_result"] = go_result
+    return facts
 
 
 def _release_contradiction(payload: dict) -> str:
@@ -662,6 +702,42 @@ def _dns_resolution(window: str) -> tuple[str, str]:
     return parsed.pop(), ""
 
 
+#: Who the started client actually belongs to, and which mode it holds.
+#:
+#: `Process::getOwnerDevice()` is inherited by `HttpClient`, so the record can
+#: name the device this row speaks for instead of repeating the device the
+#: caller asked about. `isHttps()` is read in BOTH modes: an HTTP-mode record
+#: used to carry `client_mode: not_read_back` for no reason other than the
+#: reader not asking. Each getter is guarded on its own so one refusal is a
+#: named absence rather than a missing payload.
+_CLIENT_IDENTITY_JS = (
+    "var owner_device='',owner_read=false;"
+    "try{if(p&&typeof p.getOwnerDevice==='function'){var __od=p.getOwnerDevice();"
+    "if(__od&&typeof __od.getName==='function'){"
+    "owner_device=String(__od.getName());owner_read=true;}}}catch(__oe){}"
+    "var https_mode=null,https_mode_type='absent';"
+    "try{if(p&&typeof p.isHttps==='function'){var __hm=p.isHttps();"
+    "https_mode_type=typeof __hm;"
+    "if(https_mode_type==='boolean'){https_mode=__hm;}}}catch(__me){"
+    "https_mode_type='threw';}"
+)
+
+#: The request itself, with its native result kept as it came back.
+#:
+#: `go_result` and `go_result_type` are the observation; `started` is the
+#: strict boolean projection used only when the engine actually returned one.
+#: The previous `!!(p&&p.go(url))` turned `undefined`, `null` and any object
+#: into `false`, which the reader then reported as "the client did not start
+#: the request" -- a claim about the client made out of a coercion.
+_CLIENT_GO_JS = (
+    "var go_result=null,go_result_type='absent',started=false;"
+    "if(p){try{var __g=p.go(__URL__);go_result_type=typeof __g;"
+    "if(go_result_type==='boolean'){go_result=__g;started=__g;}"
+    "else if(go_result_type==='number'||go_result_type==='string'){"
+    "go_result=__g;}}catch(__ge){go_result_type='threw';}}"
+)
+
+
 class PacketTracerEnterpriseServiceRuntime:
     """Usa procesos documentados de PT; no ofrece JS ni comandos arbitrarios."""
 
@@ -678,6 +754,9 @@ class PacketTracerEnterpriseServiceRuntime:
         clock: Callable[[], float] = monotonic,
         sleeper: Callable[[float], None] = sleep,
         secret_resolver: SecretResolver | None = None,
+        web_inspection_schedule: Sequence[float] | None = None,
+        web_late_read_offset: float | None = None,
+        budget_reader: Callable[[], tuple[int, float]] | None = None,
     ) -> None:
         """Bind the runtime to one inventory reader and one command channel.
 
@@ -691,6 +770,22 @@ class PacketTracerEnterpriseServiceRuntime:
         secret-bearing action is refused before any script exists. One runtime
         serves one invocation, so its `EvidenceSanitizer` holds exactly the
         values this invocation resolved and nothing else.
+
+        `web_inspection_schedule` decouples the inspection cadence of a web
+        fetch from its deadline: a finite, explicit list of monotonic offsets
+        from the request start. Without it the reader keeps the interval-based
+        poll it has always used, so no existing composition changes. A slot
+        whose moment has already passed when the previous read returned is
+        recorded as missed; it is never replayed as a burst.
+
+        `web_late_read_offset` grants exactly one bounded read after the HTTP
+        deadline, before the owned client is released. It starts no request
+        and retries nothing; what it finds is late evidence, never success
+        inside the earlier window.
+
+        `budget_reader` lets the caller's operation ledger be recorded beside
+        each observation. It is read, never consulted for permission: the
+        ledger itself refuses a call the budget cannot pay for.
         """
         self._sanitizer = EvidenceSanitizer()
         self._query_inventory = query_inventory
@@ -703,6 +798,15 @@ class PacketTracerEnterpriseServiceRuntime:
         self._interval = convergence_interval_seconds
         self._clock = clock
         self._sleep = sleeper
+        self._web_schedule = (
+            tuple(float(item) for item in web_inspection_schedule)
+            if web_inspection_schedule is not None
+            else None
+        )
+        self._web_late_read = (
+            float(web_late_read_offset) if web_late_read_offset is not None else None
+        )
+        self._budget_reader = budget_reader
 
     def inventory(self) -> list[RuntimeConfigurationTarget]:
         """Return the runtime inventory, normalized to typed targets."""
@@ -1808,6 +1912,7 @@ class PacketTracerEnterpriseServiceRuntime:
         message: str = "",
         observed: dict[str, str | int | bool] | None = None,
         limitations: Sequence[str] = (),
+        trace: Sequence[RuntimeObservationStep] = (),
     ) -> RuntimeServiceVerification:
         """Build one verification row from its observation fact.
 
@@ -1834,6 +1939,7 @@ class PacketTracerEnterpriseServiceRuntime:
                 key: redact(value) if isinstance(value, str) else value
                 for key, value in (observed or {}).items()
             },
+            trace=list(trace),
             observation=observation,
             cause=self._safe(cause),
             claim_level=claim_level,
@@ -2063,8 +2169,21 @@ class PacketTracerEnterpriseServiceRuntime:
             and end >= lease_start
             for start, end in parsed_ranges
         )
+        # The expected process state is part of the expectation, defaulting to
+        # the enabled configuration every product plan asks for. A diagnostic
+        # that configures a pool while the process is still disabled states
+        # `enabled=False` and is verified against exactly that, instead of
+        # having its own intent read back as a mismatch.
+        expected_enabled = expected.get("enabled", True)
+        if not isinstance(expected_enabled, bool):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_server_configuration_readback",
+                cause="dhcp_expected_enabled_invalid",
+            )
         matches = (
-            payload["enabled"] is True
+            payload["enabled"] is expected_enabled
             and payload["interface"] == expected.get("interface")
             and payload["pool_name"] == expected.get("pool_name")
             and payload["network"] == expected.get("network")
@@ -2095,6 +2214,8 @@ class PacketTracerEnterpriseServiceRuntime:
                 "interface": payload["interface"],
                 "pool_name": payload["pool_name"],
                 "excluded_range_count": len(ranges),
+                "expected_enabled": expected_enabled,
+                "observed_enabled": payload["enabled"],
             },
             limitations=("lease_allocation_state_unobserved",),
         )
@@ -3314,45 +3435,64 @@ class PacketTracerEnterpriseServiceRuntime:
         method = f"{scheme}_client_fresh_content"
         secure = scheme == "https"
         client = json.dumps(expectation.client_device_name)
-        url = json.dumps(scheme + "://" + target + "/")
-        if secure:
-            start_js = (
-                f"var d=ipc.network().getDevice({client});"
-                + self._background_https_start(expectation.id, url)
-                + "var before=content_before;"
-                "reportResult(JSON.stringify({started:started,"
-                "content_before:before,https_mode:https_mode,owned:owned}));"
-            )
-        else:
-            start_js = (
-                f"var d=ipc.network().getDevice({client});"
-                + self._background_http_start(expectation.id, url)
-                + "var before=content_before;"
-                "reportResult(JSON.stringify({started:started,"
-                "content_before:before,owned:owned}));"
-            )
+        path = "/"
+        selected_url = scheme + "://" + target + path
+        url = json.dumps(selected_url)
+        timeline: list[RuntimeObservationStep] = []
+        # The URL and path are INPUTS this reader selected. No documented
+        # getter returns the URL a client is requesting, so they are recorded
+        # as what was asked for and never as a read-back.
+        request_inputs: dict[str, str | int | bool] = {
+            "selected_url": selected_url,
+            "selected_path": path,
+            "selected_url_is_input": True,
+            "scheme": scheme,
+        }
+        started_at = self._clock()
+        start_builder = (
+            self._background_https_start if secure else self._background_http_start
+        )
+        start_js = (
+            f"var d=ipc.network().getDevice({client});"
+            + start_builder(expectation.id, url)
+            + "var before=content_before;"
+            "reportResult(JSON.stringify({started:started,go_result:go_result,"
+            "go_result_type:go_result_type,content_before:before,"
+            "https_mode:https_mode,https_mode_type:https_mode_type,"
+            "owner_device:owner_device,owner_read:owner_read,owned:owned}));"
+        )
         # Set BEFORE the dispatch: from here on the script may have created
         # and tracked a client whatever the channel reports back, so the
         # finalization must look rather than assume.
         lease.state = ClientOwnership.UNKNOWN
-        start = self._observe(start_js, 5.0)
-        if start.kind is not BridgeObservationKind.PAYLOAD:
+
+        def exit_row(**kwargs) -> RuntimeServiceVerification:
+            """Leave the fetch carrying its inputs and its whole timeline."""
+            merged: dict[str, str | int | bool] = dict(request_inputs)
+            merged.update(kwargs.pop("observed", None) or {})
             return self._observed(
                 expectation,
-                observation=self._transport_fact(start),
                 method=method,
                 claim_level=claim,
+                observed=merged,
+                trace=tuple(timeline),
+                **kwargs,
+            )
+
+        start = self._observe(start_js, 5.0)
+        timeline.append(self._web_step(len(timeline), "start", start, started_at))
+        if start.kind is not BridgeObservationKind.PAYLOAD:
+            return exit_row(
+                observation=self._transport_fact(start),
                 cause=start.outcome.detail,
                 message="The client request did not deliver a correlated answer.",
             )
         payload = start.payload or {}
+        request_inputs.update(_client_identity_facts(payload))
         owned = payload.get("owned")
         if not isinstance(owned, bool):
-            return self._observed(
-                expectation,
+            return exit_row(
                 observation=ObservationFact.MALFORMED,
-                method=method,
-                claim_level=claim,
                 cause=f"start_shape:{_typed_payload(payload, {'owned': bool})}",
                 message="The start payload did not report client ownership.",
             )
@@ -3363,22 +3503,16 @@ class PacketTracerEnterpriseServiceRuntime:
         lease.state = ClientOwnership.OWNED if owned else ClientOwnership.UNKNOWN
         shape = _typed_payload(payload, {"content_before": str, "started": bool})
         if shape:
-            return self._observed(
-                expectation,
+            return exit_row(
                 observation=ObservationFact.MALFORMED,
-                method=method,
-                claim_level=claim,
                 cause=f"start_shape:{shape}",
                 message="The start payload is not the typed shape.",
             )
         if not owned:
-            contradiction = _no_client_contradiction(payload, secure=secure)
+            contradiction = _no_client_contradiction(payload)
             if contradiction:
-                return self._observed(
-                    expectation,
+                return exit_row(
                     observation=ObservationFact.MALFORMED,
-                    method=method,
-                    claim_level=claim,
                     cause=f"start_inconsistent:{contradiction}",
                     message=(
                         "The start payload denied a client it also reported "
@@ -3388,52 +3522,87 @@ class PacketTracerEnterpriseServiceRuntime:
             # No client exists, so nothing about the server was observed and
             # there is no page to attribute anything to.
             lease.state = ClientOwnership.ABSENT
-            return self._observed(
-                expectation,
+            return exit_row(
                 observation=ObservationFact.SUBJECT_NOT_FOUND,
-                method=method,
-                claim_level=claim,
                 cause="client_not_created",
                 message="The device did not provide a background HTTP client.",
             )
-        if secure:
-            mode = payload.get("https_mode")
-            if not isinstance(mode, bool):
-                # Absent is neither false nor true: the payload did not report
-                # the mode, so nothing about the listener was observed.
-                return self._observed(
-                    expectation,
-                    observation=ObservationFact.MALFORMED,
-                    method=method,
-                    claim_level=claim,
-                    cause="https_mode_absent",
-                    message="The start payload did not report the client HTTPS mode.",
-                )
-            if not mode:
-                return self._observed(
-                    expectation,
-                    observation=ObservationFact.CONTRADICTED,
-                    method=method,
-                    claim_level=claim,
-                    cause="https_mode_not_confirmed",
-                    message="The client did not confirm HTTPS mode after setHttps.",
-                )
+        # A guarded getter that raised is an engine error about that member,
+        # named. Before the guards existed the same throw escaped to the outer
+        # wrapper and arrived as one undifferentiated engine error.
+        if payload.get("https_mode_type") == "threw":
+            return exit_row(
+                observation=ObservationFact.ENGINE_ERROR,
+                cause="client_mode_reader_threw",
+                message="Reading the client mode raised inside Packet Tracer.",
+            )
+        if payload.get("go_result_type") == "threw":
+            return exit_row(
+                observation=ObservationFact.ENGINE_ERROR,
+                cause="client_go_threw",
+                message="Starting the client request raised inside Packet Tracer.",
+            )
+        owner_device = str(payload.get("owner_device") or "")
+        if payload.get("owner_read") is not True or not owner_device:
+            return exit_row(
+                observation=ObservationFact.NOT_OBSERVED,
+                cause="client_owner_not_observed",
+                message="The owned client did not report its owner device.",
+            )
+        if owner_device != expectation.client_device_name:
+            return exit_row(
+                observation=ObservationFact.CONTRADICTED,
+                cause=f"client_owner_mismatch:{owner_device}",
+                message="The owned client belongs to a different device.",
+            )
+        mode = payload.get("https_mode")
+        if not isinstance(mode, bool):
+            # Absent is neither HTTP nor HTTPS: both modes use this reader, so
+            # nothing about the selected request mode was observed.
+            return exit_row(
+                observation=ObservationFact.MALFORMED,
+                cause=f"{scheme}_mode_absent",
+                message="The start payload did not report the client mode.",
+            )
+        if mode is not secure:
+            return exit_row(
+                observation=ObservationFact.CONTRADICTED,
+                cause=f"{scheme}_mode_not_confirmed",
+                message=f"The client did not confirm {scheme.upper()} mode.",
+            )
         before = payload["content_before"]
-        if not payload["started"]:
-            return self._observed(
-                expectation,
+        go_type = payload.get("go_result_type")
+        if go_type != "boolean":
+            # The engine answered `go()` with something that is not a boolean.
+            # Coercing it would have produced "the client did not start the
+            # request", which is a claim about the client, not an observation.
+            return exit_row(
+                observation=ObservationFact.MALFORMED,
+                cause=f"go_result_not_boolean:{go_type or 'absent'}",
+                message="The client reported a non-boolean result for go().",
+            )
+        go_result = payload.get("go_result")
+        if not isinstance(go_result, bool):
+            return exit_row(
+                observation=ObservationFact.MALFORMED,
+                cause="go_result_value_not_boolean",
+                message="The client omitted the native boolean result of go().",
+            )
+        if payload["started"] is not go_result:
+            return exit_row(
+                observation=ObservationFact.MALFORMED,
+                cause="go_result_inconsistent",
+                message="The strict start projection contradicted the native result.",
+            )
+        if not go_result:
+            return exit_row(
                 observation=ObservationFact.INCONCLUSIVE,
-                method=method,
-                claim_level=claim,
                 cause="client_go_false",
                 message="The client did not start the request.",
             )
         if marker and marker in before:
-            return self._observed(
-                expectation,
+            return exit_row(
                 observation=ObservationFact.INCONCLUSIVE,
-                method=method,
-                claim_level=claim,
                 cause="marker_present_before_request",
                 message=(
                     "The expected marker already existed before this request, so "
@@ -3458,13 +3627,51 @@ class PacketTracerEnterpriseServiceRuntime:
                 and (not marker or marker in reading.content)
             )
 
-        observed = self._poll(inspect, fresh, self._http_timeout)
+        def record(label: str, item: BridgeObservation) -> BridgeObservation:
+            timeline.append(
+                self._web_step(
+                    len(timeline),
+                    label,
+                    item,
+                    started_at,
+                    before=before,
+                    marker=marker,
+                )
+            )
+            return item
+
+        if self._web_schedule is None:
+            observed = self._poll(
+                lambda: record("inspect", inspect()), fresh, self._http_timeout
+            )
+        else:
+            observed = self._scheduled_inspect(
+                inspect, fresh, record, started_at, timeline
+            )
+        late: BridgeObservation | None = None
+        if self._web_late_read is not None:
+            # One counted read, after the window, before the release. It
+            # dispatches no `go` and retries nothing: whatever it finds is
+            # late evidence about this request, never success inside the
+            # earlier window.
+            remaining = started_at + self._web_late_read - self._clock()
+            if remaining > 0:
+                self._sleep(remaining)
+            late = record("late_control", inspect())
+        if observed is None:
+            return exit_row(
+                observation=ObservationFact.INCONCLUSIVE,
+                cause="inspection_schedule_elapsed_without_read",
+                message="Every scheduled inspection slot elapsed before a read.",
+                limitations=(
+                    ["late_content_observed_after_deadline"]
+                    if late is not None and fresh(late)
+                    else []
+                ),
+            )
         if observed.kind is not BridgeObservationKind.PAYLOAD:
-            return self._observed(
-                expectation,
+            return exit_row(
                 observation=self._transport_fact(observed),
-                method=method,
-                claim_level=claim,
                 cause=observed.outcome.detail,
                 message="The client page content could not be read.",
             )
@@ -3472,37 +3679,30 @@ class PacketTracerEnterpriseServiceRuntime:
             observed.payload or {}, "content", "owned_client_absent"
         )
         if not reading.admissible:
-            return self._observed(
-                expectation,
+            return exit_row(
                 observation=reading.fact,
-                method=method,
-                claim_level=claim,
                 cause=reading.cause,
                 message="The client page read did not observe its subject.",
             )
         content = reading.content
         if not content or content == before:
-            return self._observed(
-                expectation,
+            return exit_row(
                 observation=ObservationFact.INCONCLUSIVE,
-                method=method,
-                claim_level=claim,
                 cause="no_response_within_deadline",
                 message="No content change was observed before the deadline.",
+                limitations=(
+                    ["late_content_observed_after_deadline"]
+                    if late is not None and fresh(late)
+                    else []
+                ),
             )
         if marker and marker not in content:
-            return self._observed(
-                expectation,
+            return exit_row(
                 observation=ObservationFact.CONTRADICTED,
-                method=method,
-                claim_level=claim,
                 message=f"Fresh {scheme.upper()} content contradicted the expectation.",
             )
-        row = self._observed(
-            expectation,
+        row = exit_row(
             observation=ObservationFact.OBSERVED,
-            method=method,
-            claim_level=claim,
             observed={
                 "marker": marker,
                 "target": target,
@@ -3552,19 +3752,20 @@ class PacketTracerEnterpriseServiceRuntime:
             f"if(m&&p){{this.__mcpE6HttpClients[{key}]={{manager:m,client:p}};}}"
             "var owned=!!(m&&p);"
             "var content_before=p?String(p.getLastPageContent()):'';"
-            f"var started=!!(p&&p.go({url_json}));"
+            + _CLIENT_IDENTITY_JS
+            + _CLIENT_GO_JS.replace("__URL__", url_json)
         )
 
     @staticmethod
     def _background_https_start(expectation_id: str, url_json: str) -> str:
-        """Start the request as HTTP does, plus an affirmative mode read.
+        """Start the request as HTTP does, plus the affirmative mode write.
 
         `HttpClient::setHttps(bool)` and `isHttps()` are documented members
         inherited by `HttpBackgroundClient` (`[CISCO]`
         `help/default/IpcAPI/class_http_client.html`). Setting the mode before
-        `go()` and reading it back in the same payload is what makes "this
-        client was in HTTPS mode" an observation instead of an assumption
-        drawn from the URL scheme.
+        `go()` is what distinguishes this start from the HTTP one; reading it
+        back is shared with HTTP, because "this client was in HTTP mode" needs
+        the same observation and used to be left unread.
         """
         key = json.dumps(expectation_id)
         return (
@@ -3577,8 +3778,9 @@ class PacketTracerEnterpriseServiceRuntime:
             f"if(m&&p){{this.__mcpE6HttpClients[{key}]={{manager:m,client:p}};}}"
             "var owned=!!(m&&p);"
             "var content_before=p?String(p.getLastPageContent()):'';"
-            "if(p){p.setHttps(true);}var https_mode=p?!!p.isHttps():null;"
-            f"var started=!!(p&&p.go({url_json}));"
+            "if(p){p.setHttps(true);}"
+            + _CLIENT_IDENTITY_JS
+            + _CLIENT_GO_JS.replace("__URL__", url_json)
         )
 
     @staticmethod
@@ -3697,6 +3899,65 @@ class PacketTracerEnterpriseServiceRuntime:
             "start_outcome_unobserved",
         )
 
+    def _budget_fields(self) -> dict[str, object]:
+        """Read the caller's remaining budget, or say it was not observable."""
+        if self._budget_reader is None:
+            return {"budget_observed": False}
+        try:
+            operations, seconds = self._budget_reader()
+        except Exception:
+            return {"budget_observed": False}
+        return {
+            "budget_observed": True,
+            "remaining_operations": int(operations),
+            "remaining_seconds": round(float(seconds), 3),
+        }
+
+    def _web_step(
+        self,
+        index: int,
+        label: str,
+        observation: BridgeObservation,
+        started_at: float,
+        *,
+        before: str = "",
+        marker: str = "",
+    ) -> RuntimeObservationStep:
+        """Retain one attempted observation of a web fetch, as it happened.
+
+        The step states what the transport reported and what the payload
+        contained. It never decides the fetch: a step that read nothing is a
+        step that read nothing, and the row's conclusion is still taken from
+        the reading the fetch returned on.
+        """
+        outcome = observation.kind.value
+        content = ""
+        if observation.kind is BridgeObservationKind.PAYLOAD:
+            if label == "start":
+                # The start payload is not a page reading: reporting it
+                # through the inspect parser would name a missing `found` key
+                # that the start never promised.
+                outcome = "request_started"
+            else:
+                reading = _text_reading(
+                    observation.payload or {}, "content", "owned_client_absent"
+                )
+                outcome = "content_read" if reading.admissible else reading.cause
+                content = reading.content if reading.admissible else ""
+        return RuntimeObservationStep(
+            index=index,
+            label=label,
+            dispatch=observation.outcome.dispatch.value,
+            result=observation.outcome.result.value,
+            outcome=self._safe(outcome),
+            offset_seconds=round(max(0.0, self._clock() - started_at), 3),
+            content_length=len(content),
+            content_changed=bool(content and content != before),
+            marker_present=bool(marker and marker in content),
+            detail=self._safe(observation.outcome.detail),
+            **self._budget_fields(),
+        )
+
     @staticmethod
     def _with_release(row: RuntimeServiceVerification, release: ReleaseOutcome):
         """Attach the finalization outcome without touching the primary fact.
@@ -3724,6 +3985,40 @@ class PacketTracerEnterpriseServiceRuntime:
             if predicate(last) or self._clock() >= deadline:
                 return last
             self._sleep(self._interval)
+
+    def _scheduled_inspect(self, inspect, predicate, record, started_at, timeline):
+        """Inspect at the explicit offsets, recording the slots that are missed.
+
+        The cadence is the schedule's, not the deadline's. A slot names a
+        moment; when that moment has already passed by the time the previous
+        read returned, the slot is recorded as missed and skipped. It is never
+        fabricated and never fired late, so the reads a slow engine costs are
+        not replayed together at the end. The schedule is finite, so this
+        terminates whatever the engine does.
+        """
+        last: BridgeObservation | None = None
+        for index, offset in enumerate(self._web_schedule or ()):
+            due = started_at + float(offset)
+            remaining = due - self._clock()
+            if remaining < 0:
+                timeline.append(
+                    RuntimeObservationStep(
+                        index=len(timeline),
+                        label="inspect",
+                        performed=False,
+                        outcome="slot_missed",
+                        offset_seconds=round(float(offset), 3),
+                        detail=f"slot:{index}",
+                        **self._budget_fields(),
+                    )
+                )
+                continue
+            if remaining > 0:
+                self._sleep(remaining)
+            last = record("inspect", inspect())
+            if predicate(last):
+                return last
+        return last
 
     # -- transport ------------------------------------------------------
 

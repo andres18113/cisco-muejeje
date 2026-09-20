@@ -59,6 +59,37 @@ class ObservationFact(StrEnum):
     UNSPECIFIED = "unspecified"
 
 
+class RuntimeObservationStep(BaseModel):
+    """One attempted observation inside a longer read, kept in order.
+
+    A read that samples more than once used to keep only the sample it
+    returned on. Every attempt is retained here with what it dispatched, what
+    came back and when, so a reader can tell a sample that was never taken
+    from one that was taken and saw nothing. A slot the schedule named but the
+    read could not perform is recorded with `performed` false; it is never
+    fabricated and never replayed later as a burst.
+    """
+
+    index: int
+    label: str
+    performed: bool = True
+    dispatch: str = ""
+    result: str = ""
+    outcome: str = ""
+    #: Monotonic seconds since the request this read is about was started.
+    offset_seconds: float = 0.0
+    #: What the caller's budget still allowed when this step ran, when the
+    #: runtime was given a reader for it. `budget_observed` keeps a missing
+    #: reader apart from an exhausted budget.
+    budget_observed: bool = False
+    remaining_operations: int = 0
+    remaining_seconds: float = 0.0
+    content_length: int = 0
+    content_changed: bool = False
+    marker_present: bool = False
+    detail: str = ""
+
+
 class RuntimeServiceVerification(BaseModel):
     """What a service runtime reports about one expectation."""
 
@@ -68,6 +99,9 @@ class RuntimeServiceVerification(BaseModel):
     evidence_method: str = ""
     fresh_evidence: bool = False
     observed: dict[str, str | int | bool] = Field(default_factory=dict)
+    #: Every attempted observation of this read, in order. Empty for readers
+    #: that observe exactly once.
+    trace: list[RuntimeObservationStep] = Field(default_factory=list)
     message: str = ""
     #: What the read established. UNSPECIFIED is the default and means the
     #: producer stated no fact; it never means OBSERVED.

@@ -103,6 +103,12 @@ const makeClient = () => {
   live[id] = true;
   return {
     id: id,
+    getOwnerDevice: () => {
+      guard('getOwnerDevice');
+      if (state.owner_name === null) { return device; }
+      if (state.owner_name === '') { return null; }
+      return {getName: () => state.owner_name};
+    },
     getLastPageContent: () => { guard('getLastPageContent'); return state.page; },
     setHttps: (value) => { guard('setHttps', value); state.https_mode = !!value; },
     isHttps: () => {
@@ -204,6 +210,7 @@ class _ClientStub:
             "go_sets_page": "MCP_E6_PAGE_MARKER",
             "https_mode": False,
             "https_reports": None,
+            "owner_name": None,
             "create_returns_null": False,
             "manager_missing": False,
             "throw_on": [],
@@ -958,3 +965,35 @@ def test_a_slot_without_a_client_is_unresolved_rather_than_contradictory(stub):
     assert _unresolved(row) == [
         "client_ownership_unresolved:release_unverified:slot_not_usable"
     ]
+
+
+def test_a_client_that_does_not_report_an_owner_is_not_an_owned_client(stub):
+    """The owner is read from the client, never assumed from the request.
+
+    `HttpClient::getOwnerDevice()` is what makes this an OWNED background
+    client rather than some client that happens to exist. A refusal to answer
+    is a named absence: the row cannot claim an independent client
+    observation, and the client is still released.
+    """
+    engine = stub(owner_name="")
+
+    row = _runtime(engine).verify(_expectation())
+
+    assert row.status is not ActionExecutionStatus.VERIFIED
+    assert row.cause == "client_owner_not_observed"
+    assert row.observation is ObservationFact.NOT_OBSERVED
+    # Unowned is not unreleased: the client this run created is still deleted.
+    assert len(engine.deletions()) == 1
+    assert engine.live == 0
+
+
+def test_a_client_owned_by_another_device_contradicts_the_selection(stub):
+    """A fetch is evidence about the endpoint the expectation selected."""
+    engine = stub(owner_name="__MCP_E6_OTHER")
+
+    row = _runtime(engine).verify(_expectation())
+
+    assert row.status is not ActionExecutionStatus.VERIFIED
+    assert row.cause == "client_owner_mismatch:__MCP_E6_OTHER"
+    assert row.observation is ObservationFact.CONTRADICTED
+    assert len(engine.deletions()) == 1

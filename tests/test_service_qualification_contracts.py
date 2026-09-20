@@ -1159,7 +1159,9 @@ def test_the_own_write_and_the_bracket_must_both_hold():
     assert moved.causes == ["page_changed_between_steps"]
 
 
-def _row(observation: ObservationFact, cause: str = "") -> RuntimeServiceVerification:
+def _row(
+    observation: ObservationFact, cause: str = "", *, mode: str = ""
+) -> RuntimeServiceVerification:
     return RuntimeServiceVerification(
         expectation_id="q1",
         status=ActionExecutionStatus.UNKNOWN,
@@ -1168,6 +1170,7 @@ def _row(observation: ObservationFact, cause: str = "") -> RuntimeServiceVerific
         fresh_evidence=True,
         observation=observation,
         cause=cause,
+        observed={"client_mode": mode} if mode else {},
     )
 
 
@@ -1256,15 +1259,15 @@ def _listener(**steps):
     values = {
         "readiness": _gate(),
         "marker_page": _marker_page(),
-        "http_positive": _row(ObservationFact.OBSERVED),
+        "http_positive": _row(ObservationFact.OBSERVED, mode="http"),
         "http_off": _toggle("http_disable", False, True),
-        "https_positive": _row(ObservationFact.OBSERVED),
+        "https_positive": _row(ObservationFact.OBSERVED, mode="https"),
         "http_negative": _row(
-            ObservationFact.INCONCLUSIVE, "no_response_within_deadline"
+            ObservationFact.INCONCLUSIVE, "no_response_within_deadline", mode="http"
         ),
         "https_off": _toggle("https_disable", False, False),
         "https_negative": _row(
-            ObservationFact.INCONCLUSIVE, "no_response_within_deadline"
+            ObservationFact.INCONCLUSIVE, "no_response_within_deadline", mode="https"
         ),
     }
     values.update(steps)
@@ -1290,19 +1293,29 @@ def test_same_mode_positives_cannot_make_the_negative_half_supported():
 
 
 def test_every_fetch_names_its_url_and_what_is_known_of_its_mode():
-    """Q1R-3: constructed URL, confirmed HTTPS mode, unread HTTP mode."""
+    """Q1R-3: constructed URL and the native mode read in both schemes."""
     facts = _listener().facts
     assert facts["positive_https_only"]["request_url"] == URLS["https"]
     assert facts["positive_https_only"]["client_mode"] == "https_confirmed_by_isHttps"
-    assert facts["positive_http_mode_both_enabled"]["client_mode"] == "not_read_back"
+    assert facts["positive_http_mode_both_enabled"]["client_mode"] == (
+        "http_confirmed_by_isHttps"
+    )
     unconfirmed = _listener(
-        https_positive=_row(ObservationFact.CONTRADICTED, "https_mode_not_confirmed")
+        https_positive=_row(
+            ObservationFact.CONTRADICTED,
+            "https_mode_not_confirmed",
+            mode="http",
+        )
     )
     assert unconfirmed.facts["positive_https_only"]["client_mode"] == (
         "https_not_confirmed"
     )
     assert any(
         item.startswith("switch_port_stp_state")
+        for item in facts["unavailable_observations"]
+    )
+    assert not any(
+        item.startswith("http_client_mode_not_read_back")
         for item in facts["unavailable_observations"]
     )
     ports = facts["readiness_before"]["last"]["ports"]
@@ -1312,7 +1325,11 @@ def test_every_fetch_names_its_url_and_what_is_known_of_its_mode():
 
 def test_a_failed_positive_leaves_its_negative_unrun_and_uninterpreted():
     """A timeout in the positive: the negatives have no discriminating power."""
-    timeout = _row(ObservationFact.INCONCLUSIVE, "no_response_within_deadline")
+    timeout = _row(
+        ObservationFact.INCONCLUSIVE,
+        "no_response_within_deadline",
+        mode="http",
+    )
     result = _listener(
         http_positive=timeout,
         http_off=None,
@@ -1336,7 +1353,7 @@ def test_a_failed_positive_leaves_its_negative_unrun_and_uninterpreted():
 def test_wrong_content_on_a_marked_positive_page_contradicts_it():
     """A completed read of the marked page returning other content."""
     result = _listener(
-        http_positive=_row(ObservationFact.CONTRADICTED),
+        http_positive=_row(ObservationFact.CONTRADICTED, mode="http"),
         http_off=None,
         https_positive=None,
         http_negative=None,
@@ -1349,10 +1366,10 @@ def test_wrong_content_on_a_marked_positive_page_contradicts_it():
 
 def test_a_listener_serving_while_read_back_disabled_contradicts_the_model():
     """The stop condition in either mode."""
-    served = _listener(https_negative=_row(ObservationFact.OBSERVED))
+    served = _listener(https_negative=_row(ObservationFact.OBSERVED, mode="https"))
     assert served.conclusion is CONTRADICTED
     assert "negative_https:listener_served_while_read_back_as_disabled" in served.causes
-    http_served = _listener(http_negative=_row(ObservationFact.OBSERVED))
+    http_served = _listener(http_negative=_row(ObservationFact.OBSERVED, mode="http"))
     assert http_served.conclusion is CONTRADICTED
 
 
@@ -1470,6 +1487,74 @@ def test_only_a_completed_live_record_at_the_exact_sha_can_be_evidence():
         assert promotion_evidence_refusal(record, **arguments)
     later_sha = dict(arguments, executed_sha="e" * 40)
     assert "never relabeled" in promotion_evidence_refusal(_record(), **later_sha)
+
+
+def test_a_diagnostic_record_needs_a_proven_pairing_at_both_ends():
+    """G4: the promotion gate reads the exit pairing, not only the admission one.
+
+    A diagnostic binds one local Packet Tracer before its transport exists.
+    Whether that same process was still the one answering when the run cleaned
+    up is a separate observation, and a record that cannot show it never
+    supports a promotion, whatever its measurements concluded.
+    """
+    paired = {
+        "process_id": 4242,
+        "process_path": r"C:\Program Files\Cisco Packet Tracer\bin\PacketTracer.exe",
+        "product_version": BUILD,
+        "file_version": BUILD,
+        "mailbox_entries": [],
+        "error": "",
+    }
+    arguments = {
+        "stage": QualificationStage.D_WEB,
+        "executed_sha": SHA,
+        "build": BUILD,
+        "channel": "file",
+    }
+
+    def diagnostic(**changes) -> QualificationRecord:
+        values = {
+            "stage": QualificationStage.D_WEB,
+            "diagnostic_lifecycle": dict(paired),
+            "diagnostic_lifecycle_postflight": dict(paired),
+        }
+        values.update(changes)
+        return _record(**values)
+
+    assert promotion_evidence_refusal(diagnostic(), **arguments) == ""
+    refusing = (
+        ({"diagnostic_lifecycle": {}}, "process"),
+        ({"diagnostic_lifecycle_postflight": {}}, "process"),
+        (
+            {"diagnostic_lifecycle_postflight": dict(paired, error="count:0")},
+            "process",
+        ),
+        (
+            {"diagnostic_lifecycle_postflight": dict(paired, process_id=4343)},
+            "process",
+        ),
+        (
+            {
+                "diagnostic_lifecycle_postflight": dict(
+                    paired, mailbox_entries=["req_orphan.js"]
+                )
+            },
+            "mailbox",
+        ),
+    )
+    for changes, needle in refusing:
+        assert needle in promotion_evidence_refusal(diagnostic(**changes), **arguments)
+    # A non-diagnostic stage records neither reading and is unaffected.
+    assert (
+        promotion_evidence_refusal(
+            _record(),
+            stage=QualificationStage.Q0,
+            executed_sha=SHA,
+            build=BUILD,
+            channel="file",
+        )
+        == ""
+    )
 
 
 # -- F1: the typed Q3 baseline admission policy ---------------------------------

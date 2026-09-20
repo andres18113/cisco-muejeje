@@ -66,6 +66,8 @@ from ...domain.enterprise.models.service_plan import (
     ServiceVerificationKind,
 )
 from ...domain.enterprise.models.service_qualification import (
+    D_WEB_INSPECTION_SCHEDULE,
+    D_WEB_LATE_READ_OFFSET,
     Q3_DNS_IPV4,
     Q3_GATEWAY_IPV4,
     Q3_PC1,
@@ -95,6 +97,9 @@ from ...infrastructure.catalog.enterprise_capabilities import (
 from ...infrastructure.catalog.service_capabilities import (
     packet_tracer_service_capabilities,
 )
+from ...infrastructure.execution.endpoint_address_observer import (
+    PacketTracerEndpointAddressObserver,
+)
 from ...infrastructure.execution.enterprise_configuration_runtime import (
     PacketTracerEnterpriseConfigurationRuntime,
 )
@@ -102,6 +107,10 @@ from ...infrastructure.execution.enterprise_service_runtime import (
     PacketTracerEnterpriseServiceRuntime,
 )
 from ...infrastructure.execution.file_bridge import FileBridge
+from ...infrastructure.execution.forwarding_probe import (
+    ForwardingProbeExecutor,
+    forwarding_probe_evidence,
+)
 from ...infrastructure.execution.import_isolation_preflight import (
     PRODUCTION_NAMESPACE,
     ImportIsolationPreflight,
@@ -112,10 +121,14 @@ from ...infrastructure.execution.packet_tracer_physical_runtime import (
     PacketTracerPhysicalTopologyRuntime,
 )
 from ...infrastructure.execution.service_environment import ServiceEnvironmentReader
+from ...infrastructure.execution.service_qualification_lifecycle import (
+    PacketTracerDiagnosticLifecycleReader,
+)
 from ...infrastructure.execution.service_qualification_probes import (
     PacketTracerQualificationProbes,
 )
 from ...infrastructure.execution.source_preflight import GitSourceReader
+from ...infrastructure.execution.typed_ping import TypedPingExecutor
 from ...infrastructure.persistence.service_qualification_store import (
     QualificationRecordStore,
 )
@@ -479,7 +492,15 @@ def _configuration_runtime(
     bound: LedgeredTransport,
 ) -> PacketTracerEnterpriseConfigurationRuntime:
     return PacketTracerEnterpriseConfigurationRuntime(
-        _no_inventory, bound.send, bound.send_and_wait
+        _no_inventory,
+        bound.send,
+        bound.send_and_wait,
+        # The neutral access-forwarding observer is the only path that reads
+        # these; every other waiter keeps the lifecycle helper it had. The
+        # sleeper is the ledger's, so a bounded sample can never outlive the
+        # phase's remaining time.
+        clock=bound.clock,
+        sleeper=bound.capped_sleep,
     )
 
 
@@ -492,6 +513,62 @@ def _service_runtime(bound: LedgeredTransport) -> PacketTracerEnterpriseServiceR
         convergence_interval_seconds=HTTP_TIMEOUT_SECONDS,
         clock=bound.clock,
         sleeper=bound.capped_sleep,
+    )
+
+
+def _diagnostic_service_runtime(
+    bound: LedgeredTransport, allowance
+) -> PacketTracerEnterpriseServiceRuntime:
+    """Compose the product web reader with the diagnostic's inspection cadence.
+
+    The public timeout defaults are untouched: only the finite inspection
+    schedule, the one bounded late read and the budget reader are added, and
+    all three are observation rather than policy.
+    """
+    return PacketTracerEnterpriseServiceRuntime(
+        _no_inventory,
+        bound.send_and_wait,
+        dispatch_and_wait=bound.dispatch_and_wait,
+        http_timeout_seconds=HTTP_TIMEOUT_SECONDS,
+        convergence_interval_seconds=HTTP_TIMEOUT_SECONDS,
+        clock=bound.clock,
+        sleeper=bound.capped_sleep,
+        web_inspection_schedule=D_WEB_INSPECTION_SCHEDULE,
+        web_late_read_offset=D_WEB_LATE_READ_OFFSET,
+        budget_reader=allowance,
+    )
+
+
+class _SerializedForwardingProbe:
+    """Run the existing bind-before-ping probe and hand back typed evidence."""
+
+    def __init__(self, executor: ForwardingProbeExecutor) -> None:
+        """Wrap one composed executor for this invocation."""
+        self._executor = executor
+
+    def probe_once(self, **kwargs) -> Mapping[str, Any]:
+        """Probe once and serialize every boundary the executor acquired."""
+        return forwarding_probe_evidence(self._executor.probe_once(**kwargs))
+
+
+def _forwarding_probe(bound: LedgeredTransport) -> _SerializedForwardingProbe:
+    """Compose the real probe: documented endpoint getters plus one typed ping.
+
+    `measurement_attempts` is one, because a diagnostic measures once. The
+    safe ping timeout stays the executor's own contract: the total cost is
+    bounded by the stage ledger, never by shortening a measurement into a
+    premature negative.
+    """
+    return _SerializedForwardingProbe(
+        ForwardingProbeExecutor(
+            PacketTracerEndpointAddressObserver(bound.send_and_wait),
+            TypedPingExecutor(
+                bound.send_and_wait,
+                measurement_attempts=1,
+                clock=bound.clock,
+                sleeper=bound.capped_sleep,
+            ),
+        )
     )
 
 
@@ -529,6 +606,9 @@ def production_boundaries(governed_root: Path) -> QualificationBoundaries:
         new_nonce=lambda: uuid4().hex,
         q3_product_contract=q3_product_contract,
         q3_required_build=Q3_PACKET_TRACER_BUILD,
+        forwarding_probe=_forwarding_probe,
+        diagnostic_service_runtime=_diagnostic_service_runtime,
+        diagnostic_lifecycle=PacketTracerDiagnosticLifecycleReader().read,
     )
 
 
@@ -558,6 +638,20 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--authorized-build")
     parser.add_argument("--authorized-max-operations")
     parser.add_argument("--authorized-max-seconds")
+    # The diagnostic half of the authority. Every one of these is compared
+    # against a value the stage definition or the observed checkout already
+    # fixes; none of them is prose and none of them widens anything.
+    parser.add_argument("--authorized-profile")
+    parser.add_argument("--authorized-profile-version")
+    parser.add_argument("--authorized-tree")
+    parser.add_argument("--authorized-model", action="append")
+    parser.add_argument("--authorized-link", action="append")
+    parser.add_argument("--authorized-step", action="append")
+    parser.add_argument("--authorized-reserve-operations")
+    parser.add_argument("--authorized-process-id")
+    parser.add_argument("--authorized-process-path")
+    parser.add_argument("--instance-token")
+    parser.add_argument("--attempt-id")
     return parser
 
 
@@ -572,6 +666,17 @@ def _request(argv: Sequence[str] | None) -> QualificationRequest:
         args.authorized_build,
         args.authorized_max_operations,
         args.authorized_max_seconds,
+        args.authorized_profile,
+        args.authorized_profile_version,
+        args.authorized_tree,
+        args.authorized_model,
+        args.authorized_link,
+        args.authorized_step,
+        args.authorized_reserve_operations,
+        args.authorized_process_id,
+        args.authorized_process_path,
+        args.instance_token,
+        args.attempt_id,
     )
     authorization = None
     if any(item is not None for item in named):
@@ -584,6 +689,17 @@ def _request(argv: Sequence[str] | None) -> QualificationRequest:
             build=args.authorized_build or "",
             max_operations=_integer(args.authorized_max_operations),
             max_seconds=_integer(args.authorized_max_seconds),
+            profile_id=args.authorized_profile or "",
+            profile_version=args.authorized_profile_version or "",
+            tree=args.authorized_tree or "",
+            models=tuple(args.authorized_model or ()),
+            links=tuple(args.authorized_link or ()),
+            step_ids=tuple(args.authorized_step or ()),
+            reserve_operations=_integer(args.authorized_reserve_operations),
+            process_id=_integer(args.authorized_process_id),
+            process_path=args.authorized_process_path or "",
+            instance_token=args.instance_token or "",
+            attempt_id=args.attempt_id or "",
         )
     return QualificationRequest(
         execute=bool(args.execute),

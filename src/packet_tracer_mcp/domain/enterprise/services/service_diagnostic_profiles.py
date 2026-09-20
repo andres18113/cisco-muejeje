@@ -8,11 +8,19 @@ failure boundary each one asks about is its dependent variable: observing it
 confirms no product invariant and learns no allowlist from it.
 
 Nothing here dispatches anything. `diagnostic_dispatch_refusal` is fail-closed
-and refuses every draft, no stage definition reaches these profiles, and the
-plan projections below are pure transformations of plans the real compiler
-already produced. Where an existing product writer cannot support a
-decomposition without changing its meaning, the profile names that seam and
-the minimal extension it would need instead of copying the writer's setters.
+and refuses every draft, and the plan projections below are pure
+transformations of plans the real compiler already produced. Where an existing
+product writer cannot support a decomposition without changing its meaning,
+the profile names that seam and the minimal extension it would need instead of
+copying the writer's setters.
+
+The two questions are now also executable, as the `D-DHCP` and `D-WEB`
+qualification stages. That does not make this module an execution path: the
+stages carry their own fixtures, budgets and steps in
+`service_qualification.py`, they are admitted by the ordinary qualification
+request rule, and no coordinator reads a `DiagnosticProfile` or a
+`DiagnosticAuthorization`. What lives here is the reviewer-facing question,
+its vendor findings, its seams and the plan projections the stage reuses.
 """
 
 from __future__ import annotations
@@ -34,6 +42,7 @@ from ..models.service_qualification import (
     Q3_SERVER,
     Q3_SWITCH,
 )
+from ..models.verification import PrerequisiteKind
 from .configuration_compiler import configuration_plan_semantic_hash
 
 D_DHCP = "D-DHCP"
@@ -81,7 +90,13 @@ class DiagnosticStep:
 
 @dataclass(frozen=True)
 class DiagnosticSeam:
-    """One existing contract the proposed decomposition cannot use as it is."""
+    """One contract extension the profile exposes for explicit review.
+
+    `current` states whether the executable diagnostic has resolved the seam;
+    `required` and `minimal_extension` preserve what was reviewed. A resolved
+    seam remains listed because the planning profile records the design delta,
+    not because its draft authorization can gate executable code.
+    """
 
     id: str
     contract: str
@@ -117,12 +132,22 @@ class DiagnosticBudget:
 
 @dataclass(frozen=True)
 class DiagnosticAuthorization:
-    """The authority one dispatch would need. A draft grants nothing.
+    """Planning data about the authority one dispatch would need.
+
+    **This is not the execution gate.** It has no SHA or tree binding, it
+    enforces no ordered prerequisite closure, and nothing executable consults
+    it. The stages that actually run these questions -- `D-DHCP` and `D-WEB`
+    in `service_qualification.py` -- are gated by the ordinary
+    `QualificationAuthorization`, extended with the profile, tree, fixture
+    model, link port, ordered step, reserve and attempt bindings, and by every
+    existing repository, process, transport, ledger and record control. Making
+    this object `GRANTED` grants nothing there.
 
     A draft carries `status` `DRAFT`, `granted` false and no identity, so the
-    refusal gate declines it for several independent reasons at once. A granted
-    record has to name its reviewer, the exact profile, build, channel,
-    fixtures, steps, ceiling and every seam it approves.
+    planning-side refusal gate declines it for several independent reasons at
+    once. A granted record has to name its reviewer, the exact profile, build,
+    channel, fixtures, steps, ceiling and every seam it approves -- and that
+    is still a reviewer's worksheet, never an execution permission.
     """
 
     profile_id: str
@@ -284,25 +309,74 @@ def d_dhcp_static_only_plan(
     return projected
 
 
-def d_dhcp_pool_only_plan(plan: ServicePlan) -> tuple[ServicePlan, tuple[str, ...]]:
-    """Project E6 to the pool action alone and name the dependency it removes.
+@dataclass(frozen=True)
+class ProjectionRewrite:
+    """One exact change a projection made to what the compiler asserted.
 
-    The compiler makes the pool action depend on the enable action, so a plan
-    that keeps only the pool would carry a dependency on an action nobody runs.
-    Dropping that dependency changes what the compiler asserted about ordering,
-    which is why it is returned as an explicit list: the caller records it as
-    the seam it is, and `POOL_BEFORE_ENABLE` has to be approved before the step
-    it blocks may run.
+    A projection that only dropped rows states nothing here. Every rewrite
+    that changes an assertion -- a removed ordering dependency, a foundation
+    the executed configuration cannot satisfy, an expectation field, an
+    expectation rebound to another action -- is recorded as its own entry, so
+    a record can never present the modified plan as a fresh execution of the
+    unmodified one.
     """
+
+    kind: str
+    target: str
+    detail: str = ""
+
+    def as_text(self) -> str:
+        """Return the compact single-line form a record stores."""
+        return f"{self.kind}:{self.target}" + (f":{self.detail}" if self.detail else "")
+
+
+#: The identities the diagnostic projections carry beside the source plan's.
+D_DHCP_POOL_PROJECTION = "d-dhcp-pool-disabled"
+D_DHCP_ENABLE_PROJECTION = "d-dhcp-enable"
+D_DHCP_PROJECTION_VERSION = "2"
+
+
+def d_dhcp_pool_only_plan(
+    plan: ServicePlan,
+    *,
+    executed_configuration_action_ids: frozenset[str] | set[str] | tuple[str, ...] = (),
+) -> tuple[ServicePlan, tuple[ProjectionRewrite, ...]]:
+    """Project E6 to the pool action alone, configured while still disabled.
+
+    Three rewrites are needed, not one, and each is returned explicitly:
+
+    1. the compiler makes the pool action depend on the enable action in both
+       lists, so a plan that keeps only the pool would carry a dependency on
+       an action nobody runs;
+    2. the compiled plan's foundational requirements include the two client
+       `endpoint_dhcp_mode` actions. The executed E5 of this diagnostic is the
+       server's static address alone, so those foundations can never become
+       VERIFIED and the applicator would refuse before dispatching anything.
+       Only foundations whose configuration action the executed plan actually
+       contains survive;
+    3. the direct DHCP server-state expectation the compiler wrote expects
+       `enabled=True`, which is exactly what this stage must not assume. Its
+       expectation is rewritten to `enabled=False` and keeps every other pool
+       field, so the disabled stage verifies the configuration it wrote rather
+       than the transition the next stage makes.
+
+    Nothing here calls a setter, and no expectation is invented: the fields
+    are the compiler's own, with one boolean stated as the stage means it.
+    """
+    executed = frozenset(executed_configuration_action_ids)
     enable_ids = {
         item.id for item in plan.actions if isinstance(item, EnableServerDhcp)
     }
-    rewritten: set[str] = set()
+    rewrites: list[ProjectionRewrite] = []
     actions = []
     for item in plan.actions:
         if not isinstance(item, ConfigureServerDhcpPool):
             continue
-        rewritten |= enable_ids & (set(item.depends_on) | set(item.apply_dependencies))
+        removed = enable_ids & (set(item.depends_on) | set(item.apply_dependencies))
+        rewrites.extend(
+            ProjectionRewrite("dependency_removed", value, f"of:{item.id}")
+            for value in sorted(removed)
+        )
         actions.append(
             item.model_copy(
                 update={
@@ -318,32 +392,153 @@ def d_dhcp_pool_only_plan(plan: ServicePlan) -> tuple[ServicePlan, tuple[str, ..
                 deep=True,
             )
         )
-    return _projected_service_plan(plan, actions), tuple(sorted(rewritten))
+    projected, more = _projected_service_plan(
+        plan,
+        actions,
+        executed=executed,
+        projection_id=D_DHCP_POOL_PROJECTION,
+        expected_enabled=False,
+    )
+    return projected, tuple(rewrites) + more
 
 
-def d_dhcp_enable_only_plan(plan: ServicePlan) -> ServicePlan:
-    """Project E6 to the enable action alone, for the future-authorized step."""
+def d_dhcp_enable_only_plan(
+    plan: ServicePlan,
+    *,
+    executed_configuration_action_ids: frozenset[str] | set[str] | tuple[str, ...] = (),
+) -> tuple[ServicePlan, tuple[ProjectionRewrite, ...]]:
+    """Project E6 to the enable action alone and verify the transition to true.
+
+    The compiler attaches the DHCP server-state read-back to the pool action,
+    so an enable-only projection would carry no product verification at all.
+    The expectation is therefore rebound to the enable action with
+    `enabled=True`: the same reader, the same fields, asserting exactly the
+    transition this stage makes. The rebinding is returned as the rewrite it
+    is; it is never presented as what the compiler wrote.
+    """
+    actions = [item for item in plan.actions if isinstance(item, EnableServerDhcp)]
     return _projected_service_plan(
-        plan, [item for item in plan.actions if isinstance(item, EnableServerDhcp)]
+        plan,
+        actions,
+        executed=frozenset(executed_configuration_action_ids),
+        projection_id=D_DHCP_ENABLE_PROJECTION,
+        expected_enabled=True,
+        rebind_to=actions[0].id if actions else "",
     )
 
 
-def _projected_service_plan(plan: ServicePlan, actions: list) -> ServicePlan:
-    """Return the plan reduced to `actions` and to their direct read-backs.
+def _projected_prerequisites(
+    expectation, action_ids: set[str], *, rebind_to: str
+) -> tuple[list, tuple[ProjectionRewrite, ...]]:
+    """Keep only prerequisites the projected plan can still satisfy.
+
+    The compiler writes an `ACTION_APPLIED` prerequisite naming the action the
+    expectation was attached to, plus one `VERIFICATION_VERIFIED` per declared
+    dependency. A projection that keeps a subset of the actions leaves those
+    references pointing at rows nobody runs, and the applicator then reports
+    the read-back as DEPENDENCY_BLOCKED -- a stage that activates a process
+    and verifies nothing while looking like it verified something.
+
+    So a prerequisite whose reference the projection dropped is removed and
+    recorded; a rebound expectation's `ACTION_APPLIED` is rewritten to the
+    action it is now attached to, because that is the effect this read-back
+    actually follows.
+    """
+    kept = []
+    rewrites: list[ProjectionRewrite] = []
+    for prerequisite in expectation.verification_prerequisites:
+        if prerequisite.kind is PrerequisiteKind.ACTION_APPLIED:
+            if rebind_to and prerequisite.reference_id != rebind_to:
+                kept.append(prerequisite.model_copy(update={"reference_id": rebind_to}))
+                rewrites.append(
+                    ProjectionRewrite(
+                        "prerequisite_rebound",
+                        expectation.id,
+                        f"action_applied:{prerequisite.reference_id}->{rebind_to}",
+                    )
+                )
+                continue
+            if prerequisite.reference_id in action_ids:
+                kept.append(prerequisite)
+                continue
+        elif prerequisite.kind is not PrerequisiteKind.VERIFICATION_VERIFIED:
+            kept.append(prerequisite)
+            continue
+        rewrites.append(
+            ProjectionRewrite(
+                "prerequisite_removed",
+                expectation.id,
+                f"{prerequisite.kind.value}:{prerequisite.reference_id}",
+            )
+        )
+    return kept, tuple(rewrites)
+
+
+def _projected_service_plan(
+    plan: ServicePlan,
+    actions: list,
+    *,
+    executed: frozenset[str] = frozenset(),
+    projection_id: str = "",
+    expected_enabled: bool | None = None,
+    rebind_to: str = "",
+) -> tuple[ServicePlan, tuple[ProjectionRewrite, ...]]:
+    """Return the plan reduced to `actions`, and every rewrite that required.
 
     Only the direct DHCP server-state expectation survives. An attribution
     expectation needs a lease, and no step of this profile acquires one, so
     keeping it would schedule a verification the sequence excludes and budgets
     nothing for.
     """
+    rewrites: list[ProjectionRewrite] = []
     action_ids = {item.id for item in actions}
-    expectations = [
-        item
-        for item in plan.verification_expectations
-        if item.action_id in action_ids
-        and item.kind is ServiceVerificationKind.DHCP_SERVER_STATE
-    ]
+    expectations = []
+    for item in plan.verification_expectations:
+        if item.kind is not ServiceVerificationKind.DHCP_SERVER_STATE:
+            continue
+        if item.action_id not in action_ids and not rebind_to:
+            continue
+        update: dict[str, object] = {}
+        if rebind_to and item.action_id != rebind_to:
+            update["action_id"] = rebind_to
+            rewrites.append(
+                ProjectionRewrite(
+                    "expectation_rebound", item.id, f"{item.action_id}->{rebind_to}"
+                )
+            )
+        prerequisites, dropped = _projected_prerequisites(
+            item, action_ids, rebind_to=rebind_to
+        )
+        if dropped:
+            update["verification_prerequisites"] = prerequisites
+            rewrites.extend(dropped)
+        if expected_enabled is not None and item.expected.get("enabled") is not (
+            expected_enabled
+        ):
+            update["expected"] = {**item.expected, "enabled": expected_enabled}
+            rewrites.append(
+                ProjectionRewrite(
+                    "expectation_field",
+                    item.id,
+                    f"enabled={item.expected.get('enabled')}->{expected_enabled}",
+                )
+            )
+        expectations.append(
+            item.model_copy(update=update, deep=True) if update else item
+        )
     expectation_ids = {item.id for item in expectations}
+    foundations = []
+    for item in plan.foundational_requirements:
+        if executed and item.configuration_action_id not in executed:
+            rewrites.append(
+                ProjectionRewrite(
+                    "foundation_removed",
+                    item.configuration_action_id,
+                    f"kind:{item.kind}:device:{item.device_name}",
+                )
+            )
+            continue
+        foundations.append(item.model_copy(deep=True))
     services = [
         item.model_copy(
             update={
@@ -361,14 +556,24 @@ def _projected_service_plan(plan: ServicePlan, actions: list) -> ServicePlan:
         for item in plan.services
         if item.id in {row.service_id for row in actions}
     ]
-    return plan.model_copy(
-        update={
-            "services": services,
-            "actions": actions,
-            "verification_expectations": expectations,
-        },
-        deep=True,
-    )
+    update = {
+        "services": services,
+        "actions": actions,
+        "foundational_requirements": foundations,
+        "verification_expectations": expectations,
+    }
+    if projection_id:
+        update["id"] = f"{plan.id}/{projection_id}"
+        rewrites.append(
+            ProjectionRewrite(
+                "projection_identity",
+                f"{plan.id}/{projection_id}",
+                # The source identities are untouched: the projection is named
+                # beside them, never in place of them.
+                f"source:{plan.id}:semantic_hash_retained:{plan.semantic_hash}",
+            )
+        )
+    return plan.model_copy(update=update, deep=True), tuple(rewrites)
 
 
 POOL_BEFORE_ENABLE = "pool-configured-before-enable"
@@ -484,12 +689,19 @@ _D_DHCP_STEPS = (
         id="D3-a",
         effect=DiagnosticEffect.ACTIVATE,
         targets=(f"{Q3_SERVER}:EnableServerDhcp",),
-        # One operation, not two: the compiler attaches the DHCP server-state
-        # read-back to the pool action, so an enable-only projection carries no
-        # product verification. D3-b's native read observes the enabled boolean.
+        # Two operations: the enable dispatch and the DHCP server-state
+        # read-back the projection rebinds to it. The compiler attaches that
+        # read-back to the pool action, so an enable-only projection that
+        # dropped it would activate a process and verify nothing.
         purpose="d-dhcp:e6:enable_only",
-        retains=("dispatch", "result", "postcondition", "no_product_read_back"),
-        operations=1,
+        retains=(
+            "dispatch",
+            "result",
+            "postcondition",
+            "read_back",
+            "expectation_rebound",
+        ),
+        operations=2,
         separately_authorized=True,
     ),
     DiagnosticStep(
@@ -582,8 +794,8 @@ _D_WEB_SEAMS = (
         id=HTTP_MODE_NOT_READ,
         contract="the background client start evaluation",
         current=(
-            "only the HTTPS start reads `isHttps()`, so an HTTP-mode record "
-            "says `client_mode: not_read_back`"
+            "resolved in executable D-WEB: both starts read `isHttps()` and "
+            "retain the native mode and its type"
         ),
         required="the mode the client actually held when the request started",
         minimal_extension=(
@@ -594,7 +806,10 @@ _D_WEB_SEAMS = (
     DiagnosticSeam(
         id=POLL_DISCARDS_READINGS,
         contract="the bounded polling helper of the web reader",
-        current="only the last reading survives; the earlier ones are dropped",
+        current=(
+            "resolved in executable D-WEB: the diagnostic composition retains "
+            "every attempted inspection and every missed schedule slot"
+        ),
         required=(
             "each inspection with its timestamp, its outcome and the operation "
             "and time budget still remaining when it ran"
@@ -607,7 +822,10 @@ _D_WEB_SEAMS = (
     DiagnosticSeam(
         id=NO_LATE_CONTROL_READ,
         contract="the owned client's lifecycle between the deadline and release",
-        current="nothing reads the page again after the polling window closes",
+        current=(
+            "resolved in executable D-WEB: one separately labelled late read "
+            "runs before release without a second request"
+        ),
         required=(
             "one late content read, before release, that separates content "
             "arriving after the window from content never arriving"
@@ -620,7 +838,10 @@ _D_WEB_SEAMS = (
     DiagnosticSeam(
         id=LISTENER_PORT_NOT_READ,
         contract="the listener readiness reader",
-        current="it reports the enable flags and no port number",
+        current=(
+            "resolved in executable D-WEB: each listener reports its native "
+            "port value and type beside the enable flags"
+        ),
         required="the actual port number each handle is listening on",
         minimal_extension=(
             "add `getPortNumber()` per handle to the same evaluation, which "
@@ -894,8 +1115,12 @@ def d_web_profile(*, build: str, channels: tuple[str, ...]) -> DiagnosticProfile
             "listener cannot be separated: only layer-1 and layer-2 readiness "
             "is observable",
             "the measured link fields are carried as themselves and never as a "
-            "forwarding, spanning-tree or reachability observation: no STP "
-            "state reader and no port light-status enumeration is documented",
+            "forwarding or reachability observation. Two observations this "
+            "profile does not take DO exist and the executable D-WEB stage "
+            "takes them: the registered `show spanning-tree` query with the "
+            "maintained parser, and `Port::getLightStatus()` with its "
+            "documented enumeration (off=0, amber=1, green=2, blink=3), which "
+            "is auxiliary evidence and never a per-VLAN forwarding claim",
             "a timeout is never a negative listener claim",
             "no TLS property is asserted by an HTTPS-mode retrieval",
             "every owned client is named, released once and reported; an "

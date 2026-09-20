@@ -8,7 +8,8 @@ import re
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from time import monotonic
+from math import isfinite
+from time import monotonic, sleep
 
 from ...domain.enterprise.models.configuration import (
     ConfigurationAction,
@@ -38,6 +39,11 @@ from ...domain.enterprise.models.configuration_runtime import (
     RuntimeVerification,
 )
 from ...domain.enterprise.models.discovery import DeviceInitializationState
+from ...domain.enterprise.models.forwarding import (
+    AccessForwardingObservation,
+    AccessForwardingRow,
+)
+from ...domain.enterprise.services.access_forwarding import FORWARDING_STATES
 from ...shared.utils import same_interface_name
 from ..generator.configuration_renderer import PacketTracerIosRenderer
 from .configuration_runtime import PacketTracerConfigurationRuntime
@@ -91,6 +97,68 @@ _ENDPOINT_ACTIONS = (SetEndpointStaticAddress, SetEndpointDhcp)
 # budget expired after 25 complete reads.  Keep the wait bounded while giving
 # the independent forwarding read-back its own lifecycle-sized budget.
 TRUNK_FORWARDING_CONVERGENCE_TIMEOUT_SECONDS = 45.0
+
+#: Hard ceiling on the neutral access-forwarding observer. It is a sampling
+#: bound, not a retry budget: the first admissible sample ends the loop, and a
+#: sequence that never becomes forwarding is an observation, not a failure to
+#: keep trying. No mode toggle, PortFast write, link bounce or reconfiguration
+#: is ever dispatched to make it converge.
+ACCESS_FORWARDING_MAX_SAMPLES = 3
+ACCESS_FORWARDING_DEADLINE_SECONDS = 30.0
+ACCESS_FORWARDING_INTERVAL_SECONDS = 1.0
+
+
+def spanning_tree_sample_is_authoritative(
+    show: IosCommandResult, device_name: str
+) -> bool:
+    """Whether one registered STP sample may be read as evidence at all.
+
+    Execution, freshness, completeness and source identity are the four
+    dimensions the registered reader already separates. All four must hold
+    before any row of the output means anything, and this is the one place
+    that decides it for every STP consumer of this runtime.
+    """
+    return bool(
+        show.executed
+        and show.fresh_output_observed
+        and show.output_complete
+        and show.observed_device_name == device_name
+        and show.device_identity_provenance
+        == DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
+    )
+
+
+def spanning_tree_vlan_instance(output: str, vlan_id: int):
+    """Return the parsed instance of one VLAN, or None when it is absent."""
+    return next(
+        (item for item in parse_show_spanning_tree(output) if item.vlan_id == vlan_id),
+        None,
+    )
+
+
+def spanning_tree_interface_rows(instance, interface: str) -> tuple:
+    """Return every row of one instance that names the requested interface.
+
+    More than one row is an ambiguity the caller has to see: collapsing it to
+    the first match would turn two contradictory rows into one state.
+    """
+    return tuple(
+        item
+        for item in instance.interfaces
+        if same_interface_name(item.interface, interface)
+    )
+
+
+def _access_forwarding_row(instance, interface: str) -> AccessForwardingRow:
+    """Project one requested interface into its neutral observation row."""
+    rows = spanning_tree_interface_rows(instance, interface)
+    first = rows[0] if len(rows) == 1 else None
+    return AccessForwardingRow(
+        interface=interface,
+        matches=len(rows),
+        state=str(first.state).upper() if first is not None else "",
+        role=str(first.role) if first is not None else "",
+    )
 
 
 def voice_access_learning_extension_is_authorized(
@@ -226,11 +294,23 @@ class PacketTracerEnterpriseConfigurationRuntime:
         ) = None,
         endpoint_address_observer=None,
         endpoint_dhcp_mode_observer=None,
+        clock: Callable[[], float] = monotonic,
+        sleeper: Callable[[float], None] = sleep,
     ) -> None:
         """Bind inventory, mutation and observation channels for one run."""
         self._query_inventory = query_inventory
         self._send = send
         self._send_and_wait = send_and_wait
+        # Only the neutral access-forwarding observer reads these; every other
+        # waiter keeps the lifecycle helper it already used, so injecting them
+        # changes no existing path.
+        self._clock = clock
+        self._sleeper = sleeper
+        simulation_state_reader = (
+            simulation_time_observer
+            or SimulationTraceRuntime(send_and_wait).read_simulation_state
+        )
+        self._simulation_time_observer = simulation_state_reader
         self._endpoint_addresses = (
             endpoint_address_observer
             or PacketTracerEndpointAddressObserver(send_and_wait)
@@ -252,8 +332,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         self._ios_readiness = ios_readiness or self._wait_for_ios
         self._trunk_transition_observer = trunk_transition_observer
         self._pvst_learning_extension = BoundedPvstLearningExtension(
-            simulation_time_observer
-            or SimulationTraceRuntime(send_and_wait).read_simulation_state,
+            simulation_state_reader,
             interval_seconds=convergence_interval_seconds,
         )
         self._ready_ios_devices: set[str] = set()
@@ -395,44 +474,20 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 device_name,
                 OperationalQueryId.SHOW_SPANNING_TREE,
             )
-            authoritative = bool(
-                show.executed
-                and show.fresh_output_observed
-                and show.output_complete
-                and show.observed_device_name == device_name
-                and show.device_identity_provenance
-                == DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
-            )
+            authoritative = spanning_tree_sample_is_authoritative(show, device_name)
             states: dict[str, str] = {}
             vlan_present = False
             forward_delay_seconds = None
             if authoritative:
-                instance = next(
-                    (
-                        item
-                        for item in parse_show_spanning_tree(show.output)
-                        if item.vlan_id == voice_vlan
-                    ),
-                    None,
-                )
+                instance = spanning_tree_vlan_instance(show.output, voice_vlan)
                 vlan_present = instance is not None
                 if instance is not None:
                     forward_delay_seconds = instance.forward_delay_seconds
                     for expectation in expectations:
                         interface = expected_interfaces[expectation.id]
-                        row = next(
-                            (
-                                item
-                                for item in instance.interfaces
-                                if same_interface_name(
-                                    item.interface,
-                                    interface,
-                                )
-                            ),
-                            None,
-                        )
-                        if row is not None:
-                            states[expectation.id] = str(row.state).upper()
+                        rows = spanning_tree_interface_rows(instance, interface)
+                        if rows:
+                            states[expectation.id] = str(rows[0].state).upper()
             latest.update(
                 {
                     "show": show,
@@ -622,6 +677,141 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 convergence=report,
             )
         return results
+
+    def observe_access_forwarding(
+        self,
+        device_name: str,
+        vlan_id: int,
+        interfaces: Sequence[str],
+        *,
+        max_samples: int = ACCESS_FORWARDING_MAX_SAMPLES,
+        deadline_seconds: float = ACCESS_FORWARDING_DEADLINE_SECONDS,
+        interval_seconds: float = ACCESS_FORWARDING_INTERVAL_SECONDS,
+    ) -> AccessForwardingObservation:
+        """Observe one switch/VLAN group's exact interfaces, neutrally.
+
+        Same registered dispatch, same parser, same authority core as the
+        Voice observer, and nothing of its semantics: no `voice_vlan_id`, no
+        `voice_forwarding` field, no PVST learning extension and no inherited
+        simulation-time window. The three bounds are separate and all of them
+        are hard: a sample count, a wall-clock deadline read from the injected
+        clock, and whatever the caller's operation ledger still allows, which
+        stops the loop by refusing the next dispatch.
+
+        Sampling stops at the first sample whose every requested interface is
+        forwarding. A sequence that never gets there is returned as it was
+        observed; nothing is reconfigured to make it converge.
+        """
+        requested = tuple(dict.fromkeys(str(item) for item in interfaces if item))
+        if (
+            isinstance(max_samples, bool)
+            or not isinstance(max_samples, int)
+            or max_samples < 0
+        ):
+            raise ValueError("access forwarding max_samples must be a non-negative int")
+        numeric_bounds = (deadline_seconds, interval_seconds)
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not isfinite(float(value))
+            or float(value) < 0
+            for value in numeric_bounds
+        ):
+            raise ValueError(
+                "access forwarding time bounds must be finite and non-negative"
+            )
+        ceiling = max_samples
+        deadline_window = float(deadline_seconds)
+        interval = float(interval_seconds)
+        started = self._clock()
+        deadline = started + deadline_window
+        samples = 0
+        show: IosCommandResult | None = None
+        rows: tuple[AccessForwardingRow, ...] = ()
+        vlan_present = False
+        authoritative = False
+        deadline_reached = False
+        while samples < ceiling:
+            if self._clock() >= deadline:
+                deadline_reached = True
+                break
+            show = self._ios.execute(
+                device_name,
+                OperationalQueryId.SHOW_SPANNING_TREE,
+            )
+            samples += 1
+            # An answer that arrived after the bounded window is late evidence
+            # about this sample, not authority. It is kept and it grants nothing.
+            deadline_reached = self._clock() >= deadline
+            authoritative = spanning_tree_sample_is_authoritative(show, device_name)
+            vlan_present = False
+            rows = ()
+            if authoritative:
+                instance = spanning_tree_vlan_instance(show.output, vlan_id)
+                vlan_present = instance is not None
+                if instance is not None:
+                    rows = tuple(
+                        _access_forwarding_row(instance, interface)
+                        for interface in requested
+                    )
+            if rows and all(
+                item.matches == 1 and str(item.state).upper() in FORWARDING_STATES
+                for item in rows
+            ):
+                break
+            if samples >= ceiling:
+                break
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                deadline_reached = True
+                break
+            self._sleeper(min(interval, remaining))
+        return AccessForwardingObservation(
+            switch_name=device_name,
+            vlan_id=vlan_id,
+            requested_interfaces=requested,
+            rows=rows,
+            executed=bool(show is not None and show.executed),
+            fresh_output_observed=bool(show is not None and show.fresh_output_observed),
+            output_complete=bool(show is not None and show.output_complete),
+            observed_device_name=(show.observed_device_name if show else ""),
+            device_identity_provenance=(
+                show.device_identity_provenance if show else ""
+            ),
+            vlan_present=vlan_present,
+            samples=samples,
+            max_samples=ceiling,
+            deadline_seconds=deadline_window,
+            elapsed_ms=int(max(0.0, self._clock() - started) * 1000),
+            deadline_reached=deadline_reached,
+            simulation_time=(
+                self._simulation_time_text() if samples else "not_sampled"
+            ),
+            failure_reason=(
+                (show.failure_reason if show is not None else "no_sample_taken")
+                or ("" if authoritative else "stp_sample_not_authoritative")
+            ),
+        )
+
+    def _simulation_time_text(self) -> str:
+        """Report the simulation-time reader, when the composition has one.
+
+        Wall-clock time, simulation time and the operation budget are three
+        separate bounds. This runtime only ever bounds the first and the
+        third; the second is read when a reader exists and is named `absent`
+        when none was composed, which is a fact about this run rather than a
+        claim that simulation time stood still.
+        """
+        reader = self._simulation_time_observer
+        if reader is None:
+            return "absent"
+        try:
+            observed = reader()
+        except Exception as exc:
+            return f"unreadable:{type(exc).__name__}"
+        if not getattr(observed, "observed", False):
+            return "unobserved"
+        return f"sim_time:{observed.sim_time};frames:{observed.frames}"
 
     def read_dhcp_pool(
         self,

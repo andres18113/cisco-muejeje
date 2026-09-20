@@ -25,11 +25,17 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..models.execution import DispatchFact, ResultFact
+from ..models.forwarding import AccessForwardingObservation
 from ..models.service_qualification import (
     Q3_OBSERVED_NATIVE_DEFAULT_POOL,
     MeasurementConclusion,
 )
 from ..models.service_runtime import ObservationFact, RuntimeServiceVerification
+from .access_forwarding import (
+    access_forwarding_admission,
+    access_forwarding_facts,
+    interpret_port_light,
+)
 
 SUPPORTED = MeasurementConclusion.SUPPORTED_IN_SAMPLE
 NEGATIVE = MeasurementConclusion.NEGATIVE_OBSERVED
@@ -801,14 +807,18 @@ def assess_page_tables(
 # -- M-HTTPS-2 -----------------------------------------------------------------
 
 #: Observations the repaired listener procedure names instead of inventing.
+#:
+#: Three entries were removed because they were false. Both client starts now
+#: read `isHttps()`. A usable registered STP observation exists through
+#: `OperationalQueryId.SHOW_SPANNING_TREE` with the maintained parser, and
+#: `Port::getLightStatus()` has a documented enumeration. The latter two are
+#: not read by *this* procedure, which is a scope statement, not an absence:
+#: what Q1 does not observe here is named below, and what the diagnostic stage
+#: observes lives in its own record.
 LISTENER_UNAVAILABLE_OBSERVATIONS = (
     "request_url_not_read_back:no_documented_http_client_url_getter",
-    "http_client_mode_not_read_back:http_reader_does_not_call_isHttps",
-    "switch_port_stp_state:no_documented_reader",
-    "port_light_status:undocumented_enum",
-)
-_MODE_CONFIRMED_CAUSES = frozenset(
-    {"no_response_within_deadline", "client_go_false", "marker_present_before_request"}
+    "switch_port_stp_state:not_read_by_this_procedure",
+    "port_light_status:not_read_by_this_procedure",
 )
 
 
@@ -836,27 +846,19 @@ def fetch_outcome(row: RuntimeServiceVerification | None) -> str:
 def fetch_client_mode(row: RuntimeServiceVerification | None, scheme: str) -> str:
     """Name what the production reader established about the client's mode.
 
-    The HTTPS start payload is validated in a fixed order -- client
-    ownership, shape, `isHttps()` after `setHttps(true)`, then `go()` -- so a
-    row that reached a later exit has had its mode confirmed. The HTTP reader
-    does not read the mode at all, and its golden script is not changed to
-    make it.
+    Both start paths now validate in one order -- client ownership, the native
+    `isHttps()` value, then `go()` and its native return. The observed mode is
+    carried on every later exit, so this rule reads that fact directly rather
+    than inferring a mode from how far the reader happened to get.
     """
-    if scheme != "https":
-        return "not_read_back"
     if row is None:
         return "not_run"
-    if row.observation is ObservationFact.CONTRADICTED and row.cause:
-        return "https_not_confirmed"
-    past_mode_check = (
-        row.observation is ObservationFact.OBSERVED
-        or (row.observation is ObservationFact.CONTRADICTED and not row.cause)
-        or (
-            row.observation is ObservationFact.INCONCLUSIVE
-            and row.cause in _MODE_CONFIRMED_CAUSES
-        )
-    )
-    return "https_confirmed_by_isHttps" if past_mode_check else "unobserved"
+    observed = str(row.observed.get("client_mode") or "")
+    if observed == scheme:
+        return f"{scheme}_confirmed_by_isHttps"
+    if observed in ("http", "https") or row.cause == f"{scheme}_mode_not_confirmed":
+        return f"{scheme}_not_confirmed"
+    return "unobserved"
 
 
 def listener_toggle_established(
@@ -951,12 +953,34 @@ READINESS_PORT_KEYS = (
     "port_up_type",
     "protocol_up",
     "protocol_up_type",
+    "light_status",
+    "light_status_type",
     "ip",
     "mask",
 )
 
-#: The fields a network attempt needs to be true before it may start.
+#: The listener fields one readiness reading carries. The port numbers come
+#: from `getPortNumber()`; their `*_type` companions keep an absent reader
+#: apart from a number the engine actually returned.
+READINESS_LISTENER_KEYS = (
+    "http_enabled",
+    "https_enabled",
+    "https_process_enabled",
+    "http_port_number",
+    "http_port_number_type",
+    "https_port_number",
+    "https_port_number_type",
+)
+
+#: The fields a network attempt needs to be true before it may start. The link
+#: light is deliberately absent: it is auxiliary evidence, and requiring or
+#: accepting it here would turn a lamp into a forwarding permission.
 READINESS_REQUIRED_BOOLEANS = ("found", "linked", "port_up", "protocol_up")
+
+
+def _readiness_value(value: Any) -> bool:
+    """Whether one readiness field may be copied into the record as itself."""
+    return isinstance(value, (bool, str, int)) or value is None
 
 
 def _readiness_facts(reading: ProbeReading | None) -> dict[str, Any]:
@@ -971,18 +995,24 @@ def _readiness_facts(reading: ProbeReading | None) -> dict[str, Any]:
         if not isinstance(value, Mapping):
             ports[str(name)[:80]] = {"malformed": True}
             continue
-        ports[str(name)[:80]] = {
+        row = {
             key: value.get(key)
             for key in READINESS_PORT_KEYS
-            if isinstance(value.get(key), (bool, str)) or value.get(key) is None
+            if _readiness_value(value.get(key))
         } | {"error": str(value.get("error") or "")[:120]}
+        # The documented meaning of the light is resolved here, from the raw
+        # value and its `typeof` alone. An unknown code stays unknown.
+        row["light_status_name"] = interpret_port_light(
+            row.get("light_status"), str(value.get("light_status_type") or "absent")
+        )
+        ports[str(name)[:80]] = row
     facts: dict[str, Any] = {"observed": True, "ports": ports}
     listeners = reading.payload.get("listeners")
     if isinstance(listeners, Mapping):
         facts["listeners"] = {
             key: listeners.get(key)
-            for key in ("http_enabled", "https_enabled", "https_process_enabled")
-            if isinstance(listeners.get(key), bool) or listeners.get(key) is None
+            for key in READINESS_LISTENER_KEYS
+            if _readiness_value(listeners.get(key))
         }
     return facts
 
@@ -1493,3 +1523,251 @@ def default_pool_differences(
             if first[name].get(key) != second[name].get(key):
                 differences.append(f"default_pool_changed:{name}.{key}")
     return tuple(differences)
+
+
+# -- D-WEB and D-DHCP ----------------------------------------------------------
+
+#: Every diagnostic conclusion carries this: what these stages measure is a
+#: boundary or a transition, not a product invariant. Observing it confirms no
+#: capability and learns no allowlist from it.
+DIAGNOSTIC_SCOPE = "diagnostic_observation_confirms_no_product_capability"
+#: A ping changes ARP, MAC and timing state. Any later success on the same
+#: fixture is therefore not attributable to the boundary under investigation
+#: unless a governed comparison changed only that boundary.
+ACTIVE_STIMULUS = "ping_is_an_active_stimulus:arp_mac_and_timing_state_changed"
+
+
+def assess_access_forwarding(
+    observation: AccessForwardingObservation,
+    *,
+    label: str,
+    lights: Mapping[str, Any] | None = None,
+) -> Assessment:
+    """Judge one bounded per-VLAN forwarding sample of the exact interfaces.
+
+    The admission rule decides; this only states what the decision supports.
+    An admitted sample supports forwarding for those interfaces, in that VLAN,
+    in that sample -- never reachability, never a service, and never a later
+    sample. A refused one names its dimension and supports nothing at all.
+    """
+    admission = access_forwarding_admission(observation)
+    facts = {label: access_forwarding_facts(observation, admission)}
+    if lights is not None:
+        # Kept beside the rows, never merged into them: a green light and a
+        # non-forwarding row are contemporaneous and contradictory, and both
+        # stay in the record exactly as they were observed.
+        facts[f"{label}_port_lights"] = dict(lights)
+    limitations = [
+        DIAGNOSTIC_SCOPE,
+        "forwarding_permission_is_per_vlan_per_interface_per_sample",
+        "light_status_and_port_up_are_auxiliary_and_grant_no_forwarding",
+    ]
+    if not admission.admitted:
+        return Assessment(
+            INCONCLUSIVE,
+            facts=facts,
+            causes=[f"{admission.dimension}", *admission.causes],
+            limitations=limitations,
+        )
+    return Assessment(SUPPORTED, facts=facts, limitations=limitations)
+
+
+def assess_forwarding_probe(
+    evidence: Mapping[str, Any] | None,
+    *,
+    forwarding_admitted: bool,
+) -> Assessment:
+    """Judge one bind-before-ping probe without promoting it past ICMP.
+
+    A verified probe establishes that one attributed ICMP exchange between two
+    validated bindings reached its destination. It says nothing about TCP,
+    about a listener, or about the HTTP request that follows it. An
+    unattributed or drifted probe establishes nothing at all.
+    """
+    facts = {"probe": dict(evidence or {})}
+    limitations = [
+        DIAGNOSTIC_SCOPE,
+        ACTIVE_STIMULUS,
+        "icmp_reachability_is_not_tcp_or_http_service",
+    ]
+    if not evidence:
+        return Assessment(
+            INCONCLUSIVE,
+            facts=facts,
+            causes=["probe_not_run"],
+            limitations=limitations,
+        )
+    if not forwarding_admitted:
+        # The ping may have run; what it cannot do is stand in for the
+        # forwarding evidence the stage refused to grant.
+        limitations.append("ping_taken_without_admitted_forwarding_evidence")
+    status = str(evidence.get("status") or "")
+    if not evidence.get("bindings_stable"):
+        return Assessment(
+            INCONCLUSIVE,
+            facts=facts,
+            causes=[f"probe_not_attributed:{status or 'unknown'}"],
+            limitations=limitations,
+            outcome_unknown=status == "unobservable",
+        )
+    if status != "verified":
+        return Assessment(
+            NEGATIVE if status == "failed" else INCONCLUSIVE,
+            facts=facts,
+            causes=[f"probe_{status or 'unknown'}"],
+            limitations=limitations,
+        )
+    return Assessment(SUPPORTED, facts=facts, limitations=limitations)
+
+
+def assess_client_timeline(
+    row: RuntimeServiceVerification | None,
+    *,
+    marker: str,
+    schedule: Sequence[float],
+) -> Assessment:
+    """Judge one instrumented fetch of the real owned background client.
+
+    The conclusion is the reader's own observation fact. What this adds is the
+    boundary statement: a retrieved marker supports the whole path for this
+    sample, and anything else leaves the listener, request, client and reader
+    boundary unresolved rather than blaming one of them.
+    """
+    limitations = [DIAGNOSTIC_SCOPE, "timeout_is_never_a_negative_listener_claim"]
+    if row is None:
+        return Assessment(
+            INCONCLUSIVE,
+            facts={"fetch": {"observed": False}},
+            causes=["fetch_not_run"],
+            limitations=limitations,
+        )
+    steps = [item.model_dump(mode="json") for item in row.trace]
+    performed = [item for item in steps if item["performed"]]
+    late = [item for item in steps if item["label"] == "late_control"]
+    facts = {
+        "fetch": {
+            "outcome": fetch_outcome(row),
+            "observation": row.observation.value,
+            "cause": row.cause,
+            "marker": marker,
+            "schedule": [float(item) for item in schedule],
+            "inspections": len(
+                [item for item in performed if item["label"] == "inspect"]
+            ),
+            "missed_slots": len([item for item in steps if not item["performed"]]),
+            "late_read": late[0] if late else None,
+            "timeline": steps,
+            "inputs": dict(row.observed),
+            "limitations": list(row.limitations),
+        }
+    }
+    if (
+        late
+        and late[0]["content_changed"]
+        and row.observation is not (ObservationFact.OBSERVED)
+    ):
+        limitations.append("late_content_is_late_evidence_not_success_in_window")
+    if row.observation is ObservationFact.OBSERVED:
+        return Assessment(SUPPORTED, facts=facts, limitations=limitations)
+    if row.observation is ObservationFact.CONTRADICTED:
+        return Assessment(
+            CONTRADICTED,
+            facts=facts,
+            causes=[row.cause or "fresh_without_marker"],
+            limitations=limitations,
+        )
+    limitations.append("listener_request_client_and_reader_boundary_unresolved")
+    return Assessment(
+        INCONCLUSIVE,
+        facts=facts,
+        causes=[row.cause or row.observation.value],
+        limitations=limitations,
+    )
+
+
+def assess_native_default_interval(
+    *,
+    label: str,
+    before: DefaultPoolSnapshot,
+    after: DefaultPoolSnapshot,
+    intervention: str,
+    native_calls: Sequence[str] = (),
+    fields_written: Sequence[str] = (),
+) -> Assessment:
+    """State what one adjacent pair of native readings identifies.
+
+    A transition between two snapshots identifies the INTERVAL between them.
+    It does not identify one native call inside that interval, and it says
+    nothing about the backend algorithm that produced it. When the interval
+    contains an intervention whose own footprint writes more than one field,
+    the broader intervention is named here rather than a narrower cause being
+    claimed.
+    """
+    differences = default_pool_differences(before, after)
+    facts = {
+        label: {
+            "before": before.label,
+            "after": after.label,
+            "intervention": intervention,
+            "native_calls": list(native_calls),
+            "fields_written": list(fields_written),
+            "differences": list(differences),
+            "observed": before.observed and after.observed,
+        }
+    }
+    limitations = [
+        DIAGNOSTIC_SCOPE,
+        f"transition_identifies_the_interval_not_one_call:{intervention}",
+    ]
+    if len(fields_written) > 1:
+        limitations.append(
+            "intervention_writes_more_than_one_field:" + ",".join(fields_written)
+        )
+    if not (before.observed and after.observed):
+        return Assessment(
+            INCONCLUSIVE,
+            facts=facts,
+            causes=[
+                f"native_default_unobserved:{before.label}"
+                if not before.observed
+                else f"native_default_unobserved:{after.label}"
+            ],
+            limitations=limitations,
+            outcome_unknown=True,
+        )
+    if differences:
+        return Assessment(
+            NEGATIVE,
+            facts=facts,
+            causes=[f"native_default_changed:{item}" for item in differences],
+            limitations=limitations,
+        )
+    return Assessment(SUPPORTED, facts=facts, limitations=limitations)
+
+
+def assess_baseline_drift(
+    first: DefaultPoolSnapshot, second: DefaultPoolSnapshot
+) -> Assessment:
+    """Distinguish autonomous drift from a transition following an effect.
+
+    Two adjacent readings with no intervention between them. A difference
+    here is the workspace moving on its own, which invalidates every later
+    attribution in this run rather than being attributed to the first effect.
+    """
+    assessment = assess_native_default_interval(
+        label="baseline_control",
+        before=first,
+        after=second,
+        intervention="none:adjacent_baseline_readings",
+    )
+    if assessment.conclusion is NEGATIVE:
+        return Assessment(
+            CONTRADICTED,
+            facts=assessment.facts,
+            causes=["autonomous_native_default_drift", *assessment.causes],
+            limitations=[
+                *assessment.limitations,
+                "no_later_transition_in_this_run_is_attributable_to_an_effect",
+            ],
+        )
+    return assessment

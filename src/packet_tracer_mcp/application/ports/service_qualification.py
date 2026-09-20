@@ -9,9 +9,9 @@ the coordinator.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from ...domain.enterprise.models.execution import DispatchFact, ResultFact
 from ...domain.enterprise.models.service_qualification import QualificationRecord
@@ -64,6 +64,34 @@ class QualificationRecordPort(Protocol):
 
     def complete(self, record: QualificationRecord) -> str:
         """Write the terminal record; it is never rewritten afterwards."""
+
+    def attempt_exists(self, attempt_id: str) -> bool:
+        """Whether a record already names this attempt identity.
+
+        Only an executable diagnostic stage asks, and it fails closed: a store
+        that cannot answer refuses the run rather than assuming the attempt is
+        new. A new SHA, a new process and a new run id do not create an
+        attempt; the authority's attempt identity does, exactly once.
+        """
+
+
+class ForwardingProbePort(Protocol):
+    """One bind-before-ping probe, already serialized to typed evidence.
+
+    The coordinator never sees the executor's own result type: the adapter
+    that composes the probe also serializes it, so no infrastructure value
+    crosses into the application layer.
+    """
+
+    def probe_once(
+        self,
+        *,
+        source_device_name: str,
+        destination_endpoint: Any,
+        source_endpoint: Any = None,
+        expected_reachable: bool = True,
+    ) -> Mapping[str, Any]:
+        """Observe both bindings, one typed ping and both bindings again."""
 
 
 @dataclass(frozen=True)

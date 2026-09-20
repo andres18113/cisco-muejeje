@@ -99,10 +99,27 @@ def test_both_prepared_profiles_carry_an_ungranted_draft(profiles):
         )
 
 
-def test_no_executable_stage_reaches_a_prepared_profile(profiles):
-    """A profile is not a stage: no stage definition names one."""
+def test_a_prepared_profile_is_never_the_execution_gate(profiles):
+    """The stages that run these questions are gated by the stage authority.
+
+    Both questions are now executable, so the profile ids and the stage names
+    deliberately coincide. What must not coincide is the authority: a profile
+    carries a planning draft with no SHA, no tree and no ordered closure, and
+    nothing executable reads it.
+    """
     stages = {item.stage.value for item in STAGE_DEFINITIONS.values()}
-    assert {item.id for item in profiles}.isdisjoint(stages)
+    assert {item.id for item in profiles} <= stages
+    for profile in profiles:
+        draft = profile.authorization
+        assert (draft.status, draft.granted) == ("DRAFT", False)
+        # The planning draft binds none of the identity the executable stage
+        # requires, which is exactly why it cannot serve as one.
+        assert not hasattr(draft, "sha") and not hasattr(draft, "tree")
+        definition = STAGE_DEFINITIONS[QualificationStage(profile.id)]
+        assert definition.executable and definition.profile_id == profile.id
+        # The stage's own step ids are its own; a profile step name selects
+        # nothing in the stage that runs the question.
+        assert set(definition.step_ids).isdisjoint(profile.step_ids)
 
 
 @pytest.mark.parametrize(
@@ -168,12 +185,17 @@ def test_activating_the_process_is_never_part_of_the_ordinary_selection(profiles
 
 
 def test_the_dhcp_sequence_fits_its_proposed_ceiling_with_its_reserve():
-    """43 of 60, or 41 without the activation, with the 11-operation reserve."""
+    """44 of 60, or 41 without the activation, with the 11-operation reserve.
+
+    The activation costs two operations, not one: the enable-only projection
+    rebinds the direct server-state read-back to the enable action, so the
+    step that activates the process also verifies the transition it makes.
+    """
     profile = d_dhcp_profile(build=Q3_PACKET_TRACER_BUILD, channels=CHANNELS)
     steps = sum(item.operations for item in profile.steps)
-    assert steps == 32
+    assert steps == 33
     assert profile.budget.reserve_operations == Q3.reserve_operations == 11
-    assert profile.worst_case_operations() == steps + 11 == 43
+    assert profile.worst_case_operations() == steps + 11 == 44
     without_activation = tuple(
         item.id for item in profile.steps if not item.separately_authorized
     )
@@ -246,38 +268,93 @@ def test_the_compiled_pool_action_really_does_depend_on_the_enable_action(contra
     assert enable.id in pool.apply_dependencies
 
 
-def test_the_pool_only_projection_names_the_dependency_it_rewrites(contract):
-    """D2-a is blocked on exactly the dependency the projection removed."""
-    projected, rewritten = d_dhcp_pool_only_plan(contract.service_plan)
+def _server_e5_action_ids(contract):
+    """Return the E5 action ids the server-only static projection executes."""
+    projected = d_dhcp_static_only_plan(contract.configuration_plan)
+    return frozenset(item.id for item in projected.actions)
+
+
+def test_the_pool_only_projection_records_every_rewrite_it_makes(contract):
+    """Removing the enable edge is not enough, and each change is named.
+
+    Three assertions the compiled plan forces: the pool action depends on the
+    enable action, the plan's foundational requirements include two client
+    DHCP-mode actions a server-only E5 never executes, and the direct
+    server-state expectation was written for `enabled=True`.
+    """
+    executed = _server_e5_action_ids(contract)
+    projected, rewrites = d_dhcp_pool_only_plan(
+        contract.service_plan, executed_configuration_action_ids=executed
+    )
     enable = next(
         item
         for item in contract.service_plan.actions
         if isinstance(item, EnableServerDhcp)
     )
-    assert rewritten == (enable.id,)
+    kinds = {item.kind for item in rewrites}
+    assert kinds == {
+        "dependency_removed",
+        "foundation_removed",
+        "expectation_field",
+        "projection_identity",
+    }
+    assert [item.target for item in rewrites if item.kind == "dependency_removed"] == [
+        enable.id
+    ]
     assert [item.action_type.value for item in projected.actions] == [
         "configure_server_dhcp_pool"
     ]
     assert [item.depends_on for item in projected.actions] == [[]]
     assert [item.apply_dependencies for item in projected.actions] == [[]]
-    assert [item.kind for item in projected.verification_expectations] == [
-        ServiceVerificationKind.DHCP_SERVER_STATE
+    # Only the server's own addressing foundation survives; the two client
+    # DHCP-mode foundations cannot become VERIFIED from a server-only E5.
+    assert [item.kind for item in projected.foundational_requirements] == [
+        "endpoint_address"
     ]
+    surviving = {
+        item.configuration_action_id for item in projected.foundational_requirements
+    }
+    assert surviving and surviving <= executed
+    (expectation,) = projected.verification_expectations
+    assert expectation.kind is ServiceVerificationKind.DHCP_SERVER_STATE
+    assert expectation.expected["enabled"] is False
+    # Every other pool field is the compiler's own, unchanged.
+    source = next(
+        item
+        for item in contract.service_plan.verification_expectations
+        if item.id == expectation.id
+    )
+    assert {k: v for k, v in expectation.expected.items() if k != "enabled"} == {
+        k: v for k, v in source.expected.items() if k != "enabled"
+    }
+    # The source identity is preserved beside the projection identity.
+    assert projected.id.endswith("/d-dhcp-pool-disabled")
+    assert projected.source_configuration_hash == (
+        contract.service_plan.source_configuration_hash
+    )
     profile = d_dhcp_profile(build=Q3_PACKET_TRACER_BUILD, channels=CHANNELS)
     assert profile.step("D2-a").blocked_by == (POOL_BEFORE_ENABLE,)
     seam = next(item for item in profile.seams if item.id == POOL_BEFORE_ENABLE)
     assert "depends_on" in seam.contract
 
 
-def test_the_enable_only_projection_carries_no_product_read_back(contract):
-    """D3-a costs one operation because the read-back belongs to the pool row."""
-    projected = d_dhcp_enable_only_plan(contract.service_plan)
-    assert [item.action_type.value for item in projected.actions] == [
-        "enable_server_dhcp"
-    ]
-    assert projected.verification_expectations == []
+def test_the_enable_only_projection_rebinds_the_read_back_to_the_enable(contract):
+    """An enable that verifies nothing would activate a process blindly."""
+    executed = _server_e5_action_ids(contract)
+    projected, rewrites = d_dhcp_enable_only_plan(
+        contract.service_plan, executed_configuration_action_ids=executed
+    )
+    (action,) = projected.actions
+    assert action.action_type.value == "enable_server_dhcp"
+    (expectation,) = projected.verification_expectations
+    assert expectation.kind is ServiceVerificationKind.DHCP_SERVER_STATE
+    assert expectation.action_id == action.id
+    assert expectation.expected["enabled"] is True
+    rebound = [item for item in rewrites if item.kind == "expectation_rebound"]
+    assert len(rebound) == 1 and rebound[0].target == expectation.id
     profile = d_dhcp_profile(build=Q3_PACKET_TRACER_BUILD, channels=CHANNELS)
-    assert profile.step("D3-a").operations == 1
+    assert profile.step("D3-a").operations == 2
+    assert "expectation_rebound" in profile.step("D3-a").retains
     assert "enabled_boolean" in profile.step("D3-b").retains
 
 
@@ -413,10 +490,15 @@ def test_the_web_link_fields_are_never_a_forwarding_or_stp_claim():
             "last_sample",
             "reason",
         }
-    assert any(
-        "no STP state reader and no port light-status enumeration is documented" in item
-        for item in profile.limitations
-    )
+    # The profile used to claim neither observation was documented. Both are:
+    # the limitation now states that this prepared sequence does not take
+    # them and names where they are taken instead.
+    text = " ".join(profile.limitations)
+    assert "no STP state reader" not in text
+    assert "undocumented" not in text
+    assert "show spanning-tree" in text
+    assert "off=0, amber=1, green=2, blink=3" in text
+    assert "executable D-WEB stage" in text
 
 
 def test_the_web_profile_states_what_it_cannot_separate():
@@ -436,6 +518,7 @@ def test_every_web_seam_names_a_minimal_extension_not_a_copied_writer():
     for seam in profile.seams:
         assert seam.contract and seam.current and seam.required
         assert seam.minimal_extension
+        assert seam.current.startswith("resolved in executable D-WEB:")
     blocked = {item for step in profile.steps for item in step.blocked_by}
     assert blocked == set(profile.seam_ids)
 
