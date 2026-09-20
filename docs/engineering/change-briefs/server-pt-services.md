@@ -273,14 +273,15 @@ may conclude. S1b stays gated and no model is selected.
 | setup | 4 fixture devices at 2 each, 3 links at 2 each, fixture identity | 15 |
 | setup | E5 endpoints, E6 enable HTTP and HTTPS | 2 |
 | experiment | M-HTTPS-1: write H, read both, write S, read both | 4 |
-| experiment | M-HTTPS-2: readiness, marker page, HTTP positive (4), HTTP off, HTTPS positive (4), HTTP negative (4), HTTPS off, HTTPS negative (4) | 20 |
+| experiment | M-HTTPS-2: the bounded readiness gate (4), marker page, HTTP positive (4), HTTP off, HTTPS positive (4), HTTP negative (4), HTTPS off, HTTPS negative (4) | 23 |
 | finalization reserve | 4 device removals at 2 each, 2 restoration reads | 10 |
-| | **planned worst case** | **53** |
+| | **planned worst case** | **56** |
 
 A failed positive spends one readiness read instead of the steps it stops, so
 every early exit costs less than the complete path. Block C drops M-DNS-3's
-operation and adds no reconciliation read, so seven operations of slack
-remain; they are not a retry entitlement.
+operation and adds no reconciliation read; Block F's readiness gate then takes
+up to four reads instead of one, so the figure the stage definition computes is
+56 and four operations of slack remain. They are not a retry entitlement.
 
 ## Block C — review correction delta on `6e78e74` (risk L)
 
@@ -299,7 +300,7 @@ historical records and the `0850de3` attributions are untouched. Risk stays
 | S2-05.1 (R-MAIL-04, R-EVT-06/07) | The send's prerequisite is the **absence of an own key** on the claim object. A present key whose value is not a readable claim (`op_id` and `nonce` strings) is unknown ownership: no send, no overwrite, no adoption, no reset (`subject_claim_unreadable`, decision row 21). A readable claim keeps the own-replay/foreign distinction. | `enterprise_service_runtime.py` (`_send_lines`, `_allowed_skips`) | Repeated invocations of the generated script over the persistent Node engine: valid own claim, valid foreign claim and each of `null`, `false`, `0`, `""` under the key. Every present inadmissible entry: zero sends and a byte-equivalent held claim. One send for a genuinely missing key, and no retry after a lost answer. |
 | S2-06.1 (R-MAIL-04 supporting) | A mailbox scan row is used only when its counters are coherent with the bounded scanner that produced them: non-negative counts, `scanned == min(count, MAILBOX_SCAN_LIMIT)`, `matches + mismatched <= scanned`, `truncated == (count > scanned)`, and all counters at their defaults when the recipient account was not found. An incoherent payload is MALFORMED (`mailbox_scan_incoherent:<relation>`) and establishes neither presence nor absence. | `enterprise_service_runtime.py` (`_mailbox_scan_incoherence`, `_verify_smtp_delivered`) | The real reader over controlled payloads and over its normal generated-script path: zero scanned with a match, negative counters, a count over the bound, conflicting truncation, missing fields, a valid match inside a truncated scan and valid no-match results. `supporting_evidence_only`, the absent POP3 claim, unrelated-message privacy and the send's original uncertainty are unchanged, and no new field-format claim is made. |
 | Q1R-7 | The page procedure separates three cases: no mutation attempted, an attempted effect reconciled by a complete read of both handles, and an attempted effect that remains unresolved. Only the third sets `outcome_unknown`, which stops every further experimental effect and leaves only the owned finalization. A setter return, a caught exception and an inconclusive table conclusion are none of them a reconciliation. The first causal error is preserved and no write is retried. | `service_qualification_evidence.py` (`assess_page_tables`), `qualify_server_services.py` | Generated probe, pure assessor and coordinator: a baseline read failure runs no setter and attributes no unknown effect; a page change followed by a throwing setter admits no later page setter, listener toggle, fetch or unrelated experimental effect; a lost or unreadable necessary read after an attempted write stops conservatively while a loss before any effect does not; the ordinary shared and separate models still complete; finalization, record persistence, ownership and budget limits are unchanged. |
-| Q1R-5.1 | The repaired Q1 stage does not repeat M-DNS-3. It is declared OMITTED with the reason naming the `0850de3` sample that already measured it, and the stage's accounting drops its operation. Nothing relabels that sample as new support, and the reviewed probe and rule stay available for a future authorized measurement. | `service_qualification.py` (`_q1`), `qualify_server_services.py` (`_q1`), `docs/qa/server-services-qualification.md` | The stage-definition test pins the worst case at 53 of 60 with the 10-operation reserve intact; a coordinator run records M-DNS-3 as OMITTED with its reason and dispatches no resolver read. |
+| Q1R-5.1 | The repaired Q1 stage does not repeat M-DNS-3. It is declared OMITTED with the reason naming the `0850de3` sample that already measured it, and the stage's accounting drops its operation. Nothing relabels that sample as new support, and the reviewed probe and rule stay available for a future authorized measurement. | `service_qualification.py` (`_q1`), `qualify_server_services.py` (`_q1`), `docs/qa/server-services-qualification.md` | The stage-definition test pins the worst case at 56 of 60 with the 10-operation reserve intact; a coordinator run records M-DNS-3 as OMITTED with its reason and dispatches no resolver read. |
 
 ### Invariants added by this block
 
@@ -803,6 +804,223 @@ focused review addendum at 14,426 bytes, SHA-256
 `4a5f96a18671101b743385c78224bb444becb8d3977310c4a0e3d7b21f5442a5`,
 linked to entry 4 without replacing the original package or any prior record.
 
+## Block H — A02 evidence closure and diagnostic preparation (risk L)
+
+Review disposition on `a02c1e0` (tree `fdec9ee`) names one demonstrated
+evidence-persistence defect and asks for two prepared diagnostics. This block
+closes the defect, corrects two projection statements that the delivered
+records contradict, preserves the closed campaign, and records two proposed
+measurement profiles that nothing here authorizes to dispatch. It introduces no
+new transport, bridge endpoint, executor, `.pts`, capability promotion or
+attempt counter, and it resets nothing.
+
+Risk stays **L**: the change touches durable run evidence and the qualification
+execution path.
+
+### Problem and intended outcome
+
+`_q3_snapshot_default` appended each bounded native-default reading to
+`_Execution.default_pool_snapshots`, an in-memory list. That list reached the
+record only when a later `conclude()` projected it into a measurement's facts.
+On the stopped Q3 branch the final reading is taken *after* the last
+`conclude()` and after `finish("Q3_SETUP")`, so it reached nothing durable.
+The delivered Q3 record `q3-2026-09-20T03-27-46Z-51ff55e7` proves the loss: its
+ledger counts operation 32 as an accepted, correlated `dispatch_and_wait`, its
+`purpose` is empty because `finish()` had already cleared the ledger label, and
+the pool values it returned are not recoverable from the record. The same
+record's M-DHCP-1 row carries the limitation
+`native_default_pool_coexists_and_is_never_modified` beside its own cause
+`q3_native_default_changed:default_pool_changed:serverPool.end`.
+
+The outcome is one authoritative durable sink for every default reading, a
+precise operation purpose assigned before dispatch, an explicit
+not-observed entry for a reading that could not be afforded or performed, and
+prose that distinguishes *no explicit setter targeted the native default* from
+*the default's values did not change*.
+
+### Requirements and acceptance
+
+| ID | Requirement | Acceptance |
+| --- | --- | --- |
+| H1 | Every acquired native-default reading is written to one authoritative sink on the record itself — `QualificationRecord.native_default_pool` — at the moment it is taken, whatever phase the run is in and whether or not it has stopped. Each entry preserves the label, the observed flag, the unobserved cause, the bounded pool rows, the intended-pool presence, the exact raw payload, the differences against the first reading, the purpose dispatched under it and the ledger sequence of the counted operation. The measurement projection reads that sink instead of a parallel list. | A real coordinator/store run stops early on a changed default and then returns a third, deliberately different value on the final reading; the reloaded terminal record carries all three observations with their labels, purposes and operation sequences, the third differs from `after_setup`, and the primary cause is unchanged. |
+| H2 | The reading is dispatched under `q3:native_default:<label>`, set before the call and never inferred afterwards from an ordinal. A reading the remaining allowance cannot pay for, or that the ledger refuses, is recorded as an explicit unobserved entry with its own cause and no counted operation; no additional bridge operation is added to repair documentation, and the stage budgets are unchanged. | Record purposes contain no empty label for a counted default reading; a ceiling that leaves nothing for the final reading yields `default_pool_snapshot_not_affordable` with `operation_seq` 0 and no extra dispatch; ledger totals stay inside the pinned Q3 worst case of 59. |
+| H3 | A failing final reading or a failing record write is additional evidence. It never replaces the first primary failure, never authorizes a new experimental effect, and leaves owned finalization bounded and running. | With the store failing the terminal write, the returned record still holds the three observations, `persist_error` is set, the primary failure is the original default change, and no experimental dispatch follows; with the final reading malformed, errored or unobserved, the entry states the cause and the primary failure is still the original one. |
+| H4 | `native_default_pool_coexists_and_is_never_modified` is replaced by `no_explicit_setter_targeted_the_native_default`. The Q1 planned-worst-case projection is corrected from 53 to the 56 the stage definition and its contract test compute. Historical records, their bytes and their hashes are unchanged, and an external review limitation states that the pre-cleanup payload of the delivered Q3 record is missing and is never reconstructed. | The limitation token appears in a new run's setup row and nowhere claims immutability; the brief's Q1 table sums to 56; the archived campaign files reverify byte-for-byte against their recorded digests. |
+| H5 | Two diagnostic profiles, D-DHCP and D-WEB, exist as typed offline records built from the existing runner, product writers, native readers and operation ledger. Each carries its proposed sequence, exact target/effect list, per-step observation contract, budget arithmetic including finalization, its declared seams and a draft authorization whose status is `DRAFT` and whose `granted` flag is false. Dispatch is refused for any profile whose authorization is not an exact-scope granted record. | The profiles are generated from the real Q3 product contract and the installed vendor reference; the refusal function returns a non-empty reason for both drafts and for a granted record whose stage, fixture set, step set, budget or build differs; no stage definition, CLI path or tool registration can reach them. |
+
+### Architecture and affected contracts
+
+- `QualificationRecord` gains `native_default_pool`, a list of
+  `DefaultPoolObservation`. It is the single sink; `_Execution` keeps no
+  parallel list and `_native_default_facts` projects from the record. Durability
+  uses the existing write-ahead machinery: each reading is followed by a
+  `native_default:<label>` transition through `QualificationRecordStore`, and
+  the terminal `complete()` write carries whatever the last transition did not.
+  No new persistence subsystem and no event-sourcing layer is introduced.
+- `_q3_default_read` in `qualify_server_services.py` owns the whole reading:
+  affordability, purpose, dispatch, classification through the existing
+  `default_pool_snapshot` classifier, ledger association and persistence. The
+  domain classifier and the difference rule are unchanged.
+- `service_diagnostic_profiles.py` is a new pure domain service. It owns the
+  two profiles, the plan projections they propose, the seams they declare and
+  the fail-closed dispatch gate. It performs no I/O, registers no tool and is
+  reachable from no executable stage.
+
+### Invariants added by this block
+
+30. An observation that was performed is durable evidence of the run, not of
+    the measurement that happened to be open when it was taken. A stop, a
+    concluded procedure and finalization change what may be *done* next; they
+    never change what was *seen*.
+31. An operation's purpose is decided before its dispatch. A purpose
+    reconstructed afterwards from a sequence number is an inference, not a
+    record.
+32. A reading that could not be afforded or that the ledger refused is
+    explicitly not observed. Absent evidence is never repaired by dispatching
+    another operation for the sake of the record.
+33. A prepared diagnostic is a question, not a contract. Its expected
+    transition is the dependent variable; observing it confirms no new product
+    invariant and learns no allowlist from it.
+
+### Test design and budget
+
+Causal RED comes first through the real coordinator, the real record store and
+the stub engine's own native-state and call log as the oracle:
+`tests/test_service_qualification_coordinator.py` for the terminal-evidence
+regression, the unaffordable reading, the failing terminal write and the
+unchanged success-path trace; `tests/test_service_qualification_contracts.py`
+for the record model, the projection and the two diagnostic profiles. The
+pinned stage worst cases do not move: Q3 stays `17 + 31 + 11 = 59` inside
+60 / 1200 and Q1 stays `19 + 27 + 10 = 56` inside 60 / 600, because this block
+adds no bridge operation to either stage.
+
+### D-DHCP — proposed sequence to identify when the native default changes
+
+The dependent variable is the native `serverPool` transition that the delivered
+record observed between `before_e5` and `after_setup`: network `192.0.2.0`,
+mask `255.255.255.0`, start `192.0.2.0` and end `192.0.3.255`, with the name,
+the 512 maximum, the zero gateway and the zero DNS unchanged. The old record
+cannot say which operation caused it, because eleven counted operations sit
+between the two readings — one client read, three readiness reads, four E5
+calls and three E6 calls — and the bracket attributes the transition to none of
+them.
+
+| Step | Effect | Targets | Observation retained | Ops |
+| --- | --- | --- | --- | --- |
+| admission | observe | executable build, workspace baseline | build identity, baseline inventory | 2 |
+| fixtures | create | `__MCP_E6Q_SRV`, `__MCP_E6Q_PC1`, `__MCP_E6Q_PC2`, `__MCP_E6Q_SW` and the three links | creation disposition per device and link, fixture identity | 15 |
+| D0-a | observe | `DhcpServerMain` on `__MCP_E6Q_SRV/FastEthernet0` | typed baseline admission: disabled boolean process, one exact native row | 1 |
+| D0-b | observe | `FastEthernet0` of both PCs | client mode and MAC proving no client is activated | 1 |
+| D0-c | observe | the three fixture links | bounded readiness gate, at most four reads in thirty seconds | 4 |
+| D1-a | configure | the server's `SetEndpointStaticAddress` only | typed mutation row and its read-back; no `SetEndpointDhcp`, no DHCP setter | 2 |
+| D1-b | observe | the same DHCP process | default reading after the server address alone, with differences against D0-a | 1 |
+| D2-a | configure | `ConfigureServerDhcpPool` only, process still disabled | typed mutation row and DHCP server-state read-back | 2 |
+| D2-b | observe | the same DHCP process | both pools, intended presence, differences against D0-a and D1-b | 1 |
+| D3-a | activate | `EnableServerDhcp` — **future explicit authorization only** | typed mutation row and read-back | 2 |
+| D3-b | observe | the same DHCP process | default reading after the process is enabled | 1 |
+| D4 | observe | the same DHCP process | pre-cleanup reading, always attempted, always recorded | 1 |
+| finalization | release | run bag, four removals, two restoration reads | release rows, restoration proof | 11 |
+| | | | **worst case** | **44** |
+
+Proposed ceiling 60 operations / 900 seconds with the Q3 reserve of 11
+operations / 180 seconds. Without D3 the sequence costs 41. The sequence
+creates no client acquisition, registers no DHCP event observer, calls no
+default-pool setter, removal or reset, and never rewrites the default's values
+to restore them. An unknown effect, a wrong subject identity, a malformed or
+incomplete inventory or a foreign fixture stops the sequence where it stands.
+
+**Declared seam.** The compiled Q3 service plan makes
+`svc/server-dhcp-pool/…` depend on `svc/enable-server-dhcp/…` in both
+`depends_on` and `apply_dependencies`, so the existing writer cannot configure
+the pool while the process stays disabled. D2 therefore requires one minimal
+reviewed extension: a projection that drops the enable action and records that
+it rewrote exactly that dependency, declared on the profile and blocking D2
+until a reviewer approves it. The alternative — copying `addPool` and the pool
+setters into the diagnostic — is refused.
+
+### D-WEB — proposed narrow diagnostic for the client reader
+
+The delivered Q1 record shows four readiness reads ending with all six exact
+ports up, both page handles reading the new marker at 53 bytes, and the HTTP
+positive returning `unestablished:inconclusive:no_response_within_deadline`
+with `client_mode: not_read_back`. The HTTPS positive and both negatives never
+ran. That is neither a demonstrated HTTP or HTTPS failure nor evidence that a
+longer timeout would change it: the runner's fetch timeout and its polling
+interval are both `HTTP_TIMEOUT_SECONDS`, so the bounded poll performs exactly
+two inspections, the second at the deadline.
+
+Three alternatives have to be separated: the network path, the listener or the
+request, and the polling or the reader.
+
+| Step | Effect | Targets | Observation retained | Ops |
+| --- | --- | --- | --- | --- |
+| admission | observe | executable build, workspace baseline | build identity, baseline inventory | 2 |
+| fixtures | create | the four devices, three links, E5 endpoints, E6 listener enable | creation rows, fixture identity, listener application rows | 17 |
+| W0-a | observe | `HttpServer` and `HttpsServer` on `__MCP_E6Q_SRV` | `isEnabled`, `isHttpsEnabled` and `getPortNumber` for each handle, plus the page read-back through both | 1 |
+| W0-b | observe | the three fixture links | bounded readiness gate, at most four reads | 4 |
+| W1 | configure | the existing `index.html` through both handles | marked page written and read back through both handles | 1 |
+| W2-a | request | one owned background client on `__MCP_E6Q_PC1`, HTTP mode | owner device, `isHttps()` mode, content before the request, the selected URL and path, and the `go()` result | 1 |
+| W2-b | observe | the same owned client | two timestamped bounded inspections with the remaining operation and time budget of each | 2 |
+| W2-c | observe | the same owned client | one late control read after the deadline and before release, timestamped | 1 |
+| W2-d | release | the same owned client | found, deleted, present-after and error | 1 |
+| W3 | request | a second owned client on `__MCP_E6Q_PC1`, HTTPS mode, same page and marker | the same fields as W2 | 5 |
+| W4-a | observe | both listeners | states and port numbers after the attempts | 1 |
+| W4-b | observe | the three fixture links | endpoint readiness after the attempts | 1 |
+| finalization | release | four removals, two restoration reads | release rows, restoration proof | 10 |
+| | | | **worst case** | **48** |
+
+Proposed ceiling 60 operations / 600 seconds with the Q1 reserve of 10
+operations / 120 seconds. Every owned client is named, released once and
+reported; no client is recreated, no fetch is retried automatically, no
+unconditional wait is added, PortFast and forwarding configuration are not
+touched, the transport is not switched and no event is registered.
+
+The discriminating comparison is the same fixture, the same page and the same
+marker under two client modes. A retrieved HTTPS marker beside an unretrieved
+HTTP marker places the boundary at the HTTP listener or request; neither
+retrieved, with both listeners enabled on their read-back port numbers and all
+six ports up, places it at the network path or at the reader; a late control
+read that finds the marker after the deadline places it at the polling window.
+A timeout remains a timeout: it is never a negative listener claim, and no TLS
+property is asserted.
+
+**Vendor reference audit.** Checked against the Extensions API reference
+installed with the measured Packet Tracer build, which labels itself 8.1.0.
+Documentation is not measurement, and nothing below is a support claim.
+
+| Member | Reference contract | Disposition |
+| --- | --- | --- |
+| `HttpClient::getOwnerDevice()` | inherited from `Process` | newly read; proves which device owns the client |
+| `HttpClient::isHttps()` | returns true for HTTPS mode, false for HTTP | already used by the HTTPS reader; newly read in HTTP mode, which closes `http_client_mode_not_read_back` |
+| `HttpClient::go(string)` | creates a request to a URL; returns whether it succeeded | unchanged; success is about the request, never about a response |
+| `HttpClient::cancel()` | cancels the request and closes the TCP connection | available; not used, because it discriminates none of the three alternatives |
+| `HttpClient::http_get/http_post/http_put/http_delete` | signatures only — no parameter names, semantics or return description | refused; an undocumented signature is never guessed |
+| `HttpClient::onStart(string)`, `onDone(string, ip, HttpResponseType, string)` | IPC events; `HttpResponseType` has no page in the installed reference | refused here; the only contract that could separate the network path from the listener needs its own qualification and its own authorization |
+| `HttpServer::getPortNumber()` | returns the port number of the HTTP service | newly read for both handles |
+| `HttpServer::getUsername()`, `getPassword()` | documented readers | deliberately not read; this order excludes credential work |
+| `HttpServer::onRequest(string, TcpConnection)` | IPC event | refused; same reason as `onDone` |
+| `HttpsServer::isHttpsEnabled()` | returns whether the HTTPS service is enabled | already read; retained per handle beside `isEnabled` |
+
+**Stated uncertainty.** With documented read-only members alone, the network
+path and the listener cannot be separated: only layer-1 and layer-2 readiness
+is observable, `onRequest` and `onDone` are unqualified event sources, and
+`HttpResponseType` is undocumented in the installed reference. The profile says
+so instead of inferring a listener refusal from silence.
+
+### Draft authorizations — no granted status
+
+Both drafts are recorded with `status: DRAFT` and `granted: false`. Neither
+names an attempt ordinal, because neither belongs to
+`SERVER-PT-D02-Q3-Q1-AUTOFIX-01`, whose Q3 3-of-3 and Q1 2-of-2 attempts are
+spent and whose counters this block does not touch. Each draft requires, before
+any dispatch: an independent reviewer's exact-scope approval naming this
+sequence; a clean delivery commit with exact-SHA CI; an operator-confirmed
+dedicated Packet Tracer process; the measured build and one fixed channel; and,
+for D-DHCP, a separate decision on the declared plan-dependency seam. The
+refusal gate is fail-closed: an absent, draft, differently scoped or
+differently budgeted authorization refuses, and an unobservable value is
+unknown, never permission.
+
 ## Test design
 
 | Level | Scope | Files |
@@ -955,7 +1173,7 @@ either one.
 
 | # | Decision | Current disposition |
 | --- | --- | --- |
-| 1 | **Q1 budget.** | 60 / 600 with the 10-operation reserve; the repaired worst case is 53 once Block C stops repeating M-DNS-3. No LIVE authorization follows from it. |
+| 1 | **Q1 budget.** | 60 / 600 with the 10-operation reserve; the worst case the stage definition computes is 56, after Block C stopped repeating M-DNS-3 and Block F added the bounded readiness gate. No LIVE authorization follows from it. |
 | 2 | **Q0 slack.** | Unchanged: 20 / 300; one spare operation is not a retry entitlement. |
 | 3 | **Mail evidence under the fallback.** | `SMTP_DELIVERED` is supporting evidence only. Promotion of any mail operation needs a Q2 record at its own SHA; an event path needs a safe zero-event release first. |
 | 4 | **Claim scope on HTTP.** | The claim bounds duplicates only within one evaluation. HTTP separate-evaluation atomicity is INCONCLUSIVE, so the claim is a candidate mechanism, not a qualified one. |
@@ -1184,3 +1402,22 @@ re-run on this commit.
 - **Carried from `0850de3`:** Q0 observer cleanup stays UNKNOWN, pid 28652 was
   still running at the batch handoff, and any later LIVE work needs a fresh,
   operator-confirmed dedicated process.
+- **The delivered Q3 pre-cleanup payload is missing, and stays missing.**
+  Operation 32 of `q3-2026-09-20T03-27-46Z-51ff55e7` was dispatched and
+  correlated, but the reading it returned reached no durable field, so the
+  pool values held at that moment are unrecoverable. Block H stops the loss
+  for future runs; it does not reconstruct this one. The payload is never
+  assumed equal to `after_setup`, and the exhausted attempt is never rerun to
+  fill it. The record's bytes and hashes are unchanged.
+- **Which operation moved the native default is still unknown.** The change
+  is observed between two readings eleven operations apart. D-DHCP is the
+  proposed way to find out; it is a draft with no granted authorization, and
+  the transition remains a dependent variable, not a product invariant.
+- **The Q1 HTTP boundary is still unlocated.** The single HTTP positive ended
+  with no observed content change inside its deadline, and the HTTPS positive
+  and both negatives never ran. D-WEB is prepared and ungranted; with only
+  documented read-only members, the network path and the listener cannot be
+  separated, because `onRequest`, `onDone` and `HttpResponseType` are
+  unqualified or undocumented in the installed reference.
+- **Both campaign attempt pools are spent.** Q3 3 of 3 and Q1 2 of 2 are
+  consumed. No SHA, nonce, diagnostic label or restart creates another.
