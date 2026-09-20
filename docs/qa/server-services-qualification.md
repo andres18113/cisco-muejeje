@@ -35,7 +35,7 @@ qualify anything.
 | Q2 | declarative only | none | 60 / 900 s | not planned | requires S2 and a Q0 record |
 | Q3 | executable; file channel only on build 9.0.1.0858 | Server-PT `192.0.2.10/24`, two DHCP PC-PT clients, 2960-24TT on exact Fa0/1..3 links | 60 / 1200 s | 59 (17 setup + 31 measurement/application + 11 reserve) | M-DHCP-1, 2, 4, 5, 6; one-address pool `MCP_E6Q_DHCP`; guarded acquisitions (M-DHCP-3 omitted: the event source and its release are not qualified) |
 | D-DHCP | executable diagnostic; file channel only on build 9.0.1.0858 | the Q3 fixture, with no client ever activated | 50 / 900 s | 45 (17 setup + 17 measurement + 11 reserve) | M-DDHCP-0..4: the disabled baseline with its drift control, the server's static addressing alone, the intended pool while still disabled, the enable, the pre-cleanup reading |
-| D-WEB | executable diagnostic; file channel only on build 9.0.1.0858 | the Q1 fixture, statically addressed | 68 / 900 s | 63 (19 setup + 34 measurement + 10 reserve) | M-DWEB-0..5: the listener and endpoint boundaries, the per-VLAN forwarding state of the exact switch ports, the marked page, one attributed ping, one instrumented fetch, the same boundaries again |
+| D-WEB | executable diagnostic; file channel only on build 9.0.1.0858 | the Q1 fixture, statically addressed | 80 / 900 s | 74 (19 setup + 45 measurement + 10 reserve) | M-DWEB-0..5: the listener and endpoint boundaries, the per-VLAN forwarding state of the exact switch ports, the marked page, one attributed ping, one instrumented fetch, the same boundaries again |
 
 The two `D-` stages are **diagnostics**: each asks an open question and
 measures a boundary or a transition. What they observe confirms no product

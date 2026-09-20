@@ -37,15 +37,39 @@ the shared stage rules are in
 
 ## Budget arithmetic
 
-Measured against the engine stub with the real components, not summed from
-placeholder steps. One endpoint E5 batch is one `send` plus one verification
-read per expectation; one E6 service action is one dispatch plus one read-back
-per expectation; one native default reading is one dispatch; one
-`show spanning-tree` sample is four counted calls (the terminal state read, the
-dispatch, one output convergence read and the attribution read); one typed ping
-is three; one bind-before-ping probe is seven. Each bounded neutral-forwarding
-observation also performs one separate simulation-state read after its STP
-sample loop; that read never extends the wall-clock or sample bounds.
+Every figure is the worst case of the composed path, enforced by a bound the
+code applies, not the fastest path an instantly answered stub happened to
+take. One endpoint E5 batch is one `send` plus one verification read per
+expectation; one E6 service action is one dispatch plus one read-back per
+expectation; one native default reading is one dispatch.
+
+Two compositions are not one call each, and the earlier figures counted them
+as though they were:
+
+- A **registered `show spanning-tree` sample** expands into session
+  preparation, the dispatch, however many output-convergence reads the
+  terminal needs, the attribution read, and pager continuation or
+  cancellation; a dispatch proved corrupt is retried up to three times. None
+  of that is capped by a deadline the caller reads only after the query
+  returns, so the sample is capped where the calls actually happen: the
+  observation dispatches through a counting channel that carries the
+  remaining deadline into each `send_and_wait` and refuses past
+  **six calls per sample**. Four was the intended path. A sample that needs
+  more is returned as explicitly incomplete, with
+  `failure_reason=sample_call_budget_exhausted`, and grants no forwarding
+  permission. Each observation also takes one separate simulation-state read
+  after its sample loop, which never extends the wall-clock or sample bounds.
+- A **typed ping** is one dispatch, then a poll of the terminal until the
+  statistics appear or the safe 30 s window closes, then one attribution
+  read. At the 0.25 s interval that poll is tens of counted calls, not the
+  one the old three-call figure assumed. The diagnostic composition therefore
+  sets `max_inspections=6`; the window is unchanged and is spread across those
+  six reads, so the last one lands at or after the deadline and a slow
+  destination is still classified from its own statistics. A poll that ends on
+  the cap reports `ping_inspection_budget_exhausted` and never an unreachable
+  destination it did not wait for. A **bind-before-ping probe** is therefore
+  two endpoint reads, that ping, and two endpoint reads after it: **twelve**,
+  not seven.
 
 | D-DHCP | Operations |
 | --- | --- |
@@ -69,22 +93,30 @@ sample loop; that read never extends the wall-clock or sample bounds.
 | fixture identity read | 1 |
 | E5 endpoint batch, E6 listener enables | 2 |
 | M-DWEB-0: listener reading, readiness ceiling | 5 |
-| M-DWEB-1: two four-call forwarding samples, one simulation-state read | 9 |
+| M-DWEB-1: two bounded forwarding samples, one simulation-state read | 13 |
 | M-DWEB-2: marker page | 1 |
-| M-DWEB-3: bind-before-ping probe | 7 |
+| M-DWEB-3: bind-before-ping probe | 12 |
 | M-DWEB-4: start, three scheduled inspections, late read, release | 6 |
-| M-DWEB-5: listener reading, one four-call forwarding sample, one simulation-state read | 6 |
+| M-DWEB-5: listener reading, one bounded forwarding sample, one simulation-state read | 8 |
 | finalization reserve: four removals, two restoration reads | 10 |
-| **planned worst case** | **63** of a proposed **68 / 900 s** |
+| **planned worst case** | **74** of a proposed **80 / 900 s** |
 
-Both ceilings are new, proposed limits for review, not a raise of any existing
-one: Q0 stays 20 / 300, Q1 stays 60 / 600, Q3 stays 60 / 1200. The five-call
-slack above each planned worst case covers one additional convergence round in
-every nested terminal loop the stage contains. The ledger, not the plan, is the
-hard bound: a call past the ceiling is refused before dispatch, and the
-finalization reserve is never spent on an effect. The old 43/47 planning
-figures of the prepared profiles and the old 60-operation ceiling are not
-evidence that any of this fits.
+Both ceilings are new, proposed limits for review, not a raise of any granted
+one: Q0 stays 20 / 300, Q1 stays 60 / 600, Q3 stays 60 / 1200, and no
+historical Q budget is touched. D-WEB's draft ceiling moves from 68 to 80
+because the corrected worst case is 74; D-DHCP's 50 is unchanged, because
+nothing it does polls a terminal. The slack above each planned worst case is
+ordinary headroom for the single-call reads, not an allowance for a nested
+loop: every loop is now bounded by its own declared budget, so the figures
+above are ceilings the code enforces rather than expectations it hopes to meet.
+
+The ledger, not the plan, is the hard bound: a call past the ceiling is refused
+before dispatch, and the finalization reserve is never spent on an effect. A
+contract test pins each per-stage figure, the sample budget the runtime
+enforces and the inspection bound the production probe composes, so a number
+here that the code does not apply fails the suite. The old 43/47 planning
+figures of the prepared profiles, the old 60-operation ceiling and the earlier
+63-operation D-WEB figure are not evidence that any of this fits.
 
 ## The authority a diagnostic stage binds
 
@@ -104,16 +136,44 @@ reads.
 | Step selection | `--authorized-step` (repeat) | a subset of the stage's steps, in the stage's declared order, with every prerequisite present before the step that needs it; reordered, duplicated, incomplete and activation-only selections refuse |
 | Cleanup reserve | `--authorized-reserve-operations` | exactly the stage's finalization reserve |
 | Fresh instance | `--instance-token` | 32 lowercase hex, naming the dedicated Packet Tracer process this attempt runs against |
-| Process identity | `--authorized-process-id`, `--authorized-process-path` | exact PID and executable path of the one locally observed Packet Tracer process; its product/file version must report the authorized build, at admission and again after finalization |
+| Process identity | `--authorized-process-id`, `--authorized-process-path` | exact PID and executable path of the one locally observed Packet Tracer process; its product/file version must report the authorized build, and its creation identity must be observable, at admission, before every effect and again after finalization. A PID names a slot the operating system reuses, so a reading without a creation identity is unknown and never a match |
 | Attempt identity | `--attempt-id` | 32 lowercase hex, distinct from the instance token, and never used by any stored record. A new SHA, a new process and a new run id do not create an attempt |
 
-The runner also performs and fails closed on three local controls before
-constructing a transport: the record store must state that the attempt identity
-is new; every boundary the selected stage needs must be composed; and the
-read-only lifecycle reader must observe exactly the authorized PID/path/build
-with no `req_*` or `res_*` mailbox artifacts. A fresh heartbeat is only
-liveness. It cannot select a process, clear a stale request, or prove an empty
-workspace.
+The runner also performs and fails closed on four local controls before
+constructing a transport: it must take an exclusive campaign claim in the
+shared mailbox scope and atomically reserve this attempt identity there; the
+record store must also state that the identity is new; every boundary the
+selected stage needs must be composed; and the read-only lifecycle reader must
+observe exactly the authorized PID/path/build, with an observable creation
+identity, and no `req_*` or `res_*` mailbox artifacts. A fresh heartbeat is
+only liveness. It cannot select a process, clear a stale request, or prove an
+empty workspace.
+
+### What the claim proves, and what it does not
+
+Three obligations are separate and none of them implies another.
+
+1. **One cooperating Python campaign writer.** The claim is one exclusive file
+   creation beside the mailbox, because the mailbox is what two checkouts
+   share and a per-checkout record directory is not: `FileBridge` names every
+   request `pid_boot_seq` precisely so concurrent writers coexist, so nothing
+   in that protocol excludes a second campaign. An existing claim refuses
+   admission and is never removed, never aged out and never reclaimed, since a
+   holder that is still running is indistinguishable from one that died. The
+   attempt identity is reserved by the same exclusive creation and stays spent
+   after release.
+2. **The permitted Packet Tracer process.** The pairing below binds a process
+   incarnation, not a PID and a path, because the operating system reuses
+   process identifiers and a replacement started into the same slot polls the
+   same mailbox.
+3. **Ownership of the object being mutated.** The existing disposable-workspace
+   observation and the nonce-checked run bag decide this, per object.
+
+Neither a claim nor a pairing establishes whole-run exclusion on its own, and
+this contract does not claim it. What is **not** established, and what keeps
+LIVE blocked rather than being described as excluded: no control here proves
+that some other program is not mutating the same workspace by another route.
+That receiver boundary is not observable within the seams this delivery uses.
 
 ### Prepared lifecycle preflight for a later authorized run
 
@@ -129,26 +189,36 @@ workspace observer proves the active workspace is disposable and empty. A
 process change, nonempty mailbox, existing semantic device/link or unreadable
 workspace refuses; no heartbeat or authorization text overrides those facts.
 
-### The pairing is confirmed again on the way out
+### The pairing is re-checked before every effect, and again on the way out
 
 Binding a process before the transport exists says nothing about which
-process answered afterwards. Packet Tracer can be closed or can crash
-mid-run, and the replacement polls the same mailbox, so the owned removals
-and both restoration reads would be served by an instance the authorization
-never named. After finalization the runner therefore takes the same
-read-only local reading a second time and stores it beside the first.
+process answers afterwards. Packet Tracer can be closed or can crash mid-run,
+and the replacement polls the same mailbox, so the owned removals would be
+served by an instance the authorization never named -- in whatever workspace
+that instance has open.
 
-It costs no bridge operation, so an exhausted budget cannot suppress it and
-the cleanup reserve is never borrowed for it. It still launches, stops and
-deletes nothing: an artifact left in the mailbox is reported, not cleaned,
-because it is exactly what a later instance could re-execute. A changed
-PID, path or build, an unreadable second reading, or any remaining `req_*`
-or `res_*` artifact is recorded as engine residue, drops
-`restoration_proven` and leaves the run `stopped`. The measurements are
-kept as taken; what they lose is the claim that the cleanup evidence
-describes the authorized instance. The promotion gate reads both readings,
-so a diagnostic that cannot show the same pairing at both ends supports
-nothing.
+The runner therefore asks again before each procedure and, above all, before
+owned cleanup. **A removal is never dispatched to a receiver it cannot prove.**
+When the pairing or the campaign claim has been lost, finalization deletes
+nothing and releases nothing: every removal is recorded `not_attempted` with
+its cause, the fixtures are reported as residue for an operator to reconcile,
+`restoration_proven` is false and the run ends `stopped`. Detecting a
+replacement afterwards would invalidate the report; it would not undo the
+deletion, and the report is not the thing being protected.
+
+The loss is sticky. Authority is never re-acquired inside a run, because a
+window in which some other process answered cannot be closed retroactively.
+The first loss is kept as the primary failure and later ones are recorded
+separately.
+
+The same read-only reading is still taken once more after finalization and
+stored beside the first, so an artifact left in the mailbox is reported. Every
+one of these checks enumerates local processes, reads one small file and lists
+one directory: no bridge operation, so an exhausted budget cannot suppress
+them and the cleanup reserve is never borrowed for them. They launch, stop and
+delete nothing, because a stale artifact is exactly what a later instance
+could re-execute. The promotion gate reads both readings, so a diagnostic that
+cannot show the same pairing at both ends supports nothing.
 
 ## Diagnostic commands (all ungranted)
 
@@ -192,7 +262,7 @@ the checkout, the process, the build, the channel and the workspace all agree.
   --authorization-id <reviewer-scoped-id> --authorized-stage D-WEB `
   --authorized-sha <40-hex-sha> --authorized-tree <40-hex-tree> `
   --authorized-channel file --authorized-build 9.0.1.0858 `
-  --authorized-max-operations 68 --authorized-max-seconds 900 `
+  --authorized-max-operations 80 --authorized-max-seconds 900 `
   --authorized-reserve-operations 10 `
   --authorized-profile D-WEB --authorized-profile-version 2 `
   --authorized-target __MCP_E6Q_SRV --authorized-target __MCP_E6Q_PC1 `
@@ -226,11 +296,20 @@ alone and never the existence of a report.
 | Outcome | What it means | What it permits |
 | --- | --- | --- |
 | `READY_FOR_REVIEW` | the offline delivery is complete, the full suite, quality gate, namespace inventory, MkDocs and whitespace pass, and exact-SHA CI is green | an independent review; nothing else |
-| `ACCEPTED_NATIVE` | an independently reviewed LIVE record, at the exact SHA and tree, on the qualified build and channel, answers the stage's question with an observed result | citing that record for that question, at that SHA, on that build and channel |
-| `ACCEPTED_PRODUCT` | a product flow reproduces the accepted native result without any diagnostic-only warming | a separately proposed capability change, reviewed on its own |
+| `ACCEPTED_NATIVE` | an independently reviewed LIVE record, at the exact SHA and tree, on the qualified build and channel, answers **one** stage's question with an observed result | citing that record for that question, for that family, at that SHA, on that build and channel |
+| `ACCEPTED_PRODUCT` | a product flow reproduces an accepted native result without any diagnostic-only warming | a separately proposed capability change for that family, reviewed on its own |
 | `BLOCKED` | a precondition outside this repository is missing: no authorized instance, no reviewer decision, an unobservable control | nothing; the Goal is not completed |
 | `EXPERIMENT_BUDGET_EXHAUSTED` | the predeclared attempts of the current campaign are used up | nothing; a new campaign with new predeclared families and exact-attempt bindings is a separate decision |
 | `OBSERVER_LIMIT_UNRESOLVED` | the question needs an observation no qualified reader provides | recording the limit; never inferring the answer from its absence |
+
+D-DHCP and D-WEB are two investigations, not two halves of one. A native
+result for either answers that family only: it is not completion of the other,
+it is not completion of both, and it is not product acceptance. `ACCEPTED_NATIVE`
+and `ACCEPTED_PRODUCT` stay distinct because a diagnostic warms state a product
+flow does not, so reproducing a native result through the product is a separate
+observation rather than a restatement. Every outcome above is a claim an
+author makes; only a reviewer outside the authoring agent can accept it, and
+self-review is never that reviewer.
 
 Offline autofix may continue causally inside the approved contract at any time.
 Any LIVE iteration needs a new campaign with finite, predeclared experiment
@@ -241,20 +320,26 @@ from any outcome above.
 
 ## Inactive `/goal` draft
 
-Recorded as text, not created. `codex-cli 0.155.1` is installed here and its
-non-interactive command surface lists no `goal` entry; the official guide
-places `/goal` support at 0.128.0, which is not proof either way about the
-interactive slash command in this installation. Availability is therefore
-**observed-version-only, interactive listing pending**.
+Recorded as text, not created, and never implemented in the MCP: `/goal` is an
+interactive Codex feature, and this repository exposes no tool for it. The
+installed `codex-cli 0.155.1` lists no `goal` entry in its non-interactive
+command surface, which is not an availability verdict -- a shell help listing
+does not enumerate interactive slash commands. Availability is therefore
+**observed-version-only, interactive listing pending**. Nothing offline depends
+on it: the corrections in this delivery were made and verified without it.
 
 ```text
 /goal Server-PT diagnostic execution readiness
 
-Outcome that counts as success:
-  an independently reviewed LIVE record for D-DHCP or D-WEB, at the exact SHA
-  and tree its authorization names, on build 9.0.1.0858 over the file channel,
-  whose measurements answer the stage's question with an observed result.
-  CI being green is READY_FOR_REVIEW and nothing more.
+Outcome that counts as success, per family:
+  an independently reviewed LIVE record for ONE of D-DHCP or D-WEB, at the
+  exact SHA and tree its authorization names, on build 9.0.1.0858 over the
+  file channel, whose measurements answer THAT stage's question with an
+  observed result. It closes that family and nothing else: it is not the other
+  investigation, it is not both, and it is not product acceptance, which needs
+  a product flow reproducing the result without diagnostic-only warming.
+  CI being green is READY_FOR_REVIEW and nothing more. Acceptance is a
+  reviewer's, never the reporting agent's.
 
 Bounded scope:
   - offline: causal autofix inside the approved contract, the full suite, the

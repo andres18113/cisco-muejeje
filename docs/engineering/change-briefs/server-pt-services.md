@@ -1330,9 +1330,12 @@ What it changes in this workstream, and nothing else:
   planning data that nothing executable reads.
 
 Proposed, reviewable ceilings: D-DHCP 50 / 900 with a planned worst case of 45,
-D-WEB 68 / 900 with a planned worst case of 63. Both are measured from the
-composed call paths. No existing ceiling moves: Q0 stays 20 / 300, Q1 stays
-60 / 600, Q3 stays 60 / 1200.
+D-WEB 80 / 900 with a planned worst case of 74. Both are the worst cases of the
+composed call paths, each nested loop bounded by a budget the code enforces.
+D-WEB's draft ceiling was 68 against a figure of 63 that counted a registered
+spanning-tree sample as four calls and a typed ping as three; those were the
+intended paths, not the worst cases. No granted ceiling moves: Q0 stays
+20 / 300, Q1 stays 60 / 600, Q3 stays 60 / 1200.
 
 ## Open decisions
 

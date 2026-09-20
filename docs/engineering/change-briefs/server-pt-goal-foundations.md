@@ -182,23 +182,29 @@ later instance could re-execute. A run refused before any effect owns no
 state and claims no restoration, so it takes no second reading; the gate
 that would consume one already requires a completed run.
 
-Single writer is held by that evidence, not by a new lock. The mailbox
-protocol was built for coexistence rather than exclusion: `FileBridge`
-names every request `pid_boot_seq` so concurrent MCP processes sharing one
-mailbox cannot collide, and `_purge_own_stale` deliberately never touches
-another process artifact. A lock file would bind only the Python side and
-would not observe the hazard that actually exists here, which is a second
-Packet Tracer answering the same mailbox. What is observable is what is
-used: exactly one process at admission, an empty mailbox at admission, and
-the same pairing with nothing undrained at exit.
+Single writer was held by that evidence alone. **Superseded by GF-R1 below.**
+The pairing observes which Packet Tracer answers; it does not observe whether
+a second Python campaign writer, in another checkout, is driving the same
+mailbox. The mailbox protocol was built for coexistence rather than exclusion:
+`FileBridge` names every request `pid_boot_seq` precisely so concurrent MCP
+processes sharing one mailbox do not collide, and `_purge_own_stale`
+deliberately never touches another process artifact. Unique filenames avoid
+collisions between requests; they exclude nothing between campaigns. GF-R1
+adds the claim that does, in the scope the two writers share, and keeps the
+three obligations -- one campaign writer, one bound Packet Tracer incarnation,
+and ownership of each mutated object -- separate, because none of them implies
+another.
 
 The sampling and evidence corrections do not add a stage, fixture, effect,
 parser or timeout. The lifecycle correction adds only the two exact process
-identity fields described above. They update D-WEB's measured worst case from 61 to 63
-operations: M-DWEB-1 is nine operations (two four-call STP samples plus one
-simulation-state read) and M-DWEB-5 is six (one listener read, one four-call
-STP sample and one simulation-state read). The proposed ceiling stays 68, so
-the finalization reserve remains untouched.
+identity fields described above. They updated D-WEB's figure from 61 to 63
+operations, counting a registered spanning-tree sample as four calls and a
+typed ping as three.
+
+**Superseded by GF-R4 below.** Four and three were the intended paths of those
+compositions, not their worst cases, and the figure they produced is not
+evidence that the stage fits. The proved bounds, and the 74-operation worst
+case they give, are in the focused corrections section.
 
 ## Invariants added by this block
 
@@ -231,17 +237,20 @@ result is evidence about Packet Tracer.
 
 ## Budget arithmetic
 
-Every figure below is the worst case of the real composed call path measured
-against the stub, not a sum of placeholder steps. The measured Q3 path is the
-calibration source: an endpoint E5 batch costs one `send` plus one verification
-read per expectation, an E6 service action costs one dispatch plus one
-read-back per expectation, and one native default reading costs one dispatch.
-The exact per-stage tables are pinned by a contract test and reproduced in the
-operator contract.
+**The D-WEB figures in this section are superseded by GF-R4 below.** The
+calibration is still right for what it covers -- an endpoint E5 batch costs one
+`send` plus one verification read per expectation, an E6 service action costs
+one dispatch plus one read-back per expectation, and one native default reading
+costs one dispatch -- but a registered spanning-tree sample and a typed ping
+were counted at their intended paths rather than their worst cases, so "the
+worst case of the real composed call path" was not what the figures described.
+The proved bounds, and the ceiling change they require, are in the focused
+corrections. D-DHCP's arithmetic is unaffected: nothing it does polls a
+terminal.
 
 The old 60-operation ceiling and the 43/47 planning figures of the prepared
-profiles are not evidence that this fits; the numbers are recomputed from the
-composed paths. Neither ceiling is raised by this delivery.
+profiles are not evidence that any of this fits; the numbers are recomputed
+from the composed paths. No granted ceiling is raised by this delivery.
 
 ## Residual limitations
 
@@ -260,3 +269,233 @@ composed paths. Neither ceiling is raised by this delivery.
   observed-version-only: `codex-cli 0.155.1` is installed and its
   non-interactive command surface lists no `goal` entry, which is not proof
   either way about the interactive slash command.
+
+## Focused corrections at `ab668d7` (risk L)
+
+One offline correction delivery inside this block's approved contract, not a
+new phase. It closes four audit findings against the components that actually
+ship, and it changes no LIVE entitlement: Q3 3/3 and Q1 2/2 stay exhausted,
+every diagnostic authorization stays DRAFT, and no Packet Tracer process is
+contacted, launched or stopped by anything below.
+
+| Field | Value |
+| --- | --- |
+| Checkout | `Cisco-MCP-server-services-goal-foundations` |
+| Branch | `feature/server-pt-goal-foundations` |
+| Correction base | `ab668d758a1a9d36fa86b141c9f0ce2021c7a363` (tree `114e07e9ac8934ed7c89f9b544b227bf05100c66`) |
+| Authoritative main | `6263344e31ba3b0de6539d652f2cd06fc73a3562` (`cisco/main`) |
+| Risk | L - unchanged: authorization, evidence semantics and destructive cleanup |
+
+Instruction loading evidence for this delivery: `AGENTS.md`, `CLAUDE.md` and
+`docs/engineering/standards.md` were read from this checkout and compared
+byte-for-byte against the copies already in the working session; all three are
+identical. An interactive `/context` listing could not be observed from this
+session, so that check stays **pending**, exactly as it was recorded above.
+
+### GF-R1 - foreign effects are prevented, not merely reported
+
+The defect is an ordering one. `_finalize` removed devices and read restoration
+*before* `_lifecycle_postflight` looked at the process pairing again, so a
+permanent replacement was detected one step too late to stop a removal in the
+replacement's workspace. Three separate obligations were also being carried by
+one observation: a single cooperating Python campaign writer, the permitted
+Packet Tracer process, and ownership of the resource being mutated.
+
+The correction keeps them separate and uses the seams that already exist.
+
+- **One campaign writer.** `FileCampaignCoordinator` takes an exclusive claim
+  in the fixed file mailbox under `%LOCALAPPDATA%`, which is the resource two
+  checkouts actually share; a per-checkout record directory is not. The claim
+  is one `O_CREAT|O_EXCL` file. An existing claim refuses admission and is
+  never removed, never inspected for staleness and never reclaimed by age.
+  Release deletes only a claim whose stored holder identity is this process's.
+- **One attempt, reserved atomically.** The attempt identity is reserved in the
+  same coordination scope by the same exclusive creation, so the scan and the
+  reservation are no longer two steps with a window between them.
+  `QualificationRecordStore.attempt_exists` stays as a second fail-closed check
+  over the immutable records, which remain the audit trail.
+- **One process incarnation.** `DiagnosticLifecycleObservation` gains
+  `process_incarnation`, read as the bound process's creation time. A PID that
+  is reused by a new process no longer satisfies the pairing.
+  `CPScaleProcessRecord` is deliberately not touched: the incarnation is read
+  by the diagnostic lifecycle reader's own source.
+- **Authority is checked before effects, and its loss is sticky.** Every
+  effecting step and owned finalization re-evaluate the pairing and the claim
+  before acting. The first loss is kept, later ones are recorded separately,
+  and a lost authority is never re-acquired inside the same run.
+- **A destructive action on an unproven receiver does not happen.** When
+  authority is lost, `_finalize` performs no removal and no bag release. It
+  records each one as `not_attempted` with its cause, keeps whatever was
+  already observed, and drops `restoration_proven`. The postflight reading
+  stays exactly where it was and keeps its detection role.
+
+Stated limit, not a claim of universal exclusion: this proves one Python
+campaign writer and one bound Packet Tracer incarnation. It does not prove that
+no other program mutates the same workspace by other means. That receiver
+boundary is not establishable within the existing seams, so it is recorded here
+and LIVE stays blocked on it rather than being described as excluded.
+
+### GF-R2 - operational prerequisites are not experimental conclusions
+
+`_Execution.admissible` required every prerequisite measurement to conclude
+`SUPPORTED_IN_SAMPLE`. A coherent native-default change concludes
+`NEGATIVE_OBSERVED`, so D1 blocked D2 and D2 blocked D3 even when E5/E6 applied
+and their exact read-backs succeeded - the diagnostic's dependent variable
+disqualified its own continuation.
+
+`ExperimentSpec` gains `operational_prerequisites`: named preconditions a run
+*establishes*, distinct from what a measurement *concludes*. `_Execution` keeps
+the established set, and for a stage that declares a diagnostic profile the
+admission rule reads that set instead of the prerequisite conclusions. Q0, Q1,
+Q3 and every product caller keep the conclusion rule unchanged; nothing
+globally admits a NEGATIVE or UNKNOWN prerequisite.
+
+The preconditions are small, observable and operational: the subject/session is
+the bound one, the retained inventory was read coherently, the required
+configuration was established and read back, the required enabled/disabled
+state was verified, persistence is usable, authority and budget are present,
+and no effect is left unresolved. A negative experimental conclusion is kept
+negative and is never relabelled to pass a gate. Autonomous baseline drift, a
+lost response, a contradictory read-back, a wrong subject and an unreadable
+inventory each still stop effects, because each one fails a precondition rather
+than only producing a negative conclusion.
+
+### GF-R3 - terminal boundaries are observed on unsuccessful paths
+
+Two distinct holes. `_d_web_after` was gated behind the HTTP fetch concluding
+`SUPPORTED_IN_SAMPLE`, so the very timeout the diagnostic investigates
+suppressed the after-listener and STP readings. `_run_d_dhcp`'s D4-final used
+the ordinary `begin`, which refuses once a primary failure exists, so a stopped
+DHCP diagnostic deleted its fixtures without the terminal native reading it
+promises.
+
+Safe final observation is separated from success-dependent progression.
+`_Execution.begin_terminal` admits a read-only terminal observation when the
+subject/session authority holds and the ordinary (non-reserve) allowance covers
+it, whatever the primary failure was - a timeout, a contradiction, a stopped
+procedure or a persistence problem. It dispatches no fetch, ping, DHCP
+acquisition or configuration. A reading that is unsafe or unaffordable produces
+an explicit not-observed entry naming its cause; it is never silently omitted
+and never paid for out of the cleanup reserve. The first primary failure is
+preserved and later failures are recorded separately. When persistence itself
+is unavailable the record says that the terminal evidence is retained in memory
+and was not durably stored, rather than presenting it as persisted.
+
+The D4 interval metadata is corrected in the same pass. D4 compared the
+baseline with the final reading while labelling it with D1's last intervention
+and D1's native-call and field lists. It now reports a **cumulative**
+baseline-to-final summary that names the ordered sequence of interventions
+actually executed, and the call lists it carries are labelled as the declared
+generated footprint, not as an observed execution count. An adjacent interval
+and a cumulative summary are two different claims and are recorded as such.
+
+### GF-R4 - composed slow paths are budgeted from their real worst case
+
+The 63-operation figure assigned seven calls to the bind-before-ping
+composition and four to a spanning-tree sample. Neither is that composition's
+worst case. `TypedPingExecutor._ping_once` polls `inspect()` until statistics
+appear or the 30-second window closes; at a 0.25-second interval that is tens
+of counted calls, not one. `ControlledIosExecutor.execute` is worse: session
+preparation, up to three dispatch attempts, a convergence waiter, an
+attribution read, pager capture and pager cancellation are all nested calls
+that the caller's per-sample deadline cannot cap, because it is only read after
+the nested command returns.
+
+Both get a finite, explicit sampling policy that preserves the safe observation
+window and the single command attempt.
+
+- **Ping.** `TypedPingExecutor` gains an optional `max_inspections`. Default
+  `None` keeps today's behaviour for every existing caller and changes no
+  public default. When set, the poll interval is spread so the inspections
+  cover the whole safe window instead of shortening it, and the loop ends on
+  the window or on the cap, whichever comes first. A sample that ends on the
+  cap is classified as bounded-incomplete, never as an unreachable
+  destination.
+- **Registered STP reads.** The neutral access-forwarding observation dispatches
+  through its own `ControlledIosExecutor` bound to a counting channel that
+  carries the remaining deadline into each actual `send_and_wait` timeout and
+  refuses past a declared per-sample call budget. `ios_terminal.py` is not
+  modified; the bound is applied where the diagnostic composes its executor.
+  A sample that exhausts the budget is returned as an explicitly incomplete
+  sample with its cause and grants no forwarding permission.
+- **The advertised schedule is stated and tested.** Two closely spaced samples
+  do not cover a nominal 30-second convergence window, and the contract now
+  says what the schedule actually is instead of implying coverage. No blind
+  sleep, PortFast, bounce or configuration retry is introduced.
+
+Recomputed worst cases, from the complete feasible paths including the GF-R1
+authority checks (which cost zero bridge operations) and the GF-R3 terminal
+observations (which are already counted as planned operations):
+
+| Stage | Was | Now | Ceiling |
+| --- | --- | --- | --- |
+| D-DHCP | 45 | 45 | 50, unchanged |
+| D-WEB | 63 | 74 | 68 -> 80 |
+
+The D-WEB deltas are M-DWEB-1 (9 -> 13: two samples at six calls plus one
+simulation read), M-DWEB-3 (7 -> 12: four endpoint reads, one dispatch, six
+inspections, one attribution) and M-DWEB-5 (6 -> 8). D-DHCP is unchanged
+because nothing it does polls a terminal; the GF-R1 authority checks cost no
+bridge operation and the GF-R3 terminal reading was already a planned one.
+
+D-WEB's draft ceiling is raised because the corrected worst case exceeds 68. It
+is a never-granted draft limit; no historical Q budget is raised, and Q0
+20/300, Q1 60/600 and Q3 60/1200 are untouched. Each per-stage figure, the
+sample budget the runtime enforces and the inspection bound the production
+probe composes are pinned by contract tests, so a figure the code does not
+apply fails the suite.
+
+### One mapping from the four findings to their evidence
+
+Every regression below is causal: reverting only its own fix and re-running it
+produces RED, which was executed and recorded rather than assumed.
+
+| Finding | Fix | Regressions that pin it | Reverting the fix |
+| --- | --- | --- | --- |
+| GF-R1 foreign effects | authority re-checked before every effect and before owned cleanup, sticky on loss; no removal to an unproven receiver; campaign claim and atomic attempt reservation in the shared mailbox scope; incarnation bound | `test_a_replacement_before_the_first_removal_deletes_nothing`, `test_a_second_packet_tracer_mid_run_stops_before_the_next_effect`, `test_a_reused_pid_at_the_authorized_path_is_not_the_bound_process`, `test_a_second_campaign_writer_is_refused_by_the_shared_scope`, `test_one_attempt_identity_cannot_be_reserved_twice`, `test_a_claim_is_never_reclaimed_by_age_or_guesswork`, `test_a_held_campaign_refuses_the_run_before_any_contact` | RED |
+| GF-R2 prerequisites | `operational_prerequisites` over established state for diagnostic stages; conclusion rule unchanged everywhere else | `test_a_coherent_change_at_d1_does_not_stop_d2_or_d3`, `test_a_coherent_change_at_d2_does_not_stop_the_enable`, `test_a_coherent_change_at_the_enable_is_the_finding_itself`, `test_autonomous_drift_still_stops_every_later_effect` | RED |
+| GF-R3 terminal boundaries | `begin_terminal` admits read-only final observations after a failure; cumulative D4 summary | `test_an_http_timeout_does_not_suppress_the_after_boundaries`, `test_every_unsuccessful_fetch_path_still_reads_its_boundaries`, `test_the_terminal_reading_is_cumulative_and_names_its_interventions`, `test_a_terminal_reading_without_authority_is_declared_not_taken` | RED |
+| GF-R4 budgets | `max_inspections` on the typed ping; per-sample channel call budget carrying the remaining deadline into the I/O; recomputed figures | `test_a_delayed_ping_costs_its_inspections_and_still_classifies`, `test_an_output_slower_than_the_sample_budget_is_incomplete_not_forwarding`, `test_the_sample_bound_caps_the_nested_calls_the_deadline_cannot`, `test_a_ledger_that_cannot_pay_refuses_the_next_nested_call`, `test_the_composed_worst_cases_are_pinned_not_only_below_the_ceiling` | RED |
+
+The positive controls stay green beside them: a clean run still removes what it
+owns (`test_a_clean_run_still_removes_what_it_owns`), a slow-but-finishable
+sample is still admitted
+(`test_delayed_forwarding_observed_within_the_bound_is_still_admitted`), and
+autonomous drift still closes the run.
+
+### Invariants added by this correction
+
+39. A destructive action requires a proven receiver at the moment it is taken.
+    Detecting afterwards that the receiver was not the authorized one
+    invalidates the report; it does not undo the deletion.
+40. An experimental conclusion and an operational precondition are different
+    claims. A negative finding is the result the diagnostic exists to produce
+    and never disqualifies the step that depends on the state, only on the
+    conclusion.
+41. A terminal read-only observation belongs to the run, not to its success.
+    An unobserved terminal reading is an explicit absence with a cause.
+42. A budget figure is the worst case of the composed path, including every
+    nested call the caller cannot see. An instantly answered stub command is
+    not a worst-case oracle.
+
+### Test design for this correction
+
+Causal RED first for each behavioural fix, through the real components rather
+than the audit's isolated countermodels. GF-R1 adds two competing campaign
+writers, two competing reservations of one attempt, a replacement immediately
+before the first removal, a second Packet Tracer detected mid-run, a reused PID
+with a changed incarnation, and a foreign engine workspace holding objects with
+the exact fixture names and models - asserting zero mutations and zero
+deletions in that foreign workspace, not only `restoration_proven=False`.
+GF-R2 drives coherent native changes independently at static addressing, pool
+configuration and enable, asserting the later intervention runs, that all
+adjacent observations survive a reload, and that client acquisition, client
+mode changes and native-default setters stay at zero. GF-R3 exercises the HTTP
+timeout, `go=False`, fresh wrong content, an unresolved release and an
+intermediate DHCP failure, asserting the terminal payloads and their own
+operation identities after reload, with the terminal value forced to differ
+from every earlier snapshot. GF-R4 runs the real composition against the fake
+clock with delayed ping statistics, slow and incomplete terminal output,
+delayed STP forwarding, a budget exhaustion that genuinely forces refusal, a
+deadline crossing, and the cleanup/attribution reservation, pinning actual
+ledger calls against the calculated bound.
