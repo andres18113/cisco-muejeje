@@ -556,19 +556,151 @@ def test_a_terminal_reading_without_authority_is_declared_not_taken(replaced_run
     assert after.reason.startswith("not_observed:authority_lost:")
 
 
-def test_a_failing_store_keeps_the_primary_cause_and_the_reading(stage, tmp_path):
+def test_a_failing_store_separates_retained_evidence_from_durable_evidence(
+    stage, tmp_path
+):
     """Durability and observation are two claims, and the record separates them."""
     from service_qualification_engine import RecordingStore
 
+    from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
+        QualificationRecord,
+    )
+
+    # The boundary write of the terminal observation fails; later writes
+    # succeed, so the record can still state what it could not make
+    # durable at the moment it observed it.
     store = RecordingStore(
-        tmp_path / "lossy", fail_from="experiment:D_DHCP_ENABLE:started"
+        tmp_path / "lossy", fail_at={"experiment:D_DHCP_FINAL:started"}
     )
     run = stage("D-DHCP", record_store=store)
+    # The store is the one that failed, so the last durable record is read
+    # from where it actually wrote, not from the run's own directory.
+    (path,) = list((tmp_path / "lossy").rglob("*.json"))
+    record = QualificationRecord.model_validate_json(path.read_text(encoding="utf-8"))
 
-    assert store.lost is True
-    # The store stopped accepting writes, so the last durable record is what
-    # a reviewer can cite; the run still declares which it is.
+    # The reading was still taken -- a persistence failure is a reason to
+    # observe what the run is about to leave behind, not to stop looking --
+    # and the record states which of the two claims it can make about it.
+    assert any(
+        item.startswith("terminal_observation_retained_in_memory_only:")
+        for item in record.limitations
+    )
+    assert record.persist_error
+    assert [item.label for item in record.native_default_pool][-1] == (
+        "d4_before_cleanup"
+    )
+    # It was counted outside the cleanup reserve, in its own phase.
+    assert [
+        item.phase
+        for item in record.operations
+        if item.purpose.endswith("d4_before_cleanup")
+    ] == ["terminal_observation"]
+    # The boundary write failing is not a reason to fail the run: nothing
+    # followed it, the evidence was made durable by the terminal write,
+    # and what could not be persisted at the time is named.
+    assert run.exit_code == 0
+
+
+class _GoesQuietAfter:
+    """A channel that stops answering once it has served `calls` commands.
+
+    An engine that becomes unreachable mid-run is not a run that failed to
+    take its readings: the readings are dispatched and come back unobserved,
+    and each one has to say so.
+    """
+
+    def __init__(self, inner, *, calls: int) -> None:
+        """Wrap one transport and mute it after that many commands."""
+        self.inner = inner
+        self.budget = calls
+        self.calls: list[tuple[str, str]] = []
+
+    def _spend(self) -> bool:
+        if self.budget <= 0:
+            return False
+        self.budget -= 1
+        return True
+
+    def send(self, js_code: str) -> bool:
+        """Queue one command, or report that nothing was accepted."""
+        self.calls.append(("send", js_code))
+        return self.inner.send(js_code) if self._spend() else False
+
+    def send_and_wait(self, js_code: str, timeout: float) -> str | None:
+        """Dispatch one command, or return no answer at all."""
+        self.calls.append(("send_and_wait", js_code))
+        if not self._spend():
+            return None
+        return self.inner.send_and_wait(js_code, timeout)
+
+    def dispatch_and_wait(self, js_code: str, timeout: float):
+        """Dispatch with typed facts while the engine still answers."""
+        self.calls.append(("dispatch_and_wait", js_code))
+        return self.inner.dispatch_and_wait(js_code, timeout)
+
+
+def test_an_engine_that_stops_answering_leaves_an_absence_with_its_cause(
+    tmp_path, capsys
+):
+    """An unobserved terminal reading is an explicit absence, never silence."""
+    directory = tmp_path / "quiet"
+    directory.mkdir()
+    run = DiagnosticStageRun(directory, "D-WEB", {"stp_rows": dict(FORWARDING_ROWS)})
+    try:
+        # Enough to be admitted and to create the fixtures, then nothing.
+        run.transport = _GoesQuietAfter(run.transport, calls=30)
+        run.run(request_args("D-WEB") + authorization_args("D-WEB"))
+        capsys.readouterr()
+        record = run.record()
+    finally:
+        run.close()
+
+    # Every reading the silent engine could not answer is named rather
+    # than dropped, and the run is stopped rather than completed.
+    assert record.outcome.value == "stopped"
     assert run.exit_code == 1
+    assert record.restoration_proven is False
+    # A reading that came back empty is a measurement that ran and names
+    # what it could not observe; one that never started names why. Either
+    # way it is in the record, with a cause.
+    accounted = [
+        item
+        for item in record.measurements
+        if (item.status is MeasurementStatus.RAN and item.causes)
+        or (item.status is MeasurementStatus.NOT_RUN and item.reason)
+    ]
+    assert accounted, "a reading that was not taken must say so"
+    assert all(
+        item.status is not MeasurementStatus.NOT_RUN or item.reason
+        for item in record.measurements
+    )
+
+
+def test_an_unaffordable_terminal_reading_is_named_not_omitted(stage, monkeypatch):
+    """Silence is not an observation, and the cleanup reserve is not a fallback."""
+    from packet_tracer_mcp.application.use_cases import qualify_server_services as uc
+
+    after = next(item for item in D_WEB.experiments if item.id == "M-DWEB-5")
+    original = uc.OperationLedger.can_afford
+
+    def can_afford(self, operations: int) -> bool:
+        """Refuse exactly the terminal observation's declared cost."""
+        if operations == after.planned_operations:
+            return False
+        return original(self, operations)
+
+    monkeypatch.setattr(uc.OperationLedger, "can_afford", can_afford)
+    run = stage("D-WEB")
+    record = run.record()
+
+    reading = run.measurement("M-DWEB-5")
+    assert reading.status is MeasurementStatus.NOT_RUN
+    assert reading.reason == "not_observed:unaffordable:D_WEB_AFTER"
+    # It was declared rather than paid for out of the finalization reserve.
+    finalization = [
+        item for item in record.operations if item.phase == "finalization" and item.seq
+    ]
+    assert len(finalization) <= D_WEB.reserve_operations
 
 
 # -- GF-R4: a budget is the worst case of the composed path ----------------------

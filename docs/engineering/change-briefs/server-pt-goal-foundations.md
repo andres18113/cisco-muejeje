@@ -381,6 +381,15 @@ preserved and later failures are recorded separately. When persistence itself
 is unavailable the record says that the terminal evidence is retained in memory
 and was not durably stored, rather than presenting it as persisted.
 
+That last case needed one addition to the ledger. A failed write-ahead boundary
+closes the effect gate, and the gate refused everything outside finalization --
+including the read-only reading this correction exists to take. The ledger
+therefore gains a `terminal_observation` phase, which the gate admits and which
+`allowance()` still treats as ordinary, non-reserve spending. A closed gate
+stops further mutation; it is not a reason to stop looking at what the run is
+about to leave behind, and the phase makes that distinction visible in the
+record's own operation list rather than implicit in a boolean.
+
 The D4 interval metadata is corrected in the same pass. D4 compared the
 baseline with the final reading while labelling it with D1's last intervention
 and D1's native-call and field lists. It now reports a **cumulative**

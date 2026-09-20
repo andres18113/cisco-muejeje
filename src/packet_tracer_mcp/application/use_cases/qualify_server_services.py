@@ -229,6 +229,13 @@ class LedgerPhase(StrEnum):
     ADMISSION = "admission"
     SETUP = "setup"
     EXPERIMENT = "experiment"
+    #: A read-only final observation of what the run is about to leave
+    #: behind. It is not an effect, so a closed effect gate does not
+    #: suppress it -- the gate exists to stop further mutation, and a
+    #: persistence failure is a reason to observe rather than to stop
+    #: looking. It is not finalization either, so it spends the ordinary
+    #: allowance and never the cleanup reserve.
+    TERMINAL_OBSERVATION = "terminal_observation"
     FINALIZATION = "finalization"
 
 
@@ -337,7 +344,10 @@ class OperationLedger:
     def admit(self, call: str, requested_timeout: float) -> tuple[int, float]:
         """Count one call and return its index and capped timeout, or refuse it."""
         reason = ""
-        if not self._effects_open and self.phase is not LedgerPhase.FINALIZATION:
+        if not self._effects_open and self.phase not in (
+            LedgerPhase.FINALIZATION,
+            LedgerPhase.TERMINAL_OBSERVATION,
+        ):
             reason = f"effects_halted:{self._halt_reason}"
         operations, seconds = self.allowance()
         if not reason and operations < 1:
@@ -1705,7 +1715,7 @@ class _Execution:
             self.record.limitations.append(
                 f"terminal_observation_retained_in_memory_only:{_bounded(procedure)}"
             )
-        self.ledger.enter(LedgerPhase.EXPERIMENT)
+        self.ledger.enter(LedgerPhase.TERMINAL_OBSERVATION)
         self.ledger.purpose = f"experiment:{procedure}"
         self.in_flight = tuple(ids)
         return True
