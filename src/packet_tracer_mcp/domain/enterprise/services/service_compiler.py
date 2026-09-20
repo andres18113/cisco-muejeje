@@ -7,6 +7,7 @@ import ipaddress
 import json
 import re
 from collections import defaultdict
+from collections.abc import Mapping, Sequence
 from typing import cast
 
 from ...models.plans import DevicePlan, TopologyPlan
@@ -70,6 +71,12 @@ _HOSTNAME_RE = re.compile(
     r"(?=^.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*"
     r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
 )
+#: Where the shared page store stopped being an assumption. The Q1
+#: ordinal-1 file run wrote the existing index page through each handle on
+#: a Server-PT and read the other handle back changed. It is provenance for
+#: the contract, not evidence that applying it works: application and
+#: verification support stay UNKNOWN/UNMEASURED until a run measures them.
+SHARED_PAGE_STORE_RECORD = "q1-2026-09-19T23-00-53Z-b17240ad"
 _SAFE_TFTP_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,126}$")
 _SAFE_HTTP_CONTENT = re.compile(r"^[\x20-\x7E\r\n\t]{0,4096}$")
 _MAIL_USER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")
@@ -467,6 +474,10 @@ class ServiceCompiler:
                     verification_required=requirement.verification_required,
                 )
             )
+
+        actions = self._bind_shared_web_content(
+            services, actions, source_requirements, action_ids_by_service, issues
+        )
 
         by_name = {item.name.casefold(): item for item in services}
         by_id = {item.id: item for item in services}
@@ -1447,11 +1458,19 @@ class ServiceCompiler:
                     for hostname, address in sorted(records)
                 ],
             ]
-        if service_type is ServiceType.HTTP:
-            enable = EnableHttpService(
-                id=_stable_id("enable-http", service_id),
-                phase=ServicePhase.ENABLE,
-                **common,
+        if service_type in {ServiceType.HTTP, ServiceType.HTTPS}:
+            enable: ServiceAction = (
+                EnableHttpService(
+                    id=_stable_id("enable-http", service_id),
+                    phase=ServicePhase.ENABLE,
+                    **common,
+                )
+                if service_type is ServiceType.HTTP
+                else EnableHttpsService(
+                    id=_stable_id("enable-https", service_id),
+                    phase=ServicePhase.ENABLE,
+                    **common,
+                )
             )
             content = (
                 requirement.http_content
@@ -1466,6 +1485,10 @@ class ServiceCompiler:
                     )
                 )
                 return [enable]
+            # Both protocols reach the same page store, so HTTPS compiles a
+            # content action of its own here and `_bind_shared_web_content`
+            # decides afterwards whether it survives as the shared one, is
+            # merged into the HTTP-owned action, or refuses the plan.
             return [
                 enable,
                 SetHttpContent(
@@ -1474,16 +1497,10 @@ class ServiceCompiler:
                     depends_on=[enable.id],
                     content=content,
                     content_sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                    shared_service_ids=[service_id],
+                    content_source_record=SHARED_PAGE_STORE_RECORD,
                     **common,
                 ),
-            ]
-        if service_type is ServiceType.HTTPS:
-            return [
-                EnableHttpsService(
-                    id=_stable_id("enable-https", service_id),
-                    phase=ServicePhase.ENABLE,
-                    **common,
-                )
             ]
         if service_type is ServiceType.NTP:
             return [
@@ -1538,6 +1555,115 @@ class ServiceCompiler:
             ],
         ]
 
+    @staticmethod
+    def _shared_content(
+        service_id: str, actions: Sequence[ServiceAction]
+    ) -> SetHttpContent | None:
+        """Return the one content action that serves `service_id`, if any."""
+        for item in actions:
+            if isinstance(item, SetHttpContent) and (
+                service_id in item.shared_service_ids or item.service_id == service_id
+            ):
+                return item
+        return None
+
+    @staticmethod
+    def _bind_shared_web_content(
+        services: Sequence[ServiceDefinition],
+        actions: list[ServiceAction],
+        requirements: Mapping[str, ServiceRequirement],
+        action_ids_by_service: dict[str, list[str]],
+        issues: list[ConfigurationIssue],
+    ) -> list[ServiceAction]:
+        """Collapse every host page to one content action, or refuse the plan.
+
+        Packet Tracer serves HTTP and HTTPS from one page table, so two
+        content actions on the same host page are two writes of one page, not
+        two pages. When the requirements state different content for it there
+        is no plan that satisfies both, and the conflict is an error before
+        anything is applied rather than a last write that wins. A requirement
+        that states nothing is not a competing intention: the stated one is
+        used, and only stated contents can conflict.
+
+        The surviving action is owned by the HTTP service when the host serves
+        HTTP, so an HTTPS-only host never needs its HTTP listener enabled to
+        publish a page. It depends on every merged service's enable, and it
+        names all of them in `shared_service_ids`.
+        """
+        groups: dict[tuple[str, str], list[SetHttpContent]] = defaultdict(list)
+        for item in actions:
+            if isinstance(item, SetHttpContent):
+                groups[(item.host_device_id, item.path)].append(item)
+        removed: set[str] = set()
+        replacements: dict[str, SetHttpContent] = {}
+        for (host_device_id, path), group in sorted(groups.items()):
+            if len(group) < 2:
+                continue
+            ordered = sorted(group, key=lambda item: item.service_id)
+            stated = sorted(
+                {
+                    item.content
+                    for item in ordered
+                    if requirements[item.service_id].http_content
+                }
+            )
+            if len(stated) > 1:
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.WEB_CONTENT_CONFLICT,
+                        f"Host {host_device_id} serves one page store, but "
+                        f"{path} is required to hold "
+                        + " and ".join(repr(item) for item in stated)
+                        + ".",
+                        ",".join(item.service_id for item in ordered),
+                    )
+                )
+                continue
+            owner = next(
+                (item for item in ordered if item.service_type is ServiceType.HTTP),
+                ordered[0],
+            )
+            content = stated[0] if stated else owner.content
+            merged = owner.model_copy(
+                update={
+                    "id": _stable_id("http-content", owner.service_id, content),
+                    "content": content,
+                    "content_sha256": hashlib.sha256(
+                        content.encode("utf-8")
+                    ).hexdigest(),
+                    "shared_service_ids": sorted(item.service_id for item in ordered),
+                    "depends_on": sorted(
+                        {
+                            dependency
+                            for item in ordered
+                            for dependency in item.depends_on
+                        }
+                    ),
+                },
+                deep=True,
+            )
+            replacements[owner.id] = merged
+            removed.update(item.id for item in ordered if item.id != owner.id)
+        if not replacements and not removed:
+            return actions
+        kept = [
+            replacements.get(item.id, item)
+            for item in actions
+            if item.id not in removed
+        ]
+        for service_id, identifiers in action_ids_by_service.items():
+            action_ids_by_service[service_id] = [
+                replacements[item].id if item in replacements else item
+                for item in identifiers
+                if item not in removed
+            ]
+        for service in services:
+            service.action_ids = list(action_ids_by_service.get(service.id, []))
+        # A warning about an action that no longer exists would name an
+        # identity nothing in the plan carries.
+        issues[:] = [item for item in issues if item.subject not in removed]
+        return kept
+
     def _expectations(self, services, actions, requirements, devices, foundations):
         by_service: dict[str, list[ServiceAction]] = defaultdict(list)
         for action in actions:
@@ -1582,14 +1708,8 @@ class ServiceCompiler:
                     separators=(",", ":"),
                 )
             elif service.service_type in {ServiceType.HTTP, ServiceType.HTTPS}:
-                direct.expected["marker"] = next(
-                    (
-                        item.content
-                        for item in service_actions
-                        if isinstance(item, SetHttpContent)
-                    ),
-                    "",
-                )
+                shared = self._shared_content(service.id, actions)
+                direct.expected["marker"] = shared.content if shared else ""
             elif service.service_type is ServiceType.SMTP:
                 direct.expected["domain_name"] = next(
                     item.domain_name
@@ -1790,14 +1910,8 @@ class ServiceCompiler:
                         )
                     )
                 elif service.service_type in {ServiceType.HTTP, ServiceType.HTTPS}:
-                    content = next(
-                        (
-                            item.content
-                            for item in service_actions
-                            if isinstance(item, SetHttpContent)
-                        ),
-                        "",
-                    )
+                    shared = self._shared_content(service.id, actions)
+                    content = shared.content if shared else ""
                     fetch = ServiceVerificationExpectation(
                         id=_stable_id("verify-http-ip", service.id, client_id),
                         service_id=service.id,
@@ -1893,13 +2007,10 @@ class ServiceCompiler:
                         depends_on=sorted([dns_id, fetch_id]),
                         expected={
                             "hostname": hostname,
-                            "marker": next(
-                                (
-                                    item.content
-                                    for item in by_service[service.id]
-                                    if isinstance(item, SetHttpContent)
-                                ),
-                                "",
+                            "marker": (
+                                shared.content
+                                if (shared := self._shared_content(service.id, actions))
+                                else ""
                             ),
                         },
                     )
@@ -2064,6 +2175,18 @@ class ServiceCompiler:
         for action in payload["actions"]:
             if not action.get("verification_dependencies"):
                 action.pop("verification_dependencies", None)
+            # Shared page ownership is semantic only once it binds more than
+            # the action's own service: a content action that serves nobody
+            # else is the plan it always was. The source record is provenance
+            # for the contract, so two plans that differ only by which
+            # measurement is cited are the same plan.
+            action.pop("content_source_record", None)
+            if action.get("shared_service_ids") in (
+                None,
+                [],
+                [action.get("service_id")],
+            ):
+                action.pop("shared_service_ids", None)
         canonical = json.dumps(
             payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
         )

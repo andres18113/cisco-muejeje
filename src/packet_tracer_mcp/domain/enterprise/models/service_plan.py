@@ -286,7 +286,20 @@ class EnableHttpService(BaseServiceAction):
 
 
 class SetHttpContent(BaseServiceAction):
-    """Set the served index page and record its digest."""
+    """Set the served index page and record its digest.
+
+    One page store, one action. The Q1 ordinal-1 record measured distinct
+    `HttpServer` and `HttpsServer` process objects over a single page table on
+    Server-PT: a write through either protocol is visible through both. So
+    when one host serves both protocols, one action carries the payload,
+    `service_type` names the process it is written through, and
+    `shared_service_ids` names every service the page belongs to. The payload
+    is never duplicated into a second action to represent the second protocol.
+
+    `content_source_record` names the qualification record that measured the
+    shared store. It is provenance, not permission: it promotes no capability
+    and sets no readiness.
+    """
 
     action_type: Literal[ServiceActionType.SET_HTTP_CONTENT] = (
         ServiceActionType.SET_HTTP_CONTENT
@@ -294,6 +307,11 @@ class SetHttpContent(BaseServiceAction):
     path: Literal["index.html"] = "index.html"
     content: str
     content_sha256: str
+    #: Every service id this one page satisfies, sorted. A single-service
+    #: action carries its own id, so the field is never empty and a reader
+    #: never has to guess whether an empty list means "none" or "unknown".
+    shared_service_ids: list[str] = Field(default_factory=list)
+    content_source_record: str = ""
 
 
 class EnableHttpsService(BaseServiceAction):

@@ -101,6 +101,10 @@ class ConfigurationIssueCode(StrEnum):
     DNS_SERVER_ADDRESS_REQUIRED = "DNS_SERVER_ADDRESS_REQUIRED"
     DNS_AUTHORITY_CONFLICT = "DNS_AUTHORITY_CONFLICT"
     HTTP_CONTENT_UNSAFE = "HTTP_CONTENT_UNSAFE"
+    #: Two protocols on one host asked for different content on the same
+    #: shared page. There is one page store, so there is no plan that serves
+    #: both intentions, and the conflict refuses before any effect.
+    WEB_CONTENT_CONFLICT = "WEB_CONTENT_CONFLICT"
     TFTP_FILENAME_UNSAFE = "TFTP_FILENAME_UNSAFE"
     EMAIL_DOMAIN_INVALID = "EMAIL_DOMAIN_INVALID"
     EMAIL_ACCOUNT_INVALID = "EMAIL_ACCOUNT_INVALID"
