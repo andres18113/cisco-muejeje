@@ -39,7 +39,7 @@ observation and owned cleanup are exactly what must still be allowed.
 from __future__ import annotations
 
 import secrets as _random
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from time import monotonic
@@ -97,11 +97,13 @@ from ...domain.enterprise.models.service_plan import (
     ServicePlan,
     ServiceType,
     ServiceVerificationKind,
+    SetHttpContent,
     secret_refs,
 )
 from ...domain.enterprise.models.service_run_record import (
     DhcpServiceAuthorityRecord,
     ServiceRunRecord,
+    SharedContentExecutionBinding,
     SourceTreeIdentity,
     generate_run_id,
 )
@@ -417,10 +419,28 @@ def _selected_clients(
     }
 
 
+def _shared_writer_candidate(
+    action: SetHttpContent,
+    service: ServiceDefinition,
+) -> SetHttpContent:
+    """Bind one source page action to a candidate admitted writer."""
+    return action.model_copy(
+        update={
+            "service_id": service.id,
+            "service_type": service.service_type,
+        },
+        deep=True,
+    )
+
+
 def _service_eligibility(
     plan: ServicePlan,
     capabilities: ServiceCapabilityRecords,
-) -> tuple[list[ServiceDefinition], dict[str, list[str]]]:
+) -> tuple[
+    list[ServiceDefinition],
+    dict[str, list[str]],
+    dict[str, SetHttpContent],
+]:
     """Split the plan's services into eligible ones and named refusals.
 
     A service is eligible when every action it applies and every REQUIRED
@@ -430,8 +450,16 @@ def _service_eligibility(
     compiled and still reported, and R-CAP-06 is exactly the rule that it may
     not report VERIFIED for a capability it lacks either.
     """
+    shared_content = {
+        action.id: action
+        for action in plan.actions
+        if isinstance(action, SetHttpContent)
+        and len(set(action.shared_service_ids)) > 1
+    }
     actions_by_service: dict[str, list[Any]] = {}
     for action in plan.actions:
+        if action.id in shared_content:
+            continue
         actions_by_service.setdefault(action.service_id, []).append(action)
     expectations_by_service: dict[str, list[Any]] = {}
     for expectation in plan.verification_expectations:
@@ -501,7 +529,58 @@ def _service_eligibility(
             ]
             continue
         still_eligible.append(service)
-    return still_eligible, unknown_operations
+    eligible_by_id = {item.id: item for item in still_eligible}
+    selected_shared_writers: dict[str, SetHttpContent] = {}
+    shared_ineligible: set[str] = set()
+    for action in shared_content.values():
+        members = [
+            eligible_by_id[service_id]
+            for service_id in action.shared_service_ids
+            if service_id in eligible_by_id
+        ]
+        if not members:
+            continue
+        ordered = sorted(
+            members,
+            key=lambda item: (
+                item.id != action.service_id,
+                item.service_type is not ServiceType.HTTP,
+                item.id,
+            ),
+        )
+        candidates = []
+        for service in ordered:
+            candidate = _shared_writer_candidate(action, service)
+            candidates.append(
+                (candidate, resolve_action_capability(capabilities, candidate))
+            )
+        selected = next(
+            (
+                candidate
+                for candidate, resolution in candidates
+                if resolution.is_supported
+            ),
+            None,
+        )
+        if selected is not None:
+            selected_shared_writers[action.id] = selected
+            continue
+        missing = sorted(
+            {
+                f"{resolution.key}={resolution.support.value}"
+                for _candidate, resolution in candidates
+            }
+        )
+        for service in members:
+            unknown_operations[service.id] = missing or [
+                f"{action.host_model}:{action.action_type.value}=unknown"
+            ]
+            shared_ineligible.add(service.id)
+    if shared_ineligible:
+        still_eligible = [
+            item for item in still_eligible if item.id not in shared_ineligible
+        ]
+    return still_eligible, unknown_operations, selected_shared_writers
 
 
 def _dhcp_authorities(plan: ServicePlan) -> list[DhcpServiceAuthorityRecord]:
@@ -1370,7 +1449,9 @@ def apply_enterprise_services(
     # Resolve this before inventory/path admission so an optional excluded
     # service cannot add identities to the governed runtime read or block the
     # closure that is actually authorized to execute.
-    eligible, ineligible = _service_eligibility(service_plan, capabilities)
+    eligible, ineligible, shared_writers = _service_eligibility(
+        service_plan, capabilities
+    )
     required_ineligible = sorted(
         service.id
         for service in service_plan.services
@@ -1397,6 +1478,21 @@ def apply_enterprise_services(
             ServiceEntryRefusal.CAPABILITY_UNKNOWN,
             "No requested service is eligible on this build.",
         )
+    try:
+        selected_plan = _plan_for(service_plan, eligible, shared_writers)
+        shared_content_bindings = _shared_content_execution_bindings(
+            service_plan, selected_plan
+        )
+    except ValueError as exc:
+        return refuse(
+            "A9",
+            ServiceEntryRefusal.SERVICE_INELIGIBLE,
+            _sanitized(str(exc)),
+        )
+    run.record.selected_clients = sorted(_selected_clients(service_plan, eligible))
+    run.record.selected_service_ids = [item.id for item in selected_plan.services]
+    run.record.selected_action_ids = [item.id for item in selected_plan.actions]
+    run.record.shared_content_bindings = shared_content_bindings
 
     service_subject_ids = {
         device_id
@@ -1424,7 +1520,7 @@ def apply_enterprise_services(
     # and every one of them must resolve on the authenticated HTTP channel
     # before E5 runs. A refusal names references, never a value or a
     # resolver's own message.
-    references = secret_refs(_plan_for(service_plan, eligible).actions)
+    references = secret_refs(selected_plan.actions)
     if references:
         if transport_selection.channel != SECRET_CHANNEL:
             return refuse(
@@ -1561,8 +1657,6 @@ def apply_enterprise_services(
             and not isinstance(action, SetEndpointStaticAddress)
         ),
     )
-    run.record.selected_clients = sorted(_selected_clients(service_plan, eligible))
-
     return _execute(
         run,
         runtimes=runtimes,
@@ -1571,6 +1665,7 @@ def apply_enterprise_services(
         configuration_plan=configuration_plan,
         device_capabilities=composition.capabilities,
         service_plan=service_plan,
+        selected_plan=selected_plan,
         capabilities=capabilities,
         eligible=eligible,
         ineligible=ineligible,
@@ -1596,6 +1691,7 @@ def _execute(
     configuration_plan: Any,
     device_capabilities: dict[str, Any],
     service_plan: ServicePlan,
+    selected_plan: ServicePlan,
     capabilities: ServiceCapabilityRecords,
     eligible: Sequence[ServiceDefinition],
     ineligible: dict[str, list[str]],
@@ -1738,15 +1834,14 @@ def _execute(
             deployed_names=deployed_names,
             models=models,
         )
-    eligible_plan = _plan_for(service_plan, eligible)
     # One fresh nonce per message, bound into a copy of the plan and written
     # ahead with the stage record, so an earlier run's message can never
     # satisfy this run's rows and the compiled plan's hash is untouched.
     run.record.nonces = {
         reference: message_nonce_factory()
-        for reference in eligible_plan.operation_nonce_refs()
+        for reference in selected_plan.operation_nonce_refs()
     }
-    eligible_plan = eligible_plan.with_operation_nonces(run.record.nonces)
+    eligible_plan = selected_plan.with_operation_nonces(run.record.nonces)
     run.transition(ServiceStage.SERVICE_APPLY, outcome="started")
     service_result: ServiceApplicationResult | None = None
     halted_detail = ""
@@ -2016,7 +2111,11 @@ def _releases(
     return releases
 
 
-def _plan_for(plan: ServicePlan, services: Sequence[ServiceDefinition]) -> ServicePlan:
+def _plan_for(
+    plan: ServicePlan,
+    services: Sequence[ServiceDefinition],
+    shared_writers: Mapping[str, SetHttpContent],
+) -> ServicePlan:
     """Narrow a plan to the eligible services, keeping its identity intact.
 
     The plan id and both source hashes are preserved deliberately: the E6
@@ -2025,28 +2124,149 @@ def _plan_for(plan: ServicePlan, services: Sequence[ServiceDefinition]) -> Servi
     claiming to be this one.
     """
     keep = {item.id for item in services}
-    if keep == {item.id for item in plan.services}:
-        return plan
-    action_ids = {action.id for action in plan.actions if action.service_id in keep}
+    source_actions = {item.id: item for item in plan.actions}
+    actions: list[Any] = []
+    for action in plan.actions:
+        if (
+            isinstance(action, SetHttpContent)
+            and len(set(action.shared_service_ids)) > 1
+        ):
+            selected_members = sorted(set(action.shared_service_ids) & keep)
+            if not selected_members:
+                continue
+            writer = shared_writers.get(action.id)
+            if writer is None or writer.service_id not in selected_members:
+                raise ValueError(
+                    f"Shared content action {action.id!r} has no admitted writer."
+                )
+            source_members = set(action.shared_service_ids)
+            selected_member_ids = set(selected_members)
+
+            def selected_dependency(
+                identifier: str,
+                source_members: set[str] = source_members,
+                selected_members: set[str] = selected_member_ids,
+            ) -> bool:
+                dependency = source_actions.get(identifier)
+                return not (
+                    dependency is not None
+                    and dependency.service_id in source_members
+                    and dependency.service_id not in selected_members
+                )
+
+            actions.append(
+                writer.model_copy(
+                    update={
+                        "shared_service_ids": selected_members,
+                        "depends_on": [
+                            item
+                            for item in action.depends_on
+                            if selected_dependency(item)
+                        ],
+                        "apply_dependencies": [
+                            item
+                            for item in action.apply_dependencies
+                            if selected_dependency(item)
+                        ],
+                    },
+                    deep=True,
+                )
+            )
+            continue
+        if action.service_id in keep:
+            actions.append(action)
+    action_ids = {action.id for action in actions}
     devices = {item.host_device_id for item in services} | {
         client_id for item in services for client_id in item.client_device_ids
     }
+    expectations = [
+        item
+        for item in plan.verification_expectations
+        if item.service_id in keep and item.action_id in action_ids
+    ]
+    expectation_ids = {item.id for item in expectations}
+    for action in actions:
+        missing = sorted({*action.depends_on, *action.apply_dependencies} - action_ids)
+        if missing:
+            raise ValueError(
+                f"Selected action {action.id!r} has missing dependencies: "
+                + ", ".join(missing)
+            )
+        missing_verifications = sorted(
+            set(action.verification_dependencies) - expectation_ids
+        )
+        if missing_verifications:
+            raise ValueError(
+                f"Selected action {action.id!r} has missing verification "
+                "dependencies: " + ", ".join(missing_verifications)
+            )
+    selected_services = [
+        item.model_copy(
+            update={
+                "action_ids": [
+                    identifier
+                    for identifier in item.action_ids
+                    if identifier in action_ids
+                ],
+                "verification_expectation_ids": [
+                    identifier
+                    for identifier in item.verification_expectation_ids
+                    if identifier in expectation_ids
+                ],
+            },
+            deep=True,
+        )
+        for item in plan.services
+        if item.id in keep
+    ]
     return plan.model_copy(
         update={
-            "services": [item for item in plan.services if item.id in keep],
-            "actions": [item for item in plan.actions if item.service_id in keep],
+            "services": selected_services,
+            "actions": actions,
             "foundational_requirements": [
                 item
                 for item in plan.foundational_requirements
                 if item.device_id in devices
             ],
-            "verification_expectations": [
-                item
-                for item in plan.verification_expectations
-                if item.service_id in keep and item.action_id in action_ids
-            ],
+            "verification_expectations": expectations,
         }
     )
+
+
+def _shared_content_execution_bindings(
+    source: ServicePlan,
+    selected: ServicePlan,
+) -> list[SharedContentExecutionBinding]:
+    """Persist the source ownership and the exact admitted writer projection."""
+    source_by_id = {
+        item.id: item for item in source.actions if isinstance(item, SetHttpContent)
+    }
+    bindings: list[SharedContentExecutionBinding] = []
+    for action in selected.actions:
+        if not isinstance(action, SetHttpContent):
+            continue
+        original = source_by_id.get(action.id)
+        if original is None:
+            raise ValueError(
+                f"Selected shared content action {action.id!r} has no source action."
+            )
+        bindings.append(
+            SharedContentExecutionBinding(
+                source_action_id=original.id,
+                selected_action_id=action.id,
+                source_service_ids=sorted(
+                    set(original.shared_service_ids or [original.service_id])
+                ),
+                selected_service_ids=sorted(
+                    set(action.shared_service_ids or [action.service_id])
+                ),
+                writer_service_id=action.service_id,
+                writer_service_type=action.service_type,
+                dependency_ids=list(action.depends_on),
+                content_source_record=action.content_source_record,
+            )
+        )
+    return bindings
 
 
 def _unsupported_paths(

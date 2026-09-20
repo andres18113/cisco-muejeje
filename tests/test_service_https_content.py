@@ -48,8 +48,10 @@ from packet_tracer_mcp.domain.enterprise.models.execution import PostconditionFa
 from packet_tracer_mcp.domain.enterprise.models.intent import EnterpriseIntent
 from packet_tracer_mcp.domain.enterprise.models.service_entry import ServiceEntryRefusal
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
+    ClientOperationCapability,
     EnableHttpService,
     EnableHttpsService,
+    ServiceActionType,
     ServicePhase,
     ServicePlan,
     ServiceType,
@@ -123,6 +125,39 @@ def _marker(plan: ServicePlan, kind: ServiceVerificationKind) -> str:
     markers = {item.expected.get("marker") for item in rows}
     assert len(markers) == 1, markers
     return markers.pop()
+
+
+def _candidate_catalog(
+    *,
+    http_fetch: CapabilityStatus = CapabilityStatus.SUPPORTED,
+    https_fetch: CapabilityStatus = CapabilityStatus.UNKNOWN,
+    http_content: CapabilityStatus = CapabilityStatus.SUPPORTED,
+    https_content: CapabilityStatus = CapabilityStatus.SUPPORTED,
+):
+    records = dict(packet_tracer_service_capabilities(BACKEND_VERSION))
+    for key, support in (
+        ("PC-PT:http_fetch", http_fetch),
+        ("PC-PT:https_fetch", https_fetch),
+    ):
+        current = records[key]
+        assert isinstance(current, ClientOperationCapability)
+        records[key] = current.model_copy(update={"support": support})
+    for service_type, support in (
+        (ServiceType.HTTP, http_content),
+        (ServiceType.HTTPS, https_content),
+    ):
+        key = f"Server-PT:{service_type.value}"
+        profile = records[key]
+        action_support = dict(profile.action_application_support)
+        action_support[ServiceActionType.SET_HTTP_CONTENT.value] = support
+        records[key] = profile.model_copy(
+            update={"action_application_support": action_support}
+        )
+    return records
+
+
+def _stored(harness, result):
+    return harness.record_store.load(harness.deployment_id, result.run_id)
 
 
 # -- one page store, one action --------------------------------------------------
@@ -306,6 +341,162 @@ def test_an_optional_unrelated_service_still_coexists_with_the_shared_page():
     (content,) = _content_actions(plan)
     assert content.shared_service_ids == sorted([HTTP_SERVICE, HTTPS_SERVICE])
     assert any(item.service_type is ServiceType.NTP for item in plan.services)
+
+
+# -- admitted execution projection ----------------------------------------------
+
+
+def test_optional_unknown_https_keeps_one_http_writer_without_dangling_dependencies(
+    tmp_path: Path,
+):
+    """F1-close: optional exclusion cannot remove or poison the HTTP writer."""
+    payload = _payload()
+    source = _compose(payload).services
+    content = _content_actions(source)[0]
+    harness = _harness(tmp_path, payload)
+
+    result = harness.run()
+
+    assert result.refusal_code is ServiceEntryRefusal.NONE
+    dispatched = [
+        identifier for batch in harness.services.applied for identifier in batch
+    ]
+    assert dispatched.count(content.id) == 1
+    stored = _stored(harness, result)
+    assert stored.service_semantic_hash == source.semantic_hash
+    assert stored.service_result is not None
+    assert stored.service_result.service_plan_id == source.id
+    assert stored.service_result.service_semantic_hash == source.semantic_hash
+    assert HTTP_SERVICE in stored.selected_service_ids
+    assert HTTPS_SERVICE not in stored.selected_service_ids
+    assert content.id in stored.selected_action_ids
+    (binding,) = stored.shared_content_bindings
+    assert binding.source_action_id == content.id
+    assert binding.selected_action_id == content.id
+    assert binding.source_service_ids == sorted([HTTP_SERVICE, HTTPS_SERVICE])
+    assert binding.selected_service_ids == [HTTP_SERVICE]
+    assert binding.writer_service_id == HTTP_SERVICE
+    assert binding.writer_service_type is ServiceType.HTTP
+    assert set(binding.dependency_ids) <= set(stored.selected_action_ids)
+
+
+def test_excluded_optional_http_rebinds_the_single_writer_to_eligible_https(
+    tmp_path: Path,
+):
+    """F1-close: the shared action survives under an exact HTTPS writer."""
+    payload = _payload(http_content="ONE_PAGE", https_content="ONE_PAGE")
+    services = payload["sites"][0]["services"]
+    next(item for item in services if item["service_type"] == "http")["required"] = (
+        False
+    )
+    next(item for item in services if item["service_type"] == "https")["required"] = (
+        True
+    )
+    catalog = _candidate_catalog(
+        http_fetch=CapabilityStatus.UNKNOWN,
+        https_fetch=CapabilityStatus.SUPPORTED,
+    )
+    source = _compose(payload).services
+    content = _content_actions(source)[0]
+    harness = _harness(tmp_path, payload)
+
+    result = harness.run(capability_catalog=lambda _version: catalog)
+
+    assert result.refusal_code is ServiceEntryRefusal.NONE
+    dispatched = [
+        identifier for batch in harness.services.applied for identifier in batch
+    ]
+    assert dispatched.count(content.id) == 1
+    stored = _stored(harness, result)
+    assert stored.service_semantic_hash == source.semantic_hash
+    assert stored.service_result is not None
+    assert stored.service_result.service_plan_id == source.id
+    assert HTTPS_SERVICE in stored.selected_service_ids
+    assert HTTP_SERVICE not in stored.selected_service_ids
+    (binding,) = stored.shared_content_bindings
+    assert binding.selected_service_ids == [HTTPS_SERVICE]
+    assert binding.writer_service_id == HTTPS_SERVICE
+    assert binding.writer_service_type is ServiceType.HTTPS
+    assert set(binding.dependency_ids) <= set(stored.selected_action_ids)
+    assert not any(
+        isinstance(item, EnableHttpService)
+        for item in source.actions
+        if item.id in stored.selected_action_ids
+    )
+
+
+def test_both_eligible_protocols_keep_one_writer_and_both_service_markers(
+    tmp_path: Path,
+):
+    """F1-close: agreement produces one write and two admitted outcomes."""
+    payload = _payload(http_content="ONE_PAGE", https_content="ONE_PAGE")
+    next(
+        item
+        for item in payload["sites"][0]["services"]
+        if item["service_type"] == "https"
+    )["required"] = True
+    catalog = _candidate_catalog(https_fetch=CapabilityStatus.SUPPORTED)
+    content = _content_actions(_compose(payload).services)[0]
+    harness = _harness(tmp_path, payload)
+
+    result = harness.run(capability_catalog=lambda _version: catalog)
+
+    assert result.refusal_code is ServiceEntryRefusal.NONE
+    dispatched = [
+        identifier for batch in harness.services.applied for identifier in batch
+    ]
+    assert dispatched.count(content.id) == 1
+    assert {
+        item.service_id
+        for item in result.services
+        if item.usability_status.value != "skipped"
+    } >= {HTTP_SERVICE, HTTPS_SERVICE}
+    stored = _stored(harness, result)
+    (binding,) = stored.shared_content_bindings
+    assert binding.source_service_ids == sorted([HTTP_SERVICE, HTTPS_SERVICE])
+    assert binding.selected_service_ids == sorted([HTTP_SERVICE, HTTPS_SERVICE])
+    assert binding.writer_service_id == HTTP_SERVICE
+
+
+def test_an_unknown_exact_writer_operation_cannot_borrow_an_excluded_service_key(
+    tmp_path: Path,
+):
+    """F1-close: provenance broadens ownership, never operation capability."""
+    payload = _payload()
+    catalog = _candidate_catalog(http_content=CapabilityStatus.UNKNOWN)
+    harness = _harness(tmp_path, payload)
+
+    result = harness.run(capability_catalog=lambda _version: catalog)
+
+    assert result.refusal_code is ServiceEntryRefusal.SERVICE_INELIGIBLE
+    assert "set_http_content" in result.blocked_reason
+    assert harness.mutating_calls == []
+
+
+def test_https_only_product_projection_never_selects_an_http_enable(
+    tmp_path: Path,
+):
+    """F1-close: HTTPS-only writes through HTTPS without enabling HTTP."""
+    payload = _payload(drop_http=True, https_content="TLS_ONLY_PAGE")
+    next(item for item in payload["sites"][0]["services"])["required"] = True
+    catalog = _candidate_catalog(https_fetch=CapabilityStatus.SUPPORTED)
+    source = _compose(payload).services
+    content = _content_actions(source)[0]
+    harness = _harness(tmp_path, payload)
+
+    result = harness.run(capability_catalog=lambda _version: catalog)
+
+    assert result.refusal_code is ServiceEntryRefusal.NONE
+    stored = _stored(harness, result)
+    assert content.id in stored.selected_action_ids
+    assert not any(
+        isinstance(item, EnableHttpService)
+        for item in source.actions
+        if item.id in stored.selected_action_ids
+    )
+    (binding,) = stored.shared_content_bindings
+    assert binding.writer_service_type is ServiceType.HTTPS
+    assert binding.selected_service_ids == [HTTPS_SERVICE]
 
 
 def test_the_shared_binding_survives_a_record_round_trip():

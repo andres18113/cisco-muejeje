@@ -59,6 +59,16 @@ action. Explicit service dependencies become graph edges and missing nodes or
 cycles are compile errors. Identical DNS records and TFTP file requirements are
 deduplicated; contradictory DNS answers are rejected.
 
+HTTP and HTTPS on one Server-PT share one measured `index.html` store. The
+compiled `SetHttpContent` therefore records every sharing service in
+`shared_service_ids` and carries one payload. Product admission selects one
+writer from the services that remain eligible, resolves that writer's exact
+operation capability, and removes only dependencies owned by an excluded
+sharing service. The source plan id/hash stay unchanged while the run record
+stores the selected service/action ids and the source-to-selected writer
+binding. No other service key can authorize the writer, and a projection with
+a missing dependency refuses before E5.
+
 The semantic hash is canonical SHA-256 over the complete plan excluding only
 the hash field itself. It includes E4 and E5 source hashes, service placement,
 actions, foundational requirements, protocol metadata, and verification

@@ -44,6 +44,7 @@ from .service_entry import (
     ServiceStage,
     StageTransition,
 )
+from .service_plan import ServiceType
 from .service_runtime import ServiceApplicationResult
 
 
@@ -76,6 +77,19 @@ class DhcpServiceAuthorityRecord(BaseModel):
     client_device_ids: list[str] = Field(default_factory=list)
     action_ids: list[str] = Field(default_factory=list)
     expectation_ids: list[str] = Field(default_factory=list)
+
+
+class SharedContentExecutionBinding(BaseModel):
+    """Source and selected identities for one admitted shared page writer."""
+
+    source_action_id: str
+    selected_action_id: str
+    source_service_ids: list[str] = Field(default_factory=list)
+    selected_service_ids: list[str] = Field(default_factory=list)
+    writer_service_id: str
+    writer_service_type: ServiceType
+    dependency_ids: list[str] = Field(default_factory=list)
+    content_source_record: str = ""
 
 
 class ServiceRunRecord(BaseModel):
@@ -124,6 +138,11 @@ class ServiceRunRecord(BaseModel):
     services: list[ServiceEntryOutcome] = Field(default_factory=list)
     clients: list[ClientServiceOutcome] = Field(default_factory=list)
     selected_clients: list[str] = Field(default_factory=list)
+    selected_service_ids: list[str] = Field(default_factory=list)
+    selected_action_ids: list[str] = Field(default_factory=list)
+    shared_content_bindings: list[SharedContentExecutionBinding] = Field(
+        default_factory=list
+    )
     releases: list[OwnedResourceRelease] = Field(default_factory=list)
     nonces: dict[str, str] = Field(default_factory=dict)
     dhcp_authorities: list[DhcpServiceAuthorityRecord] = Field(default_factory=list)
