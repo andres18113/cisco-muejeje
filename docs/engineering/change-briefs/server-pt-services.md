@@ -845,7 +845,7 @@ prose that distinguishes *no explicit setter targeted the native default* from
 | H1 | Every acquired native-default reading is written to one authoritative sink on the record itself — `QualificationRecord.native_default_pool` — at the moment it is taken, whatever phase the run is in and whether or not it has stopped. Each entry preserves the label, the observed flag, the unobserved cause, the bounded pool rows, the intended-pool presence, the exact raw payload, the differences against the first reading, the purpose dispatched under it and the ledger sequence of the counted operation. The measurement projection reads that sink instead of a parallel list. | A real coordinator/store run stops early on a changed default and then returns a third, deliberately different value on the final reading; the reloaded terminal record carries all three observations with their labels, purposes and operation sequences, the third differs from `after_setup`, and the primary cause is unchanged. |
 | H2 | The reading is dispatched under `q3:native_default:<label>`, set before the call and never inferred afterwards from an ordinal. A reading the remaining allowance cannot pay for, or that the ledger refuses, is recorded as an explicit unobserved entry with its own cause and no counted operation; no additional bridge operation is added to repair documentation, and the stage budgets are unchanged. | Record purposes contain no empty label for a counted default reading; a ceiling that leaves nothing for the final reading yields `default_pool_snapshot_not_affordable` with `operation_seq` 0 and no extra dispatch; ledger totals stay inside the pinned Q3 worst case of 59. |
 | H3 | A failing final reading or a failing record write is additional evidence. It never replaces the first primary failure, never authorizes a new experimental effect, and leaves owned finalization bounded and running. | With the store failing the terminal write, the returned record still holds the three observations, `persist_error` is set, the primary failure is the original default change, and no experimental dispatch follows; with the final reading malformed, errored or unobserved, the entry states the cause and the primary failure is still the original one. |
-| H4 | `native_default_pool_coexists_and_is_never_modified` is replaced by `no_explicit_setter_targeted_the_native_default`. The Q1 planned-worst-case projection is corrected from 53 to the 56 the stage definition and its contract test compute. Historical records, their bytes and their hashes are unchanged, and an external review limitation states that the pre-cleanup payload of the delivered Q3 record is missing and is never reconstructed. | The limitation token appears in a new run's setup row and nowhere claims immutability; the brief's Q1 table sums to 56; the archived campaign files reverify byte-for-byte against their recorded digests. |
+| H4 | `native_default_pool_coexists_and_is_never_modified` is replaced by `no_explicit_setter_targeted_the_native_default`. The Q1 planned-worst-case projection is corrected from 53 to the 56 the stage definition and its contract test compute, in the brief and in the M-DNS-1/M-DNS-2 omission reasons a future record copies into its own evidence. Historical records, their bytes and their hashes are unchanged, and an external review limitation states that the pre-cleanup payload of the delivered Q3 record is missing and is never reconstructed. | The limitation token appears in a new run's setup row and nowhere claims immutability; the brief's Q1 table sums to 56; the archived campaign files reverify byte-for-byte against their recorded digests. |
 | H5 | Two diagnostic profiles, D-DHCP and D-WEB, exist as typed offline records built from the existing runner, product writers, native readers and operation ledger. Each carries its proposed sequence, exact target/effect list, per-step observation contract, budget arithmetic including finalization, its declared seams and a draft authorization whose status is `DRAFT` and whose `granted` flag is false. Dispatch is refused for any profile whose authorization is not an exact-scope granted record. | The profiles are generated from the real Q3 product contract and the installed vendor reference; the refusal function returns a non-empty reason for both drafts and for a granted record whose stage, fixture set, step set, budget or build differs; no stage definition, CLI path or tool registration can reach them. |
 
 ### Architecture and affected contracts
@@ -888,8 +888,10 @@ Causal RED comes first through the real coordinator, the real record store and
 the stub engine's own native-state and call log as the oracle:
 `tests/test_service_qualification_coordinator.py` for the terminal-evidence
 regression, the unaffordable reading, the failing terminal write and the
-unchanged success-path trace; `tests/test_service_qualification_contracts.py`
-for the record model, the projection and the two diagnostic profiles. The
+unchanged success-path trace; `tests/test_service_qualification_cli.py` for
+the persisted sink through the real command line; and the new
+`tests/test_service_diagnostic_profiles.py` for the two profiles, their
+projections against the real Q3 product contract and the refusal gate. The
 pinned stage worst cases do not move: Q3 stays `17 + 31 + 11 = 59` inside
 60 / 1200 and Q1 stays `19 + 27 + 10 = 56` inside 60 / 600, because this block
 adds no bridge operation to either stage.
@@ -984,6 +986,16 @@ read that finds the marker after the deadline places it at the polling window.
 A timeout remains a timeout: it is never a negative listener claim, and no TLS
 property is asserted.
 
+**Declared seams.** Four existing contracts cannot support this record as
+they are, and each step that needs one stays blocked until it is approved.
+
+| Seam | What exists | What is needed | Minimal extension |
+| --- | --- | --- | --- |
+| `http-client-mode-not-read` | only the HTTPS start reads `isHttps()` | the mode the client held when the request started | read it in the same start evaluation for both modes; no extra operation |
+| `poll-discards-intermediate-readings` | only the last reading survives | each inspection with its timestamp and remaining budget | collect the readings the poll already takes; no extra inspection |
+| `no-late-control-read` | nothing reads the page after the window closes | one late read that separates late content from no content | one counted read per fetch, budgeted as its fifth operation |
+| `listener-port-number-not-read` | the reader reports enable flags only | the actual port number of each handle | add `getPortNumber()` to the same evaluation; no extra operation |
+
 **Vendor reference audit.** Checked against the Extensions API reference
 installed with the measured Packet Tracer build, which labels itself 8.1.0.
 Documentation is not measurement, and nothing below is a support claim.
@@ -1005,7 +1017,11 @@ Documentation is not measurement, and nothing below is a support claim.
 path and the listener cannot be separated: only layer-1 and layer-2 readiness
 is observable, `onRequest` and `onDone` are unqualified event sources, and
 `HttpResponseType` is undocumented in the installed reference. The profile says
-so instead of inferring a listener refusal from silence.
+so instead of inferring a listener refusal from silence. The measured link
+fields stay separate from any forwarding, spanning-tree or reachability claim:
+`isPortUp`, `isProtocolUp`, `getLink` and the host address readers are carried
+as themselves, and the record repeats what the Q1 sample already names — no
+documented STP state reader and an undocumented port light-status enumeration.
 
 ### Where the profiles live
 
@@ -1032,6 +1048,85 @@ for D-DHCP, a separate decision on the declared plan-dependency seam. The
 refusal gate is fail-closed: an absent, draft, differently scoped or
 differently budgeted authorization refuses, and an unobservable value is
 unknown, never permission.
+
+### A02 implementation evidence
+
+Observed offline in `Cisco-MCP-s3` from `a02c1e0894f425f51c26e686e917cb41e59e3745`
+(tree `fdec9eeab3a4af4c8decfc70ac60451b746898f1`), whose authoritative base and
+merge base is `6263344e31ba3b0de6539d652f2cd06fc73a3562` on the `cisco` remote.
+No Packet Tracer process was opened or contacted, no bridge was started, no LIVE
+attempt was used and no capability was promoted. This order authorized offline
+work only.
+
+| Commit | Scope |
+| --- | --- |
+| `d97f0ee` | this Block H design delta, recorded before any behavior edit |
+| `68ed2e4` | A02-E1: the record is the one sink for every native default reading |
+| `4996e55` | the D-DHCP and D-WEB profiles, their projections, seams and gate |
+| `a0e8e4b` | the Q1 omission prose corrected to the computed worst case |
+
+#### Causal RED and GREEN
+
+The RED was produced at `d97f0ee` by restoring the two pre-fix source files and
+running the new coordinator regression against them. The stub engine's own call
+log is the oracle:
+
+```text
+ENGINE READS: 3
+PERSISTED LABELS: ['before_e5', 'after_setup']
+OPERATION 30 PURPOSE: ''
+AssertionError: assert ['before_e5', 'after_setup'] == ['before_e5', 'after_setup', 'before_cleanup']
+```
+
+That is the delivered LIVE defect reproduced offline: three reads performed, two
+persisted, and the counted operation of the third carrying no purpose. Six new
+regressions failed at `d97f0ee` and pass at `68ed2e4`, covering the terminal
+record, a failing completion write, a failing write of the reading itself, a lost
+answer, an incoherent inventory and an unaffordable reading. The success-path
+snapshot trace and the semantic restoration controls stayed green throughout.
+
+The measured consequence is narrow and honest. The record now carries each
+reading's label, the purpose it was dispatched under, the sequence of the counted
+operation, the raw bounded payload and the differences against the run's first
+reading. The stage budgets do not move, because the first reading reuses the
+typed baseline admission read and the later ones replace reads the stage already
+made. A reading nothing could pay for is recorded with `operation_seq` 0 and
+`default_pool_snapshot_not_affordable`, and no dispatch follows it.
+
+One case is deliberately not escalated: an unobserved final reading on a run that
+has not stopped records its cause in the entry and in the measurement projection
+without adding a secondary failure, because there is no primary cause for it to
+be additional to.
+
+#### Suites and gates
+
+| Verification | Result |
+| --- | --- |
+| focused coordinator regression | 64 passed |
+| qualification and diagnostics affected | 318 passed |
+| combined affected/coexistence | 1310 passed, 1 skipped |
+| diagnostic profiles | 34 passed |
+| full offline suite | 6582 passed, 3 skipped, 3 pre-existing warnings |
+| namespace inventory | 0 active imports, 0 active strings, 0 unreviewed inert mentions |
+| documentation | built; only the two pre-existing `handoff.md` link warnings |
+| whitespace | clean |
+| Ruff gate against `cisco/main` | 86 gated Python files, zero mechanical exemptions |
+| clean delivery gate | run on the final commit, with `--delivery-commit HEAD` |
+| exact-SHA CI | inspected at the published head, matrix included |
+
+The pinned stage worst cases are unchanged: Q3 `17 + 31 + 11 = 59` inside
+60 / 1200 and Q1 `19 + 27 + 10 = 56` inside 60 / 600. The two prepared
+diagnostics ask for their own ceilings and neither is granted one: D-DHCP 43 of
+60 with an 11-operation reserve, 41 without the activation step, and D-WEB 47 of
+60 with a 10-operation reserve.
+
+Campaign ledger entry 6 archives this closure against entry 5. It reverifies the
+operator's package byte for byte — 17 files, 90,548 bytes, internal manifest
+SHA-256 `317eaf45…4a2902c` — records both delivered attempt records unchanged at
+`7e22a2bc…f89636` and `11af4155…2da917`, archives the A02 work order at 11,737
+bytes and SHA-256 `f507f3f1…5f3f38`, and states the missing pre-cleanup payload
+as an external review limitation. It consumes no attempt: Q3 3 of 3 and Q1 2 of 2
+remain spent, and there are zero remaining LIVE attempts.
 
 ## Test design
 

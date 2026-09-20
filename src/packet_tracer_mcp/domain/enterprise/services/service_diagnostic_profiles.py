@@ -893,6 +893,9 @@ def d_web_profile(*, build: str, channels: tuple[str, ...]) -> DiagnosticProfile
             "with documented read-only members alone the network path and the "
             "listener cannot be separated: only layer-1 and layer-2 readiness "
             "is observable",
+            "the measured link fields are carried as themselves and never as a "
+            "forwarding, spanning-tree or reachability observation: no STP "
+            "state reader and no port light-status enumeration is documented",
             "a timeout is never a negative listener claim",
             "no TLS property is asserted by an HTTPS-mode retrieval",
             "every owned client is named, released once and reported; an "

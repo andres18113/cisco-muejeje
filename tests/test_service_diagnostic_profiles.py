@@ -397,6 +397,28 @@ def test_every_previously_unused_vendor_member_has_a_disposition():
     )
 
 
+def test_the_web_link_fields_are_never_a_forwarding_or_stp_claim():
+    """Layer-1 and layer-2 readings are carried as themselves and nothing more."""
+    profile = d_web_profile(build=Q3_PACKET_TRACER_BUILD, channels=CHANNELS)
+    for step in ("W0-b", "W4-b"):
+        assert set(profile.step(step).retains) <= {
+            "port_up",
+            "protocol_up",
+            "link_type",
+            "ip",
+            "mask",
+            "reads",
+            "deadline_seconds",
+            "first_sample",
+            "last_sample",
+            "reason",
+        }
+    assert any(
+        "no STP state reader and no port light-status enumeration is documented" in item
+        for item in profile.limitations
+    )
+
+
 def test_the_web_profile_states_what_it_cannot_separate():
     """Only layer-1 and layer-2 readiness is observable, and it says so."""
     profile = d_web_profile(build=Q3_PACKET_TRACER_BUILD, channels=CHANNELS)
@@ -416,3 +438,25 @@ def test_every_web_seam_names_a_minimal_extension_not_a_copied_writer():
         assert seam.minimal_extension
     blocked = {item for step in profile.steps for item in step.blocked_by}
     assert blocked == set(profile.seam_ids)
+
+
+def test_every_dhcp_reading_after_the_baseline_names_its_before_oracle():
+    """A transition is always attributable to one named interval, not a phase."""
+    profile = d_dhcp_profile(build=Q3_PACKET_TRACER_BUILD, channels=CHANNELS)
+    readings = [
+        item
+        for item in profile.steps
+        if item.effect is DiagnosticEffect.OBSERVE and "native_default" in item.purpose
+    ]
+    assert [item.id for item in readings] == ["D0-a", "D1-b", "D2-b", "D3-b", "D4"]
+    baseline, *later = readings
+    assert not [item for item in baseline.retains if item.startswith("differences")]
+    for step in later:
+        compared = [
+            item.removeprefix("differences_against_")
+            for item in step.retains
+            if item.startswith("differences_against_")
+        ]
+        assert compared, step.id
+        earlier = profile.step_ids[: profile.step_ids.index(step.id)]
+        assert set(compared) <= set(earlier), step.id

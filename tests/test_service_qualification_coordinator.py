@@ -1501,7 +1501,7 @@ class _NativeDefaultWatcher(_Wrapped):
         self.reads = 0
         self.pools: list[dict] = []
 
-    def _native_end(self, index: int) -> str:
+    def native_end(self, index: int) -> str:
         return self.pools[index]["pools"]["serverPool"]["end"]
 
     def dispatch_and_wait(self, js_code: str, timeout: float):
@@ -1571,8 +1571,8 @@ def test_every_native_default_reading_reaches_the_terminal_record(harness):
     assert [counted[item.operation_seq] for item in entries] == DEFAULT_PURPOSES
     assert watcher.reads == 3
     assert [item.pools[0]["end"] for item in entries] == [
-        watcher._native_end(0),
-        watcher._native_end(1),
+        watcher.native_end(0),
+        watcher.native_end(1),
         LATE_END,
     ]
     assert entries[2].pools[0]["end"] != entries[1].pools[0]["end"]
