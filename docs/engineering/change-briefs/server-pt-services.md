@@ -663,6 +663,100 @@ repaired Q1 is not a prerequisite for this offline block.
     the same page are a compile error before any effect, never a resolved
     conflict and never a second write.
 
+## Block G — focused closure addendum at `243ddc8` (risk L)
+
+Review disposition on `243ddc8` (tree `f16efe8`) is
+**REQUIRES_CHANGES**. This block closes four integration and uncertainty
+boundaries in the already-approved amendment; it does not introduce another
+service subsystem, transport, protocol, scheduler, public tool argument,
+capability promotion or campaign. The maintained Block F design and its
+measured shared-page/default-pool facts remain authoritative wherever this
+delta does not replace a narrower decision.
+
+### Problem and intended outcome
+
+The compiled shared page action records every owning service, but product
+admission and execution projection still use only its single writer
+`service_id`. Optional exclusion can therefore leave a retained service with a
+dependency on an excluded listener, or remove the only page writer. The
+readiness loop also lets a fixed ten-second probe finish after its local
+thirty-second deadline, and Q3 first activates DHCP mode in E5 before it checks
+the link precondition. Later native-default snapshots accept incomplete or
+malformed readings as observations. Finally, Q3's continuation guard ignores
+some canonical unresolved mutation rows and the product phase schedules the
+server setup setters a second time.
+
+The outcome is one provenance-aware admitted projection for shared content,
+one deadline-enforcing readiness gate before the first protected activation,
+one strict reusable default-snapshot classifier, and one exact staged-result
+reuse boundary that executes every setup mutation once while preserving its
+original typed result.
+
+### Requirements and acceptance
+
+| ID | Requirement | Acceptance |
+| --- | --- | --- |
+| F1-close | Shared-content admission evaluates the binding recorded in `shared_service_ids`, not only the selected writer key. The selected execution projection keeps one compatible content action, chooses a writer among admitted HTTP/HTTPS services whose exact writer operation is supported, rewrites only dependencies owned by excluded sharing services, and preserves the source plan id/hash plus explicit selected service/action identities. If no admitted writer has the exact required capability, admission refuses before E5. | Required HTTP plus optional unknown HTTPS executes HTTP with one writer and no dangling HTTPS dependency; admitted HTTPS plus excluded optional HTTP either writes through HTTPS or refuses before effects; both admitted execute one write and retain both service markers; incompatible stated content still refuses with zero E5/E6 effects; HTTPS-only never enables HTTP; a supported unrelated service key cannot authorize an unknown writer; outcome rows, retained rows and the stored record preserve the binding. |
+| F2-close | `_await_readiness` computes a timeout for every read as the minimum of the probe's normal timeout, the local deadline remainder and the stage allowance outside finalization reserve. A read that returns after the local deadline is retained as a late observation but cannot establish readiness. Q3 runs this gate after typed baseline admission and before its first `SetEndpointDhcp`; the same sample may protect later DHCP work only while the fixture topology relevant to it is unchanged. | Initially ready, delayed ready, persistent down and late completion are driven through the real coordinator with an injected clock/transport; the late call receives a reduced timeout and grants no permission; the gate stays within four reads and thirty seconds without reserve borrowing or unconditional sleep; unready Q3 makes zero `SetEndpointDhcp`, `dhcpRun` and background-client calls, while finalization still runs. |
+| F3-close | Every post-setup and pre-cleanup default snapshot passes the same subject/interface, process, typed inventory, error, truncation, cardinality, unique-name and typed-pool validation as the admitted baseline. The intended new pool is accounted for separately and excluded from the immutable-default comparison only after its row is valid. Raw bounded facts and the original unobserved cause are preserved. | Complete equal snapshots establish preservation; a changed field establishes a change; extra/duplicate pools, wrong subject, count mismatch, malformed rows/fields, truncation and an error after a valid prefix are unobserved snapshots with their original cause. Unknown and changed both stop later experimental effects but remain distinct in the record; an affordable final snapshot is retained after a stop; legacy archive bytes do not change. |
+| F4-close | Q3 classifies the exact full governed E5/E6 result identities and the canonical decided rows before any subsequent effect. Missing or duplicate rows, unresolved effect, runtime exception and contradicted verification stop. Server setup is applied once through the real `ServiceApplicator`; a later full-plan call may reuse only exact original action rows whose retained input snapshot reproduces the same canonical decision and whose plan/action identity matches. Reuse never fabricates a new dispatch, accepted envelope or verified observation; full-plan read-only verification may run fresh. | An acknowledgement lost with `attempted=None`, a missing/duplicate row and a contradicted read-back all block the guard and subsequent effects; native setter call logs prove one setup call across both phases; the same-claim negative runs only after every prerequisite is established; record/store roundtrip preserves the original mutation inputs, decisions, uncertainty and journal; budget arithmetic counts actual calls and not retained rows. |
+
+### Architecture and affected contracts
+
+- `apply_enterprise_services` owns admitted-plan projection. The compiler's
+  `SetHttpContent.shared_service_ids` and source record are the provenance; the
+  projection does not infer sharing from host names, service type alone or a
+  missing dependency. Capability resolution is performed on each candidate
+  writer action, and only the selected execution copy is rebound. The compiled
+  plan identity remains the source identity; selected service and action ids
+  are persisted separately so the executed subset is not mistaken for the
+  source plan.
+- `PacketTracerQualificationProbes` continues to own the normal per-read
+  timeout. Its readiness methods accept a smaller caller-provided timeout; the
+  coordinator owns local-deadline and stage-reserve arithmetic and rejects a
+  sample completed after expiry.
+- `service_qualification_evidence` owns one strict snapshot classifier shared
+  by the admission and later snapshots. A valid intended-pool row is presence
+  evidence, not part of the immutable default. A malformed intended row makes
+  the whole snapshot unobserved rather than disappearing from comparison.
+- `ServiceApplicator` owns retained E6 action admission. It accepts only
+  exact, unique plan rows with retained `received_mutation`; rerunning the
+  canonical `decide_mutation` over that retained input must reproduce the
+  stored decision outputs. Invalid retention fails before runtime inventory or
+  effects. Q3 setup uses an exact server-only projection through this
+  applicator and the product phase reuses those rows in the full plan.
+
+### Invariants added by this block
+
+25. Shared-resource provenance can broaden ownership, never capability. One
+    service's supported key cannot authorize another process as the writer.
+26. A ready sample authorizes nothing after its local deadline, even when the
+    underlying transport returns a correlated body.
+27. A positive prefix in a bounded inventory remains evidence of those rows,
+    but it never proves complete preservation after an error, truncation or
+    incoherent cardinality.
+28. A retained result is the original decided row, not a synthetic success and
+    not permission to redispatch. Exact plan/action identity and canonical
+    input/output agreement are prerequisites to reuse.
+29. Q3 calls each native setup setter at most once across setup and product
+    phases; read-only verification and protected finalization are not setters.
+
+### Test design and budget
+
+Behavioral changes use causal RED first through existing real boundaries:
+`test_apply_enterprise_services.py` and `test_service_https_content.py` for the
+admitted shared projection; `test_service_qualification_coordinator.py` plus
+the generated probe harness for deadlines and ordering;
+`test_service_qualification_contracts.py` for strict snapshots; and the real
+applicator/coordinator/store harnesses for retained results and native setter
+call counts. Focused runs precede affected/coexistence and the full suite.
+Documentation, namespace, whitespace and the clean exact-commit delivery gate
+remain mandatory. Q3 remains 60 operations / 1200 seconds with at least 11 / 180
+reserved; Q1 remains 60 / 600 with at least 10 / 120 reserved. Cached rows cost
+no bridge call, while every fresh verification, readiness read and finalization
+call is counted. Packet Tracer contact remains conditional on clean publication
+and exact-successor-SHA CI.
+
 ## Test design
 
 | Level | Scope | Files |
