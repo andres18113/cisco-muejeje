@@ -1,4 +1,4 @@
-# Campaign `SERVER-PT-D02-Q3-Q1-AUTOFIX-01`, amendment 01 and focused closure 01
+# Campaign `SERVER-PT-D02-Q3-Q1-AUTOFIX-01`: amendment, focused closure and A02 closure
 
 Navigation and provenance only. Nothing here authorizes a run.
 
@@ -13,11 +13,13 @@ remain historical facts.
 
 | File | What it is |
 | --- | --- |
-| `amendment-ledger.jsonl` | appended entries `seq` 4 and 5; seq 5 links to seq 4 entry hash `5a2480e4…5b911` |
+| `amendment-ledger.jsonl` | appended entries `seq` 4, 5 and 6, each linked to the previous entry hash: 5 to `5a2480e4…5b911` and 6 to `fbf11de2…f6f59d` |
 | `AMENDMENT-01.sha256` | digests of the archived amendment, the unmodified original package and the ledger entry |
 | `FOCUSED-CLOSURE-01.sha256` | digests of the review addendum, amendment 01, the unmodified original package and the two-entry ledger |
+| `A02-CLOSURE-01.sha256` | digests of the A02 work order, the operator's unmodified `...-FOCUSED-CLOSURE-a02c1e0.zip`, that package's internal manifest, both delivered attempt records and the three-entry ledger |
 | [`../../assignments/Codex_Continuation_A1_Q3_Q1_S1b.md`](../../assignments/Codex_Continuation_A1_Q3_Q1_S1b.md) | the amendment itself, archived byte-for-byte (16,758 bytes, SHA-256 `70f2b7ad…6e9040`) |
 | [`../../assignments/Codex_243_Focused_Closure_and_Remaining_LIVE.md`](../../assignments/Codex_243_Focused_Closure_and_Remaining_LIVE.md) | focused review addendum, archived byte-for-byte (14,426 bytes, SHA-256 `4a5f96a1…5442a5`) |
+| [`../../assignments/Codex_A02_Evidence_Closure_and_Diagnostic_Preparation.md`](../../assignments/Codex_A02_Evidence_Closure_and_Diagnostic_Preparation.md) | the A02 work order, archived byte-for-byte (11,737 bytes, SHA-256 `f507f3f1…5f3f38`) |
 
 ## What the amendment changed, and what it did not
 
@@ -70,3 +72,35 @@ Q3 ordinal 1 (`c3aa5707…4166a6`) stopped because the DHCP manager was
 requested from the wrong receiver. Its process-exit observation remains
 unconfirmed at its original deadline, and a later process disappearance does
 not rewrite that artifact.
+
+## A02 closure 01: what entry 6 records, and what it does not
+
+Entry `seq` 6 links to entry 5 and records one offline delivery from
+`a02c1e0` (tree `fdec9eea`). It closes the demonstrated terminal-evidence
+loss, corrects two projection statements the delivered records contradict,
+and prepares two diagnostics that nothing authorizes to run.
+
+The campaign's attempt pools stay exactly where the focused closure left
+them: Q3 ordinal 3 of 3 and Q1 ordinal 2 of 2 are spent, and there are zero
+remaining LIVE attempts. A new SHA, nonce, counter, diagnostic label or
+application restart creates none. The delivered attempt records, the
+operator's package and every earlier entry are unmodified; the two attempt
+authorizations inside that package cite ledger entry hash
+`fbf11de2…f6f59d`, which is entry 5 of this file, so the chain resolves
+here and needs no replacement.
+
+### The external review limitation this closure records
+
+Operation 32 of Q3 record `q3-2026-09-20T03-27-46Z-51ff55e7` was dispatched
+and correlated, and its purpose was empty because the procedure had already
+finished. The pool values it returned reached no durable field and are
+unrecoverable. A reviewer reading that record should treat the pre-cleanup
+payload as missing: it is **not** equal to `after_setup`, it is not
+reconstructed anywhere, and the exhausted attempt is not rerun to fill it.
+The record's bytes and hashes are unchanged.
+
+Two questions therefore stay open, and each has a prepared, ungranted
+profile rather than an answer: which operation moves the native default
+pool (`D-DHCP`, worst case 43 of 60), and where the unretrieved HTTP page
+fails (`D-WEB`, worst case 47 of 60). Both are drafts with no granted
+status, and their dispatch gate refuses every one of them.
