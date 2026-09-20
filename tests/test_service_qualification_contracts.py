@@ -21,6 +21,7 @@ from packet_tracer_mcp.application.use_cases.qualify_server_services import (
     OperationLedger,
     OperationRefused,
     _q3_e5_foundation_cause,
+    _q3_service_result_cause,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration import (
     SetEndpointDhcp,
@@ -31,12 +32,16 @@ from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationResult,
     ConfigurationApplicationStatus,
+    RuntimeActionMutation,
     VerificationResult,
+    decide_mutation,
 )
 from packet_tracer_mcp.domain.enterprise.models.execution import (
     DispatchFact,
+    FootprintFact,
     PostconditionFact,
     ResultFact,
+    TransitionFact,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     AcquireDhcpLease,
@@ -70,6 +75,8 @@ from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
 from packet_tracer_mcp.domain.enterprise.models.service_runtime import (
     ObservationFact,
     RuntimeServiceVerification,
+    ServiceApplicationResult,
+    ServiceVerificationResult,
 )
 from packet_tracer_mcp.domain.enterprise.services.service_qualification_evidence import (
     NO_QUALIFIED_NEGATIVE_OBSERVABLE,
@@ -231,12 +238,12 @@ def test_q3_exact_fixture_and_complete_worst_case_fit_the_hard_ceiling():
     # Each shared procedure carries its whole worst case on its first
     # measurement: Q3_SETUP on M-DHCP-1 and Q3_DHCP on M-DHCP-2, so no
     # dispatch is counted twice and none is left uncounted.
-    assert [item.planned_operations for item in q3.experiments] == [10, 0, 0, 22, 0, 0]
-    assert q3.experiment("M-DHCP-1").planned_operations == 1 + 1 + 4 + 1 + 1 + 1 + 1
-    assert q3.experiment("M-DHCP-2").planned_operations == 1 + 4 + 3 + 9 + 1 + 3 + 1
-    assert (q3.setup_operations, q3.required_experiment_operations) == (17, 32)
+    assert [item.planned_operations for item in q3.experiments] == [15, 0, 0, 16, 0, 0]
+    assert q3.experiment("M-DHCP-1").planned_operations == 1 + 1 + 4 + 4 + 3 + 1 + 1
+    assert q3.experiment("M-DHCP-2").planned_operations == 1 + 3 + 7 + 1 + 3 + 1
+    assert (q3.setup_operations, q3.required_experiment_operations) == (17, 31)
     assert q3.reserve_operations == 11
-    assert q3.planned_minimum_operations == 60
+    assert q3.planned_minimum_operations == 59
     assert q3.budget.reserve_seconds == 180
     assert q3.allowed_channels == ("file",)
     assert request_refusals(_request("Q3")) == ()
@@ -1627,6 +1634,8 @@ def test_default_pool_snapshots_keep_the_native_rows_and_name_every_difference()
         "before_e5",
         _baseline(pool_count=1, pools=[dict(NATIVE_POOL)]),
         intended_pool="MCP_E6Q_DHCP",
+        server="__MCP_E6Q_SRV",
+        interface="FastEthernet0",
     )
     after = default_pool_snapshot(
         "after_setup",
@@ -1638,6 +1647,8 @@ def test_default_pool_snapshots_keep_the_native_rows_and_name_every_difference()
             ],
         ),
         intended_pool="MCP_E6Q_DHCP",
+        server="__MCP_E6Q_SRV",
+        interface="FastEthernet0",
     )
     assert before.pools == (NATIVE_POOL,) and before.intended_present is False
     assert after.intended_present is True
@@ -1650,16 +1661,91 @@ def test_default_pool_snapshots_keep_the_native_rows_and_name_every_difference()
             pool_count=2, pools=[dict(NATIVE_POOL), {**NATIVE_POOL, "name": "X"}]
         ),
         intended_pool="MCP_E6Q_DHCP",
+        server="__MCP_E6Q_SRV",
+        interface="FastEthernet0",
     )
     assert default_pool_differences(before, appeared) == ("default_pool_added:X",)
-    gone = default_pool_snapshot("after_setup", _baseline(), intended_pool="X")
+    gone = default_pool_snapshot(
+        "after_setup",
+        _baseline(),
+        intended_pool="X",
+        server="__MCP_E6Q_SRV",
+        interface="FastEthernet0",
+    )
     assert default_pool_differences(before, gone) == (
         "default_pool_removed:serverPool",
     )
-    unread = default_pool_snapshot("after_setup", None, intended_pool="X")
+    unread = default_pool_snapshot(
+        "after_setup",
+        None,
+        intended_pool="X",
+        server="__MCP_E6Q_SRV",
+        interface="FastEthernet0",
+    )
     assert default_pool_differences(before, unread) == (
         "default_pool_snapshot_unobserved:after_setup",
     )
+
+
+@pytest.mark.parametrize(
+    ("label", "payload", "cause"),
+    [
+        (
+            "wrong subject",
+            {"device": "OTHER"},
+            "default_pool_snapshot_subject_mismatch",
+        ),
+        (
+            "wrong interface",
+            {"interface": "FastEthernet1"},
+            "default_pool_snapshot_interface_mismatch",
+        ),
+        (
+            "count mismatch",
+            {"pool_count": 2, "pools": [dict(NATIVE_POOL)]},
+            "default_pool_snapshot_inventory_incoherent",
+        ),
+        (
+            "malformed row",
+            {"pool_count": 1, "pools": [{**NATIVE_POOL, "max": "512"}]},
+            "default_pool_snapshot_row_malformed",
+        ),
+        (
+            "duplicate name",
+            {"pool_count": 2, "pools": [dict(NATIVE_POOL), dict(NATIVE_POOL)]},
+            "default_pool_snapshot_duplicate_pool_name",
+        ),
+        (
+            "truncated",
+            {"truncated": True, "pool_count": 1, "pools": [dict(NATIVE_POOL)]},
+            "default_pool_snapshot_inventory_truncated",
+        ),
+        (
+            "error after prefix",
+            {
+                "error": "getPoolAt:boom",
+                "pool_count": 1,
+                "pools": [dict(NATIVE_POOL)],
+            },
+            "default_pool_snapshot_read_error",
+        ),
+    ],
+)
+def test_a_later_default_snapshot_must_be_a_complete_typed_observation(
+    label, payload, cause
+):
+    """F3-close: a positive prefix never proves complete preservation."""
+    snapshot = default_pool_snapshot(
+        "after_setup",
+        _baseline(**payload),
+        intended_pool="MCP_E6Q_DHCP",
+        server="__MCP_E6Q_SRV",
+        interface="FastEthernet0",
+    )
+
+    assert snapshot.observed is False, label
+    assert snapshot.cause == cause
+    assert snapshot.raw["pools"] == _baseline(**payload).payload["pools"]
 
 
 # -- F3: the readiness rule ------------------------------------------------------
@@ -1869,3 +1955,99 @@ def test_nothing_less_than_a_complete_verified_e5_admits_a_server_mutation(
 ):
     """An unknown, contradicted or blocked foundation grants no permission."""
     assert _q3_e5_foundation_cause(result, foundations, {"a", "b"}) == expected, label
+
+
+def _decided_service_row(action_id: str, **changes) -> ActionApplicationResult:
+    facts = {
+        "applied": True,
+        "dispatch": DispatchFact.ACCEPTED,
+        "result": ResultFact.CORRELATED,
+        "postcondition": PostconditionFact.SATISFIED,
+        "transition": TransitionFact.CHANGED,
+        "footprint": FootprintFact.COVERED,
+        "attempted": True,
+        **changes,
+    }
+    mutation = RuntimeActionMutation(action_id=action_id, **facts)
+    decision = decide_mutation(mutation)
+    return ActionApplicationResult(
+        action_id=action_id,
+        status=decision.status,
+        failure_code=decision.failure_code,
+        disposition=decision.disposition,
+        dispatch=mutation.dispatch,
+        result=mutation.result,
+        postcondition=mutation.postcondition,
+        transition=mutation.transition,
+        footprint=mutation.footprint,
+        attempted=mutation.attempted,
+        residual_change=decision.residue.value == "changed",
+        cause=decision.cause,
+        received_mutation=mutation,
+    )
+
+
+def _service_result(*rows, verifications=()) -> ServiceApplicationResult:
+    return ServiceApplicationResult(
+        service_plan_id="svc/q3",
+        service_semantic_hash="s" * 16,
+        source_topology_hash="t" * 16,
+        source_configuration_hash="c" * 16,
+        status=ConfigurationApplicationStatus.APPLIED,
+        action_results=list(rows),
+        verification_results=list(verifications),
+    )
+
+
+def test_q3_accepts_only_the_exact_complete_decided_service_result():
+    """F4-close: identities and canonical decisions are the continuation gate."""
+    rows = (_decided_service_row("a"), _decided_service_row("b"))
+    assert _q3_service_result_cause(_service_result(*rows), {"a", "b"}) == ""
+
+    assert _q3_service_result_cause(_service_result(rows[0]), {"a", "b"}) == (
+        "outcome_unknown:q3_product_incomplete_result_set"
+    )
+    assert (
+        _q3_service_result_cause(_service_result(rows[0], rows[0], rows[1]), {"a", "b"})
+        == "outcome_unknown:q3_product_incomplete_result_set"
+    )
+
+
+def test_q3_blocks_an_unacknowledged_effect_even_when_attempted_is_unknown():
+    """F4-close: attempted=None does not remove an uncertain row from review."""
+    unresolved = _decided_service_row(
+        "a",
+        applied=False,
+        dispatch=DispatchFact.ACCEPTANCE_UNKNOWN,
+        result=ResultFact.NOT_OBSERVED,
+        postcondition=PostconditionFact.UNOBSERVED,
+        transition=TransitionFact.UNOBSERVED,
+        footprint=FootprintFact.NOT_APPLICABLE,
+        attempted=None,
+        cause="acknowledgement_lost",
+    )
+
+    assert (
+        _q3_service_result_cause(_service_result(unresolved), {"a"})
+        == "outcome_unknown:q3_product_service"
+    )
+
+
+def test_q3_blocks_a_contradictory_product_verification():
+    """A fresh contradiction is distinct from unresolved mutation evidence."""
+    result = _service_result(
+        _decided_service_row("a"),
+        verifications=[
+            ServiceVerificationResult(
+                expectation_id="verify/a",
+                service_id="svc/q3",
+                status=ActionExecutionStatus.FAILED,
+                evidence_kind=ServiceEvidenceKind.DIRECT_STATE,
+                observation=ObservationFact.CONTRADICTED,
+            )
+        ],
+    )
+
+    assert _q3_service_result_cause(result, {"a"}) == (
+        "contradiction:q3_product_readback"
+    )

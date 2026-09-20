@@ -53,8 +53,10 @@ from ...domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationResult,
     ConfigurationRuntimeContext,
+    MutationResidue,
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
+    decide_mutation,
 )
 from ...domain.enterprise.models.deployment import DeploymentManifest
 from ...domain.enterprise.models.execution import (
@@ -542,6 +544,51 @@ def _q3_endpoint_plan(contract: Q3ProductContract) -> ConfigurationPlan:
     )
     plan.semantic_hash = configuration_plan_semantic_hash(plan)
     return plan
+
+
+def _q3_server_plan(plan: ServicePlan) -> ServicePlan:
+    """Project exact server setup rows without changing source-plan identity."""
+    actions = [
+        item
+        for item in plan.actions
+        if isinstance(item, EnableServerDhcp | ConfigureServerDhcpPool)
+    ]
+    action_ids = {item.id for item in actions}
+    expectations = [
+        item
+        for item in plan.verification_expectations
+        if item.action_id in action_ids
+        and item.kind is ServiceVerificationKind.DHCP_SERVER_STATE
+    ]
+    expectation_ids = {item.id for item in expectations}
+    service_ids = {item.service_id for item in actions}
+    services = [
+        item.model_copy(
+            update={
+                "action_ids": [
+                    identifier
+                    for identifier in item.action_ids
+                    if identifier in action_ids
+                ],
+                "verification_expectation_ids": [
+                    identifier
+                    for identifier in item.verification_expectation_ids
+                    if identifier in expectation_ids
+                ],
+            },
+            deep=True,
+        )
+        for item in plan.services
+        if item.id in service_ids
+    ]
+    return plan.model_copy(
+        update={
+            "services": services,
+            "actions": actions,
+            "verification_expectations": expectations,
+        },
+        deep=True,
+    )
 
 
 def _q3_context(contract: Q3ProductContract) -> ConfigurationRuntimeContext:
@@ -1700,7 +1747,7 @@ class _Readiness:
 def _await_readiness(
     execution: _Execution,
     endpoints: Sequence[tuple[str, str]],
-    read: Callable[[], ProbeReading],
+    read: Callable[[float], ProbeReading],
     *,
     purpose: str,
 ) -> _Readiness:
@@ -1732,12 +1779,21 @@ def _await_readiness(
         if ledger.elapsed() >= deadline:
             reason = "readiness_deadline_reached"
             break
+        local_remaining = max(0.0, deadline - ledger.elapsed())
+        _operations, stage_remaining = ledger.allowance()
+        timeout = min(local_remaining, max(0.0, stage_remaining))
+        if timeout <= 0:
+            reason = "readiness_budget_exhausted"
+            break
         with ledger.purpose_of(purpose):
-            sample = assess_port_readiness(read(), endpoints)
+            sample = assess_port_readiness(read(timeout), endpoints)
         reads += 1
         last = dict(sample.facts)
         if reads == 1:
             first = dict(sample.facts)
+        if ledger.elapsed() > deadline:
+            reason = "readiness_deadline_reached_after_read"
+            break
         if sample.ready:
             reason = ""
             break
@@ -1889,7 +1945,7 @@ def _https_listener(execution: _Execution) -> Assessment:
     gate = _await_readiness(
         execution,
         endpoints,
-        lambda: probes.read_listener_readiness(Q1_SERVER, endpoints),
+        lambda timeout: probes.read_listener_readiness(Q1_SERVER, endpoints, timeout),
         purpose="readiness:q1_fixture_links",
     )
     steps: dict[str, Any] = {
@@ -2066,6 +2122,7 @@ def _snapshot_facts(snapshot: DefaultPoolSnapshot) -> dict[str, Any]:
         "cause": snapshot.cause,
         "pools": [dict(item) for item in snapshot.pools],
         "intended_pool_present": snapshot.intended_present,
+        "raw": dict(snapshot.raw),
     }
 
 
@@ -2083,7 +2140,13 @@ def _q3_snapshot_default(
     execution: _Execution, label: str, reading: ProbeReading | None
 ) -> DefaultPoolSnapshot:
     """Record one bounded default snapshot and every difference it reveals."""
-    snapshot = default_pool_snapshot(label, reading, intended_pool=Q3_POOL)
+    snapshot = default_pool_snapshot(
+        label,
+        reading,
+        intended_pool=Q3_POOL,
+        server=Q3_SERVER,
+        interface="FastEthernet0",
+    )
     execution.default_pool_snapshots.append(snapshot)
     if len(execution.default_pool_snapshots) > 1:
         differences = default_pool_differences(
@@ -2108,13 +2171,29 @@ def _q3_e5_foundation_cause(
     not VERIFIED all mean the same thing here: the next effect has no
     permission, and none of them is a reason to dispatch it and look later.
     """
-    reported = {item.action_id for item in configuration.action_results}
-    if reported != expected_action_ids:
+    reported = [item.action_id for item in configuration.action_results]
+    if (
+        len(reported) != len(expected_action_ids)
+        or set(reported) != expected_action_ids
+        or len(reported) != len(set(reported))
+    ):
         return "outcome_unknown:q3_e5_incomplete_result_set"
     for item in sorted(configuration.action_results, key=lambda row: row.action_id):
+        snapshot = item.received_mutation
+        if snapshot is not None:
+            decision = decide_mutation(snapshot)
+            if not (
+                item.status is decision.status
+                and item.failure_code is decision.failure_code
+                and item.disposition is decision.disposition
+                and item.cause == decision.cause
+            ):
+                return f"outcome_unknown:q3_e5_endpoints:{item.action_id}"
         if (
             item.dispatch is DispatchFact.ACCEPTANCE_UNKNOWN
             or item.result is ResultFact.NOT_OBSERVED
+            or item.status is ActionExecutionStatus.UNKNOWN
+            or (snapshot is not None and bool(snapshot.call_error))
         ):
             return f"outcome_unknown:q3_e5_endpoints:{item.action_id}"
         if item.postcondition is PostconditionFact.UNSATISFIED:
@@ -2135,29 +2214,74 @@ def _q3_e5_foundation_cause(
     return ""
 
 
-def _q3_service_result_cause(result: ServiceApplicationResult) -> str:
+def _q3_service_result_cause(
+    result: ServiceApplicationResult,
+    expected_action_ids: set[str],
+    *,
+    expected_verification_ids: set[str] | None = None,
+    recovered_action_ids: set[str] | None = None,
+) -> str:
     """Return why the product result forbids another mutation, or "".
 
-    Both checks run before the intentional same-claim guard control: an effect
-    whose outcome nobody read and a read-back that contradicts the plan are
-    equally disqualifying, and the guard is a mutation like any other.
+    The exact row identities and the canonical decision retained on every
+    mutation are the authority. A later fresh verification may settle a
+    correlated execute-once action, but it cannot repair a lost acknowledgement
+    or an incoherent result set.
     """
-    if any(
-        item.dispatch is DispatchFact.ACCEPTANCE_UNKNOWN
-        or item.result is ResultFact.NOT_OBSERVED
-        or (
-            item.received_mutation is not None
-            and bool(item.received_mutation.call_error)
-        )
-        for item in result.action_results
-        if item.attempted is True
+    action_ids = [item.action_id for item in result.action_results]
+    if len(action_ids) != len(expected_action_ids) or set(action_ids) != set(
+        expected_action_ids
     ):
-        return "outcome_unknown:q3_product_service"
+        return "outcome_unknown:q3_product_incomplete_result_set"
+    if len(action_ids) != len(set(action_ids)):
+        return "outcome_unknown:q3_product_incomplete_result_set"
+    if expected_verification_ids is not None:
+        verification_ids = [item.expectation_id for item in result.verification_results]
+        if (
+            len(verification_ids) != len(expected_verification_ids)
+            or set(verification_ids) != expected_verification_ids
+            or len(verification_ids) != len(set(verification_ids))
+        ):
+            return "outcome_unknown:q3_product_incomplete_verification_set"
     if any(
         item.observation is ObservationFact.CONTRADICTED
         for item in result.verification_results
     ):
         return "contradiction:q3_product_readback"
+    if any(
+        item.observation is ObservationFact.ENGINE_ERROR
+        or item.cause.startswith("exception:")
+        for item in result.verification_results
+    ):
+        return "outcome_unknown:q3_product_verification"
+    recovered = recovered_action_ids or set()
+    for row in result.action_results:
+        snapshot = row.received_mutation
+        if snapshot is None or snapshot.action_id != row.action_id:
+            return "outcome_unknown:q3_product_service"
+        decision = decide_mutation(snapshot)
+        if not (
+            row.status is decision.status
+            and row.failure_code is decision.failure_code
+            and row.disposition is decision.disposition
+            and row.dispatch is snapshot.dispatch
+            and row.result is snapshot.result
+            and row.postcondition is snapshot.postcondition
+            and row.transition is snapshot.transition
+            and row.footprint is snapshot.footprint
+            and row.attempted is snapshot.attempted
+            and row.residual_change is (decision.residue is MutationResidue.CHANGED)
+            and row.cause == decision.cause
+        ):
+            return "outcome_unknown:q3_product_service"
+        if (
+            row.dispatch is not DispatchFact.ACCEPTED
+            or row.result is ResultFact.NOT_OBSERVED
+            or row.attempted is None
+            or bool(snapshot.call_error)
+            or (not decision.frontier and row.action_id not in recovered)
+        ):
+            return "outcome_unknown:q3_product_service"
     return ""
 
 
@@ -2170,6 +2294,7 @@ def _q3_setup_assessment(
     server_readback: RuntimeServiceVerification | None,
     contract: Q3ProductContract,
     native_default: Mapping[str, Any],
+    readiness: Mapping[str, Any],
     setup_cause: str,
 ) -> Assessment:
     """Judge the product configuration path without promoting native support."""
@@ -2191,6 +2316,7 @@ def _q3_setup_assessment(
             "causes": list(admission.causes),
         },
         "native_default": dict(native_default),
+        "readiness": dict(readiness),
         "configuration_plan": configuration.config_plan_id if configuration else "",
         "configuration_hash": (
             configuration.config_semantic_hash if configuration else ""
@@ -2386,15 +2512,18 @@ def _q3_timing_assessment(
     facts["product_contradictions"] = product_contradictions
     product_outcome_unknown = bool(
         service_result
-        and any(
-            item.dispatch is DispatchFact.ACCEPTANCE_UNKNOWN
-            or item.result is ResultFact.NOT_OBSERVED
-            or (
-                item.received_mutation is not None
-                and bool(item.received_mutation.call_error)
+        and (
+            guard_not_run.startswith("outcome_unknown:")
+            or any(
+                item.dispatch is DispatchFact.ACCEPTANCE_UNKNOWN
+                or item.result is ResultFact.NOT_OBSERVED
+                or (
+                    item.received_mutation is not None
+                    and bool(item.received_mutation.call_error)
+                )
+                for item in service_result.action_results
+                if item.attempted is True
             )
-            for item in service_result.action_results
-            if item.attempted is True
         )
     )
     facts["product_outcome_unknown"] = product_outcome_unknown
@@ -2494,6 +2623,8 @@ def _run_q3(execution: _Execution) -> None:
     )
     context = _q3_context(contract)
     clients = ((Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0"))
+    gate = _Readiness(False, 0, 0.0, "readiness_not_attempted")
+    server_application: ServiceApplicationResult | None = None
 
     setup_ids = ("M-DHCP-1", "M-DHCP-4", "M-DHCP-5")
     if not execution.begin(setup_ids, "Q3_SETUP"):
@@ -2550,9 +2681,22 @@ def _run_q3(execution: _Execution) -> None:
             server_mutations: list[RuntimeActionMutation] = []
             server_readback: RuntimeServiceVerification | None = None
             setup_cause = ""
-            if not execution.run.transition("experiment:Q3_SETUP:e5_started"):
+            endpoints = _fixture_endpoints(execution)
+            gate = _await_readiness(
+                execution,
+                endpoints,
+                lambda timeout: execution.probes.read_port_readiness(
+                    endpoints, timeout
+                ),
+                purpose="readiness:q3_fixture_links",
+            )
+            if not gate.ready:
+                setup_cause = f"readiness_not_established:{gate.reason}"
+            if gate.ready and not execution.run.transition(
+                "experiment:Q3_SETUP:e5_started"
+            ):
                 execution.stop("persistence:q3_e5_not_announced")
-            if not execution.stopped:
+            if gate.ready and not execution.stopped:
                 with execution.ledger.purpose_of("q3:product:e5_endpoints"):
                     configuration = ConfigurationApplicator(
                         configuration_runtime
@@ -2578,40 +2722,69 @@ def _run_q3(execution: _Execution) -> None:
                 )
                 if setup_cause:
                     execution.stop(setup_cause)
-            if not execution.stopped and not execution.run.transition(
-                "experiment:Q3_SETUP:e6_started"
+            if (
+                gate.ready
+                and not execution.stopped
+                and not execution.run.transition("experiment:Q3_SETUP:e6_started")
             ):
                 execution.stop("persistence:q3_e6_not_announced")
-            if not execution.stopped:
-                server_actions = [
-                    item
-                    for item in contract.service_plan.actions
-                    if isinstance(item, EnableServerDhcp | ConfigureServerDhcpPool)
-                ]
+            if gate.ready and not execution.stopped:
+                server_plan = _q3_server_plan(contract.service_plan)
                 with execution.ledger.purpose_of("q3:product:e6_server"):
-                    server_mutations = service_runtime.apply_actions(server_actions)
-                server_expectation = next(
-                    item
-                    for item in contract.service_plan.verification_expectations
-                    if item.kind is ServiceVerificationKind.DHCP_SERVER_STATE
+                    server_application = ServiceApplicator(service_runtime).apply(
+                        server_plan,
+                        actual_source_topology_hash=(
+                            contract.manifest.physical_topology_hash
+                        ),
+                        actual_source_configuration_hash=(
+                            contract.service_plan.source_configuration_hash
+                        ),
+                        foundational_statuses=foundations,
+                        capabilities=contract.service_capabilities,
+                        runtime_context=context,
+                        deployment_manifest=contract.manifest,
+                    )
+                setup_cause = _q3_service_result_cause(
+                    server_application,
+                    {item.id for item in server_plan.actions},
+                    expected_verification_ids={
+                        item.id for item in server_plan.verification_expectations
+                    },
                 )
-                with execution.ledger.purpose_of("q3:product:server_readback"):
-                    server_readback = service_runtime.verify(server_expectation)
+                server_mutations = [
+                    row.received_mutation
+                    for row in server_application.action_results
+                    if row.received_mutation is not None
+                ]
+                server_readback = next(
+                    iter(server_application.verification_results), None
+                )
+                if setup_cause:
+                    execution.stop(setup_cause)
+            if execution.ledger.can_afford(1):
                 after_setup = execution.probes.read_dhcp_server_baseline(
                     Q3_SERVER, "FastEthernet0"
                 )
-                _q3_snapshot_default(execution, "after_setup", after_setup)
-                if execution.default_pool_differences:
+                after_snapshot = _q3_snapshot_default(
+                    execution, "after_setup", after_setup
+                )
+                if not after_snapshot.observed:
+                    setup_cause = setup_cause or (
+                        "q3_native_default_unobserved:" + after_snapshot.cause
+                    )
+                    execution.stop(setup_cause)
+                elif execution.default_pool_differences:
                     setup_cause = setup_cause or (
                         "q3_native_default_changed:"
                         + execution.default_pool_differences[0]
                     )
                     execution.stop(setup_cause)
-            clients_after = (
-                clients_before
-                if execution.stopped
-                else execution.probes.read_dhcp_clients(clients)
-            )
+            else:
+                setup_cause = setup_cause or "q3_native_default_snapshot_not_affordable"
+                execution.stop(setup_cause)
+            clients_after = clients_before
+            if configuration is not None and execution.ledger.can_afford(1):
+                clients_after = execution.probes.read_dhcp_clients(clients)
             mac, mode = _q3_client_assessments(clients_before, clients_after)
             execution.conclude(
                 "M-DHCP-1",
@@ -2624,6 +2797,7 @@ def _run_q3(execution: _Execution) -> None:
                     server_readback,
                     contract,
                     _native_default_facts(execution),
+                    gate.facts(),
                     setup_cause,
                 ),
             )
@@ -2631,6 +2805,12 @@ def _run_q3(execution: _Execution) -> None:
             execution.conclude("M-DHCP-5", mode)
     execution.finish("Q3_SETUP")
     if execution.stopped:
+        if execution.ledger.can_afford(1):
+            _q3_snapshot_default(
+                execution,
+                "before_cleanup",
+                execution.probes.read_dhcp_server_baseline(Q3_SERVER, "FastEthernet0"),
+            )
         return
 
     # M-DHCP-3 is OMITTED in this profile: no observer is registered, so the
@@ -2654,8 +2834,7 @@ def _run_q3(execution: _Execution) -> None:
         before_one = before_two = empty_table = None
         service_result = None
         guard = None
-        guard_not_run = ""
-        gate = _Readiness(False, 0, 0.0, "readiness_not_attempted")
+        guard_not_run = "" if gate.ready else f"readiness_not_established:{gate.reason}"
         after_one = after_two = full_table = None
         if not execution.stopped:
             before_one = execution.probes.read_dhcp_clients(clients)
@@ -2664,19 +2843,6 @@ def _run_q3(execution: _Execution) -> None:
             empty_table = execution.probes.read_dhcp_table(
                 Q3_SERVER, "FastEthernet0", Q3_POOL
             )
-            # The physical path is gated before any client is activated. This
-            # says nothing about the clients' own addressing, which the rows
-            # above and below measure separately.
-            gate = _await_readiness(
-                execution,
-                _fixture_endpoints(execution),
-                lambda: execution.probes.read_port_readiness(
-                    _fixture_endpoints(execution)
-                ),
-                purpose="readiness:q3_fixture_links",
-            )
-            if not gate.ready:
-                guard_not_run = f"readiness_not_established:{gate.reason}"
         if not execution.stopped and gate.ready:
             nonces = {
                 reference: f"{execution.nonce}:{index}"
@@ -2685,6 +2851,12 @@ def _run_q3(execution: _Execution) -> None:
                 )
             }
             bound_plan = contract.service_plan.with_operation_nonces(nonces)
+            first_acquisition = next(
+                item
+                for item in bound_plan.actions
+                if isinstance(item, AcquireDhcpLease)
+                and item.host_device_name == Q3_PC1
+            )
             if not execution.run.transition("experiment:Q3_DHCP:product_started"):
                 execution.stop("persistence:q3_product_not_announced")
             if not execution.stopped:
@@ -2701,17 +2873,37 @@ def _run_q3(execution: _Execution) -> None:
                         capabilities=contract.service_capabilities,
                         runtime_context=context,
                         deployment_manifest=contract.manifest,
+                        retained_action_results=(
+                            server_application.action_results
+                            if server_application is not None
+                            else ()
+                        ),
                     )
-                guard_not_run = _q3_service_result_cause(service_result)
+                verification_by_id = {
+                    item.expectation_id: item
+                    for item in service_result.verification_results
+                }
+                recovered_action_ids = {
+                    expectation.action_id
+                    for expectation in bound_plan.verification_expectations
+                    if (
+                        (row := verification_by_id.get(expectation.id)) is not None
+                        and row.status is ActionExecutionStatus.VERIFIED
+                        and row.fresh_evidence
+                        and row.observation is ObservationFact.OBSERVED
+                    )
+                }
+                guard_not_run = _q3_service_result_cause(
+                    service_result,
+                    {item.id for item in bound_plan.actions},
+                    expected_verification_ids={
+                        item.id for item in bound_plan.verification_expectations
+                    },
+                    recovered_action_ids=recovered_action_ids,
+                )
                 if guard_not_run:
                     execution.stop(guard_not_run)
                 else:
-                    first_acquisition = next(
-                        item
-                        for item in bound_plan.actions
-                        if isinstance(item, AcquireDhcpLease)
-                        and item.host_device_name == Q3_PC1
-                    )
                     with execution.ledger.purpose_of("q3:guard:acquisition_replay"):
                         [guard] = service_runtime.apply_actions([first_acquisition])
                 after_one = execution.probes.read_dhcp_clients(clients)

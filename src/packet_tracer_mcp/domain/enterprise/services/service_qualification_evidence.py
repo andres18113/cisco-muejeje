@@ -1291,6 +1291,7 @@ class DefaultPoolSnapshot:
     cause: str = ""
     pools: tuple[Mapping[str, Any], ...] = ()
     intended_present: bool = False
+    raw: Mapping[str, Any] = field(default_factory=dict)
 
 
 def _is_observed_native_default(row: Any) -> bool:
@@ -1311,6 +1312,17 @@ def _bounded_pools(payload: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
     if not isinstance(rows, list):
         return ()
     return tuple(dict(row) for row in rows if isinstance(row, Mapping))
+
+
+def _is_typed_pool_row(row: Any) -> bool:
+    """Whether one bounded inventory row has the complete typed pool shape."""
+    if not isinstance(row, Mapping) or set(row) != set(_NATIVE_POOL_TYPES):
+        return False
+    for key, expected_type in _NATIVE_POOL_TYPES.items():
+        value = row[key]
+        if isinstance(value, bool) or not isinstance(value, expected_type):
+            return False
+    return bool(row["name"])
 
 
 def assess_dhcp_baseline_admission(
@@ -1395,20 +1407,68 @@ def assess_dhcp_baseline_admission(
 
 
 def default_pool_snapshot(
-    label: str, reading: ProbeReading | None, *, intended_pool: str
+    label: str,
+    reading: ProbeReading | None,
+    *,
+    intended_pool: str,
+    server: str,
+    interface: str,
 ) -> DefaultPoolSnapshot:
-    """Copy the non-intended pool rows exactly as one bounded read saw them."""
+    """Validate and retain one bounded post-admission pool observation."""
     if reading is None:
         return DefaultPoolSnapshot(label, False, "default_pool_snapshot_not_read")
     if not reading.observed:
-        return DefaultPoolSnapshot(label, False, _unobserved(reading))
-    pools = _bounded_pools(reading.payload)
+        return DefaultPoolSnapshot(
+            label,
+            False,
+            _unobserved(reading),
+            raw=dict(reading.payload),
+        )
+    payload = reading.payload
+    raw = dict(payload)
+    cause = ""
+    if payload.get("device") != server:
+        cause = "default_pool_snapshot_subject_mismatch"
+    elif payload.get("interface") != interface:
+        cause = "default_pool_snapshot_interface_mismatch"
+    elif payload.get("found") is not True:
+        cause = "default_pool_snapshot_device_not_found"
+    elif payload.get("process_found") is not True:
+        cause = "default_pool_snapshot_process_absent"
+    elif payload.get("enabled_type") != "boolean" or not isinstance(
+        payload.get("enabled"), bool
+    ):
+        cause = "default_pool_snapshot_process_state_malformed"
+    elif payload.get("error"):
+        cause = "default_pool_snapshot_read_error"
+    elif payload.get("truncated") is not False:
+        cause = "default_pool_snapshot_inventory_truncated"
+    rows = payload.get("pools")
+    count = payload.get("pool_count")
+    if not cause and (
+        isinstance(count, bool)
+        or not isinstance(count, int)
+        or count < 0
+        or not isinstance(rows, list)
+        or count != len(rows)
+    ):
+        cause = "default_pool_snapshot_inventory_incoherent"
+    if not cause and any(not _is_typed_pool_row(row) for row in rows):
+        cause = "default_pool_snapshot_row_malformed"
+    if not cause:
+        names = [row["name"] for row in rows]
+        if len(names) != len(set(names)):
+            cause = "default_pool_snapshot_duplicate_pool_name"
+    pools = _bounded_pools(payload)
+    if cause:
+        return DefaultPoolSnapshot(label, False, cause, raw=raw)
     return DefaultPoolSnapshot(
         label,
         True,
         "",
         tuple(row for row in pools if row.get("name") != intended_pool),
         any(row.get("name") == intended_pool for row in pools),
+        raw,
     )
 
 

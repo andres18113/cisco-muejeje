@@ -49,8 +49,10 @@ from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
 from packet_tracer_mcp.domain.enterprise.models.execution import (
     DirtyState,
     DispatchFact,
+    PostconditionFact,
     ResultFact,
 )
+from packet_tracer_mcp.domain.enterprise.models.service_plan import AcquireDhcpLease
 from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     STAGE_DEFINITIONS,
     MeasurementConclusion,
@@ -228,6 +230,28 @@ class _Wrapped:
 
     def __getattr__(self, name):
         return getattr(self.inner, name)
+
+
+class _LateReadinessTransport(_Wrapped):
+    """Advance the injected clock after one correlated readiness response."""
+
+    def __init__(self, inner, clock, *, late_read: int, elapsed: float):
+        super().__init__(inner)
+        self.clock = clock
+        self.late_read = late_read
+        self.elapsed = elapsed
+        self.reads = 0
+        self.timeouts: list[float] = []
+
+    def dispatch_and_wait(self, js_code: str, timeout: float):
+        if 'step:"readiness"' in js_code or 'step:"port_readiness"' in js_code:
+            self.reads += 1
+            self.timeouts.append(timeout)
+            outcome = self.inner.dispatch_and_wait(js_code, timeout)
+            if self.reads == self.late_read:
+                self.clock.now += self.elapsed
+            return outcome
+        return self.inner.dispatch_and_wait(js_code, timeout)
 
 
 def _status(record: QualificationRecord) -> dict[str, tuple[str, str]]:
@@ -1240,6 +1264,26 @@ def test_the_readiness_gate_stops_at_its_monotonic_deadline(harness):
     assert record.restoration_proven is True
 
 
+def test_a_ready_sample_returned_after_the_deadline_grants_no_permission(harness):
+    """F2-close: a late correlated body is evidence, never authorization."""
+    h = harness({"ports_down_calls": 12})
+    clock = FakeClock()
+    delayed = _LateReadinessTransport(h.transport, clock, late_read=3, elapsed=3.0)
+    h.transport = delayed
+
+    record, ledger = _q1_executor(h, clock=clock, settle_seconds=14.0)
+
+    gate = _gate_of(record, "M-HTTPS-2", "readiness_before")
+    assert gate["ready"] is False
+    assert gate["reads"] == 3
+    assert gate["reason"] == "readiness_deadline_reached_after_read"
+    assert gate["last"]["ports"]["__MCP_E6Q_SRV/FastEthernet0"]["port_up"] is True
+    assert delayed.timeouts[-1] == pytest.approx(2.0)
+    assert h.scripts("createClient") == []
+    assert ledger.refused_calls == 0
+    assert record.restoration_proven is True
+
+
 def test_a_record_that_cannot_advance_admits_no_readiness_read_or_effect(harness):
     """The persistence gate closes effects before the gate reads anything."""
     h = harness()
@@ -1312,12 +1356,88 @@ def test_q3_dispatches_no_server_mutation_when_a_foundation_is_not_verified(harn
     assert record.restoration_proven is True
 
 
+def test_q3_readiness_precedes_the_first_dhcp_client_activation(harness):
+    """F2-close: an unready fixture admits no SetEndpointDhcp or dhcpRun."""
+    h = harness({"ports_up": False, "dhcp_default_pool": "native"})
+
+    record, ledger = _q3_executor(h)
+
+    snapshot = h.engine.snapshot()
+    assert snapshot["dhcp_setter_calls"]["configurePcIpDhcp"] == 0
+    assert snapshot["dhcp_setter_calls"]["setEnable"] == 0
+    assert snapshot["dhcp_setter_calls"]["addPool"] == 0
+    assert snapshot["dhcp_runs"] == []
+    assert h.scripts("createClient") == []
+    assert record.restoration_proven is True
+    assert ledger.refused_calls == 0
+
+
+def test_q3_reuses_exact_setup_rows_without_rescheduling_server_actions(harness):
+    """F4-close: setup setters are scheduled once and their rows are retained."""
+    h = harness({"dhcp_default_pool": "native"})
+
+    record, _ledger = _q3_executor(h)
+
+    assert record.primary_failure == "outcome_unknown:q3_product_service"
+    snapshot = h.engine.snapshot()
+    calls = snapshot["dhcp_setter_calls"]
+    assert calls["configurePcIpDhcp"] == 2
+    assert calls["setEnable"] == 1
+    assert calls["addPool"] == 1
+    assert calls["setNetworkMask"] == 1
+    assert calls["setStartIp"] == 1
+    assert calls["setEndIp"] == 1
+    assert calls["setMaxUsers"] == 1
+    assert len(h.scripts("setEnable(true)")) == 1
+    assert len(h.scripts("addPool(")) == 1
+
+
+def test_q3_lost_action_acknowledgement_blocks_the_guard_and_later_effects(harness):
+    """F4-close: attempted=None with an unknown envelope is never permission."""
+    h = harness({"dhcp_default_pool": "native"})
+    base = h.boundaries()
+
+    class _LostAcknowledgement(_Wrapped):
+        def apply_actions(self, actions):
+            rows = self.inner.apply_actions(actions)
+            first = next(
+                (item.id for item in actions if isinstance(item, AcquireDhcpLease)),
+                "",
+            )
+            return [
+                row.model_copy(
+                    update={
+                        "applied": False,
+                        "dispatch": DispatchFact.ACCEPTANCE_UNKNOWN,
+                        "result": ResultFact.NOT_OBSERVED,
+                        "postcondition": PostconditionFact.UNOBSERVED,
+                        "attempted": None,
+                        "cause": "synthetic_acknowledgement_lost",
+                    }
+                )
+                if row.action_id == first
+                else row
+                for row in rows
+            ]
+
+    record, ledger = _q3_executor(
+        h,
+        service_runtime=lambda bound: _LostAcknowledgement(base.service_runtime(bound)),
+    )
+
+    assert record.primary_failure == "outcome_unknown:q3_product_service"
+    assert not any(
+        item.purpose == "q3:guard:acquisition_replay" for item in ledger.entries
+    )
+    assert record.restoration_proven is True
+
+
 def test_q3_records_the_native_default_before_and_after_its_own_setup(harness):
     """F2: the snapshots bracket the setup and the intended pool is separate."""
     h = harness({"dhcp_default_pool": "native"})
     record, ledger = _q3_executor(h)
-    assert record.primary_failure == ""
-    assert ledger.used <= Q3.planned_minimum_operations == 60
+    assert record.primary_failure == "outcome_unknown:q3_product_service"
+    assert ledger.used <= Q3.planned_minimum_operations == 59
     timing = next(
         item for item in record.measurements if item.experiment_id == "M-DHCP-6"
     )

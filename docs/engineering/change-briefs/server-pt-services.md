@@ -751,11 +751,13 @@ the generated probe harness for deadlines and ordering;
 applicator/coordinator/store harnesses for retained results and native setter
 call counts. Focused runs precede affected/coexistence and the full suite.
 Documentation, namespace, whitespace and the clean exact-commit delivery gate
-remain mandatory. Q3 remains 60 operations / 1200 seconds with at least 11 / 180
-reserved; Q1 remains 60 / 600 with at least 10 / 120 reserved. Cached rows cost
-no bridge call, while every fresh verification, readiness read and finalization
-call is counted. Packet Tracer contact remains conditional on clean publication
-and exact-successor-SHA CI.
+remain mandatory. Q3's recalculated worst case is 59 operations within its
+60 / 1200 ceiling: 17 fixture/admission + 31 measurement/application + 11
+reserved; the spare operation is not a retry entitlement. Q1 remains 60 / 600
+with at least 10 / 120 reserved. Cached rows cost no bridge call, while every
+fresh verification, readiness read and finalization call is counted. Packet
+Tracer contact remains conditional on clean publication and exact-successor-SHA
+CI.
 
 ## Test design
 

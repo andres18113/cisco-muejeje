@@ -320,9 +320,14 @@ class PacketTracerQualificationProbes:
         self._send = send
         self._timeout = timeout_seconds
 
-    def _read(self, step: str, script: str) -> ProbeReading:
+    def _read(
+        self, step: str, script: str, timeout_seconds: float | None = None
+    ) -> ProbeReading:
+        timeout = self._timeout
+        if timeout_seconds is not None:
+            timeout = max(0.0, min(timeout, float(timeout_seconds)))
         return parse_probe_reading(
-            step, self._dispatch_and_wait(_wrap(step, script), self._timeout)
+            step, self._dispatch_and_wait(_wrap(step, script), timeout)
         )
 
     def _owned_bag(self) -> str:
@@ -754,7 +759,10 @@ class PacketTracerQualificationProbes:
         )
 
     def read_listener_readiness(
-        self, server: str, endpoints: Sequence[tuple[str, str]]
+        self,
+        server: str,
+        endpoints: Sequence[tuple[str, str]],
+        timeout_seconds: float | None = None,
     ) -> ProbeReading:
         """Read listener flags and the fixture links' endpoint readiness."""
         return self._read(
@@ -764,14 +772,20 @@ class PacketTracerQualificationProbes:
             + self._ports_block(endpoints)
             + "reportResult(JSON.stringify({listeners:{http_enabled:__he,"
             "https_enabled:__se,https_process_enabled:__sp},ports:__ports}));",
+            timeout_seconds,
         )
 
-    def read_port_readiness(self, endpoints: Sequence[tuple[str, str]]) -> ProbeReading:
+    def read_port_readiness(
+        self,
+        endpoints: Sequence[tuple[str, str]],
+        timeout_seconds: float | None = None,
+    ) -> ProbeReading:
         """Read the exact fixture endpoints where no server process is involved."""
         return self._read(
             "port_readiness",
             self._ports_block(endpoints)
             + "reportResult(JSON.stringify({ports:__ports}));",
+            timeout_seconds,
         )
 
     def prepare_marker_page(self, server: str, marker: str) -> ProbeReading:

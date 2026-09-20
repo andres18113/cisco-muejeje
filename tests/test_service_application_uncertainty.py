@@ -158,7 +158,7 @@ _INCONSISTENT = {
 }
 
 
-def _apply(runtime, *, direct_readback=None, transform=None):
+def _apply(runtime, *, direct_readback=None, transform=None, retained=None):
     """Apply the compiled fixture, optionally rewriting the plan first.
 
     `transform` exists so a test can state the exact typed prerequisites it
@@ -172,16 +172,15 @@ def _apply(runtime, *, direct_readback=None, transform=None):
                 profile.direct_readback_support = direct_readback
     if transform is not None:
         plan = transform(plan)
-    return (
-        ServiceApplicator(runtime).apply(
-            plan,
-            actual_source_topology_hash=plan.source_topology_hash,
-            actual_source_configuration_hash=plan.source_configuration_hash,
-            foundational_statuses=_foundation(plan),
-            capabilities=capabilities,
-        ),
-        plan,
-    )
+    arguments = {
+        "actual_source_topology_hash": plan.source_topology_hash,
+        "actual_source_configuration_hash": plan.source_configuration_hash,
+        "foundational_statuses": _foundation(plan),
+        "capabilities": capabilities,
+    }
+    if retained is not None:
+        arguments["retained_action_results"] = retained
+    return ServiceApplicator(runtime).apply(plan, **arguments), plan
 
 
 # -- 1. one decision per row, and the row carries what it received -------
@@ -516,6 +515,39 @@ def test_a_stored_result_without_a_snapshot_stays_a_legacy_record():
         # fabricates `applied` for the record.
         assert row.dispatch is DispatchFact.ACCEPTED
         assert not hasattr(row, "applied")
+
+
+def test_exact_retained_action_rows_are_preserved_without_redispatch():
+    """F4-close: reuse keeps original decisions and performs fresh reads only."""
+    first, _plan = _apply(_FactRuntime(_ACCEPTED_SATISFIED_CHANGED))
+    runtime = _FactRuntime(_ACCEPTED_SATISFIED_CHANGED)
+
+    second, _ = _apply(runtime, retained=first.action_results)
+
+    assert runtime.apply_calls == []
+    assert runtime.verify_calls
+    assert [item.model_dump() for item in second.action_results] == [
+        item.model_dump() for item in first.action_results
+    ]
+
+
+@pytest.mark.parametrize("duplicate", [False, True])
+def test_invalid_retained_rows_fail_before_any_runtime_effect(duplicate):
+    """Tampered or duplicate rows are not successes and are never replayed."""
+    first, _plan = _apply(_FactRuntime(_ACCEPTED_SATISFIED_CHANGED))
+    retained = [item.model_copy(deep=True) for item in first.action_results]
+    if duplicate:
+        retained.append(retained[0].model_copy(deep=True))
+    else:
+        retained[0].cause = "tampered_decision"
+    runtime = _FactRuntime(_ACCEPTED_SATISFIED_CHANGED)
+
+    result, _ = _apply(runtime, retained=retained)
+
+    assert result.status is ConfigurationApplicationStatus.FAILED
+    assert result.failure_code is ConfigurationFailureCode.DEPENDENCY_BLOCKED
+    assert any("retained action result" in item for item in result.preflight_errors)
+    assert runtime.apply_calls == []
 
 
 # -- 4. the full round-trip through the real serializer ------------------

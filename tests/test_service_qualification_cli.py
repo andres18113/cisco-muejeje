@@ -193,7 +193,8 @@ def test_q3_runs_the_real_bounded_dhcp_stage_and_round_trips_its_record(
 
     code, summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
 
-    assert code == 0
+    assert code == 1
+    assert summary["primary_failure"] == "outcome_unknown:q3_product_service"
     assert summary["refusals"] == []
     assert summary["operations_used"] <= 60
     assert {item["id"] for item in summary["measurements"]} == {
@@ -224,7 +225,7 @@ def test_q3_runs_the_real_bounded_dhcp_stage_and_round_trips_its_record(
     }
     (record,) = sim.records()
     assert record.stage is QualificationStage.Q3
-    assert record.budget.planned_minimum_operations == 60
+    assert record.budget.planned_minimum_operations == 59
     assert record.restoration_proven is True
     assert record.source.executed_sha == SIM_SHA
     assert record.budget.refused_calls == 0
@@ -232,10 +233,11 @@ def test_q3_runs_the_real_bounded_dhcp_stage_and_round_trips_its_record(
     assert {item.kind for item in record.releases} >= {"claim", "device"}
     assert not [item for item in record.releases if item.kind == "observer"]
     assert "engine.dhcp_event_delivery" not in record.experimental_capabilities
-    assert any(
-        "lease_time_semantics_unqualified" in item.limitations
-        for item in record.measurements
+    timing = next(
+        item for item in record.measurements if item.experiment_id == "M-DHCP-6"
     )
+    assert timing.causes == ["product_dhcp_effect_outcome_unknown"]
+    assert "no_guard_or_later_mutation_authorized" in timing.limitations
     snapshot = sim.engine.snapshot()
     assert snapshot["devices"] == []
     assert snapshot["run_bags"] == {}
@@ -253,7 +255,7 @@ def test_the_amended_q3_profile_registers_no_dhcp_observer(simulation, capsys):
 
     code, _summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
 
-    assert code == 0
+    assert code == 1
     dispatched = "".join(script for _kind, script in sim.transport.calls)
     assert "registerEvent" not in dispatched
     assert "unregisterIpcEventByID" not in dispatched
@@ -377,22 +379,20 @@ def test_q3_never_activates_a_client_from_an_unready_fixture(simulation, capsys)
 
     code, summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
 
-    assert code == 0
+    assert code == 1
     conclusions = {item["id"]: item["conclusion"] for item in summary["measurements"]}
-    assert conclusions["M-DHCP-6"] == "inconclusive"
+    assert conclusions["M-DHCP-1"] == "inconclusive"
+    assert conclusions["M-DHCP-6"] == "not_evaluated"
     assert sim.engine.snapshot()["dhcp_runs"] == []
     (record,) = sim.records()
-    timing = next(
-        item for item in record.measurements if item.experiment_id == "M-DHCP-6"
+    setup = next(
+        item for item in record.measurements if item.experiment_id == "M-DHCP-1"
     )
-    gate = timing.facts["readiness"]
+    gate = setup.facts["readiness"]
     assert (gate["ready"], gate["reads"], gate["max_reads"]) == (False, 4, 4)
     assert gate["reason"].startswith("readiness_not_up:")
-    assert any(
-        item.startswith("acquisition_not_requested:readiness_not_established")
-        for item in timing.causes
-    )
-    assert "no_client_activated" in timing.limitations
+    assert any(item.startswith("readiness_not_established") for item in setup.causes)
+    assert "no_serving_claim" in setup.limitations
     assert [
         item.purpose for item in record.operations if "service_apply" in item.purpose
     ] == []
@@ -405,13 +405,17 @@ def test_q3_runtime_budget_refusal_stops_experiments_and_preserves_finalization(
     """Exercise the Q3 ledger stop independently of its reviewed 60-op arithmetic."""
     q3 = STAGE_DEFINITIONS[QualificationStage.Q3]
     experiments = tuple(
-        replace(item, planned_operations=17) if item.id == "M-DHCP-2" else item
+        replace(item, planned_operations=1)
+        if item.id == "M-DHCP-1"
+        else replace(item, planned_operations=0)
+        if item.id == "M-DHCP-2"
+        else item
         for item in q3.experiments
     )
     narrow = replace(
         q3,
         experiments=experiments,
-        budget=replace(q3.budget, max_operations=55),
+        budget=replace(q3.budget, max_operations=29),
     )
     sim = simulation()
 
@@ -420,14 +424,14 @@ def test_q3_runtime_budget_refusal_stops_experiments_and_preserves_finalization(
             STAGE_DEFINITIONS, {QualificationStage.Q3: narrow}, clear=False
         ),
         mock.patch.dict(
-            STAGE_CEILINGS, {QualificationStage.Q3: (55, 1200)}, clear=False
+            STAGE_CEILINGS, {QualificationStage.Q3: (29, 1200)}, clear=False
         ),
     ):
         code, summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
 
     assert code == 1
     assert "operation_budget_exhausted" in summary["primary_failure"]
-    assert summary["operations_used"] == 55
+    assert summary["operations_used"] == 28
     snapshot = sim.engine.snapshot()
     assert snapshot["devices"] == []
     assert snapshot["run_bags"] == {}
@@ -464,7 +468,8 @@ def test_q3_coexists_with_the_exact_observed_native_default(simulation, capsys):
 
     code, summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
 
-    assert code == 0
+    assert code == 1
+    assert summary["primary_failure"] == "outcome_unknown:q3_product_service"
     assert summary["operations_used"] <= 60
     conclusions = {item["id"]: item["conclusion"] for item in summary["measurements"]}
     assert conclusions["M-DHCP-1"] == "supported_in_sample"

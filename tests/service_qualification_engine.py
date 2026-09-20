@@ -155,6 +155,12 @@ const registrations = [];
 const unregisterCalls = [];
 const clients = {};
 const dhcpRuns = [];
+const dhcpSetterCalls = {
+  setDhcpFlag: 0, configurePcIpDhcp: 0, setEnable: 0, addPool: 0,
+  setNetworkMask: 0,
+  setDefaultRouter: 0, setDnsServerIp: 0, setStartIp: 0, setEndIp: 0,
+  setMaxUsers: 0, addExcludedAddress: 0,
+};
 let clientSeq = 0;
 
 const PORTS = {
@@ -299,13 +305,24 @@ const dhcpPool = (dev, pool) => ({
   getEndIp: () => pool.end,
   getMaxUsers: () => pool.max,
   setNetworkMask: (network, mask) => {
+    dhcpSetterCalls.setNetworkMask++;
     pool.network = String(network); pool.mask = String(mask);
   },
-  setDefaultRouter: (value) => { pool.gateway = String(value); },
-  setDnsServerIp: (value) => { pool.dns = String(value); },
-  setStartIp: (value) => { pool.start = String(value); },
-  setEndIp: (value) => { pool.end = String(value); },
-  setMaxUsers: (value) => { pool.max = Number(value); },
+  setDefaultRouter: (value) => {
+    dhcpSetterCalls.setDefaultRouter++; pool.gateway = String(value);
+  },
+  setDnsServerIp: (value) => {
+    dhcpSetterCalls.setDnsServerIp++; pool.dns = String(value);
+  },
+  setStartIp: (value) => {
+    dhcpSetterCalls.setStartIp++; pool.start = String(value);
+  },
+  setEndIp: (value) => {
+    dhcpSetterCalls.setEndIp++; pool.end = String(value);
+  },
+  setMaxUsers: (value) => {
+    dhcpSetterCalls.setMaxUsers++; pool.max = Number(value);
+  },
   getLeaseAt: (index) => {
     if (index < pool.leases.length) { return pool.leases[index]; }
     if (config.dhcp_table_end === 'throw') { throw new Error('lease table end'); }
@@ -321,6 +338,7 @@ const dhcpServerProcess = (dev) => {
   return {
     isEnable: () => state.enabled,
     setEnable: (value) => {
+      dhcpSetterCalls.setEnable++;
       state.enabled = !!value;
       // Enabling the process is process-wide. The stub can be told that the
       // native default moves when it happens, because nothing measured says
@@ -342,6 +360,7 @@ const dhcpServerProcess = (dev) => {
       return pool ? dhcpPool(dev, pool) : null;
     },
     addPool: (name) => {
+      dhcpSetterCalls.addPool++;
       state.pools[String(name)] = {name: String(name), network: '', mask: '',
         gateway: '', dns: '', start: '', end: '', max: 0, leases: []};
     },
@@ -351,6 +370,7 @@ const dhcpServerProcess = (dev) => {
       return item ? {first: item.start, second: item.end} : null;
     },
     addExcludedAddress: (start, end) => {
+      dhcpSetterCalls.addExcludedAddress++;
       state.exclusions.push({start: String(start), end: String(end)});
     },
   };
@@ -439,6 +459,7 @@ const makeDevice = (name, model) => {
     },
     getPorts: () => dev.ports.map((p) => p.name),
     setDhcpFlag: (v) => {
+      dhcpSetterCalls.setDhcpFlag++;
       dev.dhcp = !!v;
       for (const port of dev.ports) { port.dhcpMode = !!v; }
     },
@@ -556,6 +577,7 @@ global.lwAddLink = (d1, p1, d2, p2, cable) => {
 global.configurePcIp = (name, dhcp, ip, mask, gateway, dns, iface) => {
   const port = findPort(String(name), String(iface || 'FastEthernet0'));
   if (!port) { return false; }
+  if (dhcp) { dhcpSetterCalls.configurePcIpDhcp++; }
   port.dhcpMode = !!dhcp;
   if (ip && mask) { port.ip = String(ip); port.mask = String(mask); }
   if (dns) { port.dns = String(dns); }
@@ -634,6 +656,7 @@ const snapshot = () => {
     servers: servers,
     dhcp_servers: dhcpServers,
     dhcp_runs: dhcpRuns.slice(),
+    dhcp_setter_calls: Object.assign({}, dhcpSetterCalls),
     live_clients: Object.keys(clients).length,
     queued: queue.length,
     production_globals: ['__mcpE6Claims', '__mcpE6Inert', '__mcpE6HttpClients']

@@ -169,6 +169,7 @@ class ServiceApplicator:
         capabilities: dict[str, ServiceCapabilityProfile] | None = None,
         runtime_context: ConfigurationRuntimeContext | None = None,
         deployment_manifest: DeploymentManifest | None = None,
+        retained_action_results: Sequence[ActionApplicationResult] = (),
     ) -> ServiceApplicationResult:
         """Apply one ServicePlan and return its full typed outcome."""
         started = monotonic()
@@ -267,6 +268,58 @@ class ServiceApplicator:
                 deployment_id=deployment_id,
                 started=started,
             )
+        actions_by_id = {item.id: item for item in plan.actions}
+        retained_ids = [item.action_id for item in retained_action_results]
+        retained_decisions: dict[str, MutationDecision] = {}
+        retained_errors: list[str] = []
+        if len(retained_ids) != len(set(retained_ids)):
+            retained_errors.append("duplicate retained action result identity")
+        for row in retained_action_results:
+            action = actions_by_id.get(row.action_id)
+            snapshot = row.received_mutation
+            if action is None:
+                retained_errors.append(
+                    f"retained action result {row.action_id!r} is absent from the plan"
+                )
+                continue
+            if snapshot is None or snapshot.action_id != row.action_id:
+                retained_errors.append(
+                    f"retained action result {row.action_id!r} has no exact input snapshot"
+                )
+                continue
+            decision = decide_mutation(snapshot)
+            agrees = (
+                row.operation is action.operation
+                and snapshot.operation is action.operation
+                and row.status is decision.status
+                and row.failure_code is decision.failure_code
+                and row.disposition is decision.disposition
+                and row.dispatch is snapshot.dispatch
+                and row.result is snapshot.result
+                and row.postcondition is snapshot.postcondition
+                and row.transition is snapshot.transition
+                and row.footprint is snapshot.footprint
+                and row.attempted is snapshot.attempted
+                and row.residual_change is (decision.residue is MutationResidue.CHANGED)
+                and row.cause == decision.cause
+                and decision.frontier
+            )
+            if not agrees:
+                retained_errors.append(
+                    f"retained action result {row.action_id!r} does not reproduce "
+                    "its canonical decision"
+                )
+                continue
+            retained_decisions[row.action_id] = decision
+        if retained_errors:
+            return self._failure(
+                plan,
+                ConfigurationFailureCode.DEPENDENCY_BLOCKED,
+                *retained_errors,
+                context=runtime_context,
+                started=started,
+                deployment_id=deployment_id,
+            )
         try:
             runtime_inventory = self._runtime.inventory()
         except Exception as exc:
@@ -362,12 +415,17 @@ class ServiceApplicator:
             )
 
         capabilities = capabilities or {}
-        results: dict[str, ActionApplicationResult] = {}
+        results: dict[str, ActionApplicationResult] = {
+            item.action_id: item.model_copy(deep=True)
+            for item in retained_action_results
+        }
         # One decision per mutation row, computed once and reused. A second
         # call would be a second chance to disagree, and an audit
         # re-evaluation must run on the retained input snapshot instead.
-        decisions: dict[str, MutationDecision] = {}
+        decisions: dict[str, MutationDecision] = dict(retained_decisions)
         for action in plan.actions:
+            if action.id in results:
+                continue
             # Resolved on the model that actually hosts the action, through the
             # one resolution compilation and admission also use.
             resolution = resolve_action_capability(capabilities, action)
@@ -486,10 +544,22 @@ class ServiceApplicator:
                         )
                         for item in batch
                     ]
-                    mutations = {
-                        item.action_id: item
-                        for item in self._runtime.apply_actions(runtime_batch)
-                    }
+                    mutation_rows = self._runtime.apply_actions(runtime_batch)
+                    mutation_ids = [item.action_id for item in mutation_rows]
+                    expected_ids = {item.id for item in batch}
+                    invalid_result_set = len(mutation_ids) != len(
+                        set(mutation_ids)
+                    ) or bool(set(mutation_ids) - expected_ids)
+                    mutations = (
+                        {
+                            item.id: self._session_failed_mutation(
+                                item, "InvalidRuntimeMutationResultSet"
+                            )
+                            for item in batch
+                        }
+                        if invalid_result_set
+                        else {item.action_id: item for item in mutation_rows}
+                    )
                 except Exception as exc:
                     mutations = {
                         item.id: self._session_failed_mutation(

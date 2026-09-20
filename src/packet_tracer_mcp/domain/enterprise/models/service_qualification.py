@@ -410,11 +410,11 @@ def _q3() -> StageDefinition:
                 ),
                 required=True,
                 procedure="Q3_SETUP",
-                # The whole Q3_SETUP worst case: the admission baseline read,
-                # the two bounded client reads, the four-call E5 application,
-                # the E6 server batch, its read-back and the post-setup
-                # snapshot of the observed native default.
-                planned_operations=10,
+                # The whole Q3_SETUP worst case: admission baseline and client
+                # reads, four readiness reads before E5, the four-call E5
+                # application, two staged E6 server actions plus their fresh
+                # read-back, and the post-setup default snapshot.
+                planned_operations=15,
                 capabilities=(
                     "server.dhcp_process_binding",
                     "server.dhcp_pool_configuration",
@@ -449,12 +449,12 @@ def _q3() -> StageDefinition:
                 ),
                 required=True,
                 procedure="Q3_DHCP",
-                # The whole Q3_DHCP worst case: the run-bag sentinel, up to
-                # four aggregate readiness reads, four bounded client and
-                # table reads before the product path, the nine-call service
-                # application, the same-claim guard control, four bounded
-                # reads after it and the pre-cleanup default snapshot.
-                planned_operations=22,
+                # The whole Q3_DHCP worst case: the run-bag sentinel, three
+                # bounded client/table reads before the product path, seven
+                # calls for the full application with exact setup rows
+                # retained, the same-claim guard, three reads after it and the
+                # pre-cleanup default snapshot. Retained rows cost no call.
+                planned_operations=16,
                 prerequisites=("M-DHCP-1",),
                 capabilities=("server.dhcp_lease_table",),
             ),

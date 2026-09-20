@@ -33,7 +33,7 @@ qualify anything.
 | Q0 | executable | `__MCP_E6Q_PC1` (PC-PT) | 20 operations / 300 s | 19 | M-ENG-1, ATOM-1, M-UNREG-1, M-UNREG-2 (M-HTTP-1 omitted: no HTTP server in the fixture) |
 | Q1 | executable | `__MCP_E6Q_SRV`, `__MCP_E6Q_PC1`, `__MCP_E6Q_PC2`, `__MCP_E6Q_SW` | 60 operations / 600 s | 56 | M-HTTPS-1, M-HTTPS-2 (M-DNS-1/2 omitted: optional, no reviewed probe; M-DNS-3 omitted: already measured at `0850de3`) |
 | Q2 | declarative only | none | 60 / 900 s | not planned | requires S2 and a Q0 record |
-| Q3 | executable; file channel only on build 9.0.1.0858 | Server-PT `192.0.2.10/24`, two DHCP PC-PT clients, 2960-24TT on exact Fa0/1..3 links | 60 / 1200 s | 60 (17 setup + 32 measurement/application + 11 reserve) | M-DHCP-1, 2, 4, 5, 6; one-address pool `MCP_E6Q_DHCP`; guarded acquisitions (M-DHCP-3 omitted: the event source and its release are not qualified) |
+| Q3 | executable; file channel only on build 9.0.1.0858 | Server-PT `192.0.2.10/24`, two DHCP PC-PT clients, 2960-24TT on exact Fa0/1..3 links | 60 / 1200 s | 59 (17 setup + 31 measurement/application + 11 reserve) | M-DHCP-1, 2, 4, 5, 6; one-address pool `MCP_E6Q_DHCP`; guarded acquisitions (M-DHCP-3 omitted: the event source and its release are not qualified) |
 
 The planned figure is the stage's **bounded worst case**, not its luckiest
 trace: every production fetch is budgeted at its start, both inspections and
@@ -58,24 +58,29 @@ which all four are true on every port.
 
 The gate spends at most four aggregate reads inside a 30-second monotonic
 window, itself capped by the stage's unspent time and its untouchable
-finalization reserve, and stops at the first complete ready sample. Nothing
-sleeps unconditionally and nothing spins. The record keeps the read count, the
-elapsed time, the first and last samples and the precise failure reason.
+finalization reserve, and stops at the first complete ready sample. Each read
+receives the smaller of the probe's normal timeout, the local deadline
+remainder and the stage allowance. A sample returned after the local deadline
+is retained but grants no permission. Nothing sleeps unconditionally and
+nothing spins. The record keeps the read count, elapsed time, first and last
+samples and the precise failure reason.
 
 These fields prove readiness of the measured links at the moment they were
 read. They prove nothing about STP forwarding, reachability or a successful
 request. A gate that never becomes ready is a readiness result: Q1 writes no
-marked page and starts no fetch, Q3 requests no acquisition, both stages
-finalize normally, and neither records a verdict about HTTP, HTTPS or DHCP.
+marked page and starts no fetch; Q3 performs no `SetEndpointDhcp`, server
+setter or acquisition. Both stages finalize, and neither records a service
+verdict from the readiness result.
 
-Q3's exact worst case consumes its whole reviewed ceiling on paper: 17
-admission/fixture operations, 32 product/native measurement operations and an
-untouchable 11-operation reserve for the run bag, four owned removals and two
-restoration reads. The product path is compiled through the real E4/E5/E6
-composition with a private candidate capability copy. It applies only the
-endpoint bootstrap needed on the already owned physical fixture, then drives
-the real service applicator and generated runtime scripts. The public catalog
-stays UNKNOWN/UNMEASURED.
+Q3's recalculated exact worst case is 59 operations: 17 admission/fixture
+operations, 31 product/native measurement operations and an untouchable
+11-operation reserve for the run bag, four owned removals and two restoration
+reads. The one operation below the 60-operation ceiling is not a retry
+entitlement. The product path is compiled through the real E4/E5/E6
+composition with a private candidate capability copy. It applies server setup
+once through the service applicator, retains those exact typed action rows for
+the full plan and performs fresh read-only verification without rescheduling
+the setup setters. The public catalog stays UNKNOWN/UNMEASURED.
 
 The fixture has no router. Gateway option `192.0.2.1` and DNS option
 `192.0.2.10` are stored DHCP options, not reachability or DNS-service evidence.
