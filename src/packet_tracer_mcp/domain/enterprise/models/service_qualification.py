@@ -598,7 +598,7 @@ def _q1() -> StageDefinition:
                 planned_operations=0,
                 omission_reason=(
                     "optional_without_reviewed_probe: omitted explicitly; the "
-                    "required set's planned worst case is 53 of 60 operations, "
+                    "required set's planned worst case is 56 of 60 operations, "
                     "so this is not a budget refusal"
                 ),
             ),
@@ -610,7 +610,7 @@ def _q1() -> StageDefinition:
                 planned_operations=0,
                 omission_reason=(
                     "optional_without_reviewed_probe: omitted explicitly; the "
-                    "required set's planned worst case is 53 of 60 operations, "
+                    "required set's planned worst case is 56 of 60 operations, "
                     "so this is not a budget refusal"
                 ),
             ),
