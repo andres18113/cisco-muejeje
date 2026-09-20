@@ -166,6 +166,7 @@ _SPECS: dict[str, dict[str, tuple[type, ...]]] = {
     },
     "page_read": {"cells": _DICT},
     "readiness": {"listeners": _DICT, "ports": _DICT},
+    "port_readiness": {"ports": _DICT},
     "marker_page": {
         "error": _STR,
         "index_written": _DICT,
@@ -188,6 +189,7 @@ _SPECS: dict[str, dict[str, tuple[type, ...]]] = {
     },
     "client_resolvers": {"clients": _DICT},
     "dhcp_server_baseline": {
+        "device": _STR,
         "found": _BOOL,
         "process_found": _BOOL,
         "interface": _STR,
@@ -708,41 +710,68 @@ class PacketTracerQualificationProbes:
             "try{__sp=__s?!!__s.isEnabled():null;}catch(__x){}"
         )
 
-    def read_listener_readiness(
-        self, server: str, endpoints: Sequence[tuple[str, str]]
-    ) -> ProbeReading:
-        """Read listener flags and the fixture links' endpoint readiness.
+    @staticmethod
+    def _ports_block(endpoints: Sequence[tuple[str, str]]) -> str:
+        """Return the typed readiness read of the exact named ports.
 
         Documented readers only: `isPortUp`, `isProtocolUp`, `getLink` on every
         named port and `getIpAddress/getSubnetMask` where the port has them.
-        Every reader is guarded on its own, so one refusal is a named cause
-        and never a missing port. The switch's STP state has no documented
-        reader and is not read.
+        Every reader is guarded on its own, so one refusal is a named cause and
+        never a missing port. A boolean is reported only when the engine
+        returned `typeof "boolean"`: the companion `*_type` field keeps a
+        missing reader, a non-boolean return and an actual `false` apart, which
+        `!!` would have collapsed into one observation. The switch's STP state
+        has no documented reader and is not read.
         """
         named = json.dumps([list(item) for item in endpoints])
-        return self._read(
-            "readiness",
-            self._server(server)
-            + self._listener_states()
-            + f"var __ports={{}};var __n={named};"
+        return (
+            f"var __ports={{}};var __n={named};"
             "for(var __i=0;__i<__n.length;__i++){"
-            "var __c={found:false,port_up:null,protocol_up:null,linked:null,"
+            "var __c={device:__n[__i][0],interface:__n[__i][1],found:false,"
+            "port_up:null,port_up_type:'absent',protocol_up:null,"
+            "protocol_up_type:'absent',linked:null,link_type:'absent',"
             "ip:null,mask:null,error:''};"
             "try{var __dv=ipc.network().getDevice(__n[__i][0]);"
             "var __pt=__dv?__dv.getPort(__n[__i][1]):null;if(__pt){__c.found=true;"
-            "try{__c.port_up=!!__pt.isPortUp();}catch(__x){__c.error='isPortUp:'+__er(__x);}"
-            "try{__c.protocol_up=!!__pt.isProtocolUp();}"
-            "catch(__x){__c.error=__c.error||('isProtocolUp:'+__er(__x));}"
-            "try{__c.linked=!!__pt.getLink();}"
-            "catch(__x){__c.error=__c.error||('getLink:'+__er(__x));}"
+            "try{var __pu=__pt.isPortUp();__c.port_up_type=typeof __pu;"
+            "if(__c.port_up_type==='boolean'){__c.port_up=__pu;}}"
+            "catch(__x){__c.port_up_type='threw';__c.error='isPortUp:'+__er(__x);}"
+            "try{var __ru=__pt.isProtocolUp();__c.protocol_up_type=typeof __ru;"
+            "if(__c.protocol_up_type==='boolean'){__c.protocol_up=__ru;}}"
+            "catch(__x){__c.protocol_up_type='threw';"
+            "__c.error=__c.error||('isProtocolUp:'+__er(__x));}"
+            "try{var __lk=__pt.getLink();"
+            "var __no=(__lk===null||__lk===undefined);"
+            "__c.link_type=__no?'absent':(typeof __lk);__c.linked=!__no;}"
+            "catch(__x){__c.link_type='threw';"
+            "__c.error=__c.error||('getLink:'+__er(__x));}"
             "if(typeof __pt.getIpAddress==='function'){try{"
             "__c.ip=String(__pt.getIpAddress()).substring(0,64);"
             "__c.mask=String(__pt.getSubnetMask()).substring(0,64);}"
             "catch(__x){__c.error=__c.error||('getIpAddress:'+__er(__x));}}}}"
             "catch(__x){__c.error=__er(__x);}"
             "__ports[__n[__i][0]+'/'+__n[__i][1]]=__c;}"
-            "reportResult(JSON.stringify({listeners:{http_enabled:__he,"
+        )
+
+    def read_listener_readiness(
+        self, server: str, endpoints: Sequence[tuple[str, str]]
+    ) -> ProbeReading:
+        """Read listener flags and the fixture links' endpoint readiness."""
+        return self._read(
+            "readiness",
+            self._server(server)
+            + self._listener_states()
+            + self._ports_block(endpoints)
+            + "reportResult(JSON.stringify({listeners:{http_enabled:__he,"
             "https_enabled:__se,https_process_enabled:__sp},ports:__ports}));",
+        )
+
+    def read_port_readiness(self, endpoints: Sequence[tuple[str, str]]) -> ProbeReading:
+        """Read the exact fixture endpoints where no server process is involved."""
+        return self._read(
+            "port_readiness",
+            self._ports_block(endpoints)
+            + "reportResult(JSON.stringify({ports:__ports}));",
         )
 
     def prepare_marker_page(self, server: str, marker: str) -> ProbeReading:
@@ -815,10 +844,15 @@ class PacketTracerQualificationProbes:
     # -- Q3 private probes on owned DHCP fixtures --------------------------
 
     def read_dhcp_server_baseline(self, server: str, interface: str) -> ProbeReading:
-        """Read the exact interface binding and a bounded initial pool inventory."""
+        """Read the exact interface binding and a bounded pool inventory.
+
+        The subject is echoed back as `device`, so the admission rule compares
+        the reading against the server it asked about instead of trusting that
+        the answer came from the right device.
+        """
         return self._read(
             "dhcp_server_baseline",
-            f"var __d=ipc.network().getDevice({json.dumps(server)});"
+            f"var __dn={json.dumps(server)};var __d=ipc.network().getDevice(__dn);"
             "var __m=__d?__d.getProcess('DhcpServerMain'):null;"
             f"var __if={json.dumps(interface)};"
             "var __p=__m&&__m.getDhcpServerProcessByPortName(__if);"
@@ -837,9 +871,10 @@ class PacketTracerQualificationProbes:
             "start:String(__q.getStartIp()).substring(0,64),"
             "end:String(__q.getEndIp()).substring(0,64),max:__q.getMaxUsers()});}}"
             "catch(__x){__error=__er(__x);}}"
-            "reportResult(JSON.stringify({found:!!__d,process_found:!!__p,"
-            "interface:__if,enabled:__enabled,enabled_type:__etype,"
-            "pool_count:__count,pools:__pools,truncated:__tr,error:__error}));",
+            "reportResult(JSON.stringify({device:__dn,found:!!__d,"
+            "process_found:!!__p,interface:__if,enabled:__enabled,"
+            "enabled_type:__etype,pool_count:__count,pools:__pools,"
+            "truncated:__tr,error:__error}));",
         )
 
     def read_dhcp_clients(self, clients: Sequence[tuple[str, str]]) -> ProbeReading:
@@ -891,7 +926,16 @@ class PacketTracerQualificationProbes:
     def register_dhcp_observers(
         self, clients: Sequence[tuple[str, str]]
     ) -> ProbeReading:
-        """Register two bounded event callbacks on each owned client port."""
+        """Register two bounded event callbacks on each owned client port.
+
+        Unreachable in the amended Q3 profile, which declares M-DHCP-3 OMITTED.
+        The subscription is made on the port, while Cisco documents
+        `dhcpSucceed`/`dhcpFailed` on `DhcpClientProcess`, so the event source
+        identity is unqualified; the Node stub emits them as `HostPort`, which
+        masks the mismatch rather than measuring it. Nothing calls this until a
+        separately reviewed event change fixes source identity, correlation and
+        release evidence.
+        """
         return self._read(
             "dhcp_events_register",
             self._owned_bag()
@@ -918,7 +962,13 @@ class PacketTracerQualificationProbes:
         )
 
     def collect_dhcp_observers(self) -> ProbeReading:
-        """Read bounded event rows, release by identity where possible, then drop."""
+        """Read bounded event rows, release by identity where possible, then drop.
+
+        Unreachable in the amended Q3 profile for the reason recorded on
+        `register_dhcp_observers`. An unregister attempt that did not throw is
+        not observed detachment, so this reading cannot resolve the resources
+        it releases.
+        """
         return self._read(
             "dhcp_events_collect",
             self._owned_bag()

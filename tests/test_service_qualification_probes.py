@@ -815,3 +815,82 @@ def test_an_unavailable_build_is_never_recovered(engine_factory, config, reason)
     engine = engine_factory(**config)
     reading = ServiceEnvironmentReader(NodeEngineTransport(engine).send_and_wait).read()
     assert (reading.available, reading.version, reading.reason) == (False, "", reason)
+
+
+# -- amendment 01: typed readiness and the echoed baseline subject --------------
+
+
+def test_port_readiness_reports_actual_booleans_and_their_absence(engine_factory):
+    """F3: `!!` is gone, so a non-boolean reader is not an observed `false`."""
+    engine = engine_factory(port_up_return="number")
+    engine.seed_device(SERVER, "Server-PT")
+    engine.seed_device("__MCP_E6Q_SW", "2960-24TT")
+    probes, _transport = _probes(engine)
+
+    reading = probes.read_port_readiness(
+        [(SERVER, "FastEthernet0"), ("__MCP_E6Q_SW", "FastEthernet0/1"), ("X", "Y")]
+    )
+
+    assert reading.observed and "listeners" not in reading.payload
+    server = reading.payload["ports"][f"{SERVER}/FastEthernet0"]
+    assert (server["device"], server["interface"]) == (SERVER, "FastEthernet0")
+    assert server["found"] is True
+    # `isPortUp` answered with a number, so there is no boolean to report.
+    assert server["port_up"] is None and server["port_up_type"] == "number"
+    assert server["protocol_up"] is False and server["protocol_up_type"] == "boolean"
+    assert server["linked"] is False and server["link_type"] == "absent"
+    missing = reading.payload["ports"]["X/Y"]
+    assert missing["found"] is False and missing["port_up_type"] == "absent"
+
+
+def test_a_linked_fixture_reports_every_readiness_boolean(engine_factory):
+    """The positive control: two linked ports answer with actual booleans."""
+    engine = engine_factory()
+    engine.seed_device(SERVER, "Server-PT")
+    engine.seed_device("__MCP_E6Q_SW", "2960-24TT")
+    probes, _transport = _probes(engine)
+    engine.evaluate(
+        f"lwAddLink({json.dumps(SERVER)},'FastEthernet0','__MCP_E6Q_SW',"
+        "'FastEthernet0/1','Copper Straight-Through');reportResult('linked');"
+    )
+
+    reading = probes.read_port_readiness(
+        [(SERVER, "FastEthernet0"), ("__MCP_E6Q_SW", "FastEthernet0/1")]
+    )
+
+    for row in reading.payload["ports"].values():
+        assert (row["found"], row["linked"], row["port_up"], row["protocol_up"]) == (
+            True,
+            True,
+            True,
+            True,
+        )
+        assert row["link_type"] == "object" and row["error"] == ""
+
+
+def test_the_dhcp_baseline_echoes_the_subject_it_was_asked_about(engine_factory):
+    """F1: the admission rule compares the answer against the device it named."""
+    engine = engine_factory(dhcp_default_pool="native")
+    engine.seed_device(SERVER, "Server-PT")
+    probes, _transport = _probes(engine)
+
+    reading = probes.read_dhcp_server_baseline(SERVER, "FastEthernet0")
+
+    assert reading.observed
+    assert reading.payload["device"] == SERVER
+    assert reading.payload["enabled"] is False
+    assert reading.payload["pools"] == [
+        {
+            "name": "serverPool",
+            "network": "0.0.0.0",
+            "mask": "0.0.0.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "0.0.0.0",
+            "end": "0.0.2.0",
+            "max": 512,
+        }
+    ]
+    missing = probes.read_dhcp_server_baseline("__MCP_E6Q_ABSENT", "FastEthernet0")
+    assert missing.payload["device"] == "__MCP_E6Q_ABSENT"
+    assert missing.payload["found"] is False

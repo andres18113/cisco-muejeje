@@ -38,6 +38,19 @@ Behaviour switches (`config`) select the engine facts under test:
   exception coincides with a page that did change;
 - `ports_up` / `protocol_up`: what a linked port's `isPortUp()` and
   `isProtocolUp()` report (an unlinked port reports false);
+- `ports_down_calls`: how many of the first `isPortUp`/`isProtocolUp` calls
+  answer false before the flags above apply, so a fixture can come up between
+  two aggregate readiness reads;
+- `port_up_return` / `protocol_up_return`: `boolean`, or `number`, `string`,
+  `undefined` or `null` to answer with something that is not a boolean;
+- `dhcp_default_pool`: `native` for the exact pool the LIVE Q3 record observed
+  on stock Server-PT, `arbitrary` (or the legacy `true`) for a different
+  unreviewed default, `false` for none;
+- `dhcp_pool_selection`: which pool `dhcpRun` allocates from -- `first` by
+  sorted name, `intended` for `MCP_E6Q_DHCP`, `default` for any other pool.
+  Nothing measured says which one a native server picks;
+- `default_pool_change_on_enable`: fields merged into every non-intended pool
+  when the DHCP process is enabled;
 - `fetch_failure`: `error_page` renders fresh non-marker content for a refused
   fetch; `unchanged` leaves the client page as it was (a timeout);
 - `serve_nothing`: no fetch is served whatever the listeners say, which with
@@ -84,10 +97,29 @@ const config = Object.assign({
   setpage_throws_http: [], setpage_throws_https: [],
   setpage_throws_after_http: [], setpage_throws_after_https: [],
   ports_up: true, protocol_up: true, serve_nothing: false,
+  ports_down_calls: 0, port_up_return: 'boolean', protocol_up_return: 'boolean',
   dhcp_table_end: 'null', dhcp_acquire_throws: false,
   dhcp_emit_events: true, dhcp_lease_time: '3600',
   dhcp_client_address_override: null, dhcp_default_pool: false,
+  dhcp_pool_selection: 'first', default_pool_change_on_enable: null,
 }, JSON.parse(process.argv[2] || '{}'));
+
+// What a non-boolean reader returns. Packet Tracer is free to answer with
+// something that is not a boolean, and the readiness rule has to tell that
+// apart from an actual false instead of coercing both into one.
+const NON_BOOLEAN = {number: 1, string: 'up', undefined: undefined, null: null};
+const readinessCalls = {portUp: 0, protocolUp: 0};
+
+// The exact native pool a stock Server-PT carried in the Q3 ordinal-2 LIVE
+// record. `arbitrary` is a different, unreviewed default that must refuse.
+const DEFAULT_POOLS = {
+  native: {name: 'serverPool', network: '0.0.0.0', mask: '0.0.0.0',
+    gateway: '0.0.0.0', dns: '0.0.0.0', start: '0.0.0.0', end: '0.0.2.0',
+    max: 512, leases: []},
+  arbitrary: {name: 'DEFAULT', network: '10.0.0.0', mask: '255.255.255.0',
+    gateway: '10.0.0.1', dns: '', start: '10.0.0.10', end: '10.0.0.20',
+    max: 11, leases: []},
+};
 
 const guardPage = (patterns, url) => {
   for (const pattern of (patterns || [])) {
@@ -246,10 +278,12 @@ const makeClient = () => {
 const dhcpState = (dev) => {
   if (!dev.dhcpServer) {
     dev.dhcpServer = {enabled: false, exclusions: [], pools: {}};
-    if (config.dhcp_default_pool) {
-      dev.dhcpServer.pools.DEFAULT = {name: 'DEFAULT', network: '10.0.0.0',
-        mask: '255.255.255.0', gateway: '10.0.0.1', dns: '', start: '10.0.0.10',
-        end: '10.0.0.20', max: 11, leases: []};
+    const kind = config.dhcp_default_pool === true
+      ? 'arbitrary' : config.dhcp_default_pool;
+    const template = kind ? DEFAULT_POOLS[kind] : null;
+    if (template) {
+      dev.dhcpServer.pools[template.name] =
+        Object.assign({}, template, {leases: []});
     }
   }
   return dev.dhcpServer;
@@ -286,7 +320,18 @@ const dhcpServerProcess = (dev) => {
   const state = dhcpState(dev);
   return {
     isEnable: () => state.enabled,
-    setEnable: (value) => { state.enabled = !!value; },
+    setEnable: (value) => {
+      state.enabled = !!value;
+      // Enabling the process is process-wide. The stub can be told that the
+      // native default moves when it happens, because nothing measured says
+      // it does not.
+      const drift = value ? config.default_pool_change_on_enable : null;
+      if (drift) {
+        for (const name of Object.keys(state.pools)) {
+          if (name !== 'MCP_E6Q_DHCP') { Object.assign(state.pools[name], drift); }
+        }
+      }
+    },
     getPoolCount: () => Object.keys(state.pools).length,
     getPoolAt: (index) => {
       const name = Object.keys(state.pools).sort()[index];
@@ -326,8 +371,15 @@ const dhcpClientProcess = (dev) => ({
     if (!port) { throw new Error('dhcp client port missing'); }
     const server = devices.find((item) => item.model === 'Server-PT' && item.dhcpServer);
     const state = server ? dhcpState(server) : null;
-    const pool = state && (state.pools.MCP_E6Q_DHCP
-      || state.pools[Object.keys(state.pools).sort()[0]]);
+    // Which pool a native server answers from is unqualified, so the stub
+    // never hard-codes the intended one: the selection is configured.
+    const names = state ? Object.keys(state.pools).sort() : [];
+    const chosen = config.dhcp_pool_selection === 'intended'
+      ? 'MCP_E6Q_DHCP'
+      : (config.dhcp_pool_selection === 'default'
+        ? names.filter((name) => name !== 'MCP_E6Q_DHCP')[0]
+        : names[0]);
+    const pool = state && chosen ? state.pools[chosen] : null;
     const existing = pool && pool.leases.find((row) => row.macAddress === port.mac);
     if (state && state.enabled && pool && (existing || pool.leases.length < pool.max)) {
       const leaseAddress = existing ? existing.ipAddress : pool.start;
@@ -402,8 +454,22 @@ const makeDevice = (name, model) => {
       getName: () => port.name,
       getOwnerDevice: () => api,
       getLink: () => (port.link ? port.link.api : null),
-      isPortUp: () => !!port.link && !!config.ports_up,
-      isProtocolUp: () => !!port.link && !!config.protocol_up,
+      isPortUp: () => {
+        readinessCalls.portUp++;
+        if (config.port_up_return !== 'boolean') {
+          return NON_BOOLEAN[config.port_up_return];
+        }
+        if (readinessCalls.portUp <= config.ports_down_calls) { return false; }
+        return !!port.link && !!config.ports_up;
+      },
+      isProtocolUp: () => {
+        readinessCalls.protocolUp++;
+        if (config.protocol_up_return !== 'boolean') {
+          return NON_BOOLEAN[config.protocol_up_return];
+        }
+        if (readinessCalls.protocolUp <= config.ports_down_calls) { return false; }
+        return !!port.link && !!config.protocol_up;
+      },
       registerEvent: (event, obj, cb) => {
         if (config.register_throws) { throw new Error('registration refused'); }
         registrations.push({uuid: port.uuid, event: String(event), obj: obj, cb: cb,

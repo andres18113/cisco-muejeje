@@ -162,22 +162,23 @@ def test_declarative_and_unknown_stages_refuse_before_contact(
 
 
 def test_q1_is_admitted_at_its_reviewed_ceiling_and_finalizes(simulation, capsys):
-    """Q1's 60/600 design ceiling covers its planned worst case of 53 operations.
+    """Q1's 60/600 design ceiling covers its planned worst case of 56 operations.
 
     The stage used to refuse before contact because its executable definition
     exceeded a 30-operation ceiling. It now runs end to end through the
-    operator entry point, spends no more than the planned worst case, refuses
-    no call, and leaves the workspace and the engine bag empty.
+    operator entry point, spends no more than the planned worst case -- which
+    includes the readiness gate -- refuses no call, and leaves the workspace
+    and the engine bag empty.
     """
     sim = simulation()
     code, summary = sim.main(request_args("Q1") + authorization_args("Q1"), capsys)
     assert code == 0
     assert summary["refusals"] == []
     assert sim.opened == ["file"]
-    assert summary["operations_used"] <= 53
+    assert summary["operations_used"] <= 56
     (record,) = sim.records()
     assert record.budget.max_operations == 60
-    assert record.budget.planned_minimum_operations == 53
+    assert record.budget.planned_minimum_operations == 56
     assert record.budget.refused_calls == 0
     assert record.restoration_proven is True
     snapshot = sim.engine.snapshot()
@@ -203,11 +204,20 @@ def test_q3_runs_the_real_bounded_dhcp_stage_and_round_trips_its_record(
         "M-DHCP-5",
         "M-DHCP-6",
     }
-    assert all(item["status"] == "ran" for item in summary["measurements"])
+    assert {item["id"]: item["status"] for item in summary["measurements"]} == {
+        "M-DHCP-1": "ran",
+        "M-DHCP-2": "ran",
+        # Declared OMITTED in the amended profile, with its reason, rather
+        # than silently dropped or reported as supported.
+        "M-DHCP-3": "omitted",
+        "M-DHCP-4": "ran",
+        "M-DHCP-5": "ran",
+        "M-DHCP-6": "ran",
+    }
     assert {item["id"]: item["conclusion"] for item in summary["measurements"]} == {
         "M-DHCP-1": "supported_in_sample",
         "M-DHCP-2": "supported_in_sample",
-        "M-DHCP-3": "inconclusive",
+        "M-DHCP-3": "not_evaluated",
         "M-DHCP-4": "supported_in_sample",
         "M-DHCP-5": "supported_in_sample",
         "M-DHCP-6": "inconclusive",
@@ -219,7 +229,9 @@ def test_q3_runs_the_real_bounded_dhcp_stage_and_round_trips_its_record(
     assert record.source.executed_sha == SIM_SHA
     assert record.budget.refused_calls == 0
     assert record.dirty_state.value == "unknown"
-    assert {item.kind for item in record.releases} >= {"claim", "observer", "device"}
+    assert {item.kind for item in record.releases} >= {"claim", "device"}
+    assert not [item for item in record.releases if item.kind == "observer"]
+    assert "engine.dhcp_event_delivery" not in record.experimental_capabilities
     assert any(
         "lease_time_semantics_unqualified" in item.limitations
         for item in record.measurements
@@ -227,11 +239,39 @@ def test_q3_runs_the_real_bounded_dhcp_stage_and_round_trips_its_record(
     snapshot = sim.engine.snapshot()
     assert snapshot["devices"] == []
     assert snapshot["run_bags"] == {}
+    assert snapshot["registrations"] == []
     assert snapshot["dhcp_runs"] == [
         {"device": "__MCP_E6Q_PC1", "port": "FastEthernet0"},
         {"device": "__MCP_E6Q_PC2", "port": "FastEthernet0"},
     ]
     assert snapshot["production_globals"] == ["__mcpE6Claims"]
+
+
+def test_the_amended_q3_profile_registers_no_dhcp_observer(simulation, capsys):
+    """F4: no event registration or unregistration executes in this profile."""
+    sim = simulation()
+
+    code, _summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
+
+    assert code == 0
+    dispatched = "".join(script for _kind, script in sim.transport.calls)
+    assert "registerEvent" not in dispatched
+    assert "unregisterIpcEventByID" not in dispatched
+    assert "dhcpSucceed" not in dispatched
+    snapshot = sim.engine.snapshot()
+    assert snapshot["registrations"] == [] and snapshot["unregister_calls"] == []
+    (record,) = sim.records()
+    omitted = next(
+        item for item in record.measurements if item.experiment_id == "M-DHCP-3"
+    )
+    assert omitted.status.value == "omitted"
+    assert omitted.reason.startswith(
+        "qualification_event_source_and_release_not_qualified"
+    )
+    assert record.engine_residue == [
+        "claim:__MCP_E6Q_PC1:retained",
+        "claim:__MCP_E6Q_PC2:retained",
+    ]
 
 
 def test_q3_unreviewed_build_refuses_before_opening_the_file_channel(
@@ -286,15 +326,26 @@ def test_q3_persistence_loss_before_acquisition_halts_effects_and_cleans_fixture
 def test_q3_preserves_a_product_address_contradiction_and_still_finalizes(
     simulation, capsys
 ):
-    """Do not relabel a same-subnet address outside the one-address pool as success."""
+    """Do not relabel a same-subnet address outside the one-address pool as success.
+
+    F5: the contradicted read-back is classified before the intentional
+    same-claim guard control, so the guard is never dispatched on top of an
+    effect the product already contradicted.
+    """
     sim = simulation(dhcp_client_address_override="192.0.2.101")
 
     code, summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
 
     assert code == 1
-    assert summary["primary_failure"] == "contradiction:M-DHCP-6"
+    assert summary["primary_failure"] == "contradiction:q3_product_readback"
     conclusions = {item["id"]: item["conclusion"] for item in summary["measurements"]}
     assert conclusions["M-DHCP-6"] == "contradicted"
+    (record,) = sim.records()
+    timing = next(
+        item for item in record.measurements if item.experiment_id == "M-DHCP-6"
+    )
+    assert timing.facts["guard"] == {}
+    assert [item.purpose for item in record.operations if "guard" in item.purpose] == []
     snapshot = sim.engine.snapshot()
     assert snapshot["devices"] == []
     assert snapshot["run_bags"] == {}
@@ -316,21 +367,36 @@ def test_q3_unknown_acquisition_stops_guard_mutation_but_keeps_bounded_cleanup(
     assert snapshot["run_bags"] == {}
 
 
-def test_q3_event_registration_refusal_is_inconclusive_not_a_product_failure(
-    simulation, capsys
-):
-    """Continue independent DHCP reads only after all refused callbacks are inert."""
-    sim = simulation(register_throws=True)
+def test_q3_never_activates_a_client_from_an_unready_fixture(simulation, capsys):
+    """F3: a gate that never becomes ready requests no acquisition at all.
+
+    The stage still reads what it can and finalizes; what it records is a
+    readiness result about the measured links, never a verdict on DHCP.
+    """
+    sim = simulation(ports_up=False)
 
     code, summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
 
     assert code == 0
     conclusions = {item["id"]: item["conclusion"] for item in summary["measurements"]}
-    assert conclusions["M-DHCP-3"] == "inconclusive"
-    assert sim.engine.snapshot()["dhcp_runs"] == [
-        {"device": "__MCP_E6Q_PC1", "port": "FastEthernet0"},
-        {"device": "__MCP_E6Q_PC2", "port": "FastEthernet0"},
-    ]
+    assert conclusions["M-DHCP-6"] == "inconclusive"
+    assert sim.engine.snapshot()["dhcp_runs"] == []
+    (record,) = sim.records()
+    timing = next(
+        item for item in record.measurements if item.experiment_id == "M-DHCP-6"
+    )
+    gate = timing.facts["readiness"]
+    assert (gate["ready"], gate["reads"], gate["max_reads"]) == (False, 4, 4)
+    assert gate["reason"].startswith("readiness_not_up:")
+    assert any(
+        item.startswith("acquisition_not_requested:readiness_not_established")
+        for item in timing.causes
+    )
+    assert "no_client_activated" in timing.limitations
+    assert [
+        item.purpose for item in record.operations if "service_apply" in item.purpose
+    ] == []
+    assert record.restoration_proven is True
 
 
 def test_q3_runtime_budget_refusal_stops_experiments_and_preserves_finalization(
@@ -339,7 +405,7 @@ def test_q3_runtime_budget_refusal_stops_experiments_and_preserves_finalization(
     """Exercise the Q3 ledger stop independently of its reviewed 60-op arithmetic."""
     q3 = STAGE_DEFINITIONS[QualificationStage.Q3]
     experiments = tuple(
-        replace(item, planned_operations=3) if item.id == "M-DHCP-6" else item
+        replace(item, planned_operations=17) if item.id == "M-DHCP-2" else item
         for item in q3.experiments
     )
     narrow = replace(
@@ -371,7 +437,7 @@ def test_q3_records_an_initial_default_pool_and_stops_before_product_setters(
     simulation, capsys
 ):
     """Never remove or silently coexist with an unreviewed native default pool."""
-    sim = simulation(dhcp_default_pool=True)
+    sim = simulation(dhcp_default_pool="arbitrary")
 
     code, summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
 
@@ -379,9 +445,94 @@ def test_q3_records_an_initial_default_pool_and_stops_before_product_setters(
     assert summary["primary_failure"] == "q3_initial_server_state_not_admissible"
     conclusions = {item["id"]: item["conclusion"] for item in summary["measurements"]}
     assert conclusions["M-DHCP-1"] == "inconclusive"
+    (record,) = sim.records()
+    admission = next(
+        item for item in record.measurements if item.experiment_id == "M-DHCP-1"
+    ).facts["baseline_admission"]
+    assert admission["admitted"] is False
+    assert (
+        "baseline_pool_is_not_the_exact_observed_native_default" in admission["causes"]
+    )
     snapshot = sim.engine.snapshot()
     assert snapshot["dhcp_runs"] == []
     assert snapshot["devices"] == []
+
+
+def test_q3_coexists_with_the_exact_observed_native_default(simulation, capsys):
+    """F1/F2: the measured `serverPool` is admitted, preserved and never touched."""
+    sim = simulation(dhcp_default_pool="native")
+
+    code, summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
+
+    assert code == 0
+    assert summary["operations_used"] <= 60
+    conclusions = {item["id"]: item["conclusion"] for item in summary["measurements"]}
+    assert conclusions["M-DHCP-1"] == "supported_in_sample"
+    (record,) = sim.records()
+    setup = next(
+        item for item in record.measurements if item.experiment_id == "M-DHCP-1"
+    )
+    assert setup.facts["baseline_admission"] == {
+        "admitted": True,
+        "kind": "observed_native_default",
+        "causes": [],
+    }
+    assert "native_default_pool_coexists_and_is_never_modified" in setup.limitations
+    assert "process_enable_is_process_wide_not_pool_scoped" in setup.limitations
+    labels = [item["label"] for item in setup.facts["native_default"]["snapshots"]]
+    assert labels == ["before_e5", "after_setup"]
+    timing = next(
+        item for item in record.measurements if item.experiment_id == "M-DHCP-6"
+    )
+    assert [item["label"] for item in timing.facts["native_default"]["snapshots"]] == [
+        "before_e5",
+        "after_setup",
+        "before_cleanup",
+    ]
+    assert timing.facts["native_default"]["differences"] == []
+    # The last read before cleanup still shows exactly the pool the first one
+    # did: the run never removed it, renamed it or rewrote one of its options.
+    for item in timing.facts["native_default"]["snapshots"]:
+        assert item["pools"] == [
+            {
+                "name": "serverPool",
+                "network": "0.0.0.0",
+                "mask": "0.0.0.0",
+                "gateway": "0.0.0.0",
+                "dns": "0.0.0.0",
+                "start": "0.0.0.0",
+                "end": "0.0.2.0",
+                "max": 512,
+            }
+        ]
+    assert timing.facts["native_default"]["snapshots"][-1]["intended_pool_present"]
+
+
+def test_q3_stops_when_the_observed_native_default_moves(simulation, capsys):
+    """F2: a default that changed under the run stops the effects that follow."""
+    sim = simulation(
+        dhcp_default_pool="native",
+        default_pool_change_on_enable={"gateway": "10.9.9.9"},
+    )
+
+    code, summary = sim.main(request_args("Q3") + authorization_args("Q3"), capsys)
+
+    assert code == 1
+    assert summary["primary_failure"] == (
+        "q3_native_default_changed:default_pool_changed:serverPool.gateway"
+    )
+    (record,) = sim.records()
+    setup = next(
+        item for item in record.measurements if item.experiment_id == "M-DHCP-1"
+    )
+    assert setup.facts["native_default"]["differences"] == [
+        "default_pool_changed:serverPool.gateway"
+    ]
+    before, after = setup.facts["native_default"]["snapshots"]
+    assert before["pools"][0]["gateway"] == "0.0.0.0"
+    assert after["pools"][0]["gateway"] == "10.9.9.9"
+    assert sim.engine.snapshot()["dhcp_runs"] == []
+    assert record.restoration_proven is True
 
 
 def test_a_budget_below_the_planned_worst_case_never_reaches_a_channel(

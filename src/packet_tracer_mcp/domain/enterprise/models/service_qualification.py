@@ -214,13 +214,16 @@ class StageDefinition:
         raise KeyError(experiment_id)
 
 
-#: Plan 5.8 ceilings, with the reviewed Q1 design ceiling. Q0 and Q1 are the
-#: executable stages. Q1 keeps the reviewed 60/600; the repaired procedure's
-#: worst case is 53 operations with its 10-operation finalization reserve
+#: Plan 5.8 ceilings, with the reviewed Q1 design ceiling. Q0, Q1 and Q3 are
+#: the executable stages. Q1 keeps the reviewed 60/600; the amended worst case
+#: is 56 operations, because the readiness gate is charged to the trace rather
+#: than to unlogged preparation, with its 10-operation finalization reserve
 #: intact. M-DNS-3 is not repeated, so no operation is spent on a measurement
 #: the 0850de3 record already carries, and no reconciliation read was added to
-#: replace it. It authorizes no LIVE run, and it changes neither Q0 nor the
-#: declarative Q2 or executable Q3.
+#: replace it. Q3 keeps 60/1200 and its 11-operation reserve: the allowance
+#: M-DHCP-3 held is reallocated to readiness and to preserving the observed
+#: native default, never to another acquisition. No ceiling is raised, and
+#: none of this authorizes a LIVE run or changes declarative Q2.
 STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.Q0: (20, 300),
     QualificationStage.Q1: (60, 600),
@@ -249,6 +252,29 @@ Q3_GATEWAY_IPV4 = "192.0.2.1"
 Q3_DNS_IPV4 = Q3_SERVER_IPV4
 Q3_LEASE_IPV4 = "192.0.2.100"
 Q3_POOL = "MCP_E6Q_DHCP"
+#: The complete native pool a stock Server-PT carried in the Q3 ordinal-2
+#: record (run `2026-09-19T22-52-28Z-6d12894c`, on the reviewed build over the
+#: file channel). Every field is compared by value and by type, so a pool that
+#: only shares the name is refused. Nothing here says the range is harmless,
+#: and the build the policy is qualified for is injected by the composition
+#: rather than pinned here: the domain names no backend version.
+Q3_OBSERVED_NATIVE_DEFAULT_POOL: dict[str, str | int] = {
+    "name": "serverPool",
+    "network": "0.0.0.0",
+    "mask": "0.0.0.0",
+    "gateway": "0.0.0.0",
+    "dns": "0.0.0.0",
+    "start": "0.0.0.0",
+    "end": "0.0.2.0",
+    "max": 512,
+}
+
+#: The readiness gate both executable network stages share. Four aggregate
+#: reads and thirty monotonic seconds is a precondition, not a retry budget:
+#: the first complete ready sample wins, and the stage's unspent time and its
+#: finalization reserve cap the deadline.
+READINESS_MAX_READS = 4
+READINESS_DEADLINE_SECONDS = 30.0
 
 
 def _q0() -> StageDefinition:
@@ -384,7 +410,11 @@ def _q3() -> StageDefinition:
                 ),
                 required=True,
                 procedure="Q3_SETUP",
-                planned_operations=8,
+                # The whole Q3_SETUP worst case: the admission baseline read,
+                # the two bounded client reads, the four-call E5 application,
+                # the E6 server batch, its read-back and the post-setup
+                # snapshot of the observed native default.
+                planned_operations=10,
                 capabilities=(
                     "server.dhcp_process_binding",
                     "server.dhcp_pool_configuration",
@@ -397,7 +427,7 @@ def _q3() -> StageDefinition:
                 ),
                 required=True,
                 procedure="Q3_SETUP",
-                planned_operations=4,
+                planned_operations=0,
                 capabilities=("client.dhcp_mac_reader",),
             ),
             ExperimentSpec(
@@ -419,7 +449,12 @@ def _q3() -> StageDefinition:
                 ),
                 required=True,
                 procedure="Q3_DHCP",
-                planned_operations=8,
+                # The whole Q3_DHCP worst case: the run-bag sentinel, up to
+                # four aggregate readiness reads, four bounded client and
+                # table reads before the product path, the nine-call service
+                # application, the same-claim guard control, four bounded
+                # reads after it and the pre-cleanup default snapshot.
+                planned_operations=22,
                 prerequisites=("M-DHCP-1",),
                 capabilities=("server.dhcp_lease_table",),
             ),
@@ -429,11 +464,20 @@ def _q3() -> StageDefinition:
                     "Qualification-only dhcpSucceed/dhcpFailed observers receive "
                     "bounded events and are released or made inert."
                 ),
-                required=True,
+                required=False,
                 procedure="Q3_DHCP",
-                planned_operations=4,
+                planned_operations=0,
                 prerequisites=("M-DHCP-1",),
                 capabilities=("engine.dhcp_event_delivery",),
+                omission_reason=(
+                    "qualification_event_source_and_release_not_qualified: the "
+                    "registration subscribes on the port while Cisco documents "
+                    "dhcpSucceed/dhcpFailed on DhcpClientProcess, and an "
+                    "unregister attempt that did not throw is not observed "
+                    "detachment. No observer is registered in this profile "
+                    "until a separately reviewed event change fixes source "
+                    "identity, correlation and release evidence"
+                ),
             ),
             ExperimentSpec(
                 id="M-DHCP-6",
@@ -443,7 +487,7 @@ def _q3() -> StageDefinition:
                 ),
                 required=True,
                 procedure="Q3_DHCP",
-                planned_operations=8,
+                planned_operations=0,
                 prerequisites=("M-DHCP-1", "M-DHCP-5"),
                 capabilities=(
                     "client.dhcp_acquisition",
@@ -518,13 +562,14 @@ def _q1() -> StageDefinition:
                 ),
                 required=True,
                 procedure="HTTPS2",
-                # A readiness read, the marked page, two listener toggles and
-                # four production fetches, each budgeted at its worst case of
-                # 4 operations: the start, both inspections and the release of
-                # the owned client. A failed positive stops the negatives it
-                # would qualify and spends one readiness read instead, so every
+                # The readiness gate at its ceiling of four aggregate reads,
+                # the marked page, two listener toggles and four production
+                # fetches, each budgeted at its worst case of 4 operations:
+                # the start, both inspections and the release of the owned
+                # client. A failed positive stops the negatives it would
+                # qualify and spends one readiness read instead, so every
                 # early exit costs less than this complete path.
-                planned_operations=20,
+                planned_operations=23,
                 capabilities=("https.listener_toggle", "https.client_mode"),
             ),
             ExperimentSpec(

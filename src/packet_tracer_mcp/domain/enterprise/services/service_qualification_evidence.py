@@ -25,7 +25,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..models.execution import DispatchFact, ResultFact
-from ..models.service_qualification import MeasurementConclusion
+from ..models.service_qualification import (
+    Q3_OBSERVED_NATIVE_DEFAULT_POOL,
+    MeasurementConclusion,
+)
 from ..models.service_runtime import ObservationFact, RuntimeServiceVerification
 
 SUPPORTED = MeasurementConclusion.SUPPORTED_IN_SAMPLE
@@ -935,37 +938,122 @@ def _negative_control(
     return INCONCLUSIVE, causes
 
 
+#: Everything one readiness row carries. The `*_type` companions exist so that
+#: a missing reader, a non-boolean return and an actual `false` stay three
+#: different observations in the record instead of collapsing into one.
+READINESS_PORT_KEYS = (
+    "device",
+    "interface",
+    "found",
+    "linked",
+    "link_type",
+    "port_up",
+    "port_up_type",
+    "protocol_up",
+    "protocol_up_type",
+    "ip",
+    "mask",
+)
+
+#: The fields a network attempt needs to be true before it may start.
+READINESS_REQUIRED_BOOLEANS = ("found", "linked", "port_up", "protocol_up")
+
+
 def _readiness_facts(reading: ProbeReading | None) -> dict[str, Any]:
     """Copy the typed readiness fields; name an unobserved reading."""
     if reading is None:
         return {"observed": False, "cause": "not_run"}
     if not reading.observed:
         return {"observed": False, "cause": _unobserved(reading)}
-    listeners = reading.payload["listeners"]
     ports: dict[str, Any] = {}
-    for name, value in sorted(reading.payload["ports"].items()):
+    rows = reading.payload.get("ports")
+    for name, value in sorted((rows or {}).items()):
         if not isinstance(value, Mapping):
             ports[str(name)[:80]] = {"malformed": True}
             continue
         ports[str(name)[:80]] = {
             key: value.get(key)
-            for key in ("found", "port_up", "protocol_up", "linked", "ip", "mask")
+            for key in READINESS_PORT_KEYS
             if isinstance(value.get(key), (bool, str)) or value.get(key) is None
         } | {"error": str(value.get("error") or "")[:120]}
-    return {
-        "observed": True,
-        "listeners": {
+    facts: dict[str, Any] = {"observed": True, "ports": ports}
+    listeners = reading.payload.get("listeners")
+    if isinstance(listeners, Mapping):
+        facts["listeners"] = {
             key: listeners.get(key)
             for key in ("http_enabled", "https_enabled", "https_process_enabled")
             if isinstance(listeners.get(key), bool) or listeners.get(key) is None
-        },
-        "ports": ports,
-    }
+        }
+    return facts
+
+
+@dataclass(frozen=True)
+class ReadinessSample:
+    """One aggregate readiness reading over the exact fixture endpoints.
+
+    The three flags are deliberately separate. `observed` says the channel
+    returned a payload the parser accepted, `complete` says every requested
+    port answered with actual booleans and no error, and `ready` says those
+    booleans are all true. Only `ready` admits a network attempt, and none of
+    them says anything about STP forwarding, reachability or HTTP success.
+    """
+
+    observed: bool
+    complete: bool
+    ready: bool
+    cause: str = ""
+    facts: Mapping[str, Any] = field(default_factory=dict)
+
+
+def assess_port_readiness(
+    reading: ProbeReading | None, endpoints: Sequence[tuple[str, str]]
+) -> ReadinessSample:
+    """Judge one aggregate readiness reading against the exact endpoints."""
+    facts = _readiness_facts(reading)
+    if reading is None:
+        return ReadinessSample(False, False, False, "readiness_not_read", facts)
+    if not reading.observed:
+        return ReadinessSample(False, False, False, _unobserved(reading), facts)
+    rows = reading.payload.get("ports")
+    if not isinstance(rows, Mapping):
+        return ReadinessSample(True, False, False, "readiness_ports_malformed", facts)
+    wanted = [f"{device}/{interface}" for device, interface in endpoints]
+    if sorted(rows) != sorted(wanted):
+        return ReadinessSample(
+            True, False, False, "readiness_endpoints_incomplete", facts
+        )
+    for (device, interface), key in zip(endpoints, wanted, strict=True):
+        row = rows[key]
+        if not isinstance(row, Mapping):
+            return ReadinessSample(
+                True, False, False, f"readiness_row_malformed:{key}", facts
+            )
+        if row.get("device") != device or row.get("interface") != interface:
+            return ReadinessSample(
+                True, False, False, f"readiness_subject_mismatch:{key}", facts
+            )
+        if row.get("error"):
+            return ReadinessSample(
+                True, False, False, f"readiness_read_error:{key}", facts
+            )
+        for name in READINESS_REQUIRED_BOOLEANS:
+            if not isinstance(row.get(name), bool):
+                return ReadinessSample(
+                    True, False, False, f"readiness_non_boolean:{key}:{name}", facts
+                )
+    for key in wanted:
+        row = rows[key]
+        for name in READINESS_REQUIRED_BOOLEANS:
+            if row[name] is not True:
+                return ReadinessSample(
+                    True, True, False, f"readiness_not_up:{key}:{name}", facts
+                )
+    return ReadinessSample(True, True, True, "", facts)
 
 
 def assess_https_listener(
     *,
-    readiness: ProbeReading | None,
+    readiness: Mapping[str, Any],
     marker_page: ProbeReading | None,
     http_positive: RuntimeServiceVerification | None,
     http_off: ProbeReading | None,
@@ -974,9 +1062,14 @@ def assess_https_listener(
     https_off: ProbeReading | None,
     https_negative: RuntimeServiceVerification | None,
     request_urls: Mapping[str, str],
-    readiness_after: ProbeReading | None = None,
+    readiness_after: Mapping[str, Any] | None = None,
 ) -> Assessment:
     """Judge both same-mode positives and both declared negative controls.
+
+    `readiness` is the bounded gate result the coordinator reached before any
+    network attempt. A gate that never became ready leaves every control
+    unrun, which is a statement about the measured links and never a verdict
+    on the listeners.
 
     The order is fixed by the coordinator: an HTTP-mode positive with both
     listeners enabled, then HTTP off and an HTTPS-mode positive, then the
@@ -1026,7 +1119,7 @@ def assess_https_listener(
         }
 
     facts: dict[str, Any] = {
-        "readiness_before": _readiness_facts(readiness),
+        "readiness_before": dict(readiness),
         "marker_page": (
             {
                 "established": page_ready,
@@ -1073,7 +1166,7 @@ def assess_https_listener(
         "unavailable_observations": list(LISTENER_UNAVAILABLE_OBSERVATIONS),
     }
     if readiness_after is not None:
-        facts["readiness_after_failed_positive"] = _readiness_facts(readiness_after)
+        facts["readiness_after_failed_positive"] = dict(readiness_after)
     limitations = [
         "fresh_content_not_retained",
         NO_QUALIFIED_NEGATIVE_OBSERVABLE,
@@ -1085,6 +1178,9 @@ def assess_https_listener(
         + [f"negative_http:{item}" for item in http_n_causes]
         + [f"negative_https:{item}" for item in https_n_causes]
     )
+    if readiness.get("ready") is not True:
+        causes.insert(0, f"readiness_not_established:{readiness.get('reason', '')}")
+        limitations.append("readiness_result_is_not_a_listener_verdict")
     # A setup that was dispatched and never read back is an effect with an
     # unknown outcome, which the coordinator must treat as a stop signal.
     unknown_setup = [
@@ -1153,3 +1249,187 @@ def assess_client_resolver(
     if isinstance(value, str) and value and e5_dispatch_accepted:
         return Assessment(CONTRADICTED, facts, ["resolver_differs_from_e5_intent"])
     return Assessment(INCONCLUSIVE, facts, ["resolver_not_attributable_to_e5"])
+
+
+# -- Q3 native-default coexistence ---------------------------------------------
+
+#: The two baselines the amended Q3 profile may build on. Anything else --
+#: unknown, malformed, incomplete, truncated, enabled, duplicated or merely
+#: similar -- refuses before any effect.
+BASELINE_EMPTY = "empty_disabled_process"
+BASELINE_OBSERVED_NATIVE_DEFAULT = "observed_native_default"
+BASELINE_REFUSED = "refused"
+
+_NATIVE_POOL_TYPES: Mapping[str, type] = {
+    "name": str,
+    "network": str,
+    "mask": str,
+    "gateway": str,
+    "dns": str,
+    "start": str,
+    "end": str,
+    "max": int,
+}
+
+
+@dataclass(frozen=True)
+class BaselineAdmission:
+    """Whether one observed Q3 server baseline may be built on, and why."""
+
+    admitted: bool
+    kind: str
+    causes: tuple[str, ...] = ()
+    pools: tuple[Mapping[str, Any], ...] = ()
+
+
+@dataclass(frozen=True)
+class DefaultPoolSnapshot:
+    """The bounded non-intended pool inventory observed at one moment."""
+
+    label: str
+    observed: bool
+    cause: str = ""
+    pools: tuple[Mapping[str, Any], ...] = ()
+    intended_present: bool = False
+
+
+def _is_observed_native_default(row: Any) -> bool:
+    """Return whether one row is the exact observed native pool, field by field."""
+    if not isinstance(row, Mapping) or set(row) != set(Q3_OBSERVED_NATIVE_DEFAULT_POOL):
+        return False
+    for key, expected in Q3_OBSERVED_NATIVE_DEFAULT_POOL.items():
+        value = row[key]
+        if isinstance(value, bool) or not isinstance(value, _NATIVE_POOL_TYPES[key]):
+            return False
+        if value != expected:
+            return False
+    return True
+
+
+def _bounded_pools(payload: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    rows = payload.get("pools")
+    if not isinstance(rows, list):
+        return ()
+    return tuple(dict(row) for row in rows if isinstance(row, Mapping))
+
+
+def assess_dhcp_baseline_admission(
+    reading: ProbeReading | None,
+    *,
+    server: str,
+    interface: str,
+    intended_pool: str,
+    observed_build: str,
+    qualified_build: str,
+    observed_channel: str,
+    qualified_channels: Sequence[str],
+) -> BaselineAdmission:
+    """Decide whether the amended Q3 profile may build on this baseline.
+
+    Two baselines are admissible on the disposable fixture, the exact reviewed
+    build and the fixed channel: a coherently observed empty inventory under a
+    disabled process, and exactly one complete row equal to the observed native
+    default. A matching pool name is not authority; every field is compared by
+    value and by type, and a refusal names each reason it found.
+
+    The reviewed build and the permitted channels are supplied by the caller,
+    because which backend version this coexistence was measured on is not a
+    domain fact. A composition that declares neither refuses, like any other
+    unobservable required value.
+    """
+    causes: list[str] = []
+    if not qualified_build or observed_build != qualified_build:
+        causes.append(
+            f"coexistence_not_qualified_for_build:{observed_build or 'unknown'}"
+        )
+    if not qualified_channels or observed_channel not in qualified_channels:
+        causes.append(
+            f"coexistence_not_qualified_for_channel:{observed_channel or 'unknown'}"
+        )
+    if reading is None:
+        causes.append("dhcp_server_baseline_not_read")
+        return BaselineAdmission(False, BASELINE_REFUSED, tuple(causes))
+    if not reading.observed:
+        causes.append(_unobserved(reading))
+        return BaselineAdmission(False, BASELINE_REFUSED, tuple(causes))
+    payload = reading.payload
+    pools = _bounded_pools(payload)
+    if payload.get("device") != server:
+        causes.append("baseline_subject_not_the_owned_server")
+    if payload.get("interface") != interface:
+        causes.append("baseline_interface_not_the_bound_port")
+    if payload.get("found") is not True:
+        causes.append("baseline_device_not_found")
+    if payload.get("process_found") is not True:
+        causes.append("baseline_dhcp_process_absent")
+    if payload.get("enabled_type") != "boolean" or payload.get("enabled") is not False:
+        causes.append("baseline_process_not_an_actual_disabled_boolean")
+    if payload.get("error"):
+        causes.append("baseline_read_error")
+    if payload.get("truncated") is not False:
+        causes.append("baseline_inventory_truncated")
+    count = payload.get("pool_count")
+    if (
+        isinstance(count, bool)
+        or not isinstance(count, int)
+        or not isinstance(payload.get("pools"), list)
+        or count != len(payload["pools"])
+        or len(pools) != len(payload["pools"])
+    ):
+        causes.append("baseline_inventory_incoherent")
+        return BaselineAdmission(False, BASELINE_REFUSED, tuple(causes), pools)
+    if any(row.get("name") == intended_pool for row in pools):
+        causes.append("baseline_already_contains_the_intended_pool")
+    kind = BASELINE_REFUSED
+    if not pools:
+        kind = BASELINE_EMPTY
+    elif len(pools) == 1 and _is_observed_native_default(pools[0]):
+        kind = BASELINE_OBSERVED_NATIVE_DEFAULT
+    elif len(pools) > 1:
+        causes.append("baseline_extra_or_duplicate_pool")
+    else:
+        causes.append("baseline_pool_is_not_the_exact_observed_native_default")
+    if causes:
+        return BaselineAdmission(False, BASELINE_REFUSED, tuple(causes), pools)
+    return BaselineAdmission(True, kind, (), pools)
+
+
+def default_pool_snapshot(
+    label: str, reading: ProbeReading | None, *, intended_pool: str
+) -> DefaultPoolSnapshot:
+    """Copy the non-intended pool rows exactly as one bounded read saw them."""
+    if reading is None:
+        return DefaultPoolSnapshot(label, False, "default_pool_snapshot_not_read")
+    if not reading.observed:
+        return DefaultPoolSnapshot(label, False, _unobserved(reading))
+    pools = _bounded_pools(reading.payload)
+    return DefaultPoolSnapshot(
+        label,
+        True,
+        "",
+        tuple(row for row in pools if row.get("name") != intended_pool),
+        any(row.get("name") == intended_pool for row in pools),
+    )
+
+
+def default_pool_differences(
+    before: DefaultPoolSnapshot, after: DefaultPoolSnapshot
+) -> tuple[str, ...]:
+    """Name every way the observed native default moved between two reads."""
+    if not before.observed:
+        return (f"default_pool_snapshot_unobserved:{before.label}",)
+    if not after.observed:
+        return (f"default_pool_snapshot_unobserved:{after.label}",)
+    first = {str(row.get("name")): row for row in before.pools}
+    second = {str(row.get("name")): row for row in after.pools}
+    differences = [
+        f"default_pool_removed:{name}" for name in sorted(set(first) - set(second))
+    ]
+    differences += [
+        f"default_pool_added:{name}" for name in sorted(set(second) - set(first))
+    ]
+    for name in sorted(set(first) & set(second)):
+        for key in sorted(set(first[name]) | set(second[name])):
+            if first[name].get(key) != second[name].get(key):
+                differences.append(f"default_pool_changed:{name}.{key}")
+    return tuple(differences)

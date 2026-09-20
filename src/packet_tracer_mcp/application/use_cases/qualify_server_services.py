@@ -35,7 +35,7 @@ composition.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -91,6 +91,8 @@ from ...domain.enterprise.models.service_qualification import (
     Q3_PC2,
     Q3_POOL,
     Q3_SERVER,
+    READINESS_DEADLINE_SECONDS,
+    READINESS_MAX_READS,
     BudgetRecord,
     EnvironmentIdentity,
     ExecutionMode,
@@ -126,13 +128,20 @@ from ...domain.enterprise.services.configuration_compiler import (
     configuration_plan_semantic_hash,
 )
 from ...domain.enterprise.services.service_qualification_evidence import (
+    BASELINE_OBSERVED_NATIVE_DEFAULT,
     Assessment,
+    BaselineAdmission,
+    DefaultPoolSnapshot,
     ProbeReading,
     assess_atomicity,
     assess_bag_persistence,
+    assess_dhcp_baseline_admission,
     assess_https_listener,
     assess_observer_release,
     assess_page_tables,
+    assess_port_readiness,
+    default_pool_differences,
+    default_pool_snapshot,
     listener_toggle_established,
     marker_page_established,
     page_read_admits_second_write,
@@ -1178,6 +1187,12 @@ class _Execution:
     observers_unresolved: set[str] = field(default_factory=set)
     in_flight: tuple[str, ...] = ()
     e5_accepted: bool = False
+    #: Every bounded read of the observed native default, in the order the run
+    #: took them, plus every difference between two of them. Both are kept
+    #: whatever the outcome: a default that moved is evidence, not a detail to
+    #: drop once the stage stops.
+    default_pool_snapshots: list[DefaultPoolSnapshot] = field(default_factory=list)
+    default_pool_differences: list[str] = field(default_factory=list)
 
     @property
     def record(self) -> QualificationRecord:
@@ -1657,6 +1672,92 @@ def _configure_q1(execution: _Execution) -> bool:
     return execution.run.transition("fixtures:configured")
 
 
+@dataclass(frozen=True)
+class _Readiness:
+    """What the bounded readiness gate observed before a network attempt."""
+
+    ready: bool
+    reads: int
+    elapsed_seconds: float
+    reason: str
+    first: dict[str, Any] = field(default_factory=dict)
+    last: dict[str, Any] = field(default_factory=dict)
+
+    def facts(self) -> dict[str, Any]:
+        """Return the record shape: the bounds, the reason and both samples."""
+        return {
+            "ready": self.ready,
+            "reads": self.reads,
+            "max_reads": READINESS_MAX_READS,
+            "deadline_seconds": READINESS_DEADLINE_SECONDS,
+            "elapsed_seconds": self.elapsed_seconds,
+            "reason": self.reason,
+            "first": self.first,
+            "last": self.last,
+        }
+
+
+def _await_readiness(
+    execution: _Execution,
+    endpoints: Sequence[tuple[str, str]],
+    read: Callable[[], ProbeReading],
+    *,
+    purpose: str,
+) -> _Readiness:
+    """Read the exact fixture endpoints until one complete sample is ready.
+
+    The gate is a precondition, not a retry budget: at most
+    `READINESS_MAX_READS` aggregate reads inside a
+    `READINESS_DEADLINE_SECONDS` monotonic window, itself capped by whatever
+    the stage still has outside its finalization reserve, and the first
+    complete ready sample ends it. Between two reads it waits only while it is
+    still allowed to read again, so nothing sleeps unconditionally and nothing
+    spins. A gate that never becomes ready is a readiness result: no client is
+    created and no acquisition is requested from it.
+    """
+    ledger = execution.ledger
+    started = ledger.elapsed()
+    deadline = started + READINESS_DEADLINE_SECONDS
+    first: dict[str, Any] = {}
+    last: dict[str, Any] = {}
+    reads = 0
+    reason = "readiness_not_attempted"
+    while reads < READINESS_MAX_READS:
+        if execution.stopped:
+            reason = f"stopped:{execution.record.primary_failure}"
+            break
+        if not ledger.can_afford(1):
+            reason = "readiness_budget_exhausted"
+            break
+        if ledger.elapsed() >= deadline:
+            reason = "readiness_deadline_reached"
+            break
+        with ledger.purpose_of(purpose):
+            sample = assess_port_readiness(read(), endpoints)
+        reads += 1
+        last = dict(sample.facts)
+        if reads == 1:
+            first = dict(sample.facts)
+        if sample.ready:
+            reason = ""
+            break
+        reason = sample.cause
+        remaining = deadline - ledger.elapsed()
+        if reads < READINESS_MAX_READS and remaining > 0:
+            ledger.wait(
+                min(execution.run.boundaries.settle_seconds, remaining),
+                execution.run.boundaries.sleep,
+            )
+    return _Readiness(
+        not reason and reads > 0,
+        reads,
+        round(ledger.elapsed() - started, 3),
+        reason,
+        first,
+        last,
+    )
+
+
 def _incomplete_batch(requested: Sequence[str], reported: Sequence[str]) -> str:
     """Name why a runtime batch cannot be read as complete, or return `""`.
 
@@ -1766,20 +1867,33 @@ def _fixture_endpoints(execution: _Execution) -> tuple[tuple[str, str], ...]:
 def _https_listener(execution: _Execution) -> Assessment:
     """Run the listener procedure, admitting each effect only after the last one.
 
-    A same-mode working positive comes before every negative: an HTTP-mode
-    fetch with both listeners enabled, then HTTP off and an HTTPS-mode fetch.
-    A negative whose positive did not retrieve the marker is not run, because
-    it could not discriminate anything; a failed positive instead spends one
-    read of listener and endpoint readiness, so the record says what the
-    fixture looked like when it failed. No wait, timeout or status-code
-    meaning is added to force a positive.
+    Nothing reaches the network before the bounded readiness gate reports one
+    fresh complete sample in which every fixture link is up. A gate that never
+    becomes ready leaves the marked page unwritten and every fetch unstarted:
+    that is a readiness result about the measured links, never evidence that
+    HTTP or HTTPS is broken.
+
+    A same-mode working positive then comes before every negative: an
+    HTTP-mode fetch with both listeners enabled, then HTTP off and an
+    HTTPS-mode fetch. A negative whose positive did not retrieve the marker is
+    not run, because it could not discriminate anything; a failed positive
+    instead spends one read of listener and endpoint readiness, so the record
+    says what the fixture looked like when it failed. No wait, timeout or
+    status-code meaning is added to force a positive, and a started fetch is
+    never retried inside this experiment.
     """
     probes = execution.probes
     marker = f"MCPQ-{execution.nonce[:16]}-INDEX"
     endpoints = _fixture_endpoints(execution)
     urls = {scheme: f"{scheme}://{Q1_SERVER_IPV4}/" for scheme in ("http", "https")}
+    gate = _await_readiness(
+        execution,
+        endpoints,
+        lambda: probes.read_listener_readiness(Q1_SERVER, endpoints),
+        purpose="readiness:q1_fixture_links",
+    )
     steps: dict[str, Any] = {
-        "readiness": probes.read_listener_readiness(Q1_SERVER, endpoints),
+        "readiness": gate.facts(),
         "marker_page": None,
         "http_positive": None,
         "http_off": None,
@@ -1789,20 +1903,19 @@ def _https_listener(execution: _Execution) -> Assessment:
         "https_negative": None,
     }
 
-    def assessed(readiness_after: ProbeReading | None = None) -> Assessment:
+    def assessed(readiness_after: Mapping[str, Any] | None = None) -> Assessment:
         return assess_https_listener(
             **steps, request_urls=urls, readiness_after=readiness_after
         )
 
     def failed_positive() -> Assessment:
-        after = (
-            probes.read_listener_readiness(Q1_SERVER, endpoints)
-            if not execution.stopped and execution.ledger.can_afford(1)
-            else None
-        )
-        return assessed(after)
+        if execution.stopped or not execution.ledger.can_afford(1):
+            return assessed()
+        with execution.ledger.purpose_of("readiness:q1_after_failed_positive"):
+            reading = probes.read_listener_readiness(Q1_SERVER, endpoints)
+        return assessed(dict(assess_port_readiness(reading, endpoints).facts))
 
-    if execution.stopped:
+    if execution.stopped or not gate.ready:
         return assessed()
     steps["marker_page"] = probes.prepare_marker_page(Q1_SERVER, marker)
     if not marker_page_established(steps["marker_page"]):
@@ -1945,29 +2058,119 @@ def _q3_client_assessments(
     return mac, mode
 
 
-def _q3_server_baseline_admits(reading: ProbeReading | None) -> bool:
-    if reading is None or not reading.observed:
-        return False
-    payload = reading.payload
-    return bool(
-        payload.get("found")
-        and payload.get("process_found")
-        and payload.get("interface") == "FastEthernet0"
-        and payload.get("enabled_type") == "boolean"
-        and not payload.get("error")
-        and payload.get("truncated") is False
-        and payload.get("pool_count") == 0
-        and payload.get("pools") == []
+def _snapshot_facts(snapshot: DefaultPoolSnapshot) -> dict[str, Any]:
+    """Return one bounded default-pool reading exactly as it was observed."""
+    return {
+        "label": snapshot.label,
+        "observed": snapshot.observed,
+        "cause": snapshot.cause,
+        "pools": [dict(item) for item in snapshot.pools],
+        "intended_pool_present": snapshot.intended_present,
+    }
+
+
+def _native_default_facts(execution: _Execution) -> dict[str, Any]:
+    """Return every default-pool snapshot this run took and their differences."""
+    return {
+        "snapshots": [
+            _snapshot_facts(item) for item in execution.default_pool_snapshots
+        ],
+        "differences": list(execution.default_pool_differences),
+    }
+
+
+def _q3_snapshot_default(
+    execution: _Execution, label: str, reading: ProbeReading | None
+) -> DefaultPoolSnapshot:
+    """Record one bounded default snapshot and every difference it reveals."""
+    snapshot = default_pool_snapshot(label, reading, intended_pool=Q3_POOL)
+    execution.default_pool_snapshots.append(snapshot)
+    if len(execution.default_pool_snapshots) > 1:
+        differences = default_pool_differences(
+            execution.default_pool_snapshots[0], snapshot
+        )
+        for item in differences:
+            if item not in execution.default_pool_differences:
+                execution.default_pool_differences.append(item)
+    return snapshot
+
+
+def _q3_e5_foundation_cause(
+    configuration: ConfigurationApplicationResult,
+    foundations: Mapping[str, ActionExecutionStatus],
+    expected_action_ids: set[str],
+) -> str:
+    """Return why E5 cannot found an E6 mutation, or "" when it can.
+
+    The classification reuses the applicator's own decided facts. A short
+    result set, an unknown dispatch, an unobserved result, an unsatisfied
+    postcondition, a contradicted read-back or a foundational status that is
+    not VERIFIED all mean the same thing here: the next effect has no
+    permission, and none of them is a reason to dispatch it and look later.
+    """
+    reported = {item.action_id for item in configuration.action_results}
+    if reported != expected_action_ids:
+        return "outcome_unknown:q3_e5_incomplete_result_set"
+    for item in sorted(configuration.action_results, key=lambda row: row.action_id):
+        if (
+            item.dispatch is DispatchFact.ACCEPTANCE_UNKNOWN
+            or item.result is ResultFact.NOT_OBSERVED
+        ):
+            return f"outcome_unknown:q3_e5_endpoints:{item.action_id}"
+        if item.postcondition is PostconditionFact.UNSATISFIED:
+            return f"contradiction:q3_e5_endpoints:{item.action_id}"
+    # E5 read-backs carry a lifecycle status, not an observation fact:
+    # FAILED is the re-read that did not match what the action intended.
+    contradicted = sorted(
+        item.expectation_id
+        for item in configuration.verification_results
+        if item.status is ActionExecutionStatus.FAILED
     )
+    if contradicted:
+        return f"contradiction:q3_e5_verification:{contradicted[0]}"
+    if not foundations or any(
+        item is not ActionExecutionStatus.VERIFIED for item in foundations.values()
+    ):
+        return "q3_foundations_not_established"
+    return ""
+
+
+def _q3_service_result_cause(result: ServiceApplicationResult) -> str:
+    """Return why the product result forbids another mutation, or "".
+
+    Both checks run before the intentional same-claim guard control: an effect
+    whose outcome nobody read and a read-back that contradicts the plan are
+    equally disqualifying, and the guard is a mutation like any other.
+    """
+    if any(
+        item.dispatch is DispatchFact.ACCEPTANCE_UNKNOWN
+        or item.result is ResultFact.NOT_OBSERVED
+        or (
+            item.received_mutation is not None
+            and bool(item.received_mutation.call_error)
+        )
+        for item in result.action_results
+        if item.attempted is True
+    ):
+        return "outcome_unknown:q3_product_service"
+    if any(
+        item.observation is ObservationFact.CONTRADICTED
+        for item in result.verification_results
+    ):
+        return "contradiction:q3_product_readback"
+    return ""
 
 
 def _q3_setup_assessment(
     baseline: ProbeReading,
-    configuration: ConfigurationApplicationResult,
-    foundations: dict[str, ActionExecutionStatus],
+    admission: BaselineAdmission,
+    configuration: ConfigurationApplicationResult | None,
+    foundations: Mapping[str, ActionExecutionStatus],
     server_mutations: Sequence[RuntimeActionMutation],
-    server_readback: RuntimeServiceVerification,
+    server_readback: RuntimeServiceVerification | None,
     contract: Q3ProductContract,
+    native_default: Mapping[str, Any],
+    setup_cause: str,
 ) -> Assessment:
     """Judge the product configuration path without promoting native support."""
     mutation_facts = [
@@ -1981,20 +2184,33 @@ def _q3_setup_assessment(
         for item in server_mutations
     ]
     facts = {
-        "initial_server": dict(baseline.payload),
-        "configuration_plan": configuration.config_plan_id,
-        "configuration_hash": configuration.config_semantic_hash,
+        "initial_server": dict(baseline.payload) if baseline.observed else {},
+        "baseline_admission": {
+            "admitted": admission.admitted,
+            "kind": admission.kind,
+            "causes": list(admission.causes),
+        },
+        "native_default": dict(native_default),
+        "configuration_plan": configuration.config_plan_id if configuration else "",
+        "configuration_hash": (
+            configuration.config_semantic_hash if configuration else ""
+        ),
         "service_plan": contract.service_plan.id,
         "service_hash": contract.service_plan.semantic_hash,
         "foundation_statuses": {
             key: value.value for key, value in sorted(foundations.items())
         },
+        "setup_cause": setup_cause,
         "server_mutations": mutation_facts,
-        "server_readback": {
-            "status": server_readback.status.value,
-            "observation": server_readback.observation.value,
-            "cause": server_readback.cause,
-        },
+        "server_readback": (
+            {
+                "status": server_readback.status.value,
+                "observation": server_readback.observation.value,
+                "cause": server_readback.cause,
+            }
+            if server_readback is not None
+            else {}
+        ),
     }
     expected_actions = {
         item.id
@@ -2013,34 +2229,51 @@ def _q3_setup_assessment(
         item is ActionExecutionStatus.VERIFIED for item in foundations.values()
     )
     readback_ready = (
-        server_readback.status is ActionExecutionStatus.VERIFIED
+        server_readback is not None
+        and server_readback.status is ActionExecutionStatus.VERIFIED
         and server_readback.observation is ObservationFact.OBSERVED
     )
-    unknown_effect = any(
+    unknown_effect = setup_cause.startswith("outcome_unknown:") or any(
         item.dispatch is DispatchFact.ACCEPTANCE_UNKNOWN
         or item.result is ResultFact.NOT_OBSERVED
         for item in server_mutations
     )
-    if complete_mutations and foundations_ready and readback_ready:
+    limitations = [
+        "stored_configuration_sample_only",
+        "serving_behavior_not_inferred",
+        f"initial_pool_inventory:{admission.kind}",
+    ]
+    if admission.kind == BASELINE_OBSERVED_NATIVE_DEFAULT:
+        limitations.append("native_default_pool_coexists_and_is_never_modified")
+        limitations.append("process_enable_is_process_wide_not_pool_scoped")
+    if not setup_cause and complete_mutations and foundations_ready and readback_ready:
         return Assessment(
             MeasurementConclusion.SUPPORTED_IN_SAMPLE,
             facts=facts,
-            limitations=[
-                "stored_configuration_sample_only",
-                "serving_behavior_not_inferred",
-                "default_pool_inventory_observed_empty",
-            ],
+            limitations=limitations,
         )
-    contradicted = server_readback.observation is ObservationFact.CONTRADICTED or any(
-        item.postcondition is PostconditionFact.UNSATISFIED for item in server_mutations
+    contradicted = (
+        setup_cause.startswith("contradiction:")
+        or (
+            server_readback is not None
+            and server_readback.observation is ObservationFact.CONTRADICTED
+        )
+        or any(
+            item.postcondition is PostconditionFact.UNSATISFIED
+            for item in server_mutations
+        )
     )
     return Assessment(
         MeasurementConclusion.CONTRADICTED
         if contradicted
         else MeasurementConclusion.INCONCLUSIVE,
         facts=facts,
-        causes=["q3_product_configuration_not_established"],
-        limitations=["no_serving_claim"],
+        causes=[
+            value
+            for value in (setup_cause, "q3_product_configuration_not_established")
+            if value
+        ],
+        limitations=[*limitations, "no_serving_claim"],
         outcome_unknown=unknown_effect,
     )
 
@@ -2088,79 +2321,6 @@ def _q3_table_assessment(
     )
 
 
-def _q3_event_assessment(
-    registration: ProbeReading | None, collected: ProbeReading | None
-) -> Assessment:
-    facts = {
-        "registration": (
-            dict(registration.payload)
-            if registration is not None and registration.observed
-            else {}
-        ),
-        "collection": (
-            dict(collected.payload)
-            if collected is not None and collected.observed
-            else {}
-        ),
-    }
-    if (
-        registration is None
-        or collected is None
-        or not registration.observed
-        or not collected.observed
-    ):
-        return Assessment(
-            MeasurementConclusion.INCONCLUSIVE,
-            facts=facts,
-            causes=["dhcp_event_lifecycle_unobserved"],
-            limitations=["no_product_event_path"],
-            outcome_unknown=registration is not None and not registration.observed,
-        )
-    events = collected.payload.get("events")
-    names = (
-        {item.get("event") for item in events if isinstance(item, dict)}
-        if isinstance(events, list)
-        else set()
-    )
-    releases = collected.payload.get("releases")
-    setup_complete = (
-        registration.payload.get("owned") is True
-        and registration.payload.get("registered") == 4
-        and registration.payload.get("errors") == []
-        and collected.payload.get("owned") is True
-        and collected.payload.get("dropped") is True
-        and isinstance(releases, list)
-        and len(releases) == 4
-        and all(not item.get("threw") for item in releases if isinstance(item, dict))
-    )
-    delivered = {"dhcpSucceed", "dhcpFailed"} <= names
-    detachment_observed = bool(
-        setup_complete
-        and all(
-            isinstance(item, dict) and item.get("attempted") is True
-            for item in releases
-        )
-    )
-    supported = setup_complete and delivered and detachment_observed
-    causes = []
-    if not setup_complete or not delivered:
-        causes.append("dhcp_event_sample_incomplete")
-    if delivered and not detachment_observed:
-        causes.append("observer_detachment_unverified")
-    return Assessment(
-        MeasurementConclusion.SUPPORTED_IN_SAMPLE
-        if supported
-        else MeasurementConclusion.INCONCLUSIVE,
-        facts=facts,
-        causes=causes,
-        limitations=[
-            "qualification_only_observer",
-            "bounded_to_owned_clients",
-            "no_product_event_path",
-        ],
-    )
-
-
 def _q3_timing_assessment(
     before_one: ProbeReading | None,
     before_two: ProbeReading | None,
@@ -2168,6 +2328,9 @@ def _q3_timing_assessment(
     after_two: ProbeReading | None,
     service_result: ServiceApplicationResult | None,
     guard: RuntimeActionMutation | None,
+    guard_not_run: str,
+    readiness: Mapping[str, Any],
+    native_default: Mapping[str, Any],
 ) -> Assessment:
     readings = (before_one, before_two, after_one, after_two)
     rows = [_q3_client_rows(item) for item in readings]
@@ -2176,6 +2339,9 @@ def _q3_timing_assessment(
         "before_2": rows[1] or [],
         "after_1": rows[2] or [],
         "after_2": rows[3] or [],
+        "readiness": dict(readiness),
+        "native_default": dict(native_default),
+        "guard_not_run": guard_not_run,
         "service_status": service_result.status.value if service_result else "absent",
         "service_actions": (
             [
@@ -2247,6 +2413,19 @@ def _q3_timing_assessment(
             limitations=["no_guard_or_later_mutation_authorized"],
             outcome_unknown=True,
         )
+    if guard_not_run:
+        # No acquisition was requested at all, so there is nothing to time and
+        # nothing to replay. This states what the fixture allowed, never that
+        # DHCP acquisition failed.
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=[f"acquisition_not_requested:{guard_not_run}"],
+            limitations=[
+                "no_client_activated",
+                "readiness_result_is_not_an_acquisition_verdict",
+            ],
+        )
     if not guard_refused:
         return Assessment(
             MeasurementConclusion.CONTRADICTED,
@@ -2271,37 +2450,6 @@ def _q3_timing_assessment(
             "same_action_guard_refused_without_redispatch",
         ],
     )
-
-
-def _q3_record_observer_releases(
-    execution: _Execution, collected: ProbeReading | None
-) -> None:
-    if collected is None or not collected.observed:
-        execution.observers_unresolved.add("q3-dhcp")
-        return
-    for index, item in enumerate(collected.payload.get("releases", []), start=1):
-        if not isinstance(item, dict):
-            execution.observers_unresolved.add(f"q3-dhcp-{index}")
-            continue
-        resolved = item.get("attempted") is True and not item.get("threw")
-        inert = item.get("inert") is True
-        outcome = (
-            "release_attempted_unverified"
-            if resolved
-            else "inert_attached"
-            if inert
-            else "release_unverified"
-        )
-        execution.record.releases.append(
-            ReleaseRecord(
-                resource=f"observer:q3-dhcp-{index}",
-                kind="observer",
-                outcome=outcome,
-                detail=f"device={item.get('device', '')};event={item.get('event', '')}",
-            )
-        )
-        if not resolved:
-            execution.observers_unresolved.add(f"q3-dhcp-{index}")
 
 
 def _run_q3(execution: _Execution) -> None:
@@ -2345,74 +2493,138 @@ def _run_q3(execution: _Execution) -> None:
         deep=True,
     )
     context = _q3_context(contract)
+    clients = ((Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0"))
 
     setup_ids = ("M-DHCP-1", "M-DHCP-4", "M-DHCP-5")
     if not execution.begin(setup_ids, "Q3_SETUP"):
         return
+    foundations: dict[str, ActionExecutionStatus] = {}
     with execution.procedure(setup_ids):
         baseline = execution.probes.read_dhcp_server_baseline(
             Q3_SERVER, "FastEthernet0"
         )
-        clients_before = execution.probes.read_dhcp_clients(
-            ((Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0"))
+        admission = assess_dhcp_baseline_admission(
+            baseline,
+            server=Q3_SERVER,
+            interface="FastEthernet0",
+            intended_pool=Q3_POOL,
+            observed_build=execution.record.environment.observed_build,
+            qualified_build=execution.run.boundaries.q3_required_build,
+            observed_channel=execution.channel,
+            qualified_channels=execution.definition.allowed_channels,
         )
-        if not _q3_server_baseline_admits(baseline):
+        _q3_snapshot_default(execution, "before_e5", baseline)
+        clients_before = execution.probes.read_dhcp_clients(clients)
+        if not admission.admitted:
             mac, mode = _q3_client_assessments(clients_before, clients_before)
             execution.conclude(
                 "M-DHCP-1",
                 Assessment(
                     MeasurementConclusion.INCONCLUSIVE,
-                    facts=(dict(baseline.payload) if baseline.observed else {}),
-                    causes=["initial_dhcp_server_state_not_admissible"],
-                    limitations=["no_setter_dispatched"],
+                    facts={
+                        "initial_server": (
+                            dict(baseline.payload) if baseline.observed else {}
+                        ),
+                        "baseline_admission": {
+                            "admitted": False,
+                            "kind": admission.kind,
+                            "causes": list(admission.causes),
+                        },
+                        "native_default": _native_default_facts(execution),
+                    },
+                    causes=[
+                        "initial_dhcp_server_state_not_admissible",
+                        *admission.causes,
+                    ],
+                    limitations=[
+                        "no_setter_dispatched",
+                        "observed_state_preserved_untouched",
+                    ],
                 ),
             )
             execution.conclude("M-DHCP-4", mac)
             execution.conclude("M-DHCP-5", mode)
             execution.stop("q3_initial_server_state_not_admissible")
         else:
+            configuration = None
+            server_mutations: list[RuntimeActionMutation] = []
+            server_readback: RuntimeServiceVerification | None = None
+            setup_cause = ""
             if not execution.run.transition("experiment:Q3_SETUP:e5_started"):
                 execution.stop("persistence:q3_e5_not_announced")
-            with execution.ledger.purpose_of("q3:product:e5_endpoints"):
-                configuration = ConfigurationApplicator(configuration_runtime).apply(
-                    endpoint_plan,
-                    actual_source_topology_hash=contract.manifest.physical_topology_hash,
-                    capabilities=contract.device_capabilities,
-                    runtime_context=context,
-                    deployment_manifest=contract.manifest,
+            if not execution.stopped:
+                with execution.ledger.purpose_of("q3:product:e5_endpoints"):
+                    configuration = ConfigurationApplicator(
+                        configuration_runtime
+                    ).apply(
+                        endpoint_plan,
+                        actual_source_topology_hash=(
+                            contract.manifest.physical_topology_hash
+                        ),
+                        capabilities=contract.device_capabilities,
+                        runtime_context=context,
+                        deployment_manifest=contract.manifest,
+                    )
+                foundations = derive_service_foundational_statuses(
+                    foundation_plan, configuration
                 )
-            foundations = derive_service_foundational_statuses(
-                foundation_plan, configuration
-            )
-            if not execution.run.transition("experiment:Q3_SETUP:e6_started"):
+                # The E5 result and the foundations it produced decide whether
+                # any E6 server mutation is admissible. They used to be judged
+                # only after the mutation had already been dispatched.
+                setup_cause = _q3_e5_foundation_cause(
+                    configuration,
+                    foundations,
+                    {item.id for item in endpoint_plan.actions},
+                )
+                if setup_cause:
+                    execution.stop(setup_cause)
+            if not execution.stopped and not execution.run.transition(
+                "experiment:Q3_SETUP:e6_started"
+            ):
                 execution.stop("persistence:q3_e6_not_announced")
-            server_actions = [
-                item
-                for item in contract.service_plan.actions
-                if isinstance(item, EnableServerDhcp | ConfigureServerDhcpPool)
-            ]
-            with execution.ledger.purpose_of("q3:product:e6_server"):
-                server_mutations = service_runtime.apply_actions(server_actions)
-            server_expectation = next(
-                item
-                for item in contract.service_plan.verification_expectations
-                if item.kind is ServiceVerificationKind.DHCP_SERVER_STATE
-            )
-            with execution.ledger.purpose_of("q3:product:server_readback"):
-                server_readback = service_runtime.verify(server_expectation)
-            clients_after = execution.probes.read_dhcp_clients(
-                ((Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0"))
+            if not execution.stopped:
+                server_actions = [
+                    item
+                    for item in contract.service_plan.actions
+                    if isinstance(item, EnableServerDhcp | ConfigureServerDhcpPool)
+                ]
+                with execution.ledger.purpose_of("q3:product:e6_server"):
+                    server_mutations = service_runtime.apply_actions(server_actions)
+                server_expectation = next(
+                    item
+                    for item in contract.service_plan.verification_expectations
+                    if item.kind is ServiceVerificationKind.DHCP_SERVER_STATE
+                )
+                with execution.ledger.purpose_of("q3:product:server_readback"):
+                    server_readback = service_runtime.verify(server_expectation)
+                after_setup = execution.probes.read_dhcp_server_baseline(
+                    Q3_SERVER, "FastEthernet0"
+                )
+                _q3_snapshot_default(execution, "after_setup", after_setup)
+                if execution.default_pool_differences:
+                    setup_cause = setup_cause or (
+                        "q3_native_default_changed:"
+                        + execution.default_pool_differences[0]
+                    )
+                    execution.stop(setup_cause)
+            clients_after = (
+                clients_before
+                if execution.stopped
+                else execution.probes.read_dhcp_clients(clients)
             )
             mac, mode = _q3_client_assessments(clients_before, clients_after)
             execution.conclude(
                 "M-DHCP-1",
                 _q3_setup_assessment(
                     baseline,
+                    admission,
                     configuration,
                     foundations,
                     server_mutations,
                     server_readback,
                     contract,
+                    _native_default_facts(execution),
+                    setup_cause,
                 ),
             )
             execution.conclude("M-DHCP-4", mac)
@@ -2421,7 +2633,9 @@ def _run_q3(execution: _Execution) -> None:
     if execution.stopped:
         return
 
-    measurement_ids = ("M-DHCP-2", "M-DHCP-3", "M-DHCP-6")
+    # M-DHCP-3 is OMITTED in this profile: no observer is registered, so the
+    # procedure is the lease table and the lease-time window only.
+    measurement_ids = ("M-DHCP-2", "M-DHCP-6")
     if not execution.begin(measurement_ids, "Q3_DHCP"):
         return
     with execution.procedure(measurement_ids):
@@ -2437,30 +2651,33 @@ def _run_q3(execution: _Execution) -> None:
             execution.bag_unreleased.add("sentinel")
         else:
             execution.stop("q3_run_bag_not_owned")
-        registration = None
-        if not execution.stopped:
-            registration = execution.probes.register_dhcp_observers(
-                ((Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0"))
-            )
-            if registration.observed and registration.payload.get("owned"):
-                execution.bag_unreleased.add("dhcp")
-            if registration is None or not registration.observed:
-                execution.stop("q3_event_registration_unobserved")
         before_one = before_two = empty_table = None
         service_result = None
         guard = None
-        after_one = after_two = full_table = collected = None
+        guard_not_run = ""
+        gate = _Readiness(False, 0, 0.0, "readiness_not_attempted")
+        after_one = after_two = full_table = None
         if not execution.stopped:
-            before_one = execution.probes.read_dhcp_clients(
-                ((Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0"))
-            )
+            before_one = execution.probes.read_dhcp_clients(clients)
             execution.settle()
-            before_two = execution.probes.read_dhcp_clients(
-                ((Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0"))
-            )
+            before_two = execution.probes.read_dhcp_clients(clients)
             empty_table = execution.probes.read_dhcp_table(
                 Q3_SERVER, "FastEthernet0", Q3_POOL
             )
+            # The physical path is gated before any client is activated. This
+            # says nothing about the clients' own addressing, which the rows
+            # above and below measure separately.
+            gate = _await_readiness(
+                execution,
+                _fixture_endpoints(execution),
+                lambda: execution.probes.read_port_readiness(
+                    _fixture_endpoints(execution)
+                ),
+                purpose="readiness:q3_fixture_links",
+            )
+            if not gate.ready:
+                guard_not_run = f"readiness_not_established:{gate.reason}"
+        if not execution.stopped and gate.ready:
             nonces = {
                 reference: f"{execution.nonce}:{index}"
                 for index, reference in enumerate(
@@ -2485,17 +2702,9 @@ def _run_q3(execution: _Execution) -> None:
                         runtime_context=context,
                         deployment_manifest=contract.manifest,
                     )
-                if any(
-                    item.dispatch is DispatchFact.ACCEPTANCE_UNKNOWN
-                    or item.result is ResultFact.NOT_OBSERVED
-                    or (
-                        item.received_mutation is not None
-                        and bool(item.received_mutation.call_error)
-                    )
-                    for item in service_result.action_results
-                    if item.attempted is True
-                ):
-                    execution.stop("outcome_unknown:q3_product_service")
+                guard_not_run = _q3_service_result_cause(service_result)
+                if guard_not_run:
+                    execution.stop(guard_not_run)
                 else:
                     first_acquisition = next(
                         item
@@ -2505,20 +2714,18 @@ def _run_q3(execution: _Execution) -> None:
                     )
                     with execution.ledger.purpose_of("q3:guard:acquisition_replay"):
                         [guard] = service_runtime.apply_actions([first_acquisition])
-                after_one = execution.probes.read_dhcp_clients(
-                    ((Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0"))
-                )
+                after_one = execution.probes.read_dhcp_clients(clients)
                 execution.settle()
-                after_two = execution.probes.read_dhcp_clients(
-                    ((Q3_PC1, "FastEthernet0"), (Q3_PC2, "FastEthernet0"))
-                )
+                after_two = execution.probes.read_dhcp_clients(clients)
                 full_table = execution.probes.read_dhcp_table(
                     Q3_SERVER, "FastEthernet0", Q3_POOL
                 )
-                collected = execution.probes.collect_dhcp_observers()
-                if collected.observed and collected.payload.get("dropped"):
-                    execution.bag_unreleased.discard("dhcp")
-        _q3_record_observer_releases(execution, collected)
+        if execution.ledger.can_afford(1):
+            _q3_snapshot_default(
+                execution,
+                "before_cleanup",
+                execution.probes.read_dhcp_server_baseline(Q3_SERVER, "FastEthernet0"),
+            )
         if service_result is not None:
             for action in contract.service_plan.actions:
                 if isinstance(action, AcquireDhcpLease):
@@ -2533,16 +2740,33 @@ def _run_q3(execution: _Execution) -> None:
                     execution.record.engine_residue.append(
                         f"claim:{action.host_device_name}:retained"
                     )
-        if service_result is None:
+        if service_result is None and not gate.ready and not execution.stopped:
+            # Nothing was dispatched, so neither measurement was interrupted:
+            # both record what the unready fixture allowed them to observe.
+            execution.conclude(
+                "M-DHCP-2", _q3_table_assessment(empty_table, full_table)
+            )
+            execution.conclude(
+                "M-DHCP-6",
+                _q3_timing_assessment(
+                    before_one,
+                    before_two,
+                    after_one,
+                    after_two,
+                    None,
+                    None,
+                    guard_not_run,
+                    gate.facts(),
+                    _native_default_facts(execution),
+                ),
+            )
+        elif service_result is None:
             execution.interrupt_in_flight(
                 execution.record.primary_failure or "q3_product_application_not_run"
             )
         else:
             execution.conclude(
                 "M-DHCP-2", _q3_table_assessment(empty_table, full_table)
-            )
-            execution.conclude(
-                "M-DHCP-3", _q3_event_assessment(registration, collected)
             )
             execution.conclude(
                 "M-DHCP-6",
@@ -2553,6 +2777,9 @@ def _run_q3(execution: _Execution) -> None:
                     after_two,
                     service_result,
                     guard,
+                    guard_not_run,
+                    gate.facts(),
+                    _native_default_facts(execution),
                 ),
             )
     execution.finish("Q3_DHCP")

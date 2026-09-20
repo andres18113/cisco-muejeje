@@ -20,16 +20,22 @@ from packet_tracer_mcp.application.use_cases.qualify_server_services import (
     LedgerPhase,
     OperationLedger,
     OperationRefused,
+    _q3_e5_foundation_cause,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration import (
     SetEndpointDhcp,
     SetEndpointStaticAddress,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    ActionApplicationResult,
     ActionExecutionStatus,
+    ConfigurationApplicationResult,
+    ConfigurationApplicationStatus,
+    VerificationResult,
 )
 from packet_tracer_mcp.domain.enterprise.models.execution import (
     DispatchFact,
+    PostconditionFact,
     ResultFact,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
@@ -40,6 +46,7 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceType,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
+    Q3_OBSERVED_NATIVE_DEFAULT_POOL,
     STAGE_CEILINGS,
     STAGE_DEFINITIONS,
     BudgetRecord,
@@ -71,9 +78,13 @@ from packet_tracer_mcp.domain.enterprise.services.service_qualification_evidence
     assess_atomicity,
     assess_bag_persistence,
     assess_client_resolver,
+    assess_dhcp_baseline_admission,
     assess_https_listener,
     assess_observer_release,
     assess_page_tables,
+    assess_port_readiness,
+    default_pool_differences,
+    default_pool_snapshot,
 )
 from packet_tracer_mcp.infrastructure.catalog.service_capabilities import (
     packet_tracer_service_capabilities,
@@ -155,13 +166,15 @@ def test_q0_fits_its_ceiling_with_the_reserve_counted():
 
 
 def test_q1_fits_its_reviewed_ceiling_on_its_bounded_worst_case():
-    """19 setup + 24 required + 10 reserve = 53 worst-case operations <= 60.
+    """19 setup + 27 required + 10 reserve = 56 worst-case operations <= 60.
 
-    Every planned figure is its step's worst case: four page steps, and a
-    readiness read, the marked page, two toggles and four production fetches
-    at four operations each. The luckiest trace is cheaper; the stage is
-    admitted on the expensive one, and the reserve is not part of the slack.
-    M-DNS-3 costs nothing because the repaired stage does not repeat it.
+    Every planned figure is its step's worst case: four page steps, and the
+    readiness gate at its ceiling of four aggregate reads, the marked page,
+    two toggles and four production fetches at four operations each. The
+    readiness gate is charged to the trace, never to unlogged preparation.
+    The luckiest trace is cheaper; the stage is admitted on the expensive one,
+    and the reserve is not part of the slack. M-DNS-3 costs nothing because
+    the repaired stage does not repeat it.
     """
     q1 = STAGE_DEFINITIONS[QualificationStage.Q1]
     assert q1.fixture_names == (
@@ -171,11 +184,12 @@ def test_q1_fits_its_reviewed_ceiling_on_its_bounded_worst_case():
         "__MCP_E6Q_SW",
     )
     assert q1.experiment("M-HTTPS-1").planned_operations == 4
-    assert q1.experiment("M-HTTPS-2").planned_operations == 20
+    assert q1.experiment("M-HTTPS-2").planned_operations == 4 + 1 + 2 + 4 * 4
     assert q1.experiment("M-DNS-3").planned_operations == 0
-    assert (q1.setup_operations, q1.required_experiment_operations) == (19, 24)
+    assert (q1.setup_operations, q1.required_experiment_operations) == (19, 27)
     assert q1.reserve_operations == 10
-    assert q1.planned_minimum_operations == 53
+    assert q1.budget.reserve_seconds == 120
+    assert q1.planned_minimum_operations == 56
     assert q1.planned_minimum_operations <= q1.budget.max_operations == 60
     assert request_refusals(_request("Q1")) == ()
 
@@ -214,7 +228,12 @@ def test_q3_exact_fixture_and_complete_worst_case_fit_the_hard_ceiling():
         "M-DHCP-3",
         "M-DHCP-6",
     ]
-    assert [item.planned_operations for item in q3.experiments] == [8, 4, 0, 8, 4, 8]
+    # Each shared procedure carries its whole worst case on its first
+    # measurement: Q3_SETUP on M-DHCP-1 and Q3_DHCP on M-DHCP-2, so no
+    # dispatch is counted twice and none is left uncounted.
+    assert [item.planned_operations for item in q3.experiments] == [10, 0, 0, 22, 0, 0]
+    assert q3.experiment("M-DHCP-1").planned_operations == 1 + 1 + 4 + 1 + 1 + 1 + 1
+    assert q3.experiment("M-DHCP-2").planned_operations == 1 + 4 + 3 + 9 + 1 + 3 + 1
     assert (q3.setup_operations, q3.required_experiment_operations) == (17, 32)
     assert q3.reserve_operations == 11
     assert q3.planned_minimum_operations == 60
@@ -226,13 +245,13 @@ def test_q3_exact_fixture_and_complete_worst_case_fit_the_hard_ceiling():
 def test_a_stage_whose_worst_case_exceeds_its_ceiling_is_refused_before_contact():
     """The infeasibility gate survives the raised ceiling, with its arithmetic."""
     q1 = STAGE_DEFINITIONS[QualificationStage.Q1]
-    narrow = replace(q1, budget=replace(q1.budget, max_operations=52))
+    narrow = replace(q1, budget=replace(q1.budget, max_operations=55))
     with mock.patch.dict(
         STAGE_DEFINITIONS, {QualificationStage.Q1: narrow}, clear=False
     ):
         refusals = request_refusals(_request("Q1"))
     assert _pairs(refusals) == {(RefusalKind.INFEASIBLE, RefusalSubject.BUDGET)}
-    assert "53" in refusals[0].detail and "52" in refusals[0].detail
+    assert "56" in refusals[0].detail and "55" in refusals[0].detail
 
 
 @pytest.mark.parametrize("stage", ["Q2"])
@@ -1172,7 +1191,25 @@ def _marker_page(contains: bool = True) -> ProbeReading:
     )
 
 
-def _readiness(**port) -> ProbeReading:
+def _port_row(**port) -> dict:
+    return {
+        "device": "SRV",
+        "interface": "FastEthernet0",
+        "found": True,
+        "linked": True,
+        "link_type": "object",
+        "port_up": True,
+        "port_up_type": "boolean",
+        "protocol_up": True,
+        "protocol_up_type": "boolean",
+        "ip": "192.0.2.10",
+        "mask": "255.255.255.0",
+        "error": "",
+        **port,
+    }
+
+
+def _readiness_reading(**port) -> ProbeReading:
     return _reading(
         "readiness",
         {
@@ -1181,20 +1218,28 @@ def _readiness(**port) -> ProbeReading:
                 "https_enabled": True,
                 "https_process_enabled": True,
             },
-            "ports": {
-                "SRV/FastEthernet0": {
-                    "found": True,
-                    "port_up": True,
-                    "protocol_up": True,
-                    "linked": True,
-                    "ip": "192.0.2.10",
-                    "mask": "255.255.255.0",
-                    "error": "",
-                    **port,
-                }
-            },
+            "ports": {"SRV/FastEthernet0": _port_row(**port)},
         },
     )
+
+
+def _gate(ready: bool = True, reason: str = "", **port) -> dict:
+    """Return the bounded gate result the coordinator hands the rule."""
+    facts = dict(
+        assess_port_readiness(
+            _readiness_reading(**port), [("SRV", "FastEthernet0")]
+        ).facts
+    )
+    return {
+        "ready": ready,
+        "reads": 1,
+        "max_reads": 4,
+        "deadline_seconds": 30.0,
+        "elapsed_seconds": 0.5,
+        "reason": reason,
+        "first": facts,
+        "last": facts,
+    }
 
 
 URLS = {"http": "http://192.0.2.10/", "https": "https://192.0.2.10/"}
@@ -1202,7 +1247,7 @@ URLS = {"http": "http://192.0.2.10/", "https": "https://192.0.2.10/"}
 
 def _listener(**steps):
     values = {
-        "readiness": _readiness(),
+        "readiness": _gate(),
         "marker_page": _marker_page(),
         "http_positive": _row(ObservationFact.OBSERVED),
         "http_off": _toggle("http_disable", False, True),
@@ -1253,7 +1298,9 @@ def test_every_fetch_names_its_url_and_what_is_known_of_its_mode():
         item.startswith("switch_port_stp_state")
         for item in facts["unavailable_observations"]
     )
-    assert facts["readiness_before"]["ports"]["SRV/FastEthernet0"]["port_up"] is True
+    ports = facts["readiness_before"]["last"]["ports"]
+    assert ports["SRV/FastEthernet0"]["port_up"] is True
+    assert ports["SRV/FastEthernet0"]["port_up_type"] == "boolean"
 
 
 def test_a_failed_positive_leaves_its_negative_unrun_and_uninterpreted():
@@ -1266,14 +1313,17 @@ def test_a_failed_positive_leaves_its_negative_unrun_and_uninterpreted():
         http_negative=None,
         https_off=None,
         https_negative=None,
-        readiness=_readiness(port_up=False),
+        readiness=_gate(ready=False, reason="readiness_not_up", port_up=False),
     )
     assert result.conclusion is INCONCLUSIVE
     facts = result.facts
     assert facts["negative_http_mode_http_disabled"]["fetch"] == "not_run"
     assert "negative_http:no_same_mode_positive_control" in result.causes
     assert "negative_https:no_same_mode_positive_control" in result.causes
-    assert facts["readiness_before"]["ports"]["SRV/FastEthernet0"]["port_up"] is False
+    ports = facts["readiness_before"]["last"]["ports"]
+    assert ports["SRV/FastEthernet0"]["port_up"] is False
+    assert "readiness_not_established:readiness_not_up" in result.causes
+    assert "readiness_result_is_not_a_listener_verdict" in result.limitations
 
 
 def test_wrong_content_on_a_marked_positive_page_contradicts_it():
@@ -1413,3 +1463,409 @@ def test_only_a_completed_live_record_at_the_exact_sha_can_be_evidence():
         assert promotion_evidence_refusal(record, **arguments)
     later_sha = dict(arguments, executed_sha="e" * 40)
     assert "never relabeled" in promotion_evidence_refusal(_record(), **later_sha)
+
+
+# -- F1: the typed Q3 baseline admission policy ---------------------------------
+
+
+NATIVE_POOL = dict(Q3_OBSERVED_NATIVE_DEFAULT_POOL)
+
+
+def _baseline(**payload) -> ProbeReading:
+    """Return a complete admissible baseline reading with `payload` applied."""
+    return _reading(
+        "dhcp_server_baseline",
+        {
+            "device": "__MCP_E6Q_SRV",
+            "found": True,
+            "process_found": True,
+            "interface": "FastEthernet0",
+            "enabled": False,
+            "enabled_type": "boolean",
+            "pool_count": 0,
+            "pools": [],
+            "truncated": False,
+            "error": "",
+            **payload,
+        },
+    )
+
+
+def _admission(reading, **overrides):
+    arguments = {
+        "server": "__MCP_E6Q_SRV",
+        "interface": "FastEthernet0",
+        "intended_pool": "MCP_E6Q_DHCP",
+        "observed_build": BUILD,
+        "qualified_build": BUILD,
+        "observed_channel": "file",
+        "qualified_channels": ("file",),
+        **overrides,
+    }
+    return assess_dhcp_baseline_admission(reading, **arguments)
+
+
+def test_the_empty_disabled_process_is_the_control_baseline():
+    """An empty coherent inventory under a disabled process is admissible."""
+    verdict = _admission(_baseline())
+    assert (verdict.admitted, verdict.kind) == (True, "empty_disabled_process")
+    assert verdict.causes == () and verdict.pools == ()
+
+
+def test_the_exact_observed_native_default_is_admitted_and_preserved():
+    """The measured `serverPool` row, field by field, coexists with the stage."""
+    verdict = _admission(_baseline(pool_count=1, pools=[dict(NATIVE_POOL)]))
+    assert (verdict.admitted, verdict.kind) == (True, "observed_native_default")
+    assert verdict.pools == (NATIVE_POOL,)
+
+
+@pytest.mark.parametrize(
+    ("label", "payload"),
+    [
+        (
+            "arbitrary_default",
+            {
+                "pool_count": 1,
+                "pools": [
+                    {
+                        "name": "DEFAULT",
+                        "network": "10.0.0.0",
+                        "mask": "255.255.255.0",
+                        "gateway": "10.0.0.1",
+                        "dns": "",
+                        "start": "10.0.0.10",
+                        "end": "10.0.0.20",
+                        "max": 11,
+                    }
+                ],
+            },
+        ),
+        (
+            "same_name_changed_field",
+            {"pool_count": 1, "pools": [{**NATIVE_POOL, "end": "0.0.3.0"}]},
+        ),
+        (
+            "same_name_wrong_type",
+            {"pool_count": 1, "pools": [{**NATIVE_POOL, "max": "512"}]},
+        ),
+        (
+            "boolean_where_a_number_belongs",
+            {"pool_count": 1, "pools": [{**NATIVE_POOL, "max": True}]},
+        ),
+        (
+            "extra_field",
+            {"pool_count": 1, "pools": [{**NATIVE_POOL, "lease": 3600}]},
+        ),
+        (
+            "duplicate_native_row",
+            {"pool_count": 2, "pools": [dict(NATIVE_POOL), dict(NATIVE_POOL)]},
+        ),
+        (
+            "extra_pool_beside_the_native_one",
+            {
+                "pool_count": 2,
+                "pools": [dict(NATIVE_POOL), {**NATIVE_POOL, "name": "EXTRA"}],
+            },
+        ),
+        ("enabled_process", {"enabled": True}),
+        ("mode_is_not_a_boolean", {"enabled": None, "enabled_type": "undefined"}),
+        ("process_absent", {"process_found": False}),
+        ("device_absent", {"found": False}),
+        ("read_error", {"error": "getPoolAt:boom"}),
+        ("truncated_inventory", {"truncated": True, "pool_count": 40}),
+        ("incoherent_count", {"pool_count": 3, "pools": []}),
+        ("count_is_a_boolean", {"pool_count": True, "pools": []}),
+        ("foreign_interface", {"interface": "FastEthernet1"}),
+        ("foreign_subject", {"device": "__MCP_E6Q_PC1"}),
+        (
+            "intended_pool_already_present",
+            {
+                "pool_count": 1,
+                "pools": [{**NATIVE_POOL, "name": "MCP_E6Q_DHCP"}],
+            },
+        ),
+    ],
+)
+def test_every_other_baseline_refuses_before_any_effect(label, payload):
+    """A matching name, a plausible row or a similar shape is not authority."""
+    verdict = _admission(_baseline(**payload))
+    assert verdict.admitted is False, label
+    assert verdict.kind == "refused" and verdict.causes
+
+
+def test_an_unobserved_baseline_is_never_an_empty_one():
+    """A lost or malformed answer decides nothing about the server."""
+    absent = _admission(None)
+    assert absent.admitted is False and absent.causes == (
+        "dhcp_server_baseline_not_read",
+    )
+    lost = _admission(_reading("dhcp_server_baseline", observed=False))
+    assert lost.admitted is False and lost.causes[0].startswith(
+        "dhcp_server_baseline_unobserved"
+    )
+
+
+def test_coexistence_is_qualified_for_one_build_and_one_channel():
+    """The policy is a property of the reviewed build and fixed channel."""
+    other_build = _admission(_baseline(), observed_build="9.0.9.9999")
+    assert other_build.admitted is False
+    assert "coexistence_not_qualified_for_build:9.0.9.9999" in other_build.causes
+    other_channel = _admission(_baseline(), observed_channel="http")
+    assert other_channel.admitted is False
+    assert "coexistence_not_qualified_for_channel:http" in other_channel.causes
+    # A composition that declared no reviewed build states nothing, which is
+    # unknown rather than permission.
+    undeclared = _admission(_baseline(), qualified_build="")
+    assert undeclared.admitted is False
+    assert f"coexistence_not_qualified_for_build:{BUILD}" in undeclared.causes
+    assert _admission(_baseline(), qualified_channels=()).admitted is False
+
+
+def test_default_pool_snapshots_keep_the_native_rows_and_name_every_difference():
+    """The intended pool is excluded; anything else that moved is named."""
+    before = default_pool_snapshot(
+        "before_e5",
+        _baseline(pool_count=1, pools=[dict(NATIVE_POOL)]),
+        intended_pool="MCP_E6Q_DHCP",
+    )
+    after = default_pool_snapshot(
+        "after_setup",
+        _baseline(
+            pool_count=2,
+            pools=[
+                {**NATIVE_POOL, "gateway": "10.9.9.9"},
+                {**NATIVE_POOL, "name": "MCP_E6Q_DHCP"},
+            ],
+        ),
+        intended_pool="MCP_E6Q_DHCP",
+    )
+    assert before.pools == (NATIVE_POOL,) and before.intended_present is False
+    assert after.intended_present is True
+    assert default_pool_differences(before, after) == (
+        "default_pool_changed:serverPool.gateway",
+    )
+    appeared = default_pool_snapshot(
+        "after_setup",
+        _baseline(
+            pool_count=2, pools=[dict(NATIVE_POOL), {**NATIVE_POOL, "name": "X"}]
+        ),
+        intended_pool="MCP_E6Q_DHCP",
+    )
+    assert default_pool_differences(before, appeared) == ("default_pool_added:X",)
+    gone = default_pool_snapshot("after_setup", _baseline(), intended_pool="X")
+    assert default_pool_differences(before, gone) == (
+        "default_pool_removed:serverPool",
+    )
+    unread = default_pool_snapshot("after_setup", None, intended_pool="X")
+    assert default_pool_differences(before, unread) == (
+        "default_pool_snapshot_unobserved:after_setup",
+    )
+
+
+# -- F3: the readiness rule ------------------------------------------------------
+
+
+READY_ENDPOINTS = [("SRV", "FastEthernet0"), ("SW", "FastEthernet0/1")]
+
+
+def _readiness_pair(first=None, second=None) -> ProbeReading:
+    return _reading(
+        "port_readiness",
+        {
+            "ports": {
+                "SRV/FastEthernet0": _port_row(**(first or {})),
+                "SW/FastEthernet0/1": _port_row(
+                    device="SW",
+                    interface="FastEthernet0/1",
+                    ip=None,
+                    mask=None,
+                    **(second or {}),
+                ),
+            }
+        },
+    )
+
+
+def test_a_complete_sample_with_every_link_up_is_ready():
+    """All four typed booleans true on every requested port, and nothing else."""
+    sample = assess_port_readiness(_readiness_pair(), READY_ENDPOINTS)
+    assert (sample.observed, sample.complete, sample.ready) == (True, True, True)
+    assert sample.cause == ""
+    assert sample.facts["ports"]["SW/FastEthernet0/1"]["protocol_up"] is True
+
+
+@pytest.mark.parametrize(
+    ("label", "row", "expected"),
+    [
+        (
+            "non_boolean_port_up",
+            {"port_up": None, "port_up_type": "number"},
+            "readiness_non_boolean:SRV/FastEthernet0:port_up",
+        ),
+        (
+            "missing_protocol_reader",
+            {"protocol_up": None, "protocol_up_type": "absent"},
+            "readiness_non_boolean:SRV/FastEthernet0:protocol_up",
+        ),
+        (
+            "reader_threw",
+            {"port_up": None, "port_up_type": "threw", "error": "isPortUp:boom"},
+            "readiness_read_error:SRV/FastEthernet0",
+        ),
+        (
+            "port_not_found",
+            {"found": False, "linked": False, "port_up": False, "protocol_up": False},
+            "readiness_not_up:SRV/FastEthernet0:found",
+        ),
+        (
+            "link_absent",
+            {"linked": False, "link_type": "absent"},
+            "readiness_not_up:SRV/FastEthernet0:linked",
+        ),
+        (
+            "still_down",
+            {"port_up": False},
+            "readiness_not_up:SRV/FastEthernet0:port_up",
+        ),
+        (
+            "foreign_subject",
+            {"device": "OTHER"},
+            "readiness_subject_mismatch:SRV/FastEthernet0",
+        ),
+    ],
+)
+def test_no_network_attempt_is_admitted_from_an_incomplete_or_down_sample(
+    label, row, expected
+):
+    """Missing, invalid and false stay three different observations."""
+    sample = assess_port_readiness(_readiness_pair(row), READY_ENDPOINTS)
+    assert sample.ready is False, label
+    assert sample.cause == expected
+
+
+def test_a_readiness_sample_that_is_not_about_the_exact_endpoints_is_incomplete():
+    """A short, extra or unreadable port list decides nothing about readiness."""
+    short = assess_port_readiness(
+        _reading("port_readiness", {"ports": {"SRV/FastEthernet0": _port_row()}}),
+        READY_ENDPOINTS,
+    )
+    assert (short.complete, short.cause) == (False, "readiness_endpoints_incomplete")
+    malformed = assess_port_readiness(
+        _reading("port_readiness", {"ports": {"SRV/FastEthernet0": "up", "SW/X": 1}}),
+        [("SRV", "FastEthernet0"), ("SW", "X")],
+    )
+    assert malformed.cause == "readiness_row_malformed:SRV/FastEthernet0"
+    unread = assess_port_readiness(
+        _reading("port_readiness", observed=False), READY_ENDPOINTS
+    )
+    assert (unread.observed, unread.ready) == (False, False)
+    assert assess_port_readiness(None, READY_ENDPOINTS).cause == "readiness_not_read"
+
+
+# -- F5: what E5 has to establish before E6 may mutate the server ---------------
+
+
+def _e5_result(*rows, verifications=()) -> ConfigurationApplicationResult:
+    return ConfigurationApplicationResult(
+        config_plan_id="cfg/q3",
+        config_semantic_hash="h" * 16,
+        source_topology_hash="t" * 16,
+        status=ConfigurationApplicationStatus.APPLIED,
+        action_results=list(rows),
+        verification_results=list(verifications),
+    )
+
+
+def _e5_row(action_id: str, **changes) -> ActionApplicationResult:
+    fields = {
+        "status": ActionExecutionStatus.VERIFIED,
+        "dispatch": DispatchFact.ACCEPTED,
+        "result": ResultFact.CORRELATED,
+        "postcondition": PostconditionFact.SATISFIED,
+        "attempted": True,
+        **changes,
+    }
+    return ActionApplicationResult(action_id=action_id, **fields)
+
+
+VERIFIED_FOUNDATIONS = {"cfg/a": ActionExecutionStatus.VERIFIED}
+
+
+def test_a_complete_verified_e5_founds_the_server_mutation():
+    """Every row decided, every foundation VERIFIED: E6 may run."""
+    assert (
+        _q3_e5_foundation_cause(
+            _e5_result(_e5_row("a"), _e5_row("b")),
+            VERIFIED_FOUNDATIONS,
+            {"a", "b"},
+        )
+        == ""
+    )
+
+
+@pytest.mark.parametrize(
+    ("label", "result", "foundations", "expected"),
+    [
+        (
+            "a row nobody reported",
+            _e5_result(_e5_row("a")),
+            VERIFIED_FOUNDATIONS,
+            "outcome_unknown:q3_e5_incomplete_result_set",
+        ),
+        (
+            "an unknown dispatch",
+            _e5_result(
+                _e5_row("a", dispatch=DispatchFact.ACCEPTANCE_UNKNOWN), _e5_row("b")
+            ),
+            VERIFIED_FOUNDATIONS,
+            "outcome_unknown:q3_e5_endpoints:a",
+        ),
+        (
+            "a result nobody observed",
+            _e5_result(_e5_row("a"), _e5_row("b", result=ResultFact.NOT_OBSERVED)),
+            VERIFIED_FOUNDATIONS,
+            "outcome_unknown:q3_e5_endpoints:b",
+        ),
+        (
+            "an unsatisfied postcondition",
+            _e5_result(
+                _e5_row("a", postcondition=PostconditionFact.UNSATISFIED), _e5_row("b")
+            ),
+            VERIFIED_FOUNDATIONS,
+            "contradiction:q3_e5_endpoints:a",
+        ),
+        (
+            "a failed read-back",
+            _e5_result(
+                _e5_row("a"),
+                _e5_row("b"),
+                verifications=[
+                    VerificationResult(
+                        expectation_id="v1",
+                        action_id="a",
+                        status=ActionExecutionStatus.FAILED,
+                    )
+                ],
+            ),
+            VERIFIED_FOUNDATIONS,
+            "contradiction:q3_e5_verification:v1",
+        ),
+        (
+            "a foundation that is not VERIFIED",
+            _e5_result(_e5_row("a"), _e5_row("b")),
+            {"cfg/a": ActionExecutionStatus.DEPENDENCY_BLOCKED},
+            "q3_foundations_not_established",
+        ),
+        (
+            "no foundation at all",
+            _e5_result(_e5_row("a"), _e5_row("b")),
+            {},
+            "q3_foundations_not_established",
+        ),
+    ],
+)
+def test_nothing_less_than_a_complete_verified_e5_admits_a_server_mutation(
+    label, result, foundations, expected
+):
+    """An unknown, contradicted or blocked foundation grants no permission."""
+    assert _q3_e5_foundation_cause(result, foundations, {"a", "b"}) == expected, label

@@ -43,6 +43,9 @@ from packet_tracer_mcp.application.use_cases.qualify_server_services import (
     IsolationObservation,
     qualify_server_services,
 )
+from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    ActionExecutionStatus,
+)
 from packet_tracer_mcp.domain.enterprise.models.execution import (
     DirtyState,
     DispatchFact,
@@ -74,6 +77,7 @@ from packet_tracer_mcp.infrastructure.execution.service_environment import (
 
 Q0 = STAGE_DEFINITIONS[QualificationStage.Q0]
 Q1 = STAGE_DEFINITIONS[QualificationStage.Q1]
+Q3 = STAGE_DEFINITIONS[QualificationStage.Q3]
 PC = "__MCP_E6Q_PC1"
 CAPABILITIES = frozenset(Q0.experimental_capabilities)
 
@@ -183,6 +187,21 @@ def _engine_bag(harness) -> dict:
     """Read the whole run-bag container straight out of the stub engine."""
     return json.loads(
         harness.engine.evaluate("reportResult(JSON.stringify(this.__mcpE6Q||{}));")
+    )
+
+
+def _q3_request():
+    return replace(
+        _request(),
+        stage="Q3",
+        targets=Q3.fixture_names,
+        authorization=replace(
+            _request().authorization,
+            stage="Q3",
+            targets=Q3.fixture_names,
+            max_operations=Q3.budget.max_operations,
+            max_seconds=Q3.budget.max_seconds,
+        ),
     )
 
 
@@ -703,9 +722,11 @@ def test_q1_measures_both_experiments_inside_its_planned_worst_case(harness):
     )
     for key in ("positive_http_mode_both_enabled", "positive_https_only"):
         assert listener.facts[key]["conclusion"] == "supported_in_sample"
-    assert listener.facts["readiness_before"]["observed"] is True
+    gate = listener.facts["readiness_before"]
+    assert (gate["ready"], gate["reads"], gate["max_reads"]) == (True, 1, 4)
+    assert gate["last"]["observed"] is True
     assert json.dumps(listener.facts).count("negative_observed") == 0
-    assert ledger.used == 51 < Q1.planned_minimum_operations == 53
+    assert ledger.used == 51 < Q1.planned_minimum_operations == 56
     assert ledger.refused_calls == 0
     clients = [item for item in record.releases if item.kind == "client"]
     assert [item.outcome for item in clients] == ["released"] * 4
@@ -961,7 +982,7 @@ def test_q1_passes_the_real_stage_gate_and_finalizes_inside_its_ceiling(harness)
     assert result.refusals == []
     assert h.opened == ["file"]
     assert record.budget.max_operations == 60
-    assert record.budget.planned_minimum_operations == 53
+    assert record.budget.planned_minimum_operations == 56
     assert record.budget.used_operations <= Q1.planned_minimum_operations
     assert record.budget.refused_calls == 0
     assert record.restoration_proven is True
@@ -1009,10 +1030,10 @@ def test_a_secondary_cleanup_failure_never_replaces_the_primary(harness):
 
 
 def test_q1_executor_at_exactly_its_planned_worst_case_completes(harness):
-    """A ceiling equal to the planned 53 admits the stage and is never exceeded."""
+    """A ceiling equal to the planned 56 admits the stage and is never exceeded."""
     h = harness()
-    record, ledger = _q1_executor(h, max_operations=53)
-    assert ledger.used <= 53 and ledger.refused_calls == 0
+    record, ledger = _q1_executor(h, max_operations=56)
+    assert ledger.used <= 56 and ledger.refused_calls == 0
     assert record.primary_failure == ""
     assert record.restoration_proven is True
 
@@ -1020,7 +1041,7 @@ def test_q1_executor_at_exactly_its_planned_worst_case_completes(harness):
 def test_q1_executor_one_below_its_worst_case_creates_nothing(harness):
     """The pre-check refuses the stage work; finalization still reads twice."""
     h = harness()
-    record, ledger = _q1_executor(h, max_operations=52)
+    record, ledger = _q1_executor(h, max_operations=55)
     assert record.primary_failure == "budget:Q1"
     assert h.scripts("lwAddDevice") == []
     assert [item.purpose for item in ledger.entries][-2:] == [
@@ -1030,18 +1051,25 @@ def test_q1_executor_one_below_its_worst_case_creates_nothing(harness):
 
 
 def test_a_lost_inspection_is_exactly_what_the_worst_case_budget_pays_for(harness):
-    """Calls 27 and 32 are the two positives' first inspections.
+    """The complete worst case: a slow fixture and both positives losing one poll.
 
-    Losing each costs that fetch its fourth operation, which is exactly the
-    worst case both positives are budgeted at. The trace then fits the plan
-    exactly: nothing is refused, every owned client is still released, and
-    the finalization reserve is untouched.
+    The fixture needs all four readiness reads before every link is up, and
+    the two positives each lose their first inspection, which costs that fetch
+    its fourth operation. Both are exactly what the plan budgets, so the trace
+    lands on the planned worst case: nothing is refused, every owned client is
+    still released, and the finalization reserve is untouched.
     """
-    h = harness(lose={27, 32})
-    record, ledger = _q1_executor(h, max_operations=53)
+    h = harness({"ports_down_calls": 18}, lose={30, 35})
+    record, ledger = _q1_executor(h, max_operations=56)
     assert record.primary_failure == ""
-    assert ledger.used == 53 == Q1.planned_minimum_operations
+    assert ledger.used == 56 == Q1.planned_minimum_operations
     assert ledger.refused_calls == 0
+    gate = next(
+        item for item in record.measurements if item.experiment_id == "M-HTTPS-2"
+    ).facts["readiness_before"]
+    assert (gate["ready"], gate["reads"]) == (True, 4)
+    assert gate["first"]["ports"]["__MCP_E6Q_SRV/FastEthernet0"]["port_up"] is False
+    assert gate["last"]["ports"]["__MCP_E6Q_SRV/FastEthernet0"]["port_up"] is True
     clients = [item for item in record.releases if item.kind == "client"]
     assert [item.outcome for item in clients] == ["released"] * 4
     assert record.restoration_proven is True
@@ -1075,3 +1103,232 @@ def test_a_failing_run_bag_release_is_secondary_and_the_record_completes(harness
     durable = h.durable()
     assert durable.completed_at is not None
     assert h.engine.snapshot()["devices"] == []
+
+
+# -- amendment 01: the bounded readiness gate ------------------------------------
+
+
+def _q3_executor(h: _Harness, max_operations: int = 60, **overrides):
+    """Drive the Q3 executor directly, at a chosen ceiling."""
+    boundaries = h.boundaries(**overrides)
+    devices, links = fixture_plans(Q3)
+    request = _q3_request()
+    record = coordinator._initial_record(
+        request,
+        Q3,
+        boundaries,
+        IsolationObservation(True, "ISOLATED"),
+        RepositoryIdentity(
+            head=SIM_SHA, tree="f" * 40, clean=True, upstream_head=SIM_SHA
+        ),
+        frozenset(Q3.experimental_capabilities),
+    )
+    record.environment.observed_build = SIM_BUILD
+    run = coordinator._Run(record, boundaries, boundaries.record_store.begin(record))
+    ledger = coordinator.OperationLedger(
+        max_operations=max_operations, max_seconds=1200, clock=boundaries.clock
+    )
+    run.ledger = ledger
+    bound = coordinator.LedgeredTransport(
+        ledger, h.transport, boundaries.sleep, boundaries.clock
+    )
+    assert ServiceEnvironmentReader(bound.send_and_wait).read().version == SIM_BUILD
+    physical = boundaries.physical_runtime(bound.send_and_wait)
+    baseline = physical.observe_workspace()
+    ledger.reserve(Q3.reserve_operations, Q3.budget.reserve_seconds)
+    execution = coordinator._Execution(
+        run=run,
+        nonce="7" * 32,
+        definition=Q3,
+        devices=devices,
+        links=links,
+        bound=bound,
+        physical=physical,
+        baseline=baseline,
+        channel="file",
+        capabilities=frozenset(Q3.experimental_capabilities),
+        probes=boundaries.probes(bound, record.run_id, "7" * 32),
+        product_contract=boundaries.q3_product_contract(SIM_BUILD, "file"),
+    )
+    coordinator._run_q3(execution)
+    coordinator._finalize(execution)
+    return record, ledger
+
+
+def _gate_of(record, experiment_id: str, key: str = "readiness") -> dict:
+    facts = next(
+        item for item in record.measurements if item.experiment_id == experiment_id
+    ).facts
+    return facts[key if key in facts else "readiness_before"]
+
+
+def test_a_fixture_that_is_already_up_costs_exactly_one_readiness_read(harness):
+    """The gate stops at the first complete ready sample."""
+    h = harness()
+    record, _ledger = _q1_executor(h)
+    gate = _gate_of(record, "M-HTTPS-2", "readiness_before")
+    assert (gate["ready"], gate["reads"]) == (True, 1)
+    assert gate["deadline_seconds"] == 30.0
+    assert gate["first"] == gate["last"]
+
+
+def test_a_fixture_that_comes_up_late_is_admitted_on_the_fresh_sample(harness):
+    """F3: the first two reads are down, the third is complete and ready."""
+    h = harness({"ports_down_calls": 12})
+    record, _ledger = _q1_executor(h)
+    gate = _gate_of(record, "M-HTTPS-2", "readiness_before")
+    assert (gate["ready"], gate["reads"]) == (True, 3)
+    assert gate["first"]["ports"]["__MCP_E6Q_SRV/FastEthernet0"]["port_up"] is False
+    assert gate["last"]["ports"]["__MCP_E6Q_SRV/FastEthernet0"]["port_up"] is True
+    listener = next(
+        item for item in record.measurements if item.experiment_id == "M-HTTPS-2"
+    )
+    assert listener.facts["positive_http_mode_both_enabled"]["fetch"] == (
+        "marker_retrieved"
+    )
+
+
+def test_a_fixture_that_never_comes_up_starts_no_fetch_and_no_client(harness):
+    """F3: no marked page, no created client, and no listener verdict."""
+    h = harness({"ports_up": False})
+    record, ledger = _q1_executor(h)
+    listener = next(
+        item for item in record.measurements if item.experiment_id == "M-HTTPS-2"
+    )
+    gate = listener.facts["readiness_before"]
+    assert (gate["ready"], gate["reads"]) == (False, 4)
+    assert gate["reason"].startswith("readiness_not_up:")
+    assert listener.conclusion is MeasurementConclusion.INCONCLUSIVE
+    assert "readiness_not_established:readiness_not_up" in " ".join(listener.causes)
+    assert "readiness_result_is_not_a_listener_verdict" in listener.limitations
+    assert h.scripts("createClient") == []
+    # The marked page belongs to the gated procedure, so it was never written.
+    assert h.scripts("-INDEX") == []
+    assert listener.facts["marker_page"] == {"established": False}
+    assert ledger.refused_calls == 0
+    assert record.restoration_proven is True
+    assert h.engine.snapshot()["devices"] == []
+
+
+def test_a_non_boolean_readiness_reader_is_never_read_as_down_or_up(harness):
+    """F3: an invalid native value is incomplete, which is not `false`."""
+    h = harness({"protocol_up_return": "string"})
+    record, _ledger = _q1_executor(h)
+    gate = _gate_of(record, "M-HTTPS-2", "readiness_before")
+    assert gate["ready"] is False
+    assert gate["reason"].endswith(":protocol_up")
+    assert "readiness_non_boolean" in gate["reason"]
+    row = gate["last"]["ports"]["__MCP_E6Q_SRV/FastEthernet0"]
+    assert row["protocol_up"] is None and row["protocol_up_type"] == "string"
+    assert h.scripts("createClient") == []
+
+
+def test_the_readiness_gate_stops_at_its_monotonic_deadline(harness):
+    """F3: the gate is a 30-second precondition, not an open-ended wait."""
+    h = harness({"ports_up": False})
+    record, ledger = _q1_executor(h, settle_seconds=20.0)
+    gate = _gate_of(record, "M-HTTPS-2", "readiness_before")
+    assert gate["ready"] is False
+    assert gate["reads"] < 4 and gate["reason"] == "readiness_deadline_reached"
+    assert gate["elapsed_seconds"] >= 30.0
+    assert h.scripts("createClient") == []
+    assert ledger.refused_calls == 0
+    assert [item.purpose for item in ledger.entries][-2:] == [
+        "read:restoration:1",
+        "read:restoration:2",
+    ]
+    assert record.restoration_proven is True
+
+
+def test_a_record_that_cannot_advance_admits_no_readiness_read_or_effect(harness):
+    """The persistence gate closes effects before the gate reads anything."""
+    h = harness()
+    store = RecordingStore(
+        h.directory / "records", fail_from="experiment:HTTPS2:started"
+    )
+    record, ledger = _q1_executor(h, record_store=store)
+    assert record.primary_failure == "persistence:record_not_advanced"
+    assert [
+        item.purpose for item in ledger.entries if "readiness" in item.purpose
+    ] == []
+    assert h.scripts("createClient") == []
+    assert h.engine.snapshot()["devices"] == []
+
+
+# -- amendment 01: Q3 classifies E5 before it mutates the server ----------------
+
+
+def test_q3_dispatches_no_server_mutation_when_e5_is_not_complete(harness):
+    """F5: an E5 batch whose rows are missing founds nothing for E6."""
+    h = harness()
+    base = h.boundaries()
+
+    class _Truncated(_Wrapped):
+        def apply_actions(self, actions):
+            return self.inner.apply_actions(actions)[:-1]
+
+    record, _ledger = _q3_executor(
+        h,
+        configuration_runtime=lambda bound: _Truncated(
+            base.configuration_runtime(bound)
+        ),
+    )
+    assert record.primary_failure == "q3_foundations_not_established"
+    assert h.scripts("addPool") == []
+    assert h.scripts("dhcpRun") == []
+    setup = next(
+        item for item in record.measurements if item.experiment_id == "M-DHCP-1"
+    )
+    # The applicator blocked the dependent endpoint instead of reporting it,
+    # so the foundations are incomplete and nothing may be built on them.
+    assert "dependency_blocked" in setup.facts["foundation_statuses"].values()
+    assert setup.facts["server_mutations"] == []
+    assert setup.facts["server_readback"] == {}
+    assert record.restoration_proven is True
+
+
+def test_q3_dispatches_no_server_mutation_when_a_foundation_is_not_verified(harness):
+    """F5: foundations are derived and judged before the E6 batch is built."""
+    h = harness()
+    base = h.boundaries()
+
+    class _Unverified(_Wrapped):
+        def verify(self, expectations):
+            rows = self.inner.verify(expectations)
+            return [
+                item.model_copy(update={"status": ActionExecutionStatus.UNKNOWN})
+                for item in rows
+            ]
+
+    record, _ledger = _q3_executor(
+        h,
+        configuration_runtime=lambda bound: _Unverified(
+            base.configuration_runtime(bound)
+        ),
+    )
+    assert record.primary_failure == "q3_foundations_not_established"
+    assert h.scripts("addPool") == []
+    assert h.scripts("dhcpRun") == []
+    assert record.restoration_proven is True
+
+
+def test_q3_records_the_native_default_before_and_after_its_own_setup(harness):
+    """F2: the snapshots bracket the setup and the intended pool is separate."""
+    h = harness({"dhcp_default_pool": "native"})
+    record, ledger = _q3_executor(h)
+    assert record.primary_failure == ""
+    assert ledger.used <= Q3.planned_minimum_operations == 60
+    timing = next(
+        item for item in record.measurements if item.experiment_id == "M-DHCP-6"
+    )
+    snapshots = timing.facts["native_default"]["snapshots"]
+    assert [item["label"] for item in snapshots] == [
+        "before_e5",
+        "after_setup",
+        "before_cleanup",
+    ]
+    assert {item["intended_pool_present"] for item in snapshots} == {False, True}
+    assert timing.facts["native_default"]["differences"] == []
+    assert h.scripts("addPool") != []
+    # The intended pool was created; the observed default was never touched.
+    assert "serverPool" not in "".join(h.scripts("addPool"))
