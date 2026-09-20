@@ -169,9 +169,9 @@
     {
       "source_name": "amendment-ledger.jsonl",
       "archive_path": "evidence/campaign-d02-q3-q1-autofix-01/amendment-ledger.jsonl",
-      "bytes": 3537,
-      "sha256": "79140fec96bff90e853107b607dec19f4251a36c6f3851b37df2481cf7afe81a",
-      "origin": "produced by this delivery, 2026-09-19"
+      "bytes": 6687,
+      "sha256": "05db0a7a1dd31b065ecc7c671ebcd513f672ece6bff742c0a3eef642b2cba43d",
+      "origin": "appended by amendment and focused-closure deliveries, 2026-09-19"
     },
     {
       "source_name": "AMENDMENT-01.sha256",
@@ -183,8 +183,22 @@
     {
       "source_name": "README.md",
       "archive_path": "evidence/campaign-d02-q3-q1-autofix-01/README.md",
-      "bytes": 3671,
-      "sha256": "1efdcf383cc60a1b983f1e858ad4221cf0c16f07b3c89becf58513624ab9e240",
+      "bytes": 4494,
+      "sha256": "50eeaf86bb4dc43b5f4f94b33ddff6528bbb77ef7b8117922a1f9bec4ff36708",
+      "origin": "produced by this delivery, 2026-09-19"
+    },
+    {
+      "source_name": "Codex_243_Focused_Closure_and_Remaining_LIVE.md",
+      "archive_path": "assignments/Codex_243_Focused_Closure_and_Remaining_LIVE.md",
+      "bytes": 14426,
+      "sha256": "4a5f96a18671101b743385c78224bb444becb8d3977310c4a0e3d7b21f5442a5",
+      "origin": "maintainer Downloads directory, 2026-09-19"
+    },
+    {
+      "source_name": "FOCUSED-CLOSURE-01.sha256",
+      "archive_path": "evidence/campaign-d02-q3-q1-autofix-01/FOCUSED-CLOSURE-01.sha256",
+      "bytes": 452,
+      "sha256": "440d838a0206360b76e439ba0835333123549aa205d314b88294687186e8fd84",
       "origin": "produced by this delivery, 2026-09-19"
     }
   ]

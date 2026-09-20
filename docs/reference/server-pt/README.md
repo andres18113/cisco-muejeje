@@ -35,7 +35,8 @@ are not restated here; read them in the current brief.
 | `server-pt-services-brief-0850de3.md` | the same brief at the accepted S4a commit `0850de3` | the current brief; it holds the S4A-C1..C4 correction delta and its verification evidence |
 | `evidence/q-batch-0850de3/` | the operator batch `server-pt-q-batch-0850de3.zip` and its 15 extracted files, 2026-09-19 | nothing: LIVE evidence is immutable. The current brief states which conclusions each record permits |
 | `assignments/Codex_Continuation_A1_Q3_Q1_S1b.md` | amendment 01 to campaign `SERVER-PT-D02-Q3-Q1-AUTOFIX-01`, Downloads, 2026-09-19 | nothing yet: it is the active authority for Block F of the current brief |
-| `evidence/campaign-d02-q3-q1-autofix-01/` | the appended amendment ledger entry and its digests, 2026-09-19 | nothing: it extends the campaign chain without replacing any earlier entry |
+| `assignments/Codex_243_Focused_Closure_and_Remaining_LIVE.md` | focused closure review addendum, Downloads, 2026-09-19 | nothing yet: it completes the active amendment boundaries and delegates the two remaining attempts conditionally |
+| `evidence/campaign-d02-q3-q1-autofix-01/` | appended amendment and focused-closure ledger entries with their digests, 2026-09-19 | nothing: they extend the campaign chain without replacing any earlier entry |
 
 The companion overlay ZIP named by the S1 review was not present, so the
 individually supplied source files were used and hash-verified without
@@ -69,7 +70,8 @@ The campaign package itself stays with the operator, outside this repository:
 files total 318,993 bytes. It carries the three LIVE attempt directories and
 the first three correction-ledger entries.
 [`evidence/campaign-d02-q3-q1-autofix-01/`](evidence/campaign-d02-q3-q1-autofix-01/README.md)
-appends one entry to that chain and replaces nothing in it.
+appends amendment entry 4 and focused-closure entry 5 to that chain and replaces
+nothing in it.
 
 ## Adding a record
 

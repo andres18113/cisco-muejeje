@@ -1,4 +1,4 @@
-# Campaign `SERVER-PT-D02-Q3-Q1-AUTOFIX-01`, amendment 01
+# Campaign `SERVER-PT-D02-Q3-Q1-AUTOFIX-01`, amendment 01 and focused closure 01
 
 Navigation and provenance only. Nothing here authorizes a run.
 
@@ -13,9 +13,11 @@ remain historical facts.
 
 | File | What it is |
 | --- | --- |
-| `amendment-ledger.jsonl` | one appended entry, `seq` 4, linked to published chain tip `91ab8ef5…0fd6457` by `previous_entry_sha256` |
+| `amendment-ledger.jsonl` | appended entries `seq` 4 and 5; seq 5 links to seq 4 entry hash `5a2480e4…5b911` |
 | `AMENDMENT-01.sha256` | digests of the archived amendment, the unmodified original package and the ledger entry |
+| `FOCUSED-CLOSURE-01.sha256` | digests of the review addendum, amendment 01, the unmodified original package and the two-entry ledger |
 | [`../../assignments/Codex_Continuation_A1_Q3_Q1_S1b.md`](../../assignments/Codex_Continuation_A1_Q3_Q1_S1b.md) | the amendment itself, archived byte-for-byte (16,758 bytes, SHA-256 `70f2b7ad…6e9040`) |
+| [`../../assignments/Codex_243_Focused_Closure_and_Remaining_LIVE.md`](../../assignments/Codex_243_Focused_Closure_and_Remaining_LIVE.md) | focused review addendum, archived byte-for-byte (14,426 bytes, SHA-256 `4a5f96a1…5442a5`) |
 
 ## What the amendment changed, and what it did not
 
@@ -32,6 +34,13 @@ capability. Q3 keeps one unused attempt of its original three and Q1 one of its
 original two; this amendment consumed neither. Q0, Q2 and Q1b remain out of
 scope, as do pool removal, `dhcpRelease`, any reset, claim deletion and a merge
 to `main`.
+
+Focused closure entry `seq` 5 records the F1 through F4 corrections reviewed
+against `243ddc8`: admitted shared-content writer projection, hard readiness
+deadlines before Q3 client activation, strict later default snapshots and exact
+staged-result reuse. Its offline behavior head is `35cbc7c` (tree `b534a2c`),
+with Q3's recalculated planned worst case 59 of the unchanged 60-operation
+ceiling. It records no LIVE attempt and promotes no capability.
 
 ## The two measurements this work is built on
 

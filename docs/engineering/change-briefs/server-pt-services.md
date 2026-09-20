@@ -759,6 +759,50 @@ fresh verification, readiness read and finalization call is counted. Packet
 Tracer contact remains conditional on clean publication and exact-successor-SHA
 CI.
 
+### Focused closure implementation evidence
+
+Observed offline in `Cisco-MCP-s3` from reviewed candidate `243ddc8` (tree
+`f16efe8`). The executable closure head is `35cbc7c30a504330d663619e36bcd26a0104ab37`
+(tree `b534a2c392f5581c80fbf6cc0821cd11603adce6`). The branch remains local at
+this point; exact clean delivery, feature publication and successor-SHA CI are
+the next gates. No Packet Tracer process was opened, no LIVE attempt was used
+and no capability was promoted.
+
+| Commit | Scope |
+| --- | --- |
+| `b297913` | this Block G design delta, recorded before behavior edits |
+| `3a08de8` | F2 through F4: hard readiness deadline/order, strict snapshots, complete result classification and exact retained setup rows |
+| `35cbc7c` | F1: admitted shared writer projection plus persisted source/selected binding identity |
+
+The closure results are deliberately narrow. F1 keeps one page writer and one
+write after optional exclusion, rebinds to an eligible HTTPS writer without an
+HTTP enable, and refuses when no exact writer operation is supported. F2 caps
+each read and places Q3 readiness before `SetEndpointDhcp`. F3 preserves raw
+later readings but grants preservation only to complete typed inventories. F4
+runs setup setters once, retains their original decided rows and refuses the
+same-claim guard when the full product result remains unresolved. The nominal
+offline Q3 simulation therefore terminates honestly as
+`outcome_unknown:q3_product_service`; it is not relabelled successful to keep
+the older guard trace.
+
+| Verification | Result at the executable closure head |
+| --- | --- |
+| focused runner | 318 passed |
+| runner plus DHCP affected | 542 passed |
+| shared-content affected | 385 passed |
+| combined affected/coexistence | 763 passed |
+| full offline suite | 6544 passed, 3 skipped, 3 pre-existing warnings |
+| namespace inventory | 0 active imports, 0 active strings, 0 unreviewed inert mentions |
+| documentation | built; only the two pre-existing `handoff.md` link warnings |
+| whitespace | clean |
+
+Q3 now plans `17 + 31 + 11 = 59` operations inside the unchanged 60 / 1200
+ceiling; one spare operation is not a retry entitlement. Q1 remains
+`19 + 27 + 10 = 56` inside 60 / 600. Campaign ledger entry 5 archives the
+focused review addendum at 14,426 bytes, SHA-256
+`4a5f96a18671101b743385c78224bb444becb8d3977310c4a0e3d7b21f5442a5`,
+linked to entry 4 without replacing the original package or any prior record.
+
 ## Test design
 
 | Level | Scope | Files |
