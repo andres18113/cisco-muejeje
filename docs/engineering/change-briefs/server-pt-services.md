@@ -916,11 +916,11 @@ them.
 | D1-b | observe | the same DHCP process | default reading after the server address alone, with differences against D0-a | 1 |
 | D2-a | configure | `ConfigureServerDhcpPool` only, process still disabled | typed mutation row and DHCP server-state read-back | 2 |
 | D2-b | observe | the same DHCP process | both pools, intended presence, differences against D0-a and D1-b | 1 |
-| D3-a | activate | `EnableServerDhcp` — **future explicit authorization only** | typed mutation row and read-back | 2 |
-| D3-b | observe | the same DHCP process | default reading after the process is enabled | 1 |
+| D3-a | activate | `EnableServerDhcp` — **future explicit authorization only** | typed mutation row; the compiler attaches the server-state read-back to the pool row, so this projection carries none | 1 |
+| D3-b | observe | the same DHCP process | enabled boolean and the default reading after the process is enabled | 1 |
 | D4 | observe | the same DHCP process | pre-cleanup reading, always attempted, always recorded | 1 |
 | finalization | release | run bag, four removals, two restoration reads | release rows, restoration proof | 11 |
-| | | | **worst case** | **44** |
+| | | | **worst case** | **43** |
 
 Proposed ceiling 60 operations / 900 seconds with the Q3 reserve of 11
 operations / 180 seconds. Without D3 the sequence costs 41. The sequence
@@ -967,7 +967,7 @@ request, and the polling or the reader.
 | W4-a | observe | both listeners | states and port numbers after the attempts | 1 |
 | W4-b | observe | the three fixture links | endpoint readiness after the attempts | 1 |
 | finalization | release | four removals, two restoration reads | release rows, restoration proof | 10 |
-| | | | **worst case** | **48** |
+| | | | **worst case** | **47** |
 
 Proposed ceiling 60 operations / 600 seconds with the Q1 reserve of 10
 operations / 120 seconds. Every owned client is named, released once and
@@ -1006,6 +1006,18 @@ path and the listener cannot be separated: only layer-1 and layer-2 readiness
 is observable, `onRequest` and `onDone` are unqualified event sources, and
 `HttpResponseType` is undocumented in the installed reference. The profile says
 so instead of inferring a listener refusal from silence.
+
+### Where the profiles live
+
+`domain/enterprise/services/service_diagnostic_profiles.py` holds both
+profiles as typed records, the plan projections D-DHCP would dispatch, the
+declared seams, the vendor reference audit and the fail-closed
+`diagnostic_dispatch_refusal` gate. It is pure: it performs no I/O, it
+registers no tool and no stage definition names either profile.
+`tests/test_service_diagnostic_profiles.py` generates the projections from
+the real Q3 product contract, so the sequences are the ones the existing
+compiler can produce, pins both budget sums including their reserves, and
+proves that every scope mismatch refuses on its own.
 
 ### Draft authorizations — no granted status
 
