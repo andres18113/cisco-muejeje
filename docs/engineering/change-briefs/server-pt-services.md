@@ -797,6 +797,14 @@ or merged to main.
 | quality gate, worktree mode | `702a271` | 84 changed Python files gated, 0 mechanical exemptions, lint and format clean |
 | namespace inventory | `56d80b4` | 0 active imports, 0 active strings, 0 unreviewed inert mentions |
 | whitespace | `702a271` | worktree and index clean |
+| quality gate, delivery mode | `1c1f954` / `cc1a7c8` | clean tree at the exact commit, base and merge base `6263344`, 84 gated files, 0 exemptions |
+| documentation | `1c1f954` | built; only the two pre-existing `handoff.md` link warnings |
+| exact-SHA CI | `1c1f954` | run 35480784437 success: `quality`, `docs` and pytest on Windows/Linux x 3.11/3.13 |
+
+The branch was published by ordinary fast-forward (`c0307ca..1c1f954`), which
+is the only publication this amendment authorizes. Delivery-mode gate and
+exact-SHA CI results always name the commit they ran on; this evidence commit
+is a later one, and its own CI status is reported with the delivery.
 
 Both LIVE slots remain unused. The amendment's section 7 attempts are
 conditional on the delivery gate, the fast-forward publication and exact-SHA
