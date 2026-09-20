@@ -31,19 +31,42 @@ qualify anything.
 | Stage | Current runner state | Fixtures | Ceiling | Planned worst case | Measurements |
 | --- | --- | --- | --- | --- | --- |
 | Q0 | executable | `__MCP_E6Q_PC1` (PC-PT) | 20 operations / 300 s | 19 | M-ENG-1, ATOM-1, M-UNREG-1, M-UNREG-2 (M-HTTP-1 omitted: no HTTP server in the fixture) |
-| Q1 | executable | `__MCP_E6Q_SRV`, `__MCP_E6Q_PC1`, `__MCP_E6Q_PC2`, `__MCP_E6Q_SW` | 60 operations / 600 s | 53 | M-HTTPS-1, M-HTTPS-2 (M-DNS-1/2 omitted: optional, no reviewed probe; M-DNS-3 omitted: already measured at `0850de3`) |
+| Q1 | executable | `__MCP_E6Q_SRV`, `__MCP_E6Q_PC1`, `__MCP_E6Q_PC2`, `__MCP_E6Q_SW` | 60 operations / 600 s | 56 | M-HTTPS-1, M-HTTPS-2 (M-DNS-1/2 omitted: optional, no reviewed probe; M-DNS-3 omitted: already measured at `0850de3`) |
 | Q2 | declarative only | none | 60 / 900 s | not planned | requires S2 and a Q0 record |
-| Q3 | executable; file channel only on build 9.0.1.0858 | Server-PT `192.0.2.10/24`, two DHCP PC-PT clients, 2960-24TT on exact Fa0/1..3 links | 60 / 1200 s | 60 (17 setup + 32 measurement/application + 11 reserve) | M-DHCP-1..6; one-address pool `MCP_E6Q_DHCP`; guarded acquisitions and qualification-only events |
+| Q3 | executable; file channel only on build 9.0.1.0858 | Server-PT `192.0.2.10/24`, two DHCP PC-PT clients, 2960-24TT on exact Fa0/1..3 links | 60 / 1200 s | 60 (17 setup + 32 measurement/application + 11 reserve) | M-DHCP-1, 2, 4, 5, 6; one-address pool `MCP_E6Q_DHCP`; guarded acquisitions (M-DHCP-3 omitted: the event source and its release are not qualified) |
 
 The planned figure is the stage's **bounded worst case**, not its luckiest
 trace: every production fetch is budgeted at its start, both inspections and
 the release of its owned client. A stage whose worst case exceeds its ceiling
 is refused before contact, with the arithmetic in the refusal.
 
-Q1's 60 / 600 is the reviewed design ceiling. The repaired procedure's worst
-case is 53 with the 10-operation finalization reserve intact (the `0850de3`
-run used 46). It authorizes no LIVE run, and it changes neither Q0's 20 / 300
+Q1's 60 / 600 is the reviewed design ceiling. The amended procedure's worst
+case is 56 with the 10-operation finalization reserve intact: the readiness
+gate's four aggregate reads are charged to the trace rather than to unlogged
+preparation. It authorizes no LIVE run, and it changes neither Q0's 20 / 300
 nor declarative Q2. The runner never raises a ceiling by itself.
+
+## Readiness before any network attempt
+
+Both executable network stages share one bounded readiness check over the
+exact six fixture ports. It keeps the raw typed `found`, `linked`, `port_up`
+and `protocol_up` with the port and device identity, and a value counts as a
+boolean only when the engine returned `typeof "boolean"` -- missing, invalid
+and `false` stay three different observations, which `!!` used to collapse
+into one. A network attempt is admitted only from a fresh complete reading in
+which all four are true on every port.
+
+The gate spends at most four aggregate reads inside a 30-second monotonic
+window, itself capped by the stage's unspent time and its untouchable
+finalization reserve, and stops at the first complete ready sample. Nothing
+sleeps unconditionally and nothing spins. The record keeps the read count, the
+elapsed time, the first and last samples and the precise failure reason.
+
+These fields prove readiness of the measured links at the moment they were
+read. They prove nothing about STP forwarding, reachability or a successful
+request. A gate that never becomes ready is a readiness result: Q1 writes no
+marked page and starts no fetch, Q3 requests no acquisition, both stages
+finalize normally, and neither records a verdict about HTTP, HTTPS or DHCP.
 
 Q3's exact worst case consumes its whole reviewed ceiling on paper: 17
 admission/fixture operations, 32 product/native measurement operations and an
@@ -56,19 +79,56 @@ stays UNKNOWN/UNMEASURED.
 
 The fixture has no router. Gateway option `192.0.2.1` and DNS option
 `192.0.2.10` are stored DHCP options, not reachability or DNS-service evidence.
-The pool has one usable address, `192.0.2.100`. Any initial/default native pool
-is recorded and stops before setters; it is never deleted. Each client action
-runs once under its product claim, and the declared same-action control must
-refuse without another `dhcpRun`.
+The pool has one usable address, `192.0.2.100`. Each client action runs once
+under its product claim, and the declared same-action control must refuse
+without another `dhcpRun`.
+
+Q3 classifies the complete E5 result and the foundations derived from it before
+any E6 server mutation, and a contradicted product read-back blocks the
+same-claim guard control just as an unknown effect does. Missing rows, unknown
+dispatch, exceptions and contradicted foundations grant no permission.
+
+## The native default pool Q3 coexists with
+
+Stock Server-PT on build 9.0.1.0858 ships one DHCP pool, and the LIVE Q3
+ordinal-2 record measured it exactly: `serverPool`, network, mask, gateway,
+DNS and start all `0.0.0.0`, end `0.0.2.0`, 512 users. Q3 admits two baselines
+and nothing else: a coherently observed empty inventory under a disabled
+process, or exactly that one row under a disabled process. Both also require
+the owned newly created Server-PT by name, exact `FastEthernet0`, an actual
+boolean `enabled=false`, a complete untruncated inventory, no error and no
+`MCP_E6Q_DHCP` already present. Every field is compared by value and by type,
+so a pool that only shares the name is refused, and the reviewed build and the
+permitted channel come from the composition rather than from the domain.
+
+`serverPool` is never deleted, renamed, reset, replaced, per-pool disabled or
+worked around. It is read three times with bounded reads -- before E5, after
+setup and before cleanup -- and every snapshot and every difference between
+them stays in the record. A default that moved stops the effects that would
+have followed it. Enabling the DHCP process is process-wide, so the authorized
+experiment may also activate the native pool's behavior; nothing here says the
+default stays inert afterwards, and nothing infers that its range or its zero
+mask is harmless. Two pools in one process are not two independent DHCP
+servers, and which one a native server allocates from is unqualified.
 
 M-DHCP-2 records bounded empty and capacity-one table samples. Null, throw,
 repeat and bound termination remain sample facts; none is generalized into a
-lease-count API, table completion or pool exhaustion. M-DHCP-3 registers at
-most four qualification-only callbacks on the two owned clients. Missing
-event identity leaves an inert attached observer and UNKNOWN cleanup until the
-dedicated process is retired; it never creates a product event path. M-DHCP-6
-uses fixed observation windows without clock or lease manipulation, so absent
-natural renewal remains INCONCLUSIVE.
+lease-count API, table completion or pool exhaustion. There is no qualified
+end-of-table predicate, so the default pool's lease table is never required or
+claimed to be empty. M-DHCP-6 uses fixed observation windows without clock or
+lease manipulation, so absent natural renewal remains INCONCLUSIVE.
+
+M-DHCP-3 is **OMITTED / NOT_EVALUATED** in this profile, reason
+`qualification_event_source_and_release_not_qualified`. It is not marked
+supported and it is not silently removed: no observer is registered or
+unregistered, and a regression proves the profile dispatches zero
+`registerEvent` calls. The registration subscribes on the port while Cisco
+documents `dhcpSucceed`/`dhcpFailed` on `DhcpClientProcess`, and an unregister
+attempt that merely did not throw is not observed detachment. The allowance it
+held is spent on readiness and on preserving the observed default, never on
+another acquisition. R-EVT-05 production gating is unchanged, and the
+deferral ends only with a separately reviewed event change that fixes source
+identity, correlation and release evidence.
 
 M-DNS-3 is declared OMITTED rather than run again. The Q1-file run at
 `0850de3` recorded `DnsClient.getServerIp` for its exact reader, model, build
@@ -100,10 +160,10 @@ request exactly as it reports a slow or lost one -- `no_response_within_deadline
 -- while fresh non-marker content proves a marker mismatch rather than a
 refusal. A negative control can therefore contradict the model (the marker was
 retrieved while the listener read back as disabled) but never establish it.
-Each negative runs only after a working positive in its own mode (an HTTP-mode
-fetch with both listeners enabled, then HTTPS-only); a failed positive leaves
-its negatives unrun and spends one read of listener flags and fixture-port
-readiness instead. The record names what no documented reader provides: the
+The readiness gate runs before the first positive; each negative then runs only
+after a working positive in its own mode (an HTTP-mode fetch with both
+listeners enabled, then HTTPS-only); a failed positive leaves its negatives
+unrun and spends one read of listener flags and fixture-port readiness instead. The record names what no documented reader provides: the
 client's request URL, the HTTP reader's mode, and a switch port's STP state.
 The measurement records its observations and stays INCONCLUSIVE.
 

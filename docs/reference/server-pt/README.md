@@ -34,6 +34,8 @@ are not restated here; read them in the current brief.
 | `server-pt-services-brief-9973f66.md` | `docs/engineering/change-briefs/server-pt-services.md` at commit `9973f66` | the current brief, which projects it; sections 8–12 hold the S0, S1 and S4a narratives |
 | `server-pt-services-brief-0850de3.md` | the same brief at the accepted S4a commit `0850de3` | the current brief; it holds the S4A-C1..C4 correction delta and its verification evidence |
 | `evidence/q-batch-0850de3/` | the operator batch `server-pt-q-batch-0850de3.zip` and its 15 extracted files, 2026-09-19 | nothing: LIVE evidence is immutable. The current brief states which conclusions each record permits |
+| `assignments/Codex_Continuation_A1_Q3_Q1_S1b.md` | amendment 01 to campaign `SERVER-PT-D02-Q3-Q1-AUTOFIX-01`, Downloads, 2026-09-19 | nothing yet: it is the active authority for Block F of the current brief |
+| `evidence/campaign-d02-q3-q1-autofix-01/` | the appended amendment ledger entry and its digests, 2026-09-19 | nothing: it extends the campaign chain without replacing any earlier entry |
 
 The companion overlay ZIP named by the S1 review was not present, so the
 individually supplied source files were used and hash-verified without
@@ -58,6 +60,16 @@ and channel.
 `BATCH-STATUS.md` is the operator's handoff for the batch, preserved as
 received. Its eligibility section was an input to a later decision, not an
 authorization.
+
+## Campaign `SERVER-PT-D02-Q3-Q1-AUTOFIX-01`
+
+The campaign package itself stays with the operator, outside this repository:
+`SERVER-PT-D02-Q3-Q1-AUTOFIX-01.zip`, 127,800 bytes, SHA-256
+`1b71018ac383db84fa3ba64e58fa5a020e180e0d0b0d37cd2120e5d4e75dfa2f`, whose 80
+files total 318,993 bytes. It carries the three LIVE attempt directories and
+the first three correction-ledger entries.
+[`evidence/campaign-d02-q3-q1-autofix-01/`](evidence/campaign-d02-q3-q1-autofix-01/README.md)
+appends one entry to that chain and replaces nothing in it.
 
 ## Adding a record
 

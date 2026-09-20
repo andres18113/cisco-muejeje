@@ -123,8 +123,9 @@ foreign/user state.
 | R-COV-01/02 — complete, honestly labelled per-client results | `apply_enterprise_services.py`, `service_compiler.py`; `tests/test_apply_enterprise_services.py` |
 | **R-MAIL-01..06, R-SEC-01/03/05/06, R-OBS-04, R-EVT-04..07, R-REG-02 — S2 mail** | **this brief (active), then** [E6 architecture, *Mail under the event fallback*](../../architecture/enterprise-services.md#mail-under-the-event-fallback) |
 | R-QUAL-05/06 — re-qualification after a content or protocol change | this brief, **Open decisions** |
+| **R-HTTPS-01 — the shared page store (S1b)** | **this brief, Block F (active);** `domain/enterprise/models/service_plan.py` (`SetHttpContent`), `service_compiler.py` (`_bind_shared_web_content`, `SHARED_PAGE_STORE_RECORD`); `tests/test_service_https_content.py` |
 | **R-DHCP-01..08, R-EVT-05/06/07, R-REG-02 — S3 DHCP** | **this brief (active), then** [E6 architecture](../../architecture/enterprise-services.md#server-pt-dhcp-under-the-event-fallback) |
-| R-HTTPS-01/04, R-DNS-04, R-MAIL-07, R-EVT-01..03, R-OBS-05 | **not active.** Their text stays in the [archived brief](../../reference/server-pt/server-pt-services-brief-9973f66.md). R-EVT-01..03 and R-OBS-05 describe observer registration, which the measured fallback forbids in production |
+| R-HTTPS-04, R-DNS-04, R-MAIL-07, R-EVT-01..03, R-OBS-05 | **not active.** Their text stays in the [archived brief](../../reference/server-pt/server-pt-services-brief-9973f66.md). R-EVT-01..03 and R-OBS-05 describe observer registration, which the measured fallback forbids in production |
 
 Supersessions that still bind: TD-12.1 (the classifier reads the original
 runtime input), TD-12.2 (a missing list item never synthesizes channel
@@ -750,6 +751,57 @@ default. Exact-SHA CI is pending because push is not authorized.
 The whole-branch review was performed by the author; independent review is
 still required and was not simulated because this assignment forbids
 subagents.
+
+## Block F implementation evidence
+
+Observed offline in worktree `Cisco-MCP-s3`, branch `feature/server-pt-s3-dhcp`,
+from exact commit `c0307ca` (tree `407760f`), which equals the published
+`cisco/feature/server-pt-s3-dhcp` head and descends from `cisco/main`
+`6263344`. The worktree owns its `.venv` and `packet_tracer_mcp` resolves
+inside it. `AGENTS.md` and `docs/engineering/standards.md` were read from this
+checkout at the start of the work. This Claude Code session was started here,
+and `CLAUDE.md` with both imported files are present as project instructions;
+an independent `/context` listing was not captured, so effective loading is
+recorded as **observed through the session's own instruction context**, not as
+a separately reproduced check. Nothing opened or contacted Packet Tracer,
+started a product bridge, ran a Q stage, promoted a capability, reset a claim
+or merged to main.
+
+| Commit | Scope |
+| --- | --- |
+| `468d81a` | Block F design delta recorded before any behavior change |
+| `56d80b4` | typed Q3 coexistence, the readiness gate, the E5-before-E6 classification and the M-DHCP-3 omission |
+| `702a271` | S1b shared page store: one content action per host page, conflict refusal, expectations and metadata |
+
+### Causal RED and GREEN
+
+| Boundary | RED | GREEN |
+| --- | --- | --- |
+| baseline admission | the real CLI run with the exact observed native pool stopped at `q3_initial_server_state_not_admissible`, exactly as both LIVE records did | the measured `serverPool` row admits, an arbitrary `DEFAULT`, a changed field, a wrong type, a duplicate, an extra pool, an enabled process, a truncated inventory, a foreign subject and an unqualified build or channel all refuse before any effect |
+| default preservation | a run whose default moved under it completed and dispatched the acquisitions anyway | the three bounded snapshots are recorded, the difference is named, and `q3_native_default_changed:default_pool_changed:serverPool.gateway` stops the stage with `dhcp_runs == []` |
+| readiness | with every port down, the Q1 executor wrote its marked page and started four fetches; the Q3 executor requested both acquisitions | the gate reads at most four times inside 30 monotonic seconds, and an unready fixture produces no marked page, no created client and no `dhcpRun`, with both stages still finalizing and proving restoration |
+| native boolean integrity | `isPortUp` answering with a number read back as `port_up: false` | it reads back as `port_up: null` with `port_up_type: "number"`, the sample is incomplete rather than down, and no fetch starts |
+| E5 before E6 | a short E5 batch and an unverifiable foundation each reached `addPool` | both stop with `q3_foundations_not_established` before any server mutation, and a contradicted product read-back stops before the same-claim guard instead of after it |
+| event deferral | the profile registered four observers and called detachment observed from an attempt that did not throw | the amended profile dispatches zero `registerEvent` and zero `unregisterIpcEventByID` calls, records M-DHCP-3 OMITTED with its reason, and leaves no observer release row |
+| shared page store | the compiler emitted no HTTPS content action at all, so an HTTPS fetch verified the empty marker | one action serves both protocols, both expectations resolve the same marker, HTTPS-only publishes through `HttpsServer` with no HTTP enable, and two stated contents refuse with `WEB_CONTENT_CONFLICT` and zero dispatched calls |
+| plan identity | adding the shared metadata moved the semantic hash of every existing plan | self-only ownership and the source record stay out of the hash, so `844b7665…b66e8` is unchanged and only a real shared binding moves it |
+
+### Suites and gates
+
+| Check | Commit/tree | Result |
+| --- | --- | --- |
+| focused qualification closure | `56d80b4` | 282 passed |
+| S1b acceptance closure | `702a271` | 18 passed |
+| full offline suite | `56d80b4` | 6504 passed, 3 skipped |
+| full offline suite | `702a271` | 6522 passed, 3 skipped, 3 pre-existing warnings |
+| quality gate, worktree mode | `702a271` | 84 changed Python files gated, 0 mechanical exemptions, lint and format clean |
+| namespace inventory | `56d80b4` | 0 active imports, 0 active strings, 0 unreviewed inert mentions |
+| whitespace | `702a271` | worktree and index clean |
+
+Both LIVE slots remain unused. The amendment's section 7 attempts are
+conditional on the delivery gate, the fast-forward publication and exact-SHA
+CI, and a correct terminal inconclusive result is an acceptable outcome of
+either one.
 
 ## Open decisions
 

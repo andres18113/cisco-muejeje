@@ -158,6 +158,34 @@
       "archive_path": "server-pt-services-brief-0850de3.md",
       "bytes": 28438,
       "sha256": "9526ca920375eb3747fffa3d1e7a4b3d732e771a8c24355a35e71202d6cc03e7"
+    },
+    {
+      "source_name": "Codex_Continuation_A1_Q3_Q1_S1b.md",
+      "archive_path": "assignments/Codex_Continuation_A1_Q3_Q1_S1b.md",
+      "bytes": 16758,
+      "sha256": "70f2b7ad94ecfa915333dc3ef291b7e742fb6186df7a879a033d227a036e9040",
+      "origin": "maintainer Downloads directory, 2026-09-19"
+    },
+    {
+      "source_name": "amendment-ledger.jsonl",
+      "archive_path": "evidence/campaign-d02-q3-q1-autofix-01/amendment-ledger.jsonl",
+      "bytes": 3537,
+      "sha256": "79140fec96bff90e853107b607dec19f4251a36c6f3851b37df2481cf7afe81a",
+      "origin": "produced by this delivery, 2026-09-19"
+    },
+    {
+      "source_name": "AMENDMENT-01.sha256",
+      "archive_path": "evidence/campaign-d02-q3-q1-autofix-01/AMENDMENT-01.sha256",
+      "bytes": 326,
+      "sha256": "43e61ffe62ac7fe68e2557b66d7a508ff62153540e0eabdde1668124c7b8b98b",
+      "origin": "produced by this delivery, 2026-09-19"
+    },
+    {
+      "source_name": "README.md",
+      "archive_path": "evidence/campaign-d02-q3-q1-autofix-01/README.md",
+      "bytes": 3671,
+      "sha256": "1efdcf383cc60a1b983f1e858ad4221cf0c16f07b3c89becf58513624ab9e240",
+      "origin": "produced by this delivery, 2026-09-19"
     }
   ]
 }
