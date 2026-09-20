@@ -112,6 +112,41 @@ class PlannedStep:
     operations: int
 
 
+class DiagnosticPrecondition(StrEnum):
+    """Operational state an executable diagnostic run can establish.
+
+    These are observations about the subject, not conclusions about the
+    hypothesis. A measurement may conclude `NEGATIVE_OBSERVED` -- that is
+    exactly what a diagnostic looks for -- while still having established the
+    state its successor depends on, and it may conclude nothing useful while
+    having established none. Keeping the two apart is what lets a coherent
+    native-default change at D1 be the finding instead of a gate that stops
+    D2 from ever running.
+    """
+
+    #: The authorized subject and session are bound and the fixtures this
+    #: stage owns exist under it.
+    SUBJECT_SESSION = "subject_session_bound"
+    #: The retained inventory was read coherently at least once.
+    INVENTORY_COHERENT = "inventory_coherent"
+    #: The server's static addressing was applied and read back.
+    SERVER_ADDRESSING = "server_addressing_established"
+    #: The intended pool was written and its stored configuration verified.
+    POOL_CONFIGURED = "pool_configuration_established"
+    #: The DHCP process was verified to be off.
+    PROCESS_DISABLED_VERIFIED = "process_disabled_verified"
+    #: The DHCP process was verified to have transitioned on.
+    PROCESS_ENABLED_VERIFIED = "process_enabled_verified"
+    #: Both listeners reported their enable flags and read-back ports.
+    LISTENERS_ESTABLISHED = "listeners_established"
+    #: A fresh attributed forwarding sample was admitted for the exact VLAN.
+    FORWARDING_OBSERVED = "forwarding_sample_observed"
+    #: This run's marker is in the served page.
+    MARKER_PAGE = "marker_page_established"
+    #: One attributed ping between two verified bindings was taken.
+    PING_ATTRIBUTED = "ping_attributed"
+
+
 @dataclass(frozen=True)
 class ExperimentSpec:
     """One measurement: its hypothesis and what running it requires.
@@ -129,8 +164,23 @@ class ExperimentSpec:
     procedure: str
     planned_operations: int
     prerequisites: tuple[str, ...] = ()
+    #: The operational state a run must have established before this
+    #: measurement may be attempted, which is not the same thing as what an
+    #: earlier measurement concluded. An executable diagnostic is admitted
+    #: from these, because its dependent variable is allowed to be negative:
+    #: a coherent native-default change is the finding, not a reason the next
+    #: intervention cannot run. `prerequisites` keeps deciding every stage
+    #: that declares no diagnostic profile, so Q0/Q1/Q3 and every product
+    #: caller are unchanged and no NEGATIVE or UNKNOWN conclusion is globally
+    #: admitted anywhere.
+    operational_prerequisites: tuple[str, ...] = ()
     capabilities: tuple[str, ...] = ()
     omission_reason: str = ""
+    #: A read-only terminal observation belongs to the run rather than to its
+    #: success, so it is still attempted after a primary failure when subject
+    #: authority and the ordinary allowance permit. It dispatches no stimulus
+    #: and never spends the finalization reserve.
+    terminal_observation: bool = False
 
 
 @dataclass(frozen=True)
@@ -312,7 +362,7 @@ STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.Q2: (60, 900),
     QualificationStage.Q3: (60, 1200),
     QualificationStage.D_DHCP: (50, 900),
-    QualificationStage.D_WEB: (68, 900),
+    QualificationStage.D_WEB: (80, 900),
 }
 
 Q0_PC = "__MCP_E6Q_PC1"
@@ -724,6 +774,24 @@ DIAGNOSTIC_ACCESS_VLAN = 1
 #: offsets from the request start. It is deliberately decoupled from the HTTP
 #: deadline: three slots, all inside the reader's own 8 s window.
 D_WEB_INSPECTION_SCHEDULE = (1.0, 3.0, 6.0)
+#: How many inspections one diagnostic ping may take. The safe 30 s window
+#: is unchanged and is spread across them, so the last read lands at or
+#: after the deadline and a slow destination is still classified from its
+#: own statistics rather than from a shortened wait. Unbounded, that poll
+#: is limited only by the window and the 0.25 s interval, which is tens of
+#: counted calls and not the one the earlier figure assumed.
+D_WEB_PING_INSPECTIONS = 6
+#: How many channel calls one registered spanning-tree sample may make. It
+#: mirrors `ACCESS_FORWARDING_SAMPLE_CALLS` in the runtime that enforces
+#: it; a contract test pins the two together so the arithmetic here and
+#: the bound applied there cannot drift apart.
+D_WEB_FORWARDING_SAMPLE_CALLS = 6
+#: The bounded samples each neutral forwarding observation takes. Two
+#: closely spaced samples do not cover a nominal 30 s convergence window
+#: and are not claimed to: they are two observations inside it, and the
+#: schedule is stated rather than implied.
+D_WEB_FORWARDING_SAMPLES_BEFORE = 2
+D_WEB_FORWARDING_SAMPLES_AFTER = 1
 #: One bounded late read, after the deadline and before the release.
 D_WEB_LATE_READ_OFFSET = 10.0
 
@@ -799,7 +867,11 @@ def _d_dhcp() -> StageDefinition:
                 # The endpoint batch is one `send` plus one verification read
                 # for the single addressing expectation, then one reading.
                 planned_operations=3,
-                prerequisites=("M-DDHCP-0",),
+                operational_prerequisites=(
+                    DiagnosticPrecondition.SUBJECT_SESSION,
+                    DiagnosticPrecondition.INVENTORY_COHERENT,
+                    DiagnosticPrecondition.PROCESS_DISABLED_VERIFIED,
+                ),
                 capabilities=("server.dhcp_default_pool_observation",),
             ),
             ExperimentSpec(
@@ -814,7 +886,11 @@ def _d_dhcp() -> StageDefinition:
                 # One pool dispatch, its fresh server-state read-back, and
                 # one native reading.
                 planned_operations=3,
-                prerequisites=("M-DDHCP-1",),
+                operational_prerequisites=(
+                    DiagnosticPrecondition.SUBJECT_SESSION,
+                    DiagnosticPrecondition.INVENTORY_COHERENT,
+                    DiagnosticPrecondition.SERVER_ADDRESSING,
+                ),
                 capabilities=("server.dhcp_pool_configuration",),
             ),
             ExperimentSpec(
@@ -829,7 +905,11 @@ def _d_dhcp() -> StageDefinition:
                 # One enable dispatch, the rebound server-state read-back and
                 # one native reading.
                 planned_operations=3,
-                prerequisites=("M-DDHCP-2",),
+                operational_prerequisites=(
+                    DiagnosticPrecondition.SUBJECT_SESSION,
+                    DiagnosticPrecondition.INVENTORY_COHERENT,
+                    DiagnosticPrecondition.POOL_CONFIGURED,
+                ),
                 capabilities=("server.dhcp_process_enable",),
             ),
             ExperimentSpec(
@@ -841,8 +921,9 @@ def _d_dhcp() -> StageDefinition:
                 required=True,
                 procedure="D_DHCP_FINAL",
                 planned_operations=1,
-                prerequisites=("M-DDHCP-0",),
+                operational_prerequisites=(DiagnosticPrecondition.SUBJECT_SESSION,),
                 capabilities=("server.dhcp_default_pool_observation",),
+                terminal_observation=True,
             ),
         ),
         reserve=(
@@ -938,12 +1019,19 @@ def _d_web() -> StageDefinition:
                 ),
                 required=True,
                 procedure="D_WEB_FORWARDING",
-                # Two bounded samples at four counted calls each: the terminal
-                # state read, the dispatch, one output convergence read and
-                # the attribution read; plus one read of simulation time after
-                # the bounded sample loop.
-                planned_operations=9,
-                prerequisites=("M-DWEB-0",),
+                # Two bounded samples, each capped at its own channel call
+                # budget, plus one read of simulation time after the loop.
+                # A registered query is session preparation, dispatch,
+                # convergence reads, attribution and pager handling, and a
+                # proved-corrupt dispatch is retried, so four was the
+                # intended path rather than the worst case.
+                planned_operations=(
+                    D_WEB_FORWARDING_SAMPLES_BEFORE * D_WEB_FORWARDING_SAMPLE_CALLS + 1
+                ),
+                operational_prerequisites=(
+                    DiagnosticPrecondition.SUBJECT_SESSION,
+                    DiagnosticPrecondition.LISTENERS_ESTABLISHED,
+                ),
                 capabilities=("switch.access_forwarding_observation",),
             ),
             ExperimentSpec(
@@ -955,7 +1043,10 @@ def _d_web() -> StageDefinition:
                 required=True,
                 procedure="D_WEB_PAGE",
                 planned_operations=1,
-                prerequisites=("M-DWEB-1",),
+                operational_prerequisites=(
+                    DiagnosticPrecondition.SUBJECT_SESSION,
+                    DiagnosticPrecondition.LISTENERS_ESTABLISHED,
+                ),
                 capabilities=("https.page_table",),
             ),
             ExperimentSpec(
@@ -967,10 +1058,16 @@ def _d_web() -> StageDefinition:
                 ),
                 required=True,
                 procedure="D_WEB_PING",
-                # The bind-before-ping probe: two endpoint address reads, the
-                # three-call typed ping, two endpoint address reads after it.
-                planned_operations=7,
-                prerequisites=("M-DWEB-2",),
+                # The bind-before-ping probe: two endpoint address reads,
+                # the typed ping, two endpoint address reads after it. The
+                # ping is one dispatch, its bounded inspections and one
+                # attribution read; the single inspection of the earlier
+                # figure was the fastest path, not the worst one.
+                planned_operations=4 + 2 + D_WEB_PING_INSPECTIONS,
+                operational_prerequisites=(
+                    DiagnosticPrecondition.SUBJECT_SESSION,
+                    DiagnosticPrecondition.MARKER_PAGE,
+                ),
                 capabilities=("forwarding.typed_ping",),
             ),
             ExperimentSpec(
@@ -985,7 +1082,10 @@ def _d_web() -> StageDefinition:
                 # The start, the three scheduled inspections, the late control
                 # read and the release of the owned client.
                 planned_operations=6,
-                prerequisites=("M-DWEB-3",),
+                operational_prerequisites=(
+                    DiagnosticPrecondition.SUBJECT_SESSION,
+                    DiagnosticPrecondition.MARKER_PAGE,
+                ),
                 capabilities=("https.client_mode", "https.client_timeline"),
             ),
             ExperimentSpec(
@@ -997,10 +1097,15 @@ def _d_web() -> StageDefinition:
                 ),
                 required=True,
                 procedure="D_WEB_AFTER",
-                # One listener/port reading, one four-call forwarding sample
+                # One listener/port reading, one bounded forwarding sample
                 # and one separate simulation-time read.
-                planned_operations=6,
-                prerequisites=("M-DWEB-4",),
+                planned_operations=(
+                    1
+                    + D_WEB_FORWARDING_SAMPLES_AFTER * D_WEB_FORWARDING_SAMPLE_CALLS
+                    + 1
+                ),
+                operational_prerequisites=(DiagnosticPrecondition.SUBJECT_SESSION,),
+                terminal_observation=True,
                 capabilities=("switch.access_forwarding_observation",),
             ),
         ),
@@ -1195,12 +1300,19 @@ class DiagnosticLifecycleObservation:
     error represents zero, multiple or unreadable processes. Mailbox entries
     include request, response and temporary command artifacts but exclude the
     heartbeat, whose freshness is liveness rather than process identity.
+
+    `process_incarnation` is the bound process's observed creation identity. A
+    PID and a path name a slot the operating system reuses; a second Packet
+    Tracer started into the same PID polls the same mailbox and would
+    otherwise satisfy a pairing it never earned. An empty value is an
+    unobserved incarnation, which is unknown and never a match.
     """
 
     process_id: int | None = None
     process_path: str = ""
     product_version: str = ""
     file_version: str = ""
+    process_incarnation: str = ""
     mailbox_entries: tuple[str, ...] = ()
     error: str = ""
 
@@ -1646,6 +1758,17 @@ def diagnostic_lifecycle_refusals(
                 "The observed Packet Tracer PID/path does not match authorization.",
             )
         )
+    if not observed.process_incarnation:
+        # A PID and a path name a slot, not a process. Without the creation
+        # identity there is nothing later readings could be compared against,
+        # so the pairing cannot be bound at all.
+        found.append(
+            refusal(
+                RefusalKind.UNOBSERVABLE,
+                RefusalSubject.PROCESS_INSTANCE,
+                "The observed Packet Tracer process reports no creation identity.",
+            )
+        )
     versions = tuple(
         value for value in (observed.product_version, observed.file_version) if value
     )
@@ -1693,7 +1816,12 @@ def diagnostic_lifecycle_continuity(
     if observed.error:
         return (f"process_instance:unobservable:{observed.error}",)
     found: list[str] = []
-    if _process_identity(observed) != _process_identity(preflight):
+    if not observed.process_incarnation or not preflight.process_incarnation:
+        # An unobserved creation identity is unknown, and unknown is not the
+        # same process. A reused PID at the authorized path would otherwise
+        # pass this comparison on the strength of the slot alone.
+        found.append("process_instance:incarnation_unobserved")
+    elif _process_identity(observed) != _process_identity(preflight):
         found.append("process_instance:changed")
     if observed.mailbox_entries:
         found.append("mailbox:not_drained:" + ",".join(observed.mailbox_entries[:8]))
@@ -1702,13 +1830,14 @@ def diagnostic_lifecycle_continuity(
 
 def _process_identity(
     observed: DiagnosticLifecycleObservation,
-) -> tuple[int | None, str, str, str]:
-    """Return the four local facts that together name one Packet Tracer."""
+) -> tuple[int | None, str, str, str, str]:
+    """Return the local facts that together name one Packet Tracer incarnation."""
     return (
         observed.process_id,
         observed.process_path,
         observed.product_version,
         observed.file_version,
+        observed.process_incarnation,
     )
 
 

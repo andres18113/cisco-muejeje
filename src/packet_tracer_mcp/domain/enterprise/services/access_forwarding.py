@@ -214,6 +214,9 @@ def access_forwarding_facts(
         "deadline_seconds": observation.deadline_seconds,
         "elapsed_ms": observation.elapsed_ms,
         "deadline_reached": observation.deadline_reached,
+        "sample_call_budget": observation.sample_call_budget,
+        "channel_calls": observation.channel_calls,
+        "sample_budget_exhausted": observation.sample_budget_exhausted,
         "simulation_time": observation.simulation_time,
         "failure_reason": observation.failure_reason,
         "lights": [

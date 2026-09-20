@@ -1745,6 +1745,68 @@ def assess_native_default_interval(
     return Assessment(SUPPORTED, facts=facts, limitations=limitations)
 
 
+def assess_native_default_cumulative(
+    *,
+    label: str,
+    baseline: DefaultPoolSnapshot,
+    final: DefaultPoolSnapshot,
+    interventions: Sequence[str] = (),
+    declared_native_calls: Sequence[str] = (),
+) -> Assessment:
+    """State what the run's first and last native readings identify together.
+
+    This pair does not bracket one intervention. It spans every intervention
+    the run dispatched, so a difference between them is cumulative and belongs
+    to the sequence, never to the last call inside it. Naming one intervention
+    here would report a span as a step.
+
+    `declared_native_calls` is the footprint the generators declare for those
+    interventions. It is what would be emitted, not a count of what executed:
+    an adjacent interval is where a single intervention is attributed, and the
+    typed action rows are where execution is observed.
+    """
+    differences = default_pool_differences(baseline, final)
+    facts = {
+        label: {
+            "before": baseline.label,
+            "after": final.label,
+            "span": "cumulative_baseline_to_final",
+            "interventions": list(interventions),
+            "declared_native_calls": list(declared_native_calls),
+            "differences": list(differences),
+            "observed": baseline.observed and final.observed,
+        }
+    }
+    limitations = [
+        DIAGNOSTIC_SCOPE,
+        "cumulative_span_identifies_the_sequence_not_one_intervention:"
+        + ("+".join(interventions) if interventions else "none"),
+        "declared_call_footprint_is_not_an_observed_execution_count",
+    ]
+    if not (baseline.observed and final.observed):
+        return Assessment(
+            INCONCLUSIVE,
+            facts=facts,
+            causes=[
+                f"native_default_unobserved:{baseline.label}"
+                if not baseline.observed
+                else f"native_default_unobserved:{final.label}"
+            ],
+            limitations=limitations,
+            outcome_unknown=True,
+        )
+    if differences:
+        return Assessment(
+            NEGATIVE,
+            facts=facts,
+            causes=[
+                f"native_default_changed_cumulatively:{item}" for item in differences
+            ],
+            limitations=limitations,
+        )
+    return Assessment(SUPPORTED, facts=facts, limitations=limitations)
+
+
 def assess_baseline_drift(
     first: DefaultPoolSnapshot, second: DefaultPoolSnapshot
 ) -> Assessment:

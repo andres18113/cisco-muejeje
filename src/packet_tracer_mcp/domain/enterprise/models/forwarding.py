@@ -207,6 +207,17 @@ class AccessForwardingObservation:
     deadline_seconds: float = 0.0
     elapsed_ms: int = 0
     deadline_reached: bool = False
+    #: Every channel call one sample was allowed, and how many the whole
+    #: observation actually made. A registered query is not one call:
+    #: session preparation, the dispatch, output convergence, attribution
+    #: and pager handling are nested calls a caller's own deadline cannot
+    #: cap from outside, so they are bounded here and counted here.
+    sample_call_budget: int = 0
+    channel_calls: int = 0
+    #: True when a sample ended on that budget rather than on its own
+    #: completion. Such a sample is incomplete by construction: it is
+    #: reported as exactly that and grants no forwarding permission.
+    sample_budget_exhausted: bool = False
     #: What the simulation-time reader reported, when the composition supplied
     #: one. `absent` means no such reader was composed, which is a statement
     #: about this run and never a claim that simulation time did not move.

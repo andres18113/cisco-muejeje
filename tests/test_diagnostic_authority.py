@@ -8,11 +8,14 @@ under which single attempt identity.
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import replace
 
 import pytest
 
 from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
+    D_WEB_FORWARDING_SAMPLE_CALLS,
+    D_WEB_PING_INSPECTIONS,
     DIAGNOSTIC_PROFILE_VERSION,
     STAGE_DEFINITIONS,
     DiagnosticLifecycleObservation,
@@ -29,11 +32,18 @@ from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     stage_definition,
     step_selection_refusals,
 )
+from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+    ACCESS_FORWARDING_SAMPLE_CALLS,
+)
+from packet_tracer_mcp.infrastructure.execution.typed_ping import TypedPingExecutor
 
 SHA = "a" * 40
 TREE = "b" * 40
 BUILD = "9.0.1.0858"
 PROCESS_ID = 4242
+#: The creation identity that distinguishes one incarnation of that PID
+#: from the next process the operating system puts in the same slot.
+INCARNATION = "2026-09-20T09:15:00.0000000+00:00"
 PROCESS_PATH = r"C:\Program Files\Cisco Packet Tracer\bin\PacketTracer.exe"
 DIAGNOSTIC_STAGES = (QualificationStage.D_DHCP, QualificationStage.D_WEB)
 
@@ -103,9 +113,64 @@ def test_both_diagnostic_stages_fit_their_proposed_ceiling(stage):
 
 
 def test_the_composed_worst_cases_are_pinned_not_only_below_the_ceiling():
-    """A loose less-than assertion cannot detect a missing nested call."""
+    """A loose less-than assertion cannot detect a missing nested call.
+
+    GF-R4: the D-WEB figure is recomputed from the bounded compositions
+    instead of from their fastest observed path. The ping is one dispatch,
+    its bounded inspections and one attribution read; a registered
+    spanning-tree sample is capped at its own channel call budget rather than
+    at the four calls an instantly answered stub happened to make.
+    """
     assert STAGE_DEFINITIONS[QualificationStage.D_DHCP].planned_minimum_operations == 45
-    assert STAGE_DEFINITIONS[QualificationStage.D_WEB].planned_minimum_operations == 63
+    d_web = STAGE_DEFINITIONS[QualificationStage.D_WEB]
+    assert d_web.planned_minimum_operations == 74
+    per_experiment = {item.id: item.planned_operations for item in d_web.experiments}
+    assert per_experiment["M-DWEB-1"] == 2 * D_WEB_FORWARDING_SAMPLE_CALLS + 1 == 13
+    assert per_experiment["M-DWEB-3"] == 6 + D_WEB_PING_INSPECTIONS == 12
+    assert per_experiment["M-DWEB-5"] == 2 + D_WEB_FORWARDING_SAMPLE_CALLS == 8
+
+
+def test_the_declared_sample_bound_is_the_one_the_runtime_enforces():
+    """A budget figure that the enforcing runtime does not share is a guess."""
+    assert D_WEB_FORWARDING_SAMPLE_CALLS == ACCESS_FORWARDING_SAMPLE_CALLS
+
+
+def test_the_ping_bound_is_the_one_the_production_probe_composes():
+    """The stage pays for the inspections the composed executor may take."""
+    taken: list[int | None] = []
+
+    class _Recording(TypedPingExecutor):
+        def __init__(self, *args, **kwargs):
+            taken.append(kwargs.get("max_inspections"))
+            super().__init__(*args, **kwargs)
+
+    module = importlib.import_module(
+        "packet_tracer_mcp.adapters.cli.service_qualification"
+    )
+    original = module.TypedPingExecutor
+    module.TypedPingExecutor = _Recording
+    try:
+        module._forwarding_probe(_InertBound())
+    finally:
+        module.TypedPingExecutor = original
+    assert taken == [D_WEB_PING_INSPECTIONS]
+
+
+class _InertBound:
+    """A ledgered transport stand-in; composing a probe dispatches nothing."""
+
+    def send_and_wait(self, _script: str, _timeout: float) -> str | None:
+        """Never called: this test only observes how the probe is composed."""
+        raise AssertionError("composing a probe must not dispatch")
+
+    @staticmethod
+    def clock() -> float:
+        """Return a fixed time; nothing here polls."""
+        return 0.0
+
+    @staticmethod
+    def capped_sleep(_seconds: float) -> None:
+        """Never sleep while composing."""
 
 
 @pytest.mark.parametrize(
@@ -262,6 +327,7 @@ def test_the_local_lifecycle_must_match_the_exact_process_and_empty_mailbox():
         process_id=PROCESS_ID,
         process_path=PROCESS_PATH,
         product_version=BUILD,
+        process_incarnation=INCARNATION,
     )
     assert diagnostic_lifecycle_refusals(authorization, observed, BUILD) == ()
 
@@ -312,6 +378,7 @@ def test_the_same_process_and_a_drained_mailbox_must_survive_finalization():
         process_id=PROCESS_ID,
         process_path=PROCESS_PATH,
         product_version=BUILD,
+        process_incarnation=INCARNATION,
     )
     assert diagnostic_lifecycle_continuity(preflight, preflight) == ()
 
@@ -335,6 +402,7 @@ def test_an_unreadable_second_reading_is_unknown_and_never_permission():
         process_id=PROCESS_ID,
         process_path=PROCESS_PATH,
         product_version=BUILD,
+        process_incarnation=INCARNATION,
     )
     lost = DiagnosticLifecycleObservation(error="packet_tracer_process_count:0")
     assert diagnostic_lifecycle_continuity(preflight, lost) == (
@@ -352,6 +420,7 @@ def test_artifacts_left_in_the_mailbox_are_named_and_never_deleted_here():
         process_id=PROCESS_ID,
         process_path=PROCESS_PATH,
         product_version=BUILD,
+        process_incarnation=INCARNATION,
     )
     undrained = replace(preflight, mailbox_entries=("req_7.js", "res_7.txt"))
     assert diagnostic_lifecycle_continuity(preflight, undrained) == (

@@ -121,7 +121,12 @@ def _runtime(ios, clock: _Clock):
         clock=clock,
         sleeper=clock.sleep,
     )
+    # The neutral observation dispatches through its own executor, the
+    # one bound to the counting channel, so that is the seam a
+    # sampling-rule test replaces. `_ios` stays wired for every other
+    # query this runtime answers.
     runtime._ios = ios
+    runtime._forwarding_ios = ios
     return runtime, dispatched
 
 

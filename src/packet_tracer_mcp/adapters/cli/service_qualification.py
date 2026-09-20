@@ -68,6 +68,7 @@ from ...domain.enterprise.models.service_plan import (
 from ...domain.enterprise.models.service_qualification import (
     D_WEB_INSPECTION_SCHEDULE,
     D_WEB_LATE_READ_OFFSET,
+    D_WEB_PING_INSPECTIONS,
     Q3_DNS_IPV4,
     Q3_GATEWAY_IPV4,
     Q3_PC1,
@@ -129,6 +130,9 @@ from ...infrastructure.execution.service_qualification_probes import (
 )
 from ...infrastructure.execution.source_preflight import GitSourceReader
 from ...infrastructure.execution.typed_ping import TypedPingExecutor
+from ...infrastructure.persistence.campaign_coordination import (
+    FileCampaignCoordinator,
+)
 from ...infrastructure.persistence.service_qualification_store import (
     QualificationRecordStore,
 )
@@ -555,9 +559,12 @@ def _forwarding_probe(bound: LedgeredTransport) -> _SerializedForwardingProbe:
     """Compose the real probe: documented endpoint getters plus one typed ping.
 
     `measurement_attempts` is one, because a diagnostic measures once. The
-    safe ping timeout stays the executor's own contract: the total cost is
-    bounded by the stage ledger, never by shortening a measurement into a
-    premature negative.
+    safe ping timeout stays the executor's own contract and is not
+    shortened: what is bounded is how many inspections the poll may spend
+    inside that window, because every one of them is a counted operation
+    and the stage has to account for all of them in advance. The window is
+    spread across them, so a destination that publishes its statistics
+    late is still classified from its own output.
     """
     return _SerializedForwardingProbe(
         ForwardingProbeExecutor(
@@ -565,6 +572,7 @@ def _forwarding_probe(bound: LedgeredTransport) -> _SerializedForwardingProbe:
             TypedPingExecutor(
                 bound.send_and_wait,
                 measurement_attempts=1,
+                max_inspections=D_WEB_PING_INSPECTIONS,
                 clock=bound.clock,
                 sleeper=bound.capped_sleep,
             ),
@@ -609,6 +617,10 @@ def production_boundaries(governed_root: Path) -> QualificationBoundaries:
         forwarding_probe=_forwarding_probe,
         diagnostic_service_runtime=_diagnostic_service_runtime,
         diagnostic_lifecycle=PacketTracerDiagnosticLifecycleReader().read,
+        # Exclusion is taken beside the mailbox, which is what two
+        # checkouts share, and never in this checkout's record directory,
+        # which neither of them can see from the other.
+        campaign_coordinator=FileCampaignCoordinator(),
     )
 
 

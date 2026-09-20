@@ -7,10 +7,9 @@ import json
 import re
 from collections.abc import Callable
 from dataclasses import replace
-
-from ...domain.models.typed_ping import TypedPingResult
 from time import monotonic, sleep
 
+from ...domain.models.typed_ping import TypedPingResult
 from .command_dispatch import (
     IDLE_GUARD_JS,
     PAGER_GUARD_JS,
@@ -27,7 +26,6 @@ from .ios_terminal import (
     execution_identity_diagnostics,
     extract_terminal_command_window,
 )
-
 
 # El `[^\n]*` final existe para que `group(0)` sea la LINEA de estadistica
 # completa: el contrato publico de `pt_ping` venia mostrando `Lost = N` y el
@@ -69,9 +67,20 @@ class TypedPingExecutor:
         timeout_seconds: float = SAFE_PING_TIMEOUT_S,
         interval_seconds: float = 0.25,
         measurement_attempts: int = 1,
+        max_inspections: int | None = None,
         clock: Callable[[], float] = monotonic,
         sleeper: Callable[[float], None] = sleep,
     ) -> None:
+        """Bind one typed ping to its channel, its bounds, its clock and sleeper.
+
+        `max_inspections` defaults to `None`, which is unbounded polling and
+        is exactly what every existing caller already does. A caller that has
+        to account for each nested call -- a diagnostic spending a counted
+        operation ledger -- sets it, and the poll interval is then spread so
+        that many reads still cover the same safe window. It bounds how many
+        observations are taken, never the window itself: shortening the window
+        would turn a slow destination into a premature unreachable claim.
+        """
         if (
             isinstance(timeout_seconds, bool)
             or not isinstance(timeout_seconds, (int, float))
@@ -84,9 +93,20 @@ class TypedPingExecutor:
             or interval_seconds < 0
         ):
             raise ValueError("interval_seconds must be non-negative.")
-        if isinstance(measurement_attempts, bool) or not isinstance(measurement_attempts, int) or measurement_attempts < 1:
+        if (
+            isinstance(measurement_attempts, bool)
+            or not isinstance(measurement_attempts, int)
+            or measurement_attempts < 1
+        ):
             raise ValueError("measurement_attempts must be a positive integer.")
+        if max_inspections is not None and (
+            isinstance(max_inspections, bool)
+            or not isinstance(max_inspections, int)
+            or max_inspections < 1
+        ):
+            raise ValueError("max_inspections must be a positive integer or None.")
         self._measurement_attempts = measurement_attempts
+        self._max_inspections = max_inspections
         self._send_and_wait = send_and_wait
         self._timeout = timeout_seconds
         self._interval = interval_seconds
@@ -119,7 +139,8 @@ class TypedPingExecutor:
                 return replace(
                     result,
                     attempts=attempt + 1,
-                    failure_reason=result.failure_reason or "previous_command_still_running",
+                    failure_reason=result.failure_reason
+                    or "previous_command_still_running",
                 )
             attempt += 1
             self._sleep(self._interval)
@@ -128,13 +149,20 @@ class TypedPingExecutor:
 
     def _terminal_returned_to_prompt(self, source_device: str) -> bool:
         source = json.dumps(source_device)
-        observed = self._json_result("".join((
-            "try{var d=ipc.network().getDevice(", source, ");var t=null;",
-            "if(d&&typeof d.getCommandPrompt==='function'){t=d.getCommandPrompt();}",
-            "if(!t&&d&&typeof d.getCommandLine==='function'){t=d.getCommandLine();}",
-            "reportResult(JSON.stringify({output:t?String(t.getOutput()):''}));}",
-            "catch(e){reportResult('ERROR:'+e);}",
-        )), 3.0)
+        observed = self._json_result(
+            "".join(
+                (
+                    "try{var d=ipc.network().getDevice(",
+                    source,
+                    ");var t=null;",
+                    "if(d&&typeof d.getCommandPrompt==='function'){t=d.getCommandPrompt();}",
+                    "if(!t&&d&&typeof d.getCommandLine==='function'){t=d.getCommandLine();}",
+                    "reportResult(JSON.stringify({output:t?String(t.getOutput()):''}));}",
+                    "catch(e){reportResult('ERROR:'+e);}",
+                )
+            ),
+            3.0,
+        )
         return terminal_is_idle(str(observed.get("output") or ""))
 
     def _ping_once(self, source_device: str, destination: str) -> TypedPingResult:
@@ -151,58 +179,91 @@ class TypedPingExecutor:
         # `enterCommand`, y enumera la red entera como la atribucion. Por eso el
         # tope es el del despacho IOS: si vence con el script todavia corriendo,
         # el ping queda despachado sin que Python lo sepa.
-        started = self._json_result("".join((
-            "try{var d=ipc.network().getDevice(", source, ");",
-            "var t=null;var kind='';",
-            "if(d&&typeof d.getCommandPrompt==='function'){",
-            "t=d.getCommandPrompt();if(t){kind='command_prompt';}}",
-            "if(!t&&d&&typeof d.getCommandLine==='function'){",
-            "t=d.getCommandLine();if(t){kind='ios_command_line';}}",
-            "var before=t&&typeof t.getOutput==='function'?String(t.getOutput()):'';",
-            PAGER_GUARD_JS,
-            IDLE_GUARD_JS,
-            # Mismo script que el despacho: si el pager sigue activo, el `p` de
-            # `ping` se gasta en avanzar la pagina y el CLI recibe `ing`. Y si
-            # el terminal todavia imprime, la ventana seria del comando previo.
-            "var started=false;var blocked='';",
-            "if(__pager){blocked='pager_active';}",
-            "else if(!__idle){blocked='command_in_flight';}",
-            "else if(t&&typeof t.enterCommand==='function'){",
-            dispatch_snapshot_js(command, prefer_command_prompt=True),
-            "t.enterCommand(", json.dumps(command), ");started=true;}",
-            "reportResult(JSON.stringify({started:started,blocked:blocked,before:before,",
-            "snapshot:__snap,terminal_kind:kind}));}",
-            "catch(e){reportResult('ERROR:'+e);}",
-        )), 10.0)
+        started = self._json_result(
+            "".join(
+                (
+                    "try{var d=ipc.network().getDevice(",
+                    source,
+                    ");",
+                    "var t=null;var kind='';",
+                    "if(d&&typeof d.getCommandPrompt==='function'){",
+                    "t=d.getCommandPrompt();if(t){kind='command_prompt';}}",
+                    "if(!t&&d&&typeof d.getCommandLine==='function'){",
+                    "t=d.getCommandLine();if(t){kind='ios_command_line';}}",
+                    "var before=t&&typeof t.getOutput==='function'?String(t.getOutput()):'';",
+                    PAGER_GUARD_JS,
+                    IDLE_GUARD_JS,
+                    # Mismo script que el despacho: si el pager sigue activo, el `p` de
+                    # `ping` se gasta en avanzar la pagina y el CLI recibe `ing`. Y si
+                    # el terminal todavia imprime, la ventana seria del comando previo.
+                    "var started=false;var blocked='';",
+                    "if(__pager){blocked='pager_active';}",
+                    "else if(!__idle){blocked='command_in_flight';}",
+                    "else if(t&&typeof t.enterCommand==='function'){",
+                    dispatch_snapshot_js(command, prefer_command_prompt=True),
+                    "t.enterCommand(",
+                    json.dumps(command),
+                    ");started=true;}",
+                    "reportResult(JSON.stringify({started:started,blocked:blocked,before:before,",
+                    "snapshot:__snap,terminal_kind:kind}));}",
+                    "catch(e){reportResult('ERROR:'+e);}",
+                )
+            ),
+            10.0,
+        )
         if started.get("blocked"):
             return TypedPingResult(
-                False, False,
+                False,
+                False,
                 failure_reason="prompt_not_ready_" + str(started.get("blocked")),
             )
         if not started.get("started"):
-            return TypedPingResult(False, False, failure_reason="command_prompt_unavailable")
+            return TypedPingResult(
+                False, False, failure_reason="command_prompt_unavailable"
+            )
         before = str(started.get("before") or "")
 
         def inspect() -> dict:
-            return self._json_result("".join((
-                "try{var d=ipc.network().getDevice(", source, ");",
-                "var t=null;var kind='';",
-                "if(d&&typeof d.getCommandPrompt==='function'){",
-                "t=d.getCommandPrompt();if(t){kind='command_prompt';}}",
-                "if(!t&&d&&typeof d.getCommandLine==='function'){",
-                "t=d.getCommandLine();if(t){kind='ios_command_line';}}",
-                "reportResult(JSON.stringify({found:!!t,terminal_kind:kind,",
-                "output:t?String(t.getOutput()):''}));}",
-                "catch(e){reportResult('ERROR:'+e);}",
-            )), 3.0)
+            return self._json_result(
+                "".join(
+                    (
+                        "try{var d=ipc.network().getDevice(",
+                        source,
+                        ");",
+                        "var t=null;var kind='';",
+                        "if(d&&typeof d.getCommandPrompt==='function'){",
+                        "t=d.getCommandPrompt();if(t){kind='command_prompt';}}",
+                        "if(!t&&d&&typeof d.getCommandLine==='function'){",
+                        "t=d.getCommandLine();if(t){kind='ios_command_line';}}",
+                        "reportResult(JSON.stringify({found:!!t,terminal_kind:kind,",
+                        "output:t?String(t.getOutput()):''}));}",
+                        "catch(e){reportResult('ERROR:'+e);}",
+                    )
+                ),
+                3.0,
+            )
 
         deadline = self._clock() + self._timeout
         observed: dict = {}
         window = extract_terminal_command_window(before, "", command)
+        # Sin cota, el intervalo es el del caller. Con cota, se REPARTE la
+        # misma ventana segura entre las lecturas permitidas: acortar la
+        # ventana convertiria un destino lento en un inalcanzable prematuro,
+        # que es justamente el error de clasificacion que el timeout seguro
+        # existe para evitar.
+        interval = self._interval
+        remaining_inspections = self._max_inspections
+        if remaining_inspections is not None:
+            interval = max(interval, self._timeout / remaining_inspections)
+        inspection_budget_spent = False
         while True:
             observed = inspect()
+            if remaining_inspections is not None:
+                remaining_inspections -= 1
             window = extract_terminal_command_window(
-                before, str(observed.get("output") or ""), command,
+                before,
+                str(observed.get("output") or ""),
+                command,
             )
             normalized = window.output.casefold()
             if (
@@ -211,7 +272,13 @@ class TypedPingExecutor:
                 or self._clock() >= deadline
             ):
                 break
-            self._sleep(self._interval)
+            if remaining_inspections is not None and remaining_inspections <= 0:
+                # La muestra queda INCOMPLETA por cota propia, no por la
+                # ventana. Se declara: una lectura que no se tomo no puede
+                # reportarse como una estadistica que no llego.
+                inspection_budget_spent = True
+                break
+            self._sleep(interval)
 
         # La ultima lectura ATRIBUYE: la estadistica que se va a interpretar y
         # el device al que se le atribuye salen de la misma pasada. Una medida
@@ -227,13 +294,15 @@ class TypedPingExecutor:
             5.0,
         )
         identity = classify_execution_identity(
-            source_device, attribution,
+            source_device,
+            attribution,
             accepted_evidence=DISPATCH_DELTA_ATTRIBUTION_EVIDENCE,
         )
         identity_evidence = {
             **identity,
             **execution_identity_diagnostics(
-                attribution, accepted_evidence=DISPATCH_DELTA_ATTRIBUTION_EVIDENCE,
+                attribution,
+                accepted_evidence=DISPATCH_DELTA_ATTRIBUTION_EVIDENCE,
             ),
         }
         if (
@@ -243,11 +312,11 @@ class TypedPingExecutor:
             # La sesion que respondio es de OTRO device. Su estadistica no dice
             # nada del origen pedido, asi que no se devuelve ninguna medida.
             return TypedPingResult(
-                False, False,
+                False,
+                False,
                 window_strategy=window.strategy,
                 failure_reason=(
-                    "device_provenance_mismatch:"
-                    + identity["observed_device_name"]
+                    "device_provenance_mismatch:" + identity["observed_device_name"]
                 ),
                 **identity_evidence,
             )
@@ -257,12 +326,17 @@ class TypedPingExecutor:
             # sobre la de la busqueda por nombre.
             window = extract_terminal_command_window(before, attributed, command)
 
+        incomplete = (
+            "ping_inspection_budget_exhausted"
+            if inspection_budget_spent
+            else "no_fresh_ping_result"
+        )
         if not window.fresh:
             return TypedPingResult(
                 False,
                 False,
                 window_strategy=window.strategy,
-                failure_reason="no_fresh_ping_result",
+                failure_reason=incomplete,
                 **identity_evidence,
             )
         if not window.query_echo_found:
@@ -309,7 +383,7 @@ class TypedPingExecutor:
             False,
             False,
             window_strategy=window.strategy,
-            failure_reason="no_fresh_ping_result",
+            failure_reason=incomplete,
             **identity_evidence,
         )
 
@@ -330,5 +404,7 @@ class TypedPingExecutor:
             and value
             and value == value.strip()
             and len(value) <= 128
-            and not any(ord(character) < 32 or ord(character) == 127 for character in value)
+            and not any(
+                ord(character) < 32 or ord(character) == 127 for character in value
+            )
         )

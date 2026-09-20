@@ -106,6 +106,16 @@ TRUNK_FORWARDING_CONVERGENCE_TIMEOUT_SECONDS = 45.0
 ACCESS_FORWARDING_MAX_SAMPLES = 3
 ACCESS_FORWARDING_DEADLINE_SECONDS = 30.0
 ACCESS_FORWARDING_INTERVAL_SECONDS = 1.0
+#: Every channel call one registered sample may make. `execute` is not
+#: one call: it prepares the session, dispatches, waits for the output to
+#: converge, attributes the session, and may walk or cancel a pager, and
+#: it retries a dispatch it proved corrupt. A deadline the caller reads
+#: only after `execute` returns bounds none of that, so the bound lives on
+#: the channel itself. Six covers the intended path -- session read,
+#: dispatch, two convergence reads, attribution -- plus one pager
+#: continuation or cancellation. A sample that needs more is returned as
+#: incomplete rather than being allowed to spend an unbounded ledger.
+ACCESS_FORWARDING_SAMPLE_CALLS = 6
 
 
 def spanning_tree_sample_is_authoritative(
@@ -272,6 +282,52 @@ MEASURED_ADMIN_OP_MODES = {
 }
 
 
+class _BoundedTerminalChannel:
+    """Carry a per-sample call budget and the remaining deadline into the I/O.
+
+    A registered IOS query expands into several channel calls that its caller
+    cannot see, so a deadline checked between calls caps nothing. This channel
+    sits underneath the executor: it caps each call's timeout by the time the
+    sample has left, and refuses past the sample's call budget. A refusal is
+    returned as "no answer", which the executor already models, so the sample
+    ends as an unobserved one instead of an unbounded one.
+    """
+
+    def __init__(
+        self,
+        send_and_wait: Callable[[str, float], str | None],
+        clock: Callable[[], float],
+    ) -> None:
+        """Wrap one channel; nothing is bounded until a sample opens."""
+        self._send_and_wait = send_and_wait
+        self._clock = clock
+        self._remaining = 0
+        self._deadline: float | None = None
+        self.calls = 0
+        self.exhausted = False
+
+    def open(self, *, calls: int, deadline: float | None) -> None:
+        """Start one sample with its own call budget and absolute deadline."""
+        self._remaining = int(calls)
+        self._deadline = deadline
+        self.exhausted = False
+
+    def __call__(self, script: str, timeout: float) -> str | None:
+        """Dispatch one call, or refuse it because the sample is spent."""
+        if self._remaining <= 0:
+            self.exhausted = True
+            return None
+        allowed = float(timeout)
+        if self._deadline is not None:
+            allowed = min(allowed, max(0.0, self._deadline - self._clock()))
+        if allowed <= 0:
+            self.exhausted = True
+            return None
+        self._remaining -= 1
+        self.calls += 1
+        return self._send_and_wait(script, allowed)
+
+
 class PacketTracerEnterpriseConfigurationRuntime:
     """Usa los canales oficiales existentes; no expone IOS/JS arbitrario."""
 
@@ -321,6 +377,13 @@ class PacketTracerEnterpriseConfigurationRuntime:
         )
         self._configuration = PacketTracerConfigurationRuntime(send)
         self._ios = ControlledIosExecutor(send_and_wait)
+        # The neutral forwarding observation is the only path that has to
+        # account for each of its nested calls, so it gets its own
+        # executor over a bounded channel. Every other query keeps the
+        # unbounded channel and the executor it always used, and this one
+        # keeps its own pager quarantine across a run's observations.
+        self._forwarding_channel = _BoundedTerminalChannel(send_and_wait, clock)
+        self._forwarding_ios = ControlledIosExecutor(self._forwarding_channel)
         self._renderer = PacketTracerIosRenderer()
         self._targets: dict[str, RuntimeConfigurationTarget] = {}
         self._hostname_timeout = hostname_timeout_seconds
@@ -687,6 +750,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         max_samples: int = ACCESS_FORWARDING_MAX_SAMPLES,
         deadline_seconds: float = ACCESS_FORWARDING_DEADLINE_SECONDS,
         interval_seconds: float = ACCESS_FORWARDING_INTERVAL_SECONDS,
+        sample_calls: int = ACCESS_FORWARDING_SAMPLE_CALLS,
     ) -> AccessForwardingObservation:
         """Observe one switch/VLAN group's exact interfaces, neutrally.
 
@@ -720,12 +784,18 @@ class PacketTracerEnterpriseConfigurationRuntime:
             raise ValueError(
                 "access forwarding time bounds must be finite and non-negative"
             )
+        if isinstance(sample_calls, bool) or not isinstance(sample_calls, int):
+            raise ValueError("access forwarding sample_calls must be an int")
+        if sample_calls < 1:
+            raise ValueError("access forwarding sample_calls must be positive")
         ceiling = max_samples
         deadline_window = float(deadline_seconds)
         interval = float(interval_seconds)
         started = self._clock()
         deadline = started + deadline_window
         samples = 0
+        self._forwarding_channel.calls = 0
+        budget_exhausted = False
         show: IosCommandResult | None = None
         rows: tuple[AccessForwardingRow, ...] = ()
         vlan_present = False
@@ -735,11 +805,16 @@ class PacketTracerEnterpriseConfigurationRuntime:
             if self._clock() >= deadline:
                 deadline_reached = True
                 break
-            show = self._ios.execute(
+            # The bound travels with the call, not around it: each nested
+            # dispatch is capped by the time this observation has left and
+            # refused past the sample's own call budget.
+            self._forwarding_channel.open(calls=sample_calls, deadline=deadline)
+            show = self._forwarding_ios.execute(
                 device_name,
                 OperationalQueryId.SHOW_SPANNING_TREE,
             )
             samples += 1
+            budget_exhausted = budget_exhausted or self._forwarding_channel.exhausted
             # An answer that arrived after the bounded window is late evidence
             # about this sample, not authority. It is kept and it grants nothing.
             deadline_reached = self._clock() >= deadline
@@ -784,12 +859,19 @@ class PacketTracerEnterpriseConfigurationRuntime:
             deadline_seconds=deadline_window,
             elapsed_ms=int(max(0.0, self._clock() - started) * 1000),
             deadline_reached=deadline_reached,
+            sample_call_budget=sample_calls,
+            channel_calls=self._forwarding_channel.calls,
+            sample_budget_exhausted=budget_exhausted,
             simulation_time=(
                 self._simulation_time_text() if samples else "not_sampled"
             ),
             failure_reason=(
-                (show.failure_reason if show is not None else "no_sample_taken")
-                or ("" if authoritative else "stp_sample_not_authoritative")
+                "sample_call_budget_exhausted"
+                if budget_exhausted and not authoritative
+                else (
+                    (show.failure_reason if show is not None else "no_sample_taken")
+                    or ("" if authoritative else "stp_sample_not_authoritative")
+                )
             ),
         )
 

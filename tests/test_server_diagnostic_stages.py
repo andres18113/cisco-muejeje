@@ -14,25 +14,23 @@ and can never qualify a capability.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 from service_qualification_engine import (
+    FORWARDING_ROWS,
     SIM_BUILD,
     SIM_PROCESS_ID,
+    SIM_PROCESS_INCARNATION,
     SIM_PROCESS_PATH,
     SIM_SHA,
     SIM_TREE,
-    FakeClock,
-    NodeEngine,
-    NodeEngineTransport,
+    DiagnosticStageRun,
     RecordingStore,
     authorization_args,
     request_args,
-    simulated_boundaries,
+    stage,
 )
 
-from packet_tracer_mcp.adapters.cli.service_qualification import main
 from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     STAGE_DEFINITIONS,
     DiagnosticLifecycleObservation,
@@ -42,104 +40,11 @@ from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     QualificationStage,
 )
 
+#: `stage` is re-exported here as a pytest fixture, not as a call.
+__all__ = ["stage"]
+
 D_DHCP = STAGE_DEFINITIONS[QualificationStage.D_DHCP]
 D_WEB = STAGE_DEFINITIONS[QualificationStage.D_WEB]
-FORWARDING_ROWS = {
-    "FastEthernet0/1": "FWD",
-    "FastEthernet0/2": "FWD",
-    "FastEthernet0/3": "FWD",
-}
-
-
-class _Stage:
-    """One stub engine, one transport and one completed stage invocation."""
-
-    def __init__(self, directory: Path, stage: str, engine_config, **overrides):
-        """Run the stage through the real CLI and keep everything it produced."""
-        self.directory = directory
-        config = {
-            "terminals": True,
-            "ping_reachable": True,
-            "stp_rows": dict(FORWARDING_ROWS),
-            "dhcp_default_pool": "native",
-        }
-        config.update(engine_config or {})
-        self.engine = NodeEngine(directory, **config)
-        self.transport = NodeEngineTransport(self.engine)
-        self.clock = FakeClock()
-        self.opened: list[str] = []
-        self.argv = overrides.pop("argv", None)
-        self.boundaries = self._boundaries(**overrides)
-        self.exit_code: int | None = None
-        self.summary: dict = {}
-
-    def _boundaries(self, **overrides):
-        from packet_tracer_mcp.application.ports.service_qualification import (
-            OpenedTransport,
-        )
-
-        def open_transport(channel: str):
-            self.opened.append(channel)
-            return OpenedTransport(channel, self.transport, True, "stub_engine")
-
-        values = {"open_transport": open_transport, "clock": self.clock}
-        values.update(overrides)
-        return simulated_boundaries(self.directory, self.transport, **values)
-
-    def run(self, argv) -> int:
-        """Invoke the adapter exactly as an operator would."""
-        self.exit_code = main(
-            argv,
-            environ={"PT_MCP_GOVERNED_ROOT": str(self.directory)},
-            boundaries_factory=lambda root: self.boundaries,
-        )
-        return self.exit_code
-
-    def record(self) -> QualificationRecord:
-        """Return the record exactly as the store wrote it last."""
-        (path,) = list((self.directory / "records").rglob("*.json"))
-        return QualificationRecord.model_validate_json(path.read_text(encoding="utf-8"))
-
-    def scripts(self, needle: str) -> list[str]:
-        """Return every dispatched script containing `needle`."""
-        return [script for _kind, script in self.transport.calls if needle in script]
-
-    def measurement(self, experiment_id: str):
-        """Return one measurement of the stored record."""
-        return next(
-            item
-            for item in self.record().measurements
-            if item.experiment_id == experiment_id
-        )
-
-    def close(self) -> None:
-        """Stop the engine process."""
-        self.engine.close()
-
-
-@pytest.fixture
-def stage(tmp_path, capsys):
-    """Yield a factory that runs one stage and cleans up its engine."""
-    started: list[_Stage] = []
-
-    def make(stage_name: str, engine_config=None, *, argv=None, **overrides):
-        directory = tmp_path / f"{stage_name}{len(started)}"
-        directory.mkdir()
-        item = _Stage(directory, stage_name, engine_config, **overrides)
-        started.append(item)
-        item.run(
-            argv
-            if argv is not None
-            else request_args(stage_name) + authorization_args(stage_name)
-        )
-        printed = capsys.readouterr().out.strip().splitlines()
-        item.summary = json.loads(printed[-1]) if printed else {}
-        return item
-
-    yield make
-    for item in started:
-        item.close()
-
 
 # -- D-DHCP ----------------------------------------------------------------------
 
@@ -348,6 +253,7 @@ def test_d_web_uses_the_real_binding_ping_and_client_components(stage):
         "process_path": SIM_PROCESS_PATH,
         "product_version": SIM_BUILD,
         "file_version": "",
+        "process_incarnation": SIM_PROCESS_INCARNATION,
         "mailbox_entries": [],
         "error": "",
     }
@@ -507,6 +413,7 @@ def test_a_wrong_authority_refuses_before_any_contact(
                 process_id=SIM_PROCESS_ID + 1,
                 process_path=SIM_PROCESS_PATH,
                 product_version=SIM_BUILD,
+                process_incarnation=SIM_PROCESS_INCARNATION,
             ),
             "process_instance",
         ),
@@ -515,6 +422,7 @@ def test_a_wrong_authority_refuses_before_any_contact(
                 process_id=SIM_PROCESS_ID,
                 process_path=SIM_PROCESS_PATH,
                 product_version=SIM_BUILD,
+                process_incarnation=SIM_PROCESS_INCARNATION,
                 mailbox_entries=("res_stale.txt",),
             ),
             "mailbox",
@@ -537,7 +445,7 @@ def test_a_repeated_attempt_identity_refuses_before_any_contact(stage, tmp_path)
 
     directory = tmp_path / "second"
     directory.mkdir()
-    second = _Stage(directory, "D-DHCP", None)
+    second = DiagnosticStageRun(directory, "D-DHCP", None)
     try:
         # Point the second run at the first run's record directory, so the
         # store sees the attempt identity that already ran.
@@ -555,7 +463,7 @@ def test_a_store_that_cannot_answer_uniqueness_refuses(stage, tmp_path):
     """G5.4: an unobservable control is not a pass."""
     directory = tmp_path / "blind"
     directory.mkdir()
-    run = _Stage(directory, "D-DHCP", None)
+    run = DiagnosticStageRun(directory, "D-DHCP", None)
     try:
 
         class _Blind:
@@ -585,7 +493,7 @@ def test_a_missing_diagnostic_boundary_refuses_the_stage(stage, tmp_path):
     """A stage whose executor was not composed never runs a narrower one."""
     directory = tmp_path / "uncomposed"
     directory.mkdir()
-    run = _Stage(directory, "D-WEB", None)
+    run = DiagnosticStageRun(directory, "D-WEB", None)
     try:
         run.boundaries = run._boundaries(forwarding_probe=None)
         code = run.run(request_args("D-WEB") + authorization_args("D-WEB"))
@@ -644,7 +552,7 @@ def test_a_persistence_failure_keeps_the_primary_error_and_still_finalizes(
 
     directory = tmp_path / "lossy"
     directory.mkdir()
-    run = _Stage(directory, "D-DHCP", None)
+    run = DiagnosticStageRun(directory, "D-DHCP", None)
     try:
         run.boundaries = run._boundaries(
             record_store=RecordingStore(
@@ -707,23 +615,40 @@ def test_a_schema_one_record_without_lifecycle_fields_still_loads(stage):
     assert historical.diagnostic_lifecycle_postflight == {}
 
 
-class _LocalReadings:
-    """One local lifecycle reading per call, in the order given.
+#: How often one D-WEB run reads the local pairing: once before a transport
+#: exists, once before each of its six procedures, once before owned cleanup
+#: and once after finalization. The positive control pins it, so a change to
+#: the authority schedule fails there instead of silently moving the point a
+#: negative test believed it was injecting at.
+D_WEB_PAIRING_READS = 9
 
-    The boundary is read twice: once before a transport exists and once after
-    owned finalization. A test supplies what each reading observed; the last
-    entry answers any further call.
+
+class _LocalReadings:
+    """The local pairing one run observes, reading by reading.
+
+    `switch_at` is the 1-based reading from which `later` answers instead of
+    `first`, so a test places a replacement exactly where it means to: at the
+    first effect, mid-run, or immediately before the first removal.
     """
 
-    def __init__(self, *readings: DiagnosticLifecycleObservation):
-        self.readings = list(readings)
+    def __init__(
+        self,
+        first: DiagnosticLifecycleObservation,
+        later: DiagnosticLifecycleObservation | None = None,
+        *,
+        switch_at: int = 2,
+    ):
+        self.first = first
+        self.later = later
+        self.switch_at = switch_at
         self.calls = 0
 
     def __call__(self) -> DiagnosticLifecycleObservation:
-        """Return the next reading and keep the count the run made."""
-        index = min(self.calls, len(self.readings) - 1)
+        """Return this reading and keep the count the run made."""
         self.calls += 1
-        return self.readings[index]
+        if self.later is not None and self.calls >= self.switch_at:
+            return self.later
+        return self.first
 
 
 def _paired(**overrides) -> DiagnosticLifecycleObservation:
@@ -732,6 +657,7 @@ def _paired(**overrides) -> DiagnosticLifecycleObservation:
         "process_id": SIM_PROCESS_ID,
         "process_path": SIM_PROCESS_PATH,
         "product_version": SIM_BUILD,
+        "process_incarnation": SIM_PROCESS_INCARNATION,
     }
     values.update(overrides)
     return DiagnosticLifecycleObservation(**values)
@@ -743,7 +669,9 @@ def test_the_local_pairing_is_read_again_after_finalization(stage):
     run = stage("D-WEB", diagnostic_lifecycle=readings)
     record = run.record()
 
-    assert readings.calls == 2
+    # Read before the transport, before each procedure, before owned
+    # cleanup, and once more afterwards.
+    assert readings.calls == D_WEB_PAIRING_READS
     assert record.diagnostic_lifecycle["process_id"] == SIM_PROCESS_ID
     assert record.diagnostic_lifecycle_postflight["process_id"] == SIM_PROCESS_ID
     assert record.diagnostic_lifecycle_postflight["mailbox_entries"] == []
@@ -754,12 +682,12 @@ def test_the_local_pairing_is_read_again_after_finalization(stage):
 
 
 def test_a_replaced_packet_tracer_invalidates_the_run_it_did_not_serve(stage):
-    """G4: cleanup that attests another instance proves nothing about this one.
+    """GF-R1: a replacement stops the run at the next effect, not at the end.
 
     Packet Tracer can be restarted mid-run, and the replacement polls the same
-    mailbox, so the removals and both restoration reads would be answered by a
-    process this authority never bound. The readings are kept; what they are
-    no longer allowed to establish is restoration and completion.
+    mailbox. Every reading taken afterwards describes a process this authority
+    never bound, so the run stops at the first effect that asks again rather
+    than continuing and being invalidated in its final report.
     """
     readings = _LocalReadings(_paired(), _paired(process_id=SIM_PROCESS_ID + 7))
     run = stage("D-WEB", diagnostic_lifecycle=readings)
@@ -767,17 +695,21 @@ def test_a_replaced_packet_tracer_invalidates_the_run_it_did_not_serve(stage):
 
     assert record.diagnostic_lifecycle_postflight["process_id"] == SIM_PROCESS_ID + 7
     assert "process_instance:changed" in record.engine_residue
-    assert "lifecycle:process_instance:changed" in record.secondary_failures
     assert record.restoration_proven is False
     assert run.exit_code == 1 and record.outcome.value == "stopped"
-    # The run is stopped by the pairing, not by a fabricated primary failure.
-    assert "process_instance" not in record.primary_failure
+    # The replacement itself is the primary failure now: it is what stopped
+    # the run, and naming anything else would misattribute the cause.
+    assert record.primary_failure.startswith(
+        "execution_authority_lost:process_instance:changed"
+    )
 
 
 def test_an_undrained_mailbox_is_named_at_the_end_and_deleted_by_nobody(stage):
     """Containment reports what a later instance could still re-execute."""
     readings = _LocalReadings(
-        _paired(), _paired(mailbox_entries=("req_orphan.js", "res_orphan.txt"))
+        _paired(),
+        _paired(mailbox_entries=("req_orphan.js", "res_orphan.txt")),
+        switch_at=D_WEB_PAIRING_READS,
     )
     run = stage("D-WEB", diagnostic_lifecycle=readings)
     record = run.record()
@@ -792,6 +724,7 @@ def test_an_unreadable_second_reading_is_unknown_not_a_clean_exit(stage):
     readings = _LocalReadings(
         _paired(),
         DiagnosticLifecycleObservation(error="packet_tracer_process_count:2"),
+        switch_at=D_WEB_PAIRING_READS,
     )
     run = stage("D-WEB", diagnostic_lifecycle=readings)
     record = run.record()

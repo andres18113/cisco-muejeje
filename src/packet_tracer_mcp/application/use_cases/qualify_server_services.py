@@ -91,6 +91,8 @@ from ...domain.enterprise.models.service_plan import (
     ServiceVerificationKind,
 )
 from ...domain.enterprise.models.service_qualification import (
+    D_WEB_FORWARDING_SAMPLES_AFTER,
+    D_WEB_FORWARDING_SAMPLES_BEFORE,
     D_WEB_INSPECTION_SCHEDULE,
     DIAGNOSTIC_ACCESS_VLAN,
     Q1_PC1,
@@ -107,8 +109,10 @@ from ...domain.enterprise.models.service_qualification import (
     BudgetRecord,
     DefaultPoolObservation,
     DiagnosticLifecycleObservation,
+    DiagnosticPrecondition,
     EnvironmentIdentity,
     ExecutionMode,
+    ExperimentSpec,
     FixtureDevice,
     FixtureRecord,
     MeasurementConclusion,
@@ -165,6 +169,7 @@ from ...domain.enterprise.services.service_qualification_evidence import (
     assess_dhcp_baseline_admission,
     assess_forwarding_probe,
     assess_https_listener,
+    assess_native_default_cumulative,
     assess_native_default_interval,
     assess_observer_release,
     assess_page_tables,
@@ -683,6 +688,12 @@ class QualificationBoundaries:
     #: nothing. The workspace gate after contact still proves the active
     #: document is disposable before the first effect.
     diagnostic_lifecycle: Callable[[], DiagnosticLifecycleObservation] | None = None
+    #: Cross-checkout exclusion for one campaign writer, taken in the shared
+    #: mailbox scope rather than in this checkout's record directory, and held
+    #: from admission through finalization. Two worktrees cannot exclude each
+    #: other through record directories they do not share, so a diagnostic
+    #: stage without a coordinator refuses before contact.
+    campaign_coordinator: Any | None = None
 
 
 @dataclass
@@ -830,13 +841,45 @@ def qualify_server_services(
     if refusals:
         return _refused(refusals)
     diagnostic_lifecycle: DiagnosticLifecycleObservation | None = None
+    claim: Any | None = None
     if definition.profile_id:
-        refusals, diagnostic_lifecycle = _diagnostic_admission(
+        refusals, diagnostic_lifecycle, claim = _diagnostic_admission(
             definition, authorization, boundaries
         )
         if refusals:
             return _refused(refusals)
+    try:
+        return _with_campaign_claim(
+            request,
+            boundaries,
+            definition,
+            devices,
+            links,
+            isolation,
+            repository,
+            experimental_capabilities,
+            diagnostic_lifecycle=diagnostic_lifecycle,
+            claim=claim,
+        )
+    finally:
+        if claim is not None and boundaries.campaign_coordinator is not None:
+            _release_claim(boundaries.campaign_coordinator, claim)
 
+
+def _with_campaign_claim(
+    request: QualificationRequest,
+    boundaries: QualificationBoundaries,
+    definition: StageDefinition,
+    devices: tuple[DevicePlan, ...],
+    links: tuple[LinkPlan, ...],
+    isolation: IsolationObservation,
+    repository: RepositoryIdentity,
+    experimental_capabilities: frozenset[str],
+    *,
+    diagnostic_lifecycle: DiagnosticLifecycleObservation | None,
+    claim: Any | None,
+) -> QualificationResult:
+    """Run the admitted part of one invocation while its campaign claim is held."""
     moment = boundaries.now()
     run_id = boundaries.new_run_id(moment)
     product_contract: Q3ProductContract | None = None
@@ -951,6 +994,7 @@ def qualify_server_services(
             bound,
             experimental_capabilities,
             product_contract,
+            claim=claim,
         )
     finally:
         if opened is not None and opened.transport is not None:
@@ -966,18 +1010,78 @@ def _diagnostic_admission(
     definition: StageDefinition,
     authorization: QualificationAuthorization | None,
     boundaries: QualificationBoundaries,
-) -> tuple[list[QualificationRefusal], DiagnosticLifecycleObservation | None]:
+) -> tuple[
+    list[QualificationRefusal], DiagnosticLifecycleObservation | None, Any | None
+]:
     """Check what an executable diagnostic needs beyond the shared rule.
 
-    Two things the request rule cannot decide on its own: whether this attempt
-    identity has ever been used before, which only the record store knows, and
-    whether the boundaries this stage's steps require were actually composed.
-    Both fail closed. An attempt whose uniqueness cannot be observed is not a
-    unique attempt, and a stage whose executor is missing refuses rather than
-    running a narrower experiment under the same authority.
+    Three things the request rule cannot decide on its own: whether this
+    campaign is already being run by another writer, which only a scope both
+    writers share can answer; whether this attempt identity has ever been used
+    before; and whether the boundaries this stage's steps require were composed.
+    All three fail closed. A campaign whose exclusivity cannot be taken is not
+    exclusive, an attempt whose uniqueness cannot be observed is not unique, and
+    a stage whose executor is missing refuses rather than running a narrower
+    experiment under the same authority.
+
+    The campaign claim is taken first and held while everything after it is
+    decided, so the uniqueness check and the record creation that follows it
+    are no longer two steps a second writer can interleave with. The caller
+    owns the returned claim and must release it once finalization is done.
     """
     if authorization is None:  # pragma: no cover - request_refusals covers it
-        return [refusal(RefusalKind.MISSING, RefusalSubject.AUTHORIZATION)], None
+        return [refusal(RefusalKind.MISSING, RefusalSubject.AUTHORIZATION)], None, None
+    coordinator = boundaries.campaign_coordinator
+    if coordinator is None:
+        return (
+            [
+                refusal(
+                    RefusalKind.NOT_PERMITTED,
+                    RefusalSubject.ATTEMPT_IDENTITY,
+                    "No campaign coordination scope is composed, so this run "
+                    "cannot exclude a writer in another checkout.",
+                )
+            ],
+            None,
+            None,
+        )
+    try:
+        claim = coordinator.claim(attempt_id=authorization.attempt_id)
+    except Exception as exc:
+        return (
+            [
+                refusal(
+                    RefusalKind.NOT_PERMITTED,
+                    RefusalSubject.ATTEMPT_IDENTITY,
+                    f"campaign_not_exclusive:{_bounded(exc)}",
+                )
+            ],
+            None,
+            None,
+        )
+    found, observed = _diagnostic_admission_checks(
+        definition, authorization, boundaries
+    )
+    if found:
+        _release_claim(coordinator, claim)
+        return found, observed, None
+    return found, observed, claim
+
+
+def _release_claim(coordinator: Any, claim: Any) -> tuple[str, ...]:
+    """Release one campaign claim, never raising out of a finalization path."""
+    try:
+        return tuple(coordinator.release(claim) or ())
+    except Exception as exc:
+        return (f"campaign_release_failed:{type(exc).__name__}",)
+
+
+def _diagnostic_admission_checks(
+    definition: StageDefinition,
+    authorization: QualificationAuthorization,
+    boundaries: QualificationBoundaries,
+) -> tuple[list[QualificationRefusal], DiagnosticLifecycleObservation | None]:
+    """Decide the remaining diagnostic admissions while the campaign is held."""
     found: list[QualificationRefusal] = []
     seen = getattr(boundaries.record_store, "attempt_exists", None)
     if not callable(seen):
@@ -1225,6 +1329,8 @@ def _admitted(
     bound: LedgeredTransport,
     capabilities: frozenset[str],
     product_contract: Q3ProductContract | None = None,
+    *,
+    claim: Any | None = None,
 ) -> QualificationResult:
     record = run.record
     ledger = run.ledger
@@ -1326,6 +1432,7 @@ def _admitted(
         capabilities=capabilities,
         probes=boundaries.probes(bound, record.run_id, nonce),
         product_contract=product_contract,
+        claim=claim,
         authorized_steps=(
             tuple(request.authorization.step_ids)
             if definition.steps and request.authorization is not None
@@ -1400,9 +1507,22 @@ class _Execution:
     capabilities: frozenset[str]
     probes: Any
     product_contract: Q3ProductContract | None = None
+    #: The campaign claim this invocation holds, or None for a stage that
+    #: declares no diagnostic profile. It is re-verified before effects.
+    claim: Any | None = None
     #: The steps this invocation's authority selected, in stage order. Empty
     #: for a stage that declares none, where every procedure runs.
     authorized_steps: tuple[str, ...] = ()
+    #: Operational preconditions this run has actually established, which is
+    #: not the same thing as what its measurements concluded. A diagnostic
+    #: step is admitted from this set; a negative experimental finding is the
+    #: result the diagnostic exists to produce and never revokes a state the
+    #: run did establish.
+    established: set[str] = field(default_factory=set)
+    #: The first observed loss of live execution authority. Sticky: authority
+    #: is never re-acquired inside a run, because a window in which some other
+    #: process answered cannot be closed retroactively.
+    authority_lost: str = ""
     removal_candidates: list[DevicePlan] = field(default_factory=list)
     fixtures_ready: bool = False
     #: Run-bag state the finalizer must release. A collision means the run key
@@ -1462,6 +1582,64 @@ class _Execution:
         if not self.record.primary_failure:
             self.record.primary_failure = _bounded(reason)
 
+    def establish(self, *preconditions: str) -> None:
+        """Record that this run observed one operational precondition."""
+        self.established.update(preconditions)
+
+    def live_authority(self, moment: str) -> bool:
+        """Re-decide whether this invocation still holds execution authority.
+
+        The admission reading bound one Packet Tracer incarnation and one
+        campaign claim before any effect existed. Neither is held by anything
+        afterwards: a crashed instance is replaced by one that polls the same
+        mailbox, and a claim can be removed out from under this run. Every
+        later effect, and owned cleanup above all, asks again.
+
+        It enumerates local processes, reads one small file and lists one
+        directory. It contacts Packet Tracer through nothing and spends no
+        ledger operation, so an exhausted budget cannot suppress it and the
+        cleanup reserve is never borrowed for it. The first loss is kept and
+        authority is never regained inside the run.
+        """
+        if self.authority_lost:
+            return False
+        if self.definition.profile_id == "":
+            return True
+        reasons: list[str] = []
+        coordinator = self.run.boundaries.campaign_coordinator
+        if coordinator is not None and self.claim is not None:
+            try:
+                reasons.extend(coordinator.verify(self.claim) or ())
+            except Exception as exc:
+                reasons.append(f"campaign_claim:unverifiable:{type(exc).__name__}")
+        lifecycle = self.run.boundaries.diagnostic_lifecycle
+        if callable(lifecycle) and self.run.diagnostic_lifecycle is not None:
+            try:
+                observed = lifecycle()
+            except Exception as exc:
+                observed = DiagnosticLifecycleObservation(
+                    error=f"diagnostic_lifecycle_failed:{type(exc).__name__}"
+                )
+            reasons.extend(
+                item
+                for item in diagnostic_lifecycle_continuity(
+                    self.run.diagnostic_lifecycle, observed
+                )
+                # A mailbox that still holds artifacts mid-run is this run's
+                # own traffic in flight, not a second instance. Only identity
+                # decides authority here; drainage is a finalization fact.
+                if not item.startswith("mailbox:")
+            )
+        if not reasons:
+            return True
+        self.authority_lost = _bounded(f"{moment}:{reasons[0]}")
+        record = self.record
+        record.engine_residue.extend(reasons)
+        record.secondary_failures.extend(f"authority:{item}" for item in reasons)
+        record.limitations.append(f"execution_authority_lost_before:{_bounded(moment)}")
+        self.stop(f"execution_authority_lost:{reasons[0]}")
+        return False
+
     def measurement(self, experiment_id: str) -> MeasurementRecord:
         """Return one measurement entry of the record."""
         return next(
@@ -1489,7 +1667,48 @@ class _Execution:
 
     def begin(self, ids: Sequence[str], procedure: str) -> bool:
         """Decide whether one procedure may start, and announce it durably."""
+        if not self.live_authority(f"experiment:{procedure}"):
+            self.not_run(ids, f"execution_authority_lost:{self.authority_lost}")
+            return False
         return self.admissible(ids, procedure) and self.announce(ids, procedure)
+
+    def begin_terminal(self, ids: Sequence[str], procedure: str) -> bool:
+        """Admit one read-only terminal observation, success or not.
+
+        The final reading of a diagnostic is evidence about what the run left
+        behind, so a primary failure is the reason to take it rather than a
+        reason to skip it. What it still requires is everything that makes the
+        reading meaningful and safe: the authorized subject and session, the
+        operational state the measurement names, its capability scope, and the
+        ordinary allowance -- never the finalization reserve, which belongs to
+        cleanup alone. A reading that cannot satisfy those is recorded as an
+        explicit absence with its cause instead of being silently dropped.
+        """
+        specs = [self.definition.experiment(item) for item in ids]
+        if not all(item.terminal_observation for item in specs):
+            return self.begin(ids, procedure)
+        if not self.live_authority(f"terminal:{procedure}"):
+            self.not_run(ids, f"not_observed:authority_lost:{self.authority_lost}")
+            return False
+        reason = self._unmet(specs)
+        if reason:
+            self.not_run(ids, f"not_observed:{reason}")
+            return False
+        planned = sum(item.planned_operations for item in specs)
+        if not self.ledger.can_afford(planned):
+            self.not_run(ids, f"not_observed:unaffordable:{procedure}")
+            return False
+        # The boundary is still written ahead of the reading. A record that
+        # cannot advance loses durability, not the observation: the reading is
+        # kept in memory and the record says which of the two it is.
+        if not self.run.transition(f"experiment:{procedure}:started"):
+            self.record.limitations.append(
+                f"terminal_observation_retained_in_memory_only:{_bounded(procedure)}"
+            )
+        self.ledger.enter(LedgerPhase.EXPERIMENT)
+        self.ledger.purpose = f"experiment:{procedure}"
+        self.in_flight = tuple(ids)
+        return True
 
     def admissible(
         self, ids: Sequence[str], procedure: str, extra_operations: int = 0
@@ -1499,24 +1718,40 @@ class _Execution:
         if self.stopped:
             self.not_run(ids, f"stopped:{self.record.primary_failure}")
             return False
-        for spec in specs:
-            for prerequisite in spec.prerequisites:
-                conclusion = self.measurement(prerequisite).conclusion
-                if conclusion is not MeasurementConclusion.SUPPORTED_IN_SAMPLE:
-                    self.not_run(
-                        ids, f"prerequisite_unmet:{prerequisite}={conclusion.value}"
-                    )
-                    return False
-            missing = sorted(set(spec.capabilities) - self.capabilities)
-            if missing:
-                self.not_run(ids, "capability_not_in_scope:" + ",".join(missing))
-                return False
+        reason = self._unmet(specs)
+        if reason:
+            self.not_run(ids, reason)
+            return False
         planned = sum(item.planned_operations for item in specs) + extra_operations
         if not self.ledger.can_afford(planned):
             self.not_run(ids, f"budget_insufficient_for:{procedure}")
             self.stop(f"budget:{procedure}")
             return False
         return True
+
+    def _unmet(self, specs: Sequence[ExperimentSpec]) -> str:
+        """Return why these measurements may not be attempted, or "".
+
+        A stage that declares a diagnostic profile is admitted from the
+        operational state the run established; every other stage keeps the
+        conclusion rule it always had, so no NEGATIVE or UNKNOWN prerequisite
+        is admitted for Q0/Q1/Q3 or for any product caller.
+        """
+        diagnostic = bool(self.definition.profile_id)
+        for spec in specs:
+            if diagnostic:
+                for precondition in spec.operational_prerequisites:
+                    if precondition not in self.established:
+                        return f"operational_precondition_unmet:{precondition}"
+            else:
+                for prerequisite in spec.prerequisites:
+                    conclusion = self.measurement(prerequisite).conclusion
+                    if conclusion is not MeasurementConclusion.SUPPORTED_IN_SAMPLE:
+                        return f"prerequisite_unmet:{prerequisite}={conclusion.value}"
+            missing = sorted(set(spec.capabilities) - self.capabilities)
+            if missing:
+                return "capability_not_in_scope:" + ",".join(missing)
+        return ""
 
     def announce(self, ids: Sequence[str], procedure: str) -> bool:
         """Write the procedure boundary ahead of its first effect."""
@@ -1626,6 +1861,9 @@ def _setup_fixtures(execution: _Execution) -> bool:
         execution.stop("persistence:record_not_advanced")
         return False
     execution.fixtures_ready = True
+    # The identity read above proved the exact fixture names and models under
+    # the bound session, which is what "correct subject" means operationally.
+    execution.establish(DiagnosticPrecondition.SUBJECT_SESSION)
     return True
 
 
@@ -3417,20 +3655,19 @@ def _run_d_dhcp(execution: _Execution) -> None:
         execution.finish("D_DHCP_ENABLE")
 
     ids = ("M-DDHCP-4",)
-    if execution.selected("D4-final") and execution.begin(ids, "D_DHCP_FINAL"):
+    if execution.selected("D4-final") and execution.begin_terminal(ids, "D_DHCP_FINAL"):
         with execution.procedure(ids):
             final = _q3_default_read(
                 execution, "d4_before_cleanup", prefix=D_DHCP_DEFAULT_PURPOSE
             )
             execution.conclude(
                 "M-DDHCP-4",
-                assess_native_default_interval(
-                    label="d4_interval",
-                    before=state.baseline or final,
-                    after=final,
-                    intervention=state.last_intervention,
-                    native_calls=state.native_calls,
-                    fields_written=state.fields_written,
+                assess_native_default_cumulative(
+                    label="d4_cumulative",
+                    baseline=state.baseline or final,
+                    final=final,
+                    interventions=tuple(state.interventions),
+                    declared_native_calls=tuple(state.declared_native_calls),
                 ),
             )
         execution.finish("D_DHCP_FINAL")
@@ -3449,6 +3686,21 @@ class _DDhcpState:
     native_calls: tuple[str, ...] = ()
     fields_written: tuple[str, ...] = ()
     rewrites: list[str] = field(default_factory=list)
+    #: Every intervention this run actually dispatched, in order. The final
+    #: reading spans all of them, so it is a cumulative summary and naming
+    #: only the last one would attribute the whole span to one call.
+    interventions: list[str] = field(default_factory=list)
+    #: The generated call footprint each intervention declares. It is what
+    #: the generator would emit, never a count of observed executions.
+    declared_native_calls: list[str] = field(default_factory=list)
+
+    def intervened(self, intervention: str, native_calls: Sequence[str]) -> None:
+        """Record one dispatched intervention and its declared call footprint."""
+        self.last_intervention = intervention
+        self.interventions.append(intervention)
+        self.declared_native_calls.extend(
+            f"{intervention}:{item}" for item in native_calls
+        )
 
 
 def _d_dhcp_baseline(execution: _Execution, state: _DDhcpState) -> None:
@@ -3539,6 +3791,14 @@ def _d_dhcp_baseline(execution: _Execution, state: _DDhcpState) -> None:
     )
     if causes:
         execution.stop(f"d_dhcp_baseline_not_established:{causes[0]}")
+        return
+    # A coherent retained inventory and a verified-off process are two
+    # separate operational facts, and the admission rule asks for them by
+    # name rather than reading this measurement's conclusion.
+    execution.establish(
+        DiagnosticPrecondition.INVENTORY_COHERENT,
+        DiagnosticPrecondition.PROCESS_DISABLED_VERIFIED,
+    )
 
 
 def _d_dhcp_static(
@@ -3587,7 +3847,7 @@ def _d_dhcp_static(
         if isinstance(action, SetEndpointStaticAddress)
         else ()
     )
-    state.last_intervention = "e5:server_static_address:configurePcIp"
+    state.intervened("e5:server_static_address:configurePcIp", state.native_calls)
     state.after_static = _q3_default_read(
         execution, "d1_after_server_address", prefix=D_DHCP_DEFAULT_PURPOSE
     )
@@ -3622,6 +3882,11 @@ def _d_dhcp_static(
     execution.conclude("M-DDHCP-1", assessment)
     if cause:
         execution.stop(cause)
+        return
+    # The E5 row applied and its address read-back succeeded. Whether the
+    # native default moved across the interval is the finding this stage
+    # exists to report, and it is not a reason D2 cannot be attempted.
+    execution.establish(DiagnosticPrecondition.SERVER_ADDRESSING)
 
 
 def _d_dhcp_service_stage(
@@ -3635,6 +3900,7 @@ def _d_dhcp_service_stage(
     *,
     purpose: str,
     intervention: str,
+    native_calls: Sequence[str] = (),
 ) -> tuple[ServiceApplicationResult | None, str]:
     """Apply one projected E6 stage through the real product applicator."""
     state.rewrites.extend(item.as_text() for item in rewrites)
@@ -3655,7 +3921,7 @@ def _d_dhcp_service_stage(
         {item.id for item in plan.actions},
         expected_verification_ids={item.id for item in plan.verification_expectations},
     ) or _d_dhcp_readback_cause(result)
-    state.last_intervention = intervention
+    state.intervened(intervention, native_calls)
     return result, cause
 
 
@@ -3689,20 +3955,6 @@ def _d_dhcp_pool(
     plan, rewrites = d_dhcp_pool_only_plan(
         contract.service_plan, executed_configuration_action_ids=executed_ids
     )
-    result, cause = _d_dhcp_service_stage(
-        execution,
-        state,
-        service_runtime,
-        contract,
-        plan,
-        rewrites,
-        context,
-        purpose="d-dhcp:product:e6_pool_disabled",
-        intervention="e6:configure_server_dhcp_pool:process_disabled",
-    )
-    state.after_pool = _q3_default_read(
-        execution, "d2_after_pool", prefix=D_DHCP_DEFAULT_PURPOSE
-    )
     pool_action = next(
         (item for item in plan.actions if isinstance(item, ConfigureServerDhcpPool)),
         None,
@@ -3720,6 +3972,21 @@ def _d_dhcp_pool(
         )
         if pool_action is not None
         else ()
+    )
+    result, cause = _d_dhcp_service_stage(
+        execution,
+        state,
+        service_runtime,
+        contract,
+        plan,
+        rewrites,
+        context,
+        purpose="d-dhcp:product:e6_pool_disabled",
+        intervention="e6:configure_server_dhcp_pool:process_disabled",
+        native_calls=pool_native_calls,
+    )
+    state.after_pool = _q3_default_read(
+        execution, "d2_after_pool", prefix=D_DHCP_DEFAULT_PURPOSE
     )
     assessment = assess_native_default_interval(
         label="d2_interval",
@@ -3763,6 +4030,10 @@ def _d_dhcp_pool(
     execution.conclude("M-DDHCP-2", assessment)
     if cause:
         execution.stop(cause)
+        return
+    # The stored pool verified against `enabled=False` plus its exact fields,
+    # which is the state D3's activation depends on.
+    execution.establish(DiagnosticPrecondition.POOL_CONFIGURED)
 
 
 def _d_dhcp_enable(
@@ -3787,6 +4058,7 @@ def _d_dhcp_enable(
         context,
         purpose="d-dhcp:product:e6_enable",
         intervention="e6:enable_server_dhcp",
+        native_calls=("setEnable",),
     )
     after = _q3_default_read(
         execution, "d3_after_enable", prefix=D_DHCP_DEFAULT_PURPOSE
@@ -3822,6 +4094,8 @@ def _d_dhcp_enable(
     execution.conclude("M-DDHCP-3", assessment)
     if cause:
         execution.stop(cause)
+        return
+    execution.establish(DiagnosticPrecondition.PROCESS_ENABLED_VERIFIED)
 
 
 @dataclass
@@ -3914,7 +4188,12 @@ def _run_d_web(execution: _Execution) -> None:
     ids = ("M-DWEB-1",)
     if execution.selected("W1-forwarding") and execution.begin(ids, "D_WEB_FORWARDING"):
         with execution.procedure(ids):
-            _d_web_forwarding(execution, state, label="before", samples=2)
+            _d_web_forwarding(
+                execution,
+                state,
+                label="before",
+                samples=D_WEB_FORWARDING_SAMPLES_BEFORE,
+            )
         execution.finish("D_WEB_FORWARDING")
 
     ids = ("M-DWEB-2",)
@@ -3935,8 +4214,12 @@ def _run_d_web(execution: _Execution) -> None:
             _d_web_fetch(execution, state)
         execution.finish("D_WEB_FETCH")
 
+    # The after-boundaries are the terminal observation of this stage. An HTTP
+    # timeout is precisely the case the diagnostic was asked about, so gating
+    # them behind a successful fetch would suppress the readings that locate
+    # it. They are read-only and dispatch no second request.
     ids = ("M-DWEB-5",)
-    if execution.selected("W5-after") and execution.begin(ids, "D_WEB_AFTER"):
+    if execution.selected("W5-after") and execution.begin_terminal(ids, "D_WEB_AFTER"):
         with execution.procedure(ids):
             _d_web_after(execution, state)
         execution.finish("D_WEB_AFTER")
@@ -3993,6 +4276,8 @@ def _d_web_boundaries(execution: _Execution, state: _DWebState, *, label: str) -
     )
     if causes:
         execution.stop(f"d_web_boundaries_not_established:{causes[0]}")
+        return
+    execution.establish(DiagnosticPrecondition.LISTENERS_ESTABLISHED)
 
 
 def _d_web_switch_ports(execution: _Execution) -> tuple[str, ...]:
@@ -4031,6 +4316,8 @@ def _d_web_forwarding(
     state.forwarding_admitted = (
         assessment.conclusion is MeasurementConclusion.SUPPORTED_IN_SAMPLE
     )
+    if state.forwarding_admitted:
+        execution.establish(DiagnosticPrecondition.FORWARDING_OBSERVED)
     execution.conclude("M-DWEB-1", assessment)
     if not state.forwarding_admitted:
         # No permission is granted by an unadmitted sample, and the stage says
@@ -4067,6 +4354,8 @@ def _d_web_page(execution: _Execution, state: _DWebState) -> None:
     )
     if not established:
         execution.stop("d_web_marker_page_not_established")
+        return
+    execution.establish(DiagnosticPrecondition.MARKER_PAGE)
 
 
 def _d_web_ping(execution: _Execution, state: _DWebState) -> None:
@@ -4091,12 +4380,12 @@ def _d_web_ping(execution: _Execution, state: _DWebState) -> None:
             source_endpoint=source,
             expected_reachable=True,
         )
-    execution.conclude(
-        "M-DWEB-3",
-        assess_forwarding_probe(
-            evidence, forwarding_admitted=state.forwarding_admitted
-        ),
+    probe_assessment = assess_forwarding_probe(
+        evidence, forwarding_admitted=state.forwarding_admitted
     )
+    if probe_assessment.conclusion is MeasurementConclusion.SUPPORTED_IN_SAMPLE:
+        execution.establish(DiagnosticPrecondition.PING_ATTRIBUTED)
+    execution.conclude("M-DWEB-3", probe_assessment)
 
 
 def _d_web_fetch(execution: _Execution, state: _DWebState) -> None:
@@ -4161,7 +4450,10 @@ def _d_web_after(execution: _Execution, state: _DWebState) -> None:
     runtime = execution.run.boundaries.configuration_runtime(execution.bound)
     with execution.ledger.purpose_of("d-web:forwarding:after"):
         observation = runtime.observe_access_forwarding(
-            Q1_SWITCH, DIAGNOSTIC_ACCESS_VLAN, interfaces, max_samples=1
+            Q1_SWITCH,
+            DIAGNOSTIC_ACCESS_VLAN,
+            interfaces,
+            max_samples=D_WEB_FORWARDING_SAMPLES_AFTER,
         )
     forwarding = assess_access_forwarding(observation, label="forwarding_after")
     before = state.listeners_before.get("listeners") or {}
@@ -4204,14 +4496,27 @@ def _d_web_after(execution: _Execution, state: _DWebState) -> None:
 
 
 def _finalize(execution: _Execution) -> None:
-    """Release owned state, remove owned devices and prove restoration twice."""
+    """Release owned state, remove owned devices and prove restoration twice.
+
+    The receiver is proven before anything is deleted, not afterwards. A
+    Packet Tracer that was replaced mid-run polls the same mailbox, so a
+    removal dispatched now would land in a workspace this authority never
+    bound; learning that after the fact invalidates the report without undoing
+    the deletion. With authority lost this finalization deletes nothing, names
+    every action it did not take, and still reads what it can. The postflight
+    reading below keeps its detection role for everything that came earlier.
+    """
     ledger = execution.ledger
     ledger.enter(LedgerPhase.FINALIZATION)
     record = execution.record
     execution.in_flight = ()
     execution.run.transition("finalization:started")
-    _release_engine_state(execution)
-    for plan in reversed(execution.removal_candidates):
+    owned = execution.live_authority("finalization:owned_cleanup")
+    if not owned:
+        _refuse_owned_cleanup(execution)
+    else:
+        _release_engine_state(execution)
+    for plan in reversed(execution.removal_candidates) if owned else ():
         fixture = next(item for item in record.fixtures if item.name == plan.name)
         try:
             with ledger.purpose_of(f"remove:{plan.name}"):
@@ -4270,16 +4575,59 @@ def _finalize(execution: _Execution) -> None:
         for item in observations
     ]
     _restoration_scope(execution, observations)
-    record.restoration_proven = all(
+    record.restoration_proven = owned and all(
         item is not None
         and physical_workspace_restoration_matches(execution.baseline, item)
         for item in observations
     )
+    if not owned:
+        # These reads describe whatever answers the mailbox now. They are kept
+        # as observations and they prove nothing about the bound instance's
+        # workspace, so they never become a restoration claim.
+        record.limitations.append(
+            "restoration_reads_not_attributable_to_the_authorized_process"
+        )
     _lifecycle_postflight(execution)
     for name in sorted(execution.observers_unresolved):
         record.engine_residue.append(f"observer:{name}")
     record.dirty_state = _dirty_state(execution, observations)
     execution.run.transition("finalization:completed")
+
+
+def _refuse_owned_cleanup(execution: _Execution) -> None:
+    """Name every owned deletion this run declined to dispatch, and why.
+
+    Nothing here is a guess about what the replacement receiver holds. The
+    fixtures this run created are still reported as residue, because that is
+    what an operator has to reconcile; they are simply not deleted through a
+    session whose identity can no longer be proven.
+    """
+    record = execution.record
+    cause = execution.authority_lost or "execution_authority_lost"
+    if execution.bag_touched:
+        # Only state is left behind that this run actually wrote. A bag
+        # it never claimed is not residue it declined to clean.
+        record.releases.append(
+            ReleaseRecord(
+                resource="bag:run",
+                kind="bag",
+                outcome="not_attempted",
+                detail=f"execution authority lost before cleanup: {cause}",
+            )
+        )
+    for plan in reversed(execution.removal_candidates):
+        record.releases.append(
+            ReleaseRecord(
+                resource=f"device:{plan.name}",
+                kind="device",
+                outcome="not_attempted",
+                detail=f"execution authority lost before cleanup: {cause}",
+            )
+        )
+        record.engine_residue.append(
+            f"device:{plan.name}:removal_refused_unproven_receiver"
+        )
+    record.limitations.append("owned_cleanup_not_dispatched_to_an_unproven_receiver")
 
 
 def _lifecycle_postflight(execution: _Execution) -> None:

@@ -63,6 +63,13 @@ Behaviour switches (`config`) select the engine facts under test:
   fresh content instead of the server page, modelling a wrong completed read;
 - `serve_https_when_disabled` / `serve_http_when_disabled`: contradict the
   candidate listener model on purpose;
+- `terminal_response_delay_reads`: how many `getOutput` reads a dispatched
+  command withholds its response for. A real terminal prints while the
+  caller polls, so an instantly complete command is the fastest path and
+  never the worst case a budget has to survive;
+- `delete_client_throws` / `delete_client_inert`: the owned background
+  client's release refuses, or reports success while the client stays.
+  Either way the run ends with an unresolved effect it has to declare;
 - `version`, `version_getter`, `active_file`, `unset_dns`.
 """
 
@@ -108,6 +115,8 @@ const config = Object.assign({
   dhcp_pool_selection: 'first', default_pool_change_on_enable: null,
   default_pool_drift_reads: 0,
   terminals: false, terminal_refuses: false, ping_reachable: true,
+  terminal_response_delay_reads: 0,
+  delete_client_throws: false, delete_client_inert: false,
   ping_unsupported: false, stp_unsupported: false, stp_vlan: 1,
   stp_forward_delay: 15, stp_rows: {}, stp_extra_rows: [],
   light_status: 2, light_status_return: 'number', port_number_http: 80,
@@ -453,7 +462,13 @@ const processFor = (dev, name) => {
   if (name === 'HttpBackgroundClientManager' && dev.model !== '2960-24TT') {
     return {
       createClient: () => makeClient(dev),
-      deleteClient: (client) => { if (client && client.id) { delete clients[client.id]; } },
+      // A release the engine refuses leaves an owned client behind,
+      // which is an unresolved effect and not a clean exit.
+      deleteClient: (client) => {
+        if (config.delete_client_throws) { throw new Error('delete refused'); }
+        if (config.delete_client_inert) { return; }
+        if (client && client.id) { delete clients[client.id]; }
+      },
     };
   }
   if (name === 'DnsClient' && dev.model !== '2960-24TT') {
@@ -553,13 +568,34 @@ const makeTerminal = (dev) => {
   if (!dev.terminal) {
     const prompt = dev.model === '2960-24TT' ? 'Switch>' : 'C:\\>';
     const state = {prompt: prompt, output: prompt};
+    state.pending = '';
+    state.pendingReads = 0;
     state.api = {
       getPrompt: () => state.prompt,
-      getOutput: () => state.output,
+      // A real terminal renders while the caller polls. Releasing the
+      // response after N reads is what turns one inspection into the
+      // several that a slow command actually costs.
+      getOutput: () => {
+        if (state.pendingReads > 0) {
+          state.pendingReads -= 1;
+          if (state.pendingReads === 0) {
+            state.output += state.pending;
+            state.pending = '';
+          }
+        }
+        return state.output;
+      },
       enterCommand: (command) => {
         if (config.terminal_refuses) { throw new Error('terminal refused'); }
-        state.output += String(command) + '\n' +
-          terminalRespond(dev, command) + state.prompt;
+        const response = terminalRespond(dev, command) + state.prompt;
+        const delay = Number(config.terminal_response_delay_reads || 0);
+        state.output += String(command) + '\n';
+        if (delay > 0) {
+          state.pending = response;
+          state.pendingReads = delay;
+        } else {
+          state.output += response;
+        }
         return true;
       },
     };
@@ -665,7 +701,9 @@ const makeDevice = (name, model) => {
   return dev;
 };
 
+const removeCalls = [];
 const removeDevice = (name) => {
+  removeCalls.push(String(name));
   if (config.remove_throws) { throw new Error('remove refused'); }
   const index = devices.findIndex((d) => d.name === name);
   if (index < 0) { return; }
@@ -807,6 +845,7 @@ const snapshot = () => {
     dhcp_runs: dhcpRuns.slice(),
     dhcp_setter_calls: Object.assign({}, dhcpSetterCalls),
     terminal_commands: terminalCommands.slice(),
+    remove_calls: removeCalls.slice(),
     terminals: Object.fromEntries(devices.filter((d) => d.terminal)
       .map((d) => [d.name, d.terminal.output])),
     live_clients: Object.keys(clients).length,
@@ -984,6 +1023,9 @@ SIM_TREE = "f" * 40
 SIM_BUILD = "9.0.1.0858"
 SIM_PROCESS_ID = 4242
 SIM_PROCESS_PATH = r"C:\Program Files\Cisco Packet Tracer\bin\PacketTracer.exe"
+#: One simulated process incarnation. A PID names a slot the operating
+#: system reuses, so the pairing binds the creation identity too.
+SIM_PROCESS_INCARNATION = "2026-09-20T09:15:00.0000000+00:00"
 
 
 class FakeClock:
@@ -1059,6 +1101,111 @@ class RecordingStore:
         return self.inner.attempt_exists(attempt_id)
 
 
+#: The forwarding states a coherent access fixture reports for the three
+#: switch-side ports both diagnostics link.
+FORWARDING_ROWS = {
+    "FastEthernet0/1": "FWD",
+    "FastEthernet0/2": "FWD",
+    "FastEthernet0/3": "FWD",
+}
+
+
+class DiagnosticStageRun:
+    """One stub engine, one transport and one completed stage invocation."""
+
+    def __init__(self, directory: Path, stage: str, engine_config, **overrides):
+        """Run the stage through the real CLI and keep everything it produced."""
+        self.directory = directory
+        config = {
+            "terminals": True,
+            "ping_reachable": True,
+            "stp_rows": dict(FORWARDING_ROWS),
+            "dhcp_default_pool": "native",
+        }
+        config.update(engine_config or {})
+        self.engine = NodeEngine(directory, **config)
+        self.transport = NodeEngineTransport(self.engine)
+        self.clock = FakeClock()
+        self.opened: list[str] = []
+        self.argv = overrides.pop("argv", None)
+        self.boundaries = self._boundaries(**overrides)
+        self.exit_code: int | None = None
+        self.summary: dict = {}
+
+    def _boundaries(self, **overrides):
+        from packet_tracer_mcp.application.ports.service_qualification import (
+            OpenedTransport,
+        )
+
+        def open_transport(channel: str):
+            self.opened.append(channel)
+            return OpenedTransport(channel, self.transport, True, "stub_engine")
+
+        values = {"open_transport": open_transport, "clock": self.clock}
+        values.update(overrides)
+        return simulated_boundaries(self.directory, self.transport, **values)
+
+    def run(self, argv) -> int:
+        """Invoke the adapter exactly as an operator would."""
+        from packet_tracer_mcp.adapters.cli.service_qualification import main
+
+        self.exit_code = main(
+            argv,
+            environ={"PT_MCP_GOVERNED_ROOT": str(self.directory)},
+            boundaries_factory=lambda root: self.boundaries,
+        )
+        return self.exit_code
+
+    def record(self):
+        """Return the record exactly as the store wrote it last."""
+        from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
+            QualificationRecord,
+        )
+
+        (path,) = list((self.directory / "records").rglob("*.json"))
+        return QualificationRecord.model_validate_json(path.read_text(encoding="utf-8"))
+
+    def scripts(self, needle: str) -> list[str]:
+        """Return every dispatched script containing `needle`."""
+        return [script for _kind, script in self.transport.calls if needle in script]
+
+    def measurement(self, experiment_id: str):
+        """Return one measurement of the stored record."""
+        return next(
+            item
+            for item in self.record().measurements
+            if item.experiment_id == experiment_id
+        )
+
+    def close(self) -> None:
+        """Stop the engine process."""
+        self.engine.close()
+
+
+@pytest.fixture
+def stage(tmp_path, capsys):
+    """Yield a factory that runs one stage and cleans up its engine."""
+    started: list[DiagnosticStageRun] = []
+
+    def make(stage_name: str, engine_config=None, *, argv=None, **overrides):
+        directory = tmp_path / f"{stage_name}{len(started)}"
+        directory.mkdir()
+        item = DiagnosticStageRun(directory, stage_name, engine_config, **overrides)
+        started.append(item)
+        item.run(
+            argv
+            if argv is not None
+            else request_args(stage_name) + authorization_args(stage_name)
+        )
+        printed = capsys.readouterr().out.strip().splitlines()
+        item.summary = json.loads(printed[-1]) if printed else {}
+        return item
+
+    yield make
+    for item in started:
+        item.close()
+
+
 def simulated_boundaries(directory: Path, transport: Any, **overrides: Any):
     """Return the production composition with only external boundaries replaced.
 
@@ -1080,6 +1227,9 @@ def simulated_boundaries(directory: Path, transport: Any, **overrides: Any):
         DiagnosticLifecycleObservation,
         ExecutionMode,
         RepositoryIdentity,
+    )
+    from packet_tracer_mcp.infrastructure.persistence.campaign_coordination import (
+        FileCampaignCoordinator,
     )
 
     clock = overrides.pop("clock", None) or FakeClock()
@@ -1105,7 +1255,12 @@ def simulated_boundaries(directory: Path, transport: Any, **overrides: Any):
             process_id=SIM_PROCESS_ID,
             process_path=SIM_PROCESS_PATH,
             product_version=SIM_BUILD,
+            process_incarnation=SIM_PROCESS_INCARNATION,
         ),
+        # The production coordinator claims beside the operator's real
+        # mailbox. A simulation gets its own scope under the test
+        # directory so it can never take or release that claim.
+        "campaign_coordinator": FileCampaignCoordinator(directory / "campaign"),
     }
     values.update(overrides)
     return dataclasses.replace(production_boundaries(directory), **values)
