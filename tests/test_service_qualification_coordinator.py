@@ -41,6 +41,7 @@ from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
 )
 from packet_tracer_mcp.application.use_cases.qualify_server_services import (
     IsolationObservation,
+    _snapshot_facts,
     qualify_server_services,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
@@ -75,6 +76,9 @@ from packet_tracer_mcp.infrastructure.catalog.service_capabilities import (
 )
 from packet_tracer_mcp.infrastructure.execution.service_environment import (
     ServiceEnvironmentReader,
+)
+from packet_tracer_mcp.infrastructure.execution.transport_outcome import (
+    BridgeDispatchOutcome,
 )
 
 Q0 = STAGE_DEFINITIONS[QualificationStage.Q0]
@@ -1432,6 +1436,253 @@ def test_q3_lost_action_acknowledgement_blocks_the_guard_and_later_effects(harne
     assert record.restoration_proven is True
 
 
+# -- A02-E1: the record is the one sink for every native default reading -------
+
+SRV = "__MCP_E6Q_SRV"
+#: The exact LIVE transition: enabling the process moved the native default.
+NATIVE_DEFAULT_MOVES = {
+    "dhcp_default_pool": "native",
+    "default_pool_change_on_enable": {
+        "network": "192.0.2.0",
+        "mask": "255.255.255.0",
+        "start": "192.0.2.0",
+        "end": "192.0.3.255",
+    },
+}
+LATE_END = "203.0.113.255"
+MOVED_ON_ENABLE = [
+    "default_pool_changed:serverPool.end",
+    "default_pool_changed:serverPool.mask",
+    "default_pool_changed:serverPool.network",
+    "default_pool_changed:serverPool.start",
+]
+DEFAULT_LABELS = ["before_e5", "after_setup", "before_cleanup"]
+DEFAULT_PURPOSES = [f"q3:native_default:{item}" for item in DEFAULT_LABELS]
+
+
+def _move_native_default(engine, end_ip: str) -> None:
+    """Move the native default once, through the engine's own pool object."""
+    engine.evaluate(
+        f"var d=ipc.network().getDevice({json.dumps(SRV)});"
+        "var m=d&&d.getProcess('DhcpServerMain');"
+        "var p=m&&m.getDhcpServerProcessByPortName('FastEthernet0');"
+        "var q=p&&p.getPool('serverPool');"
+        f"if(q){{q.setEndIp({json.dumps(end_ip)});}}"
+        "reportResult(JSON.stringify({moved:!!q}));"
+    )
+
+
+class _NativeDefaultWatcher(_Wrapped):
+    """Watch every native default read and disturb exactly one of them.
+
+    `pools` keeps what the stub engine itself held at each read, so the oracle
+    for a persisted reading is the engine's own state at that moment rather
+    than a second copy of the projection. `hook` runs right after the numbered
+    read returns; `lose` and `corrupt` replace one read's answer without
+    changing any other call.
+    """
+
+    def __init__(
+        self,
+        inner,
+        engine,
+        *,
+        hook_after: int = 0,
+        hook=None,
+        lose: int = 0,
+        corrupt: int = 0,
+    ):
+        super().__init__(inner)
+        self.engine = engine
+        self.hook_after = hook_after
+        self.hook = hook
+        self.lose = lose
+        self.corrupt = corrupt
+        self.reads = 0
+        self.pools: list[dict] = []
+
+    def _native_end(self, index: int) -> str:
+        return self.pools[index]["pools"]["serverPool"]["end"]
+
+    def dispatch_and_wait(self, js_code: str, timeout: float):
+        if 'step:"dhcp_server_baseline"' not in js_code:
+            return self.inner.dispatch_and_wait(js_code, timeout)
+        self.reads += 1
+        outcome = self.inner.dispatch_and_wait(js_code, timeout)
+        # Taken after the read, because the stub materializes the stock
+        # default pool on the first access, exactly as the read observes it.
+        self.pools.append(self.engine.snapshot()["dhcp_servers"].get(SRV, {}))
+        if self.reads == self.lose:
+            outcome = BridgeDispatchOutcome(
+                dispatch=DispatchFact.ACCEPTANCE_UNKNOWN,
+                result=ResultFact.NOT_OBSERVED,
+                detail="stub_response_lost",
+            )
+        elif self.reads == self.corrupt:
+            body = json.loads(outcome.body)
+            body["pool_count"] = len(body["pools"]) + 1
+            outcome = replace(outcome, body=json.dumps(body))
+        if self.reads == self.hook_after and self.hook is not None:
+            self.hook()
+        return outcome
+
+
+def _watch(h: _Harness, **options) -> _NativeDefaultWatcher:
+    """Put a watcher in front of the harness channel and return it."""
+    watcher = _NativeDefaultWatcher(h.transport, h.engine, **options)
+    h.transport = watcher
+    return watcher
+
+
+def _q3_stage(h: _Harness, **overrides):
+    """Run the whole Q3 stage through the coordinator at its own ceiling."""
+    return h.run(
+        _q3_request(),
+        capabilities=frozenset(Q3.experimental_capabilities),
+        **overrides,
+    )
+
+
+def test_every_native_default_reading_reaches_the_terminal_record(harness):
+    """A02-E1: the reading taken after the stop is durable, and it is its own.
+
+    Enabling the process moves the native default, so Q3 stops and takes its
+    last reading after the final conclusion and after `Q3_SETUP` finished. The
+    engine then moves the default once more, so a record that reproduced
+    `after_setup` instead of persisting what it read would contradict the
+    stub's own state at that moment.
+    """
+    h = harness(NATIVE_DEFAULT_MOVES)
+    watcher = _watch(
+        h, hook_after=2, hook=lambda: _move_native_default(h.engine, LATE_END)
+    )
+
+    result = _q3_stage(h)
+
+    assert result.record.primary_failure == (
+        "q3_native_default_changed:default_pool_changed:serverPool.end"
+    )
+    durable = h.durable()
+    entries = durable.native_default_pool
+    assert [item.label for item in entries] == DEFAULT_LABELS
+    assert [item.purpose for item in entries] == DEFAULT_PURPOSES
+    assert [item.observed for item in entries] == [True, True, True]
+    counted = {item.seq: item.purpose for item in durable.operations if item.seq}
+    assert [counted[item.operation_seq] for item in entries] == DEFAULT_PURPOSES
+    assert watcher.reads == 3
+    assert [item.pools[0]["end"] for item in entries] == [
+        watcher._native_end(0),
+        watcher._native_end(1),
+        LATE_END,
+    ]
+    assert entries[2].pools[0]["end"] != entries[1].pools[0]["end"]
+    assert [item.differences for item in entries] == [
+        [],
+        MOVED_ON_ENABLE,
+        MOVED_ON_ENABLE,
+    ]
+    assert durable.budget.used_operations <= Q3.planned_minimum_operations
+    assert h.scripts("dhcpRun") == [] and h.engine.snapshot()["dhcp_runs"] == []
+    assert durable.restoration_proven is True
+
+
+def test_the_terminal_record_carries_the_readings_when_completion_fails(harness):
+    """A02-E1: each reading is durable when it is taken, not only at the end."""
+    h = harness(NATIVE_DEFAULT_MOVES)
+    _watch(h, hook_after=2, hook=lambda: _move_native_default(h.engine, LATE_END))
+    store = RecordingStore(h.directory / "records", fail_at={"complete"})
+
+    result = _q3_stage(h, record_store=store)
+
+    record = result.record
+    assert "record_completion_failed" in record.secondary_failures
+    assert record.persist_error
+    assert record.primary_failure == (
+        "q3_native_default_changed:default_pool_changed:serverPool.end"
+    )
+    # The last successful write already carried all three readings.
+    assert [item.label for item in h.durable().native_default_pool] == DEFAULT_LABELS
+    assert h.durable().native_default_pool[2].pools[0]["end"] == LATE_END
+
+
+def test_a_failed_reading_write_keeps_the_primary_cause_and_finalizes(harness):
+    """A02-E1: a store failure at the last reading is evidence, not a new cause."""
+    h = harness(NATIVE_DEFAULT_MOVES)
+    watcher = _watch(h)
+    store = RecordingStore(
+        h.directory / "records", fail_at={"native_default:before_cleanup"}
+    )
+
+    result = _q3_stage(h, record_store=store)
+
+    record = result.record
+    assert record.primary_failure == (
+        "q3_native_default_changed:default_pool_changed:serverPool.end"
+    )
+    assert "persist_error:native_default:before_cleanup" in record.limitations
+    assert record.persist_error
+    assert watcher.reads == 3
+    assert [item.label for item in record.native_default_pool] == DEFAULT_LABELS
+    assert record.restoration_proven is True
+    assert h.engine.snapshot()["devices"] == []
+
+
+@pytest.mark.parametrize(
+    ("options", "cause"),
+    [
+        ({"lose": 3}, "dhcp_server_baseline_unobserved:stub_response_lost"),
+        ({"corrupt": 3}, "default_pool_snapshot_inventory_incoherent"),
+    ],
+    ids=["lost_answer", "incoherent_inventory"],
+)
+def test_an_unusable_final_reading_is_recorded_as_not_observed(harness, options, cause):
+    """A02-E1: the record says what the last reading could not establish."""
+    h = harness(NATIVE_DEFAULT_MOVES)
+    _watch(h, **options)
+
+    result = _q3_stage(h)
+
+    record = result.record
+    last = record.native_default_pool[-1]
+    assert (last.label, last.observed, last.cause) == ("before_cleanup", False, cause)
+    assert last.purpose == "q3:native_default:before_cleanup"
+    assert record.primary_failure == (
+        "q3_native_default_changed:default_pool_changed:serverPool.end"
+    )
+    assert f"native_default:before_cleanup:{cause}" in record.secondary_failures
+    assert record.restoration_proven is True
+
+
+def test_an_unaffordable_final_reading_is_stated_and_never_dispatched(harness):
+    """A02-E1: no operation is added to the stage to repair the record."""
+    clock = FakeClock()
+    h = harness(NATIVE_DEFAULT_MOVES)
+    watcher = _watch(
+        h, hook_after=2, hook=lambda: setattr(clock, "now", clock.now + 1100.0)
+    )
+
+    result = _q3_stage(h, clock=clock)
+
+    record = result.record
+    assert watcher.reads == 2
+    last = record.native_default_pool[-1]
+    assert [item.label for item in record.native_default_pool] == DEFAULT_LABELS
+    assert (last.observed, last.cause) == (
+        False,
+        "default_pool_snapshot_not_affordable",
+    )
+    assert (last.operation_seq, last.pools, last.raw) == (0, [], {})
+    assert [
+        item.purpose
+        for item in record.operations
+        if item.purpose == "q3:native_default:before_cleanup"
+    ] == []
+    assert record.primary_failure == (
+        "q3_native_default_changed:default_pool_changed:serverPool.end"
+    )
+    assert record.restoration_proven is True
+
+
 def test_q3_records_the_native_default_before_and_after_its_own_setup(harness):
     """F2: the snapshots bracket the setup and the intended pool is separate."""
     h = harness({"dhcp_default_pool": "native"})
@@ -1449,6 +1700,10 @@ def test_q3_records_the_native_default_before_and_after_its_own_setup(harness):
     ]
     assert {item["intended_pool_present"] for item in snapshots} == {False, True}
     assert timing.facts["native_default"]["differences"] == []
+    # The projection is a view of the record's sink, not a second store.
+    assert snapshots == [_snapshot_facts(item) for item in record.native_default_pool]
+    assert [item.purpose for item in record.native_default_pool] == DEFAULT_PURPOSES
+    assert all(item.operation_seq for item in record.native_default_pool)
     assert h.scripts("addPool") != []
     # The intended pool was created; the observed default was never touched.
     assert "serverPool" not in "".join(h.scripts("addPool"))

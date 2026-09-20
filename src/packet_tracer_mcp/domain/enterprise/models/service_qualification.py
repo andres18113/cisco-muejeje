@@ -1118,6 +1118,29 @@ class ReleaseRecord(BaseModel):
     detail: str = ""
 
 
+class DefaultPoolObservation(BaseModel):
+    """One bounded native default-pool reading, exactly as it was taken.
+
+    The entry is written when the reading returns, not when a measurement is
+    concluded, so a reading taken after a stop or during finalization is still
+    durable evidence of the run. `purpose` is the label the operation was
+    dispatched under and `operation_seq` is the ledger sequence of the counted
+    call; `operation_seq` is 0 exactly when no operation was counted, which is
+    also when `observed` is false and `cause` says why.
+    """
+
+    label: str
+    purpose: str = ""
+    operation_seq: int = 0
+    observed: bool = False
+    cause: str = ""
+    pools: list[dict[str, Any]] = Field(default_factory=list)
+    intended_pool_present: bool = False
+    raw: dict[str, Any] = Field(default_factory=dict)
+    #: Every difference this reading shows against the run's first reading.
+    differences: list[str] = Field(default_factory=list)
+
+
 class QualificationTransition(BaseModel):
     """One write-ahead step boundary."""
 
@@ -1219,6 +1242,11 @@ class QualificationRecord(BaseModel):
     #: exactly as the restoration reads are later compared against it.
     workspace_baseline: dict[str, Any] = Field(default_factory=dict)
     refusals: list[QualificationRefusal] = Field(default_factory=list)
+    #: Every bounded native default-pool reading the run took, in order. This
+    #: is the authoritative sink: a measurement projects from it, and nothing
+    #: else holds these readings, so one taken after the last conclusion still
+    #: reaches the terminal record.
+    native_default_pool: list[DefaultPoolObservation] = Field(default_factory=list)
     measurements: list[MeasurementRecord] = Field(default_factory=list)
     primary_failure: str = ""
     secondary_failures: list[str] = Field(default_factory=list)

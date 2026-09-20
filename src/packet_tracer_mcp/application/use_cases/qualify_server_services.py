@@ -96,6 +96,7 @@ from ...domain.enterprise.models.service_qualification import (
     READINESS_DEADLINE_SECONDS,
     READINESS_MAX_READS,
     BudgetRecord,
+    DefaultPoolObservation,
     EnvironmentIdentity,
     ExecutionMode,
     FixtureRecord,
@@ -170,6 +171,8 @@ SendAndWait = Callable[[str, float], str | None]
 MAX_DETAIL = 240
 #: The worst case of one production fetch: start, two inspections, release.
 FETCH_OPERATIONS = 4
+#: The ledger purpose prefix every native default reading is dispatched under.
+Q3_DEFAULT_PURPOSE = "q3:native_default"
 
 
 def _bounded(value: object) -> str:
@@ -1234,17 +1237,26 @@ class _Execution:
     observers_unresolved: set[str] = field(default_factory=set)
     in_flight: tuple[str, ...] = ()
     e5_accepted: bool = False
-    #: Every bounded read of the observed native default, in the order the run
-    #: took them, plus every difference between two of them. Both are kept
-    #: whatever the outcome: a default that moved is evidence, not a detail to
-    #: drop once the stage stops.
-    default_pool_snapshots: list[DefaultPoolSnapshot] = field(default_factory=list)
-    default_pool_differences: list[str] = field(default_factory=list)
 
     @property
     def record(self) -> QualificationRecord:
         """Return the record under construction."""
         return self.run.record
+
+    @property
+    def default_pool_differences(self) -> list[str]:
+        """Return every difference the run's default readings revealed.
+
+        The readings live on the record, which is the one authoritative sink,
+        so this stays true after a stop and after the procedure that took them
+        has concluded.
+        """
+        seen: list[str] = []
+        for entry in self.record.native_default_pool:
+            for item in entry.differences:
+                if item not in seen:
+                    seen.append(item)
+        return seen
 
     @property
     def ledger(self) -> OperationLedger:
@@ -2114,48 +2126,160 @@ def _q3_client_assessments(
     return mac, mode
 
 
-def _snapshot_facts(snapshot: DefaultPoolSnapshot) -> dict[str, Any]:
-    """Return one bounded default-pool reading exactly as it was observed."""
+def _snapshot_facts(entry: DefaultPoolObservation) -> dict[str, Any]:
+    """Return one persisted default reading exactly as it was recorded."""
     return {
-        "label": snapshot.label,
-        "observed": snapshot.observed,
-        "cause": snapshot.cause,
-        "pools": [dict(item) for item in snapshot.pools],
-        "intended_pool_present": snapshot.intended_present,
-        "raw": dict(snapshot.raw),
+        "label": entry.label,
+        "purpose": entry.purpose,
+        "operation_seq": entry.operation_seq,
+        "observed": entry.observed,
+        "cause": entry.cause,
+        "pools": [dict(item) for item in entry.pools],
+        "intended_pool_present": entry.intended_pool_present,
+        "raw": dict(entry.raw),
+        "differences": list(entry.differences),
     }
 
 
 def _native_default_facts(execution: _Execution) -> dict[str, Any]:
-    """Return every default-pool snapshot this run took and their differences."""
+    """Return every default reading the record holds and their differences."""
     return {
         "snapshots": [
-            _snapshot_facts(item) for item in execution.default_pool_snapshots
+            _snapshot_facts(item) for item in execution.record.native_default_pool
         ],
-        "differences": list(execution.default_pool_differences),
+        "differences": execution.default_pool_differences,
     }
 
 
-def _q3_snapshot_default(
-    execution: _Execution, label: str, reading: ProbeReading | None
-) -> DefaultPoolSnapshot:
-    """Record one bounded default snapshot and every difference it reveals."""
-    snapshot = default_pool_snapshot(
-        label,
-        reading,
-        intended_pool=Q3_POOL,
-        server=Q3_SERVER,
-        interface="FastEthernet0",
+def _q3_default_purpose(label: str) -> str:
+    """Return the ledger purpose one default reading is dispatched under."""
+    return f"{Q3_DEFAULT_PURPOSE}:{label}"
+
+
+def _counted_seq(ledger: OperationLedger, start: int) -> int:
+    """Return the sequence of the last call counted since `start`, or 0.
+
+    A refused call carries sequence 0, so a window that only refused reports
+    no association rather than borrowing the previous call's number.
+    """
+    counted = [item.seq for item in ledger.entries[start:] if item.seq]
+    return counted[-1] if counted else 0
+
+
+def _restore_snapshot(entry: DefaultPoolObservation) -> DefaultPoolSnapshot:
+    """Return the domain snapshot one persisted reading stands for."""
+    return DefaultPoolSnapshot(
+        entry.label,
+        entry.observed,
+        entry.cause,
+        tuple(dict(item) for item in entry.pools),
+        entry.intended_pool_present,
+        dict(entry.raw),
     )
-    execution.default_pool_snapshots.append(snapshot)
-    if len(execution.default_pool_snapshots) > 1:
-        differences = default_pool_differences(
-            execution.default_pool_snapshots[0], snapshot
+
+
+def _q3_default_persist(
+    execution: _Execution,
+    purpose: str,
+    operation_seq: int,
+    snapshot: DefaultPoolSnapshot,
+) -> DefaultPoolSnapshot:
+    """Write one default reading to the record's sink and persist it there.
+
+    The sink is the record itself, so a reading taken after the last
+    conclusion, after a stop or during finalization is durable evidence of the
+    run rather than a value that disappears with the procedure that took it.
+    The write uses the existing step machinery: a failed advance keeps the
+    first primary failure, records its own error and closes further effects.
+    """
+    record = execution.record
+    first = record.native_default_pool[0] if record.native_default_pool else None
+    differences = (
+        default_pool_differences(_restore_snapshot(first), snapshot)
+        if first is not None
+        else ()
+    )
+    record.native_default_pool.append(
+        DefaultPoolObservation(
+            label=snapshot.label,
+            purpose=purpose,
+            operation_seq=operation_seq,
+            observed=snapshot.observed,
+            cause=snapshot.cause,
+            pools=[dict(item) for item in snapshot.pools],
+            intended_pool_present=snapshot.intended_present,
+            raw=dict(snapshot.raw),
+            differences=list(differences),
         )
-        for item in differences:
-            if item not in execution.default_pool_differences:
-                execution.default_pool_differences.append(item)
+    )
+    if not snapshot.observed and execution.stopped:
+        # The run already has its cause. An unobserved later reading is one
+        # more fact about it, never a replacement for it.
+        record.secondary_failures.append(
+            f"native_default:{snapshot.label}:{snapshot.cause}"
+        )
+    execution.run.transition(f"native_default:{snapshot.label}")
     return snapshot
+
+
+def _q3_default_observed(
+    execution: _Execution,
+    label: str,
+    reading: ProbeReading | None,
+    *,
+    operation_seq: int,
+) -> DefaultPoolSnapshot:
+    """Classify and persist one default reading this run already performed."""
+    return _q3_default_persist(
+        execution,
+        _q3_default_purpose(label),
+        operation_seq,
+        default_pool_snapshot(
+            label,
+            reading,
+            intended_pool=Q3_POOL,
+            server=Q3_SERVER,
+            interface="FastEthernet0",
+        ),
+    )
+
+
+def _q3_default_read(execution: _Execution, label: str) -> DefaultPoolSnapshot:
+    """Dispatch one bounded default reading under its own purpose and persist it.
+
+    The purpose is set before the call, so the counted operation states what it
+    was for instead of being identified afterwards from its ordinal. A reading
+    the remaining allowance cannot pay for, and one the ledger refuses, are
+    explicitly not observed: no operation is added to the stage to repair the
+    record, and the budgets are the ones the stage already planned.
+    """
+    purpose = _q3_default_purpose(label)
+    ledger = execution.ledger
+    start = len(ledger.entries)
+    if not ledger.can_afford(1):
+        return _q3_default_persist(
+            execution,
+            purpose,
+            0,
+            DefaultPoolSnapshot(label, False, "default_pool_snapshot_not_affordable"),
+        )
+    try:
+        with ledger.purpose_of(purpose):
+            reading = execution.probes.read_dhcp_server_baseline(
+                Q3_SERVER, "FastEthernet0"
+            )
+    except OperationRefused as exc:
+        return _q3_default_persist(
+            execution,
+            purpose,
+            0,
+            DefaultPoolSnapshot(
+                label, False, f"default_pool_snapshot_refused:{exc.reason}"
+            ),
+        )
+    return _q3_default_observed(
+        execution, label, reading, operation_seq=_counted_seq(ledger, start)
+    )
 
 
 def _q3_e5_foundation_cause(
@@ -2370,7 +2494,11 @@ def _q3_setup_assessment(
         f"initial_pool_inventory:{admission.kind}",
     ]
     if admission.kind == BASELINE_OBSERVED_NATIVE_DEFAULT:
-        limitations.append("native_default_pool_coexists_and_is_never_modified")
+        # What the run can state is what it did, not what Packet Tracer did:
+        # no explicit setter of this run targeted the native default. Whether
+        # its values moved is a separate observation, and the readings above
+        # are where a reviewer finds the answer.
+        limitations.append("no_explicit_setter_targeted_the_native_default")
         limitations.append("process_enable_is_process_wide_not_pool_scoped")
     if not setup_cause and complete_mutations and foundations_ready and readback_ready:
         return Assessment(
@@ -2631,9 +2759,13 @@ def _run_q3(execution: _Execution) -> None:
         return
     foundations: dict[str, ActionExecutionStatus] = {}
     with execution.procedure(setup_ids):
-        baseline = execution.probes.read_dhcp_server_baseline(
-            Q3_SERVER, "FastEthernet0"
-        )
+        # One read serves both the typed baseline admission and the run's first
+        # default reading, so the first snapshot costs the stage nothing extra.
+        baseline_start = len(execution.ledger.entries)
+        with execution.ledger.purpose_of(_q3_default_purpose("before_e5")):
+            baseline = execution.probes.read_dhcp_server_baseline(
+                Q3_SERVER, "FastEthernet0"
+            )
         admission = assess_dhcp_baseline_admission(
             baseline,
             server=Q3_SERVER,
@@ -2644,7 +2776,12 @@ def _run_q3(execution: _Execution) -> None:
             observed_channel=execution.channel,
             qualified_channels=execution.definition.allowed_channels,
         )
-        _q3_snapshot_default(execution, "before_e5", baseline)
+        _q3_default_observed(
+            execution,
+            "before_e5",
+            baseline,
+            operation_seq=_counted_seq(execution.ledger, baseline_start),
+        )
         clients_before = execution.probes.read_dhcp_clients(clients)
         if not admission.admitted:
             mac, mode = _q3_client_assessments(clients_before, clients_before)
@@ -2761,26 +2898,16 @@ def _run_q3(execution: _Execution) -> None:
                 )
                 if setup_cause:
                     execution.stop(setup_cause)
-            if execution.ledger.can_afford(1):
-                after_setup = execution.probes.read_dhcp_server_baseline(
-                    Q3_SERVER, "FastEthernet0"
+            after_snapshot = _q3_default_read(execution, "after_setup")
+            if not after_snapshot.observed:
+                setup_cause = setup_cause or (
+                    "q3_native_default_unobserved:" + after_snapshot.cause
                 )
-                after_snapshot = _q3_snapshot_default(
-                    execution, "after_setup", after_setup
+                execution.stop(setup_cause)
+            elif execution.default_pool_differences:
+                setup_cause = setup_cause or (
+                    "q3_native_default_changed:" + execution.default_pool_differences[0]
                 )
-                if not after_snapshot.observed:
-                    setup_cause = setup_cause or (
-                        "q3_native_default_unobserved:" + after_snapshot.cause
-                    )
-                    execution.stop(setup_cause)
-                elif execution.default_pool_differences:
-                    setup_cause = setup_cause or (
-                        "q3_native_default_changed:"
-                        + execution.default_pool_differences[0]
-                    )
-                    execution.stop(setup_cause)
-            else:
-                setup_cause = setup_cause or "q3_native_default_snapshot_not_affordable"
                 execution.stop(setup_cause)
             clients_after = clients_before
             if configuration is not None and execution.ledger.can_afford(1):
@@ -2805,12 +2932,7 @@ def _run_q3(execution: _Execution) -> None:
             execution.conclude("M-DHCP-5", mode)
     execution.finish("Q3_SETUP")
     if execution.stopped:
-        if execution.ledger.can_afford(1):
-            _q3_snapshot_default(
-                execution,
-                "before_cleanup",
-                execution.probes.read_dhcp_server_baseline(Q3_SERVER, "FastEthernet0"),
-            )
+        _q3_default_read(execution, "before_cleanup")
         return
 
     # M-DHCP-3 is OMITTED in this profile: no observer is registered, so the
@@ -2912,12 +3034,7 @@ def _run_q3(execution: _Execution) -> None:
                 full_table = execution.probes.read_dhcp_table(
                     Q3_SERVER, "FastEthernet0", Q3_POOL
                 )
-        if execution.ledger.can_afford(1):
-            _q3_snapshot_default(
-                execution,
-                "before_cleanup",
-                execution.probes.read_dhcp_server_baseline(Q3_SERVER, "FastEthernet0"),
-            )
+        _q3_default_read(execution, "before_cleanup")
         if service_result is not None:
             for action in contract.service_plan.actions:
                 if isinstance(action, AcquireDhcpLease):

@@ -482,8 +482,21 @@ def test_q3_coexists_with_the_exact_observed_native_default(simulation, capsys):
         "kind": "observed_native_default",
         "causes": [],
     }
-    assert "native_default_pool_coexists_and_is_never_modified" in setup.limitations
+    assert "no_explicit_setter_targeted_the_native_default" in setup.limitations
     assert "process_enable_is_process_wide_not_pool_scoped" in setup.limitations
+    # The record is the one sink: it holds every reading the run took,
+    # each under the purpose its counted operation was dispatched with.
+    assert [item.label for item in record.native_default_pool] == [
+        "before_e5",
+        "after_setup",
+        "before_cleanup",
+    ]
+    counted = {item.seq: item.purpose for item in record.operations if item.seq}
+    assert [counted[item.operation_seq] for item in record.native_default_pool] == [
+        "q3:native_default:before_e5",
+        "q3:native_default:after_setup",
+        "q3:native_default:before_cleanup",
+    ]
     labels = [item["label"] for item in setup.facts["native_default"]["snapshots"]]
     assert labels == ["before_e5", "after_setup"]
     timing = next(
