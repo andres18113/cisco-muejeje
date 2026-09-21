@@ -716,10 +716,16 @@ attempt marker, and never reclaims by age.
 wall-clock time, and this reader is on the authority path that every gated
 effect now consults.
 
-- A finite local observation timeout (`LOCAL_OBSERVATION_TIMEOUT_SECONDS`, 5.0
-  seconds) is passed to `subprocess.run`, so the mechanism that terminates on
-  expiry is the standard one and it terminates only the owned PowerShell helper.
-  Packet Tracer is never signalled.
+- A finite local observation timeout (`LOCAL_OBSERVATION_TIMEOUT_SECONDS`) is
+  passed to `subprocess.run`, so the mechanism that terminates on expiry is
+  the standard one and it terminates only the owned PowerShell helper. Packet
+  Tracer is never signalled. The figure is 30 s, and it is measured rather
+  than chosen: one healthy read answered in 0.20-0.24 s on a warm maintainer
+  machine, and the first 5 s value this delivery tried was crossed by a cold
+  PowerShell start on a loaded GitHub Windows runner -- which CI caught, as
+  two failing jobs, before any of it reached a review. A bound a healthy
+  environment can cross is worse than no bound: an expired read is
+  unobservable authority, so it stops the run and refuses its own cleanup.
 - `subprocess.TimeoutExpired` is **not** swallowed into the empty string. It
   propagates, `PacketTracerDiagnosticLifecycleReader` turns it into
   `process_incarnation_unreadable:TimeoutExpired`, and the continuity gate
@@ -750,16 +756,20 @@ redistributes six inspections it was already counting.
 
 The SECONDS move, and this is the one place where the protection genuinely
 costs more than the earlier delivery claimed. Deciding authority before each
-effect dispatch spends no operation and does spend wall-clock time: two
-bounded local process reads per decision, each at most
-`LOCAL_OBSERVATION_TIMEOUT_SECONDS`. The count is bounded by the ceiling
-itself, because a decision happens only for a call admitted or refused inside
-an effect scope, plus one per procedure and four for setup, finalization and
-the two pairing readings. So the declared worst case is
-`(max_operations + experiments + 4) * 2 * 5` seconds of local observation on
-top of the bridge work: D-DHCP `900 + 590` and D-WEB `900 + 900`. The
-finalization reserve moves for the same reason, since owned cleanup is where
-the per-dispatch decision matters most.
+effect dispatch spends no operation and does spend wall-clock time: two local
+process reads per decision, at most one decision per call admitted or refused
+inside an effect scope, plus one per procedure and four for setup,
+finalization and the two pairing readings.
+
+What bounds the TOTAL is the ceiling itself, not a multiplication by the
+per-read timeout. That timeout can be spent in full at most once, because an
+expired read is unobservable authority and the loss is sticky: the run stops
+and asks nothing further. Every reading that succeeds is charged to the
+phase's wall clock, and once the phase has no seconds left the ledger refuses
+the next call. So the seconds move to give the gate room on a slow machine,
+not to cover an unreachable worst case: D-DHCP 900 -> 1500 and D-WEB
+900 -> 1800, with the finalization reserve 180 -> 300 because owned cleanup
+is where the per-dispatch decision matters most.
 
 Measured, not assumed: a complete D-WEB simulation takes 46 local readings
 (36 of them at effect dispatches) and a complete D-DHCP one takes 37 (28 at

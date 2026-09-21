@@ -358,19 +358,26 @@ class StageDefinition:
 #: calls, one typed ping is three and one bind-before-ping probe is seven.
 #:
 #: Their SECONDS are recomputed for the effect gate. Deciding authority before
-#: each effect dispatch spends no operation and does spend time: two bounded
-#: local process reads, each at most `LOCAL_OBSERVATION_TIMEOUT_SECONDS`. The
-#: number of those decisions is bounded by the ceiling itself -- at most one
-#: per admitted or refused call inside an effect scope, plus one per procedure
-#: and four for setup, finalization and the two pairing readings -- so the
-#: worst case is `(max_operations + experiments + 4) * 2 * 5` seconds on top
-#: of the bridge work: D-DHCP 900 + 590 -> 1500, D-WEB 900 + 900 -> 1800. The
-#: finalization reserve moves from 180 to 300 s for the same reason, because
-#: owned cleanup is where the per-dispatch decision matters most. Typical
-#: runs spend a small fraction of this; the record reports what each one
-#: actually spent as `budget.local_observation_seconds`. No operation ceiling
-#: moves, no historical Q budget moves, and both remain proposed limits that
-#: no authorization has ever been granted against.
+#: each effect dispatch spends no operation and does spend time: two local
+#: process reads per decision, at most one decision per admitted or refused
+#: call inside an effect scope, plus one per procedure and four for setup,
+#: finalization and the two pairing readings. A complete D-WEB simulation
+#: takes 46 of those readings and a D-DHCP one 37, against 9 before the gate
+#: existed, and one healthy reading was measured at 0.20-0.24 s.
+#:
+#: What bounds the TOTAL is this ceiling itself, not a multiplication by
+#: `LOCAL_OBSERVATION_TIMEOUT_SECONDS`. The per-read timeout can be spent in
+#: full at most once, because an expired read is unobservable authority and
+#: the loss is sticky: the run stops and asks nothing further. Every reading
+#: that succeeds is charged to the phase's wall clock, and once the phase has
+#: no seconds left the ledger refuses the next call. So the seconds move to
+#: give the gate room on a slow machine rather than to cover an unreachable
+#: worst case: D-DHCP 900 -> 1500 and D-WEB 900 -> 1800, with the
+#: finalization reserve 180 -> 300 because owned cleanup is where the
+#: per-dispatch decision matters most. Each record reports what it actually
+#: spent as `budget.local_observation_seconds`. No operation ceiling moves, no
+#: historical Q budget moves, and both remain proposed limits that no
+#: authorization has ever been granted against.
 STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.Q0: (20, 300),
     QualificationStage.Q1: (60, 600),
@@ -821,7 +828,17 @@ D_WEB_LATE_READ_OFFSET = 10.0
 #: wait is finite and declared. It bounds what this run waits for, never
 #: operating-system scheduling: process creation and interpreter startup are
 #: outside this process's control and nothing here promises a bound on them.
-LOCAL_OBSERVATION_TIMEOUT_SECONDS = 5.0
+#:
+#: The figure is measured, not guessed, and it is deliberately far above the
+#: cost of a healthy read. One `Get-Process` through PowerShell answered in
+#: 0.20-0.24 s on a warm maintainer machine; the same read exceeded 5 s on a
+#: loaded GitHub Windows runner, where a first invocation pays for interpreter
+#: start and module loading on contended disk. A bound a healthy environment
+#: can cross is worse than no bound at all here: an expired read is
+#: unobservable authority, so it stops the run and refuses its own cleanup.
+#: 30 s is roughly 130 times the measured healthy cost, which leaves the
+#: timeout for the case it exists for -- a helper that is not coming back.
+LOCAL_OBSERVATION_TIMEOUT_SECONDS = 30.0
 #: What the effect gate is, stated on every diagnostic record so the reading
 #: is never mistaken for one. The gate decides authority immediately before a
 #: dispatch leaves this process; no existing dispatcher carries a session

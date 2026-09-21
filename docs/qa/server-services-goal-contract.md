@@ -116,10 +116,14 @@ historical Q budget is touched. D-WEB's draft ceiling moves from 68 to 80
 because the corrected worst case is 74; D-DHCP's 50 is unchanged, because
 nothing it does polls a terminal. The SECONDS move too -- D-DHCP 900 to
 1500, D-WEB 900 to 1800, and the finalization reserve 180 to 300 -- because
-the per-dispatch authority decision waits on two bounded local process reads
-of at most 5 s each. The count of those decisions is bounded by the
-operation ceiling itself, so the added worst case is
-`(max_operations + experiments + 4) * 2 * 5` seconds. The slack above each planned worst case is
+the per-dispatch authority decision waits on two local process reads, and a
+complete run takes 46 of those readings for D-WEB and 37 for D-DHCP against
+9 before the gate existed. What bounds the total is the ceiling itself: a
+read that expires is unobservable authority and stops the run, so the 30 s
+per-read bound can be spent in full at most once, and every reading that
+succeeds is charged to the phase's wall clock until the ledger refuses the
+next call. Each record reports what it actually spent as
+`budget.local_observation_seconds`. The slack above each planned worst case is
 ordinary headroom for the single-call reads, not an allowance for a nested
 loop: every loop is now bounded by its own declared budget, so the figures
 above are ceilings the code enforces rather than expectations it hopes to meet.
