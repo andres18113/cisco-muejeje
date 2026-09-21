@@ -99,7 +99,9 @@ class _PairingSequence:
         self.on_switch = on_switch
         self.calls = 0
 
-    def __call__(self) -> DiagnosticLifecycleObservation:
+    def __call__(
+        self, _deadline: float | None = None
+    ) -> DiagnosticLifecycleObservation:
         """Return this reading, switching the instance when the moment comes."""
         self.calls += 1
         if self.calls == self.at and self.on_switch is not None:
@@ -326,7 +328,10 @@ def test_a_reused_pid_at_the_authorized_path_is_not_the_bound_process(stage):
 
 def test_an_unobserved_incarnation_is_refused_before_a_transport(stage):
     """Unknown is not a match, so an unbindable process is never bound."""
-    run = stage("D-WEB", diagnostic_lifecycle=lambda: _paired(process_incarnation=""))
+    run = stage(
+        "D-WEB",
+        diagnostic_lifecycle=lambda _deadline=None: _paired(process_incarnation=""),
+    )
 
     assert run.exit_code == 2
     assert run.opened == []

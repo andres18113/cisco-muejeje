@@ -45,6 +45,7 @@ from service_qualification_engine import (
 
 from packet_tracer_mcp.application.use_cases.qualify_server_services import (
     LedgeredTransport,
+    LedgerPhase,
     OperationLedger,
     OperationRefused,
 )
@@ -63,6 +64,10 @@ from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     TransportIdentity,
     diagnostic_lifecycle_continuity,
     promotion_evidence_refusal,
+)
+from packet_tracer_mcp.domain.enterprise.services.service_qualification_evidence import (
+    DefaultPoolSnapshot,
+    assess_native_default_cumulative,
 )
 from packet_tracer_mcp.infrastructure.execution.cp_scale_live_preflight import (
     PowerShellPacketTracerProcessReader,
@@ -756,14 +761,18 @@ def test_a_raising_release_is_recorded_rather_than_lost(tmp_path, capsys):
 
 
 @pytest.mark.parametrize(
-    ("payload", "expected"),
+    ("payload", "expected", "release_outcome"),
     [
-        ('{"holder": "someone-else", "attempt_id": "x"}', "held_by_another_writer"),
-        ("{not json at all", "malformed"),
+        (
+            '{"holder": "someone-else", "attempt_id": "x"}',
+            "held_by_another_writer",
+            "foreign_claim_retained",
+        ),
+        ("{not json at all", "malformed", "malformed_claim_retained"),
     ],
 )
 def test_a_claim_that_is_no_longer_ours_is_reported_and_never_deleted(
-    tmp_path, capsys, payload, expected
+    tmp_path, capsys, payload, expected, release_outcome
 ):
     """C1: another holder's file is evidence, not something to clean up."""
     directory = tmp_path / "foreign"
@@ -799,6 +808,9 @@ def test_a_claim_that_is_no_longer_ours_is_reported_and_never_deleted(
     assert len(markers) == 1
     # The run says what it could not finalize, and it did restore the engine.
     assert any(expected in item for item in record.coordination_residue)
+    assert [item.outcome for item in record.releases if item.kind == "claim"] == [
+        release_outcome
+    ]
     assert record.restoration_proven is True
     assert removed == sorted(D_WEB.fixture_names)
 
@@ -879,8 +891,9 @@ def test_an_incarnation_timeout_is_unobservable_authority(tmp_path):
     class _OneProcess:
         """A process reader that answers with the authorized instance."""
 
-        def read(self):
+        def read(self, *, timeout_seconds: float | None = None):
             """Return one Packet Tracer process."""
+            assert timeout_seconds is not None and timeout_seconds > 0
             return CPScaleProcessObservation(
                 processes=(
                     CPScaleProcessRecord(
@@ -936,7 +949,7 @@ def test_the_record_reports_what_the_local_observations_cost(stage):
     """C1: the phase is charged for the time its authority readings spend."""
     clock = FakeClock()
 
-    def lifecycle():
+    def lifecycle(_deadline: float | None = None):
         # Every local reading costs the phase real time, whatever it costs
         # the operation ledger, which is nothing.
         clock.now += 0.5
@@ -951,3 +964,539 @@ def test_the_record_reports_what_the_local_observations_cost(stage):
         item.startswith("local_process_observation_bounded_seconds:")
         for item in record.limitations
     )
+
+
+# -- lifecycle closeout: every acquired campaign claim is finalized -------------
+
+
+def _assert_unverified_claim_release(summary: dict) -> None:
+    """Assert the operator-visible fact for one retained campaign claim."""
+    assert summary["claim_release"] == {
+        "resource": "campaign:lock",
+        "kind": "claim",
+        "outcome": "release_unverified",
+        "detail": "campaign_claim:release_unverified",
+    }
+
+
+def test_claim_release_failure_survives_pre_record_admission_refusal(stage, tmp_path):
+    """CA-04: a post-claim preflight refusal still returns release evidence."""
+    coordinator = _coordinator(
+        tmp_path / "admission-refusal",
+        reasons=("campaign_claim:release_unverified",),
+    )
+    run = stage(
+        "D-WEB",
+        campaign_coordinator=coordinator,
+        diagnostic_lifecycle=lambda _deadline=None: _paired(
+            process_id=SIM_PROCESS_ID + 1
+        ),
+    )
+
+    assert run.exit_code == 2
+    assert run.opened == [] and run.transport.calls == []
+    assert coordinator.releases == 1
+    assert {item["subject"] for item in run.summary["refusals"]} == {"process_instance"}
+    _assert_unverified_claim_release(run.summary)
+    assert (coordinator.scope / LOCK_NAME).exists()
+
+
+def test_claim_release_failure_survives_build_refusal(stage, tmp_path):
+    """CA-04: build policy refusal neither contacts PT nor loses release facts."""
+    coordinator = _coordinator(
+        tmp_path / "build-refusal",
+        reasons=("campaign_claim:release_unverified",),
+    )
+    run = stage(
+        "D-DHCP",
+        campaign_coordinator=coordinator,
+        q3_required_build="0.0.0-injected",
+    )
+
+    assert run.exit_code == 2
+    assert run.opened == [] and run.transport.calls == []
+    assert coordinator.releases == 1
+    assert {item["subject"] for item in run.summary["refusals"]} == {"build"}
+    _assert_unverified_claim_release(run.summary)
+    assert (coordinator.scope / LOCK_NAME).exists()
+    assert len(list(coordinator.scope.glob("attempt-*.json"))) == 1
+
+
+def test_claim_release_failure_survives_record_begin_refusal(stage, tmp_path):
+    """CA-04: begin failure has no record but does have local finalization."""
+    coordinator = _coordinator(
+        tmp_path / "begin-refusal",
+        reasons=("campaign_claim:release_unverified",),
+    )
+    records = tmp_path / "begin-records"
+    run = stage(
+        "D-WEB",
+        campaign_coordinator=coordinator,
+        record_store=RecordingStore(records, fail_at={"begin"}),
+    )
+
+    assert run.exit_code == 2
+    assert run.opened == [] and run.transport.calls == []
+    assert coordinator.releases == 1
+    assert {item["subject"] for item in run.summary["refusals"]} == {"record"}
+    _assert_unverified_claim_release(run.summary)
+    assert list(records.rglob("*.json")) == []
+    assert (coordinator.scope / LOCK_NAME).exists()
+
+
+def test_claim_release_failure_is_durable_on_transport_refusal(stage, tmp_path):
+    """CA-04: a record is updated with release evidence before completion."""
+    from packet_tracer_mcp.application.ports.service_qualification import (
+        OpenedTransport,
+    )
+
+    coordinator = _coordinator(
+        tmp_path / "transport-refusal",
+        reasons=("campaign_claim:release_unverified",),
+    )
+
+    def unavailable(channel: str) -> OpenedTransport:
+        return OpenedTransport(channel, None, False, "injected_transport_unavailable")
+
+    run = stage(
+        "D-WEB",
+        campaign_coordinator=coordinator,
+        open_transport=unavailable,
+    )
+    record = run.record()
+
+    assert run.exit_code == 2
+    assert coordinator.releases == 1
+    assert {item["subject"] for item in run.summary["refusals"]} == {"transport"}
+    _assert_unverified_claim_release(run.summary)
+    assert record.primary_failure == "refused:transport"
+    assert record.coordination_residue == ["campaign_claim:release_unverified"]
+    assert [item.outcome for item in record.releases if item.kind == "claim"] == [
+        "release_unverified"
+    ]
+    assert (coordinator.scope / LOCK_NAME).exists()
+
+
+def test_successful_and_absent_claim_releases_are_distinct(stage):
+    """CA-04: released and never-held are separate operator-visible states."""
+    claimed = stage("D-WEB")
+    unclaimed = stage("Q0")
+
+    assert claimed.summary["claim_release"]["outcome"] == "released"
+    assert [
+        item.outcome for item in claimed.record().releases if item.kind == "claim"
+    ] == ["released"]
+    assert "claim_release" not in unclaimed.summary
+
+
+# -- lifecycle closeout: terminal evidence and controlled cancellation -----------
+
+
+def test_cumulative_native_default_requires_a_real_observed_baseline():
+    """CA-02: current state survives while a missing comparison stays unknown."""
+    final = DefaultPoolSnapshot(label="d4_before_cleanup", observed=True)
+    unobserved = DefaultPoolSnapshot(
+        label="d0_baseline",
+        observed=False,
+        cause="injected_unobserved_baseline",
+    )
+    observed = DefaultPoolSnapshot(label="d0_baseline", observed=True)
+
+    missing_assessment = assess_native_default_cumulative(
+        label="d4_cumulative",
+        baseline=None,
+        final=final,
+        interventions=(),
+    )
+    missing = missing_assessment.facts["d4_cumulative"]
+    assert missing_assessment.conclusion.value == "inconclusive"
+    assert missing_assessment.causes == ["native_default_baseline_missing"]
+    assert missing == {
+        "before": None,
+        "after": "d4_before_cleanup",
+        "span": "cumulative_baseline_to_final",
+        "interventions": [],
+        "declared_native_calls": [],
+        "differences": [],
+        "observed": False,
+        "baseline_observed": False,
+        "final_observed": True,
+        "comparison_available": False,
+    }
+
+    explicit = assess_native_default_cumulative(
+        label="d4_cumulative",
+        baseline=unobserved,
+        final=final,
+    )
+    assert explicit.causes == ["native_default_unobserved:d0_baseline"]
+    assert explicit.facts["d4_cumulative"]["before"] == "d0_baseline"
+    assert explicit.facts["d4_cumulative"]["comparison_available"] is False
+
+    valid = assess_native_default_cumulative(
+        label="d4_cumulative",
+        baseline=observed,
+        final=final,
+    )
+    assert valid.conclusion.value == "supported_in_sample"
+    assert valid.facts["d4_cumulative"]["comparison_available"] is True
+
+
+def test_d_dhcp_retains_the_terminal_snapshot_without_manufacturing_a_baseline(
+    stage,
+):
+    """CA-02: runtime construction can fail before D0 without erasing D4."""
+    injected: list[str] = []
+
+    def fail_runtime(_bound):
+        injected.append("configuration_runtime")
+        raise RuntimeError("injected_runtime_construction")
+
+    run = stage("D-DHCP", configuration_runtime=fail_runtime)
+    record = run.record()
+
+    assert injected == ["configuration_runtime"]
+    assert record.primary_failure.startswith("exception:RuntimeError")
+    assert "injected_runtime_construction" in record.primary_failure
+    snapshots = [
+        item for item in record.native_default_pool if item.label == "d4_before_cleanup"
+    ]
+    assert len(snapshots) == 1
+    assert snapshots[0].observed is True
+    assert snapshots[0].operation_seq > 0
+    final = run.measurement("M-DDHCP-4")
+    assert final.status is MeasurementStatus.RAN
+    assert final.conclusion.value == "inconclusive"
+    assert final.causes == ["native_default_baseline_missing"]
+    assert final.facts["d4_cumulative"]["before"] is None
+    assert final.facts["d4_cumulative"]["after"] == "d4_before_cleanup"
+    assert final.facts["d4_cumulative"]["comparison_available"] is False
+    assert sorted(run.engine.snapshot()["remove_calls"]) == sorted(D_DHCP.fixture_names)
+    assert run.exit_code == 1
+
+
+def test_first_terminal_cancellation_still_finalizes_releases_and_persists(
+    stage, tmp_path, monkeypatch
+):
+    """CA-03: the first Ctrl-C from W5 cannot bypass bounded finalization."""
+    from packet_tracer_mcp.application.use_cases import qualify_server_services as uc
+
+    injected: list[str] = []
+    original_switch_ports = uc._d_web_switch_ports
+
+    def interrupt_after_listener(_execution):
+        ports = original_switch_ports(_execution)
+        injected.append("ordinary" if not injected else "after_listener")
+        if len(injected) == 2:
+            raise KeyboardInterrupt
+        return ports
+
+    monkeypatch.setattr(uc, "_d_web_switch_ports", interrupt_after_listener)
+    coordinator = _coordinator(
+        tmp_path / "terminal-cancel",
+        reasons=("campaign_claim:release_unverified",),
+    )
+    run = stage("D-WEB", campaign_coordinator=coordinator)
+    record = run.record()
+
+    assert injected == ["ordinary", "after_listener"]
+    assert run.exit_code == 130
+    assert record.primary_failure == "cancelled"
+    assert "terminal_observation:D_WEB_AFTER:cancelled" in record.secondary_failures
+    after = run.measurement("M-DWEB-5")
+    assert after.status is MeasurementStatus.NOT_RUN
+    assert after.reason == "not_observed:cancelled"
+    assert (
+        len(
+            [
+                item
+                for item in record.transitions
+                if item.step == "experiment:D_WEB_AFTER:started"
+            ]
+        )
+        == 1
+    )
+    assert len(_sequence(record, "d-web:listeners:after")) == 1
+    assert (
+        len(
+            [
+                item
+                for item in record.transitions
+                if item.step == "experiment:D_WEB_FETCH:started"
+            ]
+        )
+        == 1
+    )
+    assert [item.resource for item in record.releases if item.kind == "client"] == [
+        "client:d-web-http"
+    ]
+    assert sorted(run.engine.snapshot()["remove_calls"]) == sorted(D_WEB.fixture_names)
+    assert coordinator.releases == 1
+    assert record.coordination_residue == ["campaign_claim:release_unverified"]
+    assert [item.outcome for item in record.releases if item.kind == "claim"] == [
+        "release_unverified"
+    ]
+    assert record.completed_at is not None
+    assert record.outcome is QualificationOutcome.STOPPED
+
+
+# -- lifecycle closeout: local observations share the active phase deadline -----
+
+
+class _TimedProcessReader:
+    """Return one real-shaped process while advancing a fake monotonic clock."""
+
+    def __init__(self, clock: FakeClock, advance) -> None:
+        self.clock = clock
+        self.advance = advance
+        self.timeouts: list[float | None] = []
+        self.starts: list[float] = []
+
+    def read(self, *, timeout_seconds: float | None = None):
+        from packet_tracer_mcp.application.cp_scale_live.admission import (
+            CPScaleProcessObservation,
+        )
+        from packet_tracer_mcp.application.cp_scale_live.contracts import (
+            CPScaleProcessRecord,
+        )
+
+        self.timeouts.append(timeout_seconds)
+        self.starts.append(self.clock())
+        delta = self.advance(self.clock()) if callable(self.advance) else self.advance
+        self.clock.now += float(delta)
+        return CPScaleProcessObservation(
+            processes=(
+                CPScaleProcessRecord(
+                    pid=SIM_PROCESS_ID,
+                    name="PacketTracer",
+                    main_window_handle=1,
+                    product_version=SIM_BUILD,
+                    file_version=SIM_BUILD,
+                    executable_path=SIM_PROCESS_PATH,
+                ),
+            )
+        )
+
+
+class _TimedIncarnationReader:
+    """Return the bound incarnation while advancing the same fake clock."""
+
+    def __init__(self, clock: FakeClock, advance) -> None:
+        self.clock = clock
+        self.advance = advance
+        self.timeouts: list[float | None] = []
+        self.starts: list[float] = []
+
+    def read(self, pid: int, *, timeout_seconds: float | None = None) -> str:
+        assert pid == SIM_PROCESS_ID
+        self.timeouts.append(timeout_seconds)
+        self.starts.append(self.clock())
+        delta = self.advance(self.clock()) if callable(self.advance) else self.advance
+        self.clock.now += float(delta)
+        return SIM_PROCESS_INCARNATION
+
+
+def test_effect_guard_refuses_before_a_zero_time_authority_read():
+    """CA-01: no local helper starts after ordinary allowance is exhausted."""
+    clock = FakeClock()
+    ledger = OperationLedger(max_operations=3, max_seconds=10, clock=clock)
+    ledger.reserve(operations=1, seconds=2)
+    ledger.enter(LedgerPhase.EXPERIMENT)
+    clock.now = 8.0
+    guard_calls: list[str] = []
+    ledger.bind_effect_guard(
+        lambda purpose, _deadline: guard_calls.append(purpose) or ""
+    )
+    channel = _RecordingChannel()
+    bound = LedgeredTransport(ledger, channel, clock.sleep, clock)
+
+    with ledger.effect_of("mutate:zero-time"):
+        with pytest.raises(OperationRefused) as refused:
+            bound.send_and_wait("effect", 5.0)
+
+    assert refused.value.reason == "time_budget_exhausted"
+    assert guard_calls == []
+    assert channel.sent == []
+
+    one_second = FakeClock()
+    ledger = OperationLedger(max_operations=3, max_seconds=10, clock=one_second)
+    ledger.reserve(operations=1, seconds=2)
+    ledger.enter(LedgerPhase.EXPERIMENT)
+    one_second.now = 7.0
+    guard_calls = []
+
+    def slow_guard(purpose: str, _deadline: float) -> str:
+        guard_calls.append(purpose)
+        one_second.now += 1.1
+        return ""
+
+    ledger.bind_effect_guard(slow_guard)
+    channel = _RecordingChannel()
+    bound = LedgeredTransport(ledger, channel, one_second.sleep, one_second)
+    with ledger.effect_of("mutate:one-second"):
+        with pytest.raises(OperationRefused) as refused:
+            bound.send_and_wait("effect", 5.0)
+
+    assert refused.value.reason == "time_budget_exhausted"
+    assert guard_calls == ["mutate:one-second"]
+    assert channel.sent == []
+
+
+def test_lifecycle_reader_shares_one_deadline_across_both_helpers(tmp_path):
+    """CA-01: both successful local helpers spend one remaining interval."""
+    clock = FakeClock()
+    process = _TimedProcessReader(clock, 0.6)
+    incarnation = _TimedIncarnationReader(clock, 0.4)
+    reader = PacketTracerDiagnosticLifecycleReader(
+        process_reader=process,
+        mailbox_dir=tmp_path / "mailbox",
+        incarnation_reader=incarnation,
+        clock=clock,
+    )
+
+    observed = reader.read(deadline=1.0)
+
+    assert observed.error == ""
+    assert observed.process_id == SIM_PROCESS_ID
+    assert process.timeouts == [pytest.approx(1.0)]
+    assert incarnation.timeouts == [pytest.approx(0.4)]
+    assert clock.now == pytest.approx(1.0)
+
+    roomy_clock = FakeClock()
+    roomy_process = _TimedProcessReader(roomy_clock, 0.2)
+    roomy_incarnation = _TimedIncarnationReader(roomy_clock, 0.2)
+    roomy = PacketTracerDiagnosticLifecycleReader(
+        process_reader=roomy_process,
+        mailbox_dir=tmp_path / "roomy-mailbox",
+        incarnation_reader=roomy_incarnation,
+        clock=roomy_clock,
+    ).read(deadline=100.0)
+
+    assert roomy.error == ""
+    assert roomy_process.timeouts == [LOCAL_OBSERVATION_TIMEOUT_SECONDS]
+    assert roomy_incarnation.timeouts == [LOCAL_OBSERVATION_TIMEOUT_SECONDS]
+
+
+class _AdvanceClockAfterVerify:
+    """Move the fake clock only after one real client lifecycle completes."""
+
+    def __init__(self, inner, clock: FakeClock, target: float) -> None:
+        self.inner = inner
+        self.clock = clock
+        self.target = target
+
+    def inventory(self):
+        return self.inner.inventory()
+
+    def apply_actions(self, actions):
+        return self.inner.apply_actions(actions)
+
+    def verify(self, expectation):
+        row = self.inner.verify(expectation)
+        self.clock.now = self.target
+        return row
+
+
+def test_terminal_observation_cannot_borrow_cleanup_time(stage, tmp_path):
+    """CA-01: exhausted ordinary time starts no terminal authority helpers."""
+    from packet_tracer_mcp.adapters.cli.service_qualification import (
+        production_boundaries,
+    )
+
+    clock = FakeClock()
+    ordinary_deadline = float(D_WEB.budget.max_seconds - D_WEB.budget.reserve_seconds)
+    final_deadline = float(D_WEB.budget.max_seconds)
+    calls: list[tuple[float, float | None]] = []
+
+    def lifecycle(deadline: float | None = None):
+        calls.append((clock(), deadline))
+        return _paired()
+
+    base = production_boundaries(tmp_path / "unused")
+
+    def diagnostic_service_runtime(bound, allowance):
+        assert base.diagnostic_service_runtime is not None
+        return _AdvanceClockAfterVerify(
+            base.diagnostic_service_runtime(bound, allowance),
+            clock,
+            ordinary_deadline,
+        )
+
+    run = stage(
+        "D-WEB",
+        clock=clock,
+        diagnostic_lifecycle=lifecycle,
+        diagnostic_service_runtime=diagnostic_service_runtime,
+    )
+    record = run.record()
+
+    assert not [
+        item
+        for item in calls
+        if item[0] >= ordinary_deadline and item[1] == ordinary_deadline
+    ]
+    first_cleanup_read = next(
+        started for started, deadline in calls if deadline == final_deadline
+    )
+    assert first_cleanup_read == ordinary_deadline
+    after = run.measurement("M-DWEB-5")
+    assert after.status is MeasurementStatus.NOT_RUN
+    assert after.reason == "not_observed:time_budget_exhausted"
+    assert sorted(run.engine.snapshot()["remove_calls"]) == sorted(D_WEB.fixture_names)
+    assert record.restoration_proven is True
+
+
+def test_finalization_reports_a_local_observation_deadline_overrun(
+    stage, tmp_path, monkeypatch
+):
+    """CA-01: a successful late helper is reported and authorizes no cleanup."""
+    from packet_tracer_mcp.application.use_cases import qualify_server_services as uc
+
+    clock = FakeClock()
+    final_deadline = float(D_WEB.budget.max_seconds)
+    final_start = final_deadline - 1.0
+    process = _TimedProcessReader(
+        clock,
+        lambda now: 1.2 if now >= final_start else 0.0,
+    )
+    incarnation = _TimedIncarnationReader(clock, 0.0)
+    lifecycle = PacketTracerDiagnosticLifecycleReader(
+        process_reader=process,
+        mailbox_dir=tmp_path / "mailbox",
+        incarnation_reader=incarnation,
+        clock=clock,
+    )
+    original = uc._d_web_after
+
+    def finish_terminal_near_deadline(execution, state):
+        original(execution, state)
+        clock.now = final_start
+
+    monkeypatch.setattr(uc, "_d_web_after", finish_terminal_near_deadline)
+    run = stage("D-WEB", clock=clock, diagnostic_lifecycle=lifecycle.read)
+    record = run.record()
+
+    assert process.timeouts[-1] == pytest.approx(1.0)
+    assert len(process.timeouts) == len(incarnation.timeouts) + 1
+    assert process.starts[-1] == final_start
+    assert clock.now == pytest.approx(final_deadline + 0.2)
+    assert run.engine.snapshot()["remove_calls"] == []
+    assert not [
+        item
+        for item in record.operations
+        if item.phase == LedgerPhase.FINALIZATION.value and item.seq
+    ]
+    assert record.primary_failure.startswith("execution_authority_lost:")
+    assert "local_observation_deadline_exceeded:process" in record.primary_failure
+    assert record.diagnostic_lifecycle_postflight == {
+        "process_id": None,
+        "process_path": "",
+        "product_version": "",
+        "file_version": "",
+        "process_incarnation": "",
+        "mailbox_entries": [],
+        "error": "local_observation_not_admitted:time_budget_exhausted",
+    }
+    assert record.budget.elapsed_seconds > final_deadline
+    assert record.restoration_proven is False
+    assert record.completed_at is not None

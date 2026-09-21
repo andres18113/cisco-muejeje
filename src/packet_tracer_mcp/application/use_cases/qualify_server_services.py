@@ -281,7 +281,7 @@ class OperationLedger:
         self._halt_reason = ""
         #: The control every dispatch inside an effect scope is admitted
         #: against, bound once before the invocation's first effect.
-        self._effect_guard: Callable[[str], str] | None = None
+        self._effect_guard: Callable[[str, float], str] | None = None
         self._effect_scope = 0
         self.phase = LedgerPhase.ADMISSION
         self.purpose = ""
@@ -324,7 +324,7 @@ class OperationLedger:
         finally:
             self.purpose = previous
 
-    def bind_effect_guard(self, guard: Callable[[str], str]) -> None:
+    def bind_effect_guard(self, guard: Callable[[str, float], str]) -> None:
         """Bind the control every effect dispatch is decided against.
 
         It is bound exactly once, after the invocation's execution state
@@ -355,11 +355,19 @@ class OperationLedger:
         """Return the operations and seconds the current phase may still use."""
         final = self.phase is LedgerPhase.FINALIZATION
         operations = self._max_operations - self.used
-        seconds = self._max_seconds - self.elapsed()
+        deadline = self._start + self._max_seconds
         if not final:
             operations -= self._reserve_operations
-            seconds -= self._reserve_seconds
+            deadline -= self._reserve_seconds
+        seconds = deadline - self._clock()
         return operations, seconds
+
+    def deadline(self) -> float:
+        """Return the absolute monotonic deadline for the active phase."""
+        deadline = self._start + self._max_seconds
+        if self.phase is not LedgerPhase.FINALIZATION:
+            deadline -= self._reserve_seconds
+        return deadline
 
     def can_afford(self, operations: int) -> bool:
         """Return whether `operations` more calls fit without the reserve."""
@@ -377,26 +385,34 @@ class OperationLedger:
     def admit(self, call: str, requested_timeout: float) -> tuple[int, float]:
         """Count one call and return its index and capped timeout, or refuse it.
 
-        Inside an effect scope the receiver is decided first, before the
-        budget: an unproven receiver is not a call to be afforded, it is a
-        call that must not be dispatched at all.
+        A call with no remaining allowance is refused before its potentially
+        expensive effect guard. When the guard does run, it receives the one
+        absolute deadline for this phase, and allowance is recomputed before
+        dispatch because the local authority observation spends wall-clock.
         """
         reason = ""
-        if self._effect_scope:
+        halted = not self._effects_open and self.phase not in (
+            LedgerPhase.FINALIZATION,
+            LedgerPhase.TERMINAL_OBSERVATION,
+        )
+        if halted:
+            reason = f"effects_halted:{self._halt_reason}"
+        operations, seconds = self.allowance()
+        if not reason and operations < 1:
+            reason = "operation_budget_exhausted"
+        if not reason and seconds <= 0:
+            reason = "time_budget_exhausted"
+        if not reason and self._effect_scope:
             if self._effect_guard is None:
                 # A control that is absent cannot be satisfied, and an effect
                 # never proceeds on the strength of a check nobody made.
                 reason = "effect_guard_not_bound"
             else:
-                lost = self._effect_guard(self.purpose)
+                lost = self._effect_guard(self.purpose, self.deadline())
                 if lost:
                     reason = f"execution_authority_lost:{lost}"
-        halted = not self._effects_open and self.phase not in (
-            LedgerPhase.FINALIZATION,
-            LedgerPhase.TERMINAL_OBSERVATION,
-        )
-        if not reason and halted:
-            reason = f"effects_halted:{self._halt_reason}"
+        # The authority read may have spent the phase's last second. A stale
+        # pre-read allowance never authorizes the subsequent bridge dispatch.
         operations, seconds = self.allowance()
         if not reason and operations < 1:
             reason = "operation_budget_exhausted"
@@ -745,7 +761,9 @@ class QualificationBoundaries:
     #: It runs before a transport is constructed, launches nothing and deletes
     #: nothing. The workspace gate after contact still proves the active
     #: document is disposable before the first effect.
-    diagnostic_lifecycle: Callable[[], DiagnosticLifecycleObservation] | None = None
+    diagnostic_lifecycle: (
+        Callable[[float | None], DiagnosticLifecycleObservation] | None
+    ) = None
     #: Cross-checkout exclusion for one campaign writer, taken in the shared
     #: mailbox scope rather than in this checkout's record directory, and held
     #: from admission through finalization. Two worktrees cannot exclude each
@@ -762,6 +780,7 @@ class QualificationResult:
     refusals: list[QualificationRefusal] = field(default_factory=list)
     record: QualificationRecord | None = None
     record_path: str = ""
+    claim_release: ReleaseRecord | None = None
 
     @property
     def exit_code(self) -> int:
@@ -779,6 +798,8 @@ class QualificationResult:
             "refusals": [item.model_dump(mode="json") for item in self.refusals],
             "record_path": self.record_path,
         }
+        if self.claim_release is not None:
+            summary["claim_release"] = self.claim_release.model_dump(mode="json")
         record = self.record
         if record is not None:
             summary.update(
@@ -830,12 +851,14 @@ def _refused(
     refusals: Sequence[QualificationRefusal],
     record: QualificationRecord | None = None,
     record_path: str = "",
+    claim_release: ReleaseRecord | None = None,
 ) -> QualificationResult:
     return QualificationResult(
         outcome=QualificationOutcome.REFUSED,
         refusals=list(refusals),
         record=record,
         record_path=record_path,
+        claim_release=claim_release,
     )
 
 
@@ -900,14 +923,14 @@ def qualify_server_services(
     if refusals:
         return _refused(refusals)
     diagnostic_lifecycle: DiagnosticLifecycleObservation | None = None
-    claim: Any | None = None
+    hold = _CampaignHold()
     if definition.profile_id:
         refusals, diagnostic_lifecycle, claim = _diagnostic_admission(
             definition, authorization, boundaries
         )
+        hold = _CampaignHold(boundaries.campaign_coordinator, claim)
         if refusals:
-            return _refused(refusals)
-    hold = _CampaignHold(boundaries.campaign_coordinator, claim)
+            return _refused(refusals, claim_release=hold.finalize())
     try:
         return _with_campaign_claim(
             request,
@@ -922,10 +945,9 @@ def qualify_server_services(
             hold=hold,
         )
     finally:
-        # The admitted path releases the claim inside the record lifecycle, so
-        # this is the safety net for every path that refused before reaching
-        # it. A release that already happened is not repeated.
-        hold.release()
+        # Every ordinary path finalizes the hold before returning its result.
+        # This remains the idempotent safety net for an unexpected exception.
+        hold.finalize()
 
 
 def _with_campaign_claim(
@@ -954,7 +976,8 @@ def _with_campaign_claim(
                         RefusalSubject.BUILD,
                         "The Q3 Packet Tracer build policy is not composed.",
                     )
-                ]
+                ],
+                claim_release=hold.finalize(),
             )
         if request.packet_tracer_build != boundaries.q3_required_build:
             return _refused(
@@ -964,7 +987,8 @@ def _with_campaign_claim(
                         RefusalSubject.BUILD,
                         "Q3 is not implemented for the requested Packet Tracer build.",
                     )
-                ]
+                ],
+                claim_release=hold.finalize(),
             )
         if boundaries.q3_product_contract is None:
             return _refused(
@@ -974,7 +998,8 @@ def _with_campaign_claim(
                         RefusalSubject.FIXTURE,
                         "The executable Q3 product contract is not composed.",
                     )
-                ]
+                ],
+                claim_release=hold.finalize(),
             )
         try:
             product_contract = boundaries.q3_product_contract(
@@ -988,7 +1013,8 @@ def _with_campaign_claim(
                         RefusalSubject.FIXTURE,
                         f"q3_product_contract:{type(exc).__name__}:{_bounded(exc)}",
                     )
-                ]
+                ],
+                claim_release=hold.finalize(),
             )
 
     record = _initial_record(
@@ -1015,9 +1041,10 @@ def _with_campaign_claim(
         record_path = boundaries.record_store.begin(record)
     except RunRecordPersistenceError as exc:
         return _refused(
-            [refusal(RefusalKind.NOT_PERMITTED, RefusalSubject.RECORD, _bounded(exc))]
+            [refusal(RefusalKind.NOT_PERMITTED, RefusalSubject.RECORD, _bounded(exc))],
+            claim_release=hold.finalize(),
         )
-    run = _Run(record, boundaries, record_path, diagnostic_lifecycle)
+    run = _Run(record, boundaries, record_path, diagnostic_lifecycle, hold)
 
     opened: OpenedTransport | None = None
     try:
@@ -1124,9 +1151,6 @@ def _diagnostic_admission(
     found, observed = _diagnostic_admission_checks(
         definition, authorization, boundaries
     )
-    if found:
-        _release_claim(coordinator, claim)
-        return found, observed, None
     return found, observed, claim
 
 
@@ -1153,14 +1177,44 @@ class _CampaignHold:
 
     coordinator: Any = None
     claim: Any = None
-    released: bool = False
+    finalized: bool = False
+    projected: bool = False
+    release_fact: ReleaseRecord | None = None
+    release_reasons: tuple[str, ...] = ()
 
-    def release(self) -> tuple[str, ...]:
-        """Release the claim once and return what it could not do, if anything."""
-        if self.released or self.claim is None or self.coordinator is None:
-            return ()
-        self.released = True
-        return _release_claim(self.coordinator, self.claim)
+    def finalize(
+        self, record: QualificationRecord | None = None
+    ) -> ReleaseRecord | None:
+        """Release and project this invocation's claim exactly once."""
+        if not self.finalized:
+            self.finalized = True
+            if self.claim is not None and self.coordinator is not None:
+                reasons = _release_claim(self.coordinator, self.claim)
+                self.release_reasons = reasons
+                detail = _bounded("; ".join(reasons))
+                outcome = "released" if not reasons else "release_unverified"
+                if any("held_by_another_writer" in item for item in reasons):
+                    outcome = "foreign_claim_retained"
+                elif any("malformed" in item for item in reasons):
+                    outcome = "malformed_claim_retained"
+                self.release_fact = ReleaseRecord(
+                    resource="campaign:lock",
+                    kind="claim",
+                    outcome=outcome,
+                    detail=detail,
+                )
+        fact = self.release_fact
+        if record is None or fact is None or self.projected:
+            return fact
+        self.projected = True
+        record.releases.append(fact)
+        if fact.outcome == "released":
+            return fact
+        reasons = self.release_reasons
+        record.coordination_residue.extend(reasons)
+        record.secondary_failures.extend(f"campaign_release:{item}" for item in reasons)
+        record.limitations.append("campaign_lock_still_held_after_this_run")
+        return fact
 
 
 def _diagnostic_admission_checks(
@@ -1216,11 +1270,19 @@ def _diagnostic_admission_checks(
     observed: DiagnosticLifecycleObservation | None = None
     lifecycle = boundaries.diagnostic_lifecycle
     if callable(lifecycle):
+        deadline = boundaries.clock() + max(
+            0.0,
+            float(definition.budget.max_seconds - definition.budget.reserve_seconds),
+        )
         try:
-            observed = lifecycle()
+            observed = lifecycle(deadline)
         except Exception as exc:
             observed = DiagnosticLifecycleObservation(
                 error=f"diagnostic_lifecycle_failed:{type(exc).__name__}"
+            )
+        if boundaries.clock() > deadline and not observed.error:
+            observed = DiagnosticLifecycleObservation(
+                error="local_observation_deadline_exceeded:lifecycle"
             )
         found.extend(
             diagnostic_lifecycle_refusals(
@@ -1341,6 +1403,7 @@ class _Run:
         boundaries: QualificationBoundaries,
         record_path: str,
         diagnostic_lifecycle: DiagnosticLifecycleObservation | None = None,
+        hold: _CampaignHold | None = None,
     ) -> None:
         self.record = record
         self.boundaries = boundaries
@@ -1349,6 +1412,7 @@ class _Run:
         #: What the admission reading observed, kept so finalization can
         #: state whether that pairing is still the one it is describing.
         self.diagnostic_lifecycle = diagnostic_lifecycle
+        self.hold = hold if hold is not None else _CampaignHold()
 
     def sync(self) -> None:
         """Copy the ledger into the record before every write."""
@@ -1403,8 +1467,11 @@ class _Run:
         self.record.refusals.append(reason)
         self.record.dirty_state = DirtyState.CLEAN
         self.record.primary_failure = f"refused:{reason.subject.value}"
+        claim_release = self.hold.finalize(self.record)
         self.complete(QualificationOutcome.REFUSED)
-        return _refused([reason], self.record, self.record_path)
+        return _refused(
+            [reason], self.record, self.record_path, claim_release=claim_release
+        )
 
 
 def _admitted(
@@ -1560,7 +1627,9 @@ def _admitted(
         # the sequence that may have raised out of the middle of itself. Every
         # exit that reaches cleanup reaches this first, so the last reading is
         # always taken before the first deletion.
-        _observe_terminal(execution)
+        terminal_cancellation = _observe_terminal(execution)
+        if terminal_cancellation is not None and cancelled is None:
+            cancelled = terminal_cancellation
         try:
             _finalize(execution)
         except Exception as exc:
@@ -1592,7 +1661,10 @@ def _admitted(
     if cancelled is not None:
         raise cancelled
     return QualificationResult(
-        outcome=record.outcome, record=record, record_path=run.record_path
+        outcome=record.outcome,
+        record=record,
+        record_path=run.record_path,
+        claim_release=execution.hold.release_fact,
     )
 
 
@@ -1670,6 +1742,9 @@ class _Execution:
     #: Wall clock spent on bounded local authority observations, which cost no
     #: bridge operation and still cost the phase time.
     local_observation_seconds: float = 0.0
+    #: A phase-local refusal to start another authority observation. Unlike an
+    #: observed mismatch it is not sticky across the cleanup-reserve boundary.
+    authority_observation_refused: str = ""
 
     def __post_init__(self) -> None:
         """Bind this execution's effect guard before anything can dispatch.
@@ -1736,7 +1811,7 @@ class _Execution:
         """Record that this run observed one operational precondition."""
         self.established.update(preconditions)
 
-    def live_authority(self, moment: str) -> bool:
+    def live_authority(self, moment: str, deadline: float | None = None) -> bool:
         """Re-decide whether this invocation still holds execution authority.
 
         The admission reading bound one Packet Tracer incarnation and one
@@ -1747,14 +1822,20 @@ class _Execution:
 
         It enumerates local processes, reads one small file and lists one
         directory. It contacts Packet Tracer through nothing and spends no
-        ledger operation, so an exhausted budget cannot suppress it and the
-        cleanup reserve is never borrowed for it. The first loss is kept and
-        authority is never regained inside the run.
+        ledger operation, but it still spends wall-clock: the current phase
+        must admit the observation and gives every helper the same absolute
+        deadline. The first observed loss is kept and authority is never
+        regained inside the run.
         """
         if self.authority_lost:
             return False
         if self.definition.profile_id == "":
             return True
+        phase_deadline = self.ledger.deadline() if deadline is None else float(deadline)
+        clock = self.run.boundaries.clock
+        if clock() >= phase_deadline:
+            return self._refuse_authority_observation(moment)
+        self.authority_observation_refused = ""
         reasons: list[str] = []
         coordinator = self.run.boundaries.campaign_coordinator
         if coordinator is not None and self.claim is not None:
@@ -1763,24 +1844,14 @@ class _Execution:
             except Exception as exc:
                 reasons.append(f"campaign_claim:unverifiable:{type(exc).__name__}")
         lifecycle = self.run.boundaries.diagnostic_lifecycle
-        if callable(lifecycle) and self.run.diagnostic_lifecycle is not None:
-            clock = self.run.boundaries.clock
-            started = clock()
-            try:
-                observed = lifecycle()
-            except Exception as exc:
-                # A local reading that expired or failed is an unobservable
-                # authority, which is a loss. It is never read as permission.
-                observed = DiagnosticLifecycleObservation(
-                    error=f"diagnostic_lifecycle_failed:{type(exc).__name__}"
-                )
-            # It spends no operation and it does spend time. The phase that
-            # waited for it says how long, and the ledger's own wall clock has
-            # already charged those seconds against the allowance.
-            self.local_observation_seconds += max(0.0, clock() - started)
-            self.record.budget.local_observation_seconds = round(
-                self.local_observation_seconds, 3
-            )
+        if (
+            not reasons
+            and callable(lifecycle)
+            and self.run.diagnostic_lifecycle is not None
+        ):
+            if clock() >= phase_deadline:
+                return self._refuse_authority_observation(moment)
+            observed = self.observe_lifecycle(lifecycle, phase_deadline)
             reasons.extend(
                 item
                 for item in diagnostic_lifecycle_continuity(
@@ -1801,7 +1872,44 @@ class _Execution:
         self.stop(f"execution_authority_lost:{reasons[0]}")
         return False
 
-    def effect_guard(self, purpose: str) -> str:
+    def _refuse_authority_observation(self, moment: str) -> bool:
+        """Record that this phase had no time to observe local authority."""
+        refusal = f"{_bounded(moment)}:time_budget_exhausted"
+        self.authority_observation_refused = refusal
+        failure = f"authority_observation_not_admitted:{refusal}"
+        if failure not in self.record.secondary_failures:
+            self.record.secondary_failures.append(failure)
+        limitation = f"local_authority_observation_not_admitted:{refusal}"
+        if limitation not in self.record.limitations:
+            self.record.limitations.append(limitation)
+        return False
+
+    def observe_lifecycle(
+        self,
+        lifecycle: Callable[[float | None], DiagnosticLifecycleObservation],
+        deadline: float,
+    ) -> DiagnosticLifecycleObservation:
+        """Read and charge one local pairing under an absolute deadline."""
+        clock = self.run.boundaries.clock
+        started = clock()
+        try:
+            observed = lifecycle(deadline)
+        except Exception as exc:
+            observed = DiagnosticLifecycleObservation(
+                error=f"diagnostic_lifecycle_failed:{type(exc).__name__}"
+            )
+        finished = clock()
+        self.local_observation_seconds += max(0.0, finished - started)
+        self.record.budget.local_observation_seconds = round(
+            self.local_observation_seconds, 3
+        )
+        if finished > deadline and not observed.error:
+            return DiagnosticLifecycleObservation(
+                error="local_observation_deadline_exceeded:lifecycle"
+            )
+        return observed
+
+    def effect_guard(self, purpose: str, deadline: float) -> str:
         """Return why this one effect may not be dispatched, or "".
 
         The ledger asks this immediately before it admits a call inside an
@@ -1816,9 +1924,13 @@ class _Execution:
         it -- because the replacement is already in the local process table
         when the next dispatch asks.
         """
-        if self.live_authority(f"effect:{purpose}" if purpose else "effect"):
+        if self.live_authority(f"effect:{purpose}" if purpose else "effect", deadline):
             return ""
-        return self.authority_lost or "execution_authority_lost"
+        return (
+            self.authority_lost
+            or self.authority_observation_refused
+            or "execution_authority_lost"
+        )
 
     def measurement(self, experiment_id: str) -> MeasurementRecord:
         """Return one measurement entry of the record."""
@@ -1863,7 +1975,8 @@ class _Execution:
     def begin(self, ids: Sequence[str], procedure: str) -> bool:
         """Decide whether one procedure may start, and announce it durably."""
         if not self.live_authority(f"experiment:{procedure}"):
-            self.not_run(ids, f"execution_authority_lost:{self.authority_lost}")
+            reason = self.authority_lost or self.authority_observation_refused
+            self.not_run(ids, f"execution_authority_unavailable:{reason}")
             return False
         return self.admissible(ids, procedure) and self.announce(ids, procedure)
 
@@ -1894,7 +2007,10 @@ class _Execution:
         if not all(item.terminal_observation for item in specs):
             return self.begin(ids, procedure)
         if not self.live_authority(f"terminal:{procedure}"):
-            self.not_observed(ids, f"authority_lost:{self.authority_lost}")
+            if self.authority_observation_refused:
+                self.not_observed(ids, "time_budget_exhausted")
+            else:
+                self.not_observed(ids, f"authority_lost:{self.authority_lost}")
             return False
         reason = self._unmet(specs)
         if reason:
@@ -3894,7 +4010,7 @@ def _d_dhcp_final(execution: _Execution, state: _DDhcpState) -> None:
             "M-DDHCP-4",
             assess_native_default_cumulative(
                 label="d4_cumulative",
-                baseline=state.baseline or final,
+                baseline=state.baseline,
                 final=final,
                 interventions=tuple(state.interventions),
                 declared_native_calls=tuple(state.declared_native_calls),
@@ -4736,7 +4852,7 @@ def _d_web_after(execution: _Execution, state: _DWebState) -> None:
 # -- finalization ----------------------------------------------------------------
 
 
-def _observe_terminal(execution: _Execution) -> None:
+def _observe_terminal(execution: _Execution) -> KeyboardInterrupt | None:
     """Take the stage's terminal reading once, before anything is deleted.
 
     This is the only place the reading happens. Registering it and taking it
@@ -4755,13 +4871,21 @@ def _observe_terminal(execution: _Execution) -> None:
     """
     phase = execution.terminal
     if phase is None or execution.terminal_taken:
-        return
+        return None
     execution.terminal_taken = True
     if execution.cancelled:
         execution.not_observed(phase.ids, "cancelled")
-        return
+        return None
     try:
         phase.observe()
+    except KeyboardInterrupt as exc:
+        execution.cancelled = True
+        execution.stop("cancelled")
+        execution.not_observed(phase.ids, "cancelled")
+        execution.record.secondary_failures.append(
+            f"terminal_observation:{phase.procedure}:cancelled"
+        )
+        return exc
     except OperationRefused as exc:
         execution.not_observed(phase.ids, f"operation_refused:{exc.reason}")
         execution.record.secondary_failures.append(
@@ -4774,6 +4898,7 @@ def _observe_terminal(execution: _Execution) -> None:
         )
     finally:
         execution.in_flight = ()
+    return None
 
 
 def _release_campaign_claim(execution: _Execution) -> None:
@@ -4785,21 +4910,7 @@ def _release_campaign_claim(execution: _Execution) -> None:
     deliberately not engine residue: a lock left behind says nothing about
     whether the engine workspace was restored, and the two claims stay apart.
     """
-    reasons = execution.hold.release()
-    if not reasons:
-        return
-    record = execution.record
-    record.coordination_residue.extend(_bounded(item) for item in reasons)
-    record.secondary_failures.extend(f"campaign_release:{item}" for item in reasons)
-    record.releases.append(
-        ReleaseRecord(
-            resource="campaign:lock",
-            kind="claim",
-            outcome="release_unverified",
-            detail=_bounded("; ".join(reasons)),
-        )
-    )
-    record.limitations.append("campaign_lock_still_held_after_this_run")
+    execution.hold.finalize(execution.record)
 
 
 def _finalize(execution: _Execution) -> None:
@@ -4921,7 +5032,11 @@ def _refuse_owned_cleanup(execution: _Execution) -> None:
     session whose identity can no longer be proven.
     """
     record = execution.record
-    cause = execution.authority_lost or "execution_authority_lost"
+    cause = (
+        execution.authority_lost
+        or execution.authority_observation_refused
+        or "execution_authority_lost"
+    )
     if execution.bag_touched:
         # Only state is left behind that this run actually wrote. A bag
         # it never claimed is not residue it declined to clean.
@@ -4971,12 +5086,13 @@ def _lifecycle_postflight(execution: _Execution) -> None:
     lifecycle = execution.run.boundaries.diagnostic_lifecycle
     if not callable(lifecycle) or execution.run.diagnostic_lifecycle is None:
         return
-    try:
-        observed = lifecycle()
-    except Exception as exc:
+    deadline = execution.ledger.deadline()
+    if execution.run.boundaries.clock() >= deadline:
         observed = DiagnosticLifecycleObservation(
-            error=f"diagnostic_lifecycle_failed:{type(exc).__name__}"
+            error="local_observation_not_admitted:time_budget_exhausted"
         )
+    else:
+        observed = execution.observe_lifecycle(lifecycle, deadline)
     record.diagnostic_lifecycle_postflight = asdict(observed)
     reasons = diagnostic_lifecycle_continuity(
         execution.run.diagnostic_lifecycle, observed

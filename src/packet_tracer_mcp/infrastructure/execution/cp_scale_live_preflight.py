@@ -131,12 +131,20 @@ class PowerShellPacketTracerProcessReader:
         self._run_command = run_command
         self._timeout_seconds = timeout_seconds
 
-    def read(self) -> CPScaleProcessObservation:
-        """Return every Packet Tracer process, or the error that prevented inspection."""
+    def read(
+        self, *, timeout_seconds: float | None = None
+    ) -> CPScaleProcessObservation:
+        """Return every process within the configured and per-call bounds."""
         try:
             extra: dict[str, float] = {}
-            if self._timeout_seconds is not None:
-                extra["timeout"] = self._timeout_seconds
+            effective = self._timeout_seconds
+            if timeout_seconds is not None:
+                requested = max(0.0, float(timeout_seconds))
+                effective = (
+                    requested if effective is None else min(float(effective), requested)
+                )
+            if effective is not None:
+                extra["timeout"] = effective
             completed = self._run_command(
                 ["powershell.exe", "-NoProfile", "-Command", self._COMMAND],
                 check=True,

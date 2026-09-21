@@ -920,3 +920,100 @@ decision rather than an in-band receiver fence, and Q3 3/3 and Q1 2/2 stay
 spent. Every diagnostic authorization in this repository stays DRAFT, and the
 two stage ceilings above remain proposed limits that nothing has been granted
 against.
+
+## Lifecycle closeout after `ca808e5` (risk L)
+
+| Field | Value |
+| --- | --- |
+| Checkout | `Cisco-MCP-server-services-goal-foundations` |
+| Branch | `feature/server-pt-goal-foundations` |
+| Correction base | `ca808e5d774dfd3cf19be6115c861c8a30f921b5` (tree `4926c4e32e3d8395b1d94b82d60663d170c43008`) |
+| Authoritative main | `6263344e31ba3b0de6539d652f2cd06fc73a3562` (`cisco/main`) |
+| Risk | L - unchanged: admission, cancellation, evidence, persistence, and cleanup |
+
+Instruction loading evidence for this Codex delivery: the user-supplied active
+`AGENTS.md`, the same file in this checkout, and
+`docs/engineering/standards.md` were read before the design delta or behavior
+was edited. `CLAUDE.md` is Claude-specific and was not applicable to this Codex
+session. No separate interactive Codex process was launched to re-list the
+already supplied instruction chain, so that observation remains **pending**
+rather than being reported as a pass.
+
+### Design delta
+
+Independent review accepted the local per-dispatch effect gate and the closed
+inspection-window schedule, then identified four remaining lifecycle defects.
+This correction keeps those accepted contracts, GF-R2 operational
+prerequisites, ordinary-exception terminal observation, and the separation of
+coordination residue from engine residue.
+
+1. **Compose local observation with the active phase deadline.** The ledger
+   checks operation and time allowance before an effect guard can launch local
+   helpers, gives the guard one absolute monotonic deadline for the current
+   phase, and recomputes allowance before bridge dispatch. The diagnostic
+   lifecycle reader recomputes the remaining interval before each PowerShell
+   helper and caps each wait at `min(30 seconds, remaining)`. Terminal
+   observation spends only ordinary allowance; owned cleanup and postflight
+   spend only finalization allowance. A helper that returns after its deadline
+   is reported as an observed overrun, not as proof of an absolute OS bound.
+2. **Keep a terminal snapshot distinct from a cumulative comparison.** D-DHCP
+   always retains a successful final native snapshot. Its cumulative assessment
+   accepts an optional baseline and is inconclusive with
+   `native_default_baseline_missing` when no earlier snapshot exists; it never
+   substitutes the final snapshot for both endpoints. An explicit unobserved
+   baseline remains distinct from an absent baseline, while observed baseline
+   comparisons keep their existing conclusions.
+3. **Treat the first terminal cancellation as a controlled exit.** Terminal
+   observation is still at most once. A first `KeyboardInterrupt` raised there
+   is recorded separately, preserves any earlier primary failure and partial
+   evidence, and then allows bounded finalization, claim finalization, and
+   record completion to run before the established cancellation outcome is
+   propagated. Cancellation before the terminal phase keeps its existing
+   no-terminal-work behavior. Repeated interruption, process death, and force
+   termination remain outside this guarantee.
+4. **Finalize a campaign claim for every post-claim exit.** One idempotent hold
+   owns release and its projection. It distinguishes no claim, successful
+   release, ordinary release failure, a retained foreign claim, and a malformed
+   claim. When a writable record exists, the release fact is projected before
+   immutable completion; otherwise it is returned through the qualification
+   result. The original refusal remains the refusal, no failed release permits
+   Packet Tracer contact, and foreign lock and attempt bytes are never removed.
+
+The application layer continues to own admission and orchestration, the
+infrastructure readers continue to own OS/process work, and the domain evidence
+service continues to decide comparison meaning. No transport, receiver
+protocol, dispatcher, parser, `.pts`, watchdog, or generalized workflow is
+added. Packet Tracer, bridge startup for product use, GUI automation, LIVE
+campaigns, claim reset, force push, and merge to `main` remain excluded.
+
+### Lifecycle exit matrix and requirement-to-test mapping
+
+The regressions use the real coordinator, record store, generated JavaScript,
+Node stub engine, and fake monotonic clock. They assert effects and durable
+facts rather than copied classifiers. Representative combinations cover the
+boundaries without a Cartesian expansion.
+
+| Requirement | Representative exit | Regression evidence |
+| --- | --- | --- |
+| CA-01 composed deadline | zero or one second of ordinary allowance; two sequential successful local helpers; finalization near its deadline | `test_effect_guard_refuses_before_a_zero_time_authority_read`, `test_lifecycle_reader_shares_one_deadline_across_both_helpers`, `test_terminal_observation_cannot_borrow_cleanup_time`, `test_finalization_reports_a_local_observation_deadline_overrun`, plus a normal positive control |
+| CA-02 real baseline only | runtime construction raises after fixture setup and before baseline assignment; absent, explicit-unobserved, and observed baselines | `test_d_dhcp_retains_the_terminal_snapshot_without_manufacturing_a_baseline`, `test_cumulative_native_default_requires_a_real_observed_baseline`, and the existing valid-comparison controls |
+| CA-03 first terminal cancellation | normal stage body, first cancellation from the terminal reader; ordinary terminal error and cancellation-before-terminal controls | `test_first_terminal_cancellation_still_finalizes_releases_and_persists`, `test_a_failing_terminal_reader_keeps_the_error_and_still_cleans_up`, and `test_a_cancelled_run_declares_its_terminal_reading_not_taken` |
+| CA-04 complete claim lifecycle | refusal after admission, build refusal, record-begin failure, unavailable transport after record creation, and admitted completion | `test_claim_release_failure_survives_pre_record_admission_refusal`, `test_claim_release_failure_survives_build_refusal`, `test_claim_release_failure_survives_record_begin_refusal`, `test_claim_release_failure_is_durable_on_transport_refusal`, and the existing admitted-run controls |
+
+### Invariants added by this closeout
+
+48. No local authority observation starts without positive time in its active
+    phase, and no bridge dispatch relies on allowance measured before that
+    observation.
+49. One local lifecycle observation has one absolute monotonic deadline; every
+    helper receives only its remaining share, capped by the existing per-helper
+    policy.
+50. A point-in-time terminal snapshot is evidence of current state only. A
+    cumulative comparison requires a distinct, actually observed earlier
+    baseline.
+51. The first controlled cancellation from terminal observation cannot skip
+    bounded finalization or claim projection, and it cannot restart terminal or
+    experimental work.
+52. Claim release is finalized exactly once for every acquired claim, before a
+    writable record becomes immutable; release failure is additional local
+    evidence and never changes the original refusal into permission.

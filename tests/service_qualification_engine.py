@@ -1191,7 +1191,7 @@ class SwitchableLifecycle:
         """Start answering as the replacement instance."""
         self.switched = True
 
-    def __call__(self):
+    def __call__(self, _deadline: float | None = None):
         """Return whichever pairing this instant has."""
         self.calls += 1
         return self.later if self.switched else self.first
@@ -1343,7 +1343,7 @@ def simulated_boundaries(directory: Path, transport: Any, **overrides: Any):
         "close_transport": lambda opened: None,
         "clock": clock,
         "sleep": clock.sleep,
-        "diagnostic_lifecycle": lambda: DiagnosticLifecycleObservation(
+        "diagnostic_lifecycle": lambda _deadline=None: DiagnosticLifecycleObservation(
             process_id=SIM_PROCESS_ID,
             process_path=SIM_PROCESS_PATH,
             product_version=SIM_BUILD,

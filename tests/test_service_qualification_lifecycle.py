@@ -20,7 +20,10 @@ INCARNATION = "2026-09-20T09:15:00.0000000+00:00"
 class _Processes:
     observed: CPScaleProcessObservation
 
-    def read(self) -> CPScaleProcessObservation:
+    def read(
+        self, *, timeout_seconds: float | None = None
+    ) -> CPScaleProcessObservation:
+        assert timeout_seconds is not None and timeout_seconds > 0
         return self.observed
 
 
@@ -39,8 +42,9 @@ class _Incarnation:
 
     value: str = INCARNATION
 
-    def read(self, pid: int) -> str:
+    def read(self, pid: int, *, timeout_seconds: float | None = None) -> str:
         assert isinstance(pid, int) and pid > 0
+        assert timeout_seconds is not None and timeout_seconds > 0
         return self.value
 
 

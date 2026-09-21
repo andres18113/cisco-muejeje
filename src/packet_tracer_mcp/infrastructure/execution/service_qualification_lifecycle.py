@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 from ...domain.enterprise.models.service_qualification import (
@@ -43,8 +44,8 @@ class PowerShellProcessIncarnationReader:
         self._run_command = run_command
         self._timeout_seconds = max(0.0, float(timeout_seconds))
 
-    def read(self, pid: int) -> str:
-        """Return the round-trip creation timestamp of `pid`, or ""."""
+    def read(self, pid: int, *, timeout_seconds: float | None = None) -> str:
+        """Return the creation timestamp within both configured bounds."""
         if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
             return ""
         # The PID is re-rendered from a validated integer, so no external text
@@ -53,13 +54,16 @@ class PowerShellProcessIncarnationReader:
             f"$p = Get-Process -Id {int(pid)} -ErrorAction SilentlyContinue; "
             "if ($p) { $p.StartTime.ToString('o') }"
         )
+        effective = self._timeout_seconds
+        if timeout_seconds is not None:
+            effective = min(effective, max(0.0, float(timeout_seconds)))
         try:
             completed = self._run_command(
                 ["powershell.exe", "-NoProfile", "-Command", command],
                 check=True,
                 capture_output=True,
                 text=True,
-                timeout=self._timeout_seconds,
+                timeout=effective,
             )
         except subprocess.TimeoutExpired:
             # Unobservable, not unknown-and-harmless. The lifecycle reader
@@ -86,8 +90,9 @@ class PacketTracerDiagnosticLifecycleReader:
         mailbox_dir: Path | None = None,
         incarnation_reader=None,
         timeout_seconds: float = LOCAL_OBSERVATION_TIMEOUT_SECONDS,
+        clock: Callable[[], float] = monotonic,
     ) -> None:
-        """Inject the read-only sources, each under the finite local bound."""
+        """Inject sources, the helper cap and their shared monotonic clock."""
         self._process_reader = process_reader or PowerShellPacketTracerProcessReader(
             timeout_seconds=timeout_seconds
         )
@@ -96,29 +101,50 @@ class PacketTracerDiagnosticLifecycleReader:
             incarnation_reader
             or PowerShellProcessIncarnationReader(timeout_seconds=timeout_seconds)
         )
+        self._timeout_seconds = max(0.0, float(timeout_seconds))
+        self._clock = clock
 
-    def read(self) -> DiagnosticLifecycleObservation:
-        """Return one exclusive process plus every stale command artifact."""
-        process = self._process_reader.read()
+    def read(self, deadline: float | None = None) -> DiagnosticLifecycleObservation:
+        """Return one process and mailbox pairing within one absolute deadline."""
+        process_timeout = self._remaining_timeout(deadline)
+        if process_timeout <= 0:
+            return self._deadline_observation("process")
+        process = self._process_reader.read(timeout_seconds=process_timeout)
+        if self._overran(deadline):
+            return self._overrun_observation("process")
         if process.error:
             return DiagnosticLifecycleObservation(error=process.error)
         if len(process.processes) != 1:
             return DiagnosticLifecycleObservation(
                 error=f"packet_tracer_process_count:{len(process.processes)}"
             )
+        if self._remaining_timeout(deadline) <= 0:
+            return self._deadline_observation("mailbox")
         try:
             entries = self._mailbox_entries()
         except OSError as exc:
             return DiagnosticLifecycleObservation(
                 error=f"mailbox_inspection_failed:{type(exc).__name__}"
             )
+        if self._overran(deadline):
+            return self._overrun_observation("mailbox")
         item = process.processes[0]
+        incarnation_timeout = self._remaining_timeout(deadline)
+        if incarnation_timeout <= 0:
+            return self._deadline_observation("process_incarnation")
         try:
-            incarnation = str(self._incarnation_reader.read(item.pid) or "")
+            incarnation = str(
+                self._incarnation_reader.read(
+                    item.pid, timeout_seconds=incarnation_timeout
+                )
+                or ""
+            )
         except Exception as exc:
             return DiagnosticLifecycleObservation(
                 error=f"process_incarnation_unreadable:{type(exc).__name__}"
             )
+        if self._overran(deadline):
+            return self._overrun_observation("process_incarnation")
         return DiagnosticLifecycleObservation(
             process_id=item.pid,
             process_path=item.executable_path,
@@ -126,6 +152,28 @@ class PacketTracerDiagnosticLifecycleReader:
             file_version=item.file_version,
             process_incarnation=incarnation,
             mailbox_entries=entries,
+        )
+
+    def _remaining_timeout(self, deadline: float | None) -> float:
+        """Return this helper's cap within the shared remaining interval."""
+        if deadline is None:
+            return self._timeout_seconds
+        return max(0.0, min(self._timeout_seconds, float(deadline) - self._clock()))
+
+    def _overran(self, deadline: float | None) -> bool:
+        """Return whether a helper completed after its absolute deadline."""
+        return deadline is not None and self._clock() > float(deadline)
+
+    @staticmethod
+    def _deadline_observation(component: str) -> DiagnosticLifecycleObservation:
+        return DiagnosticLifecycleObservation(
+            error=f"local_observation_deadline_exhausted:{component}"
+        )
+
+    @staticmethod
+    def _overrun_observation(component: str) -> DiagnosticLifecycleObservation:
+        return DiagnosticLifecycleObservation(
+            error=f"local_observation_deadline_exceeded:{component}"
         )
 
     def _mailbox_entries(self) -> tuple[str, ...]:

@@ -1748,7 +1748,7 @@ def assess_native_default_interval(
 def assess_native_default_cumulative(
     *,
     label: str,
-    baseline: DefaultPoolSnapshot,
+    baseline: DefaultPoolSnapshot | None,
     final: DefaultPoolSnapshot,
     interventions: Sequence[str] = (),
     declared_native_calls: Sequence[str] = (),
@@ -1765,16 +1765,23 @@ def assess_native_default_cumulative(
     an adjacent interval is where a single intervention is attributed, and the
     typed action rows are where execution is observed.
     """
-    differences = default_pool_differences(baseline, final)
+    differences = (
+        default_pool_differences(baseline, final) if baseline is not None else ()
+    )
+    baseline_observed = baseline is not None and baseline.observed
+    comparison_available = baseline_observed and final.observed
     facts = {
         label: {
-            "before": baseline.label,
+            "before": baseline.label if baseline is not None else None,
             "after": final.label,
             "span": "cumulative_baseline_to_final",
             "interventions": list(interventions),
             "declared_native_calls": list(declared_native_calls),
             "differences": list(differences),
-            "observed": baseline.observed and final.observed,
+            "observed": comparison_available,
+            "baseline_observed": baseline_observed,
+            "final_observed": final.observed,
+            "comparison_available": comparison_available,
         }
     }
     limitations = [
@@ -1783,7 +1790,16 @@ def assess_native_default_cumulative(
         + ("+".join(interventions) if interventions else "none"),
         "declared_call_footprint_is_not_an_observed_execution_count",
     ]
-    if not (baseline.observed and final.observed):
+    if baseline is None:
+        limitations.append("cumulative_comparison_unavailable_without_baseline")
+        return Assessment(
+            INCONCLUSIVE,
+            facts=facts,
+            causes=["native_default_baseline_missing"],
+            limitations=limitations,
+            outcome_unknown=True,
+        )
+    if not comparison_available:
         return Assessment(
             INCONCLUSIVE,
             facts=facts,

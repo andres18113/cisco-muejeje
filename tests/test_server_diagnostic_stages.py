@@ -432,7 +432,7 @@ def test_a_wrong_authority_refuses_before_any_contact(
 )
 def test_lifecycle_preflight_refuses_before_transport(stage, observation, subject):
     """Actual process pairing and an empty mailbox precede any channel open."""
-    run = stage("D-WEB", diagnostic_lifecycle=lambda: observation)
+    run = stage("D-WEB", diagnostic_lifecycle=lambda _deadline=None: observation)
 
     assert run.exit_code == 2
     assert subject in {item["subject"] for item in run.summary["refusals"]}
@@ -664,7 +664,9 @@ class _LocalReadings:
         """Answer as the replacement from the next reading on."""
         self.switched = True
 
-    def __call__(self) -> DiagnosticLifecycleObservation:
+    def __call__(
+        self, _deadline: float | None = None
+    ) -> DiagnosticLifecycleObservation:
         """Return this reading and keep the count the run made."""
         self.calls += 1
         if self.later is not None and self.switched:
@@ -804,7 +806,7 @@ def test_an_unreadable_second_reading_is_unknown_not_a_clean_exit(stage):
 def test_a_failing_second_reading_is_secondary_and_never_raises(stage):
     """A defect in local finalization evidence cannot lose the record."""
 
-    def readings() -> DiagnosticLifecycleObservation:
+    def readings(_deadline: float | None = None) -> DiagnosticLifecycleObservation:
         if not calls:
             calls.append(1)
             return _paired()
