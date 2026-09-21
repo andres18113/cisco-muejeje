@@ -857,3 +857,66 @@ C1 injects a release failure, a foreign holder and an unreadable lock, and
 asserts the lock file is still there afterwards with its original holder, the
 attempt marker is untouched, the failure is visible in the completed durable
 record, and `restoration_proven` is still what the engine evidence said.
+
+### Measured verification of this correction
+
+Every figure below was executed in this checkout with its own `.venv`, not
+inferred. Nothing here observes Packet Tracer, and nothing here promotes a
+capability.
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Full suite | `python -m pytest -q -rs` | `6826 passed, 3 skipped` at `800d6e5`, exit 0 |
+| Delivery gate | `scripts/quality_gate.py --base cisco/main --delivery-commit HEAD` | clean tree at the exact commit, 101 Ruff-gated files, 0 mechanical exemptions, exit 0 |
+| Namespace inventory | `scripts/namespace_inventory.py` | 0 active legacy imports, 0 active string references, 0 unreviewed inert mentions |
+| Documentation | `python -m mkdocs build --site-dir _site` | built; the two `handoff.md` link warnings are unchanged from the base |
+| Whitespace | `git diff --check cisco/main..HEAD` | clean |
+| Exact-SHA CI | run `35552373244` at `800d6e5` | six of six jobs `success`: `quality`, `docs`, and pytest on Windows/Ubuntu x 3.11/3.13 |
+
+The three skips are environment absences, unchanged by this correction and
+named rather than counted: symlink privilege unavailable for the test account
+(`test_cp_live_data_integrity.py:103`), no retained raw run in this checkout
+(`test_positive_voice_ab_evidence_ledger.py:131`), and the ignored
+qualification artefact absent here
+(`test_positive_voice_dhcp_pool_observer.py:562`).
+
+**Causal RED, executed.** Each fix was reverted on its own, its own
+regressions were run, and the file was restored byte for byte. Every one went
+RED for the behaviour, not for a missing symbol:
+
+| Reverted fix | What the regression reported |
+| --- | --- |
+| R1 effect gate in `admit()` | `assert ['__MCP_E6Q_PC1', ..., '__MCP_E6Q_SRV'] == []` -- the run deleted three devices from the REPLACEMENT workspace |
+| R3 guaranteed terminal phase | `assert <MeasurementStatus.NOT_RUN> is <MeasurementStatus.RAN>` -- the terminal reading never happened on the exception path |
+| R4 inspection schedule | `assert (0.0, 5.0, 10.0, 15.0, 20.0, 25.0) == (0.0, 6.0, 12.0, 18.0, 24.0, 30.0)` -- the window closed one interval early |
+| C1 release inside the lifecycle | `assert [] == ['campaign_claim:release_unverified']` -- the failed release left no trace in the record |
+| C1 bounded local reader | `KeyError: 'timeout'` from the observed `subprocess.run` call -- the wait was unbounded |
+
+**What CI found that offline work had not.** The first delivery of this
+correction, at `0b39274`, passed everything above except exact-SHA CI, where
+both Windows pytest jobs failed on
+`test_one_process_and_only_a_heartbeat_is_a_clean_local_preflight` with
+`process_id` `None` instead of `4242`. The five-second bound was crossed by a
+cold PowerShell start on a loaded runner, so a healthy preflight came back as
+unobservable authority. The control behaved exactly as designed; the figure
+was wrong. It is recorded here rather than quietly amended: a bound is an
+empirical claim about an environment, and this one was corrected against a
+measurement (`800d6e5`) rather than against a preference.
+
+### Delivery identity
+
+| Field | Value |
+| --- | --- |
+| Delivery commit | `800d6e533903fcd36214af3de29c98b2cb896aa6` |
+| Delivery tree | `74e47d5476857cedaac14905a47d8054076fea9a` |
+| Branch | `feature/server-pt-goal-foundations` |
+| Base | `6263344e31ba3b0de6539d652f2cd06fc73a3562` (`cisco/main`) |
+| CI run | `35552373244`, six of six successful |
+| Status | `READY_FOR_REVIEW` |
+
+Self-review is not independent acceptance. LIVE remains blocked: no
+authorization exists for either stage, the effect gate is stated as a local
+decision rather than an in-band receiver fence, and Q3 3/3 and Q1 2/2 stay
+spent. Every diagnostic authorization in this repository stays DRAFT, and the
+two stage ceilings above remain proposed limits that nothing has been granted
+against.
