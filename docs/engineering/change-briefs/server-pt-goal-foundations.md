@@ -1170,3 +1170,31 @@ delivery, not a count: symlink privilege unavailable for this test account
 (`test_positive_voice_ab_evidence_ledger.py:131`), and the ignored
 qualification artefact absent here
 (`test_positive_voice_dhcp_pool_observer.py:562`).
+
+### Delivery identity of this audit
+
+| Field | Value |
+| --- | --- |
+| Delivery commit | `f9afa1b4d726b7eed859c4452e2f8be3c835af97` |
+| Delivery tree | `ce65be8d4a789a56975bfa688621fe13a5c7d192` |
+| Branch | `feature/server-pt-goal-foundations` |
+| Base | `6263344e31ba3b0de6539d652f2cd06fc73a3562` (`cisco/main`) |
+| Delivery gate | `scripts/quality_gate.py --base cisco/main --delivery-commit HEAD`: clean tree at the exact commit, 101 Ruff-gated files, 0 mechanical exemptions, exit 0 |
+| CI run | `35627312782`, six of six jobs `success`: `quality`, `docs`, and pytest on `windows-latest` and `ubuntu-latest` x Python 3.11 and 3.13 |
+| Status | `READY_FOR_REVIEW` |
+
+Self-review is not independent acceptance, and this audit does not accept the
+earlier corrections on the reviewer's behalf. What it establishes is narrower
+and stated as such: the four residual findings of the `5db6916` review are
+closed in the code that is in this checkout, three required test obligations
+that were still open are now met, and the offline verification above was
+executed rather than cited.
+
+What remains out of reach here is unchanged. The effect gate is an in-process
+decision immediately before each dispatch, not an in-band receiver fence, and
+every diagnostic record says so. No LIVE run is authorized, none was started,
+no Packet Tracer process was launched, contacted or terminated, and no
+product bridge was started. Q3 3/3 and Q1 2/2 stay spent, every diagnostic
+authorization stays DRAFT, and both stage ceilings remain proposed limits that
+nothing has been granted against. Offline CI does not prove Packet Tracer
+behaviour, and a green suite is not evidence of LIVE isolation.
