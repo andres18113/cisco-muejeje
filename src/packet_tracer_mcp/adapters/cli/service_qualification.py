@@ -49,6 +49,7 @@ from ...application.use_cases.qualify_server_services import (
     LedgeredTransport,
     Q3ProductContract,
     QualificationBoundaries,
+    QualificationCancelled,
     RuntimeIdentity,
     qualify_server_services,
 )
@@ -777,6 +778,15 @@ def main(
             boundaries_factory(governed_root),
             experimental_capabilities=capabilities,
         )
+    except QualificationCancelled as exc:
+        summary: dict[str, Any] = {
+            "outcome": "stopped",
+            "primary_failure": "cancelled",
+        }
+        if exc.claim_release is not None:
+            summary["claim_release"] = exc.claim_release.model_dump(mode="json")
+        _print(summary)
+        return 130
     except KeyboardInterrupt:
         _print({"outcome": "stopped", "primary_failure": "cancelled"})
         return 130

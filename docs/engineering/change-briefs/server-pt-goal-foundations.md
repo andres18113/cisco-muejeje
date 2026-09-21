@@ -1017,3 +1017,28 @@ boundaries without a Cartesian expansion.
 52. Claim release is finalized exactly once for every acquired claim, before a
     writable record becomes immutable; release failure is additional local
     evidence and never changes the original refusal into permission.
+
+### Independent-review correction to this closeout
+
+The read-only review of `8de5d3574e45bfb9db1130dc5c68980cbaa29bba`
+found two incomplete exits and one classification edge inside the approved
+CA-03/CA-04 contract. The correction is narrower than a redesign:
+
+- the invocation creates its `_CampaignHold` before `_diagnostic_admission`,
+  and that same top-level `try/finally` covers claim acquisition plus every
+  fallible admission check. A first cancellation after acquisition releases
+  exactly once, propagates exit 130, and carries the release fact through the
+  CLI error boundary when no record exists;
+- `_d_web_after` places the completed listener/endpoint reading immediately in
+  `M-DWEB-5.facts` before starting its next reader. A later cancellation leaves
+  the measurement not-run/cancelled but retains the actual partial payload;
+  ordinary completion still replaces it with the existing complete assessment;
+- the file coordinator treats valid JSON with an invalid claim structure as
+  malformed, not as evidence of another holder. Both malformed and foreign
+  bytes remain untouched, and release never reclaims either.
+
+| Review finding | Causal regression |
+| --- | --- |
+| acquired claim outside admission cancellation finalization | `test_pre_record_cancellation_releases_claim_and_reports_outcome` |
+| completed W5 listener payload lost on the next cancellation | extended `test_first_terminal_cancellation_still_finalizes_releases_and_persists` assertions over the reloaded `listeners_after` payload |
+| malformed JSON structure labeled as a foreign holder | extended `test_a_claim_that_is_no_longer_ours_is_reported_and_never_deleted` cases for `[]` and `{}` |

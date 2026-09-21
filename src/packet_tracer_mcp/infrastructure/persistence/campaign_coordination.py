@@ -145,8 +145,21 @@ class FileCampaignCoordinator:
             return (f"campaign_claim:unreadable:{type(exc).__name__}",)
         except ValueError:
             return ("campaign_claim:malformed",)
-        if not isinstance(stored, dict) or stored.get("holder") != claim.holder:
+        if not isinstance(stored, dict):
+            return ("campaign_claim:malformed",)
+        holder = stored.get("holder")
+        attempt_id = stored.get("attempt_id")
+        if (
+            not isinstance(holder, str)
+            or not holder
+            or not isinstance(attempt_id, str)
+            or not attempt_id
+        ):
+            return ("campaign_claim:malformed",)
+        if holder != claim.holder:
             return ("campaign_claim:held_by_another_writer",)
+        if attempt_id != claim.attempt_id:
+            return ("campaign_claim:malformed",)
         return ()
 
     def release(self, claim: CampaignClaim) -> tuple[str, ...]:

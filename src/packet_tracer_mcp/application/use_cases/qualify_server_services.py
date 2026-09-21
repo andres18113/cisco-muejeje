@@ -832,6 +832,19 @@ class QualificationResult:
         return summary
 
 
+class QualificationCancelled(KeyboardInterrupt):
+    """A controlled cancellation plus any pre-record claim-release fact."""
+
+    def __init__(
+        self,
+        original: KeyboardInterrupt,
+        claim_release: ReleaseRecord | None,
+    ) -> None:
+        """Preserve the cancellation while carrying local finalization output."""
+        super().__init__(*original.args)
+        self.claim_release = claim_release
+
+
 # -- the invocation ------------------------------------------------------------
 
 
@@ -923,15 +936,14 @@ def qualify_server_services(
     if refusals:
         return _refused(refusals)
     diagnostic_lifecycle: DiagnosticLifecycleObservation | None = None
-    hold = _CampaignHold()
-    if definition.profile_id:
-        refusals, diagnostic_lifecycle, claim = _diagnostic_admission(
-            definition, authorization, boundaries
-        )
-        hold = _CampaignHold(boundaries.campaign_coordinator, claim)
-        if refusals:
-            return _refused(refusals, claim_release=hold.finalize())
+    hold = _CampaignHold(boundaries.campaign_coordinator)
     try:
+        if definition.profile_id:
+            refusals, diagnostic_lifecycle = _diagnostic_admission(
+                definition, authorization, boundaries, hold
+            )
+            if refusals:
+                return _refused(refusals, claim_release=hold.finalize())
         return _with_campaign_claim(
             request,
             boundaries,
@@ -944,6 +956,8 @@ def qualify_server_services(
             diagnostic_lifecycle=diagnostic_lifecycle,
             hold=hold,
         )
+    except KeyboardInterrupt as exc:
+        raise QualificationCancelled(exc, hold.finalize()) from exc
     finally:
         # Every ordinary path finalizes the hold before returning its result.
         # This remains the idempotent safety net for an unexpected exception.
@@ -1099,9 +1113,8 @@ def _diagnostic_admission(
     definition: StageDefinition,
     authorization: QualificationAuthorization | None,
     boundaries: QualificationBoundaries,
-) -> tuple[
-    list[QualificationRefusal], DiagnosticLifecycleObservation | None, Any | None
-]:
+    hold: _CampaignHold,
+) -> tuple[list[QualificationRefusal], DiagnosticLifecycleObservation | None]:
     """Check what an executable diagnostic needs beyond the shared rule.
 
     Three things the request rule cannot decide on its own: whether this
@@ -1116,10 +1129,11 @@ def _diagnostic_admission(
     The campaign claim is taken first and held while everything after it is
     decided, so the uniqueness check and the record creation that follows it
     are no longer two steps a second writer can interleave with. The caller
-    owns the returned claim and must release it once finalization is done.
+    owns `hold` before this function starts, so the claim is under its
+    top-level finalizer before any fallible admission check runs.
     """
     if authorization is None:  # pragma: no cover - request_refusals covers it
-        return [refusal(RefusalKind.MISSING, RefusalSubject.AUTHORIZATION)], None, None
+        return [refusal(RefusalKind.MISSING, RefusalSubject.AUTHORIZATION)], None
     coordinator = boundaries.campaign_coordinator
     if coordinator is None:
         return (
@@ -1131,7 +1145,6 @@ def _diagnostic_admission(
                     "cannot exclude a writer in another checkout.",
                 )
             ],
-            None,
             None,
         )
     try:
@@ -1146,12 +1159,12 @@ def _diagnostic_admission(
                 )
             ],
             None,
-            None,
         )
+    hold.claim = claim
     found, observed = _diagnostic_admission_checks(
         definition, authorization, boundaries
     )
-    return found, observed, claim
+    return found, observed
 
 
 def _release_claim(coordinator: Any, claim: Any) -> tuple[str, ...]:
@@ -4803,6 +4816,11 @@ def _d_web_fetch(execution: _Execution, state: _DWebState) -> None:
 def _d_web_after(execution: _Execution, state: _DWebState) -> None:
     """Read the same boundaries again and retain whatever moved."""
     after = _d_web_listener_reading(execution, "after")
+    # This completed sub-read is evidence even when the next terminal reader
+    # is cancelled. Keep it on the existing measurement before starting that
+    # reader; a complete assessment below replaces these partial facts.
+    execution.measurement("M-DWEB-5").facts["listeners_after"] = after
+    execution.run.transition("experiment:D_WEB_AFTER:listeners_observed")
     interfaces = _d_web_switch_ports(execution)
     runtime = execution.run.boundaries.configuration_runtime(execution.bound)
     with execution.ledger.purpose_of("d-web:forwarding:after"):
@@ -5076,11 +5094,13 @@ def _lifecycle_postflight(execution: _Execution) -> None:
 
     It enumerates local processes and lists one directory. It contacts
     Packet Tracer through nothing, launches and stops nothing, deletes no
-    artifact and spends no ledger operation, so the cleanup reserve is
-    never borrowed for it and an exhausted budget cannot suppress it. A
-    broken pairing is not a new primary failure -- the run already
-    happened -- but restoration stops being proven, because what was
-    observed is no longer attributable to the process under authority.
+    artifact and spends no ledger operation, but it does spend finalization
+    wall-clock. Every helper is bounded by the remaining finalization deadline;
+    when none remains, the record retains an explicit unobserved postflight
+    instead of launching another helper. A broken or unavailable pairing is
+    not a new primary failure -- the run already happened -- but restoration
+    stops being proven, because the final evidence is not attributable to the
+    process under authority.
     """
     record = execution.record
     lifecycle = execution.run.boundaries.diagnostic_lifecycle

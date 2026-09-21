@@ -769,6 +769,8 @@ def test_a_raising_release_is_recorded_rather_than_lost(tmp_path, capsys):
             "foreign_claim_retained",
         ),
         ("{not json at all", "malformed", "malformed_claim_retained"),
+        ("[]", "malformed", "malformed_claim_retained"),
+        ("{}", "malformed", "malformed_claim_retained"),
     ],
 )
 def test_a_claim_that_is_no_longer_ours_is_reported_and_never_deleted(
@@ -1001,6 +1003,34 @@ def test_claim_release_failure_survives_pre_record_admission_refusal(stage, tmp_
     assert (coordinator.scope / LOCK_NAME).exists()
 
 
+def test_pre_record_cancellation_releases_claim_and_reports_outcome(stage, tmp_path):
+    """CA-04: first cancellation after claim acquisition still finalizes it."""
+    coordinator = _coordinator(
+        tmp_path / "admission-cancel",
+        reasons=("campaign_claim:release_unverified",),
+    )
+    injected: list[str] = []
+
+    def interrupt(_deadline: float | None = None):
+        injected.append("diagnostic_lifecycle")
+        raise KeyboardInterrupt
+
+    run = stage(
+        "D-WEB",
+        campaign_coordinator=coordinator,
+        diagnostic_lifecycle=interrupt,
+    )
+
+    assert injected == ["diagnostic_lifecycle"]
+    assert run.exit_code == 130
+    assert run.opened == [] and run.transport.calls == []
+    assert coordinator.releases == 1
+    _assert_unverified_claim_release(run.summary)
+    assert (coordinator.scope / LOCK_NAME).exists()
+    assert len(list(coordinator.scope.glob("attempt-*.json"))) == 1
+    assert list((run.directory / "records").rglob("*.json")) == []
+
+
 def test_claim_release_failure_survives_build_refusal(stage, tmp_path):
     """CA-04: build policy refusal neither contacts PT nor loses release facts."""
     coordinator = _coordinator(
@@ -1206,6 +1236,25 @@ def test_first_terminal_cancellation_still_finalizes_releases_and_persists(
     after = run.measurement("M-DWEB-5")
     assert after.status is MeasurementStatus.NOT_RUN
     assert after.reason == "not_observed:cancelled"
+    listeners_after = after.facts["listeners_after"]
+    assert listeners_after["observed"] is True
+    assert listeners_after["listeners"] == {
+        "http_enabled": True,
+        "https_enabled": True,
+        "https_process_enabled": True,
+        "http_port_number": 80,
+        "http_port_number_type": "number",
+        "https_port_number": 443,
+        "https_port_number_type": "number",
+    }
+    assert set(listeners_after["ports"]) == {
+        "__MCP_E6Q_SRV/FastEthernet0",
+        "__MCP_E6Q_SW/FastEthernet0/1",
+        "__MCP_E6Q_PC1/FastEthernet0",
+        "__MCP_E6Q_SW/FastEthernet0/2",
+        "__MCP_E6Q_PC2/FastEthernet0",
+        "__MCP_E6Q_SW/FastEthernet0/3",
+    }
     assert (
         len(
             [
@@ -1236,6 +1285,7 @@ def test_first_terminal_cancellation_still_finalizes_releases_and_persists(
     assert [item.outcome for item in record.releases if item.kind == "claim"] == [
         "release_unverified"
     ]
+    _assert_unverified_claim_release(run.summary)
     assert record.completed_at is not None
     assert record.outcome is QualificationOutcome.STOPPED
 
