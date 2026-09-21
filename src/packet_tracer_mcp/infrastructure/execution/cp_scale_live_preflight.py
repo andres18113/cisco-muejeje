@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import ntpath
+import re
 import subprocess
 import sys
 from collections.abc import Callable, Mapping
@@ -105,14 +107,17 @@ class GitCPScaleRepositoryReader:
 class PowerShellPacketTracerProcessReader:
     """Enumerate Packet Tracer processes and retain exact version/path evidence."""
 
+    _HELPER_ARGUMENT = re.compile(r"(?:^|\s)--progress-bar-server(?:\s|$)")
     _COMMAND = (
-        "Get-Process | Where-Object { $_.ProcessName -like 'PacketTracer*' } | "
-        "ForEach-Object { [PSCustomObject]@{ "
-        "ProcessName=$_.ProcessName; Id=$_.Id; "
-        "MainWindowHandle=$_.MainWindowHandle; "
-        "ProductVersion=$_.MainModule.FileVersionInfo.ProductVersion; "
-        "FileVersion=$_.MainModule.FileVersionInfo.FileVersion; "
-        "Path=$_.MainModule.FileName } } | ConvertTo-Json -Compress"
+        "Get-CimInstance Win32_Process | "
+        "Where-Object { $_.Name -like 'PacketTracer*' } | ForEach-Object { "
+        "$item=$_; $process=Get-Process -Id $item.ProcessId -ErrorAction Stop; "
+        "[PSCustomObject]@{ ProcessName=$process.ProcessName; Id=$process.Id; "
+        "ParentProcessId=$item.ParentProcessId; CommandLine=$item.CommandLine; "
+        "MainWindowHandle=$process.MainWindowHandle; "
+        "ProductVersion=$process.MainModule.FileVersionInfo.ProductVersion; "
+        "FileVersion=$process.MainModule.FileVersionInfo.FileVersion; "
+        "Path=$process.MainModule.FileName } } | ConvertTo-Json -Compress"
     )
 
     def __init__(
@@ -160,7 +165,9 @@ class PowerShellPacketTracerProcessReader:
             if not all(isinstance(item, dict) for item in rows):
                 raise ValueError("Packet Tracer process output is not an object list.")
             return CPScaleProcessObservation(
-                processes=tuple(_process_record(item) for item in rows),
+                processes=tuple(
+                    _process_record(item) for item in self._receiver_rows(rows)
+                ),
             )
         except Exception as exc:
             return CPScaleProcessObservation(
@@ -169,6 +176,52 @@ class PowerShellPacketTracerProcessReader:
                     f"{type(exc).__name__}: {exc}"
                 ),
             )
+
+    @classmethod
+    def _receiver_rows(cls, rows: list[dict[str, object]]) -> list[dict[str, object]]:
+        """Collapse only one exact primary/progress-helper runtime cohort."""
+        if (
+            len(rows) == 1
+            and "ParentProcessId" not in rows[0]
+            and "CommandLine" not in rows[0]
+        ):
+            # Preserve the injected single-row reader contract used before the
+            # production command gained cohort fields. The real command always
+            # emits both keys, including explicit nulls that fail validation.
+            _process_record(rows[0])
+            return rows
+        for item in rows:
+            # A row that is excluded from receiver authority still belongs to
+            # the observed process cohort, so its complete identity must be
+            # validated rather than silently hidden by helper classification.
+            _process_record(item)
+            _required_int(item.get("ParentProcessId"), "ParentProcessId")
+            _required_string(item.get("CommandLine"), "CommandLine")
+        helpers = [
+            item for item in rows if cls._HELPER_ARGUMENT.search(item["CommandLine"])
+        ]
+        primary = [item for item in rows if item not in helpers]
+        if not primary:
+            raise ValueError("Packet Tracer process cohort has no primary receiver.")
+        if len(primary) > 1:
+            if helpers:
+                raise ValueError(
+                    "Packet Tracer process cohort has multiple primaries and helpers."
+                )
+            return primary
+        if len(helpers) > 1:
+            raise ValueError("Packet Tracer process cohort has multiple helpers.")
+        if not helpers:
+            return primary
+        owner = primary[0]
+        helper = helpers[0]
+        if helper.get("ParentProcessId") != owner.get("Id") or ntpath.normcase(
+            ntpath.normpath(helper["Path"])
+        ) != ntpath.normcase(ntpath.normpath(owner["Path"])):
+            raise ValueError(
+                "Packet Tracer process cohort helper is not owned by the primary."
+            )
+        return primary
 
 
 def _process_record(row: Mapping[str, object]) -> CPScaleProcessRecord:

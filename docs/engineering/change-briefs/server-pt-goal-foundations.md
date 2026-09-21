@@ -1198,3 +1198,81 @@ product bridge was started. Q3 3/3 and Q1 2/2 stay spent, every diagnostic
 authorization stays DRAFT, and both stage ceilings remain proposed limits that
 nothing has been granted against. Offline CI does not prove Packet Tracer
 behaviour, and a green suite is not evidence of LIVE isolation.
+
+## 2026-09-21 corrective successor: Packet Tracer process cohort
+
+### Problem and observed cause
+
+Campaign `SERVER-PT-DIAG-0EA-01` was granted for D-DHCP v3 and D-WEB v3 with
+the documented local receiver limitation accepted. Before any CLI invocation,
+the production lifecycle reader observed
+`packet_tracer_process_count:2`. The exact installed 9.0.1 launch produced one
+primary `PacketTracer.exe` and one child of the same executable whose command
+line is `--progress-bar-server`. No request was published and no attempt
+identity was reserved.
+
+The cause is in `PowerShellPacketTracerProcessReader`: it enumerates every
+process whose name starts with `PacketTracer` using `Get-Process`, which does
+not retain `ParentProcessId` or `CommandLine`. The lifecycle reader therefore
+cannot distinguish the exact progress helper from a second receiver. This is
+not a new environment model. The maintained PoE runner already treats exactly
+one primary plus at most one same-path, direct-child
+`--progress-bar-server` process as one runtime cohort, and historical Server-PT
+evidence records that this helper is windowless and owns no mailbox.
+
+### Scope, exclusions and invariants
+
+This L-risk autofix changes only local process observation and its tests. The
+shared reader will retain `ParentProcessId` and `CommandLine` long enough to
+classify the cohort, return only the primary receiver for authority pairing,
+and accept a helper only when all of these facts are observable: one primary,
+at most one helper, the helper is a direct child of that primary, and both
+resolve to the same executable path. Missing or malformed identity fields, a
+helper without a primary, multiple helpers, a wrong parent/path, or multiple
+primaries remain refusal evidence. The primary PID/path/version/incarnation,
+mailbox gate, campaign claim and per-dispatch continuity rules are unchanged.
+The reader keeps its pre-existing injected single-row payload contract when
+both new classifier keys are absent; the production PowerShell command always
+emits both keys, and an emitted null or malformed value refuses rather than
+falling through that compatibility path.
+
+No Packet Tracer API, transport, budget, profile, selected step, capability
+claim or historical record changes. The campaign's reviewed initial SHA/tree
+will be replaced only by a committed corrective successor with its own exact
+tree and green exact-SHA CI. The already launched process is preparation only;
+it is not reused as a successor attempt. Force termination remains
+unauthorized.
+
+### Requirements and verification
+
+| Requirement | Acceptance evidence |
+| --- | --- |
+| One primary plus its exact progress helper denotes one receiver cohort | RED first: the real two-row process payload currently yields two candidates; after the fix the shared reader returns only the primary, and the lifecycle reader binds its PID/path/version/incarnation |
+| The helper classification cannot hide a competing or unobservable process | Tests reject missing/malformed command line or parent identity, helper-only, multiple-helper, wrong-parent and wrong-path cohorts; two primaries remain two and are refused by the lifecycle gate |
+| Existing single-primary readers remain compatible | The shared process-reader suite and lifecycle suite retain their single-process positive controls and typed failure paths |
+| The corrective successor is the only executable candidate | Focused reader/lifecycle/diagnostic tests, affected suites, full pytest, provisional and delivery quality gates, namespace inventory, MkDocs, whitespace, clean commit and exact-SHA CI pass before a fresh LIVE attempt |
+
+### Measured autofix verification
+
+The original reader was run against the dedicated launch before this edit and
+returned `packet_tracer_process_count:2`. The OS facts were one primary PID
+47056 and one PID 47164 child with the same executable path and the exact
+`--progress-bar-server` argument. The mailbox contained no `req_*` or `res_*`
+artifact, no campaign claim existed, no CLI invocation had started and no
+attempt identity had been reserved.
+
+The new regression first failed with `(47056, 47164) != (47056,)`. After the
+minimal correction, the production reader run against that same live cohort
+returned only PID 47056 with product/file version `9.0.1.0858`; the lifecycle
+reader bound its executable path and creation timestamp and observed an empty
+mailbox. This process is preparation evidence only and is not reused for the
+corrective successor's attempt.
+
+| Check | Result |
+| --- | --- |
+| Focused reader RED/GREEN | the causal test failed on the two returned PIDs, then the positive and seven fail-closed cohort cases passed |
+| Affected tests | `215 passed`, exit 0 |
+| Provisional quality gate | base/merge-base `6263344e`, 102 changed Python files Ruff-gated, no mechanical exemption, exit 0 |
+| Full suite | `6850 passed, 3 skipped, 3 pre-existing warnings`, exit 0, 548.43 s |
+| Namespace inventory | 0 active legacy imports, 0 active string references, 0 unreviewed inert mentions, exit 0 |
+| MkDocs | built in 3.77 s, exit 0; the two `handoff.md` warnings are unchanged |
