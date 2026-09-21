@@ -136,6 +136,13 @@ class ConfigurationFailureCode(StrEnum):
     RESPONSE_MALFORMED = "response_malformed"
     #: The post-read completed and the intended state was not there.
     POSTCONDITION_UNSATISFIED = "postcondition_unsatisfied"
+    #: The operational prerequisite of a client request was not granted: the
+    #: access ports on that path were not observed forwarding on a fresh,
+    #: complete, uniquely attributed sample of their own VLAN. It is not a
+    #: service, listener or capability failure, because the request was never
+    #: made; the refusing dimension travels in the message and the readiness
+    #: rows carry the sample and its per-client coverage.
+    ACCESS_FORWARDING_NOT_READY = "access_forwarding_not_ready"
 
 
 class FieldVerificationStatus(StrEnum):

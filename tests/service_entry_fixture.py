@@ -37,6 +37,8 @@ from packet_tracer_mcp.domain.enterprise.models.execution import (
     TransitionFact,
 )
 from packet_tracer_mcp.domain.enterprise.models.forwarding import (
+    AccessForwardingObservation,
+    AccessForwardingRow,
     ForwardingAddressObservation,
 )
 from packet_tracer_mcp.domain.enterprise.models.intent import EnterpriseIntent
@@ -215,6 +217,10 @@ class RecordingConfigurationRuntime:
     verified: list[list[str]] = field(default_factory=list)
     raise_after_dispatch: bool = False
     endpoint_ipv4: str = SERVER_ADDRESS
+    #: The independently timed forwarding backend this runtime answers from.
+    #: Its default already forwards, so a test that says nothing about
+    #: readiness keeps the behaviour it had before the gate existed.
+    forwarding: ForwardingBackend = field(default_factory=lambda: ForwardingBackend())
 
     def inventory(self) -> list[RuntimeConfigurationTarget]:
         """Return the deployed targets."""
@@ -281,6 +287,17 @@ class RecordingConfigurationRuntime:
     def wait_for_voice_access_forwarding(self, expectations: Any) -> list[Any]:
         """Return nothing; this slice never reaches the Voice barrier."""
         return []
+
+    def observe_access_forwarding(
+        self,
+        device_name: str,
+        vlan_id: int,
+        interfaces: Any,
+    ) -> AccessForwardingObservation:
+        """Delegate the grouped forwarding query to the timed backend."""
+        return self.forwarding.observe_access_forwarding(
+            device_name, vlan_id, interfaces
+        )
 
 
 @dataclass
@@ -401,4 +418,110 @@ class EndpointObserver:
             ipv4=address,
             netmask="255.255.255.248" if address else "",
             fresh_evidence=True,
+        )
+
+
+@dataclass
+class SimulatedClock:
+    """A monotonic clock the test advances, never the code under test.
+
+    The forwarding backend reads this clock, so its answer follows elapsed
+    simulated time and not how many times it was asked. A fake whose state
+    advanced per query would make "the third sample forwards" pass while
+    "forwarding arrives after four seconds" was never actually exercised.
+    """
+
+    now: float = 0.0
+
+    def __call__(self) -> float:
+        """Return the current simulated instant."""
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        """Move simulated time forward."""
+        self.now += seconds
+
+
+@dataclass
+class ForwardingBackend:
+    """An independently timed spanning-tree backend for one switch and VLAN.
+
+    Before `forwards_at` every requested interface answers `LIS` on an
+    otherwise fresh, complete and uniquely attributed sample, so the only
+    thing that refuses is the port state. From `forwards_at` onward the same
+    interfaces answer `FWD`. Every other dimension is settable on its own, so
+    a test can drive identity, freshness, completeness or a missing row
+    without also changing the port state.
+    """
+
+    clock: SimulatedClock = field(default_factory=SimulatedClock)
+    forwards_at: float | None = 0.0
+    calls: list[tuple[str, int, tuple[str, ...]]] = field(default_factory=list)
+    observed_device_name: str | None = None
+    device_identity_provenance: str = "confirmed_unique"
+    fresh_output_observed: bool = True
+    output_complete: bool = True
+    executed: bool = True
+    vlan_present: bool = True
+    missing_interfaces: frozenset[str] = frozenset()
+    duplicated_interfaces: frozenset[str] = frozenset()
+    raises: Exception | None = None
+    #: Simulated seconds one observation costs, charged to the clock so a
+    #: caller with a total budget can actually exhaust it.
+    seconds_per_observation: float = 0.0
+
+    def forwarding_now(self) -> bool:
+        """Whether the simulated switch is forwarding at this instant."""
+        return self.forwards_at is not None and self.clock.now >= self.forwards_at
+
+    def observe_access_forwarding(
+        self,
+        device_name: str,
+        vlan_id: int,
+        interfaces: Any,
+    ) -> AccessForwardingObservation:
+        """Answer one grouped query from the clock, not from the call count."""
+        requested = tuple(str(item) for item in interfaces)
+        self.calls.append((device_name, vlan_id, requested))
+        if self.raises is not None:
+            raise self.raises
+        self.clock.advance(self.seconds_per_observation)
+        state = "FWD" if self.forwarding_now() else "LIS"
+        rows = tuple(
+            AccessForwardingRow(
+                interface=item,
+                matches=(
+                    0
+                    if item in self.missing_interfaces
+                    else 2
+                    if item in self.duplicated_interfaces
+                    else 1
+                ),
+                state=state,
+                role="Desg",
+            )
+            for item in requested
+        )
+        return AccessForwardingObservation(
+            switch_name=device_name,
+            vlan_id=vlan_id,
+            requested_interfaces=requested,
+            rows=rows,
+            executed=self.executed,
+            fresh_output_observed=self.fresh_output_observed,
+            output_complete=self.output_complete,
+            observed_device_name=(
+                device_name
+                if self.observed_device_name is None
+                else self.observed_device_name
+            ),
+            device_identity_provenance=self.device_identity_provenance,
+            vlan_present=self.vlan_present,
+            samples=1,
+            max_samples=3,
+            deadline_seconds=30.0,
+            elapsed_ms=int(self.seconds_per_observation * 1000),
+            sample_call_budget=6,
+            channel_calls=1,
+            simulation_time=f"sim_time:{self.clock.now:g}",
         )

@@ -108,6 +108,9 @@ from ...domain.enterprise.models.service_run_record import (
     generate_run_id,
 )
 from ...domain.enterprise.models.service_runtime import ServiceApplicationResult
+from ...domain.enterprise.services.service_access_readiness import (
+    derive_access_readiness_plan,
+)
 from ...domain.enterprise.services.service_capability_resolution import (
     provenance_by_key,
     resolve_action_capability,
@@ -129,6 +132,10 @@ from .apply_services import ServiceApplicator, ServiceRuntime
 from .compose_enterprise_reference import compose_enterprise_reference
 from .execute_enterprise_reference import configuration_application_contradiction
 from .foundational_evidence import derive_service_foundational_statuses
+from .service_access_readiness_gate import (
+    AccessForwardingObserver,
+    ServiceAccessReadinessGate,
+)
 
 #: The E5 row representations that mean "this action's effect is unknown".
 #: The second is the legacy shape documented as D-9: the applicator turns a
@@ -253,6 +260,20 @@ class _GatedConfigurationRuntime:
     ) -> list[Any]:
         """Delegate the Voice barrier; this slice never reaches it."""
         return self.inner.wait_for_voice_access_forwarding(expectations)
+
+    def observe_access_forwarding(
+        self,
+        device_name: str,
+        vlan_id: int,
+        interfaces: Sequence[str],
+    ) -> Any:
+        """Observe one switch/VLAN group; a read, so always permitted.
+
+        Raises `AttributeError` when the composed runtime has no such reader,
+        which the readiness gate turns into a named refusal rather than a
+        silent pass. It is never synthesized here.
+        """
+        return self.inner.observe_access_forwarding(device_name, vlan_id, interfaces)
 
 
 @dataclass
@@ -631,6 +652,27 @@ def _reporting_budget_exceeded(plan: ServicePlan) -> bool:
         bool(item.client_device_id) for item in plan.verification_expectations
     )
     return len(clients) > MAX_REPORTING_CLIENTS or client_rows > MAX_CLIENT_CHECK_ROWS
+
+
+def _access_forwarding_observer(
+    runtime: object,
+) -> AccessForwardingObserver | None:
+    """Return the composed forwarding observer, or nothing when there is none.
+
+    Structural, because the readiness observation is an optional surface of a
+    configuration runtime rather than part of the E5 port every runtime must
+    implement. Returning `None` does not relax the gate: the gate refuses a
+    group it cannot observe, so an unobservable composition blocks its HTTP
+    requests instead of passing them through.
+
+    The support question is asked of the runtime that would actually answer,
+    which is the one inside the mutation-gate wrapper. The wrapper forwards
+    the reader unconditionally, so asking it instead would report every
+    composition as observable and turn a missing reader into a raised call.
+    """
+    composed = getattr(runtime, "inner", runtime)
+    reader = getattr(composed, "observe_access_forwarding", None)
+    return runtime if callable(reader) else None  # type: ignore[return-value]
 
 
 def _e5_closure(
@@ -1815,11 +1857,31 @@ def _execute(
     run.record.foundational_statuses = dict(statuses)
     run.transition(ServiceStage.FOUNDATIONAL_EVIDENCE, outcome="completed")
 
+    # -- E3r: the operational-readiness requirement, derived not observed ---
+    # Derivation is pure and happens here; the bounded sample happens later,
+    # inside the applicator, immediately before the first request that depends
+    # on it. Splitting them is what keeps the evidence fresh for its dependent
+    # without querying a switch this run may never need to ask about.
+    readiness_gate = ServiceAccessReadinessGate(
+        derive_access_readiness_plan(
+            configuration_actions=configuration_plan.actions,
+            verification_expectations=selected_plan.verification_expectations,
+        ),
+        _access_forwarding_observer(configuration_runtime),
+        clock=monotonic,
+        device_names=deployed_names,
+    )
+
     # -- E4: the E6 application --------------------------------------------
     if not run.gate.open:
         # Primary control. Entering the stage and letting the applicator
         # absorb the refusal would produce SESSION_FAILED rows for calls
         # that never happened, which is a different and false claim.
+        #
+        # The derived requirement is still reported, as never observed. A run
+        # halted before E6 asked no switch anything, and saying which groups it
+        # would have asked is a different statement from omitting them.
+        run.record.operational_readiness = readiness_gate.rows()
         return _halted(
             run,
             detail=run.gate.reason,
@@ -1854,9 +1916,14 @@ def _execute(
             capabilities=capabilities,
             runtime_context=context,
             deployment_manifest=manifest,
+            operational_readiness=readiness_gate,
         )
     except ServiceEffectHalted as exc:
         halted_detail = str(exc)
+    # Written whichever way the stage ended. A halted run still observed
+    # whatever readiness it reached, and hiding that would make the record
+    # say the question was never asked.
+    run.record.operational_readiness = readiness_gate.rows()
     run.record.service_result = service_result
     if service_result is not None:
         run.record.dirty_state = service_result.dirty_state
@@ -1983,6 +2050,7 @@ def _finish(
         services=services,
         clients=clients,
         releases=list(run.record.releases),
+        operational_readiness=[dict(item) for item in run.record.operational_readiness],
         capability_snapshot=run.record.capability_snapshot,
         dirty_state=run.record.dirty_state,
         persisted_stage=run.persisted_stage,
@@ -2056,6 +2124,7 @@ def _halted(
         services=services,
         clients=clients,
         releases=list(run.record.releases),
+        operational_readiness=[dict(item) for item in run.record.operational_readiness],
         capability_snapshot=run.record.capability_snapshot,
         dirty_state=DirtyState.UNKNOWN,
         persisted_stage=run.persisted_stage,

@@ -1348,3 +1348,484 @@ directory.
 | Full suite | `6854 passed, 3 skipped, 3 pre-existing warnings`, exit 0, 548.20 s |
 | Namespace inventory | 0 active legacy imports, 0 active string references, 0 unreviewed inert mentions, exit 0 |
 | MkDocs and whitespace | build exit 0 in 3.92 s with the two unchanged `handoff.md` warnings; `git diff --check` exit 0 |
+
+## 2026-09-21 diagnostic closeout and product readiness at `5296984` (risk L)
+
+The diagnostic campaign `SERVER-PT-DIAG-0EA-01` finished its measurements. This
+block does three separable things and deliberately joins none of them: it closes
+the campaign's evidence chain additively, it gives the product HTTP workflow a
+bounded read-only forwarding prerequisite, and it turns the measured DHCP
+native-default transition into an executable pure assessment without promoting
+allocation. No part of it launches, contacts or terminates Packet Tracer,
+re-runs a stage, edits an earlier envelope, recreates a missing historical fact
+or promotes a capability.
+
+### Identity of this delta
+
+| Field | Value |
+| --- | --- |
+| Checkout | `Cisco-MCP-server-services-goal-foundations` |
+| Branch | `feature/server-pt-goal-foundations` |
+| Base commit | `52969849408d195436ae250f611318e7e959876f` (tree `62f569e5311771e378a54f5b7aeab1d9abe480c7`) |
+| Authoritative main | `6263344e31ba3b0de6539d652f2cd06fc73a3562` (`cisco/main`) |
+| Reviewed CI on the base | `35646191228`, six successful jobs |
+| Risk | L - public report contract, product verification authority, evidence semantics |
+
+Instruction loading evidence: `AGENTS.md`, `CLAUDE.md` and
+`docs/engineering/standards.md` were read from this checkout before planning.
+Their working-tree SHA-256 digests are `a9f0e384fa952f16a473af47f12f7d67ab3a88ae47ad818040f9ffa09dfae81b`,
+`293122019c22763d7637807ef3a7ea12c1b13711cd527250d04a5ed1b4824516` and
+`2de0d5b20545fcf8b405bfbe09316af4b4587fa5fa2bc0915e459f8cc0503178`, byte-identical
+to the digests the previous block recorded, so the three files did not move
+between deliveries. As before, an interactive `/context` listing cannot be
+observed from a non-interactive session, so that check stays **pending** rather
+than a pass.
+
+### What the carried-forward evidence does and does not say
+
+These are the accepted readings this block builds on. None of them is widened
+here.
+
+| Reading | What it establishes | What it does not establish |
+| --- | --- | --- |
+| D-DHCP attempt 1 at `7660bd1`, record `2026-09-21T19-09-40Z-876af922`, `stopped` | a retained postflight response and `restoration_proven=false` | nothing about the native default; the attempt stays immutable and is not reinterpreted |
+| D-DHCP attempt 2 at `5296984`, record `2026-09-21T20-01-43Z-dffd6c3b`, `completed`, 41 of 50 operations | six native-default snapshots localize the first difference to the WHOLE `configurePcIp` interval, on exactly four fields: `network`, `mask`, `start`, `end` | no client acquisition was measured; pool configuration while disabled and process enable added no further difference, which is not evidence that the intended pool will serve a client |
+| D-WEB at `5296984`, record `2026-09-21T20-09-02Z-e294177e`, `completed`, 63 of 80 operations | W1 observed VLAN 1 `Fa0/1`-`Fa0/3` in `LIS` (`NON_FORWARDING`); the HTTP client observed its marker at its first performed inspection, offset 4.359 s, and again at the late control; one of four ping packets returned with unique source attribution and stable bindings | the `FWD` sample belongs to W5 AFTER the fetch, so no "ping caused STP forwarding", no cold-path success and no product-level cause |
+
+The native default and the intended pool share subnet `192.0.2.0/24`, and the
+realigned native range `192.0.2.0`-`192.0.3.255` contains the intended pool's
+single address `192.0.2.100`. Stored coexistence is therefore not proof that the
+intended pool would answer a request.
+
+### A. Additive evidence closeout
+
+The campaign package stays exactly as the operator holds it, at
+`C:\Users\Andres\Desktop\SERVER-PT-DIAG-0EA-01` with its archive
+`SERVER-PT-DIAG-0EA-01-FINAL-5296984.zip`. Nothing in it was edited, moved,
+renamed or repaired. The addendum is a new directory with its own index and its
+own digest list; it rewrites no attempt file, no manifest and no earlier
+envelope, and it creates no "final" history.
+
+#### What was verified, and how
+
+Every digest below was recomputed from the bytes on disk in this delivery.
+
+| Check | Scope | Result |
+| --- | --- | --- |
+| Archive identity | `SERVER-PT-DIAG-0EA-01-FINAL-5296984.zip` | measured SHA-256 equals the `d30eeabc...755c11` the work order states, and equals the operator's sidecar `.sha256` |
+| `FINAL-MANIFEST.sha256` | 7 entries | all 7 match, including the three permanent attempt markers read in place |
+| Per-attempt `manifest.sha256.json` | 8 + 9 + 8 = 25 entries | all 25 match |
+| Archive against the extracted tree | 30 members, 223,052 bytes | every member is byte-identical to its extracted file |
+| Total | 62 comparisons | 0 mismatches, 0 missing |
+
+#### The three permanent attempt markers are recovered and byte-verified
+
+They were never lost. They are in the shared campaign scope,
+`%LOCALAPPDATA%\packet-tracer-mcp\bridge\campaign`, where the coordinator
+deliberately leaves them, and `FINAL-MANIFEST.sha256` names them by that exact
+path. Each is 160 bytes and each matches the manifest digest that already
+existed:
+
+| Marker | Manifest SHA-256 | Measured | Runner PID and claim |
+| --- | --- | --- | --- |
+| `attempt-1cec3a925255de16907519d1c2919fed.json` | `7d31cc42...aaaadb` | equal | 34708, `2026-09-21T19:09:40.187624+00:00` |
+| `attempt-08a06b738839b6f48f4b24516089ac09.json` | `3b102060...910aa1` | equal | 39124, `2026-09-21T20:01:43.405474+00:00` |
+| `attempt-f2148bbd568a49391a26e83c6efcc67e.json` | `95e2de98...149992` | equal | 57572, `2026-09-21T20:09:01.358759+00:00` |
+
+Each marker also binds to exactly one delivered record through
+`authorization.attempt_id`, one-to-one with no leftover on either side, so the
+identity chain holds independently of the manifest as well as through it.
+
+#### The post-restart census was retained
+
+`processes-postrun.json`, `mailbox-postrun.json` and `campaign-postrun.json`
+exist for all three attempts and are covered by the verified per-attempt
+manifests, so the historical observation needs no reconstruction and none was
+attempted. They record the Packet Tracer instance cohort of each attempt (parent
+PIDs 50940, 25248 and 7704 with their child renderer processes, all from
+`C:\Program Files\Cisco Packet Tracer 9.0.1\bin\PacketTracer.exe`) and a mailbox
+holding only `alive.txt` at each attempt end.
+
+A new read-only OS census was taken in this delivery as a separate,
+current-state-only observation, and it is labelled as such: at
+`2026-09-21T21:53:27Z` no Packet Tracer process is running, the three runner
+PIDs and the three instance PIDs are absent, and the mailbox holds no `req_*`
+and no `res_*`, only `alive.txt` last written `2026-09-21T20:12:43Z` beside the
+campaign subdirectory. That the attempt-1 instance is absent **now** is a later
+fact about a different moment and is not evidence about how it ended.
+
+#### The force-termination sequence, preserved rather than reconciled
+
+Four dated statements, each left exactly as its own artifact records it:
+
+| When | Artifact | What it says |
+| --- | --- | --- |
+| `2026-09-21T19:09:39Z` | D-DHCP attempt 1 `authorization.json` | `force_termination_authorized: false` |
+| `2026-09-21T20:01:40Z` | D-DHCP attempt 2 `authorization.json` | `force_termination_authorized: false` |
+| `2026-09-21T20:07:16Z` | D-DHCP attempt 2 `retirement-observation.json` | `authorized_force_termination: true`, `force_termination_performed: false`, reason `exact_primary_absent_before_action`, an empty process list |
+| `2026-09-21T20:08:58Z` | D-WEB `authorization.json` | `force_termination_authorized: true` |
+
+The operator lifecycle permission therefore arrived between `20:01:40Z` and
+`20:07:16Z`, and the retirement record states in its own fields that the
+exactly identified process was already absent before any action, so force
+termination was **authorized and not performed**. No earlier envelope is edited
+to agree with a later one, and consent is not inferred from an envelope's own
+fields. `CAMPAIGN-INDEX.md` carries the operator's acceptance of the local
+receiver-gate limitation and the grant of D-DHCP v3 and D-WEB v3, and is itself
+covered by the verified manifest.
+
+Nothing in A was blocked, so B and C proceed on verified rather than partial
+evidence. No Packet Tracer launch, contact, termination, command publication,
+wildcard cleanup or marker recreation was needed or performed, and the addendum
+adds no authority of any kind.
+
+### B. Product HTTP: one bounded read-only forwarding prerequisite
+
+#### Problem
+
+`observe_access_forwarding` and `access_forwarding_admission` already exist and
+are already correct, but nothing in the product path calls them: their only
+callers are the diagnostic stages in `qualify_server_services`. The public
+workflow therefore issues its first HTTP client request with no statement about
+whether the access ports on the path forward user frames, which is exactly the
+boundary D-WEB left unresolved. A port that is up and a green light are not that
+statement, and the existing gate cannot be "demonstrated and reused" because in
+this composition it is never reached.
+
+#### Scope
+
+In scope: one operational-readiness prerequisite in front of the HTTP-family
+verification expectations of `apply_enterprise_services`, derived from the
+compiled plan, observed through the existing runtime observation, decided by the
+existing domain admission, and persisted with its relationship to the dependent
+requests.
+
+Excluded, explicitly: any change to the four-argument MCP signature; a second
+service subsystem; a duplicated spanning-tree parser; any copy of the Voice
+`wait_for_voice_access_forwarding` semantics, its PVST learning extension or its
+simulation-time window; a user-facing switch or environment variable that can
+skip readiness; gating `dns_resolution` or any non-HTTP kind; reordering the
+existing expectation DAG; a ping, PortFast change, link bounce, clock
+acceleration, extra warming request or arbitrary sleep; and any topology
+deletion.
+
+#### Design
+
+Readiness is a third concern, kept separate from configuration application,
+service eligibility and behavioural verification, and it never becomes one of
+them.
+
+1. **Derivation is pure and comes from the plan.** A new domain service,
+   `domain/enterprise/services/service_access_readiness.py`, reads the compiled
+   `ConfigureAccessPort` actions and the HTTP-family verification expectations
+   and returns one requirement per `(switch device, data VLAN)` group. A group
+   carries the exact interface set the paths need - the client's access port and
+   the host's access port for every dependent expectation - plus, per
+   expectation, the client identity it belongs to. The sources are
+   `ConfigureAccessPort.device_id`/`device_name`/`interface`/`data_vlan_id`/`endpoint_ids`
+   and the expectation's `host_device_id`/`client_device_id`. No fixture name,
+   interface-number ordering or diagram position participates, and a group is
+   keyed on the switch's semantic device id while its deployed name travels
+   alongside for the query. Two things the plan cannot place become two separate
+   refusals: an endpoint on no access port at all makes its dependent
+   unsatisfiable by construction, naming that endpoint, and a request whose two
+   ends sit on different switches or different VLANs is not a single-segment
+   path, so it belongs to no group and is reported as
+   `path_not_single_switch_and_vlan`. Neither ever silently drops out of the
+   required set.
+2. **Observation is bounded, read-only and reuses the existing instrument.** A
+   new application port, `AccessForwardingObserver`, declares exactly the
+   existing `observe_access_forwarding` surface.
+   `PacketTracerEnterpriseConfigurationRuntime` already satisfies it, so the
+   product composition binds the runtime it already has. The observation runs
+   once per group, lazily, immediately before the first dependent HTTP request,
+   and its result is memoized for that group inside the same invocation. Four
+   client expectations on one switch and VLAN therefore cost one grouped query,
+   not four.
+3. **Admission is the existing domain decision.** `access_forwarding_admission`
+   decides; `access_forwarding_facts` renders. `LIS`/`LRN`/`BLK`, a missing or
+   duplicated interface, an absent VLAN instance, stale or truncated output, a
+   wrong or unattributed device identity, an exhausted sample budget and a
+   deadline all refuse on their own named dimension, and none of them authorizes
+   HTTP.
+4. **Bounds are enforced where they execute.** Per group: the observer's own
+   `max_samples`, `deadline_seconds`, `interval_seconds` and per-sample
+   `sample_calls`, unchanged at 3 / 30.0 s / 1.0 s / 6. Across groups:
+   `READINESS_TOTAL_BUDGET_SECONDS` (120.0) read from the injected clock and
+   `READINESS_MAX_GROUPS` (4), both checked before the next observation is
+   started, so a plan with many groups cannot extend the run by multiplying
+   bounded waits. A refused budget is a precise blocked result, never a silent
+   pass.
+5. **A blocked request is named for what actually blocked it.** A dependent
+   expectation whose group was not admitted is recorded
+   `DEPENDENCY_BLOCKED` with the new failure code
+   `ACCESS_FORWARDING_NOT_READY`, observation `NOT_ATTEMPTED`, and a message
+   naming the refusing dimension, the switch, the VLAN and the interfaces. It is
+   never reported as a listener failure, a fetch failure or a capability
+   problem, because the request was not made.
+6. **Absence of an observer is a refusal, not a bypass.** A composition that
+   supplies no observer while HTTP-family expectations exist blocks them with
+   cause `observer_unavailable`. There is no flag, argument or setting that
+   turns readiness off.
+7. **The evidence is persisted with its dependents.** `ServiceStageResult` gains
+   `operational_readiness`: one row per group with the full
+   `access_forwarding_facts` sample, the requirement it answered, and the
+   expectation ids and client device ids that depended on it.
+   `compact_summary()` gains the matching `operational_readiness` key; every
+   existing key keeps its name, position and meaning. Freshness is per
+   invocation: a result observed in an earlier run is never reused, because
+   identity and state may have changed in between.
+
+#### Requirements and acceptance
+
+| Requirement | Acceptance evidence |
+| --- | --- |
+| B1 Required ports and VLANs are derived from the compiled plan | Unit tests over the derivation with a plan whose access ports, VLAN and endpoint sets are known, including a plan where interface order and device naming disagree with the required set |
+| B2 No HTTP client request is dispatched before an admitted grouped `FWD` sample | Integration test over the real composition with an independently timed backend: ports report up while spanning tree stays `LIS`, and the service runtime records no HTTP verify call in that window |
+| B3 A request follows the first admissible observation | Same test after the fake's clock passes its forwarding instant: the group is admitted once and the dependent HTTP expectations are then observed |
+| B4 One grouped query serves every client of that group | The observer's call log holds exactly one observation for the single switch/VLAN group of the two-client fixture |
+| B5 Persistent non-forwarding blocks precisely, with per-client coverage | Integration test asserting `DEPENDENCY_BLOCKED`, `ACCESS_FORWARDING_NOT_READY`, `NOT_ATTEMPTED`, the `NON_FORWARDING` dimension and the per-client rows, and asserting no HTTP verify call happened |
+| B6 A foreign or partial sample never authorizes | Tests driving wrong observed device identity, unconfirmed provenance, incomplete output and a missing interface, each refusing on its own dimension |
+| B7 The forwarding evidence and its dependents round-trip through the public report | Test asserting the `operational_readiness` rows, their expectation/client links and the unchanged existing `compact_summary()` keys |
+| B8 An already-forwarding path is admitted without waiting | Positive control: a first sample in `FWD` admits, dispatches, and records one observation |
+| B9 Readiness cannot be switched off | Test that a composition without an observer blocks with `observer_unavailable`, and a review check that no argument, flag or environment read can skip the gate |
+| B10 The fake's timer advances with time, not with queries | The independently timed backend answers from an injected clock; repeated observations at the same instant return the same non-forwarding reading |
+
+#### Invariants
+
+- The four-argument MCP signature is unchanged.
+- The product tool still deletes no operator topology and releases only what it
+  owns.
+- Existing retention, optional-service exclusion, uncertainty, ownership, secret
+  and public JSON guarantees are unchanged; the report grows one key.
+- `FORWARDING_STATES` stays an exact match set; no prefix rule is introduced.
+- Readiness never reports `VERIFIED`, never contributes a capability, and never
+  rewrites an action row.
+- The Voice barrier keeps its own semantics and is not called from this path.
+
+### C. DHCP: the native lifecycle contract, without promoting allocation
+
+#### Problem
+
+The product cannot yet say whether a changed native default is the reviewed
+realignment or unexplained drift, so the only safe answer is "refuse
+everything", which would also refuse the one transition that was actually
+measured. What is missing is a decision, not a permission.
+
+#### Scope
+
+In scope: the smallest executable pure assessment of one before/after native
+default pair, its coexistence statement, the backend-bound registry that carries
+the reviewed measurement, and their tests.
+
+Excluded, explicitly: wiring the assessment into `apply_enterprise_services` or
+the DHCP application path, because admitting the realignment there would change
+the existing authorization and restoration contract; any capability promotion -
+product DHCP capabilities stay `UNKNOWN`; any change to `serverPool` beyond
+observing it; consuming or editing a Q3 slot or its historic profile; and any
+claim about table exhaustion, end-of-table semantics, lease-time freshness,
+event release or POP3.
+
+Integration is therefore deferred with this delta recording why, which is the
+bounded option the work order offers. The registry is the composition seam and
+is ready; nothing calls it from the public path yet.
+
+#### Design
+
+A new domain service, `domain/enterprise/services/dhcp_native_default_lifecycle.py`,
+decides and states; it holds no backend version literal and performs no I/O.
+
+- `assess_native_default_transition` compares an observed before/after pair
+  against a tuple of reviewed `AdmittedNativeDefaultTransition` records supplied
+  by the caller. Ordered and fail-closed: an unobserved snapshot is
+  `NOT_ASSESSED`; an identical pair is `UNCHANGED`; a pool that was added,
+  removed or renamed is `UNEXPLAINED_DRIFT` on its own cause, so `serverPool`
+  can never be deleted, renamed or hidden into an admission; otherwise the pair
+  is admitted as `ADMITTED_REALIGNMENT` only when some record matches the
+  observation **completely** - the same model, backend build, interface and
+  named intervention, the same pool name, every before field, every after field
+  and exactly the same changed-field set - and is `UNEXPLAINED_DRIFT` with a
+  named reason in every other case.
+- Nothing is computed from the observation, so nothing is extrapolated. The
+  admission is a comparison against exact measured values, which is what makes
+  an unmeasured network refuse structurally rather than by policy. The
+  intervention the record names is the whole `configurePcIp` call, never an
+  internal setter.
+- `assess_intended_pool_coexistence` states, as facts and not as permission,
+  whether a native default and an intended pool share a subnet and whether their
+  ranges overlap, and carries the standing limitation that a matching address
+  that could come from the overlapping native default proves no service.
+- Every assessment carries `authorizes_allocation=False`. There is no code path
+  that sets it otherwise.
+- `infrastructure/catalog/dhcp_native_default_transitions.py` holds the one
+  reviewed record from D-DHCP attempt 2, keyed by backend build `9.0.1.0858`,
+  and is the only public source of admitted transitions. A test supplies its own
+  records directly and never mutates the catalog, so no test-only record can
+  reach public composition.
+
+#### Requirements and acceptance
+
+| Requirement | Acceptance evidence |
+| --- | --- |
+| C1 The exact measured transition is admitted | Unit test replaying the six recorded snapshots' before/after values from D-DHCP attempt 2 against the catalog record |
+| C2 The initial stock default and the post-E5 state are compared separately | Tests over the `d0_baseline`-to-`d1` pair and over the later pairs, asserting the post-E5 state is never treated as a baseline |
+| C3 Any unrelated drift refuses | Tests changing the gateway, the DNS server, `max`, a fifth field, and a field back to an unmeasured value, each `UNEXPLAINED_DRIFT` with its own cause |
+| C4 A different model, build, interface or intervention refuses | One test per context field |
+| C5 An unmeasured network refuses even under the same arithmetic | Test with a different subnet whose four fields follow the same relationship, asserting refusal |
+| C6 `serverPool` cannot be removed, renamed or hidden | Tests for removed, renamed and added pool rows |
+| C7 Coexistence is stated and authorizes nothing | Test asserting shared subnet, overlapping range and the standing limitation for the measured pair |
+| C8 No assessment authorizes allocation, and capabilities stay `UNKNOWN` | Test asserting `authorizes_allocation is False` on every classification, and that the public capability records for DHCP are unchanged |
+| C9 Backend policy is bound by composition | Test asserting the domain module names no backend version and that the catalog is the injected source |
+
+#### Invariants
+
+- All six recorded snapshots stay exactly as the record holds them; nothing is
+  re-derived into them.
+- The post-E5 state is never redefined as the baseline.
+- Product DHCP capabilities remain `UNKNOWN` and no catalog injection reaches
+  public composition.
+- Further unexplained change after an admitted transition still refuses.
+- Q3's slots and its historic profile are untouched.
+
+### Test levels and their justification
+
+| Level | Applies | Why |
+| --- | --- | --- |
+| Acceptance | yes | B2, B3, B5 and C1 are the acceptance statements of this block, exercised through the real composition and the real domain decision |
+| System | yes | the public report contract, including the new `operational_readiness` key and the unchanged existing keys |
+| Integration | yes | `apply_enterprise_services` with both runtimes, the readiness port and an independently timed backend |
+| Unit | yes | the pure derivation, the pure DHCP assessment and the coexistence statement |
+| LIVE | no | offline only by the work order; no Packet Tracer launch or contact is authorized or needed, and the forwarding gate's LIVE behaviour stays unverified until a separately authorized and observed run exists |
+
+### What was delivered, path by path
+
+| Path | Change |
+| --- | --- |
+| `docs/engineering/change-briefs/server-pt-goal-foundations.md` | this design delta and its verification |
+| `docs/reference/server-pt/evidence/campaign-diag-0ea-01/README.md` | the additive closeout index |
+| `docs/reference/server-pt/evidence/campaign-diag-0ea-01/verification-01.json` | the 62-comparison verification, both censuses and the force-termination sequence |
+| `docs/reference/server-pt/evidence/campaign-diag-0ea-01/ADDENDUM-01.sha256` | digests of the addendum, the two archived work orders, the unmodified package and the three recovered markers |
+| `docs/reference/server-pt/assignments/Codex_Next_Product_Readiness_5296984.md` | the work order, archived byte-for-byte (9,412 bytes, `634e9fa5...4b2a`) |
+| `docs/reference/server-pt/assignments/Codex_ServerPT_Diagnostic_Goal_DRAFT.md` | the pre-authorization proposal, archived byte-for-byte (10,494 bytes, `e11b4667...1d638`) |
+| `docs/reference/server-pt/README.md`, `source-manifest.json` | three index rows, one campaign section and five manifest entries |
+| `src/packet_tracer_mcp/domain/enterprise/services/service_access_readiness.py` | new: the pure derivation and the readiness decision |
+| `src/packet_tracer_mcp/application/use_cases/service_access_readiness_gate.py` | new: the `AccessForwardingObserver` port and the bounded lazy gate |
+| `src/packet_tracer_mcp/domain/enterprise/services/dhcp_native_default_lifecycle.py` | new: the pure native-default transition and coexistence assessments |
+| `src/packet_tracer_mcp/infrastructure/catalog/dhcp_native_default_transitions.py` | new: the one reviewed transition, keyed by exact backend build |
+| `src/packet_tracer_mcp/application/use_cases/apply_services.py` | `apply()` takes the gate; `_verify` consults it immediately before the request |
+| `src/packet_tracer_mcp/application/use_cases/apply_enterprise_services.py` | stage E3r derives the requirement, the gated runtime forwards the reader, and both result assemblies carry the rows |
+| `src/packet_tracer_mcp/domain/enterprise/models/configuration_runtime.py` | one new failure code, `ACCESS_FORWARDING_NOT_READY` |
+| `src/packet_tracer_mcp/domain/enterprise/models/service_entry.py` | `operational_readiness` on the result and on `compact_summary()` |
+| `src/packet_tracer_mcp/domain/enterprise/models/service_run_record.py` | `operational_readiness` on the durable record |
+| `tests/service_entry_fixture.py` | `SimulatedClock` and `ForwardingBackend`, and the E5 fake answers the grouped query |
+| `tests/test_service_tools_surface.py` | the product simulation answers the registered spanning-tree query and the simulation-state read |
+| `tests/test_service_access_readiness.py` | new: 24 derivation, gate and composition tests |
+| `tests/test_dhcp_native_default_lifecycle.py` | new: 34 transition, coexistence and non-promotion tests |
+
+### Requirement-to-test mapping
+
+| Requirement | Test |
+| --- | --- |
+| B1 | `test_required_ports_and_vlan_come_from_the_compiled_plan`, `test_derivation_ignores_device_names_and_interface_order`, `test_only_http_family_kinds_are_gated` |
+| B2 | `test_no_http_request_is_dispatched_while_spanning_tree_is_still_listening` |
+| B3 | `test_a_request_follows_the_first_admissible_observation` |
+| B4 | `test_one_grouped_query_serves_every_client_of_the_group` |
+| B5 | `test_persistent_non_forwarding_refuses_with_per_client_coverage` |
+| B6 | `test_a_foreign_or_partial_sample_never_authorizes` (eight dimensions), `test_an_endpoint_the_plan_never_placed_is_named_not_dropped`, `test_a_path_spanning_two_switches_is_not_a_single_segment_path` |
+| B7 | `test_the_forwarding_evidence_round_trips_through_the_public_report` |
+| B8 | `test_an_already_forwarding_path_is_admitted_without_waiting` |
+| B9 | `test_readiness_cannot_be_switched_off`, `test_an_observer_that_raised_observed_nothing`, `test_the_total_budget_is_checked_before_the_next_group_is_observed` |
+| B10 | `test_the_backend_timer_advances_with_time_not_with_queries` |
+| C1 | `test_the_exact_measured_transition_is_admitted` |
+| C2 | `test_the_post_e5_state_is_never_treated_as_a_baseline`, `test_an_unobserved_reading_decides_nothing` |
+| C3 | `test_a_field_outside_the_measured_set_refuses`, `test_a_measured_field_landing_on_an_unmeasured_value_refuses`, `test_further_change_after_the_admitted_transition_still_refuses` |
+| C4 | `test_a_different_context_refuses` (four fields), `test_a_build_with_no_reviewed_measurement_refuses` |
+| C5 | `test_an_unmeasured_network_refuses_under_the_same_relationship` |
+| C6 | `test_a_removed_default_is_drift_not_an_admission`, `test_a_renamed_default_is_drift`, `test_a_second_default_appearing_is_drift`, `test_two_defaults_moving_at_once_is_drift`, `test_a_malformed_inventory_decides_nothing`, `test_a_duplicated_pool_name_decides_nothing` |
+| C7 | `test_the_measured_pools_share_a_subnet_and_overlap`, `test_a_disjoint_intended_pool_reports_no_overlap`, `test_a_malformed_pool_row_states_no_coexistence` |
+| C8 | `test_no_classification_authorizes_allocation`, `test_product_dhcp_capabilities_remain_unknown` |
+| C9 | `test_the_domain_module_names_no_backend_version`, `test_a_caller_supplied_record_never_reaches_the_catalog` |
+| A | `verification-01.json` and `ADDENDUM-01.sha256`: 62 recomputed digests, 0 mismatches, 0 missing. A documentary result, so it has no unit test and needs none |
+
+### Three behaviours worth recording exactly
+
+**The by-hostname fetch is blocked by its own prerequisite, not by readiness.**
+In the fixture plan `svc/verify-http-name` depends on `svc/verify-http-ip`. When
+readiness refuses the group, the by-IP row carries
+`ACCESS_FORWARDING_NOT_READY` and the by-hostname row carries
+`DEPENDENCY_BLOCKED`, because readiness was never reached on its behalf and no
+sample was taken for it. Reporting a forwarding refusal there would claim a
+sample that does not exist. Both rows are blocked and neither request is made,
+which is what the requirement asks; the codes differ because the reasons differ.
+
+**A group nobody reached is reported as never observed, not omitted.** When
+every dependent of a group is blocked upstream, `rows()` still emits that group
+with status `not_observed` and cause `dependent_never_became_admissible`. The
+report says what the run did not ask as clearly as what it did.
+
+**Readiness is never consulted from the staged verification pass.** The
+applicator runs `_verify` twice, once for expectations another action stages and
+once for the rest. Only `DHCP_SERVER_STATE` and `DHCP_LEASE` are ever staged
+(`service_compiler` assigns `verification_dependencies` to nothing else), so an
+HTTP-family expectation always reaches readiness in the final pass. Were one
+staged later, the gate would still observe immediately before that request,
+because the memo and the observation both belong to the one `apply` call.
+
+### Measured verification
+
+| Check | Result |
+| --- | --- |
+| Causal RED for B2/B3/B7 | with the gate detached from the applicator, the by-IP fetch reported `VERIFIED` while spanning tree was `LIS`; 3 of the then-23 failed. Reattached: green |
+| Focused readiness set | `tests/test_service_access_readiness.py`, `24 passed` |
+| Focused DHCP set | `tests/test_dhcp_native_default_lifecycle.py`, `34 passed` |
+| Affected integration and system set | the nine `service_entry_fixture` consumers plus both access-forwarding modules, `236 passed` |
+| Evidence verification | 62 recomputed digests over the operator package and the three markers, 0 mismatches, 0 missing; archive SHA-256 equals the work order statement and the operator sidecar |
+| Full offline suite | `6912 passed, 3 skipped, 3 pre-existing warnings`, exit 0, 638.60 s. The base recorded `6854 passed, 3 skipped`, so the delta is exactly the 58 tests this block adds |
+| Provisional quality gate | base and merge base `6263344e`, 110 changed Python files Ruff-gated (104 at the base plus the six this block adds), no mechanical exemption, exit 0 |
+| Namespace inventory | 0 active legacy imports, 0 active string references, 0 unreviewed inert mentions, exit 0 |
+| MkDocs and whitespace | build exit 0 in 5.70 s with the two unchanged `handoff.md` warnings; `git diff --check` exit 0 |
+| Public report contract | all 21 `compact_summary()` keys of the base are present and unchanged; `operational_readiness` is the only addition, and `adapters/mcp/service_tools.py` is untouched, so the four-argument signature is preserved by construction |
+| Evidence semantics of a blocked row | the record a readiness refusal produces carries `support_status: unknown`, `verification_status: unverified`, `observation_status: not_attempted` and `strength: none`, with the refusing dimension as a limitation |
+
+### What remains, and what is still not established
+
+- **Integration of the DHCP assessment is deferred by design.** The decision and
+  its registry are executable and tested; nothing in the public path calls them,
+  because admitting the realignment there would change the existing
+  authorization and restoration contract. That is the bounded option the work
+  order offers, and taking it is recorded here rather than left implicit.
+- **The forwarding gate is verified offline only.** Its LIVE behaviour, Packet
+  Tracer reachability and the real `show spanning-tree` timing stay unverified
+  until a separately authorized and observed LIVE run exists. A green suite is
+  not evidence of LIVE isolation or LIVE behaviour.
+- **Product DHCP capabilities remain `UNKNOWN`** and no client acquisition has
+  been measured. A future acquisition acceptance must still identify the exact
+  intended pool, server, client interface and MAC and a freshly observed
+  matching lease; an address that could come from the overlapping native default
+  is insufficient.
+- **The cold HTTP acceptance is still to be designed.** It must be HTTP-only by
+  IP before any DNS verification that itself uses ping, or DNS validation could
+  warm the same path and hide the defect. Nothing in this block reorders the
+  existing expectation DAG.
+- **Delivery status is `READY_FOR_REVIEW`.** Self-review is not independent
+  audit, no merge or publication is included, and exact-SHA CI belongs to a
+  publication the operator has not granted.
+
+### One pre-existing discrepancy, reported and deliberately not touched
+
+While verifying its own five new entries, this delivery found that
+`docs/reference/server-pt/source-manifest.json` already disagrees with two files
+of the earlier `SERVER-PT-D02-Q3-Q1-AUTOFIX-01` package, at the reviewed base
+`5296984` and not because of anything here:
+
+| Path | Manifest says | Bytes at `5296984` and in the worktree |
+| --- | --- | --- |
+| `evidence/campaign-d02-q3-q1-autofix-01/amendment-ledger.jsonl` | `05db0a7a...ba43d` | `46dd6b7b...ccf7d` |
+| `evidence/campaign-d02-q3-q1-autofix-01/README.md` | `50eeaf86...36708` | `e7dbc251...f72150` |
+
+The committed blob and the working-tree bytes are identical in both cases, so
+nothing drifted in this checkout; the manifest entries are stale relative to a
+later amendment of those two files. It is left exactly as found. Correcting a
+recorded digest of a prior campaign is a change to an evidence claim about work
+outside this contract, and doing it incidentally is what the evidence rules
+forbid. It is raised here for the reviewer to dispose of, with its own decision.

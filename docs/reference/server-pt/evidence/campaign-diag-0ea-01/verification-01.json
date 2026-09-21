@@ -1,0 +1,459 @@
+{
+  "addendum": "ADDENDUM-01",
+  "archived_authority_documents": {
+    "Codex_Next_Product_Readiness_5296984.md": {
+      "bytes": 9412,
+      "sha256": "634e9fa525f4340f4f2cbed7f6cd82a460aa92e53e77afdd79588da62e6e4b2a"
+    },
+    "Codex_ServerPT_Diagnostic_Goal_DRAFT.md": {
+      "bytes": 10494,
+      "sha256": "e11b4667b2e35480abfe41ecfe938fec3c9425fe6bc702da3bd476eda401d638"
+    }
+  },
+  "attempt_markers": {
+    "attempt-08a06b738839b6f48f4b24516089ac09.json": {
+      "bytes": 160,
+      "path": "%LOCALAPPDATA%\\packet-tracer-mcp\\bridge\\campaign\\attempt-08a06b738839b6f48f4b24516089ac09.json",
+      "recovered_in_place": true,
+      "sha256": "3b102060e2dce6f0eccec5fd5dcfec2de4d51b18539e552383a6cdf742910aa1"
+    },
+    "attempt-1cec3a925255de16907519d1c2919fed.json": {
+      "bytes": 160,
+      "path": "%LOCALAPPDATA%\\packet-tracer-mcp\\bridge\\campaign\\attempt-1cec3a925255de16907519d1c2919fed.json",
+      "recovered_in_place": true,
+      "sha256": "7d31cc42e809663868674d5c95f1546c2811f61b482a7f6a1a17f7d866aaaadb"
+    },
+    "attempt-f2148bbd568a49391a26e83c6efcc67e.json": {
+      "bytes": 160,
+      "path": "%LOCALAPPDATA%\\packet-tracer-mcp\\bridge\\campaign\\attempt-f2148bbd568a49391a26e83c6efcc67e.json",
+      "recovered_in_place": true,
+      "sha256": "95e2de984b48ba37501b0ab4132d4e743e030e5636c3b05cc79ca01697149992"
+    }
+  },
+  "campaign": "SERVER-PT-DIAG-0EA-01",
+  "current_census": {
+    "alive_txt_last_write_utc": "2026-09-21T20:12:43Z",
+    "instance_pids_present": [],
+    "mailbox_entries": [
+      "alive.txt"
+    ],
+    "mailbox_request_files": 0,
+    "mailbox_response_files": 0,
+    "note": "the absence of the attempt-1 instance now is a later fact about a different moment and is not evidence about how it ended",
+    "observed_at_utc": "2026-09-21T21:53:27Z",
+    "packet_tracer_processes": 0,
+    "runner_pids_present": [],
+    "scope": "current_state_only"
+  },
+  "delivery": {
+    "authoritative_main": "6263344e31ba3b0de6539d652f2cd06fc73a3562",
+    "branch": "feature/server-pt-goal-foundations",
+    "checkout": "Cisco-MCP-server-services-goal-foundations",
+    "reviewed_base_commit": "52969849408d195436ae250f611318e7e959876f",
+    "reviewed_base_tree": "62f569e5311771e378a54f5b7aeab1d9abe480c7",
+    "reviewed_ci_run": "35646191228"
+  },
+  "force_termination_conclusion": "authorized between 20:01:40Z and 20:07:16Z, and not performed. No earlier envelope was edited and no consent was inferred from an envelope's own fields.",
+  "force_termination_sequence": [
+    {
+      "artifact": "D-DHCP attempt 1 authorization.json",
+      "at_utc": "2026-09-21T19:09:39Z",
+      "states": {
+        "force_termination_authorized": false
+      }
+    },
+    {
+      "artifact": "D-DHCP attempt 2 authorization.json",
+      "at_utc": "2026-09-21T20:01:40Z",
+      "states": {
+        "force_termination_authorized": false
+      }
+    },
+    {
+      "artifact": "D-DHCP attempt 2 retirement-observation.json",
+      "at_utc": "2026-09-21T20:07:16Z",
+      "states": {
+        "authorized_force_termination": true,
+        "force_termination_performed": false,
+        "processes": [],
+        "reason": "exact_primary_absent_before_action"
+      }
+    },
+    {
+      "artifact": "D-WEB authorization.json",
+      "at_utc": "2026-09-21T20:08:58Z",
+      "states": {
+        "force_termination_authorized": true
+      }
+    }
+  ],
+  "grants": {
+    "attempt_counters_reset": "none",
+    "capability_promotion": "none",
+    "live_authorization": "none",
+    "merge_or_publication": "none"
+  },
+  "historical_census": {
+    "files_per_attempt": [
+      "processes-postrun.json",
+      "mailbox-postrun.json",
+      "campaign-postrun.json"
+    ],
+    "note": "covered by the verified per-attempt manifests, so no historical fact was reconstructed or backdated",
+    "retained": true
+  },
+  "marker_to_record_binding": {
+    "08a06b738839b6f48f4b24516089ac09": "d-dhcp-2026-09-21T20-01-43Z-dffd6c3b (completed)",
+    "1cec3a925255de16907519d1c2919fed": "d-dhcp-2026-09-21T19-09-40Z-876af922 (stopped)",
+    "f2148bbd568a49391a26e83c6efcc67e": "d-web-2026-09-21T20-09-02Z-e294177e (completed)",
+    "relationship": "one-to-one through authorization.attempt_id, with nothing left over on either side; independent of FINAL-MANIFEST.sha256"
+  },
+  "package": {
+    "archive_bytes": 39180,
+    "archive_name": "SERVER-PT-DIAG-0EA-01-FINAL-5296984.zip",
+    "archive_sha256": "d30eeabc3fbb034e851e9519451fe1d8c196c7151c900e85e52b5af280755c11",
+    "archive_sha256_matches_operator_sidecar": true,
+    "archive_sha256_matches_work_order": true,
+    "member_bytes": 223052,
+    "member_count": 30,
+    "provenance": "operator-held outside this repository; read only. Every digest in this record was recomputed from those bytes in this delivery and nothing in the package was modified, moved or repaired."
+  },
+  "recorded_at_utc": "2026-09-21T22:05:00Z",
+  "schema": "server-pt-campaign-closeout-addendum-v1",
+  "standing_limitations": [
+    "diagnostic_completion_is_not_product_acceptance",
+    "no_client_dhcp_acquisition_was_measured",
+    "stored_pool_coexistence_is_not_proof_the_intended_pool_serves_a_client",
+    "d_web_fwd_sample_belongs_to_w5_after_the_fetch",
+    "no_ping_caused_stp_forwarding_claim_follows",
+    "offline_evidence_does_not_establish_live_packet_tracer_behaviour"
+  ],
+  "status": "READY_FOR_REVIEW",
+  "verification": {
+    "archive_against_extracted_tree": {
+      "CAMPAIGN-INDEX.md": {
+        "archive": "b341beb915ce534a7c61c7e41e57bb8076ef46d5fb1f6b957f26cac4d5fed813",
+        "equal": true,
+        "extracted": "b341beb915ce534a7c61c7e41e57bb8076ef46d5fb1f6b957f26cac4d5fed813"
+      },
+      "D-DHCP-attempt-1-20260921T190939Z-7660bd1/authorization.json": {
+        "archive": "cf034185fe8d1549893f8e96217f0d4a96787e13ee5c033c5676246f8f2c504d",
+        "equal": true,
+        "extracted": "cf034185fe8d1549893f8e96217f0d4a96787e13ee5c033c5676246f8f2c504d"
+      },
+      "D-DHCP-attempt-1-20260921T190939Z-7660bd1/campaign-postrun.json": {
+        "archive": "e1aa878e14500df4ddc46d935a4054649ef8e205ef95e112ca851c5b19d3bf71",
+        "equal": true,
+        "extracted": "e1aa878e14500df4ddc46d935a4054649ef8e205ef95e112ca851c5b19d3bf71"
+      },
+      "D-DHCP-attempt-1-20260921T190939Z-7660bd1/exit-code.txt": {
+        "archive": "f1b2f662800122bed0ff255693df89c4487fbdcf453d3524a42d4ec20c3d9c04",
+        "equal": true,
+        "extracted": "f1b2f662800122bed0ff255693df89c4487fbdcf453d3524a42d4ec20c3d9c04"
+      },
+      "D-DHCP-attempt-1-20260921T190939Z-7660bd1/mailbox-postrun.json": {
+        "archive": "bb0cd44fce2b02a1ea065a12a5aeaf8ca70b5c1a5792f66ab243c0b26ea94a81",
+        "equal": true,
+        "extracted": "bb0cd44fce2b02a1ea065a12a5aeaf8ca70b5c1a5792f66ab243c0b26ea94a81"
+      },
+      "D-DHCP-attempt-1-20260921T190939Z-7660bd1/manifest.sha256.json": {
+        "archive": "fbd5f78007d00ec5bee3f3bb93b1d77889d053d7eb079237771f7a9caf0fb9d9",
+        "equal": true,
+        "extracted": "fbd5f78007d00ec5bee3f3bb93b1d77889d053d7eb079237771f7a9caf0fb9d9"
+      },
+      "D-DHCP-attempt-1-20260921T190939Z-7660bd1/processes-postrun.json": {
+        "archive": "60e56a204694153409a8c119e3eab8f5874f2446f842fa2ccac6018a5ddba311",
+        "equal": true,
+        "extracted": "60e56a204694153409a8c119e3eab8f5874f2446f842fa2ccac6018a5ddba311"
+      },
+      "D-DHCP-attempt-1-20260921T190939Z-7660bd1/record.json": {
+        "archive": "1ec3411b380ba2b8eef44a0a7205373147e0adc1c13e7a67c723f87de4086e50",
+        "equal": true,
+        "extracted": "1ec3411b380ba2b8eef44a0a7205373147e0adc1c13e7a67c723f87de4086e50"
+      },
+      "D-DHCP-attempt-1-20260921T190939Z-7660bd1/stderr.txt": {
+        "archive": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "equal": true,
+        "extracted": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "D-DHCP-attempt-1-20260921T190939Z-7660bd1/stdout.txt": {
+        "archive": "755169a93f4af5a242e3fd31ce6fb26a79b4c136f49f75464b7139b127d3feca",
+        "equal": true,
+        "extracted": "755169a93f4af5a242e3fd31ce6fb26a79b4c136f49f75464b7139b127d3feca"
+      },
+      "D-DHCP-attempt-2-20260921T200140Z-5296984/authorization.json": {
+        "archive": "020d7da964186f1ed5dedab85a10763c60d4bb7ae62ee9fe41774f6055cc55ba",
+        "equal": true,
+        "extracted": "020d7da964186f1ed5dedab85a10763c60d4bb7ae62ee9fe41774f6055cc55ba"
+      },
+      "D-DHCP-attempt-2-20260921T200140Z-5296984/campaign-postrun.json": {
+        "archive": "d26aa460c137a30c4a95d99081f8bd8bc3f6095ec581d41717c4fb8229fa1da2",
+        "equal": true,
+        "extracted": "d26aa460c137a30c4a95d99081f8bd8bc3f6095ec581d41717c4fb8229fa1da2"
+      },
+      "D-DHCP-attempt-2-20260921T200140Z-5296984/exit-code.txt": {
+        "archive": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+        "equal": true,
+        "extracted": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354"
+      },
+      "D-DHCP-attempt-2-20260921T200140Z-5296984/mailbox-postrun.json": {
+        "archive": "5c9af38498dde6831c907c15ec03773aff23e29844fa82de5ed66ddf5c1f8e50",
+        "equal": true,
+        "extracted": "5c9af38498dde6831c907c15ec03773aff23e29844fa82de5ed66ddf5c1f8e50"
+      },
+      "D-DHCP-attempt-2-20260921T200140Z-5296984/manifest.sha256.json": {
+        "archive": "a96c38f4f035d2cb44087e338748df34e128367209d6f83249468e768aa07741",
+        "equal": true,
+        "extracted": "a96c38f4f035d2cb44087e338748df34e128367209d6f83249468e768aa07741"
+      },
+      "D-DHCP-attempt-2-20260921T200140Z-5296984/processes-postrun.json": {
+        "archive": "fc1418e3d95bda17709164f17e572331de4a60f246b6da92cf4d4ace117a3884",
+        "equal": true,
+        "extracted": "fc1418e3d95bda17709164f17e572331de4a60f246b6da92cf4d4ace117a3884"
+      },
+      "D-DHCP-attempt-2-20260921T200140Z-5296984/record.json": {
+        "archive": "39802c93b6bc9181a39b69e4ad5b39dcdafc11d38d63c2425f9189942da145d9",
+        "equal": true,
+        "extracted": "39802c93b6bc9181a39b69e4ad5b39dcdafc11d38d63c2425f9189942da145d9"
+      },
+      "D-DHCP-attempt-2-20260921T200140Z-5296984/retirement-observation.json": {
+        "archive": "9053c59b198e10b14c44286d539ea15806d997da48d9adfbc0f3c3c88436dd9f",
+        "equal": true,
+        "extracted": "9053c59b198e10b14c44286d539ea15806d997da48d9adfbc0f3c3c88436dd9f"
+      },
+      "D-DHCP-attempt-2-20260921T200140Z-5296984/stderr.txt": {
+        "archive": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "equal": true,
+        "extracted": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "D-DHCP-attempt-2-20260921T200140Z-5296984/stdout.txt": {
+        "archive": "48d146af7a77ee4f9bc5afb77c3cf04da16d507df0c8a9e0940aef24a2544ddc",
+        "equal": true,
+        "extracted": "48d146af7a77ee4f9bc5afb77c3cf04da16d507df0c8a9e0940aef24a2544ddc"
+      },
+      "D-WEB-attempt-1-20260921T200858Z-5296984/authorization.json": {
+        "archive": "fe7266b0680fac2d3650656d2d854b5ab9104633a277ec6006efc92deb174eaf",
+        "equal": true,
+        "extracted": "fe7266b0680fac2d3650656d2d854b5ab9104633a277ec6006efc92deb174eaf"
+      },
+      "D-WEB-attempt-1-20260921T200858Z-5296984/campaign-postrun.json": {
+        "archive": "18deeda22c2d98006e120b5067b10d8db31db9828071147c9b8765a9eb00137a",
+        "equal": true,
+        "extracted": "18deeda22c2d98006e120b5067b10d8db31db9828071147c9b8765a9eb00137a"
+      },
+      "D-WEB-attempt-1-20260921T200858Z-5296984/exit-code.txt": {
+        "archive": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+        "equal": true,
+        "extracted": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354"
+      },
+      "D-WEB-attempt-1-20260921T200858Z-5296984/mailbox-postrun.json": {
+        "archive": "32ee6eeb74b993aabab2321e3c64a8f0434d1758f21a08a20c055f4b8172aba1",
+        "equal": true,
+        "extracted": "32ee6eeb74b993aabab2321e3c64a8f0434d1758f21a08a20c055f4b8172aba1"
+      },
+      "D-WEB-attempt-1-20260921T200858Z-5296984/manifest.sha256.json": {
+        "archive": "5e951a02e1760433439205fb554fdec82b9b9a43db2ac86f7397ef4ba7236157",
+        "equal": true,
+        "extracted": "5e951a02e1760433439205fb554fdec82b9b9a43db2ac86f7397ef4ba7236157"
+      },
+      "D-WEB-attempt-1-20260921T200858Z-5296984/processes-postrun.json": {
+        "archive": "a9ef564f68a98d7b0cdb4c54963d57cce732b50eb1f8fd0c9cf38beaefce9fbd",
+        "equal": true,
+        "extracted": "a9ef564f68a98d7b0cdb4c54963d57cce732b50eb1f8fd0c9cf38beaefce9fbd"
+      },
+      "D-WEB-attempt-1-20260921T200858Z-5296984/record.json": {
+        "archive": "431e8deacc80b347d0f51e79e681ebb544f8b289522c4694fdcfaece5265c29b",
+        "equal": true,
+        "extracted": "431e8deacc80b347d0f51e79e681ebb544f8b289522c4694fdcfaece5265c29b"
+      },
+      "D-WEB-attempt-1-20260921T200858Z-5296984/stderr.txt": {
+        "archive": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "equal": true,
+        "extracted": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "D-WEB-attempt-1-20260921T200858Z-5296984/stdout.txt": {
+        "archive": "0f561bef5915b80acd4b0b1751fc94789f12311f092b509a467be98808209951",
+        "equal": true,
+        "extracted": "0f561bef5915b80acd4b0b1751fc94789f12311f092b509a467be98808209951"
+      },
+      "FINAL-MANIFEST.sha256": {
+        "archive": "3807034ddb34719a4762e4e149bf775765e305090ce842a2bfc4048b8e9616f0",
+        "equal": true,
+        "extracted": "3807034ddb34719a4762e4e149bf775765e305090ce842a2bfc4048b8e9616f0"
+      }
+    },
+    "comparisons": 62,
+    "final_manifest": {
+      "%LOCALAPPDATA%\\packet-tracer-mcp\\bridge\\campaign\\attempt-08a06b738839b6f48f4b24516089ac09.json": {
+        "expected": "3b102060e2dce6f0eccec5fd5dcfec2de4d51b18539e552383a6cdf742910aa1",
+        "measured": "3b102060e2dce6f0eccec5fd5dcfec2de4d51b18539e552383a6cdf742910aa1",
+        "present": true
+      },
+      "%LOCALAPPDATA%\\packet-tracer-mcp\\bridge\\campaign\\attempt-1cec3a925255de16907519d1c2919fed.json": {
+        "expected": "7d31cc42e809663868674d5c95f1546c2811f61b482a7f6a1a17f7d866aaaadb",
+        "measured": "7d31cc42e809663868674d5c95f1546c2811f61b482a7f6a1a17f7d866aaaadb",
+        "present": true
+      },
+      "%LOCALAPPDATA%\\packet-tracer-mcp\\bridge\\campaign\\attempt-f2148bbd568a49391a26e83c6efcc67e.json": {
+        "expected": "95e2de984b48ba37501b0ab4132d4e743e030e5636c3b05cc79ca01697149992",
+        "measured": "95e2de984b48ba37501b0ab4132d4e743e030e5636c3b05cc79ca01697149992",
+        "present": true
+      },
+      "CAMPAIGN-INDEX.md": {
+        "expected": "b341beb915ce534a7c61c7e41e57bb8076ef46d5fb1f6b957f26cac4d5fed813",
+        "measured": "b341beb915ce534a7c61c7e41e57bb8076ef46d5fb1f6b957f26cac4d5fed813",
+        "present": true
+      },
+      "D-DHCP-attempt-1-20260921T190939Z-7660bd1\\manifest.sha256.json": {
+        "expected": "fbd5f78007d00ec5bee3f3bb93b1d77889d053d7eb079237771f7a9caf0fb9d9",
+        "measured": "fbd5f78007d00ec5bee3f3bb93b1d77889d053d7eb079237771f7a9caf0fb9d9",
+        "present": true
+      },
+      "D-DHCP-attempt-2-20260921T200140Z-5296984\\manifest.sha256.json": {
+        "expected": "a96c38f4f035d2cb44087e338748df34e128367209d6f83249468e768aa07741",
+        "measured": "a96c38f4f035d2cb44087e338748df34e128367209d6f83249468e768aa07741",
+        "present": true
+      },
+      "D-WEB-attempt-1-20260921T200858Z-5296984\\manifest.sha256.json": {
+        "expected": "5e951a02e1760433439205fb554fdec82b9b9a43db2ac86f7397ef4ba7236157",
+        "measured": "5e951a02e1760433439205fb554fdec82b9b9a43db2ac86f7397ef4ba7236157",
+        "present": true
+      }
+    },
+    "mismatches": [],
+    "missing": [],
+    "per_attempt_manifests": {
+      "D-DHCP-attempt-1-20260921T190939Z-7660bd1": {
+        "authorization.json": {
+          "expected": "cf034185fe8d1549893f8e96217f0d4a96787e13ee5c033c5676246f8f2c504d",
+          "measured": "cf034185fe8d1549893f8e96217f0d4a96787e13ee5c033c5676246f8f2c504d",
+          "present": true
+        },
+        "campaign-postrun.json": {
+          "expected": "e1aa878e14500df4ddc46d935a4054649ef8e205ef95e112ca851c5b19d3bf71",
+          "measured": "e1aa878e14500df4ddc46d935a4054649ef8e205ef95e112ca851c5b19d3bf71",
+          "present": true
+        },
+        "exit-code.txt": {
+          "expected": "f1b2f662800122bed0ff255693df89c4487fbdcf453d3524a42d4ec20c3d9c04",
+          "measured": "f1b2f662800122bed0ff255693df89c4487fbdcf453d3524a42d4ec20c3d9c04",
+          "present": true
+        },
+        "mailbox-postrun.json": {
+          "expected": "bb0cd44fce2b02a1ea065a12a5aeaf8ca70b5c1a5792f66ab243c0b26ea94a81",
+          "measured": "bb0cd44fce2b02a1ea065a12a5aeaf8ca70b5c1a5792f66ab243c0b26ea94a81",
+          "present": true
+        },
+        "processes-postrun.json": {
+          "expected": "60e56a204694153409a8c119e3eab8f5874f2446f842fa2ccac6018a5ddba311",
+          "measured": "60e56a204694153409a8c119e3eab8f5874f2446f842fa2ccac6018a5ddba311",
+          "present": true
+        },
+        "record.json": {
+          "expected": "1ec3411b380ba2b8eef44a0a7205373147e0adc1c13e7a67c723f87de4086e50",
+          "measured": "1ec3411b380ba2b8eef44a0a7205373147e0adc1c13e7a67c723f87de4086e50",
+          "present": true
+        },
+        "stderr.txt": {
+          "expected": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "measured": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "present": true
+        },
+        "stdout.txt": {
+          "expected": "755169a93f4af5a242e3fd31ce6fb26a79b4c136f49f75464b7139b127d3feca",
+          "measured": "755169a93f4af5a242e3fd31ce6fb26a79b4c136f49f75464b7139b127d3feca",
+          "present": true
+        }
+      },
+      "D-DHCP-attempt-2-20260921T200140Z-5296984": {
+        "authorization.json": {
+          "expected": "020d7da964186f1ed5dedab85a10763c60d4bb7ae62ee9fe41774f6055cc55ba",
+          "measured": "020d7da964186f1ed5dedab85a10763c60d4bb7ae62ee9fe41774f6055cc55ba",
+          "present": true
+        },
+        "campaign-postrun.json": {
+          "expected": "d26aa460c137a30c4a95d99081f8bd8bc3f6095ec581d41717c4fb8229fa1da2",
+          "measured": "d26aa460c137a30c4a95d99081f8bd8bc3f6095ec581d41717c4fb8229fa1da2",
+          "present": true
+        },
+        "exit-code.txt": {
+          "expected": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+          "measured": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+          "present": true
+        },
+        "mailbox-postrun.json": {
+          "expected": "5c9af38498dde6831c907c15ec03773aff23e29844fa82de5ed66ddf5c1f8e50",
+          "measured": "5c9af38498dde6831c907c15ec03773aff23e29844fa82de5ed66ddf5c1f8e50",
+          "present": true
+        },
+        "processes-postrun.json": {
+          "expected": "fc1418e3d95bda17709164f17e572331de4a60f246b6da92cf4d4ace117a3884",
+          "measured": "fc1418e3d95bda17709164f17e572331de4a60f246b6da92cf4d4ace117a3884",
+          "present": true
+        },
+        "record.json": {
+          "expected": "39802c93b6bc9181a39b69e4ad5b39dcdafc11d38d63c2425f9189942da145d9",
+          "measured": "39802c93b6bc9181a39b69e4ad5b39dcdafc11d38d63c2425f9189942da145d9",
+          "present": true
+        },
+        "retirement-observation.json": {
+          "expected": "9053c59b198e10b14c44286d539ea15806d997da48d9adfbc0f3c3c88436dd9f",
+          "measured": "9053c59b198e10b14c44286d539ea15806d997da48d9adfbc0f3c3c88436dd9f",
+          "present": true
+        },
+        "stderr.txt": {
+          "expected": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "measured": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "present": true
+        },
+        "stdout.txt": {
+          "expected": "48d146af7a77ee4f9bc5afb77c3cf04da16d507df0c8a9e0940aef24a2544ddc",
+          "measured": "48d146af7a77ee4f9bc5afb77c3cf04da16d507df0c8a9e0940aef24a2544ddc",
+          "present": true
+        }
+      },
+      "D-WEB-attempt-1-20260921T200858Z-5296984": {
+        "authorization.json": {
+          "expected": "fe7266b0680fac2d3650656d2d854b5ab9104633a277ec6006efc92deb174eaf",
+          "measured": "fe7266b0680fac2d3650656d2d854b5ab9104633a277ec6006efc92deb174eaf",
+          "present": true
+        },
+        "campaign-postrun.json": {
+          "expected": "18deeda22c2d98006e120b5067b10d8db31db9828071147c9b8765a9eb00137a",
+          "measured": "18deeda22c2d98006e120b5067b10d8db31db9828071147c9b8765a9eb00137a",
+          "present": true
+        },
+        "exit-code.txt": {
+          "expected": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+          "measured": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+          "present": true
+        },
+        "mailbox-postrun.json": {
+          "expected": "32ee6eeb74b993aabab2321e3c64a8f0434d1758f21a08a20c055f4b8172aba1",
+          "measured": "32ee6eeb74b993aabab2321e3c64a8f0434d1758f21a08a20c055f4b8172aba1",
+          "present": true
+        },
+        "processes-postrun.json": {
+          "expected": "a9ef564f68a98d7b0cdb4c54963d57cce732b50eb1f8fd0c9cf38beaefce9fbd",
+          "measured": "a9ef564f68a98d7b0cdb4c54963d57cce732b50eb1f8fd0c9cf38beaefce9fbd",
+          "present": true
+        },
+        "record.json": {
+          "expected": "431e8deacc80b347d0f51e79e681ebb544f8b289522c4694fdcfaece5265c29b",
+          "measured": "431e8deacc80b347d0f51e79e681ebb544f8b289522c4694fdcfaece5265c29b",
+          "present": true
+        },
+        "stderr.txt": {
+          "expected": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "measured": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "present": true
+        },
+        "stdout.txt": {
+          "expected": "0f561bef5915b80acd4b0b1751fc94789f12311f092b509a467be98808209951",
+          "measured": "0f561bef5915b80acd4b0b1751fc94789f12311f092b509a467be98808209951",
+          "present": true
+        }
+      }
+    }
+  }
+}

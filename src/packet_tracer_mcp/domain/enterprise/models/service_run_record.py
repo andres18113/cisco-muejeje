@@ -23,6 +23,7 @@ never proof that work did not execute, and it is never auto-resumed.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -144,6 +145,10 @@ class ServiceRunRecord(BaseModel):
         default_factory=list
     )
     releases: list[OwnedResourceRelease] = Field(default_factory=list)
+    #: The forwarding prerequisite of every client request this run depended
+    #: on, kept beside the run it belongs to so the evidence and its dependent
+    #: requests stay linked in the durable record, not only in the response.
+    operational_readiness: list[dict[str, Any]] = Field(default_factory=list)
     nonces: dict[str, str] = Field(default_factory=dict)
     dhcp_authorities: list[DhcpServiceAuthorityRecord] = Field(default_factory=list)
     dirty_state: DirtyState = DirtyState.CLEAN

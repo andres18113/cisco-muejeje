@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum, StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -247,6 +248,12 @@ class ServiceStageResult(BaseModel):
     services: list[ServiceEntryOutcome] = Field(default_factory=list)
     clients: list[ClientServiceOutcome] = Field(default_factory=list)
     releases: list[OwnedResourceRelease] = Field(default_factory=list)
+    #: One row per switch/VLAN group whose access ports a client request
+    #: depended on, carrying the rendered forwarding sample, the verdict and
+    #: the per-client coverage. Operational readiness is reported separately
+    #: from configuration application, eligibility and behavioural
+    #: verification, because it answers a different question from all three.
+    operational_readiness: list[dict[str, Any]] = Field(default_factory=list)
     capability_snapshot: CapabilitySnapshotSummary = Field(
         default_factory=CapabilitySnapshotSummary
     )
@@ -279,6 +286,9 @@ class ServiceStageResult(BaseModel):
             "e5_effect_uncertain": self.e5_effect_uncertain,
             "services": [item.model_dump(mode="json") for item in self.services],
             "clients": [item.model_dump(mode="json") for item in self.clients],
+            "operational_readiness": [
+                dict(item) for item in self.operational_readiness
+            ],
             "releases": [item.model_dump(mode="json") for item in self.releases],
             "dirty_state": self.dirty_state.value,
             "persisted_stage": (

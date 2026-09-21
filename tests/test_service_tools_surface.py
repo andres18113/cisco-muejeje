@@ -236,6 +236,50 @@ class _Channel:
         return bool(self.sends or self.waits or self.inventories or self.health_reads)
 
 
+#: The access ports the compiled plan puts on VLAN 10 of the fixture switch.
+#: The readiness gate asks about exactly these, so the simulated switch has to
+#: answer about exactly these; a simulation that reported a different set would
+#: be proving the gate wrong rather than proving the route.
+_SIMULATED_ACCESS_PORTS = ("FastEthernet1/1", "FastEthernet1/2", "FastEthernet1/3")
+_SIMULATED_SWITCH_PROMPT = "HQ-DEFAULT-ACCESS-SW-01#"
+
+
+def _simulated_spanning_tree_output(state: str = "FWD") -> str:
+    """Render one complete `show spanning-tree` page for the fixture switch.
+
+    The layout is the exact one `parse_show_spanning_tree` was written against,
+    Root ID and Bridge ID blocks included: a page missing either is skipped by
+    the parser, which the gate would then correctly report as an absent VLAN
+    instance rather than as a forwarding refusal.
+    """
+    rows = [
+        f"{port.replace('FastEthernet', 'Fa'):<16} Desg {state:<3} "
+        "19        128.1    P2p"
+        for port in _SIMULATED_ACCESS_PORTS
+    ]
+    return "\n".join(
+        [
+            f"{_SIMULATED_SWITCH_PROMPT}show spanning-tree",
+            "VLAN0010",
+            "  Spanning tree enabled protocol ieee",
+            "  Root ID    Priority    32778",
+            "             Address     0001.4392.0108",
+            "             This bridge is the root",
+            "             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec",
+            "",
+            "  Bridge ID  Priority    32778  (priority 32768 sys-id-ext 10)",
+            "             Address     0030.A3A1.89E8",
+            "             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec",
+            "             Aging Time  20",
+            "",
+            "Interface        Role Sts Cost      Prio.Nbr Type",
+            "---------------- ---- --- --------- -------- ----------------------",
+            *rows,
+            _SIMULATED_SWITCH_PROMPT,
+        ]
+    )
+
+
 class _SimulatedProductTransport:
     """Deterministic external bridge answers for the real product wiring."""
 
@@ -256,6 +300,11 @@ class _SimulatedProductTransport:
         self.dispatch_payloads: list[str] = []
         self.addresses: dict[str, tuple[str, str]] = {}
         self.last_dns_command = ""
+        #: Which spanning-tree state the simulated switch reports. Tests that
+        #: say nothing get a forwarding switch, which is the state the public
+        #: route needs; a test that wants the gate to refuse sets this.
+        self.spanning_tree_state = "FWD"
+        self.spanning_tree_queries: list[str] = []
         self.unhandled: list[str] = []
 
     def pt_alive(self) -> bool:
@@ -352,6 +401,52 @@ class _SimulatedProductTransport:
                     "address_channel": True,
                     "ipv4": ipv4,
                     "netmask": mask,
+                }
+            )
+        if "getCurrentFrameInstanceIndex" in script:
+            # The readiness observation names the simulation clock beside its
+            # sample. It is a read of already measured primitives and moves
+            # nothing; answering it keeps the sample self-describing.
+            return json.dumps(
+                {
+                    "mode": False,
+                    "frames": 0,
+                    "sim_time": 118718,
+                    "current_index": -1,
+                }
+            )
+        if "enterCommand" in script and "expected_prompt" in script:
+            self.spanning_tree_queries.append(
+                self._json_argument(script, r"getDevice\((\"(?:\\.|[^\"\\])*\")\)")
+            )
+            return json.dumps(
+                {
+                    "ok": True,
+                    "before": _SIMULATED_SWITCH_PROMPT,
+                    "expected_prompt": _SIMULATED_SWITCH_PROMPT,
+                }
+            )
+        if "owner_name:owner" in script:
+            device = self._json_argument(script, r"getDevice\((\"(?:\\.|[^\"\\])*\")\)")
+            return json.dumps(
+                {
+                    "found": True,
+                    "configuration_channel": True,
+                    "output": _simulated_spanning_tree_output(self.spanning_tree_state),
+                    "owner_name": device,
+                    "owner_evidence": "terminal_object_identity",
+                    "owner_candidates": 1,
+                    "owner_candidate_evidence": "terminal_object_identity",
+                    "owner_candidate_names": [device],
+                    "device_count": len(self.inventory),
+                }
+            )
+        if "configuration_channel:o!==" in script:
+            return json.dumps(
+                {
+                    "found": True,
+                    "configuration_channel": True,
+                    "output": _simulated_spanning_tree_output(self.spanning_tree_state),
                 }
             )
         self.unhandled.append(script)

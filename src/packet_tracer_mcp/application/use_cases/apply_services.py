@@ -69,6 +69,7 @@ from ...domain.enterprise.services.service_capability_resolution import (
     resolve_action_capability,
     resolve_verification_capability,
 )
+from .service_access_readiness_gate import ServiceAccessReadinessGate
 
 #: How a verification expectation touches the environment it reads. It decides
 #: what may still run after the action it depends on left its outcome
@@ -158,6 +159,11 @@ class ServiceApplicator:
     def __init__(self, runtime: ServiceRuntime) -> None:
         """Bind the applicator to one service runtime."""
         self._runtime = runtime
+        #: The operational-readiness gate of the current `apply` call, bound
+        #: there and never across calls: a forwarding sample belongs to one
+        #: invocation, and reusing an earlier one would answer about a moment
+        #: whose identity and state may already have changed.
+        self._readiness: ServiceAccessReadinessGate | None = None
 
     def apply(
         self,
@@ -170,9 +176,11 @@ class ServiceApplicator:
         runtime_context: ConfigurationRuntimeContext | None = None,
         deployment_manifest: DeploymentManifest | None = None,
         retained_action_results: Sequence[ActionApplicationResult] = (),
+        operational_readiness: ServiceAccessReadinessGate | None = None,
     ) -> ServiceApplicationResult:
         """Apply one ServicePlan and return its full typed outcome."""
         started = monotonic()
+        self._readiness = operational_readiness
         runtime_context = runtime_context or ConfigurationRuntimeContext()
         deployment_id = deployment_manifest.deployment_id if deployment_manifest else ""
         if actual_source_topology_hash != plan.source_topology_hash:
@@ -976,6 +984,38 @@ class ServiceApplicator:
                     ),
                     message=(
                         f"Verification capability {resolution.key} is {support.value}."
+                    ),
+                )
+                continue
+            # Operational readiness, asked last and asked here on purpose. It
+            # is not eligibility and not capability: those decide whether the
+            # request is admissible at all, and this decides whether the path
+            # it would travel forwards right now. Asking it at this point is
+            # what makes the sample fresh for the request that follows it, and
+            # what stops a run whose expectations are all blocked upstream
+            # from querying a switch about nothing.
+            readiness = (
+                self._readiness.decide(expectation.id)
+                if self._readiness is not None
+                else None
+            )
+            if readiness is not None and not readiness.admitted:
+                results[expectation.id] = ServiceVerificationResult(
+                    expectation_id=expectation.id,
+                    service_id=expectation.service_id,
+                    status=ActionExecutionStatus.DEPENDENCY_BLOCKED,
+                    evidence_kind=expectation.evidence_kind,
+                    failure_code=(ConfigurationFailureCode.ACCESS_FORWARDING_NOT_READY),
+                    observation=ObservationFact.NOT_ATTEMPTED,
+                    cause=readiness.cause,
+                    claim_level="request_not_attempted",
+                    message=(
+                        "Access forwarding was not admitted for "
+                        + (readiness.client_device_id or readiness.host_device_id)
+                        + " on "
+                        + (", ".join(readiness.interfaces) or "no derived interface")
+                        + ": "
+                        + readiness.cause
                     ),
                 )
                 continue

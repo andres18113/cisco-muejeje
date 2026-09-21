@@ -37,6 +37,9 @@ are not restated here; read them in the current brief.
 | `assignments/Codex_Continuation_A1_Q3_Q1_S1b.md` | amendment 01 to campaign `SERVER-PT-D02-Q3-Q1-AUTOFIX-01`, Downloads, 2026-09-19 | nothing yet: it is the active authority for Block F of the current brief |
 | `assignments/Codex_243_Focused_Closure_and_Remaining_LIVE.md` | focused closure review addendum, Downloads, 2026-09-19 | nothing yet: it completes the active amendment boundaries and delegates the two remaining attempts conditionally |
 | `evidence/campaign-d02-q3-q1-autofix-01/` | appended amendment and focused-closure ledger entries with their digests, 2026-09-19 | nothing: they extend the campaign chain without replacing any earlier entry |
+| `assignments/Codex_Next_Product_Readiness_5296984.md` | the diagnostic closeout and product-readiness work order, Downloads, 2026-09-21 | nothing yet: it is the active authority for the closeout and product-readiness block of the goal-foundations brief |
+| `assignments/Codex_ServerPT_Diagnostic_Goal_DRAFT.md` | the pre-authorization proposal for campaign `SERVER-PT-DIAG-0EA-01`, Downloads, 2026-09-21 | nothing: its own header says `READY_FOR_AUTHORIZATION - NOT A LIVE GRANT`, and it is kept as the authority source for the campaign lifecycle rules |
+| `evidence/campaign-diag-0ea-01/` | the additive closeout addendum for campaign `SERVER-PT-DIAG-0EA-01` and its 62-comparison verification, 2026-09-21 | nothing: it extends the campaign chain and replaces no attempt file, manifest or envelope |
 
 The companion overlay ZIP named by the S1 review was not present, so the
 individually supplied source files were used and hash-verified without
@@ -72,6 +75,20 @@ the first three correction-ledger entries.
 [`evidence/campaign-d02-q3-q1-autofix-01/`](evidence/campaign-d02-q3-q1-autofix-01/README.md)
 appends amendment entry 4 and focused-closure entry 5 to that chain and replaces
 nothing in it.
+
+## Campaign `SERVER-PT-DIAG-0EA-01`
+
+The campaign package stays with the operator, outside this repository:
+`SERVER-PT-DIAG-0EA-01-FINAL-5296984.zip`, 39,180 bytes, SHA-256
+`d30eeabc3fbb034e851e9519451fe1d8c196c7151c900e85e52b5af280755c11`, whose 30
+members total 223,052 bytes. It carries the three D-DHCP/D-WEB attempt
+directories, the campaign index and `FINAL-MANIFEST.sha256`.
+[`evidence/campaign-diag-0ea-01/`](evidence/campaign-diag-0ea-01/README.md)
+adds one verification and one digest index to that chain and replaces nothing
+in it: 62 digests were recomputed against the package's own manifests with no
+mismatch, the three permanent attempt markers were recovered in place and match
+the digests the manifest already held, and the force-termination sequence is
+preserved as four dated statements rather than reconciled into one.
 
 ## Adding a record
 
