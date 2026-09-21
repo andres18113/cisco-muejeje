@@ -1276,3 +1276,75 @@ corrective successor's attempt.
 | Full suite | `6850 passed, 3 skipped, 3 pre-existing warnings`, exit 0, 548.43 s |
 | Namespace inventory | 0 active legacy imports, 0 active string references, 0 unreviewed inert mentions, exit 0 |
 | MkDocs | built in 3.77 s, exit 0; the two `handoff.md` warnings are unchanged |
+
+## 2026-09-21 D-DHCP attempt 1: pending response closeout
+
+### Recorded LIVE boundary
+
+The corrective successor `7660bd104c9947badca6010d92d84337976282e0`
+(tree `663c83e39cdf90c381d48dc2e549c749dcb0fc07`, exact-SHA CI
+`35640377135` six of six green) ran D-DHCP v3 attempt ordinal 1 under campaign
+`SERVER-PT-DIAG-0EA-01`. The record is
+`2026-09-21T19-09-40Z-876af922`, attempt identity
+`1cec3a925255de16907519d1c2919fed`. All five diagnostic measurements ran in
+41 operations. The campaign claim released, semantic device/link cleanup and
+both restoration reads completed, but the immutable record correctly ended
+`stopped`: postflight observed
+`res_34708_dd72195a_000022.txt`, set `restoration_proven=false`, and retained
+`lifecycle:mailbox:not_drained:...` as a secondary failure. No D-WEB attempt
+started.
+
+The response name binds it to operation 22, the only fire-and-forget `send`:
+`d-dhcp:product:e5_server_address`. The file disappeared by the later evidence
+copy without operator deletion, consistent with the engine's bounded orphan
+purge. The record, authorization, stdout, stderr, exit code, process/mailbox
+snapshots and hashes were preserved under the campaign evidence directory
+before recovery. The failed process received only normal close requests and
+remains running; force termination is not authorized.
+
+### Causal defect and minimal correction
+
+`FileBridge.send()` retains each fire-and-forget name in `_pending` and calls
+`collect_completed()` only before another `send`. The D-DHCP E5 operation is
+followed exclusively by `send_and_wait`/`dispatch_and_wait`, so its completed
+response is never retired by Python. The Script Engine may remove the request
+and publish the response correctly while the client still carries the pending
+name through finalization. This is an integration defect in the existing
+instrument, not a native negative and not permission to reinterpret attempt 1.
+
+The file transport will collect completed fire-and-forget responses before and
+after every synchronous request. The application finalizer will perform one
+last local collection before lifecycle postflight and query the transport's
+pending state. If a pending send remains, the record names transport residue,
+sets restoration false and stops even when the directory happens to be empty;
+it never waits speculatively, replays the mutation, or deletes a foreign
+artifact. Transports without this optional local lifecycle surface preserve
+their existing behaviour.
+
+### Requirements and tests
+
+| Requirement | Acceptance evidence |
+| --- | --- |
+| A completed asynchronous response is retired during later synchronous traffic | RED/GREEN file-bridge regression for both `send_and_wait` and `dispatch_and_wait`, asserting request, response and in-memory pending state are all cleared |
+| A last completed asynchronous response is retired before postflight | Finalizer regression supplies a transport whose collector resolves its pending state and requires an empty postflight plus preserved restoration claim |
+| An unresolved pending send cannot be reported clean | Finalizer regression retains the pending state with an empty mailbox observation and requires named transport residue, `stopped`, and `restoration_proven=false` |
+| The failed ordinal is immutable and no scope widens | attempt 1 artifacts/hashes remain unchanged; no budget/profile/API/step/channel change; any second D-DHCP attempt uses a fresh process, instance token and attempt identity at a new exact-SHA green successor |
+
+### Measured autofix verification
+
+The file-bridge regression failed first because the earlier `res_*` survived
+the synchronous call. After the owning-layer correction, both synchronous
+paths retire it. The application regressions independently establish that a
+resolved pending send permits the ordinary clean result, while an unresolved
+one produces `transport:pending_fire_and_forget`, stops the record and removes
+the restoration claim even when its lifecycle observation reports an empty
+directory.
+
+| Check | Result |
+| --- | --- |
+| Causal RED/GREEN | initial `send_and_wait` case failed on one retained `res_*`; final focused set `4 passed`, exit 0 |
+| Affected suite | `268 passed`, exit 0 |
+| Provisional quality gate | base/merge-base `6263344e`, 104 changed Python files Ruff-gated, no mechanical exemption, exit 0 |
+| Full suite | `6854 passed, 3 skipped, 3 pre-existing warnings`, exit 0, 548.20 s |
+| Namespace inventory | 0 active legacy imports, 0 active string references, 0 unreviewed inert mentions, exit 0 |
+| MkDocs and whitespace | build exit 0 in 3.92 s with the two unchanged `handoff.md` warnings; `git diff --check` exit 0 |

@@ -492,6 +492,19 @@ class LedgeredTransport:
         """Sleep for a runtime's poll, capped by the phase's remaining time."""
         self._ledger.wait(seconds, self._sleep)
 
+    def settle_pending_sends(self) -> bool:
+        """Retire completed local sends and report any unresolved one fail-closed."""
+        collect = getattr(self._transport, "collect_completed", None)
+        pending = getattr(self._transport, "has_pending_requests", None)
+        if not callable(collect) and not callable(pending):
+            return False
+        try:
+            if callable(collect):
+                collect()
+            return bool(pending()) if callable(pending) else False
+        except Exception:
+            return True
+
     def send(self, js_code: str) -> bool:
         """Queue one counted fire-and-forget command."""
         index, _timeout = self._ledger.admit("send", 0.0)
@@ -5034,6 +5047,11 @@ def _finalize(execution: _Execution) -> None:
         record.limitations.append(
             "owned_cleanup_not_dispatched_to_an_unproven_receiver"
         )
+    if execution.bound.settle_pending_sends():
+        record.engine_residue.append("transport:pending_fire_and_forget")
+        record.secondary_failures.append("transport:pending_fire_and_forget")
+        record.limitations.append("transport_pending_send_not_replayed")
+        record.restoration_proven = False
     _lifecycle_postflight(execution)
     for name in sorted(execution.observers_unresolved):
         record.engine_residue.append(f"observer:{name}")

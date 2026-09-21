@@ -300,6 +300,7 @@ class FileBridge:
           (`proves_no_execution` is uniformly False), so the outcome never
           claims it did not.
         """
+        self.collect_completed()
         try:
             self._ensure()
         except OSError as error:
@@ -319,6 +320,7 @@ class FileBridge:
                 detail=detail,
             )
         body, disposition = self._await_response(req_path, res_path, timeout)
+        self.collect_completed()
         self.last_disposition = disposition
         if body is not None:
             return BridgeDispatchOutcome(
@@ -430,6 +432,7 @@ class FileBridge:
         needs to know WHY it got `None` -- and in particular whether the
         command could still be running -- asks `dispatch_and_wait` instead.
         """
+        self.collect_completed()
         try:
             self._ensure()
         except OSError:
@@ -443,6 +446,7 @@ class FileBridge:
             return None
 
         body, disposition = self._await_response(req_path, res_path, timeout)
+        self.collect_completed()
         self.last_disposition = disposition
         return body
 
