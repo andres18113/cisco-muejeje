@@ -2,8 +2,21 @@
 
 from __future__ import annotations
 
+from test_enterprise_services import _fixture as _service_fixture
+from test_enterprise_voice import _compile as _compile_voice
+from test_enterprise_voice import _fixture as _voice_fixture
+from test_service_application import FakeServiceRuntime
+from test_service_application import _foundation as _service_foundation
+from test_voice_runtime import FakeVoiceRuntime, _profile
+
 from packet_tracer_mcp.application.use_cases.apply_services import ServiceApplicator
 from packet_tracer_mcp.application.use_cases.apply_voice import VoiceApplicator
+from packet_tracer_mcp.application.use_cases.compile_services import (
+    compile_enterprise_services,
+)
+from packet_tracer_mcp.application.use_cases.service_access_readiness_gate import (
+    ReadinessNotRequired,
+)
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationApplicationStatus,
@@ -19,14 +32,13 @@ from packet_tracer_mcp.domain.enterprise.models.deployment import (
 from packet_tracer_mcp.domain.enterprise.models.execution import MutationDisposition
 from packet_tracer_mcp.domain.enterprise.models.voice_plan import BindPhoneToExtension
 
-from test_enterprise_services import _fixture as _service_fixture
-from test_enterprise_voice import _compile as _compile_voice
-from test_enterprise_voice import _fixture as _voice_fixture
-from test_service_application import FakeServiceRuntime, _foundation as _service_foundation
-from test_voice_runtime import FakeVoiceRuntime, _profile
-
-from packet_tracer_mcp.application.use_cases.compile_services import (
-    compile_enterprise_services,
+#: This module drives `ServiceApplicator` directly with fake runtimes to prove
+#: the applicator's own contracts. It composes no product path, so the calls
+#: whose plans include a client request state plainly that they take no gated
+#: readiness observation. The gate itself is proved over the real composition in
+#: `tests/test_service_access_readiness.py`.
+NO_READINESS = ReadinessNotRequired(
+    "direct applicator unit test; the product composition owns the readiness gate"
 )
 
 
@@ -52,11 +64,13 @@ class _RecordingServiceRuntime(FakeServiceRuntime):
         return super().apply_actions(actions)
 
     def verify(self, expectation):
-        self.verification_targets.append((
-            expectation.host_device_id,
-            expectation.host_device_name,
-            expectation.client_device_name,
-        ))
+        self.verification_targets.append(
+            (
+                expectation.host_device_id,
+                expectation.host_device_name,
+                expectation.client_device_name,
+            )
+        )
         return super().verify(expectation)
 
 
@@ -93,13 +107,15 @@ def _runtime_context(manifest):
 
 
 def test_service_manifest_retargets_runtime_copies_without_mutating_plan():
+    """Runtime names reach the runtime through copies; the plan is untouched."""
     enterprise, topology, configuration, capabilities = _service_fixture()
     plan = compile_enterprise_services(
-        enterprise, topology, configuration, capabilities=capabilities,
+        enterprise,
+        topology,
+        configuration,
+        capabilities=capabilities,
     ).plan
-    original_action_names = {
-        item.id: item.host_device_name for item in plan.actions
-    }
+    original_action_names = {item.id: item.host_device_name for item in plan.actions}
     renamed = topology.model_copy(deep=True)
     for device in renamed.devices:
         device.name = f"LIVE-{device.name}"
@@ -127,21 +143,25 @@ def test_service_manifest_retargets_runtime_copies_without_mutating_plan():
     assert result.evidence_records
     assert result.execution_journal.deployment_id == manifest.deployment_id
     assert runtime.action_targets
-    assert all(name == deployed_names[identifier] for identifier, name in runtime.action_targets)
+    assert all(
+        name == deployed_names[identifier]
+        for identifier, name in runtime.action_targets
+    )
     assert runtime.verification_targets
     for host_id, host_name, client_name in runtime.verification_targets:
         assert host_name == deployed_names[host_id]
         if client_name:
             assert client_name in deployed_names.values()
-    assert {item.id: item.host_device_name for item in plan.actions} == original_action_names
+    assert {
+        item.id: item.host_device_name for item in plan.actions
+    } == original_action_names
 
 
 def test_voice_manifest_retargets_call_control_and_phone_runtime_copies():
+    """Call control and phones are retargeted through copies as well."""
     _, topology, _, _, _ = _voice_fixture()
     plan = _compile_voice().plan
-    original_action_names = {
-        item.id: item.host_device_name for item in plan.actions
-    }
+    original_action_names = {item.id: item.host_device_name for item in plan.actions}
     renamed = topology.model_copy(deep=True)
     for device in renamed.devices:
         device.name = f"LIVE-{device.name}"
@@ -173,25 +193,33 @@ def test_voice_manifest_retargets_call_control_and_phone_runtime_copies():
         for item in runtime.action_targets
     )
     bindings = [
-        item for item in runtime.action_targets
+        item
+        for item in runtime.action_targets
         if isinstance(item, BindPhoneToExtension)
     ]
     assert bindings
     assert all(
-        item.physical_device_name == deployed_names[item.phone_id]
-        for item in bindings
+        item.physical_device_name == deployed_names[item.phone_id] for item in bindings
     )
-    assert {item.id: item.host_device_name for item in plan.actions} == original_action_names
+    assert {
+        item.id: item.host_device_name for item in plan.actions
+    } == original_action_names
 
 
 def test_service_manifest_hash_mismatch_is_clean_and_precedes_inventory():
+    """A manifest hash mismatch refuses before the inventory is read."""
     enterprise, topology, configuration, capabilities = _service_fixture()
     plan = compile_enterprise_services(
-        enterprise, topology, configuration, capabilities=capabilities,
+        enterprise,
+        topology,
+        configuration,
+        capabilities=capabilities,
     ).plan
     runtime = _RecordingServiceRuntime(topology)
     manifest = build_deployment_manifest(
-        topology, runtime.inventory(), fingerprint=EnvironmentFingerprint(),
+        topology,
+        runtime.inventory(),
+        fingerprint=EnvironmentFingerprint(),
     ).model_copy(update={"physical_topology_hash": "wrong"})
     runtime.inventory_calls = 0
 
@@ -212,11 +240,14 @@ def test_service_manifest_hash_mismatch_is_clean_and_precedes_inventory():
 
 
 def test_voice_manifest_hash_mismatch_is_clean_and_precedes_inventory():
+    """The Voice path refuses the same mismatch just as early."""
     _, topology, _, _, _ = _voice_fixture()
     plan = _compile_voice().plan
     runtime = _RecordingVoiceRuntime(topology)
     manifest = build_deployment_manifest(
-        topology, runtime.inventory(), fingerprint=EnvironmentFingerprint(),
+        topology,
+        runtime.inventory(),
+        fingerprint=EnvironmentFingerprint(),
     ).model_copy(update={"physical_topology_hash": "wrong"})
     runtime.inventory_calls = 0
 
@@ -237,13 +268,19 @@ def test_voice_manifest_hash_mismatch_is_clean_and_precedes_inventory():
 
 
 def test_modern_e6_plan_requires_manifest_before_runtime_inventory():
+    """A physical-identity plan demands its manifest before any read."""
     enterprise, topology, configuration, capabilities = _service_fixture()
     plan = compile_enterprise_services(
-        enterprise, topology, configuration, capabilities=capabilities,
+        enterprise,
+        topology,
+        configuration,
+        capabilities=capabilities,
     ).plan
-    plan = plan.model_copy(update={
-        "source_topology_hash_schema": "physical-topology-v2",
-    })
+    plan = plan.model_copy(
+        update={
+            "source_topology_hash_schema": "physical-topology-v2",
+        }
+    )
     assert plan.source_topology_hash_schema == "physical-topology-v2"
     runtime = _RecordingServiceRuntime(topology)
 
@@ -261,6 +298,7 @@ def test_modern_e6_plan_requires_manifest_before_runtime_inventory():
 
 
 def test_e7_manifest_environment_mismatch_precedes_runtime_inventory():
+    """An environment fingerprint mismatch refuses before the inventory."""
     _, topology, _, _, _ = _voice_fixture()
     plan = _compile_voice().plan
     runtime = _RecordingVoiceRuntime(topology)
@@ -289,24 +327,31 @@ def test_e7_manifest_environment_mismatch_precedes_runtime_inventory():
         ),
     )
 
-    assert result.failure_code is ConfigurationFailureCode.ENVIRONMENT_FINGERPRINT_MISMATCH
+    assert (
+        result.failure_code is ConfigurationFailureCode.ENVIRONMENT_FINGERPRINT_MISMATCH
+    )
     assert runtime.inventory_calls == 0
     assert runtime.applied == []
 
 
 def test_service_manifest_missing_binding_never_falls_back_to_plan_name():
+    """A missing binding refuses rather than guessing the plan name."""
     enterprise, topology, configuration, capabilities = _service_fixture()
     plan = compile_enterprise_services(
-        enterprise, topology, configuration, capabilities=capabilities,
+        enterprise,
+        topology,
+        configuration,
+        capabilities=capabilities,
     ).plan
     runtime = _RecordingServiceRuntime(topology)
     manifest = build_deployment_manifest(
-        topology, runtime.inventory(), fingerprint=EnvironmentFingerprint(),
+        topology,
+        runtime.inventory(),
+        fingerprint=EnvironmentFingerprint(),
     )
     missing_id = plan.foundational_requirements[0].device_id
     manifest.bindings = [
-        item for item in manifest.bindings
-        if item.semantic_device_id != missing_id
+        item for item in manifest.bindings if item.semantic_device_id != missing_id
     ]
 
     result = ServiceApplicator(runtime).apply(
@@ -324,16 +369,18 @@ def test_service_manifest_missing_binding_never_falls_back_to_plan_name():
 
 
 def test_voice_manifest_missing_binding_never_falls_back_to_plan_name():
+    """The Voice path refuses a missing binding the same way."""
     _, topology, _, _, _ = _voice_fixture()
     plan = _compile_voice().plan
     runtime = _RecordingVoiceRuntime(topology)
     manifest = build_deployment_manifest(
-        topology, runtime.inventory(), fingerprint=EnvironmentFingerprint(),
+        topology,
+        runtime.inventory(),
+        fingerprint=EnvironmentFingerprint(),
     )
     missing_id = plan.phone_assignments[0].phone_id
     manifest.bindings = [
-        item for item in manifest.bindings
-        if item.semantic_device_id != missing_id
+        item for item in manifest.bindings if item.semantic_device_id != missing_id
     ]
 
     result = VoiceApplicator(runtime).apply(
@@ -351,6 +398,8 @@ def test_voice_manifest_missing_binding_never_falls_back_to_plan_name():
 
 
 def test_service_no_op_actions_satisfy_dependencies_and_reach_verification():
+    """A no-op action still satisfies its dependents and is verified."""
+
     class NoOpRuntime(FakeServiceRuntime):
         def apply_actions(self, actions):
             self.apply_calls.append([item.id for item in actions])
@@ -365,7 +414,10 @@ def test_service_no_op_actions_satisfy_dependencies_and_reach_verification():
 
     enterprise, topology, configuration, capabilities = _service_fixture()
     plan = compile_enterprise_services(
-        enterprise, topology, configuration, capabilities=capabilities,
+        enterprise,
+        topology,
+        configuration,
+        capabilities=capabilities,
     ).plan
     runtime = NoOpRuntime()
 
@@ -375,10 +427,13 @@ def test_service_no_op_actions_satisfy_dependencies_and_reach_verification():
         actual_source_configuration_hash=plan.source_configuration_hash,
         foundational_statuses=_service_foundation(plan),
         capabilities=capabilities,
+        operational_readiness=NO_READINESS,
     )
 
     assert result.status is ConfigurationApplicationStatus.VERIFIED
-    assert all(item.status is ActionExecutionStatus.NO_OP for item in result.action_results)
+    assert all(
+        item.status is ActionExecutionStatus.NO_OP for item in result.action_results
+    )
     assert runtime.verify_calls
     assert result.execution_journal is not None
     assert all(
@@ -388,6 +443,8 @@ def test_service_no_op_actions_satisfy_dependencies_and_reach_verification():
 
 
 def test_voice_reasserted_actions_satisfy_dependencies_and_registration():
+    """A reasserted Voice action satisfies dependants and registration."""
+
     class ReassertingRuntime(FakeVoiceRuntime):
         def apply_actions(self, actions):
             self.applied.extend(item.id for item in actions)
@@ -417,8 +474,7 @@ def test_voice_reasserted_actions_satisfy_dependencies_and_registration():
         for item in result.action_results
     )
     assert all(
-        item.status is ActionExecutionStatus.VERIFIED
-        for item in result.registrations
+        item.status is ActionExecutionStatus.VERIFIED for item in result.registrations
     )
     assert result.execution_journal is not None
     assert all(

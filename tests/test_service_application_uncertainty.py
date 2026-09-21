@@ -20,6 +20,9 @@ from packet_tracer_mcp.application.use_cases.apply_services import (
 from packet_tracer_mcp.application.use_cases.compile_services import (
     compile_enterprise_services,
 )
+from packet_tracer_mcp.application.use_cases.service_access_readiness_gate import (
+    ReadinessNotRequired,
+)
 from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
@@ -54,6 +57,15 @@ from packet_tracer_mcp.domain.enterprise.models.service_runtime import (
 from packet_tracer_mcp.domain.enterprise.models.verification import (
     PrerequisiteKind,
     VerificationPrerequisite,
+)
+
+#: This module drives `ServiceApplicator` directly with fake runtimes to prove
+#: the applicator's own contracts. It composes no product path, so the calls
+#: whose plans include a client request state plainly that they take no gated
+#: readiness observation. The gate itself is proved over the real composition in
+#: `tests/test_service_access_readiness.py`.
+NO_READINESS = ReadinessNotRequired(
+    "direct applicator unit test; the product composition owns the readiness gate"
 )
 
 
@@ -177,6 +189,7 @@ def _apply(runtime, *, direct_readback=None, transform=None, retained=None):
         "actual_source_configuration_hash": plan.source_configuration_hash,
         "foundational_statuses": _foundation(plan),
         "capabilities": capabilities,
+        "operational_readiness": NO_READINESS,
     }
     if retained is not None:
         arguments["retained_action_results"] = retained

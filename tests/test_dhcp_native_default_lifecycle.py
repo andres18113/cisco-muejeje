@@ -26,6 +26,7 @@ from packet_tracer_mcp.domain.enterprise.services.dhcp_native_default_lifecycle 
     UNEXPLAINED_DRIFT,
     AdmittedNativeDefaultTransition,
     NativeDefaultContext,
+    NativeDefaultTransitionAssessment,
     assess_intended_pool_coexistence,
     assess_native_default_transition,
 )
@@ -420,3 +421,83 @@ def test_a_caller_supplied_record_never_reaches_the_catalog():
     assert _assess([STOCK], [{**REALIGNED, "gateway": "192.0.2.1"}]).classification == (
         UNEXPLAINED_DRIFT
     )
+
+
+# -- regressions for the independent review findings ---------------------------
+
+
+def test_an_unreviewed_pool_unchanged_in_both_snapshots_still_refuses():
+    """The reviewed measurement describes a server carrying ONE native default.
+
+    A second pool sitting unchanged across both readings is neither added, nor
+    removed, nor moved, so a per-pool comparison passes straight over it. It
+    still makes the inventory a situation nobody reviewed, and admitting the
+    reviewed pool beside it would extrapolate the measurement to a server that
+    was never measured.
+    """
+    stranger = {**STOCK, "name": "unexpectedPool"}
+
+    assessment = _assess([STOCK, stranger], [REALIGNED, stranger])
+
+    assert assessment.classification == UNEXPLAINED_DRIFT
+    assert "unreviewed_pool_present:unexpectedPool" in assessment.causes
+
+
+def test_allocation_authority_is_not_a_field_any_caller_can_set():
+    """`authorizes_allocation` is a constant of the type, not an argument."""
+    with pytest.raises(TypeError):
+        NativeDefaultTransitionAssessment(
+            ADMITTED_REALIGNMENT,
+            authorizes_allocation=True,  # type: ignore[call-arg]
+        )
+    assert (
+        NativeDefaultTransitionAssessment(ADMITTED_REALIGNMENT).authorizes_allocation
+        is False
+    )
+
+
+def test_the_public_catalog_record_cannot_be_edited_in_place():
+    """Module state shared by every caller is handed out read-only.
+
+    A plain dict would let one caller change the values the next caller is
+    admitted against, which is exactly the leak the catalog exists to prevent.
+    """
+    record = admitted_native_default_transitions(BUILD)[0]
+
+    with pytest.raises(TypeError):
+        record.before["network"] = "10.0.0.0"  # type: ignore[index]
+    with pytest.raises(TypeError):
+        record.after["network"] = "10.0.0.0"  # type: ignore[index]
+    assert admitted_native_default_transitions(BUILD)[0].before["network"] == "0.0.0.0"
+
+
+@pytest.mark.parametrize(
+    ("native", "intended_bounds", "expected"),
+    [
+        (
+            REALIGNED,
+            ("192.0.2.100", "192.0.2.100"),
+            "intended_range_is_inside_the_native_default",
+        ),
+        (
+            REALIGNED,
+            ("192.0.0.0", "192.0.9.255"),
+            "native_default_is_inside_the_intended_range",
+        ),
+        (
+            REALIGNED,
+            ("192.0.3.200", "192.0.9.255"),
+            "intended_and_native_ranges_overlap_partially",
+        ),
+    ],
+)
+def test_the_overlap_cause_names_the_containment_the_numbers_show(
+    native: Any, intended_bounds: tuple[str, str], expected: str
+):
+    """Reporting one containment direction for every overlap misstates two."""
+    intended = {**INTENDED, "start": intended_bounds[0], "end": intended_bounds[1]}
+
+    coexistence = assess_intended_pool_coexistence(native=native, intended=intended)
+
+    assert coexistence.ranges_overlap is True
+    assert expected in coexistence.causes

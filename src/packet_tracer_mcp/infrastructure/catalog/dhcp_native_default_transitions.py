@@ -24,6 +24,8 @@ absence of a record is a refusal, which is why this file has exactly one.
 
 from __future__ import annotations
 
+from types import MappingProxyType
+
 from ...domain.enterprise.services.dhcp_native_default_lifecycle import (
     AdmittedNativeDefaultTransition,
     NativeDefaultContext,
@@ -48,27 +50,34 @@ _SERVER_PT_9_0_1_0858 = AdmittedNativeDefaultTransition(
     ),
     pool_name="serverPool",
     # The stock disabled state, readings `d0_baseline` and `d0_control`.
-    before={
-        "name": "serverPool",
-        "network": "0.0.0.0",
-        "mask": "0.0.0.0",
-        "gateway": "0.0.0.0",
-        "dns": "0.0.0.0",
-        "start": "0.0.0.0",
-        "end": "0.0.2.0",
-        "max": 512,
-    },
+    # Wrapped read-only: the record is module state shared by every caller, and
+    # a plain dict here would let one caller edit what the next one is admitted
+    # against.
+    before=MappingProxyType(
+        {
+            "name": "serverPool",
+            "network": "0.0.0.0",
+            "mask": "0.0.0.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "0.0.0.0",
+            "end": "0.0.2.0",
+            "max": 512,
+        }
+    ),
     # Reading `d1_after_server_address`, and unchanged through `d4`.
-    after={
-        "name": "serverPool",
-        "network": "192.0.2.0",
-        "mask": "255.255.255.0",
-        "gateway": "0.0.0.0",
-        "dns": "0.0.0.0",
-        "start": "192.0.2.0",
-        "end": "192.0.3.255",
-        "max": 512,
-    },
+    after=MappingProxyType(
+        {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.0",
+            "end": "192.0.3.255",
+            "max": 512,
+        }
+    ),
     changed_fields=("end", "mask", "network", "start"),
     evidence=D_DHCP_ATTEMPT_2_RECORD,
 )

@@ -199,12 +199,24 @@ from .deploy_enterprise_topology import (
     disposable_workspace_error,
 )
 from .foundational_evidence import derive_service_foundational_statuses
+from .service_access_readiness_gate import ReadinessNotRequired
 
 SendAndWait = Callable[[str, float], str | None]
 MAX_DETAIL = 240
 #: The worst case of one production fetch: start, two inspections, release.
 FETCH_OPERATIONS = 4
 #: The ledger purpose prefix every native default reading is dispatched under.
+#: Why the qualification stages run no product readiness gate. They take their
+#: own exact-port/VLAN forwarding evidence, keep it in their immutable records
+#: with its own admission dimensions, and are budgeted for precisely the
+#: operations their profile declares. Adding the product gate inside them would
+#: spend unbudgeted operations and publish a second forwarding claim with a
+#: different scope beside the measured one.
+DIAGNOSTIC_TAKES_ITS_OWN_FORWARDING_EVIDENCE = ReadinessNotRequired(
+    "diagnostic qualification measures access forwarding explicitly, records it "
+    "as stage evidence, and is budgeted for its own declared operations"
+)
+
 Q3_DEFAULT_PURPOSE = "q3:native_default"
 #: The same reading under the D-DHCP diagnostic, so a record can never confuse
 #: a Q3 sample with a diagnostic one by its purpose alone.
@@ -3682,6 +3694,9 @@ def _run_q3(execution: _Execution) -> None:
                         capabilities=contract.service_capabilities,
                         runtime_context=context,
                         deployment_manifest=contract.manifest,
+                        operational_readiness=(
+                            DIAGNOSTIC_TAKES_ITS_OWN_FORWARDING_EVIDENCE
+                        ),
                     )
                 setup_cause = _q3_service_result_cause(
                     server_application,
@@ -3797,6 +3812,9 @@ def _run_q3(execution: _Execution) -> None:
                         capabilities=contract.service_capabilities,
                         runtime_context=context,
                         deployment_manifest=contract.manifest,
+                        operational_readiness=(
+                            DIAGNOSTIC_TAKES_ITS_OWN_FORWARDING_EVIDENCE
+                        ),
                         retained_action_results=(
                             server_application.action_results
                             if server_application is not None
@@ -4287,6 +4305,7 @@ def _d_dhcp_service_stage(
             capabilities=contract.service_capabilities,
             runtime_context=context,
             deployment_manifest=contract.manifest,
+            operational_readiness=DIAGNOSTIC_TAKES_ITS_OWN_FORWARDING_EVIDENCE,
         )
     cause = _q3_service_result_cause(
         result,

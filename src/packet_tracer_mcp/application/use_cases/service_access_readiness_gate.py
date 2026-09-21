@@ -36,9 +36,11 @@ from ...domain.enterprise.services.access_forwarding import (
     access_forwarding_facts,
 )
 from ...domain.enterprise.services.service_access_readiness import (
+    CAUSE_ANSWER_DOES_NOT_MATCH_REQUEST,
     CAUSE_BUDGET_EXHAUSTED,
     CAUSE_OBSERVATION_FAILED,
     CAUSE_OBSERVER_UNAVAILABLE,
+    CAUSE_SAMPLE_BUDGET_EXHAUSTED,
     AccessReadinessGroupResult,
     AccessReadinessPlan,
     AccessReadinessRequirement,
@@ -55,6 +57,29 @@ from ...domain.enterprise.services.service_access_readiness import (
 #: observer own: samples, deadline, interval and per-sample call budget.
 READINESS_TOTAL_BUDGET_SECONDS = 120.0
 READINESS_MAX_GROUPS = 4
+
+
+class ReadinessNotRequired:
+    """An explicit declaration that this caller needs no readiness gate.
+
+    It exists so that "no gate" can never be the shape a call happens to have.
+    The diagnostic qualification stages take their own forwarding evidence,
+    record it in their immutable results and are budgeted for exactly the
+    operations they declare; running the product gate inside them would add
+    unbudgeted queries and a second, differently scoped forwarding claim. Those
+    callers say so here, with a reason, and any new caller has to decide rather
+    than inherit a default.
+    """
+
+    def __init__(self, reason: str) -> None:
+        """Record why this caller performs no gated readiness observation."""
+        if not reason:
+            raise ValueError("a readiness exemption must state its reason")
+        self.reason = reason
+
+
+class ReadinessGateConsumed(RuntimeError):
+    """A readiness gate was offered to a second application."""
 
 
 class AccessForwardingObserver(Protocol):
@@ -95,7 +120,22 @@ class ServiceAccessReadinessGate:
         self._by_expectation: dict[str, ReadinessDependentResult] = {}
         self._requirements = {item.key: item for item in plan.requirements}
         self._unplaced_recorded = False
+        self._consumed = False
         self.observations: list[tuple[str, int, tuple[str, ...]]] = []
+
+    def begin_invocation(self) -> None:
+        """Claim this gate for one application, and refuse a second.
+
+        The memo exists so one grouped query serves every client of a group
+        inside ONE application. Across applications it would be a stale
+        verdict about a moment whose identity and state may have changed, so a
+        second claim is refused loudly instead of answered from the cache.
+        """
+        if self._consumed:
+            raise ReadinessGateConsumed(
+                "a readiness gate serves one application; build a fresh one"
+            )
+        self._consumed = True
 
     def decide(self, expectation_id: str) -> ReadinessDependentResult | None:
         """Return the readiness verdict for one expectation, observing if needed.
@@ -192,6 +232,28 @@ class ServiceAccessReadinessGate:
                 requirement,
                 cause=f"{CAUSE_OBSERVATION_FAILED}:{type(exc).__name__}",
             )
+        mismatch = _envelope_mismatch(observation, switch_name, requirement)
+        if mismatch:
+            # A sample was taken, but not of this group. Treating it as a
+            # refusal would say something about these ports; it says nothing.
+            return unobserved_group_result(
+                requirement,
+                cause=f"{CAUSE_ANSWER_DOES_NOT_MATCH_REQUEST}:{mismatch}",
+            )
+        if observation.sample_budget_exhausted:
+            # The model documents this field as granting no permission. The
+            # shared admission rule does not yet enforce it, and the product
+            # path will not wait for that: an incomplete sample is refused
+            # here, in the layer that asked for it.
+            return observed_group_result(
+                requirement,
+                admitted=False,
+                dimension=CAUSE_SAMPLE_BUDGET_EXHAUSTED.upper(),
+                causes=(CAUSE_SAMPLE_BUDGET_EXHAUSTED,),
+                sample=access_forwarding_facts(
+                    observation, access_forwarding_admission(observation)
+                ),
+            )
         admission = access_forwarding_admission(observation)
         return observed_group_result(
             requirement,
@@ -201,3 +263,31 @@ class ServiceAccessReadinessGate:
             sample=access_forwarding_facts(observation, admission),
             forwarding_interfaces=admission.forwarding_interfaces,
         )
+
+
+def _envelope_mismatch(
+    observation: AccessForwardingObservation,
+    switch_name: str,
+    requirement: AccessReadinessRequirement,
+) -> str:
+    """Name how one observation fails to answer the question it was asked.
+
+    The admission rule checks that a sample is internally consistent -- that the
+    device it reports is the device it names. It cannot check that the sample is
+    about the SWITCH AND VLAN THIS GROUP ASKED ABOUT, because it never sees the
+    request. That binding is made here, so a self-consistent answer about
+    another switch, another VLAN or a narrower interface set can never be read
+    as permission for these ports.
+    """
+    if observation.switch_name != switch_name:
+        return f"switch:{observation.switch_name or 'unnamed'}"
+    if observation.vlan_id != requirement.vlan_id:
+        return f"vlan:{observation.vlan_id}"
+    missing = tuple(
+        item
+        for item in requirement.interfaces
+        if item not in set(observation.requested_interfaces)
+    )
+    if missing:
+        return "interfaces:" + ",".join(missing)
+    return ""

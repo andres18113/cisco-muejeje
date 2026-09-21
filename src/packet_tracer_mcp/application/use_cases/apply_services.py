@@ -65,11 +65,25 @@ from ...domain.enterprise.services.configuration_dependencies import (
     ConfigurationDependencyError,
     order_dependency_actions,
 )
+from ...domain.enterprise.services.service_access_readiness import (
+    CAUSE_READINESS_NOT_DECLARED,
+    HTTP_REQUEST_KINDS,
+    ReadinessDependentResult,
+)
 from ...domain.enterprise.services.service_capability_resolution import (
     resolve_action_capability,
     resolve_verification_capability,
 )
-from .service_access_readiness_gate import ServiceAccessReadinessGate
+from .service_access_readiness_gate import (
+    ReadinessNotRequired,
+    ServiceAccessReadinessGate,
+)
+
+#: Either the gate that must admit a client request, or the explicit statement
+#: that this caller takes that evidence itself. `None` is a third state and the
+#: default: it means the caller declared nothing, and it BLOCKS every client
+#: request rather than allowing one. See `ServiceApplicator.apply`.
+_ReadinessDecision = ServiceAccessReadinessGate | ReadinessNotRequired
 
 #: How a verification expectation touches the environment it reads. It decides
 #: what may still run after the action it depends on left its outcome
@@ -159,11 +173,11 @@ class ServiceApplicator:
     def __init__(self, runtime: ServiceRuntime) -> None:
         """Bind the applicator to one service runtime."""
         self._runtime = runtime
-        #: The operational-readiness gate of the current `apply` call, bound
-        #: there and never across calls: a forwarding sample belongs to one
-        #: invocation, and reusing an earlier one would answer about a moment
-        #: whose identity and state may already have changed.
-        self._readiness: ServiceAccessReadinessGate | None = None
+        #: The readiness decision of the current `apply` call: either a gate
+        #: bound to this one invocation, or an explicit declaration that this
+        #: caller takes its own forwarding evidence. Never `None`, so "no gate"
+        #: cannot be the shape a call happens to have.
+        self._readiness: _ReadinessDecision | None = None
 
     def apply(
         self,
@@ -175,12 +189,26 @@ class ServiceApplicator:
         capabilities: dict[str, ServiceCapabilityProfile] | None = None,
         runtime_context: ConfigurationRuntimeContext | None = None,
         deployment_manifest: DeploymentManifest | None = None,
+        operational_readiness: _ReadinessDecision | None = None,
         retained_action_results: Sequence[ActionApplicationResult] = (),
-        operational_readiness: ServiceAccessReadinessGate | None = None,
     ) -> ServiceApplicationResult:
-        """Apply one ServicePlan and return its full typed outcome."""
+        """Apply one ServicePlan and return its full typed outcome.
+
+        `operational_readiness` is the caller's readiness decision: the gate
+        that must admit a client request before it is dispatched, or
+        `ReadinessNotRequired` stating why this caller takes that evidence
+        itself. Omitting it declares nothing, and declaring nothing BLOCKS every
+        client request. That is deliberate: the default had to be the safe
+        answer rather than the convenient one, so a caller that forgets the
+        decision cannot dispatch an unobserved request, and the mistake shows up
+        as a named refusal instead of a silent pass.
+        """
         started = monotonic()
         self._readiness = operational_readiness
+        if isinstance(operational_readiness, ServiceAccessReadinessGate):
+            # Claims the gate for this application. A gate already used by
+            # another one refuses here, before any effect.
+            operational_readiness.begin_invocation()
         runtime_context = runtime_context or ConfigurationRuntimeContext()
         deployment_id = deployment_manifest.deployment_id if deployment_manifest else ""
         if actual_source_topology_hash != plan.source_topology_hash:
@@ -994,11 +1022,7 @@ class ServiceApplicator:
             # what makes the sample fresh for the request that follows it, and
             # what stops a run whose expectations are all blocked upstream
             # from querying a switch about nothing.
-            readiness = (
-                self._readiness.decide(expectation.id)
-                if self._readiness is not None
-                else None
-            )
+            readiness = self._readiness_verdict(expectation)
             if readiness is not None and not readiness.admitted:
                 results[expectation.id] = ServiceVerificationResult(
                     expectation_id=expectation.id,
@@ -1069,6 +1093,34 @@ class ServiceApplicator:
                 if item.id in results
             ],
             recovery_limitations,
+        )
+
+    def _readiness_verdict(
+        self,
+        expectation: ServiceVerificationExpectation,
+    ) -> ReadinessDependentResult | None:
+        """Return this expectation readiness verdict, or `None` when ungated.
+
+        Three states, and only one of them dispatches. A gate decides, an
+        explicit exemption stands aside, and an absent declaration refuses every
+        client request: a caller that never said how forwarding would be
+        established has not established it.
+        """
+        if isinstance(self._readiness, ServiceAccessReadinessGate):
+            return self._readiness.decide(expectation.id)
+        if isinstance(self._readiness, ReadinessNotRequired):
+            return None
+        if expectation.kind not in HTTP_REQUEST_KINDS:
+            return None
+        return ReadinessDependentResult(
+            expectation_id=expectation.id,
+            service_id=expectation.service_id,
+            kind=expectation.kind.value,
+            client_device_id=expectation.client_device_id,
+            host_device_id=expectation.host_device_id,
+            interfaces=(),
+            admitted=False,
+            cause=CAUSE_READINESS_NOT_DECLARED,
         )
 
     @staticmethod

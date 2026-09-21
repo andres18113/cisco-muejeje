@@ -105,9 +105,16 @@ class NativeDefaultTransitionAssessment:
     causes: tuple[str, ...] = ()
     limitations: tuple[str, ...] = ()
     matched_evidence: str = ""
-    #: Constant by construction. No classification sets it, and no caller can
-    #: read an admission here as permission to hand out an address.
-    authorizes_allocation: bool = False
+
+    @property
+    def authorizes_allocation(self) -> bool:
+        """Always False. Deciding what a default did permits handing out nothing.
+
+        A read-only property rather than a field, because a field with a
+        `False` default is still a field a caller can pass `True` to, and the
+        one thing this type must never be able to say is yes.
+        """
+        return False
 
     @property
     def admitted(self) -> bool:
@@ -245,7 +252,15 @@ def assess_native_default_transition(
     pool_name, changed = next(iter(moved.items()))
     qualified = tuple(f"{pool_name}.{item}" for item in changed)
     context_mismatch: list[str] = []
-    for record in admitted:
+    # The reviewed measurement describes a stock server carrying ONE native
+    # default. An inventory holding a second, unreviewed pool is a different
+    # situation, even when that pool sits unchanged across both readings and
+    # only the reviewed one moved. No record can match such an observation.
+    unreviewed = sorted((set(first) | set(second)) - {pool_name})
+    candidates: Sequence[AdmittedNativeDefaultTransition] = (
+        () if unreviewed else admitted
+    )
+    for record in candidates:
         if record.context != context:
             # Name which fields of the reviewed situation differ, so a reader
             # can tell "no record for this build" from "a record for this build
@@ -275,6 +290,11 @@ def assess_native_default_transition(
         changed_fields=qualified,
         causes=(
             "no_reviewed_transition_matches_this_observation",
+            *(
+                (f"unreviewed_pool_present:{','.join(unreviewed)}",)
+                if unreviewed
+                else ()
+            ),
             *sorted(set(context_mismatch)),
         ),
         limitations=limitations,
@@ -369,7 +389,12 @@ def assess_intended_pool_coexistence(
                 _dotted(max(native_start, intended_start)),
                 _dotted(min(native_end, intended_end)),
             )
-            causes.append("intended_range_is_inside_the_native_default")
+            if native_start <= intended_start and intended_end <= native_end:
+                causes.append("intended_range_is_inside_the_native_default")
+            elif intended_start <= native_start and native_end <= intended_end:
+                causes.append("native_default_is_inside_the_intended_range")
+            else:
+                causes.append("intended_and_native_ranges_overlap_partially")
     return IntendedPoolCoexistence(
         native_pool_name=str(native_row["name"]),
         intended_pool_name=str(intended_row["name"]),

@@ -27,6 +27,11 @@ from dataclasses import dataclass, field
 
 from ..models.service_plan import ServiceVerificationKind
 
+#: The one configuration action type that places endpoints on a switch access
+#: port. Compared as its wire value so this module stays independent of the
+#: configuration action union while still refusing everything else.
+ACCESS_PORT_ACTION_TYPE = "configure_access_port"
+
 #: The verification kinds that make an HTTP request from a client. Each one
 #: opens a TCP connection to the server through the access ports of both
 #: endpoints, so each one needs the same forwarding statement. Matched by
@@ -134,6 +139,13 @@ def access_port_placements(
     """
     placements: list[AccessPortPlacement] = []
     for action in actions:
+        # The declared action type first. Four matching attribute names are not
+        # an access port: a trunk action carries an interface and a device too,
+        # and reading one as a placement would invent a required port out of a
+        # link this question is not about.
+        declared = getattr(action, "action_type", None)
+        if str(getattr(declared, "value", declared)) != ACCESS_PORT_ACTION_TYPE:
+            continue
         interface = getattr(action, "interface", None)
         vlan_id = getattr(action, "data_vlan_id", None)
         device_id = getattr(action, "device_id", None)
@@ -273,6 +285,16 @@ CAUSE_OBSERVATION_FAILED = "readiness_observation_failed"
 CAUSE_ENDPOINT_NOT_ON_ACCESS_PORT = "endpoint_not_on_access_port"
 CAUSE_PATH_NOT_SINGLE_SEGMENT = "path_not_single_switch_and_vlan"
 CAUSE_INTERFACES_NOT_COVERED = "interfaces_not_covered_by_sample"
+#: The observation came back describing a different switch, a different VLAN or
+#: a narrower interface set than the one it was asked about. It is an answer to
+#: another question, so it is not a sample of this group at all.
+CAUSE_ANSWER_DOES_NOT_MATCH_REQUEST = "observation_does_not_answer_the_request"
+#: The sample ended on its own nested-call budget rather than on completion, so
+#: it is incomplete by construction whatever its rows happen to say.
+CAUSE_SAMPLE_BUDGET_EXHAUSTED = "sample_call_budget_exhausted"
+#: The caller never said how forwarding would be established for this request.
+#: Silence is not an exemption, so the request is refused.
+CAUSE_READINESS_NOT_DECLARED = "readiness_not_declared"
 
 
 @dataclass(frozen=True)

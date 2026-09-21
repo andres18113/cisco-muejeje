@@ -1719,8 +1719,11 @@ decides and states; it holds no backend version literal and performs no I/O.
 | `src/packet_tracer_mcp/domain/enterprise/models/service_run_record.py` | `operational_readiness` on the durable record |
 | `tests/service_entry_fixture.py` | `SimulatedClock` and `ForwardingBackend`, and the E5 fake answers the grouped query |
 | `tests/test_service_tools_surface.py` | the product simulation answers the registered spanning-tree query and the simulation-state read |
-| `tests/test_service_access_readiness.py` | new: 24 derivation, gate and composition tests |
-| `tests/test_dhcp_native_default_lifecycle.py` | new: 34 transition, coexistence and non-promotion tests |
+| `tests/test_service_access_readiness.py` | new: derivation, gate and composition tests |
+| `tests/test_dhcp_native_default_lifecycle.py` | new: transition, coexistence and non-promotion tests |
+| `src/packet_tracer_mcp/application/use_cases/qualify_server_services.py` | the three diagnostic applications declare `ReadinessNotRequired` with their reason |
+| `tests/test_service_application.py`, `tests/test_e95_service_voice_manifest_application.py` | one readiness declaration each, plus the 27 docstrings their files owe once touched |
+| `tests/test_service_application_uncertainty.py` | the shared applicator arguments declare the exemption |
 
 ### Requirement-to-test mapping
 
@@ -1776,12 +1779,12 @@ because the memo and the observation both belong to the one `apply` call.
 | Check | Result |
 | --- | --- |
 | Causal RED for B2/B3/B7 | with the gate detached from the applicator, the by-IP fetch reported `VERIFIED` while spanning tree was `LIS`; 3 of the then-23 failed. Reattached: green |
-| Focused readiness set | `tests/test_service_access_readiness.py`, `24 passed` |
-| Focused DHCP set | `tests/test_dhcp_native_default_lifecycle.py`, `34 passed` |
-| Affected integration and system set | the nine `service_entry_fixture` consumers plus both access-forwarding modules, `236 passed` |
+| Focused readiness set | `tests/test_service_access_readiness.py`, `33 passed` |
+| Focused DHCP set | `tests/test_dhcp_native_default_lifecycle.py`, `40 passed` |
+| Affected integration and system set | the `service_entry_fixture` consumers, both access-forwarding modules and the five direct applicator suites, `362 passed` |
 | Evidence verification | 62 recomputed digests over the operator package and the three markers, 0 mismatches, 0 missing; archive SHA-256 equals the work order statement and the operator sidecar |
-| Full offline suite | `6912 passed, 3 skipped, 3 pre-existing warnings`, exit 0, 638.60 s. The base recorded `6854 passed, 3 skipped`, so the delta is exactly the 58 tests this block adds |
-| Provisional quality gate | base and merge base `6263344e`, 110 changed Python files Ruff-gated (104 at the base plus the six this block adds), no mechanical exemption, exit 0 |
+| Full offline suite | `6927 passed, 3 skipped, 3 pre-existing warnings`, exit 0, 569.81 s. The base recorded `6854 passed, 3 skipped`, so the delta is exactly the 73 tests this block adds: 58 for the block itself and 15 for the independent-review corrections |
+| Provisional quality gate | base and merge base `6263344e`, 112 changed Python files Ruff-gated (104 at the base, plus the six this block adds and the two legacy test files the corrections took ownership of), no mechanical exemption, exit 0 |
 | Namespace inventory | 0 active legacy imports, 0 active string references, 0 unreviewed inert mentions, exit 0 |
 | MkDocs and whitespace | build exit 0 in 5.70 s with the two unchanged `handoff.md` warnings; `git diff --check` exit 0 |
 | Public report contract | all 21 `compact_summary()` keys of the base are present and unchanged; `operational_readiness` is the only addition, and `adapters/mcp/service_tools.py` is untouched, so the four-argument signature is preserved by construction |
@@ -1815,7 +1818,7 @@ because the memo and the observation both belong to the one `apply` call.
 
 | Field | Value |
 | --- | --- |
-| Behaviour commit | `0c8392985f5daf14e436619a98bac168b56d682c` (tree `397203bd08ec70aa011c124551cf3b1b63a11db0`) |
+| Behaviour commit | `0c8392985f5daf14e436619a98bac168b56d682c` (tree `397203bd08ec70aa011c124551cf3b1b63a11db0`), corrected by the independent-review follow-up recorded below |
 | Branch | `feature/server-pt-goal-foundations` |
 | Base | `52969849408d195436ae250f611318e7e959876f` |
 | Authoritative main | `6263344e31ba3b0de6539d652f2cd06fc73a3562` (`cisco/main`) |
@@ -1823,6 +1826,11 @@ because the memo and the observation both belong to the one `apply` call.
 | Changed paths | 21 files, 3,041 insertions and no deletions |
 | Exact-SHA CI | not obtained. Publishing needs the operator's grant, and this block includes no push |
 | Status | `READY_FOR_REVIEW` |
+
+The gate result in that row was measured on `0c83929`. The independent review
+that followed produced a third commit; its own delivery-mode gate result and
+full-suite numbers are the ones in **Measured verification** above, which were
+re-measured on the corrected tree.
 
 This section names the commit that carries the behaviour, so it necessarily
 lands in a following documentation commit. The gate result above is the one
@@ -1848,3 +1856,80 @@ later amendment of those two files. It is left exactly as found. Correcting a
 recorded digest of a prior campaign is a change to an evidence claim about work
 outside this contract, and doing it incidentally is what the evidence rules
 forbid. It is raised here for the reviewer to dispose of, with its own decision.
+### Independent review at `0c83929`, and what it changed
+
+An independent adversarial review was run against the delivery commit. It
+raised nine findings. Its own focused pytest could not start in its sandbox, so
+every claim was traced by reading rather than executed; each was therefore
+re-probed here against the committed code before anything was changed. Eight
+reproduced as stated. One, the forwarding-envelope binding, did **not**
+reproduce in the form the review described and did reproduce in a narrower
+form, which is recorded below as the review found the defect and mis-stated its
+trigger.
+
+| # | Finding | Reproduced | Disposition |
+| --- | --- | --- | --- |
+| 1 | `ServiceApplicator.apply` treated a missing readiness argument as "no gate" | yes | the default is now fail-closed: declaring nothing refuses every client request with `readiness_not_declared` |
+| 2 | the gate never bound the observation envelope to the group it asked about | yes, narrowly | an answer naming another switch, another VLAN or a narrower interface set is now refused as `observation_does_not_answer_the_request` |
+| 3 | one gate could serve two applications from one cached verdict | yes | `begin_invocation()` claims the gate once and raises `ReadinessGateConsumed` on a second application |
+| 4 | admission ignores `sample_budget_exhausted`, which the model documents as non-authorizing | yes | refused in the product gate; the shared domain rule is deliberately left unchanged, see below |
+| 5 | an unreviewed pool sitting unchanged in both DHCP snapshots was ignored | yes | any pool the reviewed record does not name now refuses, with `unreviewed_pool_present` |
+| 6 | `authorizes_allocation` was a caller-settable field | yes | it is a read-only property returning `False`; passing it is now a `TypeError` |
+| 7 | the public catalog handed out mutable shared mappings | yes | `before` and `after` are `MappingProxyType`, so a caller cannot edit what the next one is admitted against |
+| 8 | every range overlap was reported as inverse containment | yes | the cause now names the containment the numbers show, in all three directions |
+| 9 | derivation accepted any object with four matching attributes | yes | only a declared `configure_access_port` action produces a placement |
+
+#### Where finding 2 actually bites
+
+The review's scenario returned a foreign envelope *and* foreign interface names,
+and the per-dependent coverage check already refused it. The real defect needs
+the same interface names under a foreign switch and VLAN: asked about `SW1`
+VLAN 10 on `Fa1/1`/`Fa1/3`, a self-consistent answer claiming `SW2` VLAN 20 on
+those same port names was admitted. The shared admission rule checks that a
+sample is internally consistent -- that the device it reports is the device it
+names -- and it never sees the request, so it cannot check the subject. That
+binding belongs to the caller that asked, and now lives there.
+
+#### Why finding 4 is fixed in the gate and not in the shared rule
+
+`AccessForwardingObservation.sample_budget_exhausted` documents itself as
+granting no permission, and `access_forwarding_admission` does not enforce it.
+That is a genuine gap, and it is **pre-existing at the reviewed base**: the same
+rule decides the Voice barrier and the diagnostic stages, and the D-WEB and Q3
+evidence was measured under its current behaviour. Changing it here would move
+the semantics of recorded evidence outside this contract. The product path
+refuses such a sample in its own layer instead, and the sample is retained in
+the report showing that the gate is stricter than the rule rather than
+rewriting it. The shared-rule gap is raised for the reviewer with its own
+decision.
+
+#### The cost this took, measured before it was paid
+
+The fail-closed default changes what an undeclared caller gets, so three legacy
+applicator tests that dispatch HTTP and assert success had to declare
+`ReadinessNotRequired`. Two of their files were not previously in the Ruff-gated
+set, and touching them means owning their current state: 27 missing docstrings,
+16 in `tests/test_service_application.py` and 11 in
+`tests/test_e95_service_voice_manifest_application.py`. They were written rather
+than suppressed, and the gated set grows from 110 files to 112. No other file
+was reformatted and no test behaviour was changed beyond the declaration.
+
+An earlier shape of this fix made `operational_readiness` a required argument.
+It was rejected in favour of the fail-closed default: a required argument forces
+a caller to decide, while a safe default makes forgetting harmless, and the
+second is the stronger property for a gate whose whole job is to refuse.
+
+#### Requirement-to-test mapping for this correction
+
+| Finding | Test |
+| --- | --- |
+| 1 | `test_declaring_nothing_blocks_every_client_request` |
+| 2 | `test_an_answer_about_another_question_is_not_a_sample_of_this_group` (switch, VLAN and interface-set cases) |
+| 3 | `test_one_gate_serves_one_application` |
+| 4 | `test_a_sample_that_ended_on_its_call_budget_grants_nothing` |
+| 5 | `test_an_unreviewed_pool_unchanged_in_both_snapshots_still_refuses` |
+| 6 | `test_allocation_authority_is_not_a_field_any_caller_can_set` |
+| 7 | `test_the_public_catalog_record_cannot_be_edited_in_place` |
+| 8 | `test_the_overlap_cause_names_the_containment_the_numbers_show` (three directions) |
+| 9 | `test_only_a_declared_access_port_action_produces_a_placement`, `test_the_real_access_port_action_type_is_the_one_derivation_accepts` |
+| exemption contract | `test_an_exemption_must_state_its_reason` |

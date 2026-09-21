@@ -11,6 +11,7 @@ sample, through `apply_enterprise_services` and the real applicator.
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from typing import Any
 
@@ -34,12 +35,23 @@ from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
     TransportSelection,
     apply_enterprise_services,
 )
+from packet_tracer_mcp.application.use_cases.apply_services import ServiceApplicator
 from packet_tracer_mcp.application.use_cases.service_access_readiness_gate import (
+    ReadinessGateConsumed,
+    ReadinessNotRequired,
     ServiceAccessReadinessGate,
+)
+from packet_tracer_mcp.domain.enterprise.models.configuration import (
+    ConfigurationActionType,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationFailureCode,
+    ConfigurationRuntimeContext,
+)
+from packet_tracer_mcp.domain.enterprise.models.forwarding import (
+    AccessForwardingObservation,
+    AccessForwardingRow,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceVerificationKind,
@@ -51,9 +63,13 @@ from packet_tracer_mcp.domain.enterprise.models.service_runtime import (
     ObservationFact,
 )
 from packet_tracer_mcp.domain.enterprise.services.service_access_readiness import (
+    ACCESS_PORT_ACTION_TYPE,
+    CAUSE_ANSWER_DOES_NOT_MATCH_REQUEST,
     CAUSE_ENDPOINT_NOT_ON_ACCESS_PORT,
     CAUSE_OBSERVER_UNAVAILABLE,
     CAUSE_PATH_NOT_SINGLE_SEGMENT,
+    CAUSE_READINESS_NOT_DECLARED,
+    CAUSE_SAMPLE_BUDGET_EXHAUSTED,
     READINESS_ADMITTED,
     READINESS_NOT_OBSERVED,
     READINESS_REFUSED,
@@ -94,6 +110,9 @@ class _Action:
         self.device_id = device_id
         self.device_name = device_name
         self.endpoint_ids = list(endpoints)
+        #: Derivation refuses anything that is not a declared access port, so
+        #: the stand-in has to declare what the compiler declares.
+        self.action_type = ConfigurationActionType.CONFIGURE_ACCESS_PORT
 
 
 class _Expectation:
@@ -582,3 +601,252 @@ def test_the_forwarding_evidence_round_trips_through_the_public_report(
         assert item["kind"] in HTTP_KINDS
     # The readiness rows are also in the durable record, not only the response.
     assert result.operational_readiness == rows
+
+
+# -- regressions for the independent review findings ---------------------------
+
+
+def _envelope_observer(
+    *,
+    switch: str = SWITCH_NAME,
+    vlan: int = 10,
+    interfaces: tuple[str, ...] | None = None,
+    budget_exhausted: bool = False,
+):
+    """Build an observer whose answer envelope the caller chooses.
+
+    Deliberately not `ForwardingBackend`: these cases are about an answer that
+    describes a different question, which a backend built from the request
+    cannot express.
+    """
+
+    class _Observer:
+        calls = 0
+
+        def observe_access_forwarding(self, device_name, vlan_id, requested):
+            type(self).calls += 1
+            reported = tuple(requested) if interfaces is None else interfaces
+            return AccessForwardingObservation(
+                switch_name=switch,
+                vlan_id=vlan,
+                requested_interfaces=reported,
+                rows=tuple(
+                    AccessForwardingRow(
+                        interface=item, matches=1, state="FWD", role="Desg"
+                    )
+                    for item in reported
+                ),
+                executed=True,
+                fresh_output_observed=True,
+                output_complete=True,
+                observed_device_name=switch,
+                device_identity_provenance="confirmed_unique",
+                vlan_present=True,
+                samples=1,
+                max_samples=3,
+                deadline_seconds=30.0,
+                sample_call_budget=6,
+                channel_calls=6 if budget_exhausted else 1,
+                sample_budget_exhausted=budget_exhausted,
+            )
+
+    return _Observer()
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        ({"switch": "SOMEONE-ELSE"}, "switch:SOMEONE-ELSE"),
+        ({"vlan": 20}, "vlan:20"),
+        ({"interfaces": ("FastEthernet1/1",)}, "interfaces:FastEthernet1/3"),
+    ],
+)
+def test_an_answer_about_another_question_is_not_a_sample_of_this_group(
+    overrides: dict[str, Any], expected: str
+):
+    """A self-consistent answer about another switch, VLAN or port set refuses.
+
+    The shared admission rule checks that a sample is internally consistent. It
+    never sees the request, so it cannot tell that the sample is about a
+    different subject; the gate binds the answer to the question it asked.
+    """
+    plan = _plan(
+        expectations=[
+            _Expectation("http-1", ServiceVerificationKind.HTTP_FETCH, client=PC1)
+        ]
+    )
+    observer = _envelope_observer(**overrides)
+    gate = ServiceAccessReadinessGate(
+        plan,
+        observer,
+        clock=SimulatedClock(),
+        device_names={SWITCH: SWITCH_NAME},
+    )
+
+    decision = gate.decide("http-1")
+
+    assert decision is not None and decision.admitted is False
+    assert decision.cause == f"{CAUSE_ANSWER_DOES_NOT_MATCH_REQUEST}:{expected}"
+    row = gate.rows()[0]
+    assert row["status"] == READINESS_NOT_OBSERVED
+    # No sample is retained, because none of this group was sampled.
+    assert row["sample"] == {}
+
+
+def test_a_sample_that_ended_on_its_call_budget_grants_nothing():
+    """An incomplete-by-construction sample is refused by the product gate.
+
+    `AccessForwardingObservation.sample_budget_exhausted` documents itself as
+    granting no permission, and the shared admission rule does not yet enforce
+    that. The product path refuses here rather than waiting for the shared rule
+    to change, because changing it would also move the diagnostic semantics the
+    recorded evidence was measured under.
+    """
+    plan = _plan(
+        expectations=[
+            _Expectation("http-1", ServiceVerificationKind.HTTP_FETCH, client=PC1)
+        ]
+    )
+    gate = ServiceAccessReadinessGate(
+        plan,
+        _envelope_observer(budget_exhausted=True),
+        clock=SimulatedClock(),
+        device_names={SWITCH: SWITCH_NAME},
+    )
+
+    decision = gate.decide("http-1")
+
+    assert decision is not None and decision.admitted is False
+    row = gate.rows()[0]
+    assert row["dimension"] == "SAMPLE_CALL_BUDGET_EXHAUSTED"
+    assert CAUSE_SAMPLE_BUDGET_EXHAUSTED in row["causes"]
+    # The sample is retained and still says what the shared rule concluded, so
+    # the refusal is visibly the gate stricter than the rule, not a rewrite.
+    assert row["sample"]["admitted"] is True
+    assert row["sample"]["sample_budget_exhausted"] is True
+
+
+def test_one_gate_serves_one_application():
+    """A gate offered to a second application refuses instead of replaying."""
+    backend = ForwardingBackend(forwards_at=0.0)
+    gate = _gate(_plan(), backend)
+
+    gate.begin_invocation()
+    with pytest.raises(ReadinessGateConsumed):
+        gate.begin_invocation()
+
+
+def test_declaring_nothing_blocks_every_client_request(tmp_path: Path):
+    """An omitted readiness decision is refused, not treated as permission.
+
+    The default had to be the safe answer rather than the convenient one: a
+    caller who never said how forwarding would be established has not
+    established it, and the request is refused with its own cause instead of
+    dispatched as though it had been observed.
+    """
+    parameter = inspect.signature(ServiceApplicator.apply).parameters[
+        "operational_readiness"
+    ]
+    assert parameter.default is None
+    assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+
+    manifest, inventory = deployment_manifest()
+    plan, capabilities = _compiled_service_plan(manifest)
+    runtime = RecordingServiceRuntime(targets=inventory)
+
+    result = ServiceApplicator(runtime).apply(
+        plan,
+        actual_source_topology_hash=manifest.physical_topology_hash,
+        actual_source_configuration_hash=plan.source_configuration_hash,
+        foundational_statuses={
+            item.configuration_action_id: ActionExecutionStatus.VERIFIED
+            for item in plan.foundational_requirements
+        },
+        capabilities=capabilities,
+        deployment_manifest=manifest,
+        runtime_context=ConfigurationRuntimeContext(
+            environment_fingerprint=manifest.environment_fingerprint
+        ),
+    )
+    assert not result.preflight_errors, result.preflight_errors
+
+    http_rows = [
+        row
+        for row in result.verification_results
+        if row.expectation_id.startswith("svc/verify-http")
+    ]
+    assert http_rows
+    for row in http_rows:
+        assert row.status is ActionExecutionStatus.DEPENDENCY_BLOCKED
+    # The first HTTP request of the DAG is the one readiness refused; the
+    # by-hostname row is blocked by that refusal as its own prerequisite.
+    gated = [
+        row for row in http_rows if row.expectation_id.startswith("svc/verify-http-ip")
+    ]
+    assert gated
+    for row in gated:
+        assert row.failure_code is (
+            ConfigurationFailureCode.ACCESS_FORWARDING_NOT_READY
+        )
+        assert row.cause == CAUSE_READINESS_NOT_DECLARED
+    assert not [
+        item for item in runtime.verified if str(item).startswith("svc/verify-http")
+    ]
+
+
+def _compiled_service_plan(manifest):
+    """Compile the fixture intent to an E6 plan and its capability records."""
+    from packet_tracer_mcp.application.use_cases.compose_enterprise_reference import (
+        compose_enterprise_reference,
+    )
+    from packet_tracer_mcp.domain.enterprise.models.intent import EnterpriseIntent
+    from packet_tracer_mcp.infrastructure.catalog.service_capabilities import (
+        packet_tracer_service_capabilities,
+    )
+
+    capabilities = packet_tracer_service_capabilities(BACKEND_VERSION)
+    composition = compose_enterprise_reference(
+        EnterpriseIntent.model_validate_json(intent_json()),
+        packet_tracer_version=BACKEND_VERSION,
+        deployment_manifest=manifest,
+        services=True,
+        service_capabilities=capabilities,
+    )
+    assert composition.services is not None, composition.issues
+    return composition.services, capabilities
+
+
+def test_an_exemption_must_state_its_reason():
+    """The one way past the gate is explicit and has to say why."""
+    with pytest.raises(ValueError):
+        ReadinessNotRequired("")
+    assert ReadinessNotRequired("measures its own forwarding").reason
+
+
+def test_only_a_declared_access_port_action_produces_a_placement():
+    """Four matching attribute names are not an access port."""
+
+    class _Trunk:
+        action_type = "configure_trunk"
+        interface = "FastEthernet1/9"
+        data_vlan_id = 10
+        device_id = SWITCH
+        device_name = SWITCH_NAME
+        endpoint_ids = (PC1, SERVER)
+
+    plan = derive_access_readiness_plan(
+        configuration_actions=[_Trunk()],
+        verification_expectations=[
+            _Expectation("http-1", ServiceVerificationKind.HTTP_FETCH, client=PC1)
+        ],
+    )
+
+    assert plan.requirements == ()
+    assert [item.expectation_id for item in plan.unplaced] == ["http-1"]
+
+
+def test_the_real_access_port_action_type_is_the_one_derivation_accepts():
+    """The accepted value is the compiled action type, not a guessed string."""
+    assert (
+        ACCESS_PORT_ACTION_TYPE == ConfigurationActionType.CONFIGURE_ACCESS_PORT.value
+    )
