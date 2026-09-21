@@ -63,13 +63,22 @@ as though they were:
   statistics appear or the safe 30 s window closes, then one attribution
   read. At the 0.25 s interval that poll is tens of counted calls, not the
   one the old three-call figure assumed. The diagnostic composition therefore
-  sets `max_inspections=6`; the window is unchanged and is spread across those
-  six reads, so the last one lands at or after the deadline and a slow
-  destination is still classified from its own statistics. A poll that ends on
-  the cap reports `ping_inspection_budget_exhausted` and never an unreachable
-  destination it did not wait for. A **bind-before-ping probe** is therefore
-  two endpoint reads, that ping, and two endpoint reads after it: **twelve**,
-  not seven.
+  sets `max_inspections=6`. The window is unchanged, and the six reads are the
+  endpoints of an even partition of it -- 0, 6, 12, 18, 24 and 30 s -- so the
+  last one lands ON the deadline and a destination that publishes at 26 or
+  29 s is still classified from its own statistics. A poll that ends on the
+  window without statistics reports `no_fresh_ping_result`; one whose finite
+  schedule ran out while the window was still open, which happens when the
+  ledger caps a wait, reports `ping_inspection_budget_exhausted`. Neither is
+  ever an unreachable destination it did not wait for. A **bind-before-ping
+  probe** is therefore two endpoint reads, that ping, and two endpoint reads
+  after it: **twelve**, not seven.
+- Every **effect dispatch** is admitted only while this invocation still holds
+  its campaign claim and its bound Packet Tracer incarnation. That decision
+  contacts Packet Tracer through nothing and spends no counted operation, so
+  no operation figure below moves; it does spend wall-clock time, which the
+  seconds below account for and which each record reports as
+  `budget.local_observation_seconds`.
 
 | D-DHCP | Operations |
 | --- | --- |
@@ -83,7 +92,7 @@ as though they were:
 | M-DDHCP-3: enable dispatch, rebound read-back, native reading | 3 |
 | M-DDHCP-4: pre-cleanup native reading | 1 |
 | finalization reserve: run bag, four removals, two restoration reads | 11 |
-| **planned worst case** | **45** of a proposed **50 / 900 s** |
+| **planned worst case** | **45** of a proposed **50 / 1500 s** |
 
 | D-WEB | Operations |
 | --- | --- |
@@ -99,13 +108,18 @@ as though they were:
 | M-DWEB-4: start, three scheduled inspections, late read, release | 6 |
 | M-DWEB-5: listener reading, one bounded forwarding sample, one simulation-state read | 8 |
 | finalization reserve: four removals, two restoration reads | 10 |
-| **planned worst case** | **74** of a proposed **80 / 900 s** |
+| **planned worst case** | **74** of a proposed **80 / 1800 s** |
 
 Both ceilings are new, proposed limits for review, not a raise of any granted
 one: Q0 stays 20 / 300, Q1 stays 60 / 600, Q3 stays 60 / 1200, and no
 historical Q budget is touched. D-WEB's draft ceiling moves from 68 to 80
 because the corrected worst case is 74; D-DHCP's 50 is unchanged, because
-nothing it does polls a terminal. The slack above each planned worst case is
+nothing it does polls a terminal. The SECONDS move too -- D-DHCP 900 to
+1500, D-WEB 900 to 1800, and the finalization reserve 180 to 300 -- because
+the per-dispatch authority decision waits on two bounded local process reads
+of at most 5 s each. The count of those decisions is bounded by the
+operation ceiling itself, so the added worst case is
+`(max_operations + experiments + 4) * 2 * 5` seconds. The slack above each planned worst case is
 ordinary headroom for the single-call reads, not an allowance for a nested
 loop: every loop is now bounded by its own declared budget, so the figures
 above are ceilings the code enforces rather than expectations it hopes to meet.
@@ -129,7 +143,7 @@ reads.
 
 | Field | Runner argument | Rule |
 | --- | --- | --- |
-| Profile | `--authorized-profile`, `--authorized-profile-version` | exactly the stage's profile id and version; the version moves whenever the step sequence, the fixture binding or the budget arithmetic changes |
+| Profile | `--authorized-profile`, `--authorized-profile-version` | exactly the stage's profile id and version; the version moves whenever the step sequence, the fixture binding, the budget arithmetic or the execution contract an authorization buys changes |
 | Executed tree | `--authorized-tree` | 40 lowercase hex; compared against the observed source tree, because a commit names a history and the tree names the bytes that execute |
 | Fixture models | `--authorized-model` (repeat) | exactly `name:model` per fixture, in creation order |
 | Link ports | `--authorized-link` (repeat) | exactly `devA:portA-devB:portB` per link, in creation order |
@@ -189,7 +203,7 @@ workspace observer proves the active workspace is disposable and empty. A
 process change, nonempty mailbox, existing semantic device/link or unreadable
 workspace refuses; no heartbeat or authorization text overrides those facts.
 
-### The pairing is re-checked before every effect, and again on the way out
+### The pairing is re-checked at every effect, and again on the way out
 
 Binding a process before the transport exists says nothing about which
 process answers afterwards. Packet Tracer can be closed or can crash mid-run,
@@ -210,6 +224,51 @@ The loss is sticky. Authority is never re-acquired inside a run, because a
 window in which some other process answered cannot be closed retroactively.
 The first loss is kept as the primary failure and later ones are recorded
 separately.
+
+The decision is taken per **dispatch**, not once per phase. Every command that
+changes state in the receiver -- each fixture and link creation, the E5/E6
+applications, the marker page, the ping stimulus, the owned client's whole
+lifecycle, the run-bag release, and each removal's pre-readback and delete
+separately -- is admitted only if the pairing and the claim still hold at that
+moment. A receiver replaced between two removals, or between a pre-readback
+and the delete behind it, is refused before the command leaves this process.
+
+**The stated limit, and it is why LIVE stays blocked on it.** This is an
+in-process decision taken immediately before the command is handed to the
+channel. It is not an in-band receiver fence: no dispatcher in this repository
+carries a session token that the receiver itself verifies in the same
+evaluation that mutates, and inventing one would be a new protocol. The
+interval between the decision and the receiver consuming the command is
+therefore not fenced, every diagnostic record says so through
+`effect_gate_is_local_and_not_an_in_band_receiver_fence`, and no claim of
+universal exclusion is made.
+
+### The campaign lock is released inside the record, not after it
+
+The claim is held through finalization and released before the record is
+completed. A release that could not happen is recorded three ways: as a
+`ReleaseRecord` of kind `claim`, as a secondary failure, and as
+`coordination_residue` in the record and the operator summary. It keeps the
+run from reporting `completed` and it refuses promotion, because a lock still
+held blocks the next campaign. It is deliberately NOT `engine_residue`:
+whether the workspace was restored is a separate fact, and
+`restoration_proven` stays exactly what the engine evidence said. Another
+holder's claim is never deleted, an unreadable one is never reclaimed, and the
+permanent attempt marker is never removed.
+
+### The terminal reading is part of finalization
+
+Each stage's last read-only observation -- D4 for D-DHCP, W5 for D-WEB -- is
+registered before the stage's first effect and taken exactly once from
+guaranteed pre-cleanup finalization. A normal completion, a handled stop, an
+`OperationRefused`, an ordinary exception raised out of the middle of the
+sequence and a record that stopped advancing all reach it, and all reach it
+before the first deletion. A cancelled run does not take it: the measurement
+is recorded `not_observed:cancelled`, no stimulus is restarted and only owned
+cleanup still runs. A failure inside the reading is secondary -- it never
+replaces the primary error and never stops cleanup -- and a reading that is
+unsafe or unaffordable is an explicit `not_observed:<cause>` absence paid for
+out of the ordinary allowance, never out of the cleanup reserve.
 
 The same read-only reading is still taken once more after finalization and
 stored beside the first, so an artifact left in the mailbox is reported. Every
@@ -235,9 +294,9 @@ the checkout, the process, the build, the channel and the workspace all agree.
   --authorization-id <reviewer-scoped-id> --authorized-stage D-DHCP `
   --authorized-sha <40-hex-sha> --authorized-tree <40-hex-tree> `
   --authorized-channel file --authorized-build 9.0.1.0858 `
-  --authorized-max-operations 50 --authorized-max-seconds 900 `
+  --authorized-max-operations 50 --authorized-max-seconds 1500 `
   --authorized-reserve-operations 11 `
-  --authorized-profile D-DHCP --authorized-profile-version 2 `
+  --authorized-profile D-DHCP --authorized-profile-version 3 `
   --authorized-target __MCP_E6Q_SRV --authorized-target __MCP_E6Q_PC1 `
   --authorized-target __MCP_E6Q_PC2 --authorized-target __MCP_E6Q_SW `
   --authorized-model __MCP_E6Q_SRV:Server-PT --authorized-model __MCP_E6Q_PC1:PC-PT `
@@ -262,9 +321,9 @@ the checkout, the process, the build, the channel and the workspace all agree.
   --authorization-id <reviewer-scoped-id> --authorized-stage D-WEB `
   --authorized-sha <40-hex-sha> --authorized-tree <40-hex-tree> `
   --authorized-channel file --authorized-build 9.0.1.0858 `
-  --authorized-max-operations 80 --authorized-max-seconds 900 `
+  --authorized-max-operations 80 --authorized-max-seconds 1800 `
   --authorized-reserve-operations 10 `
-  --authorized-profile D-WEB --authorized-profile-version 2 `
+  --authorized-profile D-WEB --authorized-profile-version 3 `
   --authorized-target __MCP_E6Q_SRV --authorized-target __MCP_E6Q_PC1 `
   --authorized-target __MCP_E6Q_PC2 --authorized-target __MCP_E6Q_SW `
   --authorized-model __MCP_E6Q_SRV:Server-PT --authorized-model __MCP_E6Q_PC1:PC-PT `
@@ -377,3 +436,8 @@ every blocker that remains.
    enable is a controlled test scenario, not a measured attribution.
 5. `/goal` availability in this Codex installation is pending, as recorded
    above.
+6. The effect gate is a local decision immediately before each dispatch, not
+   an in-band receiver fence. The existing dispatchers carry no receiver-side
+   session token, so the interval between the decision and the receiver
+   consuming the command is unfenced. It is recorded on every record rather
+   than described as excluded.

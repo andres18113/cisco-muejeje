@@ -508,3 +508,342 @@ clock with delayed ping statistics, slow and incomplete terminal output,
 delayed STP forwarding, a budget exhaustion that genuinely forces refusal, a
 deadline crossing, and the cleanup/attribution reservation, pinning actual
 ledger calls against the calculated bound.
+
+## Residual corrections at `5db6916` (risk L)
+
+The independent review of `5db6916` returned `REQUIRES_CHANGES` with four
+residual defects. This is one further offline correction inside the same
+approved contract: no LIVE entitlement changes, Q3 3/3 and Q1 2/2 stay spent,
+every diagnostic authorization stays DRAFT, and no Packet Tracer process is
+contacted, launched or stopped by anything below.
+
+| Field | Value |
+| --- | --- |
+| Checkout | `Cisco-MCP-server-services-goal-foundations` |
+| Branch | `feature/server-pt-goal-foundations` |
+| Correction base | `5db691665854f541c54f402002171c4c17ea0d05` (tree `eb0dd38255c930174cad53f5e88806a4a4e4a095`) |
+| Previously reviewed | `ab668d758a1a9d36fa86b141c9f0ce2021c7a363` |
+| Authoritative main | `6263344e31ba3b0de6539d652f2cd06fc73a3562` (`cisco/main`) |
+| Risk | L - unchanged: authorization, effect dispatch, evidence semantics, destructive cleanup |
+
+Instruction loading evidence for this delivery: `AGENTS.md`, `CLAUDE.md` and
+`docs/engineering/standards.md` were read from this checkout before any edit.
+An interactive `/context` listing could not be observed from this session, so
+that check stays **pending**, exactly as it was recorded for the two deliveries
+above.
+
+### R1 - authority is decided at the effect boundary, not once per finalization
+
+The defect that survived `GF-R1` is a caching one. `_finalize` called
+`live_authority` once, saved `owned`, and then used that one decision for the
+bag release and for *every* removal. A receiver replaced after the first
+removal received the later ones, and the postflight reading detected the change
+only after the deletions had already been dispatched. The same shape applied
+earlier in the run: `_setup_fixtures` creates devices and links, and
+`_configure_q1` applies E5 endpoints and enables the E6 listeners, all before
+the first measurement's `begin` ever asks about authority.
+
+The correction moves the decision to the one place every effect actually passes
+through, and keeps it there.
+
+- **An effect scope is a declared thing.** `OperationLedger.effect_of(purpose)`
+  labels a block whose dispatches change engine state, exactly where
+  `purpose_of` already labelled them for the record. Reads keep `purpose_of`
+  and are unaffected.
+- **The gate sits in `admit()`, before dispatch.** A call admitted inside an
+  effect scope first asks the bound effect guard - `_Execution.live_authority` -
+  whether this invocation still holds the campaign claim and the bound Packet
+  Tracer incarnation. A lost authority refuses the call with
+  `execution_authority_lost:...` before anything crosses the channel, and the
+  refusal is recorded as a refused operation entry like every other one.
+- **Fail closed on a missing control.** An effect scope with no guard bound
+  refuses with `effect_guard_not_bound`. Constructing `_Execution` binds it,
+  so a composition cannot forget the step and dispatch anyway: an execution
+  over a ledger is the only thing that can answer for that ledger's effects.
+- **Loss stays sticky.** `live_authority` already keeps the first loss and
+  never re-acquires; the gate inherits that, so one replacement refuses every
+  later effect rather than being re-litigated per call.
+- **Zero bridge operations.** The guard enumerates local processes, reads one
+  small file and lists one directory. It spends no ledger operation, so an
+  exhausted budget cannot suppress it and the cleanup reserve is never borrowed
+  for it. Both stage budgets are therefore unchanged.
+
+Which dispatches are now gated: fixture creation, link creation, the Q1 E5
+endpoint application and E6 listener enable that D-WEB's setup performs, the
+D-DHCP E5 static addressing, the D-DHCP E6 pool configuration and process
+enable, the D-WEB marker-page write, the typed ping stimulus, the owned
+background client's whole lifecycle, the run-bag release, and each owned device
+removal - the cleanup pre-readback and the destructive command separately,
+because they are two dispatches and a receiver can be replaced between them.
+
+Q0, Q1 and Q3 keep their behaviour exactly. The guard is shared, but a stage
+that declares no diagnostic profile holds authority by definition
+(`live_authority` returns `True` on its first line), so the gate is transparent
+there. That is the whole justification for the shared guard.
+
+**Stated limit, and it is the reason LIVE stays blocked.** This is an
+in-process decision taken immediately before the command is handed to the
+channel. It is not an in-band receiver fence. No existing dispatcher - the file
+mailbox, the physical runtime's mutation acknowledgement, the product runtime
+payloads, the probe readings - carries a receiver-resident session token that
+the receiver itself verifies in the same evaluation that mutates. The one
+receiver-resident ownership resource this repository has is the engine-global
+run bag, and it proves ownership only inside the probe scripts that already
+read it; extending it to the mutation dispatchers would change the response
+contract of every effect path, which is exactly the new protocol this
+assignment forbids. So the interval between the guard's decision and the
+receiver consuming the command is **not** fenced. Every diagnostic record now
+carries `effect_gate_is_local_and_not_an_in_band_receiver_fence` as a named
+limitation, and no claim of universal exclusion is made: what is closed is the
+concrete receiver-replacement defect, where the replacement is already visible
+in the local process table when the next effect is admitted.
+
+### R3 - the terminal observation is part of finalization, not the last step
+
+`begin_terminal` fixed the paths that reach it. It did not make that path
+unavoidable. D4 and W5 were still the bottom of the ordinary stage sequence,
+`_Execution.procedure` catches only `OperationRefused`, and any other exception
+escaped to `_admitted`, whose `finally` called `_finalize` directly. A stage
+that raised an ordinary Python exception mid-sequence deleted its fixtures with
+its terminal measurement left `NOT_RUN` and its reason empty.
+
+The correction makes the selected terminal phase a registered, at-most-once
+part of guaranteed pre-cleanup finalization.
+
+- `_TerminalPhase` records the measurement ids, the procedure name and the
+  closure that takes the reading. `_run_d_dhcp` and `_run_d_web` **register**
+  it before their first procedure - over the stage state object, so the
+  cumulative D4 summary still has the baseline, the ordered interventions and
+  the declared call footprint it needs to be interpreted - and no longer call
+  it inline.
+- `_admitted`'s `finally` runs `_observe_terminal(execution)` and only then
+  `_finalize(execution)`. Normal completion, a handled stop, an intermediate
+  exception and a persistence failure all reach the phase through that one
+  path, so the reading always precedes the first deletion.
+- **Cancellation is explicit.** A `KeyboardInterrupt` sets
+  `_Execution.cancelled`. The terminal phase is then *not* taken and is
+  recorded as `not_observed:cancelled` for its measurements. A cancelled run
+  stops doing work; the only thing that still has to happen is owned cleanup.
+  No stimulus is restarted, and nothing is re-dispatched.
+- **A terminal-reader failure is secondary.** `_observe_terminal` never raises.
+  An exception inside the reading is recorded as
+  `terminal_observation:exception:<Type>`; the first primary failure is
+  preserved (`stop` keeps the first reason) and owned cleanup still runs.
+- Unsafe or unaffordable readings keep the `begin_terminal` semantics they
+  already had: an explicit `not_observed:<cause>` absence, paid for out of the
+  ordinary allowance and never out of the cleanup reserve, with durable and
+  memory-only evidence still distinguished.
+
+Nothing about the D4 content changes: it stays the cumulative baseline-to-final
+summary naming the ordered interventions actually executed, with its call lists
+labelled as the declared generated footprint. No baseline is invented from a
+final reading, no snapshot is overwritten, and no historical `a02c1e0` evidence
+is reconstructed.
+
+### R4 - the inspection schedule covers the whole promised window
+
+`TypedPingExecutor._ping_once` computed `interval = timeout / max_inspections`
+and read immediately. For a 30-second window and six inspections the reads
+landed at 0, 5, 10, 15, 20 and 25 seconds, so statistics published at 29 seconds
+- inside the window the safe timeout exists to provide - were missed. The
+resulting classification was conservative rather than fabricated: the defect is
+the premature closure of the promised window, not an invented unreachable
+result.
+
+**The policy, stated once and implemented once.** With `max_inspections = n`,
+the reads are the `n` endpoints of an even partition of the closed window
+`[0, timeout]`: slot *k* is `k * timeout / (n - 1)` for *k* in `0..n-1`. For six
+inspections over 30 seconds that is 0, 6, 12, 18, 24 and 30 seconds, with an
+immediate first read and a last read at the deadline itself.
+
+- **`n = 1` is handled deliberately.** One read cannot be both immediate and
+  window-covering. The window is the promise, so the single read is taken at
+  `timeout`. There is no division by zero: the `n = 1` schedule is built without
+  the partition.
+- **Elapsed I/O is treated as elapsed.** Slots are absolute times from the start
+  of the poll, not delays between reads. After each read the schedule advances
+  past every slot that is already in the past, and the next read waits only the
+  remainder. Missed slots are skipped, never batched: there is no catch-up
+  burst, and the number of inspect calls is at most `n`.
+- **Boundary semantics.** A slot at exactly `timeout` is taken; the window is
+  closed inclusively. The loop also ends as soon as statistics appear.
+- **Late-result semantics.** Ending on the window without statistics stays
+  `no_fresh_ping_result`, as it always was for the unbounded default.
+  `ping_inspection_budget_exhausted` now means one specific thing: the finite
+  schedule was exhausted while the clock was still inside the window, which
+  happens when the injected sleeper could not honour the schedule - a
+  ledger-capped sleep is the real case. A sample that ends on either bound is
+  still reported as incomplete and never as an unreachable destination.
+- `max_inspections=None` is untouched: the unbounded poll keeps the caller's own
+  interval and every existing caller keeps today's behaviour.
+
+One ping command, bounded attribution and the before/after address reads are
+unchanged, as is the registered STP counting/deadline implementation. The fix
+adds no seventh inspection: the composed 12-operation probe budget and both
+stage ceilings stay exactly where they are. The `D_WEB_PING_INSPECTIONS` and
+in-function comments that described the old last-read/deadline behaviour are
+corrected to the schedule above.
+
+### C1 - local finalization results are kept, and local readers are bounded
+
+**The campaign release.** `_release_claim` returned reasons and every caller
+discarded them, and it ran in `qualify_server_services`' outer `finally` - after
+`run.complete()` had already written the immutable record. A campaign lock that
+could not be released therefore blocked the next campaign with no corresponding
+terminal record or summary failure.
+
+The release now happens inside the record lifecycle. `_CampaignHold` owns the
+coordinator, the claim and whether this invocation has already released it;
+`_admitted` releases it after `_finalize` and before `run.complete()`, and the
+outer `finally` is now the no-op safety net it should always have been. Its
+result is recorded as a distinct fact:
+
+- one `ReleaseRecord(kind="claim")` naming the outcome,
+- a `secondary_failures` entry, and
+- `QualificationRecord.coordination_residue`, a new list that is *not*
+  `engine_residue`.
+
+Engine restoration stays a separate claim: a local coordination failure never
+touches `restoration_proven` and never invents engine residue. What it does do
+is keep the run from reporting `COMPLETED`, and `promotion_evidence_refusal`
+refuses a record with coordination residue, so there is no complete-clean
+handoff over a lock that is still held. `FileCampaignCoordinator` is unchanged:
+it still never deletes another holder's claim, never removes the permanent
+attempt marker, and never reclaims by age.
+
+**The incarnation reader.** `PowerShellProcessIncarnationReader.read` called
+`subprocess.run` with no timeout. Spending zero bridge operations does not bound
+wall-clock time, and this reader is on the authority path that every gated
+effect now consults.
+
+- A finite local observation timeout (`LOCAL_OBSERVATION_TIMEOUT_SECONDS`, 5.0
+  seconds) is passed to `subprocess.run`, so the mechanism that terminates on
+  expiry is the standard one and it terminates only the owned PowerShell helper.
+  Packet Tracer is never signalled.
+- `subprocess.TimeoutExpired` is **not** swallowed into the empty string. It
+  propagates, `PacketTracerDiagnosticLifecycleReader` turns it into
+  `process_incarnation_unreadable:TimeoutExpired`, and the continuity gate
+  reports `process_instance:unobservable:...`. A timeout is unobservable
+  authority, which is a loss, not a pass.
+- `PowerShellPacketTracerProcessReader` gains the same optional bound, default
+  `None` so every existing CP-scale caller is unchanged, and the diagnostic
+  lifecycle reader composes it with the finite value.
+- The phase is charged for it. `live_authority` measures the wall clock each
+  local observation costs and accumulates it into
+  `BudgetRecord.local_observation_seconds`; because the ledger's allowance is
+  wall-clock, those seconds already reduce what the phase may still spend.
+- What is *not* promised: an absolute OS scheduling bound. Process startup,
+  PowerShell initialisation and scheduler latency are outside this process's
+  control. The bound is on how long this run waits, and the record says so
+  through `local_process_observation_bounded_seconds:<n>`.
+
+### Budget arithmetic after these corrections
+
+| Stage | Planned minimum | Operation ceiling | Seconds | Reserve seconds |
+| --- | --- | --- | --- | --- |
+| D-DHCP | 45 | 50, unchanged | 900 -> 1500 | 180 -> 300 |
+| D-WEB | 74 | 80, unchanged | 900 -> 1800 | 180 -> 300 |
+
+No operation figure moves. The effect gate spends no bridge operation, the
+terminal phase was already a planned operation, and the ping schedule
+redistributes six inspections it was already counting.
+
+The SECONDS move, and this is the one place where the protection genuinely
+costs more than the earlier delivery claimed. Deciding authority before each
+effect dispatch spends no operation and does spend wall-clock time: two
+bounded local process reads per decision, each at most
+`LOCAL_OBSERVATION_TIMEOUT_SECONDS`. The count is bounded by the ceiling
+itself, because a decision happens only for a call admitted or refused inside
+an effect scope, plus one per procedure and four for setup, finalization and
+the two pairing readings. So the declared worst case is
+`(max_operations + experiments + 4) * 2 * 5` seconds of local observation on
+top of the bridge work: D-DHCP `900 + 590` and D-WEB `900 + 900`. The
+finalization reserve moves for the same reason, since owned cleanup is where
+the per-dispatch decision matters most.
+
+Measured, not assumed: a complete D-WEB simulation takes 46 local readings
+(36 of them at effect dispatches) and a complete D-DHCP one takes 37 (28 at
+effect dispatches), against 9 before this correction. A typical run therefore
+spends a small fraction of the declared bound, and every record now reports
+what it actually spent as `budget.local_observation_seconds`, so the figure
+above can be checked against evidence rather than argued about.
+
+These are proposed diagnostic limits that no authorization has ever been
+granted against. No historical Q budget moves: Q0 20/300, Q1 60/600 and Q3
+60/1200 are untouched, and the wall-clock cost of the gate exists only for
+the two stages that declare a diagnostic profile.
+
+The only other bound that moves is wall-clock inside `M-DWEB-3`: a fully
+unanswered ping now occupies its whole 30-second window instead of closing at
+about 25.6 seconds.
+
+`DIAGNOSTIC_PROFILE_VERSION` moves from `2` to `3`. The step sequence and the
+fixture binding are unchanged and no operation ceiling moves, but two things
+an authorization buys do: the time arithmetic above, and the execution
+contract itself -- effects now refuse on an unproven receiver and the
+terminal observation is a guaranteed pre-cleanup phase. An
+authorization written against the earlier contract must not be replayable
+against this one, so the documented rule for the version is widened to cover the
+execution contract as well, and the DRAFT authorization templates in the
+operator contract move with it.
+
+### One mapping from the four residual findings to their evidence
+
+Every regression below is causal: reverting only its own fix and re-running it
+produces RED for the behavioural reason, not for a missing symbol.
+
+| Finding | Fix | Regressions that pin it |
+| --- | --- | --- |
+| R1 cached finalization authority | effect scopes gated in `admit()` before dispatch; per-dispatch guard over setup, E5/E6, client lifecycle, bag release and each removal | `test_a_receiver_replaced_between_two_removals_deletes_nothing_further`, `test_a_receiver_replaced_during_setup_stops_before_the_next_fixture`, `test_a_receiver_replaced_between_the_cleanup_read_and_the_delete_refuses`, `test_a_lost_campaign_claim_refuses_the_next_effect`, `test_an_effect_scope_without_a_bound_guard_refuses_before_dispatch`, `test_the_same_fixture_names_in_the_foreign_workspace_are_not_adopted`, `test_a_clean_run_still_removes_what_it_owns` (positive control) |
+| R3 terminal phase reachable only on ordinary exits | registered `_TerminalPhase`, run at-most-once from the guaranteed pre-cleanup path; explicit cancellation; reader failure is secondary | `test_an_exception_after_an_intermediate_dhcp_intervention_still_reads_d4`, `test_an_exception_before_w5_still_reads_the_after_boundaries`, `test_the_terminal_payload_is_its_own_and_survives_a_reload`, `test_a_failing_terminal_reader_keeps_the_error_and_still_cleans_up`, `test_a_cancelled_run_declares_its_terminal_reading_not_taken`, `test_an_intermediate_dhcp_failure_states_which_path_it_took` |
+| R4 premature closure of the ping window | explicit absolute-time schedule over the closed window, endpoint counting, elapsed-I/O treatment, deliberate `n=1` | `test_statistics_late_in_the_window_are_observed` (26 s, 29 s, 29.999 s), `test_the_old_schedule_would_have_missed_these`, `test_an_unreachable_result_late_in_the_window_is_classified`, `test_output_that_never_completes_ends_on_the_window`, `test_a_sleeper_that_cannot_honour_the_schedule_reports_the_inspection_bound`, `test_variable_io_latency_neither_bursts_nor_overruns`, `test_a_missed_slot_is_skipped_and_never_batched`, `test_a_single_inspection_reads_at_the_deadline`, `test_the_unbounded_default_is_unchanged` |
+| C1 discarded release reasons, unbounded local reader | `_CampaignHold` released before immutable completion into `coordination_residue`; finite `subprocess.run` timeout with `TimeoutExpired` as unobservable authority | `test_a_failed_campaign_release_is_a_visible_durable_finalization_failure`, `test_a_raising_release_is_recorded_rather_than_lost`, `test_a_claim_that_is_no_longer_ours_is_reported_and_never_deleted` (foreign holder and unreadable lock), `test_coordination_residue_blocks_promotion_on_its_own`, `test_the_incarnation_reader_bounds_its_local_observation`, `test_an_incarnation_timeout_is_unobservable_authority` |
+
+### Invariants added by this correction
+
+43. Authority is decided at the dispatch that carries the effect, not once per
+    phase. A decision taken for one effect authorizes exactly that effect.
+44. An in-process check immediately before a dispatch is not an in-band receiver
+    fence, and the record says which of the two it is.
+45. A terminal read-only observation is part of finalization, so every exit that
+    reaches cleanup reaches it first, and a cancelled run declares it rather
+    than taking it.
+46. A local finalization result belongs to the record that the run completes,
+    not to the process that outlives it. Local coordination residue and engine
+    residue are two claims.
+47. A local observation that spends no bridge operation still spends wall-clock
+    time, and its bound is declared and charged to the phase.
+
+### Test design for this correction
+
+The receiver switch is driven by **transport milestones**, never by the callback
+that reads authority: a counting transport wrapper swaps the answering engine
+after the dispatch that matches an effect signature (the first `removeDevice`,
+a fixture creation, the cleanup pre-readback), and the lifecycle reader reports
+the replacement from that instant. Both engine workspaces hold devices with the
+same fixture names and models, and the assertions are zero `remove_calls` and
+zero mutations in the foreign snapshot plus the exact named refusals - not
+merely `restoration_proven=False`.
+
+R3's regressions inject an ordinary Python exception through an injected
+boundary while the engine stays readable: a `service_runtime` proxy that lets
+the D3 enable dispatch for real and then raises, and a
+`diagnostic_service_runtime` proxy that lets the D-WEB fetch run and then
+raises. Each asserts that the fault actually fired, that the original
+`exception:RuntimeError` is still the primary failure, that the terminal
+measurement RAN, that its operation sequence precedes every `remove:` operation,
+that its payload is unique and survives a record reload, and that it appears
+exactly once. The vacuous `if record.primary_failure:` guard in the existing
+`test_an_intermediate_dhcp_failure_still_takes_the_terminal_reading` is replaced
+by a mandatory assertion that the intended failing path occurred.
+
+R4 uses a fake clock whose channel releases complete statistics at a specified
+**time**, not after a specified number of reads, so 26 s, 29 s and a value just
+below the deadline are all distinguishable from the schedule. Each test asserts
+the read timestamps, the number of inspect calls, the attribution call, the
+freshness of the result and, for the composed path, the whole operation budget.
+
+C1 injects a release failure, a foreign holder and an unreadable lock, and
+asserts the lock file is still there afterwards with its original holder, the
+attempt marker is untouched, the failure is visible in the completed durable
+record, and `restoration_proven` is still what the engine evidence said.
