@@ -1828,9 +1828,13 @@ because the memo and the observation both belong to the one `apply` call.
 | Status | `READY_FOR_REVIEW` |
 
 The gate result in that row was measured on `0c83929`. The independent review
-that followed produced a third commit; its own delivery-mode gate result and
-full-suite numbers are the ones in **Measured verification** above, which were
-re-measured on the corrected tree.
+that followed produced the correction commit
+`771205422f694ab77b1928595d9aa3a3ba2528d8` (tree
+`28ea25502e3614e92f8c0384667819b4d9fbd0d3`), whose own delivery-mode gate ran on
+a clean tree at that exact commit with base and merge base `6263344e`, 112
+Ruff-gated changed Python files, 0 mechanical exemptions, exit 0. The full-suite
+and focused numbers in **Measured verification** above are the ones re-measured
+on that corrected tree.
 
 This section names the commit that carries the behaviour, so it necessarily
 lands in a following documentation commit. The gate result above is the one
