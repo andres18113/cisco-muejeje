@@ -509,12 +509,11 @@ def test_an_intermediate_dhcp_failure_still_takes_the_terminal_reading(stage):
     stopped = stage("D-DHCP", {"dhcp_default_pool": "arbitrary"})
     record = stopped.record()
     final = stopped.measurement("M-DDHCP-4")
-    if record.primary_failure:
-        # Whatever stopped the sequence, the terminal reading is either taken
-        # or explicitly declared not taken -- never silently missing.
-        assert final.status is MeasurementStatus.RAN or final.reason.startswith(
-            "not_observed:"
-        )
+    # The failing path is asserted, not guarded. A body the run is free to
+    # skip proves nothing about the reading it was written to defend, and a
+    # disjunction over "taken or declared" would pass either way.
+    assert record.primary_failure.startswith("d_dhcp_baseline_not_established:")
+    assert final.status is MeasurementStatus.RAN
 
 
 def test_the_terminal_reading_is_cumulative_and_names_its_interventions(stage):

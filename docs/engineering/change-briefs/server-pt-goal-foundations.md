@@ -1042,3 +1042,131 @@ CA-03/CA-04 contract. The correction is narrower than a redesign:
 | acquired claim outside admission cancellation finalization | `test_pre_record_cancellation_releases_claim_and_reports_outcome` |
 | completed W5 listener payload lost on the next cancellation | extended `test_first_terminal_cancellation_still_finalizes_releases_and_persists` assertions over the reloaded `listeners_after` payload |
 | malformed JSON structure labeled as a foreign holder | extended `test_a_claim_that_is_no_longer_ours_is_reported_and_never_deleted` cases for `[]` and `{}` |
+
+## Residual-finding closure audit at `7f39314` (risk L)
+
+| Field | Value |
+| --- | --- |
+| Checkout | `Cisco-MCP-server-services-goal-foundations` |
+| Branch | `feature/server-pt-goal-foundations` |
+| Audit base | `7f39314b83cada5a36efcfc44f25f5e0f97199d3` (tree `7c0a0530cf9ee8c9ef33f6f659c1f1c4663d74b2`) |
+| Authoritative main | `6263344e31ba3b0de6539d652f2cd06fc73a3562` (`cisco/main`) |
+| Assignment | the independent read-only review of `5db6916`: R1, R3, R4, C1 |
+| Risk | L block. This delta changes no production module and buys no new contract |
+
+The assignment named `5db6916` as its starting SHA. This checkout was already
+six commits past it, on the corrections that answer the same review
+(`d901eca` through `7f39314`), so the changed baseline was inspected rather
+than reset. What remained was to check each residual finding against the code
+that is actually here, close whatever was still open, and record the result
+instead of restating the earlier delivery's claims.
+
+Instruction loading evidence for this Claude Code session: `AGENTS.md` (8749
+bytes, `sha256:a9f0e384fa952f16...`), `docs/engineering/standards.md` (13688
+bytes, `sha256:2de0d5b20545fcf8...`) and `CLAUDE.md` (616 bytes,
+`sha256:293122019c22763d...`) were read from this checkout, not from a copy,
+before any edit. `/context` is an interactive command this session cannot
+issue, so the Claude Code memory-source observation that `CLAUDE.md` asks for
+is reported as **pending** rather than as a pass.
+
+### Disposition of the four residual findings
+
+| Finding | State found at `7f39314` | Left open |
+| --- | --- | --- |
+| R1 effect boundary | Closed. `OperationLedger.admit` consults the effect guard immediately before each dispatch inside an effect scope, an unbound guard refuses (`effect_guard_not_bound`), the first loss is sticky, allowance is recomputed after the local read, and the unfenced interval between the answer and the receiver consuming the command is declared on every record | One required regression. The review listed a same-PID/changed-incarnation replacement among the R1 cases and required every R1 regression to switch the receiver at a transport or effect milestone. That case existed only in `test_a_reused_pid_at_the_authorized_path_is_not_the_bound_process`, which switches on a count of authority readings -- inside the control under test |
+| R3 guaranteed terminal phase | Closed. `_TerminalPhase` is registered before the stage's first procedure and taken at most once from the `finally` that every exit reaches, ahead of the first deletion; unsafe, unaffordable, reader-failure and cancelled paths each produce a named absence | One assertion. The review asked for the `if record.primary_failure` guard to be replaced; a mandatory replacement was added in a new file while the original guard stayed in place and kept running |
+| R4 inspection schedule | Closed. `inspection_schedule` returns the endpoints of the closed window (`0, 6, 12, 18, 24, 30`), a single inspection reads at the deadline with no division, missed slots are dropped rather than batched, and the unbounded default is untouched | Nothing |
+| C1 release reasons and bounded readers | Closed. One `_CampaignHold` finalizes the claim exactly once for every post-claim exit and projects the release fact before the record becomes immutable, distinct from engine residue; both PowerShell helpers carry a finite timeout that `TimeoutExpired` turns into unobservable authority | Nothing |
+
+### Design delta
+
+Three test corrections and this record. No production module, contract,
+budget, invariant or profile version moves, so no new RED-first behavioural
+fix was warranted and none was manufactured. `DIAGNOSTIC_PROFILE_VERSION`
+deliberately stays at `3`: the closeout after `ca808e5` closed defects inside
+the version-3 terms rather than changing what an authorization buys, and no
+authorization has ever been issued against any of them. A reviewer who reads
+that differently should say so; it is stated here rather than left implicit.
+
+1. **A reused PID is a replacement, and the milestone is the transport's.**
+   The `replaced_at` fixture now accepts the pairing the local reader answers
+   with from the milestone onward, defaulting to the different-PID case it
+   always used. `test_the_same_pid_with_a_new_incarnation_stops_the_next_removal`
+   reissues the authorized PID at the authorized path with a later creation
+   time, switched by the first `removeDevice` returning, and asserts that the
+   one authorized removal landed on the bound instance, that the replacement's
+   identically named fixtures were neither mutated nor deleted, that the three
+   remaining removals are named refusals carrying
+   `execution_authority_lost`, and that restoration is not claimed.
+2. **The conditional guard is gone from the file that still carried it.**
+   `test_an_intermediate_dhcp_failure_still_takes_the_terminal_reading`
+   guarded its body with `if record.primary_failure` and then accepted
+   "reading taken **or** explicitly declared not taken", which passes whichever
+   occurred. Measured: the guard was true, so the body ran, but the
+   disjunction could not distinguish the defect from the fix. It now asserts
+   the failing path by name (`d_dhcp_baseline_not_established:`) and that the
+   terminal reading was taken.
+3. **D-DHCP's no-client-activation claim is read while the clients exist.**
+   `test_d_dhcp_runs_the_server_only_sequence_and_activates_no_client`
+   asserted `devices == {} or all(not port.get("dhcp_mode") ...)` over a
+   snapshot taken after owned cleanup. Measured: after a clean D-DHCP run the
+   stub holds `[]` devices and `remove_calls` of all four fixtures, so the
+   left branch always won and the port check never evaluated a single port.
+   The snapshot is now taken at the last instant the fixtures exist --
+   immediately before the first destructive dispatch -- and the test asserts
+   the four fixture names and that no port among the six carries `dhcp_mode`.
+   This is a safety claim of the stage (no client is ever put into DHCP mode),
+   and it was unverified.
+
+### Requirement-to-test mapping for this delta
+
+| Requirement | Regression | Evidence that it can fail |
+| --- | --- | --- |
+| R1: a replacement that reuses the authorized PID is refused at the next effect, injected at a transport milestone | `test_the_same_pid_with_a_new_incarnation_stops_the_next_removal` | Causal RED: with the effect-guard branch in `OperationLedger.admit` disabled and nothing else changed, `assert ['__MCP_E6Q_PC2', '__MCP_E6Q_PC1', '__MCP_E6Q_SRV'] == []` -- the run deleted three devices from the replacement's workspace. The source file was restored byte for byte (`git diff` clean) |
+| R3: the intended failing path is asserted, not guarded | `test_an_intermediate_dhcp_failure_still_takes_the_terminal_reading` | Not a behaviour change, so no RED is manufactured. The old form's weakness was measured instead: the disjunction accepted `RAN` and `not_observed:` alike, so it could not have failed for the defect it was written against |
+| Acceptance: D-DHCP activates no client | `test_d_dhcp_runs_the_server_only_sequence_and_activates_no_client` | Not a behaviour change. The old form's vacuity was measured: the post-cleanup snapshot is `devices == []`, so the left branch of the disjunction always satisfied the assertion. The new form reads four devices and six ports |
+
+### Invariants this delta protects
+
+No new invariant is added. It restores enforcement of two that were already
+claimed: invariant 43's per-dispatch receiver decision now has a regression
+for the replacement a PID comparison cannot see, and D-DHCP's server-only
+sequence now has an oracle for the client ports it promises never to touch.
+
+### Independent causal RED for all four residual findings
+
+The earlier delivery recorded its own revert battery. This session re-ran one
+independently rather than citing it, because a table is not an observation.
+Each fix was disabled alone, its own regressions were run, and the file was
+restored byte for byte; after the battery `git status` reports only the three
+test files of this delta.
+
+| Reverted fix | Regression run | What it reported |
+| --- | --- | --- |
+| R1 effect-guard branch in `OperationLedger.admit` | `test_the_same_pid_with_a_new_incarnation_stops_the_next_removal` | `assert ['__MCP_E6Q_PC2', '__MCP_E6Q_PC1', '__MCP_E6Q_SRV'] == []` -- three devices deleted from the replacement's workspace |
+| R3 `_observe_terminal` in the pre-cleanup `finally` | `test_an_exception_after_an_intermediate_dhcp_intervention_still_reads_d4` | `assert <MeasurementStatus.NOT_RUN> is <MeasurementStatus.RAN>` with an empty `reason`, after the injected `RuntimeError` had already been asserted to have fired |
+| R4 endpoint counting in `inspection_schedule` | `tests/test_typed_ping_schedule.py` | `assert (0.0, 5.0, 10.0, 15.0, 20.0, 25.0) == (0.0, 6.0, 12.0, 18.0, 24.0, 30.0)`, and nine further failures at 25.7 s, 29.25 s and the window edge |
+| C1 claim release inside the lifecycle | `test_a_failed_campaign_release_is_a_visible_durable_finalization_failure` | `coordination_residue` was missing `campaign_release_failed:OSError` |
+| C1 bounded local reader | `test_the_incarnation_reader_bounds_its_local_observation` | `KeyError: 'timeout'` from the observed `subprocess.run` call |
+
+### Measured verification of this delta
+
+Every figure was executed in this checkout with its own `.venv`. Nothing here
+observes Packet Tracer, launches it, contacts a bridge, or promotes a
+capability. No campaign attempt was spent.
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Focused | `pytest tests/test_diagnostic_residual_corrections.py tests/test_diagnostic_focused_corrections.py tests/test_typed_ping_schedule.py tests/test_server_diagnostic_stages.py tests/test_service_qualification_lifecycle.py -q` | `143 passed`, exit 0, after the revert battery restored every source file |
+| Full suite | `python -m pytest -q -rs` | `6842 passed, 3 skipped`, exit 0, 476.81 s |
+| Provisional gate | `scripts/quality_gate.py --base cisco/main` | base and merge base both `6263344e`, 101 changed Python files, 101 Ruff-gated, 0 mechanical exemptions, exit 0 |
+| Namespace inventory | `scripts/namespace_inventory.py` | 0 active legacy imports, 0 active string references, 0 unreviewed inert mentions (65 retained in 22 files), exit 0 |
+| Documentation | `python -m mkdocs build --site-dir _site` | built in 4.22 s; the two `handoff.md` link warnings are unchanged from the base |
+| Whitespace | `git diff --check` and `git diff --check cisco/main..HEAD` | both clean |
+
+The three skips are the same named environment absences as the previous
+delivery, not a count: symlink privilege unavailable for this test account
+(`test_cp_live_data_integrity.py:103`), no retained raw run in this checkout
+(`test_positive_voice_ab_evidence_ledger.py:131`), and the ignored
+qualification artefact absent here
+(`test_positive_voice_dhcp_pool_observer.py:562`).

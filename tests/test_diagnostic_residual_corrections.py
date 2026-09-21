@@ -197,11 +197,16 @@ def replaced_at(tmp_path):
     dispatch destructive rather than merely unattributable. Both the channel
     and the local pairing change at the same instant, because that is what one
     process being replaced by another looks like from here.
+
+    `replacement` is the pairing the local reader answers with from that
+    instant. It defaults to a different PID, which is the ordinary case, and a
+    test that means the harder one -- the same PID reissued to a different
+    process -- passes its own reading instead.
     """
     started: list[tuple[DiagnosticStageRun, NodeEngine]] = []
     snapshots: list[dict] = []
 
-    def make(*, when, **overrides):
+    def make(*, when, replacement=None, **overrides):
         index = len(started)
         directory = tmp_path / f"bound{index}"
         directory.mkdir()
@@ -216,7 +221,12 @@ def replaced_at(tmp_path):
         for fixture in D_WEB.fixtures:
             foreign.seed_device(fixture.name, fixture.model)
         readings = SwitchableLifecycle(
-            _paired(), _paired(process_id=SIM_PROCESS_ID + 7)
+            _paired(),
+            (
+                replacement
+                if replacement is not None
+                else _paired(process_id=SIM_PROCESS_ID + 7)
+            ),
         )
         holder: dict = {}
 
@@ -329,6 +339,42 @@ def test_the_same_fixture_names_in_the_foreign_workspace_are_not_adopted(replace
     assert devices == {item.name: item.model for item in D_WEB.fixtures}
     assert snapshot["foreign"]["remove_calls"] == []
     assert run.record().restoration_proven is False
+
+
+def test_the_same_pid_with_a_new_incarnation_stops_the_next_removal(replaced_at):
+    """R1: a PID names a slot, so only the creation identity names the process.
+
+    This is the replacement a PID comparison cannot see: the operating system
+    reissued the authorized PID at the authorized path to a different Packet
+    Tracer. The milestone is still the transport's -- the first `removeDevice`
+    returning -- so the injection stays outside the control being tested.
+    """
+    reissued = _paired(process_incarnation="2026-09-20T11:00:00.0000000+00:00")
+    run, snapshot, _transport = replaced_at(when=removes(SWITCH), replacement=reissued)
+    record = run.record()
+
+    # The pairing that answers from the milestone onward is the authorized PID
+    # at the authorized path, differing only in when the process was created.
+    assert reissued.process_id == SIM_PROCESS_ID
+    assert reissued.process_path == SIM_PROCESS_PATH
+    assert "process_instance:changed" in record.engine_residue
+
+    # One removal landed on the bound instance, before the replacement. The
+    # remaining three never left this process, and nothing reached the engine
+    # holding the identically named fixtures.
+    assert snapshot["bound"]["remove_calls"] == [SWITCH]
+    _foreign_is_untouched(snapshot)
+    declined = [
+        item
+        for item in record.releases
+        if item.kind == "device" and item.outcome == "not_attempted"
+    ]
+    assert {item.resource for item in declined} == {
+        f"device:{name}" for name in D_WEB.fixture_names if name != SWITCH
+    }
+    assert all("execution_authority_lost" in item.detail for item in declined)
+    assert record.restoration_proven is False
+    assert run.exit_code == 1
 
 
 def test_a_lost_campaign_claim_refuses_the_next_effect(tmp_path):

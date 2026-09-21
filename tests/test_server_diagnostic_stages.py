@@ -52,7 +52,21 @@ D_WEB = STAGE_DEFINITIONS[QualificationStage.D_WEB]
 
 def test_d_dhcp_runs_the_server_only_sequence_and_activates_no_client(stage):
     """G5.3: the full projection, with zero client activation anywhere."""
-    run = stage("D-DHCP")
+    # Owned cleanup deletes the fixtures, so the port flags are read at the
+    # last instant they exist: immediately before the first removal. Reading
+    # them afterwards would be an assertion over an empty workspace, which
+    # passes whatever the run did to the clients.
+    during: list[dict] = []
+
+    def wrap(inner):
+        """Snapshot the engine just before the first destructive dispatch."""
+        return MilestoneTransport(
+            inner,
+            when=lambda script: "removeDevice" in script,
+            before=lambda: during.append(inner.engine.snapshot()),
+        )
+
+    run = stage("D-DHCP", wrap_transport=wrap)
     record = run.record()
 
     assert run.exit_code == 0 and record.outcome.value == "completed"
@@ -68,12 +82,15 @@ def test_d_dhcp_runs_the_server_only_sequence_and_activates_no_client(stage):
     assert setters["addPool"] == 1 and setters["setEnable"] == 1
     assert "serverPool" not in "".join(run.scripts("addPool"))
     # The clients keep the flags the fixture created them with.
-    devices = {item["name"]: item for item in run.engine.snapshot()["devices"]}
-    assert devices == {} or all(
-        not port.get("dhcp_mode")
+    (before_cleanup,) = during
+    devices = {item["name"]: item for item in before_cleanup["devices"]}
+    assert set(devices) == set(D_DHCP.fixture_names)
+    assert [
+        port
         for device in devices.values()
         for port in device["ports"]
-    )
+        if port.get("dhcp_mode")
+    ] == []
 
 
 def test_d_dhcp_verifies_the_disabled_pool_before_the_single_enable(stage):
