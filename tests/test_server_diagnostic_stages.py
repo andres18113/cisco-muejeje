@@ -25,6 +25,7 @@ from service_qualification_engine import (
     SIM_SHA,
     SIM_TREE,
     DiagnosticStageRun,
+    MilestoneTransport,
     RecordingStore,
     authorization_args,
     request_args,
@@ -615,20 +616,36 @@ def test_a_schema_one_record_without_lifecycle_fields_still_loads(stage):
     assert historical.diagnostic_lifecycle_postflight == {}
 
 
-#: How often one D-WEB run reads the local pairing: once before a transport
-#: exists, once before each of its six procedures, once before owned cleanup
-#: and once after finalization. The positive control pins it, so a change to
-#: the authority schedule fails there instead of silently moving the point a
-#: negative test believed it was injecting at.
-D_WEB_PAIRING_READS = 9
+#: The structural schedule of one D-WEB run's local pairing readings: one
+#: before a transport exists, one before each of its six procedures, one
+#: before the terminal observation, one before owned cleanup and one after
+#: finalization, plus one before every dispatch inside an effect scope. The
+#: last group is bounded by the stage's own operation ceiling rather than
+#: fixed, so the control below pins the bound and the structure instead of a
+#: constant that moves whenever the gate asks one more question.
+D_WEB_STRUCTURAL_PAIRING_READS = 10
+
+
+def _pairing_read_ceiling(definition) -> int:
+    """Return the most local pairing readings one stage may take.
+
+    A reading happens for each call admitted or refused inside an effect
+    scope, and a call inside an effect scope is still a counted call, so the
+    operation ceiling bounds them. Everything else is the structural schedule
+    above.
+    """
+    return definition.budget.max_operations + len(definition.experiments) + 4
 
 
 class _LocalReadings:
     """The local pairing one run observes, reading by reading.
 
-    `switch_at` is the 1-based reading from which `later` answers instead of
-    `first`, so a test places a replacement exactly where it means to: at the
-    first effect, mid-run, or immediately before the first removal.
+    The replacement arrives because the run reached a milestone, never because
+    it asked a particular number of questions: counting the authority
+    callbacks would put the injection inside the control under test. Tests
+    that need a replacement at an exact point drive `switch()` from a
+    transport milestone; `switch_immediately` is the degenerate case of a
+    pairing that never matched from the first reading on.
     """
 
     def __init__(
@@ -636,19 +653,43 @@ class _LocalReadings:
         first: DiagnosticLifecycleObservation,
         later: DiagnosticLifecycleObservation | None = None,
         *,
-        switch_at: int = 2,
+        switch_immediately: bool = True,
     ):
         self.first = first
         self.later = later
-        self.switch_at = switch_at
+        self.switched = bool(later is not None and switch_immediately)
         self.calls = 0
+
+    def switch(self) -> None:
+        """Answer as the replacement from the next reading on."""
+        self.switched = True
 
     def __call__(self) -> DiagnosticLifecycleObservation:
         """Return this reading and keep the count the run made."""
         self.calls += 1
-        if self.later is not None and self.calls >= self.switch_at:
+        if self.later is not None and self.switched:
             return self.later
         return self.first
+
+
+def _after_last_removal(readings: _LocalReadings) -> dict:
+    """Switch the pairing once the last owned removal has been dispatched.
+
+    The milestone is the removal of the first fixture the stage created, which
+    the finalizer deletes last. Everything before it -- including both
+    restoration reads -- is answered by the instance the run bound, so what
+    this places at the postflight is a change that happened after the owned
+    work, not one that invalidates it halfway through.
+    """
+    last = D_WEB.fixture_names[0]
+
+    return {
+        "wrap_transport": lambda inner: MilestoneTransport(
+            inner,
+            when=lambda script: "removeDevice" in script and last in script,
+            after=readings.switch,
+        )
+    }
 
 
 def _paired(**overrides) -> DiagnosticLifecycleObservation:
@@ -669,9 +710,21 @@ def test_the_local_pairing_is_read_again_after_finalization(stage):
     run = stage("D-WEB", diagnostic_lifecycle=readings)
     record = run.record()
 
-    # Read before the transport, before each procedure, before owned
-    # cleanup, and once more afterwards.
-    assert readings.calls == D_WEB_PAIRING_READS
+    # Read before the transport, before each procedure, before the
+    # terminal observation, before owned cleanup, once more afterwards,
+    # and once before every dispatch that carries an effect. The last
+    # group is what the effect gate added, and it is bounded by the
+    # stage ceiling rather than fixed.
+    assert readings.calls >= D_WEB_STRUCTURAL_PAIRING_READS
+    assert readings.calls <= _pairing_read_ceiling(D_WEB)
+    # Every effect this run dispatched was decided against the pairing,
+    # so there are at least as many readings as effect operations.
+    effects = [
+        item
+        for item in record.operations
+        if item.seq and (item.purpose.startswith(("create:", "remove:", "apply:")))
+    ]
+    assert readings.calls >= len(effects) + D_WEB_STRUCTURAL_PAIRING_READS
     assert record.diagnostic_lifecycle["process_id"] == SIM_PROCESS_ID
     assert record.diagnostic_lifecycle_postflight["process_id"] == SIM_PROCESS_ID
     assert record.diagnostic_lifecycle_postflight["mailbox_entries"] == []
@@ -689,8 +742,19 @@ def test_a_replaced_packet_tracer_invalidates_the_run_it_did_not_serve(stage):
     never bound, so the run stops at the first effect that asks again rather
     than continuing and being invalidated in its final report.
     """
-    readings = _LocalReadings(_paired(), _paired(process_id=SIM_PROCESS_ID + 7))
-    run = stage("D-WEB", diagnostic_lifecycle=readings)
+    readings = _LocalReadings(
+        _paired(), _paired(process_id=SIM_PROCESS_ID + 7), switch_immediately=False
+    )
+    # The replacement arrives when the run reaches its channel: the
+    # preflight bound one process, and from the first command on the
+    # mailbox is answered by another one.
+    run = stage(
+        "D-WEB",
+        diagnostic_lifecycle=readings,
+        wrap_transport=lambda inner: MilestoneTransport(
+            inner, when=lambda _script: True, before=readings.switch
+        ),
+    )
     record = run.record()
 
     assert record.diagnostic_lifecycle_postflight["process_id"] == SIM_PROCESS_ID + 7
@@ -709,9 +773,9 @@ def test_an_undrained_mailbox_is_named_at_the_end_and_deleted_by_nobody(stage):
     readings = _LocalReadings(
         _paired(),
         _paired(mailbox_entries=("req_orphan.js", "res_orphan.txt")),
-        switch_at=D_WEB_PAIRING_READS,
+        switch_immediately=False,
     )
-    run = stage("D-WEB", diagnostic_lifecycle=readings)
+    run = stage("D-WEB", diagnostic_lifecycle=readings, **_after_last_removal(readings))
     record = run.record()
 
     assert "mailbox:not_drained:req_orphan.js,res_orphan.txt" in record.engine_residue
@@ -724,9 +788,9 @@ def test_an_unreadable_second_reading_is_unknown_not_a_clean_exit(stage):
     readings = _LocalReadings(
         _paired(),
         DiagnosticLifecycleObservation(error="packet_tracer_process_count:2"),
-        switch_at=D_WEB_PAIRING_READS,
+        switch_immediately=False,
     )
-    run = stage("D-WEB", diagnostic_lifecycle=readings)
+    run = stage("D-WEB", diagnostic_lifecycle=readings, **_after_last_removal(readings))
     record = run.record()
 
     assert (

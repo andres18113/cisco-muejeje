@@ -356,13 +356,28 @@ class StageDefinition:
 #: action is one dispatch plus one read-back per expectation, one native
 #: default reading is one dispatch, one `show spanning-tree` sample is four
 #: calls, one typed ping is three and one bind-before-ping probe is seven.
+#:
+#: Their SECONDS are recomputed for the effect gate. Deciding authority before
+#: each effect dispatch spends no operation and does spend time: two bounded
+#: local process reads, each at most `LOCAL_OBSERVATION_TIMEOUT_SECONDS`. The
+#: number of those decisions is bounded by the ceiling itself -- at most one
+#: per admitted or refused call inside an effect scope, plus one per procedure
+#: and four for setup, finalization and the two pairing readings -- so the
+#: worst case is `(max_operations + experiments + 4) * 2 * 5` seconds on top
+#: of the bridge work: D-DHCP 900 + 590 -> 1500, D-WEB 900 + 900 -> 1800. The
+#: finalization reserve moves from 180 to 300 s for the same reason, because
+#: owned cleanup is where the per-dispatch decision matters most. Typical
+#: runs spend a small fraction of this; the record reports what each one
+#: actually spent as `budget.local_observation_seconds`. No operation ceiling
+#: moves, no historical Q budget moves, and both remain proposed limits that
+#: no authorization has ever been granted against.
 STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.Q0: (20, 300),
     QualificationStage.Q1: (60, 600),
     QualificationStage.Q2: (60, 900),
     QualificationStage.Q3: (60, 1200),
-    QualificationStage.D_DHCP: (50, 900),
-    QualificationStage.D_WEB: (80, 900),
+    QualificationStage.D_DHCP: (50, 1500),
+    QualificationStage.D_WEB: (80, 1800),
 }
 
 Q0_PC = "__MCP_E6Q_PC1"
@@ -759,12 +774,17 @@ def _q1() -> StageDefinition:
 
 
 #: The diagnostic profile identities the extended authority must bind. The
-#: version moves whenever the step sequence, the fixture binding or the budget
-#: arithmetic changes, so an authorization written for an earlier sequence
-#: cannot be replayed against a later one.
+#: version moves whenever the step sequence, the fixture binding, the budget
+#: arithmetic or the execution contract an authorization buys changes, so an
+#: authorization written for an earlier contract cannot be replayed against a
+#: later one. Version 3 is the contract in which every effect dispatch is
+#: admitted only while this invocation still holds its campaign claim and its
+#: bound Packet Tracer incarnation, and in which the terminal read-only
+#: observation is part of guaranteed pre-cleanup finalization rather than the
+#: last ordinary step of the sequence.
 D_DHCP_PROFILE = "D-DHCP"
 D_WEB_PROFILE = "D-WEB"
-DIAGNOSTIC_PROFILE_VERSION = "2"
+DIAGNOSTIC_PROFILE_VERSION = "3"
 
 #: The exact VLAN the access fixture's switch ports belong to on a stock
 #: 2960-24TT: nothing in either diagnostic configures a VLAN, so this is the
@@ -774,12 +794,13 @@ DIAGNOSTIC_ACCESS_VLAN = 1
 #: offsets from the request start. It is deliberately decoupled from the HTTP
 #: deadline: three slots, all inside the reader's own 8 s window.
 D_WEB_INSPECTION_SCHEDULE = (1.0, 3.0, 6.0)
-#: How many inspections one diagnostic ping may take. The safe 30 s window
-#: is unchanged and is spread across them, so the last read lands at or
-#: after the deadline and a slow destination is still classified from its
-#: own statistics rather than from a shortened wait. Unbounded, that poll
-#: is limited only by the window and the 0.25 s interval, which is tens of
-#: counted calls and not the one the earlier figure assumed.
+#: How many inspections one diagnostic ping may take. The safe 30 s window is
+#: unchanged, and the reads are the endpoints of an even partition of it --
+#: 0, 6, 12, 18, 24 and 30 s -- so the last read lands ON the deadline and a
+#: destination that publishes at 29 s is still classified from its own
+#: statistics rather than from a wait that closed one interval early.
+#: Unbounded, that poll is limited only by the window and the 0.25 s interval,
+#: which is tens of counted calls and not the one the earlier figure assumed.
 D_WEB_PING_INSPECTIONS = 6
 #: How many channel calls one registered spanning-tree sample may make. It
 #: mirrors `ACCESS_FORWARDING_SAMPLE_CALLS` in the runtime that enforces
@@ -794,6 +815,19 @@ D_WEB_FORWARDING_SAMPLES_BEFORE = 2
 D_WEB_FORWARDING_SAMPLES_AFTER = 1
 #: One bounded late read, after the deadline and before the release.
 D_WEB_LATE_READ_OFFSET = 10.0
+#: How long one LOCAL authority observation may wait for its own helper
+#: process. It contacts Packet Tracer through nothing and spends no counted
+#: operation, which bounds neither its wall-clock time nor the phase's, so the
+#: wait is finite and declared. It bounds what this run waits for, never
+#: operating-system scheduling: process creation and interpreter startup are
+#: outside this process's control and nothing here promises a bound on them.
+LOCAL_OBSERVATION_TIMEOUT_SECONDS = 5.0
+#: What the effect gate is, stated on every diagnostic record so the reading
+#: is never mistaken for one. The gate decides authority immediately before a
+#: dispatch leaves this process; no existing dispatcher carries a session
+#: token the receiver verifies in the evaluation that mutates, so the interval
+#: between that decision and the receiver consuming the command is not fenced.
+EFFECT_GATE_LIMIT = "effect_gate_is_local_and_not_an_in_band_receiver_fence"
 
 
 def _d_dhcp() -> StageDefinition:
@@ -932,7 +966,7 @@ def _d_dhcp() -> StageDefinition:
             PlannedStep("read:restoration:2", 1),
             PlannedStep("release:run_bag", 1),
         ),
-        budget=StageBudget(ceiling_operations, ceiling_seconds, reserve_seconds=180),
+        budget=StageBudget(ceiling_operations, ceiling_seconds, reserve_seconds=300),
         allowed_channels=("file",),
         profile_id=D_DHCP_PROFILE,
         profile_version=DIAGNOSTIC_PROFILE_VERSION,
@@ -1114,7 +1148,7 @@ def _d_web() -> StageDefinition:
             PlannedStep("read:restoration:1", 1),
             PlannedStep("read:restoration:2", 1),
         ),
-        budget=StageBudget(ceiling_operations, ceiling_seconds, reserve_seconds=180),
+        budget=StageBudget(ceiling_operations, ceiling_seconds, reserve_seconds=300),
         allowed_channels=("file",),
         profile_id=D_WEB_PROFILE,
         profile_version=DIAGNOSTIC_PROFILE_VERSION,
@@ -2121,6 +2155,11 @@ class BudgetRecord(BaseModel):
     used_operations: int = 0
     refused_calls: int = 0
     elapsed_seconds: float = 0.0
+    #: Wall-clock seconds spent on bounded LOCAL authority observations, which
+    #: contact Packet Tracer through nothing and spend no operation. Spending
+    #: no operation is not the same as costing no time, so the phase that
+    #: waited for them says how long it waited.
+    local_observation_seconds: float = 0.0
 
 
 class QualificationRecord(BaseModel):
@@ -2178,6 +2217,14 @@ class QualificationRecord(BaseModel):
     restoration: list[dict[str, Any]] = Field(default_factory=list)
     restoration_proven: bool = False
     engine_residue: list[str] = Field(default_factory=list)
+    #: What this invocation could not finalize in the LOCAL coordination scope
+    #: it shares with other checkouts -- a campaign lock it could not release,
+    #: a claim that is no longer its own. It is deliberately not
+    #: `engine_residue`: a lock left behind blocks the next campaign, and says
+    #: nothing at all about whether the engine workspace was restored. Empty
+    #: on a historical record, which is an absent observation, never a clean
+    #: one.
+    coordination_residue: list[str] = Field(default_factory=list)
     dirty_state: DirtyState = DirtyState.UNKNOWN
     persist_error: str = ""
     limitations: list[str] = Field(default_factory=list)
@@ -2241,4 +2288,7 @@ def promotion_evidence_refusal(
             )
     if not record.restoration_proven:
         return "Restoration was not proven twice."
+    if record.coordination_residue:
+        unfinished = "; ".join(record.coordination_residue[:4])
+        return f"The run could not finalize its shared coordination scope: {unfinished}"
     return ""

@@ -95,6 +95,8 @@ from ...domain.enterprise.models.service_qualification import (
     D_WEB_FORWARDING_SAMPLES_BEFORE,
     D_WEB_INSPECTION_SCHEDULE,
     DIAGNOSTIC_ACCESS_VLAN,
+    EFFECT_GATE_LIMIT,
+    LOCAL_OBSERVATION_TIMEOUT_SECONDS,
     Q1_PC1,
     Q1_SERVER,
     Q1_SERVER_IPV4,
@@ -277,6 +279,10 @@ class OperationLedger:
         self._reserved = False
         self._effects_open = True
         self._halt_reason = ""
+        #: The control every dispatch inside an effect scope is admitted
+        #: against, bound once before the invocation's first effect.
+        self._effect_guard: Callable[[str], str] | None = None
+        self._effect_scope = 0
         self.phase = LedgerPhase.ADMISSION
         self.purpose = ""
         self.used = 0
@@ -318,6 +324,33 @@ class OperationLedger:
         finally:
             self.purpose = previous
 
+    def bind_effect_guard(self, guard: Callable[[str], str]) -> None:
+        """Bind the control every effect dispatch is decided against.
+
+        It is bound exactly once, after the invocation's execution state
+        exists and before its first effect. Until then an effect scope has no
+        control to satisfy, which `admit` treats as a refusal rather than as
+        permission.
+        """
+        self._effect_guard = guard
+
+    @contextmanager
+    def effect_of(self, purpose: str) -> Iterator[None]:
+        """Label a block whose dispatches change state in the receiver.
+
+        Read-only work keeps `purpose_of`. What this adds is that each call
+        admitted inside the block is decided against the effect guard
+        immediately before it is handed to the channel, so one decision
+        authorizes one dispatch instead of a whole phase. Scopes nest, because
+        a runtime composed inside one may open its own.
+        """
+        self._effect_scope += 1
+        try:
+            with self.purpose_of(purpose):
+                yield
+        finally:
+            self._effect_scope -= 1
+
     def allowance(self) -> tuple[int, float]:
         """Return the operations and seconds the current phase may still use."""
         final = self.phase is LedgerPhase.FINALIZATION
@@ -342,12 +375,27 @@ class OperationLedger:
         return allowed
 
     def admit(self, call: str, requested_timeout: float) -> tuple[int, float]:
-        """Count one call and return its index and capped timeout, or refuse it."""
+        """Count one call and return its index and capped timeout, or refuse it.
+
+        Inside an effect scope the receiver is decided first, before the
+        budget: an unproven receiver is not a call to be afforded, it is a
+        call that must not be dispatched at all.
+        """
         reason = ""
-        if not self._effects_open and self.phase not in (
+        if self._effect_scope:
+            if self._effect_guard is None:
+                # A control that is absent cannot be satisfied, and an effect
+                # never proceeds on the strength of a check nobody made.
+                reason = "effect_guard_not_bound"
+            else:
+                lost = self._effect_guard(self.purpose)
+                if lost:
+                    reason = f"execution_authority_lost:{lost}"
+        halted = not self._effects_open and self.phase not in (
             LedgerPhase.FINALIZATION,
             LedgerPhase.TERMINAL_OBSERVATION,
-        ):
+        )
+        if not reason and halted:
             reason = f"effects_halted:{self._halt_reason}"
         operations, seconds = self.allowance()
         if not reason and operations < 1:
@@ -754,6 +802,7 @@ class QualificationResult:
                     "secondary_failures": record.secondary_failures,
                     "restoration_proven": record.restoration_proven,
                     "engine_residue": record.engine_residue,
+                    "coordination_residue": record.coordination_residue,
                     "dirty_state": record.dirty_state.value,
                     "persisted_step": record.persisted_step,
                     "persist_error": record.persist_error,
@@ -858,6 +907,7 @@ def qualify_server_services(
         )
         if refusals:
             return _refused(refusals)
+    hold = _CampaignHold(boundaries.campaign_coordinator, claim)
     try:
         return _with_campaign_claim(
             request,
@@ -869,11 +919,13 @@ def qualify_server_services(
             repository,
             experimental_capabilities,
             diagnostic_lifecycle=diagnostic_lifecycle,
-            claim=claim,
+            hold=hold,
         )
     finally:
-        if claim is not None and boundaries.campaign_coordinator is not None:
-            _release_claim(boundaries.campaign_coordinator, claim)
+        # The admitted path releases the claim inside the record lifecycle, so
+        # this is the safety net for every path that refused before reaching
+        # it. A release that already happened is not repeated.
+        hold.release()
 
 
 def _with_campaign_claim(
@@ -887,7 +939,7 @@ def _with_campaign_claim(
     experimental_capabilities: frozenset[str],
     *,
     diagnostic_lifecycle: DiagnosticLifecycleObservation | None,
-    claim: Any | None,
+    hold: _CampaignHold,
 ) -> QualificationResult:
     """Run the admitted part of one invocation while its campaign claim is held."""
     moment = boundaries.now()
@@ -1004,7 +1056,7 @@ def _with_campaign_claim(
             bound,
             experimental_capabilities,
             product_contract,
-            claim=claim,
+            hold=hold,
         )
     finally:
         if opened is not None and opened.transport is not None:
@@ -1084,6 +1136,31 @@ def _release_claim(coordinator: Any, claim: Any) -> tuple[str, ...]:
         return tuple(coordinator.release(claim) or ())
     except Exception as exc:
         return (f"campaign_release_failed:{type(exc).__name__}",)
+
+
+@dataclass
+class _CampaignHold:
+    """One campaign claim, and whether this invocation already released it.
+
+    The release is a finalization result like any other, so it has to reach
+    the record before the record is completed. It used to run in the caller's
+    outer `finally`, which is after completion, so a lock that stayed held
+    left the next campaign blocked with nothing in the record saying so. The
+    hold makes the release idempotent: the run releases it inside its own
+    lifecycle, and the outer `finally` is the safety net for every path that
+    never got that far.
+    """
+
+    coordinator: Any = None
+    claim: Any = None
+    released: bool = False
+
+    def release(self) -> tuple[str, ...]:
+        """Release the claim once and return what it could not do, if anything."""
+        if self.released or self.claim is None or self.coordinator is None:
+            return ()
+        self.released = True
+        return _release_claim(self.coordinator, self.claim)
 
 
 def _diagnostic_admission_checks(
@@ -1340,7 +1417,7 @@ def _admitted(
     capabilities: frozenset[str],
     product_contract: Q3ProductContract | None = None,
     *,
-    claim: Any | None = None,
+    hold: _CampaignHold | None = None,
 ) -> QualificationResult:
     record = run.record
     ledger = run.ledger
@@ -1429,6 +1506,7 @@ def _admitted(
         )
 
     nonce = boundaries.new_nonce()
+    hold = hold if hold is not None else _CampaignHold()
     execution = _Execution(
         run=run,
         nonce=nonce,
@@ -1442,13 +1520,22 @@ def _admitted(
         capabilities=capabilities,
         probes=boundaries.probes(bound, record.run_id, nonce),
         product_contract=product_contract,
-        claim=claim,
+        claim=hold.claim,
+        hold=hold,
         authorized_steps=(
             tuple(request.authorization.step_ids)
             if definition.steps and request.authorization is not None
             else ()
         ),
     )
+    # Constructing the execution bound this ledger's effect guard, so from
+    # here on no dispatch inside an effect scope reaches the channel without
+    # that decision.
+    if definition.profile_id:
+        record.limitations.append(EFFECT_GATE_LIMIT)
+        record.limitations.append(
+            f"local_process_observation_bounded_seconds:{LOCAL_OBSERVATION_TIMEOUT_SECONDS}"
+        )
     cancelled: BaseException | None = None
     try:
         if definition.stage is QualificationStage.Q0:
@@ -1462,12 +1549,18 @@ def _admitted(
         else:
             _run_q3(execution)
     except KeyboardInterrupt as exc:
+        execution.cancelled = True
         execution.stop("cancelled")
         cancelled = exc
     except Exception as exc:
         execution.interrupt_in_flight(f"exception:{type(exc).__name__}")
         execution.stop(f"exception:{type(exc).__name__}:{_bounded(exc)}")
     finally:
+        # The terminal read-only observation belongs to finalization, not to
+        # the sequence that may have raised out of the middle of itself. Every
+        # exit that reaches cleanup reaches this first, so the last reading is
+        # always taken before the first deletion.
+        _observe_terminal(execution)
         try:
             _finalize(execution)
         except Exception as exc:
@@ -1476,9 +1569,14 @@ def _admitted(
             record.secondary_failures.append(
                 f"finalization:exception:{type(exc).__name__}"
             )
+        # The campaign claim is held through finalization and released before
+        # the record is completed, so a lock that stayed held is a fact this
+        # record carries rather than one that happens after it.
+        _release_campaign_claim(execution)
     completed = (
         not record.primary_failure
         and record.restoration_proven
+        and not record.coordination_residue
         and all(
             item.status is MeasurementStatus.RAN
             for item in record.measurements
@@ -1501,6 +1599,21 @@ def _admitted(
 # -- execution state -----------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class _TerminalPhase:
+    """One stage's terminal read-only observation, and what it measures.
+
+    It is registered before the stage's first procedure, over the state object
+    the procedures fill in, so the reading still has the baseline, the ordered
+    interventions and the declared call footprint it needs to be interpreted
+    even when the sequence raised out of the middle of itself.
+    """
+
+    ids: tuple[str, ...]
+    procedure: str
+    observe: Callable[[], None]
+
+
 @dataclass
 class _Execution:
     """What one admitted run owns, has concluded and has left behind."""
@@ -1520,6 +1633,9 @@ class _Execution:
     #: The campaign claim this invocation holds, or None for a stage that
     #: declares no diagnostic profile. It is re-verified before effects.
     claim: Any | None = None
+    #: The releasable hold over that claim. Finalization releases it before
+    #: the record is completed; the caller's outer path only mops up.
+    hold: _CampaignHold = field(default_factory=_CampaignHold)
     #: The steps this invocation's authority selected, in stage order. Empty
     #: for a stage that declares none, where every procedure runs.
     authorized_steps: tuple[str, ...] = ()
@@ -1543,6 +1659,30 @@ class _Execution:
     observers_unresolved: set[str] = field(default_factory=set)
     in_flight: tuple[str, ...] = ()
     e5_accepted: bool = False
+    #: The stage's terminal read-only phase, registered before its first
+    #: procedure and taken exactly once from guaranteed finalization.
+    terminal: _TerminalPhase | None = None
+    terminal_taken: bool = False
+    #: Whether the operator interrupted the run. A cancelled run stops doing
+    #: work: it declares its terminal reading instead of taking it, and
+    #: restarts no stimulus.
+    cancelled: bool = False
+    #: Wall clock spent on bounded local authority observations, which cost no
+    #: bridge operation and still cost the phase time.
+    local_observation_seconds: float = 0.0
+
+    def __post_init__(self) -> None:
+        """Bind this execution's effect guard before anything can dispatch.
+
+        Binding here rather than at one call site is deliberate: an execution
+        that exists over a ledger is the only thing that can answer for that
+        ledger's effects, and a composition that forgot the step would
+        otherwise refuse every effect it makes. The ledger still fails closed
+        for anything that opens an effect scope without one.
+        """
+        ledger = self.run.ledger
+        if ledger is not None:
+            ledger.bind_effect_guard(self.effect_guard)
 
     @property
     def record(self) -> QualificationRecord:
@@ -1624,12 +1764,23 @@ class _Execution:
                 reasons.append(f"campaign_claim:unverifiable:{type(exc).__name__}")
         lifecycle = self.run.boundaries.diagnostic_lifecycle
         if callable(lifecycle) and self.run.diagnostic_lifecycle is not None:
+            clock = self.run.boundaries.clock
+            started = clock()
             try:
                 observed = lifecycle()
             except Exception as exc:
+                # A local reading that expired or failed is an unobservable
+                # authority, which is a loss. It is never read as permission.
                 observed = DiagnosticLifecycleObservation(
                     error=f"diagnostic_lifecycle_failed:{type(exc).__name__}"
                 )
+            # It spends no operation and it does spend time. The phase that
+            # waited for it says how long, and the ledger's own wall clock has
+            # already charged those seconds against the allowance.
+            self.local_observation_seconds += max(0.0, clock() - started)
+            self.record.budget.local_observation_seconds = round(
+                self.local_observation_seconds, 3
+            )
             reasons.extend(
                 item
                 for item in diagnostic_lifecycle_continuity(
@@ -1649,6 +1800,25 @@ class _Execution:
         record.limitations.append(f"execution_authority_lost_before:{_bounded(moment)}")
         self.stop(f"execution_authority_lost:{reasons[0]}")
         return False
+
+    def effect_guard(self, purpose: str) -> str:
+        """Return why this one effect may not be dispatched, or "".
+
+        The ledger asks this immediately before it admits a call inside an
+        effect scope, which is the narrowest point this process controls. It
+        is not an in-band receiver fence: no existing dispatcher carries a
+        session token the receiver itself verifies in the evaluation that
+        mutates, so the interval between this answer and the receiver
+        consuming the command stays unfenced and is declared as a limitation
+        of every diagnostic record. What it does close is the case the
+        finalizer used to cache away -- a receiver replaced between two
+        removals, or between a cleanup pre-read and the delete that follows
+        it -- because the replacement is already in the local process table
+        when the next dispatch asks.
+        """
+        if self.live_authority(f"effect:{purpose}" if purpose else "effect"):
+            return ""
+        return self.authority_lost or "execution_authority_lost"
 
     def measurement(self, experiment_id: str) -> MeasurementRecord:
         """Return one measurement entry of the record."""
@@ -1675,12 +1845,38 @@ class _Execution:
             if item.status is MeasurementStatus.NOT_RUN and not item.reason:
                 item.reason = _bounded(reason)
 
+    def not_observed(self, ids: Sequence[str], cause: str) -> None:
+        """Record why the terminal reading was not taken, over any earlier note.
+
+        The terminal phase is a decision taken after the sequence ended, so
+        its absence is its own statement. A generic earlier note -- the stage
+        never reached this measurement -- is true about the sequence and says
+        nothing about the reading finalization just declined, so the specific
+        cause replaces it. The run-level primary failure is untouched and
+        still names what actually stopped the run.
+        """
+        for experiment_id in ids:
+            item = self.measurement(experiment_id)
+            if item.status is MeasurementStatus.NOT_RUN:
+                item.reason = _bounded(f"not_observed:{cause}")
+
     def begin(self, ids: Sequence[str], procedure: str) -> bool:
         """Decide whether one procedure may start, and announce it durably."""
         if not self.live_authority(f"experiment:{procedure}"):
             self.not_run(ids, f"execution_authority_lost:{self.authority_lost}")
             return False
         return self.admissible(ids, procedure) and self.announce(ids, procedure)
+
+    def register_terminal(
+        self, ids: Sequence[str], procedure: str, observe: Callable[[], None]
+    ) -> None:
+        """Declare the stage's terminal reading before its first procedure.
+
+        Registering is not taking. The reading is taken once, from guaranteed
+        pre-cleanup finalization, whatever the sequence between here and there
+        did -- completed, stopped, raised or lost its persistence.
+        """
+        self.terminal = _TerminalPhase(tuple(ids), procedure, observe)
 
     def begin_terminal(self, ids: Sequence[str], procedure: str) -> bool:
         """Admit one read-only terminal observation, success or not.
@@ -1698,15 +1894,15 @@ class _Execution:
         if not all(item.terminal_observation for item in specs):
             return self.begin(ids, procedure)
         if not self.live_authority(f"terminal:{procedure}"):
-            self.not_run(ids, f"not_observed:authority_lost:{self.authority_lost}")
+            self.not_observed(ids, f"authority_lost:{self.authority_lost}")
             return False
         reason = self._unmet(specs)
         if reason:
-            self.not_run(ids, f"not_observed:{reason}")
+            self.not_observed(ids, reason)
             return False
         planned = sum(item.planned_operations for item in specs)
         if not self.ledger.can_afford(planned):
-            self.not_run(ids, f"not_observed:unaffordable:{procedure}")
+            self.not_observed(ids, f"unaffordable:{procedure}")
             return False
         # The boundary is still written ahead of the reading. A record that
         # cannot advance loses durability, not the observation: the reading is
@@ -1823,6 +2019,11 @@ def _setup_fixtures(execution: _Execution) -> bool:
     """Create the stage fixtures through the production physical runtime."""
     if execution.stopped:
         return False
+    # Setup is the first effect of the run and it happens before any
+    # measurement announces itself, so the receiver is decided here too and
+    # not only at each dispatch inside the loops below.
+    if not execution.live_authority("fixtures:setup"):
+        return False
     if not execution.run.transition("fixtures:started"):
         execution.stop("persistence:record_not_advanced")
         return False
@@ -1832,7 +2033,7 @@ def _setup_fixtures(execution: _Execution) -> bool:
     try:
         for plan in execution.devices:
             fixture = next(item for item in record.fixtures if item.name == plan.name)
-            with ledger.purpose_of(f"create:{plan.name}"):
+            with ledger.effect_of(f"create:{plan.name}"):
                 result = execution.physical.ensure_device(plan)
             fixture.creation = result.disposition.value
             fixture.detail = _bounded(result.message)
@@ -1850,7 +2051,7 @@ def _setup_fixtures(execution: _Execution) -> bool:
                 execution.stop(f"fixture_not_created:{plan.name}")
                 return False
         for index, link in enumerate(execution.links, start=1):
-            with ledger.purpose_of(f"create:link:{index}"):
+            with ledger.effect_of(f"create:link:{index}"):
                 result = execution.physical.ensure_link(link)
             if result.disposition is MutationDisposition.UNKNOWN:
                 execution.stop(f"outcome_unknown:link:{index}")
@@ -2139,7 +2340,7 @@ def _configure_q1(execution: _Execution) -> bool:
         ),
     ]
     try:
-        with ledger.purpose_of("apply:e5_endpoints"):
+        with ledger.effect_of("apply:e5_endpoints"):
             e5 = execution.run.boundaries.configuration_runtime(
                 execution.bound
             ).apply_actions(endpoints)
@@ -2163,7 +2364,7 @@ def _configure_q1(execution: _Execution) -> bool:
         execution.stop(f"outcome_unknown:e5_endpoints{e5_error and ':' + e5_error}")
         return False
     try:
-        with ledger.purpose_of("apply:e6_enable_http_https"):
+        with ledger.effect_of("apply:e6_enable_http_https"):
             e6 = execution.run.boundaries.service_runtime(
                 execution.bound
             ).apply_actions(services)
@@ -3293,7 +3494,7 @@ def _run_q3(execution: _Execution) -> None:
             ):
                 execution.stop("persistence:q3_e5_not_announced")
             if gate.ready and not execution.stopped:
-                with execution.ledger.purpose_of("q3:product:e5_endpoints"):
+                with execution.ledger.effect_of("q3:product:e5_endpoints"):
                     configuration = ConfigurationApplicator(
                         configuration_runtime
                     ).apply(
@@ -3326,7 +3527,7 @@ def _run_q3(execution: _Execution) -> None:
                 execution.stop("persistence:q3_e6_not_announced")
             if gate.ready and not execution.stopped:
                 server_plan = _q3_server_plan(contract.service_plan)
-                with execution.ledger.purpose_of("q3:product:e6_server"):
+                with execution.ledger.effect_of("q3:product:e6_server"):
                     server_application = ServiceApplicator(service_runtime).apply(
                         server_plan,
                         actual_source_topology_hash=(
@@ -3441,7 +3642,7 @@ def _run_q3(execution: _Execution) -> None:
             if not execution.run.transition("experiment:Q3_DHCP:product_started"):
                 execution.stop("persistence:q3_product_not_announced")
             if not execution.stopped:
-                with execution.ledger.purpose_of("q3:product:service_apply"):
+                with execution.ledger.effect_of("q3:product:service_apply"):
                     service_result = ServiceApplicator(service_runtime).apply(
                         bound_plan,
                         actual_source_topology_hash=(
@@ -3485,7 +3686,7 @@ def _run_q3(execution: _Execution) -> None:
                 if guard_not_run:
                     execution.stop(guard_not_run)
                 else:
-                    with execution.ledger.purpose_of("q3:guard:acquisition_replay"):
+                    with execution.ledger.effect_of("q3:guard:acquisition_replay"):
                         [guard] = service_runtime.apply_actions([first_acquisition])
                 after_one = execution.probes.read_dhcp_clients(clients)
                 execution.settle()
@@ -3614,6 +3815,13 @@ def _run_d_dhcp(execution: _Execution) -> None:
     dispatched, and every adjacent pair of native readings is what the record
     attributes an interval to.
     """
+    state = _DDhcpState()
+    # Registered before the first fixture exists. Whatever the sequence below
+    # does -- complete, stop, raise, or lose its record -- finalization takes
+    # this reading over this exact state object, before it deletes anything.
+    execution.register_terminal(
+        ("M-DDHCP-4",), "D_DHCP_FINAL", lambda: _d_dhcp_final(execution, state)
+    )
     if not _diagnostic_start(execution):
         return
     contract = execution.product_contract
@@ -3632,7 +3840,6 @@ def _run_d_dhcp(execution: _Execution) -> None:
             "d_dhcp_projection:server_static_address_only",
         ]
     )
-    state = _DDhcpState()
 
     ids = ("M-DDHCP-0",)
     if execution.selected("D0-baseline") and execution.begin(ids, "D_DHCP_BASELINE"):
@@ -3664,23 +3871,36 @@ def _run_d_dhcp(execution: _Execution) -> None:
             )
         execution.finish("D_DHCP_ENABLE")
 
+
+def _d_dhcp_final(execution: _Execution, state: _DDhcpState) -> None:
+    """Read the native default inventory one last time, before any cleanup.
+
+    It is a cumulative baseline-to-final summary of the interventions this run
+    actually dispatched, not an adjacent interval: the sequence may have
+    stopped anywhere, and what the operator needs is what the whole run left
+    behind. No baseline is invented from it and no earlier snapshot is
+    rewritten by it.
+    """
     ids = ("M-DDHCP-4",)
-    if execution.selected("D4-final") and execution.begin_terminal(ids, "D_DHCP_FINAL"):
-        with execution.procedure(ids):
-            final = _q3_default_read(
-                execution, "d4_before_cleanup", prefix=D_DHCP_DEFAULT_PURPOSE
-            )
-            execution.conclude(
-                "M-DDHCP-4",
-                assess_native_default_cumulative(
-                    label="d4_cumulative",
-                    baseline=state.baseline or final,
-                    final=final,
-                    interventions=tuple(state.interventions),
-                    declared_native_calls=tuple(state.declared_native_calls),
-                ),
-            )
-        execution.finish("D_DHCP_FINAL")
+    if not execution.selected("D4-final"):
+        return
+    if not execution.begin_terminal(ids, "D_DHCP_FINAL"):
+        return
+    with execution.procedure(ids):
+        final = _q3_default_read(
+            execution, "d4_before_cleanup", prefix=D_DHCP_DEFAULT_PURPOSE
+        )
+        execution.conclude(
+            "M-DDHCP-4",
+            assess_native_default_cumulative(
+                label="d4_cumulative",
+                baseline=state.baseline or final,
+                final=final,
+                interventions=tuple(state.interventions),
+                declared_native_calls=tuple(state.declared_native_calls),
+            ),
+        )
+    execution.finish("D_DHCP_FINAL")
 
 
 @dataclass
@@ -3829,7 +4049,7 @@ def _d_dhcp_static(
     if not execution.run.transition("experiment:D_DHCP_E5:started"):
         execution.stop("persistence:d_dhcp_e5_not_announced")
         return
-    with execution.ledger.purpose_of("d-dhcp:product:e5_server_address"):
+    with execution.ledger.effect_of("d-dhcp:product:e5_server_address"):
         configuration = ConfigurationApplicator(configuration_runtime).apply(
             static_plan,
             actual_source_topology_hash=contract.manifest.physical_topology_hash,
@@ -3914,7 +4134,7 @@ def _d_dhcp_service_stage(
 ) -> tuple[ServiceApplicationResult | None, str]:
     """Apply one projected E6 stage through the real product applicator."""
     state.rewrites.extend(item.as_text() for item in rewrites)
-    with execution.ledger.purpose_of(purpose):
+    with execution.ledger.effect_of(purpose):
         result = ServiceApplicator(service_runtime).apply(
             plan,
             actual_source_topology_hash=contract.manifest.physical_topology_hash,
@@ -4176,6 +4396,16 @@ def _d_web_selection(
 
 def _run_d_web(execution: _Execution) -> None:
     """Observe every boundary an unretrieved page can fail at, in order."""
+    state = _DWebState()
+    # The after-boundaries are this stage's terminal observation and they are
+    # registered before its first effect. An HTTP timeout is precisely the
+    # case the diagnostic was asked about, and so is an exception raised out
+    # of the middle of the sequence: neither may delete the fixtures without
+    # the readings that locate it. They are read-only and dispatch no second
+    # request.
+    execution.register_terminal(
+        ("M-DWEB-5",), "D_WEB_AFTER", lambda: _d_web_terminal(execution, state)
+    )
     if not _diagnostic_start(execution):
         return
     if not _configure_q1(execution):
@@ -4184,7 +4414,6 @@ def _run_d_web(execution: _Execution) -> None:
             "fixture_setup_failed",
         )
         return
-    state = _DWebState()
     for fixture in execution.definition.fixtures:
         if fixture.ipv4:
             state.endpoints[fixture.name] = _d_web_selection(execution, fixture)
@@ -4224,15 +4453,17 @@ def _run_d_web(execution: _Execution) -> None:
             _d_web_fetch(execution, state)
         execution.finish("D_WEB_FETCH")
 
-    # The after-boundaries are the terminal observation of this stage. An HTTP
-    # timeout is precisely the case the diagnostic was asked about, so gating
-    # them behind a successful fetch would suppress the readings that locate
-    # it. They are read-only and dispatch no second request.
+
+def _d_web_terminal(execution: _Execution, state: _DWebState) -> None:
+    """Take this stage's terminal reading, from finalization and only there."""
     ids = ("M-DWEB-5",)
-    if execution.selected("W5-after") and execution.begin_terminal(ids, "D_WEB_AFTER"):
-        with execution.procedure(ids):
-            _d_web_after(execution, state)
-        execution.finish("D_WEB_AFTER")
+    if not execution.selected("W5-after"):
+        return
+    if not execution.begin_terminal(ids, "D_WEB_AFTER"):
+        return
+    with execution.procedure(ids):
+        _d_web_after(execution, state)
+    execution.finish("D_WEB_AFTER")
 
 
 def _d_web_listener_reading(execution: _Execution, label: str) -> dict[str, Any]:
@@ -4341,7 +4572,7 @@ def _d_web_page(execution: _Execution, state: _DWebState) -> None:
     """Write this run's marker into the existing index page through both handles."""
     texts = execution.probes.page_marker_texts()
     state.marker = texts["http_marker"]
-    with execution.ledger.purpose_of("d-web:marker_page"):
+    with execution.ledger.effect_of("d-web:marker_page"):
         reading = execution.probes.prepare_marker_page(Q1_SERVER, state.marker)
     established = marker_page_established(reading)
     execution.conclude(
@@ -4383,7 +4614,7 @@ def _d_web_ping(execution: _Execution, state: _DWebState) -> None:
         execution.stop("d_web_forwarding_probe_not_composed")
         return
     execution.record.limitations.append(ACTIVE_STIMULUS)
-    with execution.ledger.purpose_of("d-web:ping"):
+    with execution.ledger.effect_of("d-web:ping"):
         evidence = probe(execution.bound).probe_once(
             source_device_name=Q1_PC1,
             destination_endpoint=destination,
@@ -4428,7 +4659,7 @@ def _d_web_fetch(execution: _Execution, state: _DWebState) -> None:
         host_model="Server-PT",
         client_model="PC-PT",
     )
-    with execution.ledger.purpose_of("d-web:fetch:http"):
+    with execution.ledger.effect_of("d-web:fetch:http"):
         row = factory(execution.bound, execution.ledger.allowance).verify(expectation)
     released = str(row.observed.get("released", ""))
     execution.record.releases.append(
@@ -4505,6 +4736,72 @@ def _d_web_after(execution: _Execution, state: _DWebState) -> None:
 # -- finalization ----------------------------------------------------------------
 
 
+def _observe_terminal(execution: _Execution) -> None:
+    """Take the stage's terminal reading once, before anything is deleted.
+
+    This is the only place the reading happens. Registering it and taking it
+    are separate so that every exit which reaches cleanup reaches the reading
+    first: a normal completion, a handled stop, an `OperationRefused` inside a
+    procedure, an ordinary Python exception raised out of the middle of the
+    sequence, and a run whose record stopped advancing.
+
+    Three rules it never breaks. A cancelled run does not take it: the
+    operator asked the run to stop doing work, so the measurement is declared
+    `not_observed:cancelled` and no stimulus is restarted or re-dispatched. A
+    failure inside the reading is secondary -- it never replaces the primary
+    error and never stops owned cleanup, which is why nothing raises out of
+    here. And the reading itself is read-only and paid for out of the ordinary
+    allowance, which `begin_terminal` already enforces.
+    """
+    phase = execution.terminal
+    if phase is None or execution.terminal_taken:
+        return
+    execution.terminal_taken = True
+    if execution.cancelled:
+        execution.not_observed(phase.ids, "cancelled")
+        return
+    try:
+        phase.observe()
+    except OperationRefused as exc:
+        execution.not_observed(phase.ids, f"operation_refused:{exc.reason}")
+        execution.record.secondary_failures.append(
+            f"terminal_observation:{phase.procedure}:refused:{exc.reason}"
+        )
+    except Exception as exc:
+        execution.not_observed(phase.ids, f"exception:{type(exc).__name__}")
+        execution.record.secondary_failures.append(
+            f"terminal_observation:{phase.procedure}:exception:{type(exc).__name__}"
+        )
+    finally:
+        execution.in_flight = ()
+
+
+def _release_campaign_claim(execution: _Execution) -> None:
+    """Release the campaign claim into this record, before it is completed.
+
+    A claim this run cannot release keeps the next campaign out of the shared
+    scope, so it is a finalization result the record has to carry rather than
+    something that happens to the filesystem after the record is closed. It is
+    deliberately not engine residue: a lock left behind says nothing about
+    whether the engine workspace was restored, and the two claims stay apart.
+    """
+    reasons = execution.hold.release()
+    if not reasons:
+        return
+    record = execution.record
+    record.coordination_residue.extend(_bounded(item) for item in reasons)
+    record.secondary_failures.extend(f"campaign_release:{item}" for item in reasons)
+    record.releases.append(
+        ReleaseRecord(
+            resource="campaign:lock",
+            kind="claim",
+            outcome="release_unverified",
+            detail=_bounded("; ".join(reasons)),
+        )
+    )
+    record.limitations.append("campaign_lock_still_held_after_this_run")
+
+
 def _finalize(execution: _Execution) -> None:
     """Release owned state, remove owned devices and prove restoration twice.
 
@@ -4529,7 +4826,7 @@ def _finalize(execution: _Execution) -> None:
     for plan in reversed(execution.removal_candidates) if owned else ():
         fixture = next(item for item in record.fixtures if item.name == plan.name)
         try:
-            with ledger.purpose_of(f"remove:{plan.name}"):
+            with ledger.effect_of(f"remove:{plan.name}"):
                 result = execution.physical.remove_device(plan)
         except OperationRefused as exc:
             record.secondary_failures.append(f"remove:{plan.name}:{exc.reason}")
@@ -4585,17 +4882,28 @@ def _finalize(execution: _Execution) -> None:
         for item in observations
     ]
     _restoration_scope(execution, observations)
-    record.restoration_proven = owned and all(
+    # Authority held at the start of finalization is not authority held at the
+    # end of it: the effect gate can refuse a removal halfway through the loop
+    # above. A restoration claim needs the receiver to still be the bound one
+    # when the last reading was taken, so the two are one condition here.
+    attributable = owned and not execution.authority_lost
+    record.restoration_proven = attributable and all(
         item is not None
         and physical_workspace_restoration_matches(execution.baseline, item)
         for item in observations
     )
-    if not owned:
+    if not attributable:
         # These reads describe whatever answers the mailbox now. They are kept
         # as observations and they prove nothing about the bound instance's
         # workspace, so they never become a restoration claim.
         record.limitations.append(
             "restoration_reads_not_attributable_to_the_authorized_process"
+        )
+    if owned and not attributable:
+        # The run entered cleanup holding the receiver and lost it partway.
+        # Whatever it had not deleted by then was not dispatched at all.
+        record.limitations.append(
+            "owned_cleanup_not_dispatched_to_an_unproven_receiver"
         )
     _lifecycle_postflight(execution)
     for name in sorted(execution.observers_unresolved):
@@ -4741,7 +5049,7 @@ def _release_engine_state(execution: _Execution) -> None:
     # Even when every step released its own entry, the run key itself is
     # still present in the engine, so the finalizer always removes it.
     try:
-        with execution.ledger.purpose_of("release:run_bag"):
+        with execution.ledger.effect_of("release:run_bag"):
             reading = execution.probes.release_run_bag()
     except OperationRefused as exc:
         record.secondary_failures.append(f"release:run_bag:{exc.reason}")

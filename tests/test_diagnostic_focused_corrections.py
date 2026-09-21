@@ -721,11 +721,14 @@ def test_a_delayed_ping_costs_its_inspections_and_still_classifies(stage):
     # earlier seven-operation figure assumed.
     assert ping_calls > 7
     assert ping_calls == 6 + D_WEB_PING_INSPECTIONS
-    # A sample that ended on its own bound says so instead of reporting
-    # an unreachable destination it never waited for.
+    # The sample is incomplete, and it says which bound ended it. With the
+    # corrected schedule the last inspection lands ON the deadline, so what
+    # closed the poll is the promised window rather than the inspection
+    # count -- and either way it is never an unreachable destination.
     ping = run.measurement("M-DWEB-3").facts["probe"]["ping"]
-    assert ping["failure_reason"] == "ping_inspection_budget_exhausted"
+    assert ping["failure_reason"] == "no_fresh_ping_result"
     assert ping["reachable"] is False
+    assert ping["fresh_output_observed"] is False
 
 
 @pytest.mark.parametrize("reachable", [True, False])

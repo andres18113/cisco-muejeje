@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ...domain.enterprise.models.service_qualification import (
+    LOCAL_OBSERVATION_TIMEOUT_SECONDS,
     DiagnosticLifecycleObservation,
 )
 from .cp_scale_live_preflight import PowerShellPacketTracerProcessReader
@@ -23,14 +24,24 @@ class PowerShellProcessIncarnationReader:
     bound, and it polls the same mailbox. Creation time is the incarnation
     identity that distinguishes them.
 
-    This runs one read-only query about one PID. It launches, stops and
-    contacts nothing. An unreadable answer is returned as the empty string,
-    which the domain gate treats as unknown rather than as a match.
+    This runs one read-only query about one PID, inside a finite local bound.
+    It launches, stops and contacts nothing; the only process the timeout can
+    terminate is the PowerShell helper this reader owns. An unreadable answer
+    is returned as the empty string, which the domain gate treats as unknown
+    rather than as a match. A timeout is NOT returned that way: it propagates,
+    because a wait that expired is an unobservable authority and the caller
+    has to be able to tell it apart from a process that answered "no time".
     """
 
-    def __init__(self, *, run_command: Callable[..., Any] = subprocess.run) -> None:
-        """Inject the command runner, defaulting to `subprocess.run`."""
+    def __init__(
+        self,
+        *,
+        run_command: Callable[..., Any] = subprocess.run,
+        timeout_seconds: float = LOCAL_OBSERVATION_TIMEOUT_SECONDS,
+    ) -> None:
+        """Inject the command runner and the finite local observation bound."""
         self._run_command = run_command
+        self._timeout_seconds = max(0.0, float(timeout_seconds))
 
     def read(self, pid: int) -> str:
         """Return the round-trip creation timestamp of `pid`, or ""."""
@@ -48,7 +59,12 @@ class PowerShellProcessIncarnationReader:
                 check=True,
                 capture_output=True,
                 text=True,
+                timeout=self._timeout_seconds,
             )
+        except subprocess.TimeoutExpired:
+            # Unobservable, not unknown-and-harmless. The lifecycle reader
+            # turns this into an error the continuity gate refuses on.
+            raise
         except Exception:
             return ""
         value = str(getattr(completed, "stdout", "") or "").strip()
@@ -69,12 +85,16 @@ class PacketTracerDiagnosticLifecycleReader:
         process_reader=None,
         mailbox_dir: Path | None = None,
         incarnation_reader=None,
+        timeout_seconds: float = LOCAL_OBSERVATION_TIMEOUT_SECONDS,
     ) -> None:
-        """Inject the read-only sources used by this preflight."""
-        self._process_reader = process_reader or PowerShellPacketTracerProcessReader()
+        """Inject the read-only sources, each under the finite local bound."""
+        self._process_reader = process_reader or PowerShellPacketTracerProcessReader(
+            timeout_seconds=timeout_seconds
+        )
         self._mailbox_dir = Path(mailbox_dir) if mailbox_dir else bridge_dir()
         self._incarnation_reader = (
-            incarnation_reader or PowerShellProcessIncarnationReader()
+            incarnation_reader
+            or PowerShellProcessIncarnationReader(timeout_seconds=timeout_seconds)
         )
 
     def read(self) -> DiagnosticLifecycleObservation:

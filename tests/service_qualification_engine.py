@@ -1110,6 +1110,93 @@ FORWARDING_ROWS = {
 }
 
 
+class MilestoneTransport:
+    """One mailbox answered by one engine, then by whatever a milestone picks.
+
+    `when(script)` is asked about each dispatched command. The first script it
+    accepts is a transport milestone: `before` runs immediately ahead of that
+    command and `after` immediately behind it, so a test places a receiver
+    replacement at a point the RUN reaches -- the first `removeDevice`, a
+    fixture creation, the cleanup pre-readback -- instead of at a count of
+    authority callbacks. Counting those callbacks would place the injection
+    inside the very control under test, and would move every time the control
+    asks one more question.
+    """
+
+    def __init__(self, target, *, when=None, before=None, after=None) -> None:
+        """Start on the engine the run was admitted against."""
+        self.target = target
+        self.when = when
+        self._before = before
+        self._after = after
+        self.fired = False
+        self.calls: list[tuple[str, str]] = []
+
+    def _reached(self, js_code: str) -> None:
+        if self.fired or self.when is None or not self.when(js_code):
+            return
+        self.fired = True
+        if self._before is not None:
+            self._before()
+
+    def _passed(self) -> None:
+        if self.fired and self._after is not None:
+            hook, self._after = self._after, None
+            hook()
+
+    def send(self, js_code: str) -> bool:
+        """Queue one command on whichever engine answers now."""
+        self.calls.append(("send", js_code))
+        self._reached(js_code)
+        try:
+            return self.target.send(js_code)
+        finally:
+            self._passed()
+
+    def send_and_wait(self, js_code: str, timeout: float) -> str | None:
+        """Dispatch one command on whichever engine answers now."""
+        self.calls.append(("send_and_wait", js_code))
+        self._reached(js_code)
+        try:
+            return self.target.send_and_wait(js_code, timeout)
+        finally:
+            self._passed()
+
+    def dispatch_and_wait(self, js_code: str, timeout: float):
+        """Dispatch with typed facts on whichever engine answers now."""
+        self.calls.append(("dispatch_and_wait", js_code))
+        self._reached(js_code)
+        try:
+            return self.target.dispatch_and_wait(js_code, timeout)
+        finally:
+            self._passed()
+
+
+class SwitchableLifecycle:
+    """Local pairing readings that change only when a milestone says so.
+
+    Nothing here counts how often the run asks. The reading changes because
+    the run reached a transport milestone, which is what a Packet Tracer that
+    is replaced mid-run actually looks like to this process.
+    """
+
+    def __init__(self, first, later=None) -> None:
+        """Answer `first` until `switch()`, then `later`."""
+        self.first = first
+        self.later = later if later is not None else first
+        self.switched = False
+        self.calls = 0
+
+    def switch(self) -> None:
+        """Start answering as the replacement instance."""
+        self.switched = True
+
+    def __call__(self):
+        """Return whichever pairing this instant has."""
+        self.calls += 1
+        return self.later if self.switched else self.first
+
+
 class DiagnosticStageRun:
     """One stub engine, one transport and one completed stage invocation."""
 
@@ -1123,8 +1210,13 @@ class DiagnosticStageRun:
             "dhcp_default_pool": "native",
         }
         config.update(engine_config or {})
+        wrap = overrides.pop("wrap_transport", None)
         self.engine = NodeEngine(directory, **config)
-        self.transport = NodeEngineTransport(self.engine)
+        self.transport: Any = NodeEngineTransport(self.engine)
+        if wrap is not None:
+            # The channel the run is handed, so a test can place a milestone
+            # on it before the first command instead of after the fact.
+            self.transport = wrap(self.transport)
         self.clock = FakeClock()
         self.opened: list[str] = []
         self.argv = overrides.pop("argv", None)

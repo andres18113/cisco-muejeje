@@ -115,18 +115,34 @@ class PowerShellPacketTracerProcessReader:
         "Path=$_.MainModule.FileName } } | ConvertTo-Json -Compress"
     )
 
-    def __init__(self, *, run_command: CommandRunner = subprocess.run) -> None:
-        """Inject the command runner, defaulting to `subprocess.run`."""
+    def __init__(
+        self,
+        *,
+        run_command: CommandRunner = subprocess.run,
+        timeout_seconds: float | None = None,
+    ) -> None:
+        """Inject the command runner and an optional finite observation bound.
+
+        `timeout_seconds` defaults to `None`, which is the unbounded wait every
+        existing CP-scale caller already performs. A caller that reads this
+        pairing inside a time-bounded phase passes a finite value; the timeout
+        terminates the owned PowerShell helper and nothing else.
+        """
         self._run_command = run_command
+        self._timeout_seconds = timeout_seconds
 
     def read(self) -> CPScaleProcessObservation:
         """Return every Packet Tracer process, or the error that prevented inspection."""
         try:
+            extra: dict[str, float] = {}
+            if self._timeout_seconds is not None:
+                extra["timeout"] = self._timeout_seconds
             completed = self._run_command(
                 ["powershell.exe", "-NoProfile", "-Command", self._COMMAND],
                 check=True,
                 capture_output=True,
                 text=True,
+                **extra,
             )
             raw = completed.stdout.strip()
             if not raw:

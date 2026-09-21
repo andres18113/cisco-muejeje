@@ -57,6 +57,29 @@ _IOS_SUCCESS_RATE = re.compile(
 SAFE_PING_TIMEOUT_S = 30.0
 
 
+def inspection_schedule(timeout_seconds: float, inspections: int) -> tuple[float, ...]:
+    """Return the absolute offsets, from the dispatch, of a finite poll.
+
+    The reads are the `inspections` endpoints of an even partition of the
+    CLOSED window ``[0, timeout_seconds]``: the first is immediate and the last
+    lands on the deadline itself, so the whole promised window is covered
+    instead of closing one interval early.
+
+    One inspection cannot be both immediate and window-covering. The window is
+    the promise the safe timeout exists to keep, so a single inspection is
+    taken at the deadline; a lone read at zero could not observe a statistic
+    that has not been published yet. Building that case separately is also why
+    no division by ``inspections - 1`` can reach zero here.
+    """
+    window = max(0.0, float(timeout_seconds))
+    if inspections <= 1:
+        return (window,)
+    step = window / (inspections - 1)
+    # `min` absorbs the float accumulation of the last slot so the schedule
+    # never advertises a read after the deadline it is meant to land on.
+    return tuple(min(window, step * index) for index in range(inspections))
+
+
 class TypedPingExecutor:
     """Ejecuta solamente ``ping <ip-validada>``; nunca acepta comandos libres."""
 
@@ -76,10 +99,11 @@ class TypedPingExecutor:
         `max_inspections` defaults to `None`, which is unbounded polling and
         is exactly what every existing caller already does. A caller that has
         to account for each nested call -- a diagnostic spending a counted
-        operation ledger -- sets it, and the poll interval is then spread so
-        that many reads still cover the same safe window. It bounds how many
-        observations are taken, never the window itself: shortening the window
-        would turn a slow destination into a premature unreachable claim.
+        operation ledger -- sets it, and the reads are then placed on the
+        finite schedule `inspection_schedule` returns, whose last slot is the
+        deadline itself. It bounds how many observations are taken, never the
+        window itself: shortening the window would turn a slow destination
+        into a premature unreachable claim.
         """
         if (
             isinstance(timeout_seconds, bool)
@@ -243,42 +267,56 @@ class TypedPingExecutor:
                 3.0,
             )
 
-        deadline = self._clock() + self._timeout
+        started_at = self._clock()
+        deadline = started_at + self._timeout
         observed: dict = {}
         window = extract_terminal_command_window(before, "", command)
-        # Sin cota, el intervalo es el del caller. Con cota, se REPARTE la
-        # misma ventana segura entre las lecturas permitidas: acortar la
-        # ventana convertiria un destino lento en un inalcanzable prematuro,
-        # que es justamente el error de clasificacion que el timeout seguro
-        # existe para evitar.
-        interval = self._interval
-        remaining_inspections = self._max_inspections
-        if remaining_inspections is not None:
-            interval = max(interval, self._timeout / remaining_inspections)
+        # Unbounded, the interval is the caller's. Bounded, the reads are the
+        # fixed offsets of `inspection_schedule`, held as ABSOLUTE times from
+        # the dispatch so that the I/O each read costs is elapsed window and
+        # not a delay added on top of it.
+        pending: list[float] | None = (
+            None
+            if self._max_inspections is None
+            else list(inspection_schedule(self._timeout, self._max_inspections))
+        )
         inspection_budget_spent = False
         while True:
+            if pending is not None:
+                delay = started_at + pending.pop(0) - self._clock()
+                if delay > 0:
+                    self._sleep(delay)
             observed = inspect()
-            if remaining_inspections is not None:
-                remaining_inspections -= 1
             window = extract_terminal_command_window(
                 before,
                 str(observed.get("output") or ""),
                 command,
             )
             normalized = window.output.casefold()
-            if (
-                "packets: sent" in normalized
-                or "success rate is" in normalized
-                or self._clock() >= deadline
-            ):
+            if "packets: sent" in normalized or "success rate is" in normalized:
                 break
-            if remaining_inspections is not None and remaining_inspections <= 0:
-                # La muestra queda INCOMPLETA por cota propia, no por la
-                # ventana. Se declara: una lectura que no se tomo no puede
-                # reportarse como una estadistica que no llego.
+            # The slot at `timeout` is taken before this check ends the poll:
+            # the window is closed inclusively, and the statistics a slow
+            # destination publishes at the very end are inside it.
+            if self._clock() >= deadline:
+                break
+            if pending is None:
+                self._sleep(self._interval)
+                continue
+            now = self._clock()
+            # A slot whose time has already passed was missed, not deferred.
+            # Reading it now would be a catch-up burst, which is exactly what
+            # a finite schedule is for avoiding.
+            while pending and started_at + pending[0] <= now:
+                del pending[0]
+            if not pending:
+                # The schedule ran out while the window was still open, which
+                # only happens when the injected sleeper could not honour it --
+                # a ledger-capped sleep is the real case. The sample is
+                # INCOMPLETE by its own bound: a reading that was not taken
+                # cannot be reported as a statistic that did not arrive.
                 inspection_budget_spent = True
                 break
-            self._sleep(interval)
 
         # La ultima lectura ATRIBUYE: la estadistica que se va a interpretar y
         # el device al que se le atribuye salen de la misma pasada. Una medida
