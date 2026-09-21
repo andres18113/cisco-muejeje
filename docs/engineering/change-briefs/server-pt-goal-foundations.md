@@ -1811,6 +1811,25 @@ because the memo and the observation both belong to the one `apply` call.
   audit, no merge or publication is included, and exact-SHA CI belongs to a
   publication the operator has not granted.
 
+### Delivery identity of this block
+
+| Field | Value |
+| --- | --- |
+| Behaviour commit | `0c8392985f5daf14e436619a98bac168b56d682c` (tree `397203bd08ec70aa011c124551cf3b1b63a11db0`) |
+| Branch | `feature/server-pt-goal-foundations` |
+| Base | `52969849408d195436ae250f611318e7e959876f` |
+| Authoritative main | `6263344e31ba3b0de6539d652f2cd06fc73a3562` (`cisco/main`) |
+| Delivery-mode quality gate | clean tree at that exact commit, base and merge base `6263344e`, 110 Ruff-gated changed Python files, 0 mechanical exemptions, exit 0 |
+| Changed paths | 21 files, 3,041 insertions and no deletions |
+| Exact-SHA CI | not obtained. Publishing needs the operator's grant, and this block includes no push |
+| Status | `READY_FOR_REVIEW` |
+
+This section names the commit that carries the behaviour, so it necessarily
+lands in a following documentation commit. The gate result above is the one
+measured on the behaviour commit with a clean tree, which is the authoritative
+delivery validation; the provisional worktree run recorded earlier agreed with
+it.
+
 ### One pre-existing discrepancy, reported and deliberately not touched
 
 While verifying its own five new entries, this delivery found that
