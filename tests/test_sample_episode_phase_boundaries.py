@@ -247,7 +247,9 @@ def test_an_early_exhausted_read_does_not_refuse_a_later_valid_sample(
     assert observation.sample_budget_exhausted is False
     assert observation.deadline_reached is False
     assert observation.deadline_cause == ""
-    assert observation.episode_end_reason == "forwarding_sample_admitted"
+    assert (
+        observation.episode_end_reason == "all_requested_interfaces_observed_forwarding"
+    )
 
     # The failed read is retained and is still described as what it was.
     assert observation.episode_budget_exhausted is True
@@ -414,6 +416,9 @@ def test_a_genuinely_late_sample_is_reported_late() -> None:
     assert observation.sample_history[-1].deadline_reached is True
     assert observation.deadline_reached is True
     assert observation.deadline_cause == "sample_after_deadline"
+    assert (
+        observation.episode_end_reason == "all_requested_interfaces_observed_forwarding"
+    )
     assert admission.admitted is False
     assert admission.dimension == DIMENSION_DEADLINE
     assert admission.causes == ("sample_after_deadline",)
@@ -440,6 +445,9 @@ def test_a_timely_sample_refused_by_an_auxiliary_overrun_stays_timely() -> None:
     assert observation.auxiliary_read_after_deadline is True
     assert observation.deadline_reached is True
     assert observation.deadline_cause == "auxiliary_read_after_deadline"
+    assert (
+        observation.episode_end_reason == "all_requested_interfaces_observed_forwarding"
+    )
     assert admission.admitted is False
     assert admission.dimension == DIMENSION_DEADLINE
     assert admission.causes == ("auxiliary_read_after_deadline",)
@@ -476,7 +484,9 @@ def test_a_timely_admitted_sample_names_no_boundary_at_all() -> None:
     assert observation.sample_after_deadline is False
     assert observation.auxiliary_read_after_deadline is False
     assert observation.episode_budget_exhausted is False
-    assert observation.episode_end_reason == "forwarding_sample_admitted"
+    assert (
+        observation.episode_end_reason == "all_requested_interfaces_observed_forwarding"
+    )
 
 
 def _gated(
@@ -556,7 +566,9 @@ def test_the_gate_admits_the_timely_positive_and_names_no_boundary() -> None:
     assert sample["deadline_reached"] is False
     assert sample["deadline_cause"] == ""
     assert sample["sample_after_deadline"] is False
-    assert sample["episode_end_reason"] == "forwarding_sample_admitted"
+    assert (
+        sample["episode_end_reason"] == "all_requested_interfaces_observed_forwarding"
+    )
 
 
 def test_the_applicable_parent_boundary_is_recorded_with_its_scope() -> None:
@@ -604,7 +616,7 @@ def test_the_published_projection_separates_raw_facts_from_decisions() -> None:
             ),
         ),
         episode_budget_exhausted=True,
-        episode_end_reason="forwarding_sample_admitted",
+        episode_end_reason="all_requested_interfaces_observed_forwarding",
         deadline_scope="group",
     )
 
@@ -617,7 +629,7 @@ def test_the_published_projection_separates_raw_facts_from_decisions() -> None:
     assert facts["auxiliary_budget_exhausted"] is False
     assert facts["sample_after_deadline"] is False
     assert facts["auxiliary_read_after_deadline"] is False
-    assert facts["episode_end_reason"] == "forwarding_sample_admitted"
+    assert facts["episode_end_reason"] == "all_requested_interfaces_observed_forwarding"
     assert facts["deadline_scope"] == "group"
     assert facts["deadline_cause"] == ""
     # The pre-existing keys keep their names and their meaning.
@@ -791,7 +803,9 @@ def test_normal_progress_is_unchanged_in_the_same_composition() -> None:
     admission = access_forwarding_admission(observation)
     assert admission.admitted is True
     assert observation.samples == 1
-    assert observation.episode_end_reason == "forwarding_sample_admitted"
+    assert (
+        observation.episode_end_reason == "all_requested_interfaces_observed_forwarding"
+    )
     assert composition.ledger.refused_calls == 0
 
 
@@ -944,13 +958,13 @@ def test_an_expired_shared_window_observes_nothing_at_all() -> None:
 # -- P2: the durable record is measured at a supported public limit ------------
 
 
-def test_the_serialized_readiness_record_is_measured_at_a_supported_limit() -> None:
-    """Measure the worst supported record instead of assuming it is unbounded.
+def test_the_synthetic_four_group_readiness_projection_stays_bounded() -> None:
+    """Bound a synthetic four-group facts estimate without relabelling it.
 
     The public ceilings are the product's own: four groups per invocation,
     thirty-one samples per group and the twenty-four access ports of the
-    largest catalogued access switch. The measurement is recorded so a future
-    truncation decision can be argued from a number.
+    largest catalogued access switch. This does not serialize a complete
+    invocation or MCP response and proves no maximum supported topology.
     """
     interfaces = tuple(f"FastEthernet0/{index + 1}" for index in range(24))
     rows = tuple(
@@ -985,11 +999,11 @@ def test_the_serialized_readiness_record_is_measured_at_a_supported_limit() -> N
     )
 
     one_group = len(json.dumps(group, separators=(",", ":")).encode("utf-8"))
-    invocation = one_group * READINESS_MAX_GROUPS
+    synthetic_four_group_estimate = one_group * READINESS_MAX_GROUPS
 
-    # Measured, not asserted into existence: about 0.6 MiB per group and
-    # 2.5 MiB for a full invocation at the supported ceiling. The value is
-    # pinned loosely so the test reports growth instead of exact formatting.
+    # A loose regression bound for this synthetic projection only. Actual
+    # product response and record serialization are measured through the
+    # admitted public fixture in test_service_tools_surface.py.
     assert one_group < 1_000_000, one_group
-    assert invocation < 4_000_000, invocation
+    assert synthetic_four_group_estimate < 4_000_000, synthetic_four_group_estimate
     assert len(group["sample_history"]) == READINESS_GROUP_MAX_SAMPLES

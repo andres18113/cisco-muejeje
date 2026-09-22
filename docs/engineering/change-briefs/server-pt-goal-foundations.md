@@ -2103,7 +2103,7 @@ because an empty `deadline_cause` still reads as `sample_after_deadline`.
 | R3b: the pager names the boundary that expired | a shorter caller allowance is reported as the caller's, not as the pager's own deadline | `test_a_shorter_caller_allowance_is_not_reported_as_the_pager_deadline`, `test_a_pager_capture_that_owns_the_expired_deadline_still_says_so` |
 | R4: published documentary and fixture facts are true | both manifest revisions resolve; the heading renders as a heading with its anchor; the default auxiliary reader is exercised against a valid controlled response | `test_the_manifest_revision_errata_identify_real_revisions`, `test_the_manifest_errata_bytes_and_digests_match_their_revisions`, `test_no_maintained_heading_is_swallowed_by_the_table_above_it`, `test_the_risk_l_headings_render_outside_the_tables_above_them`, `test_default_auxiliary_channel_call_is_counted_and_deadline_capped`, `test_an_unavailable_auxiliary_reader_is_reported_as_unreadable` |
 | P1: the shared absolute window is stated and enforced | a group starting at offset 106 of the 120-second window observes for at most 14 seconds | `test_a_late_group_inherits_only_the_remaining_shared_window`, `test_an_expired_shared_window_observes_nothing_at_all` |
-| P2: the durable record is measured, not assumed | the serialized record and response at a supported public topology limit are measured and recorded | `test_the_serialized_readiness_record_is_measured_at_a_supported_limit` |
+| P2: reporting growth has a bounded synthetic control | a four-group readiness-facts projection is measured and labelled as a synthetic estimate, never as the complete record, response or largest supported topology | `test_the_synthetic_four_group_readiness_projection_stays_bounded` |
 
 ### Architectural impact and affected contracts
 
@@ -2252,13 +2252,12 @@ it.
   observation is taken at all. HTTP time between groups is neither paused nor
   refunded, and nothing here is a new HTTP transaction timeout or a new
   expiration rule for memoized groups.
-- The durable record is measured rather than assumed. At the supported public
-  ceiling -- 24 access ports, 31 samples per group, 4 groups -- one group's
-  serialized facts are 66,468 bytes compact and 120,224 bytes at the
-  `indent=2` the record store actually writes. A full invocation is therefore
-  265,872 bytes compact and 480,896 bytes on disk, which is 0.46 MiB. No limit
-  violation is demonstrated, so no evidence is truncated and no reporting
-  framework is added.
+- The readiness projection has a synthetic growth estimate rather than a
+  record-size claim. With 24 interfaces and 31 samples, one facts projection
+  is 66,468 compact bytes; multiplying that projection by four gives 265,872
+  bytes. It is not the complete persisted invocation, not the MCP response and
+  not proof of the largest supported topology. No evidence is truncated and no
+  reporting framework is added.
 
 | Verification | Result |
 | --- | --- |
@@ -2305,3 +2304,186 @@ LIVE behaviour remain unverified; this order authorizes no LIVE work, and an
 offline suite cannot establish Packet Tracer behaviour. Exact-SHA CI remains
 pending without a feature-branch publication grant, and independent acceptance
 is still required. Delivery status is `READY_FOR_REVIEW`, not acceptance.
+
+## 2026-09-22 cold HTTP acceptance preparation after `8197b02` (risk L)
+
+### Identity, problem and intended outcome
+
+The accepted input is clean branch `feature/server-pt-goal-foundations` at
+`8197b02528461ae12b051a13bdc65b17cc42e510`, tree
+`00833c7f86807f06abcee859233bbe546bdf789a`, with comparison parent
+`9aa8388f39f66fd387422c3eba5a5c6dc0e11b5b` and authoritative main
+`6263344e31ba3b0de6539d652f2cd06fc73a3562`. This successor prepares, but does
+not run or authorize, one cold HTTP-by-IP product acceptance over an
+operator-owned disposable deployment. It also closes three bounded review
+findings without reopening R1-R4, D-DHCP, D-WEB, lifecycle ownership or any
+historical evidence.
+
+Risk remains L: the change corrects a durable evidence term, tightens a
+published-source gate, adds exact source-tree provenance and defines a future
+LIVE authorization boundary. The public four-string MCP signature, capability
+catalogue, canonical forwarding admission rule and its priority are unchanged.
+
+### Scope and explicit exclusions
+
+In scope are the failed-Git-query distinction, a neutral sampling-stop reason,
+actual record/response serialization through the admitted public fixture,
+source SHA plus tree retention, an HTTP-only two-client offline trace through
+the registered MCP tool, and the exact pending attempt proposal below. No
+Packet Tracer process is contacted or launched. No branch is published or
+merged, no capability is promoted, no historical blob or record is edited, and
+no diagnostic stage is repeated. There is no ping, DNS check, preliminary web
+fetch, browser warming, PortFast, port bounce, clock acceleration or alternate
+client in the prepared scenario. Product topology removal remains outside the
+tool and outside this authorization.
+
+The existing qualification coordinator cannot express this product acceptance.
+Its request and authorization bind fixed `__MCP_E6Q_*` fixtures, an empty
+workspace, stage-owned creation/removal and a fixed stage budget; D-WEB also
+places a ping before its fetch. Reusing it would replace the product path and
+violate the cold constraint. The smallest missing LIVE integration is an
+out-of-band acceptance adapter with a thin ledgered envelope around the
+unchanged four-argument product call. It must extract and reuse the production
+session composition currently nested in `register_service_tools`, validate the
+authorization-bound channel, and construct that fixed channel before either
+runtime exists; checking the MCP tool's internal `pick_channel()` result after
+the call would be too late. The adapter reuses the existing isolation,
+repository, process-incarnation, campaign-claim and postflight readers; counts
+the product transport; protects the two client-release operations; reloads the
+`ServiceRunRecord`; and persists an immutable envelope that references that
+run. The public MCP schema remains unchanged, and the adapter must not contain
+another compiler, applicator, readiness gate, HTTP reader or fixture runner.
+This order does not add a dead or unmeasured version of that envelope. The
+offline trace and arithmetic below are its design inputs, and LIVE remains
+blocked until the envelope has its own reviewed implementation and an exact
+operator grant.
+
+### Requirements and acceptance criteria
+
+| Requirement | Acceptance criterion |
+| --- | --- |
+| H1 Published revisions fail closed | Git availability, repository identity and full-history availability are classified once before assertions. A valid full revision resolves as a commit; a syntactically valid nonexistent 40-hex revision raises the query failure. A failed assertion query is never converted to an environmental skip. Historical bytes and expected digests stay unchanged. |
+| H2 Sampling stop is not permission | The FWD-row stop reason becomes the neutral `all_requested_interfaces_observed_forwarding`. Timely admission, late-sample refusal and auxiliary-overrun refusal all retain the same sample history, deadline cause and canonical priority. Legacy `forwarding_sample_admitted` is documented as a non-authorizing sampling diagnostic, not reinterpreted or rewritten. |
+| H3 Serialization claims name what was measured | The existing four-group calculation is labelled a synthetic facts-projection estimate. A real admitted two-client fixture measures the exact UTF-8 MCP response and the exact indented `ServiceRunRecord` file, reloads the record, and proves the complete readiness history matches. Neither figure is called a maximum supported topology. |
+| H4 Exact source identity survives the product record | `SourceTreeIdentity` adds the Git tree with a compatibility default; production observes `HEAD` and `HEAD^{tree}` together. The registered public route persists both. A future acceptance refuses a missing or mismatched value even though ordinary historical schema-1 records still load. |
+| H5 The prepared scenario is the real product path | The registered `pt_apply_enterprise_services` route receives exactly its existing four inputs and an HTTP-only intent with one fresh attempt marker. The manifest is built through the supported plan/deployment contract. E5 readback precedes exact VLAN/port FWD, which precedes exactly one first HTTP-by-IP start for each selected PC. No ping, DNS, hostname fetch or warm-up request appears. |
+| H6 Evidence is attributable and durable | Each full HTTP verification row is correlated through its client outcome and carries the exact selected `http://198.18.160.2/` input, its own observed owner, HTTP mode, native Boolean `go()` result, fresh marker-bearing inspection trace and release outcome. The stored record reloads with the same interpretation and full sample history. A timeout stays inconclusive; it is never called a listener refusal. |
+| H7 The future campaign fails closed | One attempt only, with a unique deployment id and no prior service-run record for it; any retained E5 row refuses the acceptance. Any source/process/session/manifest mismatch, authorized-channel mismatch, budget or reserve loss, non-FWD/late/ambiguous evidence, malformed or unobservable HTTP result, owner/release contradiction, persistence mismatch or operator stop ends the attempt without an identical retry. Fixture cleanup requires a separate grant. |
+
+### Prepared disposable fixture and product scope
+
+The offline plan/manifest derives one `IE-2000` access switch, one `Server-PT`
+and two `PC-PT` clients. Its exact current bindings are
+`HQ-DEFAULT-ACCESS-SW-01` `FastEthernet1/1`-`FastEthernet1/3`, VLAN 10;
+`HQ-DEFAULT-SERVER-01` `FastEthernet0` at `198.18.160.2/29`;
+`HQ-DEFAULT-PC-01` `FastEthernet0` at `198.18.160.3/29`; and
+`HQ-DEFAULT-PC-02` `FastEthernet0` at `198.18.160.4/29`. The switch ports are
+bound from the plan: PC1 on `FastEthernet1/1`, PC2 on `FastEthernet1/2`, and
+the server on `FastEthernet1/3`. These names are a proposed disposable fixture,
+not display-label authority: a future grant binds a unique deployment id and
+the actual persisted manifest hash, the service-record store must contain no
+earlier run for that deployment, and the runtime inventory must reproduce every
+binding before an effect. This fresh-history precondition is what makes the
+operation arithmetic below apply; `e5_effect_scope.retained` must remain empty.
+
+Allowed product effects are only the plan-derived E5 VLAN, three access-port
+and three static endpoint actions; E6 HTTP enable plus marked `index.html`
+content; two HTTP client starts; and release of those two owned clients. The
+compiled hostname action remains excluded from the governed service closure.
+The marker is `COLD_HTTP_<attempt-id>` with the actual attempt id substituted
+before the plan is compiled. The URL is HTTP by server IP only. There is no DNS
+service in the intent and no hostname expectation. The product leaves the
+topology and server page in place.
+
+### Proposed attempt ceiling and feasibility
+
+The proposed build is `9.0.1.0858`, the proposed fixed transport is `file`,
+and the attempt count is one. The future acceptance adapter must bind `file`
+before session construction; ordinary MCP channel selection is not that gate.
+The delivery SHA and tree are deliberately not borrowed from the accepted
+input: the grant must name the clean delivery commit and tree produced by this
+successor. Until those exact values and the actual manifest/process incarnation
+are present in a separate operator grant, the proposal is ungranted.
+
+The fresh-history HTTP-only fixture has an operation ceiling of **1,015**
+counted Script Engine calls: five environment/inventory/drift reads; at most
+751 E5 calls (361 IOS readiness polls, two IOS batches, one endpoint batch, 21
+VLAN reads, three access-port reads and 363 endpoint reads); 187 readiness calls
+(31 samples x six nested calls plus one auxiliary read); two E6 apply/direct
+reads; and 70 client calls (per client: one start, at most 33 inspections in
+the eight-second/0.25-second window, and one release). The last two operations
+are a protected client-release reserve. A prior reusable record would add
+preverification reads and change the effect meaning, so it is a refusal rather
+than another path through this ceiling. This is a proposed ceiling for the
+exact plan, not permission to add actions or spend the reserve on observation.
+
+The proposed wall-clock ceiling is **420 seconds**, including the bounded
+product windows and two 30-second local lifecycle observations. The final
+**40 seconds** are protected for the two three-second release calls, lifecycle
+postflight, record completion and campaign-claim release. The current public
+tool has no outer ledger that can enforce this ceiling or distinguish release
+reserve use. That is the precise missing integration named above, so these
+figures cannot authorize LIVE on their own. Delayed-FWD, persistent-LIS,
+foreign/ambiguous owner, late sample, auxiliary overrun and HTTP-timeout paths
+remain required controls; a lucky immediate-FWD response is not feasibility
+evidence.
+
+### Test design and delivery boundary
+
+Focused tests first cover H1, H2 and H4 with causal RED where behavior changes.
+The public-route fixture covers H3, H5 and H6 without manufacturing a RED for
+behavior already present. Affected published-source, readiness, runtime,
+product-tool, persistence and namespace areas follow, then the full offline
+suite, MkDocs, whitespace and the quality gate. LIVE acceptance is not an
+applicable verification level for this order. The intermittent
+`test_no_classified_family_names_a_module_that_stopped_dispatching` observation
+remains unresolved: if it recurs in the normal gate, retain the first failure
+and investigate that boundary; do not loop until green or call the standalone
+reruns a root-cause result.
+
+The handoff status is `READY_FOR_REVIEW`. Exact-SHA CI remains pending without
+a publication grant. The pending operator grant must supply the clean delivery
+SHA/tree, persisted deployment/manifest identity, exact Packet Tracer process
+incarnation and an explicit acceptance of the exclusive disposable-lab and
+local receiver-fence limitation before any LIVE command is allowed.
+
+### Measured offline preparation
+
+The admitted two-client S1 fixture, through the registered public MCP route,
+produced a 15,106-byte UTF-8 response and an 83,253-byte complete indented run
+record in this Windows/Python 3.12 run. The response includes its temporary
+record path, so neither byte count is a portable exact-value contract. The test
+reads the actual response text and record file, reloads the typed record and
+proves every readiness sample remains present. These are measurements of that
+DNS-plus-HTTP fixture on this schema, not topology maxima.
+
+The HTTP-only preparation uses a fresh `COLD_HTTP_PREP_ATTEMPT_001` marker and
+the same planned physical deployment and an empty temporary service-record
+store. The product reports zero retained actions, exactly seven E5 mutations
+(one VLAN, three access ports and three static endpoints), and the hostname
+action excluded. The simulated page begins with different stale content and is
+updated only by parsing the real E6 `setPageContents` dispatch; the direct
+readback and both clients then observe the attempt marker. The trace records
+one FWD readiness group and exactly one first `http://198.18.160.2/` start for
+each client, with E5 readback before FWD and FWD before either start. Both rows
+retain their owner, HTTP mode, native Boolean `go()` result, marker-bearing
+inspection and `released` outcome; the durable reload agrees with the public
+response. The transport trace contains no DNS start, ping or extra web start.
+This is offline evidence about the composition only and is not a LIVE product
+acceptance.
+
+| Verification | Result |
+| --- | --- |
+| Final changed-boundary, published-source, persistence and public-tool group | 109 passed |
+| Broader affected product, forwarding, readiness and diagnostic groups | 272 passed |
+| Full offline pytest (Python 3.12.10, checkout `.venv`) | 6,981 passed, 3 skipped, 3 unchanged deprecation warnings |
+| Namespace inventory | 0 active imports, 0 active string references, 0 unreviewed inert mentions |
+| Provisional quality gate against `cisco/main` | 118 changed Python files, zero mechanical exemptions, all checks passed |
+| MkDocs | exit 0; two pre-existing missing-handoff warnings |
+| Whitespace | `git diff --check` exit 0 |
+
+No Packet Tracer process, bridge or LIVE topology was contacted. The
+dispatch-inventory test passed in the single normal full-suite run; that result
+does not establish the cause of its earlier intermittent failure. Clean
+exact-delivery validation and exact-SHA CI are delivery-stage and publication
+facts respectively, not relabelled from this provisional worktree run.

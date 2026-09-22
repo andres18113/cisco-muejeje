@@ -9,6 +9,7 @@ each gets its own test.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -40,6 +41,7 @@ from packet_tracer_mcp.domain.enterprise.models.service_entry import (
 )
 from packet_tracer_mcp.domain.enterprise.models.service_run_record import (
     ServiceRunRecord,
+    SourceTreeIdentity,
 )
 from packet_tracer_mcp.infrastructure.persistence import service_run_record_store
 from packet_tracer_mcp.infrastructure.persistence.service_run_record_store import (
@@ -139,6 +141,32 @@ def test_a_record_is_created_under_its_deployment_and_read_back(tmp_path: Path):
 
     assert path.parent.name == _DEPLOYMENT
     assert store.load(_DEPLOYMENT, "run-1") == record
+
+
+def test_a_legacy_source_identity_without_a_tree_still_loads_unknown(
+    tmp_path: Path,
+) -> None:
+    """An absent additive tree is unknown, never inferred from its commit."""
+    store = ServiceRunRecordStore(tmp_path)
+    record = _record().model_copy(
+        update={
+            "source_tree": SourceTreeIdentity(
+                sha="a" * 40,
+                tree="b" * 40,
+                dirty=False,
+            )
+        }
+    )
+    path = Path(store.begin(record))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["source_tree"].pop("tree")
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = store.load(_DEPLOYMENT, record.run_id)
+
+    assert loaded.source_tree.sha == "a" * 40
+    assert loaded.source_tree.tree == ""
+    assert loaded.source_tree.dirty is False
 
 
 def test_store_construction_is_side_effect_free(tmp_path: Path):

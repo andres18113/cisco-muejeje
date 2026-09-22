@@ -56,7 +56,7 @@ def generate_run_id(now: datetime | None = None) -> str:
 
 
 class SourceTreeIdentity(BaseModel):
-    """The tree that executed the run, and whether it was clean.
+    """The commit and tree that executed the run, and whether it was clean.
 
     A dirty tree does not invalidate the record; it changes what the record
     proves. A measurement attributed to a SHA whose working files differed from
@@ -64,6 +64,7 @@ class SourceTreeIdentity(BaseModel):
     """
 
     sha: str = ""
+    tree: str = ""
     dirty: bool = True
 
 

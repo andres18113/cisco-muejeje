@@ -955,7 +955,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 item.matches == 1 and str(item.state).upper() in FORWARDING_STATES
                 for item in rows
             ):
-                episode_end_reason = "forwarding_sample_admitted"
+                episode_end_reason = "all_requested_interfaces_observed_forwarding"
                 break
             if samples >= ceiling:
                 episode_end_reason = "max_samples_reached"

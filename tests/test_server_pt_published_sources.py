@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -34,6 +35,34 @@ ATX_HEADING = re.compile(r"^#{1,6} \S")
 TABLE_ROW = re.compile(r"^\s*\|")
 
 
+@pytest.fixture(scope="module")
+def _require_git_history() -> None:
+    """Classify an unavailable Git environment before source assertions."""
+    executable = shutil.which("git")
+    if executable is None:
+        pytest.skip("git is unavailable before published-source validation")
+    checks = (
+        ([executable, "rev-parse", "--is-inside-work-tree"], "true"),
+        ([executable, "rev-parse", "--is-shallow-repository"], "false"),
+        ([executable, "rev-parse", "--verify", "HEAD^{commit}"], ""),
+    )
+    for command, expected in checks:
+        completed = subprocess.run(
+            command,
+            cwd=ROOT,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        observed = completed.stdout.strip()
+        if completed.returncode != 0 or (expected and observed != expected):
+            detail = completed.stderr.strip() or observed or "no diagnostic"
+            pytest.skip(
+                "published-source Git environment is unavailable before "
+                f"validation: {' '.join(command[1:])}: {detail}"
+            )
+
+
 def _git_bytes(*arguments: str) -> bytes:
     """Return one read-only git command's exact bytes, never re-encoded.
 
@@ -48,9 +77,9 @@ def _git_bytes(*arguments: str) -> bytes:
         check=False,
     )
     if completed.returncode != 0:
-        pytest.skip(
-            f"git could not answer {arguments!r}: "
-            f"{completed.stderr.decode('utf-8', 'replace').strip()}"
+        detail = completed.stderr.decode("utf-8", "replace").strip()
+        raise RuntimeError(
+            f"git query failed for {arguments!r}: {detail or 'no diagnostic'}"
         )
     return completed.stdout
 
@@ -64,7 +93,26 @@ def _errata() -> list[dict]:
     return json.loads(MANIFEST.read_text(encoding="utf-8"))["revision_errata"]
 
 
-def test_the_manifest_revision_errata_identify_real_revisions() -> None:
+def test_git_revision_queries_fail_closed_after_explicit_environment_preflight(
+    _require_git_history: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing object is an assertion failure, never environment absence."""
+    head = _git("rev-parse", "--verify", "HEAD^{commit}").strip()
+    assert re.fullmatch(r"[0-9a-f]{40}", head), head
+    assert _git("cat-file", "-t", head).strip() == "commit"
+
+    def forbidden_skip(reason: str) -> None:
+        raise AssertionError(f"the assertion query attempted to skip: {reason}")
+
+    monkeypatch.setattr(pytest, "skip", forbidden_skip)
+    with pytest.raises(RuntimeError, match="git query failed"):
+        _git("cat-file", "-t", "0" * 40)
+
+
+def test_the_manifest_revision_errata_identify_real_revisions(
+    _require_git_history: None,
+) -> None:
     """Every declared revision is a forty-character commit that resolves."""
     entries = _errata()
     assert entries
@@ -78,7 +126,9 @@ def test_the_manifest_revision_errata_identify_real_revisions() -> None:
             assert kind == "commit", (entry["archive_path"], key, revision, kind)
 
 
-def test_the_manifest_errata_bytes_and_digests_match_their_revisions() -> None:
+def test_the_manifest_errata_bytes_and_digests_match_their_revisions(
+    _require_git_history: None,
+) -> None:
     """The recorded sizes and digests are the ones those revisions hold.
 
     Nothing here rewrites history to agree with a digest: the comparison runs

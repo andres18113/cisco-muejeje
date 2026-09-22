@@ -274,8 +274,10 @@ class AccessForwardingObservation:
     #: its call budget. It is retained so a run can be explained, and it never
     #: refuses on its own -- an earlier failed read is not this read.
     episode_budget_exhausted: bool = False
-    #: Why sampling stopped: an admitted forwarding sample, the sample
-    #: ceiling, the window, or the channel that stopped granting calls.
+    #: Why sampling stopped: every requested interface was observed forwarding,
+    #: the sample ceiling, the window, or the channel that stopped granting
+    #: calls. This is an episode diagnostic, never an admission decision: a
+    #: later auxiliary overrun can still refuse an otherwise timely sample.
     episode_end_reason: str = ""
     #: The auxiliary simulation-state read, separately: it is not a sample,
     #: so its own exhaustion and its own overrun carry its own names.

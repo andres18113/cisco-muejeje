@@ -215,14 +215,17 @@ def register_service_tools(
 def _observe_source_tree(governed_root: Path) -> SourceTreeIdentity:
     """Observe the executing checkout identity without trusting caller input."""
     try:
-        sha = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+        identities = subprocess.run(
+            ["git", "rev-parse", "HEAD", "HEAD^{tree}"],
             cwd=governed_root,
             check=True,
             capture_output=True,
             text=True,
             timeout=5,
-        ).stdout.strip()
+        ).stdout.splitlines()
+        if len(identities) != 2 or not all(item.strip() for item in identities):
+            return SourceTreeIdentity()
+        sha, tree = (item.strip() for item in identities)
         status = subprocess.run(
             ["git", "status", "--porcelain", "--untracked-files=normal"],
             cwd=governed_root,
@@ -233,4 +236,4 @@ def _observe_source_tree(governed_root: Path) -> SourceTreeIdentity:
         ).stdout
     except (OSError, subprocess.SubprocessError):
         return SourceTreeIdentity()
-    return SourceTreeIdentity(sha=sha, dirty=bool(status.strip()))
+    return SourceTreeIdentity(sha=sha, tree=tree, dirty=bool(status.strip()))

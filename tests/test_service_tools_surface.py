@@ -24,6 +24,7 @@ from service_entry_fixture import (
     BACKEND_VERSION,
     DEPLOYMENT_ID,
     FINGERPRINT,
+    SERVER_ADDRESS,
     IsolationPreflight,
     deployment_manifest,
     intent_json,
@@ -43,6 +44,9 @@ from packet_tracer_mcp.domain.enterprise.models.execution import (
 from packet_tracer_mcp.domain.enterprise.models.service_entry import (
     ServiceEntryRefusal,
     ServiceStageResult,
+)
+from packet_tracer_mcp.domain.enterprise.models.service_plan import (
+    ServiceVerificationKind,
 )
 from packet_tracer_mcp.infrastructure.execution.transport_outcome import (
     BridgeDispatchOutcome,
@@ -300,6 +304,8 @@ class _SimulatedProductTransport:
         self.dispatch_payloads: list[str] = []
         self.addresses: dict[str, tuple[str, str]] = {}
         self.last_dns_command = ""
+        self.page_content = "STALE_WEB_PAGE"
+        self.events: list[str] = []
         #: Which spanning-tree state the simulated switch reports. Tests that
         #: say nothing get a forwarding switch, which is the state the public
         #: route needs; a test that wants the gate to refuse sets this.
@@ -312,6 +318,7 @@ class _SimulatedProductTransport:
 
     def send(self, script: str) -> bool:
         self.send_payloads.append(script)
+        self.events.append("e5_apply")
         for arguments in re.findall(r"configurePcIp\((.*?)\);", script):
             values = json.loads("[" + arguments + "]")
             if values[1] is False:
@@ -321,6 +328,7 @@ class _SimulatedProductTransport:
     def send_and_wait(self, script: str, timeout: float) -> str:
         del timeout
         if "application_version_unavailable" in script:
+            self.events.append("environment")
             return _run_environment_javascript(
                 script,
                 application_version=self.application_version,
@@ -330,6 +338,7 @@ class _SimulatedProductTransport:
         if inventory_match:
             names = tuple(json.loads(inventory_match.group(1)))
             self.inventory_requests.append(names)
+            self.events.append("inventory")
             devices = []
             for name in names:
                 target = self.inventory.get(name)
@@ -393,6 +402,7 @@ class _SimulatedProductTransport:
                 r"var want=(\"(?:\\.|[^\"\\])*\")",
             )
             ipv4, mask = self.addresses.get(device, ("", ""))
+            self.events.append(f"e5_readback:{device}")
             return json.dumps(
                 {
                     "found": True,
@@ -428,6 +438,7 @@ class _SimulatedProductTransport:
             )
         if "owner_name:owner" in script:
             device = self._json_argument(script, r"getDevice\((\"(?:\\.|[^\"\\])*\")\)")
+            self.events.append(f"readiness:{self.spanning_tree_state}")
             return json.dumps(
                 {
                     "found": True,
@@ -468,6 +479,14 @@ class _SimulatedProductTransport:
 
     def _service_response(self, script: str) -> str:
         if "var results=[]" in script:
+            self.events.append("service_apply")
+            for path_json, content_json in re.findall(
+                r"p\.setPageContents\((\"(?:\\.|[^\"\\])*\"),(\"(?:\\.|[^\"\\])*\")\)",
+                script,
+            ):
+                if json.loads(path_json) == "index.html":
+                    self.page_content = str(json.loads(content_json))
+                    self.events.append(f"http_content_set:{self.page_content}")
             identifiers = [
                 json.loads(item)
                 for item in re.findall(
@@ -500,8 +519,9 @@ class _SimulatedProductTransport:
             records = json.loads(json.loads(encoded.group(1))) if encoded else {}
             return json.dumps({"found": True, "enabled": True, "records": records})
         if "out.content=String(p.getPage" in script:
+            self.events.append("http_direct_readback")
             return json.dumps(
-                {"found": True, "enabled": True, "content": "SAMPLE_WEB_PAGE"}
+                {"found": True, "enabled": True, "content": self.page_content}
             )
         if "var started=false;var blocked=false" in script:
             command = self._json_argument(
@@ -509,6 +529,7 @@ class _SimulatedProductTransport:
                 r"enterCommand\((\"(?:\\.|[^\"\\])*\")\)",
             )
             self.last_dns_command = command
+            self.events.append(f"dns_start:{command}")
             return json.dumps({"started": True, "blocked": False, "before": "C:\\>"})
         if "var cp=d&&typeof d.getCommandPrompt" in script:
             hostname = self.last_dns_command.removeprefix("ping ")
@@ -529,6 +550,7 @@ class _SimulatedProductTransport:
                 script,
                 r"getDevice\((\"(?:\\.|[^\"\\])*\")\)",
             )
+            self.events.append(f"http_start:{owner}")
             return json.dumps(
                 {
                     "started": True,
@@ -543,11 +565,13 @@ class _SimulatedProductTransport:
                 }
             )
         if "var found=!!(slot&&slot.manager&&slot.client)" in script:
+            self.events.append("http_release")
             return json.dumps(
                 {"found": True, "deleted": True, "present": False, "error": ""}
             )
         if "var bag=this.__mcpE6HttpClients" in script:
-            return json.dumps({"found": True, "content": "SAMPLE_WEB_PAGE"})
+            self.events.append("http_inspect")
+            return json.dumps({"found": True, "content": self.page_content})
         self.unhandled.append(script)
         return "ERROR:unhandled simulated service read"
 
@@ -746,7 +770,13 @@ def _registered_product_simulation(
     return mcp, transport
 
 
-def _call_enterprise_services(mcp: FastMCP, intent: str | None = None) -> dict:
+def _call_enterprise_services_text(
+    mcp: FastMCP,
+    intent: str | None = None,
+    *,
+    run_label: str = "",
+) -> str:
+    """Return the exact JSON text emitted by the registered public tool."""
     rendered = asyncio.run(
         mcp.call_tool(
             TOOL_NAME,
@@ -754,10 +784,15 @@ def _call_enterprise_services(mcp: FastMCP, intent: str | None = None) -> dict:
                 "intent_json": intent if intent is not None else intent_json(),
                 "deployment_id": DEPLOYMENT_ID,
                 "packet_tracer_version": BACKEND_VERSION,
+                "run_label": run_label,
             },
         )
     )
-    return json.loads(rendered[0][0].text)
+    return rendered[0][0].text
+
+
+def _call_enterprise_services(mcp: FastMCP, intent: str | None = None) -> dict:
+    return json.loads(_call_enterprise_services_text(mcp, intent))
 
 
 def _mail_intent(*, required: bool) -> str:
@@ -1055,6 +1090,173 @@ def test_actual_public_entry_requests_complete_e5_inventory_and_reuses_retained_
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
+def test_actual_admitted_public_entry_measures_record_and_mcp_response_serialization(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    """Measure the complete persisted invocation and exact public JSON text."""
+    mcp, transport = _registered_product_simulation(
+        monkeypatch,
+        tmp_path,
+        channel="file",
+    )
+
+    raw = _call_enterprise_services_text(mcp)
+    response = json.loads(raw)
+    record_path = Path(response["record_path"])
+    persisted = record_path.read_bytes()
+    stored = ServiceRunRecordStore(tmp_path).load(DEPLOYMENT_ID, response["run_id"])
+
+    response_bytes = len(raw.encode("utf-8"))
+    record_bytes = len(persisted)
+    assert response_bytes == len(
+        json.dumps(response, indent=2, ensure_ascii=False).encode("utf-8")
+    )
+    assert record_bytes == len(
+        (stored.model_dump_json(indent=2) + "\n").encode("utf-8")
+    )
+    assert record_bytes > response_bytes > 0
+    assert stored.operational_readiness == response["operational_readiness"]
+    assert stored.operational_readiness
+    for row in stored.operational_readiness:
+        sample = row["sample"]
+        assert len(sample["sample_history"]) == sample["samples"]
+    assert transport.unhandled == []
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
+def test_cold_http_preparation_uses_each_clients_first_by_ip_request(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    """Prepare the product trace without a ping, DNS read or warming fetch."""
+    marker = "COLD_HTTP_PREP_ATTEMPT_001"
+    payload = intent_payload()
+    payload["sites"][0]["services"] = [
+        service
+        for service in payload["sites"][0]["services"]
+        if service["service_type"] == "http"
+    ]
+    payload["sites"][0]["services"][0]["http_content"] = marker
+    mcp, transport = _registered_product_simulation(
+        monkeypatch,
+        tmp_path,
+        channel="file",
+    )
+    assert transport.page_content == "STALE_WEB_PAGE"
+    assert not list(tmp_path.rglob("*.json"))
+
+    raw = _call_enterprise_services_text(
+        mcp,
+        json.dumps(payload),
+        run_label="cold-http-preparation",
+    )
+    response = json.loads(raw)
+    stored = ServiceRunRecordStore(tmp_path).load(DEPLOYMENT_ID, response["run_id"])
+
+    assert response["status"] == "verified", (response, transport.unhandled)
+    assert response["refusal_code"] == ServiceEntryRefusal.NONE.value
+    assert response["run_label"] == "cold-http-preparation"
+    assert response["transport"] == "file"
+    assert response["e5_effect_scope"]["retained"] == []
+    mutated = response["e5_effect_scope"]["mutated"]
+    assert len(mutated) == 7
+    assert not [item for item in mutated if item.startswith("cfg/hostname/")]
+    assert sum(item.startswith("cfg/vlan/") for item in mutated) == 1
+    assert sum(item.startswith("cfg/access/") for item in mutated) == 3
+    assert sum(item.startswith("cfg/endpoint-static/") for item in mutated) == 3
+    excluded = response["e5_effect_scope"]["excluded"]
+    assert len(excluded) == 1
+    assert excluded[0].startswith("cfg/hostname/")
+    assert stored.status.value == response["status"]
+    assert stored.e5_effect_scope.retained == []
+    assert stored.e5_effect_scope.mutated == mutated
+    assert [item.model_dump(mode="json") for item in stored.clients] == response[
+        "clients"
+    ]
+    assert stored.operational_readiness == response["operational_readiness"]
+    assert [item.model_dump(mode="json") for item in stored.releases] == response[
+        "releases"
+    ]
+    assert re.fullmatch(r"[0-9a-f]{40}", stored.source_tree.sha)
+    assert re.fullmatch(r"[0-9a-f]{40}", stored.source_tree.tree)
+
+    readiness = stored.operational_readiness
+    assert len(readiness) == 1
+    sample = readiness[0]["sample"]
+    assert sample["vlan_id"] == 10
+    assert set(sample["requested_interfaces"]) == {
+        "FastEthernet1/1",
+        "FastEthernet1/2",
+        "FastEthernet1/3",
+    }
+    assert len(sample["sample_history"]) == sample["samples"]
+    assert {item["state"] for item in sample["sample_history"][-1]["rows"]} == {"FWD"}
+
+    expected_owner_by_check = {
+        check.expectation_id: client.deployed_name
+        for client in stored.clients
+        for outcome in client.results.values()
+        for check in outcome.checks
+        if check.kind is ServiceVerificationKind.HTTP_FETCH
+    }
+    http_rows = [
+        row
+        for row in stored.service_result.verification_results
+        if row.expectation_id in expected_owner_by_check
+    ]
+    assert len(http_rows) == 2
+    for row in http_rows:
+        expected_owner = expected_owner_by_check[row.expectation_id]
+        assert row.status is ActionExecutionStatus.VERIFIED
+        assert row.observed["selected_url"] == f"http://{SERVER_ADDRESS}/"
+        assert row.observed["selected_path"] == "/"
+        assert row.observed["selected_url_is_input"] is True
+        assert row.observed["marker"] == marker
+        assert row.observed["owner_device"] == expected_owner
+        assert row.observed["owner_read"] is True
+        assert row.observed["client_mode"] == "http"
+        assert row.observed["go_result"] is True
+        assert row.observed["go_result_type"] == "boolean"
+        assert row.observed["released"] == "released"
+        assert row.trace[0].label == "start"
+        assert row.trace[0].outcome == "request_started"
+        assert row.trace[0].content_length == 0
+        assert row.trace[0].marker_present is False
+        assert any(step.marker_present for step in row.trace if step.performed)
+
+    starts = [item for item in transport.events if item.startswith("http_start:")]
+    assert len(starts) == 2
+    assert set(starts) == {
+        "http_start:HQ-DEFAULT-PC-01",
+        "http_start:HQ-DEFAULT-PC-02",
+    }
+    assert transport.events.count("http_release") == 2
+    content_event = f"http_content_set:{marker}"
+    assert transport.events.count(content_event) == 1
+    assert transport.page_content == marker
+    assert not [item for item in transport.events if item.startswith("dns_start:")]
+    assert transport.last_dns_command == ""
+    assert transport.events.index(content_event) < transport.events.index(
+        "http_direct_readback"
+    )
+    assert (
+        max(
+            index
+            for index, event in enumerate(transport.events)
+            if event.startswith("e5_readback:")
+        )
+        < transport.events.index("readiness:FWD")
+        < min(
+            index
+            for index, event in enumerate(transport.events)
+            if event.startswith("http_start:")
+        )
+    )
+    assert transport.unhandled == []
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
 @pytest.mark.parametrize("channel", ["http", "file"])
 def test_actual_public_entry_refuses_executable_version_mismatch_before_effects(
     monkeypatch: pytest.MonkeyPatch,
@@ -1250,6 +1452,7 @@ def test_every_session_collaborator_keeps_the_admitted_channel(
         binding.endpoint_observer.observe("PC-1", "FastEthernet0")
         assert typed.dispatch is DispatchFact.NOT_SUBMITTED
         assert binding.source_tree.sha
+        assert binding.source_tree.tree
         return ServiceStageResult(run_id="inspected", transport="http")
 
     monkeypatch.setattr(service_tools, "apply_enterprise_services", inspect_binding)
