@@ -1937,3 +1937,113 @@ second is the stronger property for a gate whose whole job is to refuse.
 | 8 | `test_the_overlap_cause_names_the_containment_the_numbers_show` (three directions) |
 | 9 | `test_only_a_declared_access_port_action_produces_a_placement`, `test_the_real_access_port_action_type_is_the_one_derivation_accepts` |
 | exemption contract | `test_an_exemption_must_state_its_reason` |
+## 2026-09-21 product-readiness time and evidence correction at `557195f` (risk L)
+
+The reviewed product gate can admit a result returned after its 120-second total
+allowance, and the public observer's three one-second samples can finish before
+an independently delayed forwarding transition. The shared admission rule also
+contradicts its observation model by admitting an exhausted sample. The evidence
+addendum conflates per-attempt postrun process lists with a later zero-process
+census; two mutable index entries identify older revisions without saying so.
+The outcome is a bounded, real-path HTTP prerequisite and source-corrected,
+additive history. No Packet Tracer LIVE work, capability promotion, public MCP
+argument, DHCP public integration, diagnostic profile expansion, or historical
+run/ledger edit is in scope.
+
+The existing test `test_the_total_budget_is_checked_before_the_next_group_is_observed`
+expects a 30-second first read to admit under a 20-second total. That is a
+**requirements and design error in the test**, not compatible behavior. Replace
+it with a late refusal and a measured timeout propagated into the executing
+channel call. The earlier decision to leave exhausted-sample admission to the
+product layer is superseded for new decisions; historical results keep their
+original bytes and interpretation.
+
+The gate passes the remaining invocation allowance through its observer port
+and the E5 wrapper. The product policy uses the neutral runtime's existing
+parameters: a 30-second group horizon, at most 31 samples, one second between
+non-forwarding samples, and six nested channel calls per sample. The runtime
+uses the minimum of group and remaining-invocation allowances, one absolute
+deadline for all nested calls, and the channel's normal timeout as another cap.
+Auxiliary simulation-state reading is included in the elapsed decision and is
+not allowed to grant a late result. The gate rechecks the total deadline after
+the observer returns and retains a late sample as non-authorizing evidence.
+The existing auxiliary read is bounded by the same deadline and counted once;
+with 31 samples the ceiling is 31 x 6 nested IOS calls plus one auxiliary call
+per group. Each sample's rows, identity, completeness, call count and elapsed
+time are retained in the operational-readiness record.
+One episode remains memoized per switch/VLAN for one invocation. The canonical
+domain rule refuses `sample_budget_exhausted`; the product layer continues to
+bind the response envelope to the requested switch, VLAN and interfaces.
+
+| Requirement | Acceptance test |
+| --- | --- |
+| T1: total and group deadlines cap actual nested reads and late evidence cannot grant HTTP | Gate regression for short remainder, late answer, exhaustion before next group and raised reader; runtime channel timeout and auxiliary-read checks |
+| T2: a delayed FWD transition within the 30-second product horizon reaches the public HTTP-by-IP request after E5 | Clock-driven external channel through real composition, runtime observer and applicator at 4 seconds and near horizon; persistent LIS, foreign identity and already-FWD controls; grouped reuse and durable report reload |
+| S1: exhausted samples refuse in the shared rule and every consumer | Domain positive/negative pair, diagnostic projection, product zero-request, and affected Voice/forwarding tests |
+| E1: historical claims match their actual source and time | Additive marker-byte package and provenance check; separate per-attempt process lists from any available post-restart census; source-bound grant wording |
+| M1: indexes identify original and current ledger/README revisions | Git-history lookup, byte/digest comparison and manifest erratum without changing previous manifests or append-only entries |
+
+Unit tests cover admission and budget arithmetic; integration tests cover the
+composed runtime, E5/E6 order, grouped memo and stored record; the public
+workflow test covers dispatch and refusal. The full offline suite, namespace
+inventory, documentation build, whitespace and exact-delivery gate are the
+system checks. LIVE qualification is not applicable to this authorization;
+offline evidence cannot establish Packet Tracer behavior. Preserve ownership,
+retention, secrets, the single-writer gate and all existing capability limits.
+
+The earlier diagnostic test counted only IOS calls and expected the auxiliary
+simulation-state read to be missing from `channel_calls`; its ledger already
+charged that physical call. The corrected test asserts at most six calls per
+sample, exactly one auxiliary call, and equality between the observation and
+ledger totals. It changes no diagnostic profile or physical call ceiling.
+The operator approved scoped Ruff cleanup of `ios_terminal.py` on 2026-09-21
+because the hard nested-wait correction touches that legacy file. The cleanup
+preserves legacy enum `str()` and JSON values and is reviewed separately from
+the deadline behavior. The full suite then exposed one CP-SCALE regression test
+that parsed the old literal formatting of the qualified-query set. The operator
+approved cleanup of that test file too; its replacement uses Python's AST to
+assert the exact enum membership while preserving the suite's subprocess
+isolation boundary.
+
+### Measured offline closure
+
+- The real public composition, E5 configuration readback, neutral IOS observer,
+  `ServiceApplicator`, service runtime and durable store observe FWD at 4.0 and
+  26.0 simulated wall seconds. The trace orders the final E5 readback before
+  the admissible exact-port/VLAN FWD sample and that sample before the first
+  HTTP-by-IP request. Already-FWD admits immediately; persistent LIS, foreign
+  ownership and ambiguous ownership dispatch no HTTP.
+- A 0.03-second invocation remainder caps the actual nested channel calls and
+  returns late evidence without permission. A 0.30-second case proves the
+  auxiliary read consumes the same allowance. A collaborator that returns FWD
+  after 31 seconds produces zero HTTP requests. The production ceilings remain
+  120 seconds and four groups; each group uses a 30-second horizon, up to 31
+  samples, one-second cadence and six nested calls per sample.
+- `sample_budget_exhausted=true` now refuses in the canonical domain rule. The
+  positive control with the same complete FWD rows and `false` still admits.
+  Diagnostic projection retains the raw flag and reports INCONCLUSIVE; affected
+  Voice, forwarding and diagnostic tests remain green.
+- The additive evidence correction includes all three original 160-byte marker
+  files with matching digests. No separate historical post-restart zero-process
+  census, original operator permission message or lifecycle amendment was
+  available; those source claims remain not independently verifiable. The
+  current-only census remains scoped to `2026-09-21T21:53:27Z`.
+- Git history binds the old D02 README and ledger declarations to `a02c1e0`
+  (4,494 and 6,687 bytes) and their current revisions to `65abf7b` (6,770 and
+  10,110 bytes, blobs `a2225d6` and `5556700`). No ledger or run record changed.
+
+| Verification | Result |
+| --- | --- |
+| Focused readiness, forwarding and IOS | 151 passed |
+| Affected diagnostic, Voice, IOS, forwarding and persistence | 310 passed |
+| CP-SCALE qualification-set regression file | 49 passed |
+| Full offline pytest | 6,940 passed, 3 skipped, 3 unchanged deprecation warnings |
+| Namespace inventory | 0 active imports, 0 active string references, 0 unreviewed inert mentions |
+| MkDocs | exit 0; two pre-existing missing-handoff warnings |
+| Whitespace | `git diff --check` exit 0 |
+
+The delivery remains offline and self-reviewed. Packet Tracer capability and
+LIVE behavior remain unverified, and independent acceptance is still required.
+The exact delivery SHA/tree and clean delivery-gate result are recorded after
+the local commit; exact-SHA CI remains pending without a feature-branch
+publication grant.

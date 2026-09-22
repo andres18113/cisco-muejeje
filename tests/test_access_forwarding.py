@@ -33,6 +33,11 @@ from packet_tracer_mcp.domain.enterprise.services.access_forwarding import (
     interpret_port_light,
     port_light_reading,
 )
+from packet_tracer_mcp.domain.enterprise.services.service_qualification_evidence import (
+    INCONCLUSIVE,
+    SUPPORTED,
+    assess_access_forwarding,
+)
 
 REQUESTED = ("FastEthernet0/1", "FastEthernet0/2")
 
@@ -64,6 +69,29 @@ def test_a_complete_attributed_sample_admits_exactly_its_interfaces():
     assert (admission.admitted, admission.dimension) == (True, DIMENSION_NONE)
     assert admission.forwarding_interfaces == REQUESTED
     assert admission.causes == ()
+
+
+def test_an_exhausted_complete_forwarding_sample_refuses_in_the_shared_rule():
+    """The observation model's exhausted flag is non-authorizing by itself."""
+    exhausted = access_forwarding_admission(_observation(sample_budget_exhausted=True))
+    complete = access_forwarding_admission(_observation(sample_budget_exhausted=False))
+    assert exhausted.admitted is False
+    assert exhausted.causes == ("sample_call_budget_exhausted",)
+    assert complete.admitted is True
+
+
+def test_diagnostic_projection_refuses_exhaustion_and_retains_the_raw_flag():
+    """A diagnostic row keeps FWD bytes without promoting an exhausted read."""
+    refused = assess_access_forwarding(
+        _observation(sample_budget_exhausted=True), label="forwarding"
+    )
+    admitted = assess_access_forwarding(
+        _observation(sample_budget_exhausted=False), label="forwarding"
+    )
+    assert refused.conclusion is INCONCLUSIVE
+    assert refused.facts["forwarding"]["sample_budget_exhausted"] is True
+    assert refused.facts["forwarding"]["admitted"] is False
+    assert admitted.conclusion is SUPPORTED
 
 
 @pytest.mark.parametrize(

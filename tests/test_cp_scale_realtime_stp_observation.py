@@ -19,13 +19,13 @@ import-isolation preflight.
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 
 import pytest
 
 from tests.subprocess_harness import run_isolated_python, subprocess_failure
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -430,8 +430,10 @@ print(json.dumps(verdict))
 
 @pytest.fixture(scope="module")
 def verdict():
+    """Return the isolated probe verdict fixture."""
     code = _PROBE.replace("__ROOT__", repr(str(ROOT))).replace(
-        "__SRC__", repr(str(ROOT / "src")),
+        "__SRC__",
+        repr(str(ROOT / "src")),
     )
     completed = run_isolated_python(code, cwd=ROOT)
     assert completed.returncode == 0, subprocess_failure(completed)
@@ -444,7 +446,9 @@ def _states(case):
 
 # 1 -- the phone-facing port set is DERIVED, never named.
 
+
 def test_phone_ports_are_derived_from_the_typed_voice_to_access_binding(verdict):
+    """Verify phone ports are derived from the typed voice to access binding."""
     assert verdict["derived_ports"] == [
         {
             "device_name": "Switch5",
@@ -462,6 +466,7 @@ def test_phone_ports_are_derived_from_the_typed_voice_to_access_binding(verdict)
 
 
 def test_a_stage_with_no_phone_derives_no_edge_port(verdict):
+    """Verify a stage with no phone derives no edge port."""
     assert verdict["no_voice_plan"] == []
 
 
@@ -472,8 +477,14 @@ def test_collecting_this_evidence_can_never_be_what_fails_a_stage(verdict):
     assert case["ports"] == []
     assert case["_calls"] == []
     assert case["excluded"] == [
-        {"access_configuration_action_id": "", "reason": "NOT_A_TYPED_PHONE_ASSIGNMENT"},
-        {"access_configuration_action_id": "", "reason": "NOT_A_TYPED_PHONE_ASSIGNMENT"},
+        {
+            "access_configuration_action_id": "",
+            "reason": "NOT_A_TYPED_PHONE_ASSIGNMENT",
+        },
+        {
+            "access_configuration_action_id": "",
+            "reason": "NOT_A_TYPED_PHONE_ASSIGNMENT",
+        },
     ]
 
 
@@ -484,21 +495,23 @@ def test_the_derivation_lands_on_the_exact_failing_floor1_edge_set(verdict):
     assert {item["device_name"] for item in ports} == {"Switch5"}
     assert {item["vlan_id"] for item in ports} == {20}
     assert [item["interface"] for item in ports] == [
-        "FastEthernet0/%d" % index for index in sorted(range(1, 22), key=str)
+        f"FastEthernet0/{index}" for index in sorted(range(1, 22), key=str)
     ]
     assert len(ports) == 21
 
 
 # 2 -- a trunk is never an edge port, and never silently disappears.
 
+
 def test_a_trunk_backed_phone_action_is_excluded_from_the_edge_set(verdict):
+    """Verify a trunk backed phone action is excluded from the edge set."""
     assert verdict["trunk_ports"] == []
 
 
 def test_no_floor1_trunk_is_ever_derived_as_a_phone_edge_port(verdict):
+    """Verify no floor1 trunk is ever derived as a phone edge port."""
     derived = {
-        (item["device_name"], item["interface"])
-        for item in verdict["floor1_ports"]
+        (item["device_name"], item["interface"]) for item in verdict["floor1_ports"]
     }
     trunks = {tuple(item) for item in verdict["floor1_trunks"]}
 
@@ -507,31 +520,41 @@ def test_no_floor1_trunk_is_ever_derived_as_a_phone_edge_port(verdict):
 
 
 def test_an_excluded_trunk_is_recorded_rather_than_dropped(verdict):
+    """Verify an excluded trunk is recorded rather than dropped."""
     case = verdict["trunk_identity"]
 
     assert case["ports"] == []
-    assert case["excluded"] == [{
-        "access_configuration_action_id": "acc-1",
-        "reason": "NOT_A_TYPED_ACCESS_PORT",
-    }]
+    assert case["excluded"] == [
+        {
+            "access_configuration_action_id": "acc-1",
+            "reason": "NOT_A_TYPED_ACCESS_PORT",
+        }
+    ]
     assert case["_calls"] == []
 
 
 # 3, 4 -- both boundaries are retained, and each names which edge it is.
 
+
 def test_each_observation_names_its_boundary(verdict):
+    """Verify each observation names its boundary."""
     assert verdict["forwarding"]["edge"] == "before"
     assert verdict["after_edge"]["edge"] == "after"
 
 
 # 7, 8, 9 -- the three observable outcomes stay distinct.
 
+
 def test_complete_fresh_attributable_forwarding_is_forwarding(verdict):
+    """Verify complete fresh attributable forwarding is forwarding."""
     case = verdict["forwarding"]
 
     assert _states(case) == ["FORWARDING"]
     assert case["counts"] == {
-        "FORWARDING": 1, "BLOCKING": 0, "OTHER_OBSERVED": 0, "UNOBSERVABLE": 0,
+        "FORWARDING": 1,
+        "BLOCKING": 0,
+        "OTHER_OBSERVED": 0,
+        "UNOBSERVABLE": 0,
     }
     port = case["ports"][0]
     assert port["role"] == "Desg"
@@ -543,6 +566,7 @@ def test_complete_fresh_attributable_forwarding_is_forwarding(verdict):
 
 
 def test_complete_fresh_attributable_blocking_is_blocking(verdict):
+    """Verify complete fresh attributable blocking is blocking."""
     case = verdict["blocking"]
 
     assert _states(case) == ["BLOCKING"]
@@ -551,6 +575,7 @@ def test_complete_fresh_attributable_blocking_is_blocking(verdict):
 
 
 def test_a_real_transitional_state_is_neither_forwarding_nor_blocking(verdict):
+    """Verify a real transitional state is neither forwarding nor blocking."""
     case = verdict["learning"]
 
     assert _states(case) == ["OTHER_OBSERVED"]
@@ -558,6 +583,7 @@ def test_a_real_transitional_state_is_neither_forwarding_nor_blocking(verdict):
 
 
 # 10 -- 15: every evidence weakness is UNOBSERVABLE, never absence.
+
 
 @pytest.mark.parametrize(
     ("case", "reason"),
@@ -573,8 +599,11 @@ def test_a_real_transitional_state_is_neither_forwarding_nor_blocking(verdict):
     ],
 )
 def test_every_weak_evidence_path_is_unobservable_not_absence(
-    verdict, case, reason,
+    verdict,
+    case,
+    reason,
 ):
+    """Verify every weak evidence path is unobservable not absence."""
     observed = verdict[case]
 
     assert _states(observed) == ["UNOBSERVABLE"], case
@@ -584,6 +613,7 @@ def test_every_weak_evidence_path_is_unobservable_not_absence(
 
 
 def test_a_pager_truncation_is_retained_with_its_own_marks(verdict):
+    """Verify a pager truncation is retained with its own marks."""
     device = verdict["pager"]["devices"][0]
 
     assert device["truncated_by_pager"] is True
@@ -593,6 +623,7 @@ def test_a_pager_truncation_is_retained_with_its_own_marks(verdict):
 
 
 def test_device_attribution_is_retained_on_every_read(verdict):
+    """Verify device attribution is retained on every read."""
     device = verdict["forwarding"]["devices"][0]
 
     assert device["observed_device_name"] == "Switch5"
@@ -602,6 +633,7 @@ def test_device_attribution_is_retained_on_every_read(verdict):
 
 
 def test_the_registered_spanning_tree_query_is_the_only_one_dispatched(verdict):
+    """Verify the registered spanning tree query is the only one dispatched."""
     assert verdict["forwarding"]["_calls"] == [
         ["Switch5", "show_spanning_tree", {}],
     ]
@@ -611,23 +643,36 @@ def test_the_registered_spanning_tree_query_is_the_only_one_dispatched(verdict):
 
 
 def _runner_source():
-    return (ROOT / "src/packet_tracer_mcp/infrastructure/observation/cp_scale_live.py").read_text(
+    return (
+        ROOT / "src/packet_tracer_mcp/infrastructure/observation/cp_scale_live.py"
+    ).read_text(
         encoding="utf-8",
     )
 
 
 # 5 -- the reads sit inside the two proven Realtime boundaries.
 
+
 def test_both_reads_sit_inside_the_proven_realtime_window():
+    """Verify both reads sit inside the proven realtime window."""
     from tests.cp_scale_stage_fixture import voice_window_trace
 
     result, trace = voice_window_trace()
-    assert trace == ["before", "stp_before", "voice", "stp_after", "after", "bindings", "diagnostic"]
+    assert trace == [
+        "before",
+        "stp_before",
+        "voice",
+        "stp_after",
+        "after",
+        "bindings",
+        "diagnostic",
+    ]
     assert result.report.realtime.verified
     assert result.first_failed_boundary == "voice"
 
 
 def test_the_simulation_diagnostic_runs_only_after_the_after_read():
+    """Verify the simulation diagnostic runs only after the after read."""
     from tests.cp_scale_stage_fixture import voice_window_trace
 
     result, trace = voice_window_trace(after_simulating=True)
@@ -637,33 +682,52 @@ def test_the_simulation_diagnostic_runs_only_after_the_after_read():
 
 
 def test_realtime_stp_evidence_reads_no_simulation_surface():
+    """Verify realtime stp evidence reads no simulation surface."""
     source = _runner_source()
     start = source.index("def _stp_realtime_evidence")
-    body = source[start:source.index("\ndef ", start + 10)]
+    body = source[start : source.index("\ndef ", start + 10)]
 
     for forbidden in (
-        "SimulationTraceRuntime", "resetSimulation", "simulation", "trace",
-        "enterSimulation", "_bounded_simulation_progression",
+        "SimulationTraceRuntime",
+        "resetSimulation",
+        "simulation",
+        "trace",
+        "enterSimulation",
+        "_bounded_simulation_progression",
     ):
         assert forbidden not in body, forbidden
 
 
 # 16, 17 -- this patch observes; it changes no DHCP and adds no classifier.
 
+
 def test_the_observation_mutates_nothing_and_adds_no_traffic_type():
+    """Verify the observation mutates nothing and adds no traffic type."""
     source = _runner_source()
     start = source.index("def _stp_realtime_evidence")
-    body = source[start:source.index("\ndef ", start + 10)]
+    body = source[start : source.index("\ndef ", start + 10)]
 
     for forbidden in (
-        "setDhcpClientFlag", "configurePcIp", "setIpAddress", "renew",
-        "release", "lwAddDevice", "lwAddLink", "removeDevice", "pt_send_raw",
-        "TRAFFIC_TYPES", "type7", "traffic_type", "portfast", "spanning-tree ",
+        "setDhcpClientFlag",
+        "configurePcIp",
+        "setIpAddress",
+        "renew",
+        "release",
+        "lwAddDevice",
+        "lwAddLink",
+        "removeDevice",
+        "pt_send_raw",
+        "TRAFFIC_TYPES",
+        "type7",
+        "traffic_type",
+        "portfast",
+        "spanning-tree ",
     ):
         assert forbidden not in body, forbidden
 
 
 def test_no_type7_classifier_is_introduced_anywhere_in_the_runner():
+    """Verify no type7 classifier is introduced anywhere in the runner."""
     source = _runner_source()
 
     assert "TRAFFIC_TYPES" not in source
@@ -671,6 +735,7 @@ def test_no_type7_classifier_is_introduced_anywhere_in_the_runner():
 
 
 # 18 -- qualification is per-query, and every prior one keeps its own.
+
 
 def test_spanning_tree_qualification_did_not_relax_the_others():
     """It was UNQUALIFIED until the Floor-1 run measured the truncation.
@@ -681,22 +746,47 @@ def test_spanning_tree_qualification_did_not_relax_the_others():
     not a line-count derivation -- is what admits this one query.
     """
     terminal = (
-        ROOT / "src" / "packet_tracer_mcp" / "infrastructure" / "execution"
+        ROOT
+        / "src"
+        / "packet_tracer_mcp"
+        / "infrastructure"
+        / "execution"
         / "ios_terminal.py"
     ).read_text(encoding="utf-8")
-    start = terminal.index("_PAGINATION_QUALIFIED_QUERIES = frozenset({")
-    block = terminal[start:terminal.index("})", start)]
-
-    assert "SHOW_SPANNING_TREE" in block
-    for qualified in (
-        "SHOW_CONTROLLERS_SERIAL", "SHOW_IP_DHCP_BINDING",
-        "SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE", "SHOW_INTERFACES_TRUNK",
-        "SHOW_IP_PROTOCOLS", "SHOW_EPHONE",
-    ):
-        assert qualified in block, qualified
+    assignments = [
+        node
+        for node in ast.parse(terminal).body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name)
+            and target.id == "_PAGINATION_QUALIFIED_QUERIES"
+            for target in node.targets
+        )
+    ]
+    assert len(assignments) == 1
+    expression = assignments[0].value
+    assert isinstance(expression, ast.Call)
+    assert isinstance(expression.func, ast.Name) and expression.func.id == "frozenset"
+    assert len(expression.args) == 1 and isinstance(expression.args[0], ast.Set)
+    members = {
+        (item.value.id, item.attr)
+        for item in expression.args[0].elts
+        if isinstance(item, ast.Attribute) and isinstance(item.value, ast.Name)
+    }
+    assert members == {
+        ("OperationalQueryId", "SHOW_CONTROLLERS_SERIAL"),
+        ("OperationalQueryId", "SHOW_IP_DHCP_BINDING"),
+        ("OperationalQueryId", "SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE"),
+        ("OperationalQueryId", "SHOW_INTERFACES_TRUNK"),
+        ("OperationalQueryId", "SHOW_IP_PROTOCOLS"),
+        ("OperationalQueryId", "SHOW_EPHONE"),
+        ("OperationalQueryId", "SHOW_SPANNING_TREE"),
+        ("IosQualificationQueryId", "SHOW_POWER_INLINE"),
+    }
 
 
 def test_the_runner_reuses_the_registered_query_and_parser():
+    """Verify the runner reuses the registered query and parser."""
     source = _runner_source()
 
     assert "OperationalQueryId.SHOW_SPANNING_TREE" in source
@@ -705,6 +795,7 @@ def test_the_runner_reuses_the_registered_query_and_parser():
 
 
 def test_handoff_states_the_confirmed_defect_without_claiming_the_cause():
+    """Verify handoff states the confirmed defect without claiming the cause."""
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
     assert "SOURCE_DEFECT_FOUND = YES" in handoff
@@ -713,7 +804,8 @@ def test_handoff_states_the_confirmed_defect_without_claiming_the_cause():
     # Realtime STP remains unclaimed either way; its current value is pinned by
     # test_handoff_records_the_run_that_measured_the_pager_without_claiming_state.
     realtime = [
-        line for line in handoff.splitlines()
+        line
+        for line in handoff.splitlines()
         if line.startswith("STP_BLOCKING_IN_REALTIME = ")
     ]
     assert len(realtime) == 1
@@ -721,6 +813,7 @@ def test_handoff_states_the_confirmed_defect_without_claiming_the_cause():
 
 
 def test_handoff_keeps_the_corrected_dhcp_identity_semantics():
+    """Verify handoff keeps the corrected dhcp identity semantics."""
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
     assert "DHCP_FRAME_IDENTITY_THIS_RUN = OBSERVED_BY_PT" in handoff
@@ -729,11 +822,16 @@ def test_handoff_keeps_the_corrected_dhcp_identity_semantics():
 
 
 def test_handoff_names_the_realtime_observation_and_keeps_the_fix_out():
+    """Verify handoff names the realtime observation and keeps the fix out."""
     handoff = (ROOT / "handoff.md").read_text(encoding="utf-8")
 
-    assert "## Phone-edge STP in Realtime -- CASE D, bounded retry pending LIVE" in handoff
+    assert (
+        "## Phone-edge STP in Realtime -- CASE D, bounded retry pending LIVE" in handoff
+    )
     assert "PHONE_EDGE_PORTFAST_COMPILED = NO at FLOOR1" in handoff
-    assert "SHOW_SPANNING_TREE_PAGER = QUALIFIED by fresh 2f2055c measurement" in handoff
+    assert (
+        "SHOW_SPANNING_TREE_PAGER = QUALIFIED by fresh 2f2055c measurement" in handoff
+    )
     assert "STP_REALTIME_LOGICAL_ATTEMPTS = 2" in handoff
 
 
@@ -764,10 +862,12 @@ def _device(case):
 
 
 def test_the_retry_is_bounded_to_two_logical_attempts(verdict):
+    """Verify the retry is bounded to two logical attempts."""
     assert verdict["max_attempts"] == 2
 
 
 def test_a_complete_first_read_is_never_retried(verdict):
+    """Verify a complete first read is never retried."""
     case = verdict["retry_not_needed"]
     device = _device(case)
 
@@ -780,6 +880,7 @@ def test_a_complete_first_read_is_never_retried(verdict):
 
 
 def test_a_retry_safe_pager_failure_buys_exactly_one_more_execution(verdict):
+    """Verify a retry safe pager failure buys exactly one more execution."""
     case = verdict["retry_then_complete"]
     device = _device(case)
 
@@ -795,6 +896,7 @@ def test_a_retry_safe_pager_failure_buys_exactly_one_more_execution(verdict):
 
 
 def test_both_attempts_are_retained_independently_and_never_merged(verdict):
+    """Verify both attempts are retained independently and never merged."""
     case = verdict["retry_then_complete"]
     attempts = _device(case)["attempts"]
 
@@ -813,17 +915,26 @@ def test_both_attempts_are_retained_independently_and_never_merged(verdict):
 
 
 def test_every_attempt_retains_its_own_raw_quality_metadata(verdict):
+    """Verify every attempt retains its own raw quality metadata."""
     for attempt in _device(verdict["retry_then_complete"])["attempts"]:
         for field in (
-            "executed", "fresh_output_observed", "output_complete",
-            "truncated_by_pager", "pager_pages_captured", "pager_continuation",
-            "dispatch_classification", "failure_reason", "observed_device_name",
-            "device_identity_provenance", "vlan_instances",
+            "executed",
+            "fresh_output_observed",
+            "output_complete",
+            "truncated_by_pager",
+            "pager_pages_captured",
+            "pager_continuation",
+            "dispatch_classification",
+            "failure_reason",
+            "observed_device_name",
+            "device_identity_provenance",
+            "vlan_instances",
         ):
             assert field in attempt, field
 
 
 def test_a_second_incomplete_attempt_ends_unobservable_with_no_third(verdict):
+    """Verify a second incomplete attempt ends unobservable with no third."""
     case = verdict["retry_then_incomplete"]
     device = _device(case)
 
@@ -881,29 +992,39 @@ def test_a_complete_vlan20_without_phone_rows_is_unobservable_not_blocking(verdi
 def test_the_generic_executor_gained_no_pagination_retry():
     """ControlledIosExecutor still retries only proven dispatch corruption."""
     terminal = (
-        ROOT / "src" / "packet_tracer_mcp" / "infrastructure" / "execution"
+        ROOT
+        / "src"
+        / "packet_tracer_mcp"
+        / "infrastructure"
+        / "execution"
         / "ios_terminal.py"
     ).read_text(encoding="utf-8")
     start = terminal.index("    def execute(")
-    body = terminal[start:terminal.index("    @staticmethod", start)]
+    body = terminal[start : terminal.index("    @staticmethod", start)]
 
     assert "_is_retryable_corruption" in body
     for forbidden in (
-        "truncated_by_pager", "pager_continuation", "output_complete",
-        "PagerContinuation", "_STP_MAX_LOGICAL_ATTEMPTS",
+        "truncated_by_pager",
+        "pager_continuation",
+        "output_complete",
+        "PagerContinuation",
+        "_STP_MAX_LOGICAL_ATTEMPTS",
     ):
         assert forbidden not in body, forbidden
 
 
 def test_the_retry_lives_in_the_cp_scale_observation_seam():
+    """Verify the retry lives in the cp scale observation seam."""
     source = _runner_source()
 
     assert "_STP_MAX_LOGICAL_ATTEMPTS = 2" in source
     start = source.index("def _stp_logical_observation")
-    body = source[start:source.index("\ndef ", start + 10)]
+    body = source[start : source.index("\ndef ", start + 10)]
     # The executor keeps owning pagination mechanics; the seam only re-asks.
     for forbidden in (
-        "_PAGER_CONTINUATION_KEY", "enterCommand", "_cancel_pager",
+        "_PAGER_CONTINUATION_KEY",
+        "enterCommand",
+        "_cancel_pager",
         "String.fromCharCode",
     ):
         assert forbidden not in body, forbidden
@@ -911,13 +1032,18 @@ def test_the_retry_lives_in_the_cp_scale_observation_seam():
 
 
 def test_before_and_after_share_one_logical_observation_helper():
+    """Verify before and after share one logical observation helper."""
     from tests.cp_scale_stage_fixture import voice_window_trace
 
     _, trace = voice_window_trace()
-    assert [item for item in trace if item.startswith("stp_")] == ["stp_before", "stp_after"]
+    assert [item for item in trace if item.startswith("stp_")] == [
+        "stp_before",
+        "stp_after",
+    ]
 
 
 def test_the_logical_observation_completes_before_the_realtime_after_boundary():
+    """Verify the logical observation completes before the realtime after boundary."""
     from tests.cp_scale_stage_fixture import voice_window_trace
 
     _, trace = voice_window_trace()
@@ -927,14 +1053,18 @@ def test_the_logical_observation_completes_before_the_realtime_after_boundary():
 def test_this_patch_leaves_the_staging_defect_and_dhcp_untouched():
     """The retry buys evidence. It fixes neither PortFast nor DHCP."""
     compose = (
-        ROOT / "src" / "packet_tracer_mcp" / "application" / "use_cases"
+        ROOT
+        / "src"
+        / "packet_tracer_mcp"
+        / "application"
+        / "use_cases"
         / "compose_cp_scale_canonical.py"
     ).read_text(encoding="utf-8")
 
     # Leg 1 of the confirmed defect is still exactly as measured: LARGE's STP
     # domain, and therefore every edge action, still waits for FLOOR3.
     marker = compose.index("def _completed_stp_sites")
-    body = compose[marker:compose.index("\ndef ", marker + 10)]
+    body = compose[marker : compose.index("\ndef ", marker + 10)]
     assert "CPScaleCanonicalStage.FLOOR3" in body
     assert "CPScaleCanonicalStage.FLOOR1" not in body
 

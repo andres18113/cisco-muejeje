@@ -11,7 +11,9 @@ sample, through `apply_enterprise_services` and the real applicator.
 
 from __future__ import annotations
 
+import importlib
 import inspect
+import json
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +30,7 @@ from service_entry_fixture import (
     SimulatedClock,
     deployment_manifest,
     intent_json,
+    intent_payload,
 )
 
 from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
@@ -75,9 +78,17 @@ from packet_tracer_mcp.domain.enterprise.services.service_access_readiness impor
     READINESS_REFUSED,
     derive_access_readiness_plan,
 )
+from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
+    PacketTracerEnterpriseConfigurationRuntime,
+)
+from packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
+    SimulationStateObservation,
+)
 from packet_tracer_mcp.infrastructure.persistence.service_run_record_store import (
     ServiceRunRecordStore,
 )
+from tests.test_access_forwarding_runtime import _stp_output
+from tests.test_e95_serial_orientation_pager_capture import _PagedTerminal
 
 SWITCH = "sw-acc-hq-default-01"
 SWITCH_NAME = "HQ-DEFAULT-ACCESS-SW-01"
@@ -444,8 +455,8 @@ def test_an_observer_that_raised_observed_nothing():
     assert gate.rows()[0]["sample"] == {}
 
 
-def test_the_total_budget_is_checked_before_the_next_group_is_observed():
-    """Bounded waits cannot be multiplied into an unbounded run."""
+def test_the_total_budget_refuses_a_late_first_group_and_the_next_group():
+    """A late first answer is evidence, not permission under the total limit."""
     plan = _plan(
         actions=[
             _Action("FastEthernet1/1", (PC1,), vlan=10),
@@ -466,7 +477,9 @@ def test_the_total_budget_is_checked_before_the_next_group_is_observed():
     backend = ForwardingBackend(seconds_per_observation=30.0)
     gate = _gate(plan, backend, total_budget_seconds=20.0)
 
-    assert gate.decide("http-1").admitted is True
+    first = gate.decide("http-1")
+    assert first is not None and first.admitted is False
+    assert gate.rows()[0]["sample"]["rows"][0]["state"] == "FWD"
     second = gate.decide("http-2")
     assert second is not None and second.admitted is False
     assert second.cause.startswith("readiness_budget_exhausted:seconds=")
@@ -561,6 +574,304 @@ def test_a_request_follows_the_first_admissible_observation(tmp_path: Path):
     assert len(backend.calls) == 1
 
 
+class _TimedStpTerminal(_PagedTerminal):
+    """Return IOS output from elapsed time through the registered channel."""
+
+    def __init__(
+        self,
+        clock: SimulatedClock,
+        forwards_at: float | None,
+        trace: list[str],
+        *,
+        owner_name: str = SWITCH_NAME,
+        owner_candidates: int = 1,
+    ):
+        self.clock = clock
+        self.forwards_at = forwards_at
+        self.trace = trace
+        self.owner_name = owner_name
+        self.owner_candidates = owner_candidates
+        self.timeouts: list[float] = []
+        self.samples: list[tuple[float, str]] = []
+        super().__init__([""], prompt=f"{SWITCH_NAME}#", command="show spanning-tree")
+
+    def _emit_first_page(self) -> None:
+        state = (
+            "FWD"
+            if self.forwards_at is not None and self.clock.now >= self.forwards_at
+            else "LIS"
+        )
+        self.samples.append((self.clock.now, state))
+        self.trace.append(state)
+        output = _stp_output(
+            dict.fromkeys(
+                ("FastEthernet1/1", "FastEthernet1/2", "FastEthernet1/3"), state
+            ),
+            vlan=10,
+        )
+        self.pages = [output.split("show spanning-tree\n", 1)[1].rsplit("SW#", 1)[0]]
+        super()._emit_first_page()
+
+    def __call__(self, js: str, timeout: float) -> str:
+        self.timeouts.append(timeout)
+        self.clock.advance(min(timeout, 0.02))
+        if "owner_candidate_evidence" in js:
+            return json.dumps(
+                {
+                    "found": True,
+                    "configuration_channel": True,
+                    "output": self.output,
+                    "owner_name": self.owner_name,
+                    "owner_evidence": "session_transcript_continuity",
+                    "owner_candidates": self.owner_candidates,
+                }
+            )
+        return super().__call__(js, timeout)
+
+
+def _real_observer_run(
+    monkeypatch,
+    tmp_path: Path,
+    forwards_at: float | None,
+    *,
+    owner_name: str = SWITCH_NAME,
+    owner_candidates: int = 1,
+):
+    """Exercise public E5/E6 with the real neutral observer and IOS executor."""
+    clock = SimulatedClock()
+    trace: list[str] = []
+    terminal = _TimedStpTerminal(
+        clock,
+        forwards_at,
+        trace,
+        owner_name=owner_name,
+        owner_candidates=owner_candidates,
+    )
+    manifest, inventory = deployment_manifest()
+
+    class _Configuration(RecordingConfigurationRuntime):
+        def verify(self, expectations):
+            trace.append("e5_readback")
+            return super().verify(expectations)
+
+    class _Services(RecordingServiceRuntime):
+        def verify(self, expectation):
+            if expectation.id.startswith("svc/verify-http-ip"):
+                trace.append("http_by_ip")
+            return super().verify(expectation)
+
+    observer = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=terminal,
+        clock=clock,
+        sleeper=clock.advance,
+        simulation_time_observer=lambda: SimulationStateObservation(observed=False),
+    )
+    configuration = _Configuration(targets=inventory, forwarding=observer)
+    services = _Services(targets=inventory)
+    module = importlib.import_module(
+        "packet_tracer_mcp.application.use_cases.apply_enterprise_services"
+    )
+    monkeypatch.setattr(module, "monotonic", clock)
+    payload = intent_payload()
+    payload["sites"][0]["services"] = [
+        service
+        for service in payload["sites"][0]["services"]
+        if service["service_type"] == "http"
+    ]
+    result = apply_enterprise_services(
+        json.dumps(payload),
+        deployment_id=DEPLOYMENT_ID,
+        packet_tracer_version=BACKEND_VERSION,
+        import_preflight=IsolationPreflight(),
+        manifest_store=ManifestStore(manifest=manifest),
+        runtimes=ServiceStageRuntimes(configuration=configuration, services=services),
+        record_store=ServiceRunRecordStore(tmp_path),
+        environment_fingerprint=manifest.environment_fingerprint,
+        transport_selection=TransportSelection(channel="http"),
+        endpoint_observer=EndpointObserver(address=""),
+        source_tree=SourceTreeIdentity(sha="test-source", dirty=True),
+    )
+    return result, terminal, services, trace
+
+
+@pytest.mark.parametrize("forwards_at", [0.0, 4.0, 26.0, None])
+def test_public_http_waits_for_a_real_timed_forwarding_sample(
+    monkeypatch, tmp_path: Path, forwards_at: float | None
+):
+    """The composed IOS loop observes delayed FWD before any HTTP-by-IP call."""
+    result, terminal, services, trace = _real_observer_run(
+        monkeypatch, tmp_path, forwards_at
+    )
+    rows = _http_rows(result)
+    assert rows
+    assert terminal.samples
+    assert terminal.samples[0][1] == ("FWD" if forwards_at == 0 else "LIS")
+    if forwards_at is None:
+        assert all(state == "LIS" for _, state in terminal.samples)
+        assert not [
+            item for item in services.verified if item.startswith("svc/verify-http")
+        ]
+    else:
+        assert terminal.samples[-1][1] == "FWD"
+        assert terminal.samples[-1][0] >= forwards_at
+        assert any(
+            item.startswith("svc/verify-http-ip") for item in services.verified
+        ), (
+            [(row.expectation_id, row.status, row.cause) for row in rows],
+            result.operational_readiness,
+            terminal.samples,
+            services.verified,
+        )
+        assert (
+            max(index for index, event in enumerate(trace) if event == "e5_readback")
+            < trace.index("FWD")
+            < trace.index("http_by_ip")
+        )
+        assert terminal.samples[-1][0] < 30.0
+    assert result.operational_readiness[0]["sample"]["samples"] == len(terminal.samples)
+    history = result.operational_readiness[0]["sample"]["sample_history"]
+    assert len(history) == len(terminal.samples)
+    assert history[0]["rows"][0]["state"] == ("FWD" if forwards_at == 0 else "LIS")
+    if forwards_at is not None:
+        assert history[-1]["rows"][0]["state"] == "FWD"
+    assert len(result.operational_readiness) == 1
+    assert len(result.operational_readiness[0]["dependents"]) >= 2
+    saved = ServiceRunRecordStore(tmp_path).load(DEPLOYMENT_ID, result.run_id)
+    assert saved.operational_readiness == result.operational_readiness
+
+
+@pytest.mark.parametrize(
+    ("owner_name", "owner_candidates", "dimension"),
+    [("FOREIGN-SW", 1, "EXECUTION"), ("", 2, "IDENTITY")],
+)
+def test_public_http_refuses_foreign_or_ambiguous_terminal_identity(
+    monkeypatch,
+    tmp_path: Path,
+    owner_name: str,
+    owner_candidates: int,
+    dimension: str,
+):
+    """FWD bytes with the wrong or ambiguous executing owner send no request."""
+    result, terminal, services, _trace = _real_observer_run(
+        monkeypatch,
+        tmp_path,
+        0.0,
+        owner_name=owner_name,
+        owner_candidates=owner_candidates,
+    )
+    assert terminal.samples
+    assert result.operational_readiness[0]["dimension"] == dimension
+    assert not [
+        item for item in services.verified if item.startswith("svc/verify-http")
+    ]
+
+
+def test_product_remainder_caps_each_nested_terminal_call():
+    """A short total allowance reaches the actual channel as a shorter timeout."""
+    clock = SimulatedClock()
+    terminal = _TimedStpTerminal(clock, 0.0, [])
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=terminal,
+        clock=clock,
+        sleeper=clock.advance,
+        simulation_time_observer=lambda: SimulationStateObservation(observed=False),
+    )
+    gate = ServiceAccessReadinessGate(
+        _plan(),
+        runtime,
+        clock=clock,
+        device_names={SWITCH: SWITCH_NAME},
+        total_budget_seconds=0.03,
+    )
+    decision = gate.decide("http-1")
+    assert decision is not None and decision.admitted is False
+    assert terminal.timeouts
+    assert max(terminal.timeouts) <= 0.03
+    assert terminal.timeouts[-1] < terminal.timeouts[0]
+    assert clock.now == pytest.approx(0.03)
+    assert gate.rows()[0]["sample"]["deadline_reached"] is True
+
+
+def test_auxiliary_read_time_is_inside_the_product_permission_boundary():
+    """An auxiliary read that consumes the remainder cannot admit late FWD."""
+    clock = SimulatedClock()
+    terminal = _TimedStpTerminal(clock, 0.0, [])
+
+    def slow_simulation_state():
+        clock.advance(0.25)
+        return SimulationStateObservation(observed=False)
+
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=terminal,
+        clock=clock,
+        sleeper=clock.advance,
+        simulation_time_observer=slow_simulation_state,
+    )
+    gate = ServiceAccessReadinessGate(
+        _plan(),
+        runtime,
+        clock=clock,
+        device_names={SWITCH: SWITCH_NAME},
+        total_budget_seconds=0.3,
+    )
+    decision = gate.decide("http-1")
+    assert decision is not None and decision.admitted is False
+    sample = gate.rows()[0]["sample"]
+    assert sample["rows"][0]["state"] == "FWD"
+    assert sample["deadline_reached"] is True
+    assert sample["channel_calls"] == len(terminal.timeouts) + 1
+    assert sample["elapsed_ms"] >= 300
+
+
+def test_default_auxiliary_channel_call_is_counted_and_deadline_capped():
+    """The production auxiliary reader uses the same bounded channel."""
+    clock = SimulatedClock()
+    terminal = _TimedStpTerminal(clock, 0.0, [])
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=terminal,
+        clock=clock,
+        sleeper=clock.advance,
+    )
+    gate = ServiceAccessReadinessGate(
+        _plan(),
+        runtime,
+        clock=clock,
+        device_names={SWITCH: SWITCH_NAME},
+        total_budget_seconds=0.5,
+    )
+    assert gate.decide("http-1").admitted is True
+    sample = gate.rows()[0]["sample"]
+    assert sample["channel_calls"] == len(terminal.timeouts)
+    assert sample["simulation_time"] == "unreadable:AssertionError"
+    assert max(terminal.timeouts) <= 0.5
+
+
+def test_public_workflow_sends_no_http_after_a_late_forwarding_answer(
+    monkeypatch, tmp_path: Path
+):
+    """A collaborator's returned FWD cannot cross the product deadline."""
+    backend = ForwardingBackend(forwards_at=0.0, seconds_per_observation=31.0)
+    module = importlib.import_module(
+        "packet_tracer_mcp.application.use_cases.apply_enterprise_services"
+    )
+    monkeypatch.setattr(module, "monotonic", backend.clock)
+    result, _configuration, services = _run(backend, tmp_path)
+    assert result.operational_readiness[0]["status"] == READINESS_REFUSED
+    assert result.operational_readiness[0]["dimension"] == "DEADLINE"
+    assert result.operational_readiness[0]["sample"]["rows"][0]["state"] == "FWD"
+    assert not [
+        item for item in services.verified if item.startswith("svc/verify-http")
+    ]
+
+
 def test_the_forwarding_evidence_round_trips_through_the_public_report(
     tmp_path: Path,
 ):
@@ -623,7 +934,7 @@ def _envelope_observer(
     class _Observer:
         calls = 0
 
-        def observe_access_forwarding(self, device_name, vlan_id, requested):
+        def observe_access_forwarding(self, device_name, vlan_id, requested, **_bounds):
             type(self).calls += 1
             reported = tuple(requested) if interfaces is None else interfaces
             return AccessForwardingObservation(
@@ -694,14 +1005,7 @@ def test_an_answer_about_another_question_is_not_a_sample_of_this_group(
 
 
 def test_a_sample_that_ended_on_its_call_budget_grants_nothing():
-    """An incomplete-by-construction sample is refused by the product gate.
-
-    `AccessForwardingObservation.sample_budget_exhausted` documents itself as
-    granting no permission, and the shared admission rule does not yet enforce
-    that. The product path refuses here rather than waiting for the shared rule
-    to change, because changing it would also move the diagnostic semantics the
-    recorded evidence was measured under.
-    """
+    """Product and shared admission agree that an exhausted sample refuses."""
     plan = _plan(
         expectations=[
             _Expectation("http-1", ServiceVerificationKind.HTTP_FETCH, client=PC1)
@@ -720,9 +1024,8 @@ def test_a_sample_that_ended_on_its_call_budget_grants_nothing():
     row = gate.rows()[0]
     assert row["dimension"] == "SAMPLE_CALL_BUDGET_EXHAUSTED"
     assert CAUSE_SAMPLE_BUDGET_EXHAUSTED in row["causes"]
-    # The sample is retained and still says what the shared rule concluded, so
-    # the refusal is visibly the gate stricter than the rule, not a rewrite.
-    assert row["sample"]["admitted"] is True
+    # The retained facts now agree with the canonical shared decision.
+    assert row["sample"]["admitted"] is False
     assert row["sample"]["sample_budget_exhausted"] is True
 
 

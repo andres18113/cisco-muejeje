@@ -266,6 +266,12 @@ class _GatedConfigurationRuntime:
         device_name: str,
         vlan_id: int,
         interfaces: Sequence[str],
+        *,
+        remaining_seconds: float,
+        max_samples: int,
+        deadline_seconds: float,
+        interval_seconds: float,
+        sample_calls: int,
     ) -> Any:
         """Observe one switch/VLAN group; a read, so always permitted.
 
@@ -273,7 +279,16 @@ class _GatedConfigurationRuntime:
         which the readiness gate turns into a named refusal rather than a
         silent pass. It is never synthesized here.
         """
-        return self.inner.observe_access_forwarding(device_name, vlan_id, interfaces)
+        return self.inner.observe_access_forwarding(
+            device_name,
+            vlan_id,
+            interfaces,
+            remaining_seconds=remaining_seconds,
+            max_samples=max_samples,
+            deadline_seconds=deadline_seconds,
+            interval_seconds=interval_seconds,
+            sample_calls=sample_calls,
+        )
 
 
 @dataclass

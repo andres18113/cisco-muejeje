@@ -41,6 +41,7 @@ DIMENSION_FRESHNESS = "FRESHNESS"
 DIMENSION_COMPLETENESS = "COMPLETENESS"
 DIMENSION_IDENTITY = "IDENTITY"
 DIMENSION_DEADLINE = "DEADLINE"
+DIMENSION_SAMPLE_BUDGET = "SAMPLE_CALL_BUDGET_EXHAUSTED"
 DIMENSION_VLAN_INSTANCE = "VLAN_INSTANCE"
 DIMENSION_REQUEST = "REQUEST"
 DIMENSION_MISSING_INTERFACE = "MISSING_INTERFACE"
@@ -139,6 +140,12 @@ def access_forwarding_admission(
         return AccessForwardingAdmission(
             False, DIMENSION_DEADLINE, causes=("sample_after_deadline",)
         )
+    if observation.sample_budget_exhausted:
+        return AccessForwardingAdmission(
+            False,
+            DIMENSION_SAMPLE_BUDGET,
+            causes=("sample_call_budget_exhausted",),
+        )
     if not observation.vlan_present:
         return AccessForwardingAdmission(
             False,
@@ -210,6 +217,30 @@ def access_forwarding_facts(
         "device_identity_provenance": observation.device_identity_provenance,
         "vlan_present": observation.vlan_present,
         "samples": observation.samples,
+        "sample_history": [
+            {
+                "elapsed_ms": sample.elapsed_ms,
+                "rows": [
+                    {
+                        "interface": row.interface,
+                        "matches": row.matches,
+                        "state": row.state,
+                        "role": row.role,
+                    }
+                    for row in sample.rows
+                ],
+                "executed": sample.executed,
+                "fresh_output_observed": sample.fresh_output_observed,
+                "output_complete": sample.output_complete,
+                "observed_device_name": sample.observed_device_name,
+                "device_identity_provenance": sample.device_identity_provenance,
+                "vlan_present": sample.vlan_present,
+                "channel_calls": sample.channel_calls,
+                "sample_budget_exhausted": sample.sample_budget_exhausted,
+                "deadline_reached": sample.deadline_reached,
+            }
+            for sample in observation.sample_history
+        ],
         "max_samples": observation.max_samples,
         "deadline_seconds": observation.deadline_seconds,
         "elapsed_ms": observation.elapsed_ms,

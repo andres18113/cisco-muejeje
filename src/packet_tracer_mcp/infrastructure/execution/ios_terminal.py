@@ -5,14 +5,16 @@ from __future__ import annotations
 import ipaddress
 import json
 import re
-from dataclasses import dataclass, replace
-from enum import Enum
-from time import monotonic, sleep
 from collections.abc import Callable
+from dataclasses import dataclass, replace
+from enum import Enum, StrEnum
+from time import monotonic, sleep
 
 from ...domain.enterprise.models.discovery import DeviceInitializationResult
 from .command_dispatch import (
     PAGER_GUARD_JS as _PAGER_GUARD_JS,
+)
+from .command_dispatch import (
     DispatchClassification,
     classify_echo,
     drop_pager_prompt,
@@ -25,7 +27,17 @@ from .command_dispatch import (
 from .device_lifecycle import IosBootWaiter, StateConvergenceWaiter
 
 
-class OperationalQueryId(str, Enum):
+class _NamedStrEnum(StrEnum):
+    """Preserve legacy stringification for typed string enums."""
+
+    def __str__(self) -> str:
+        """Render the same member name as the former ``str, Enum`` classes."""
+        return Enum.__str__(self)
+
+
+class OperationalQueryId(_NamedStrEnum):
+    """Registered read-only IOS query identities."""
+
     SHOW_IP_INTERFACE_BRIEF = "show_ip_interface_brief"
     SHOW_INTERFACES_TRUNK = "show_interfaces_trunk"
     SHOW_EPHONE = "show_ephone"
@@ -55,7 +67,7 @@ class OperationalQueryId(str, Enum):
     SHOW_TELEPHONY_SERVICE = "show_telephony_service"
 
 
-class IosQualificationQueryId(str, Enum):
+class IosQualificationQueryId(_NamedStrEnum):
     """Closed developer candidates that are not product read-backs yet.
 
     A member may be exercised only by :meth:`ControlledIosExecutor.qualify`.
@@ -75,7 +87,9 @@ class IosQualificationQueryId(str, Enum):
     SHOW_POWER_INLINE = "qualification_show_power_inline"
 
 
-class TrunkQueryClassification(str, Enum):
+class TrunkQueryClassification(_NamedStrEnum):
+    """Classification of a registered trunk query."""
+
     SUPPORTED_WITH_ROWS = "supported_with_rows"
     SUPPORTED_EMPTY = "supported_empty"
     INVALID_COMMAND = "invalid_command"
@@ -84,7 +98,9 @@ class TrunkQueryClassification(str, Enum):
     PARSER_UNAVAILABLE = "parser_unavailable"
 
 
-class StpQueryClassification(str, Enum):
+class StpQueryClassification(_NamedStrEnum):
+    """Classification of a registered spanning-tree query."""
+
     SUPPORTED_WITH_INSTANCES = "supported_with_instances"
     SUPPORTED_EMPTY = "supported_empty"
     INVALID_COMMAND = "invalid_command"
@@ -93,19 +109,25 @@ class StpQueryClassification(str, Enum):
     PARSER_UNAVAILABLE = "parser_unavailable"
 
 
-class EtherChannelQueryClassification(str, Enum):
+class EtherChannelQueryClassification(_NamedStrEnum):
+    """Classification of a registered EtherChannel query."""
+
     SUPPORTED_WITH_GROUPS = "supported_with_groups"
     QUERY_TIMEOUT = "query_timeout"
     PARSER_UNAVAILABLE = "parser_unavailable"
 
 
-class OspfQueryClassification(str, Enum):
+class OspfQueryClassification(_NamedStrEnum):
+    """Classification of a registered OSPF query."""
+
     SUPPORTED_WITH_ROWS = "supported_with_rows"
     QUERY_TIMEOUT = "query_timeout"
     PARSER_UNAVAILABLE = "parser_unavailable"
 
 
-class EigrpQueryClassification(str, Enum):
+class EigrpQueryClassification(_NamedStrEnum):
+    """Classification of a registered EIGRP query."""
+
     SUPPORTED_WITH_ROWS = "supported_with_rows"
     SUPPORTED_EMPTY = "supported_empty"
     PROCESS_MISMATCH = "process_mismatch"
@@ -113,7 +135,7 @@ class EigrpQueryClassification(str, Enum):
     PARSER_UNAVAILABLE = "parser_unavailable"
 
 
-class PagerContinuation(str, Enum):
+class PagerContinuation(_NamedStrEnum):
     """Que le paso al pager durante UNA lectura registrada, no a la consulta."""
 
     # No hubo pager: la salida entro en una sola pagina.
@@ -127,7 +149,7 @@ class PagerContinuation(str, Enum):
     FAILED = "failed"
 
 
-class DeviceIdentityProvenance(str, Enum):
+class DeviceIdentityProvenance(_NamedStrEnum):
     """Quien produjo la salida, separado de a quien se le pidio.
 
     `NOT_OBSERVED` es el default y no afirma nada. `AMBIGUOUS` es distinto de
@@ -144,7 +166,7 @@ class DeviceIdentityProvenance(str, Enum):
     MISMATCHED = "mismatched"
 
 
-class DeviceIdentityEvidence(str, Enum):
+class DeviceIdentityEvidence(_NamedStrEnum):
     """Por que via se atribuyo la sesion. Ninguna usa el nombre pedido.
 
     Cada ejecutor declara la UNICA autoridad que acepta, y ninguno cae en otra
@@ -169,16 +191,20 @@ class DeviceIdentityEvidence(str, Enum):
     SESSION_TRANSCRIPT_CONTINUITY = "session_transcript_continuity"
 
 
-REGISTERED_QUERY_ATTRIBUTION_EVIDENCE = frozenset({
-    DeviceIdentityEvidence.TERMINAL_OBJECT_IDENTITY,
-    DeviceIdentityEvidence.SESSION_TRANSCRIPT_CONTINUITY,
-})
-DISPATCH_DELTA_ATTRIBUTION_EVIDENCE = frozenset({
-    DeviceIdentityEvidence.DISPATCH_TRANSCRIPT_DELTA,
-})
+REGISTERED_QUERY_ATTRIBUTION_EVIDENCE = frozenset(
+    {
+        DeviceIdentityEvidence.TERMINAL_OBJECT_IDENTITY,
+        DeviceIdentityEvidence.SESSION_TRANSCRIPT_CONTINUITY,
+    }
+)
+DISPATCH_DELTA_ATTRIBUTION_EVIDENCE = frozenset(
+    {
+        DeviceIdentityEvidence.DISPATCH_TRANSCRIPT_DELTA,
+    }
+)
 
 
-class DeviceIdentityRefusal(str, Enum):
+class DeviceIdentityRefusal(_NamedStrEnum):
     """Por que la atribucion no pudo ni intentarse.
 
     Es distinto de no encontrar dueno: sin la huella del despacho no hay con que
@@ -190,7 +216,9 @@ class DeviceIdentityRefusal(str, Enum):
     DISPATCH_SNAPSHOT_UNAVAILABLE = "dispatch_snapshot_unavailable"
 
 
-class IosSessionState(str, Enum):
+class IosSessionState(_NamedStrEnum):
+    """State of a selected IOS terminal session."""
+
     WAITING_FOR_BOOT = "waiting_for_boot"
     BOOT_COMPLETE = "boot_complete"
     SETUP_DIALOG = "setup_dialog"
@@ -229,17 +257,14 @@ _INTERFACE_COMMANDS = {
     # DCE/DTE y reloj sólo son observables por el controlador de la serial.
     OperationalQueryId.SHOW_CONTROLLERS_SERIAL: "show controllers {interface}",
     OperationalQueryId.SHOW_INTERFACE: "show interfaces {interface}",
-    OperationalQueryId.SHOW_PORT_SECURITY_INTERFACE:
-        "show port-security interface {interface}",
+    OperationalQueryId.SHOW_PORT_SECURITY_INTERFACE: "show port-security interface {interface}",
     # Acotada a UNA interfaz a proposito: el modo switchport y la VLAN de
     # acceso son propiedades del puerto, y la forma global de esta consulta
     # pagina en cuanto el switch tiene mas de un punado de puertos.
-    OperationalQueryId.SHOW_INTERFACES_SWITCHPORT:
-        "show interfaces {interface} switchport",
+    OperationalQueryId.SHOW_INTERFACES_SWITCHPORT: "show interfaces {interface} switchport",
     # Interface scope is mandatory. Global cumulative counters cannot
     # distinguish the voice exchange from the known data-client traffic.
-    OperationalQueryId.SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE:
-        "show ip dhcp server statistics {interface}",
+    OperationalQueryId.SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE: "show ip dhcp server statistics {interface}",
 }
 _QUALIFICATION_COMMANDS = {
     IosQualificationQueryId.SHOW_IP_DHCP_POOL: "show ip dhcp pool",
@@ -349,16 +374,18 @@ _PAGER_MARKER = "--More--"
 # adivinarlo seria inventar la forma del comando para esquivar el pager, y
 # PT 9.0.1 rechaza `terminal length 0`. Las cotas duras son las mismas y una
 # captura incompleta conserva su techo fail-closed.
-_PAGINATION_QUALIFIED_QUERIES = frozenset({
-    OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
-    OperationalQueryId.SHOW_IP_DHCP_BINDING,
-    OperationalQueryId.SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE,
-    OperationalQueryId.SHOW_INTERFACES_TRUNK,
-    OperationalQueryId.SHOW_IP_PROTOCOLS,
-    OperationalQueryId.SHOW_EPHONE,
-    OperationalQueryId.SHOW_SPANNING_TREE,
-    IosQualificationQueryId.SHOW_POWER_INLINE,
-})
+_PAGINATION_QUALIFIED_QUERIES = frozenset(
+    {
+        OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
+        OperationalQueryId.SHOW_IP_DHCP_BINDING,
+        OperationalQueryId.SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE,
+        OperationalQueryId.SHOW_INTERFACES_TRUNK,
+        OperationalQueryId.SHOW_IP_PROTOCOLS,
+        OperationalQueryId.SHOW_EPHONE,
+        OperationalQueryId.SHOW_SPANNING_TREE,
+        IosQualificationQueryId.SHOW_POWER_INLINE,
+    }
+)
 
 # Cotas duras de UNA captura logica. Existen para que no haya forma de que la
 # continuacion se vuelva infinita, ni de que una sesion larga se cuele como si
@@ -376,6 +403,8 @@ _PAGER_CONTINUATION_KEY = "String.fromCharCode(32)"
 
 @dataclass(frozen=True)
 class IosCommandResult:
+    """One registered IOS query result and its provenance."""
+
     device_name: str
     query_id: OperationalQueryId | IosQualificationQueryId
     executed: bool
@@ -431,6 +460,8 @@ def qualified_pager_retry_eligible(
 
 @dataclass(frozen=True)
 class InterfaceStatusRow:
+    """One interface status row from IOS output."""
+
     interface: str
     ip_address: str
     status: str
@@ -439,6 +470,8 @@ class InterfaceStatusRow:
 
 @dataclass(frozen=True)
 class EphoneStatusRow:
+    """One ephone registration row from IOS output."""
+
     index: int
     mac_address: str
     registered: bool
@@ -495,15 +528,14 @@ class DhcpPoolStatistics:
 
     @property
     def available_addresses(self) -> int:
-        return (
-            self.total_addresses
-            - self.leased_addresses
-            - self.excluded_addresses
-        )
+        """Return addresses not leased or excluded."""
+        return self.total_addresses - self.leased_addresses - self.excluded_addresses
 
 
 @dataclass(frozen=True)
 class TrunkStatusRow:
+    """One trunk interface and its VLAN sections."""
+
     interface: str
     mode: str
     encapsulation: str
@@ -524,6 +556,8 @@ class TrunkStatusRow:
 
 @dataclass(frozen=True)
 class StpPortStatusRow:
+    """One port row from a spanning-tree VLAN instance."""
+
     interface: str
     role: str
     state: str
@@ -534,6 +568,8 @@ class StpPortStatusRow:
 
 @dataclass(frozen=True)
 class StpInstanceStatus:
+    """One VLAN instance from a spanning-tree reading."""
+
     vlan_id: int
     protocol: str
     root_priority: int
@@ -552,12 +588,16 @@ class StpInstanceStatus:
 
 @dataclass(frozen=True)
 class EtherChannelMemberStatus:
+    """One EtherChannel member row."""
+
     interface: str
     flag: str
 
 
 @dataclass(frozen=True)
 class EtherChannelGroupStatus:
+    """One EtherChannel group and its members."""
+
     group_number: int
     port_channel: str
     port_channel_flags: str
@@ -567,6 +607,8 @@ class EtherChannelGroupStatus:
 
 @dataclass(frozen=True)
 class OspfNeighborStatusRow:
+    """One observed OSPF neighbor."""
+
     neighbor_id: str
     priority: int
     state: str
@@ -578,6 +620,8 @@ class OspfNeighborStatusRow:
 
 @dataclass(frozen=True)
 class OspfRouteStatusRow:
+    """One observed OSPF route."""
+
     code: str
     prefix: str
     prefix_length: int | None
@@ -590,6 +634,8 @@ class OspfRouteStatusRow:
 
 @dataclass(frozen=True)
 class EigrpNeighborStatusRow:
+    """One observed EIGRP neighbor."""
+
     handle: int
     address: str
     interface: str
@@ -603,6 +649,8 @@ class EigrpNeighborStatusRow:
 
 @dataclass(frozen=True)
 class EigrpRouteStatusRow:
+    """One observed EIGRP route."""
+
     code: str
     prefix: str
     prefix_length: int
@@ -615,6 +663,8 @@ class EigrpRouteStatusRow:
 
 @dataclass(frozen=True)
 class EigrpProtocolStatus:
+    """The AS and router identity reported by EIGRP."""
+
     as_number: int
     router_id: str
 
@@ -654,6 +704,8 @@ class RipProtocolStatus:
 
 @dataclass(frozen=True)
 class TerminalOutputWindow:
+    """A command output window with freshness evidence."""
+
     output: str
     fresh: bool
     strategy: str
@@ -661,7 +713,12 @@ class TerminalOutputWindow:
 
 
 def normalize_terminal_output(value: str) -> str:
-    return re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", value).replace("\r\n", "\n").replace("\r", "\n")
+    """Normalize line endings and terminal control bytes for parsing."""
+    return (
+        re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", value)
+        .replace("\r\n", "\n")
+        .replace("\r", "\n")
+    )
 
 
 def _has_active_pager(value: str) -> bool:
@@ -675,7 +732,9 @@ _SVI_STATE = re.compile(
     r"(?im)^(?P<interface>[A-Za-z][A-Za-z0-9/.-]*)\s+is\s+(?P<admin>[^,]+),\s*"
     r"line protocol is\s+(?P<protocol>\S+)",
 )
-_SVI_ADDRESS = re.compile(r"(?im)^\s*Internet address is\s+(?P<address>\d+\.\d+\.\d+\.\d+)/(?P<prefix>\d+)")
+_SVI_ADDRESS = re.compile(
+    r"(?im)^\s*Internet address is\s+(?P<address>\d+\.\d+\.\d+\.\d+)/(?P<prefix>\d+)"
+)
 
 
 # Syslog de IOS: `%FACILITY-severidad-MNEMONICO:`. Un `no shutdown` correcto
@@ -729,7 +788,7 @@ class EthernetLinkModeStatus:
     """
 
     interface: str
-    duplex: str            # full | half | auto | ""
+    duplex: str  # full | half | auto | ""
     speed_bps: int | None  # lo que la linea informa; ver negotiated_speed_bps
     speed_auto: bool
     routing_bandwidth_kbps: int | None
@@ -755,6 +814,7 @@ class EthernetLinkModeStatus:
 
     @property
     def reported_duplex(self) -> str:
+        """Return duplex only while the line is operational."""
         return self.duplex if self.line_protocol_up else ""
 
 
@@ -789,7 +849,11 @@ def parse_ethernet_link_mode(value: str) -> EthernetLinkModeStatus | None:
         else:
             value_match = _SPEED_VALUE.search(raw_speed)
             if value_match:
-                scale = 1_000_000 if value_match.group("unit").upper() == "M" else 1_000_000_000
+                scale = (
+                    1_000_000
+                    if value_match.group("unit").upper() == "M"
+                    else 1_000_000_000
+                )
                 speed_bps = int(value_match.group("value")) * scale
     bandwidth = _ROUTING_BANDWIDTH.search(normalized)
     return EthernetLinkModeStatus(
@@ -860,6 +924,7 @@ def parse_show_ip_interface(value: str) -> InterfaceStatusRow | None:
 
 
 def parse_show_ip_interface_brief(value: str) -> list[InterfaceStatusRow]:
+    """Parse addresses and operational status from IOS output."""
     rows: list[InterfaceStatusRow] = []
     for line in normalize_terminal_output(value).splitlines():
         parts = line.split()
@@ -867,22 +932,30 @@ def parse_show_ip_interface_brief(value: str) -> list[InterfaceStatusRow]:
             continue
         if not re.match(r"^[A-Za-z]+[A-Za-z0-9/.-]*$", parts[0]):
             continue
-        rows.append(InterfaceStatusRow(parts[0], parts[1], " ".join(parts[4:-1]), parts[-1]))
+        rows.append(
+            InterfaceStatusRow(parts[0], parts[1], " ".join(parts[4:-1]), parts[-1])
+        )
     return rows
 
 
 def parse_show_ephone(value: str) -> list[EphoneStatusRow]:
     """Extrae el estado vigente de cada bloque de ``show ephone`` de PT."""
     normalized = normalize_terminal_output(value)
-    starts = list(re.finditer(
-        r"(?m)^[ \t]*ephone-(?P<index>\d+)\s+Mac:(?P<mac>[0-9A-Fa-f.:-]+).*?"
-        r"(?P<registration>UNREGISTERED|REGISTERED)(?:\s|$)",
-        normalized,
-    ))
+    starts = list(
+        re.finditer(
+            r"(?m)^[ \t]*ephone-(?P<index>\d+)\s+Mac:(?P<mac>[0-9A-Fa-f.:-]+).*?"
+            r"(?P<registration>UNREGISTERED|REGISTERED)(?:\s|$)",
+            normalized,
+        )
+    )
     rows: list[EphoneStatusRow] = []
     for position, match in enumerate(starts):
-        end = starts[position + 1].start() if position + 1 < len(starts) else len(normalized)
-        block = normalized[match.start():end]
+        end = (
+            starts[position + 1].start()
+            if position + 1 < len(starts)
+            else len(normalized)
+        )
+        block = normalized[match.start() : end]
         ip_match = re.search(r"(?m)^\s*IP:(?P<ip>\S+)", block)
         line_match = re.search(
             r"(?m)^\s*button\s+\d+:\s+dn\s+\d+\s+number\s+"
@@ -892,14 +965,16 @@ def parse_show_ephone(value: str) -> list[EphoneStatusRow]:
         )
         if ip_match is None or line_match is None:
             continue
-        rows.append(EphoneStatusRow(
-            index=int(match.group("index")),
-            mac_address=match.group("mac"),
-            registered=match.group("registration").upper() == "REGISTERED",
-            ip_address=ip_match.group("ip"),
-            extension=line_match.group("extension"),
-            line_state=line_match.group("state").upper(),
-        ))
+        rows.append(
+            EphoneStatusRow(
+                index=int(match.group("index")),
+                mac_address=match.group("mac"),
+                registered=match.group("registration").upper() == "REGISTERED",
+                ip_address=ip_match.group("ip"),
+                extension=line_match.group("extension"),
+                line_state=line_match.group("state").upper(),
+            )
+        )
     return rows
 
 
@@ -914,7 +989,8 @@ def parse_show_ip_dhcp_binding(value: str) -> list[DhcpBindingRow]:
     seen: set[str] = set()
     for line in normalize_terminal_output(value).splitlines():
         match = re.match(
-            r"^\s*(?P<address>\d{1,3}(?:\.\d{1,3}){3})(?:\s+|$)", line,
+            r"^\s*(?P<address>\d{1,3}(?:\.\d{1,3}){3})(?:\s+|$)",
+            line,
         )
         if match is None:
             continue
@@ -968,7 +1044,7 @@ def parse_show_ip_dhcp_pool(value: str) -> list[DhcpPoolStatistics] | None:
     seen: set[str] = set()
     for position, (start, header) in enumerate(headers):
         end = headers[position + 1][0] if position + 1 < len(headers) else len(lines)
-        body = lines[start + 1:end]
+        body = lines[start + 1 : end]
         name = header.group("name")
         identity = name.casefold()
         if identity in seen:
@@ -1003,12 +1079,14 @@ def _parse_dhcp_pool_block(
     )
     if len(lines) < len(patterns) + 1:
         return None
-    matches = [pattern.fullmatch(line) for pattern, line in zip(patterns, lines)]
+    matches = [
+        pattern.fullmatch(line) for pattern, line in zip(patterns, lines, strict=False)
+    ]
     if any(match is None for match in matches):
         return None
     typed = [match for match in matches if match is not None]
     declared = int(typed[6].group(1))
-    row_lines = lines[len(patterns):]
+    row_lines = lines[len(patterns) :]
     if declared <= 0 or len(row_lines) != declared:
         return None
 
@@ -1039,14 +1117,16 @@ def _parse_dhcp_pool_block(
             or not range_start <= current <= range_end
         ):
             return None
-        subnets.append(DhcpPoolSubnetStatistics(
-            current_index=str(current),
-            range_start=str(range_start),
-            range_end=str(range_end),
-            leased_addresses=leased,
-            excluded_addresses=excluded,
-            total_addresses=total,
-        ))
+        subnets.append(
+            DhcpPoolSubnetStatistics(
+                current_index=str(current),
+                range_start=str(range_start),
+                range_end=str(range_end),
+                leased_addresses=leased,
+                excluded_addresses=excluded,
+                total_addresses=total,
+            )
+        )
 
     total = int(typed[2].group(1))
     leased = int(typed[3].group(1))
@@ -1095,13 +1175,16 @@ def parse_show_ip_dhcp_server_statistics(
     section = ""
     for line in normalize_terminal_output(value).splitlines():
         heading = re.fullmatch(
-            r"\s*Message\s+(Received|Sent)\s*", line, re.IGNORECASE,
+            r"\s*Message\s+(Received|Sent)\s*",
+            line,
+            re.IGNORECASE,
         )
         if heading is not None:
             section = heading.group(1).casefold()
             continue
         row = re.fullmatch(
-            r"\s*(?P<message>DHCP[A-Za-z]+)\s+(?P<count>\d+)\s*", line,
+            r"\s*(?P<message>DHCP[A-Za-z]+)\s+(?P<count>\d+)\s*",
+            line,
             re.IGNORECASE,
         )
         if row is None:
@@ -1158,9 +1241,15 @@ def parse_show_interfaces_trunk(value: str) -> list[TrunkStatusRow]:
             if re.fullmatch(r"\d+", parts[4]) and 1 <= int(parts[4]) <= 4094
             else None
         )
-        rows.append(TrunkStatusRow(
-            parts[0], parts[1], parts[2], parts[3], native_vlan,
-        ))
+        rows.append(
+            TrunkStatusRow(
+                parts[0],
+                parts[1],
+                parts[2],
+                parts[3],
+                native_vlan,
+            )
+        )
 
     sections: dict[str, dict[str, tuple[int, ...] | None]] = {
         "allowed_vlans": {},
@@ -1206,7 +1295,10 @@ def parse_show_interfaces_trunk(value: str) -> list[TrunkStatusRow]:
     ]
 
 
-def classify_show_interfaces_trunk(value: str, *, executed: bool = True) -> TrunkQueryClassification:
+def classify_show_interfaces_trunk(
+    value: str, *, executed: bool = True
+) -> TrunkQueryClassification:
+    """Classify the observed trunk query response."""
     if not executed:
         return TrunkQueryClassification.QUERY_TIMEOUT
     output = normalize_terminal_output(value).casefold()
@@ -1282,7 +1374,7 @@ def canonical_interface_name(value: str) -> str:
     return _INTERFACE_SPEED_ALIASES.get(prefix, prefix) + remainder
 
 
-class PoEInlineDelivery(str, Enum):
+class PoEInlineDelivery(_NamedStrEnum):
     """Que dice `show power inline` sobre UN puerto exacto, y nada mas.
 
     Ningun valor habla de otro puerto ni del modelo: la calibracion es de un
@@ -1296,6 +1388,8 @@ class PoEInlineDelivery(str, Enum):
 
 @dataclass(frozen=True)
 class PoEInlineRow:
+    """One observed inline-power port row."""
+
     interface: str
     admin: str
     oper: str
@@ -1323,14 +1417,15 @@ class PoEInlineTable:
 
     def rows_for(self, interface: str) -> tuple[PoEInlineRow, ...]:
         """Return every canonical match so duplicate evidence stays visible."""
-
         wanted = canonical_interface_name(interface)
         return tuple(
-            row for row in self.rows
+            row
+            for row in self.rows
             if canonical_interface_name(row.interface) == wanted
         )
 
     def row_for(self, interface: str) -> PoEInlineRow | None:
+        """Return the unique matching port, or none if ambiguous."""
         matches = self.rows_for(interface)
         return matches[0] if len(matches) == 1 else None
 
@@ -1350,7 +1445,8 @@ def parse_show_power_inline(value: str) -> PoEInlineTable:
     lines = normalized.splitlines()
     try:
         rule_index = next(
-            index for index, line in enumerate(lines)
+            index
+            for index, line in enumerate(lines)
             if line.strip() == _POE_INLINE_RULE
         )
     except StopIteration:
@@ -1371,7 +1467,7 @@ def parse_show_power_inline(value: str) -> PoEInlineTable:
 
     rows: list[PoEInlineRow] = []
     unparsed_lines: list[str] = []
-    for line in lines[rule_index + 1:]:
+    for line in lines[rule_index + 1 :]:
         # El unico ajuste permitido es el espacio que agrega la costura del
         # pager: se quita para volver a la forma canonica de columnas.
         candidate = line.lstrip(" ")
@@ -1380,27 +1476,33 @@ def parse_show_power_inline(value: str) -> PoEInlineTable:
         if re.fullmatch(r"[A-Za-z0-9_.-]+[>#]\s*", candidate):
             continue
         fields = [candidate[begin:end].strip() for begin, end in spans]
-        if (not _POE_INLINE_INTERFACE.fullmatch(fields[0])
-                or not all(fields)
-                or candidate[len(_POE_INLINE_RULE):].strip()
-                or any(index < len(candidate) and not candidate[index].isspace()
-                       for index, character in enumerate(_POE_INLINE_RULE)
-                       if character != "-")
-                or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", fields[3])
-                or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", fields[6])):
+        if (
+            not _POE_INLINE_INTERFACE.fullmatch(fields[0])
+            or not all(fields)
+            or candidate[len(_POE_INLINE_RULE) :].strip()
+            or any(
+                index < len(candidate) and not candidate[index].isspace()
+                for index, character in enumerate(_POE_INLINE_RULE)
+                if character != "-"
+            )
+            or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", fields[3])
+            or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", fields[6])
+        ):
             unparsed_lines.append(line)
             continue
         power = float(fields[3])
         maximum = float(fields[6])
-        rows.append(PoEInlineRow(
-            interface=fields[0],
-            admin=fields[1],
-            oper=fields[2],
-            power_watts=power,
-            device=fields[4],
-            power_class=fields[5],
-            max_watts=maximum,
-        ))
+        rows.append(
+            PoEInlineRow(
+                interface=fields[0],
+                admin=fields[1],
+                oper=fields[2],
+                power_watts=power,
+                device=fields[4],
+                power_class=fields[5],
+                max_watts=maximum,
+            )
+        )
 
     summary = _POE_INLINE_SUMMARY.search(normalized)
     return PoEInlineTable(
@@ -1461,7 +1563,7 @@ def parse_show_spanning_tree(value: str) -> list[StpInstanceStatus]:
     instances: list[StpInstanceStatus] = []
     for index, start in enumerate(starts):
         end = starts[index + 1].start() if index + 1 < len(starts) else len(normalized)
-        block = normalized[start.start():end]
+        block = normalized[start.start() : end]
         protocol = re.search(
             r"(?m)^\s*Spanning tree enabled protocol\s+(?P<value>\S+)\s*$",
             block,
@@ -1481,7 +1583,9 @@ def parse_show_spanning_tree(value: str) -> list[StpInstanceStatus]:
         forward_delays = {
             int(item)
             for item in re.findall(
-                r"Forward Delay\s+(\d+)\s+sec", block, flags=re.IGNORECASE,
+                r"Forward Delay\s+(\d+)\s+sec",
+                block,
+                flags=re.IGNORECASE,
             )
         }
         if protocol is None or root is None or bridge is None:
@@ -1505,32 +1609,36 @@ def parse_show_spanning_tree(value: str) -> list[StpInstanceStatus]:
                 row_cost = int(parts[3])
             except ValueError:
                 continue
-            rows.append(StpPortStatusRow(
-                interface=parts[0],
-                role=parts[1],
-                state=parts[2],
-                cost=row_cost,
-                priority_number=parts[4],
-                link_type=" ".join(parts[5:]),
-            ))
-        instances.append(StpInstanceStatus(
-            vlan_id=int(start.group("vlan")),
-            protocol=protocol.group("value").casefold(),
-            root_priority=int(root.group("priority")),
-            root_address=root.group("address"),
-            root_is_local="this bridge is the root" in root_body.casefold(),
-            root_cost=int(cost.group("value")) if cost else None,
-            root_port=port.group("value") if port else "",
-            bridge_priority=int(bridge.group("priority")),
-            bridge_base_priority=(
-                int(bridge.group("base")) if bridge.group("base") else None
-            ),
-            bridge_address=bridge.group("address"),
-            interfaces=tuple(rows),
-            forward_delay_seconds=(
-                next(iter(forward_delays)) if len(forward_delays) == 1 else None
-            ),
-        ))
+            rows.append(
+                StpPortStatusRow(
+                    interface=parts[0],
+                    role=parts[1],
+                    state=parts[2],
+                    cost=row_cost,
+                    priority_number=parts[4],
+                    link_type=" ".join(parts[5:]),
+                )
+            )
+        instances.append(
+            StpInstanceStatus(
+                vlan_id=int(start.group("vlan")),
+                protocol=protocol.group("value").casefold(),
+                root_priority=int(root.group("priority")),
+                root_address=root.group("address"),
+                root_is_local="this bridge is the root" in root_body.casefold(),
+                root_cost=int(cost.group("value")) if cost else None,
+                root_port=port.group("value") if port else "",
+                bridge_priority=int(bridge.group("priority")),
+                bridge_base_priority=(
+                    int(bridge.group("base")) if bridge.group("base") else None
+                ),
+                bridge_address=bridge.group("address"),
+                interfaces=tuple(rows),
+                forward_delay_seconds=(
+                    next(iter(forward_delays)) if len(forward_delays) == 1 else None
+                ),
+            )
+        )
     return instances
 
 
@@ -1539,6 +1647,7 @@ def classify_show_spanning_tree(
     *,
     executed: bool = True,
 ) -> StpQueryClassification:
+    """Classify the observed spanning-tree query response."""
     if not executed:
         return StpQueryClassification.QUERY_TIMEOUT
     output = normalize_terminal_output(value).casefold()
@@ -1587,18 +1696,18 @@ def parse_show_etherchannel_summary(
             for item in member_value.finditer(match.group("members"))
         )
         observed_members = " ".join(match.group("members").split())
-        parsed_members = " ".join(
-            f"{item.interface}({item.flag})" for item in members
-        )
+        parsed_members = " ".join(f"{item.interface}({item.flag})" for item in members)
         if not members or parsed_members != observed_members:
             continue
-        groups.append(EtherChannelGroupStatus(
-            group_number=int(match.group("group")),
-            port_channel=match.group("port_channel"),
-            port_channel_flags=match.group("flags"),
-            protocol=match.group("protocol"),
-            members=members,
-        ))
+        groups.append(
+            EtherChannelGroupStatus(
+                group_number=int(match.group("group")),
+                port_channel=match.group("port_channel"),
+                port_channel_flags=match.group("flags"),
+                protocol=match.group("protocol"),
+                members=members,
+            )
+        )
     return groups
 
 
@@ -1607,6 +1716,7 @@ def classify_show_etherchannel_summary(
     *,
     executed: bool = True,
 ) -> EtherChannelQueryClassification:
+    """Classify the observed EtherChannel query response."""
     if not executed:
         return EtherChannelQueryClassification.QUERY_TIMEOUT
     if parse_show_etherchannel_summary(value):
@@ -1629,15 +1739,17 @@ def parse_show_ip_ospf_neighbor(value: str) -> list[OspfNeighborStatusRow]:
         match = row_pattern.fullmatch(line)
         if match is None:
             continue
-        rows.append(OspfNeighborStatusRow(
-            neighbor_id=match.group("neighbor"),
-            priority=int(match.group("priority")),
-            state=match.group("state"),
-            role=match.group("role"),
-            dead_time=match.group("dead_time"),
-            address=match.group("address"),
-            interface=match.group("interface"),
-        ))
+        rows.append(
+            OspfNeighborStatusRow(
+                neighbor_id=match.group("neighbor"),
+                priority=int(match.group("priority")),
+                state=match.group("state"),
+                role=match.group("role"),
+                dead_time=match.group("dead_time"),
+                address=match.group("address"),
+                interface=match.group("interface"),
+            )
+        )
     return rows
 
 
@@ -1646,6 +1758,7 @@ def classify_show_ip_ospf_neighbor(
     *,
     executed: bool = True,
 ) -> OspfQueryClassification:
+    """Classify the observed OSPF neighbor response."""
     if not executed:
         return OspfQueryClassification.QUERY_TIMEOUT
     if parse_show_ip_ospf_neighbor(value):
@@ -1671,20 +1784,23 @@ def parse_show_ip_route_ospf(value: str) -> list[OspfRouteStatusRow]:
             continue
         prefix_length = (
             int(match.group("prefix_length"))
-            if match.group("prefix_length") is not None else None
+            if match.group("prefix_length") is not None
+            else None
         )
         if prefix_length is not None and prefix_length > 32:
             continue
-        rows.append(OspfRouteStatusRow(
-            code=match.group("code"),
-            prefix=match.group("prefix"),
-            prefix_length=prefix_length,
-            administrative_distance=int(match.group("distance")),
-            metric=int(match.group("metric")),
-            next_hop=match.group("next_hop"),
-            age=match.group("age"),
-            interface=match.group("interface"),
-        ))
+        rows.append(
+            OspfRouteStatusRow(
+                code=match.group("code"),
+                prefix=match.group("prefix"),
+                prefix_length=prefix_length,
+                administrative_distance=int(match.group("distance")),
+                metric=int(match.group("metric")),
+                next_hop=match.group("next_hop"),
+                age=match.group("age"),
+                interface=match.group("interface"),
+            )
+        )
     return rows
 
 
@@ -1693,6 +1809,7 @@ def classify_show_ip_route_ospf(
     *,
     executed: bool = True,
 ) -> OspfQueryClassification:
+    """Classify the observed OSPF route response."""
     if not executed:
         return OspfQueryClassification.QUERY_TIMEOUT
     if parse_show_ip_route_ospf(value):
@@ -1700,9 +1817,7 @@ def classify_show_ip_route_ospf(
     return OspfQueryClassification.PARSER_UNAVAILABLE
 
 
-_EIGRP_PROCESS_HEADER = re.compile(
-    r"IP-EIGRP neighbors for process (?P<as_number>\d+)"
-)
+_EIGRP_PROCESS_HEADER = re.compile(r"IP-EIGRP neighbors for process (?P<as_number>\d+)")
 
 
 def _show_ip_eigrp_process_as(value: str) -> int | None:
@@ -1729,17 +1844,19 @@ def parse_show_ip_eigrp_neighbors(value: str) -> list[EigrpNeighborStatusRow]:
         match = row_pattern.fullmatch(line)
         if match is None:
             continue
-        rows.append(EigrpNeighborStatusRow(
-            handle=int(match.group("handle")),
-            address=match.group("address"),
-            interface=match.group("interface"),
-            hold_seconds=int(match.group("hold")),
-            uptime=match.group("uptime"),
-            srtt_ms=int(match.group("srtt")),
-            rto_ms=int(match.group("rto")),
-            queue_count=int(match.group("queue")),
-            sequence_number=int(match.group("sequence")),
-        ))
+        rows.append(
+            EigrpNeighborStatusRow(
+                handle=int(match.group("handle")),
+                address=match.group("address"),
+                interface=match.group("interface"),
+                hold_seconds=int(match.group("hold")),
+                uptime=match.group("uptime"),
+                srtt_ms=int(match.group("srtt")),
+                rto_ms=int(match.group("rto")),
+                queue_count=int(match.group("queue")),
+                sequence_number=int(match.group("sequence")),
+            )
+        )
     return rows
 
 
@@ -1749,6 +1866,7 @@ def classify_show_ip_eigrp_neighbors(
     executed: bool = True,
     expected_as_number: int | None = None,
 ) -> EigrpQueryClassification:
+    """Classify the observed EIGRP neighbor response."""
     if not executed:
         return EigrpQueryClassification.QUERY_TIMEOUT
     observed_as = _show_ip_eigrp_process_as(value)
@@ -1797,16 +1915,18 @@ def parse_show_ip_route_eigrp(value: str) -> list[EigrpRouteStatusRow]:
         prefix_length = int(match.group("prefix_length"))
         if prefix_length > 32:
             continue
-        rows.append(EigrpRouteStatusRow(
-            code=match.group("code"),
-            prefix=match.group("prefix"),
-            prefix_length=prefix_length,
-            administrative_distance=int(match.group("distance")),
-            metric=int(match.group("metric")),
-            next_hop=match.group("next_hop"),
-            age=match.group("age"),
-            interface=match.group("interface"),
-        ))
+        rows.append(
+            EigrpRouteStatusRow(
+                code=match.group("code"),
+                prefix=match.group("prefix"),
+                prefix_length=prefix_length,
+                administrative_distance=int(match.group("distance")),
+                metric=int(match.group("metric")),
+                next_hop=match.group("next_hop"),
+                age=match.group("age"),
+                interface=match.group("interface"),
+            )
+        )
     return rows
 
 
@@ -1815,6 +1935,7 @@ def classify_show_ip_route_eigrp(
     *,
     executed: bool = True,
 ) -> EigrpQueryClassification:
+    """Classify the observed EIGRP route response."""
     if not executed:
         return EigrpQueryClassification.QUERY_TIMEOUT
     if parse_show_ip_route_eigrp(value):
@@ -1876,7 +1997,9 @@ _RIP_PASSIVE_ENTRY = re.compile(r"[ \t]+(?P<interface>[A-Za-z][A-Za-z0-9/.]*)[ \
 
 
 def _rip_entries(
-    block: list[str], header: re.Pattern[str], entry: re.Pattern[str],
+    block: list[str],
+    header: re.Pattern[str],
+    entry: re.Pattern[str],
 ) -> tuple[str, ...]:
     found: list[str] = []
     inside = False
@@ -1905,7 +2028,8 @@ def parse_show_ip_protocols_rip(value: str) -> RipProtocolStatus | None:
     lines = normalize_terminal_output(value).splitlines()
     start = next(
         (
-            index for index, line in enumerate(lines)
+            index
+            for index, line in enumerate(lines)
             if (match := _RIP_BLOCK_HEADER.match(line)) is not None
             and match.group("protocol").strip().casefold() == "rip"
         ),
@@ -1914,7 +2038,7 @@ def parse_show_ip_protocols_rip(value: str) -> RipProtocolStatus | None:
     if start is None:
         return None
     block = [lines[start]]
-    for line in lines[start + 1:]:
+    for line in lines[start + 1 :]:
         if _RIP_BLOCK_HEADER.match(line):
             break
         block.append(line)
@@ -1934,7 +2058,9 @@ def parse_show_ip_protocols_rip(value: str) -> RipProtocolStatus | None:
         auto_summary=auto_summary,
         networks=_rip_entries(block, _RIP_NETWORKS_HEADER, _RIP_NETWORK_ENTRY),
         passive_interfaces=_rip_entries(
-            block, _RIP_PASSIVE_HEADER, _RIP_PASSIVE_ENTRY,
+            block,
+            _RIP_PASSIVE_HEADER,
+            _RIP_PASSIVE_ENTRY,
         ),
     )
 
@@ -1988,20 +2114,24 @@ def parse_show_ip_route_rip(value: str) -> list[RipRouteStatusRow]:
         )
         if length is not None and length > 32:
             continue
-        rows.append(RipRouteStatusRow(
-            code=match.group("code"),
-            prefix=match.group("prefix"),
-            prefix_length=length,
-            administrative_distance=int(match.group("distance")),
-            metric=int(match.group("metric")),
-            next_hop=match.group("next_hop"),
-            age=match.group("age"),
-            interface=match.group("interface"),
-        ))
+        rows.append(
+            RipRouteStatusRow(
+                code=match.group("code"),
+                prefix=match.group("prefix"),
+                prefix_length=length,
+                administrative_distance=int(match.group("distance")),
+                metric=int(match.group("metric")),
+                next_hop=match.group("next_hop"),
+                age=match.group("age"),
+                interface=match.group("interface"),
+            )
+        )
     return rows
 
 
-def extract_terminal_command_window(before: str, after: str, command: str) -> TerminalOutputWindow:
+def extract_terminal_command_window(
+    before: str, after: str, command: str
+) -> TerminalOutputWindow:
     """Aísla evidencia de la consulta actual sin confiar en historial IOS.
 
     Ya no se ancla buscando el texto del comando. Esa estrategia tenía dos
@@ -2044,23 +2174,35 @@ class _PagerCapture:
     failure_reason: str = ""
 
     @classmethod
-    def not_encountered(cls, output: str, transcript: str) -> "_PagerCapture":
-        return cls(output, 1, True, False, PagerContinuation.NOT_ENCOUNTERED, transcript)
+    def not_encountered(cls, output: str, transcript: str) -> _PagerCapture:
+        return cls(
+            output, 1, True, False, PagerContinuation.NOT_ENCOUNTERED, transcript
+        )
 
     @classmethod
-    def not_qualified(cls, output: str, transcript: str) -> "_PagerCapture":
+    def not_qualified(cls, output: str, transcript: str) -> _PagerCapture:
         return cls(output, 1, False, True, PagerContinuation.NOT_QUALIFIED, transcript)
 
     @classmethod
-    def completed(cls, output: str, pages: int, transcript: str) -> "_PagerCapture":
+    def completed(cls, output: str, pages: int, transcript: str) -> _PagerCapture:
         return cls(output, pages, True, False, PagerContinuation.COMPLETED, transcript)
 
     @classmethod
     def failed(
-        cls, output: str, pages: int, transcript: str, reason: str,
-    ) -> "_PagerCapture":
+        cls,
+        output: str,
+        pages: int,
+        transcript: str,
+        reason: str,
+    ) -> _PagerCapture:
         return cls(
-            output, pages, False, True, PagerContinuation.FAILED, transcript, reason,
+            output,
+            pages,
+            False,
+            True,
+            PagerContinuation.FAILED,
+            transcript,
+            reason,
         )
 
 
@@ -2078,11 +2220,14 @@ def _terminal_resolver_js(variable: str, prefer_command_prompt: bool) -> str:
     terminales obtenidas por caminos distintos no compararia lo mismo.
     """
     return (
-        "var " + variable + "=function(dev){var r=null;"
+        "var "
+        + variable
+        + "=function(dev){var r=null;"
         + (
             "try{if(dev&&typeof dev.getCommandPrompt==='function'){"
             "r=dev.getCommandPrompt();if(r)return r;}}catch(pe){}"
-            if prefer_command_prompt else ""
+            if prefer_command_prompt
+            else ""
         )
         + "try{if(dev&&typeof dev.getCommandLine==='function'){"
         "r=dev.getCommandLine();if(r)return r;}}catch(le){}return null;};"
@@ -2110,63 +2255,71 @@ def execution_attribution_js(
     indistinguibles por esta via, que es lo que Router3 midio en vivo. Ver
     `dispatch_delta_attribution_js`.
     """
-    return "".join((
-        "try{var net=ipc.network();",
-        _terminal_resolver_js("__term", prefer_command_prompt),
-        "var d=net.getDevice(", device_literal, ");var t=__term(d);",
-        "if(!t||typeof t.getOutput!=='function'){",
-        "reportResult(JSON.stringify({found:false,",
-        "failure_reason:'IOS terminal unavailable'}));}else{",
-        "var base=", json.dumps(baseline), ";",
-        "var cmd=", json.dumps(command), ";",
-        # Anclar por el SUFIJO retenido, no por prefijo. Es la misma algebra de
-        # frescura que `fresh_command_window` ya midio en este build: `after`
-        # puede dejar de empezar por `before` sin haber perdido nada -- el pager
-        # borra su `--More--` al salir, y un buffer largo rueda por la cabeza.
-        # Exigir prefijo rechazaba justamente esas sesiones, que son frescas y
-        # atribuibles.
-        "var anchor=base;",
-        "while(anchor.length&&anchor.charCodeAt(anchor.length-1)<=32)"
-        "{anchor=anchor.substring(0,anchor.length-1);}",
-        "if(anchor.length>512){anchor=anchor.substring(anchor.length-512);}",
-        "var n=(typeof net.getDeviceCount==='function')?net.getDeviceCount():0;",
-        "var byObject=[],byTranscript=[],outObject='',outTranscript='';",
-        "for(var i=0;i<n;i++){var dev=null;",
-        "try{dev=net.getDeviceAt(i);}catch(de){dev=null;}",
-        "if(!dev)continue;var cl=__term(dev);",
-        "if(!cl||typeof cl.getOutput!=='function')continue;",
-        "var nm='';try{nm=String(dev.getName());}catch(ne){continue;}",
-        "var co='';try{co=String(cl.getOutput());}catch(oe){continue;}",
-        "if(cl===t){byObject.push(nm);outObject=co;}",
-        # Contexto retenido MAS el comando despachado detras de el. El gemelo
-        # ocioso no basta con compartir banner: tendria que haber recibido este
-        # mismo comando justo despues de este mismo contexto, y los despachos
-        # registrados van de a uno.
-        "if(anchor!==''){var at=co.indexOf(anchor);",
-        "if(at>=0&&co.substring(at+anchor.length).indexOf(cmd)>=0){",
-        "byTranscript.push(nm);outTranscript=co;}}}",
-        "var owner='',evidence='none',candidates=0,out='',",
-        "candidateEvidence='none',candidateNames=[];",
-        "if(byObject.length===1){owner=byObject[0];",
-        "evidence='terminal_object_identity';candidates=1;out=outObject;",
-        "candidateEvidence=evidence;candidateNames=byObject;}",
-        "else if(byObject.length>1){candidates=byObject.length;",
-        "candidateEvidence='terminal_object_identity';candidateNames=byObject;}",
-        "else if(byTranscript.length===1){owner=byTranscript[0];",
-        "evidence='session_transcript_continuity';candidates=1;",
-        "out=outTranscript;candidateEvidence=evidence;",
-        "candidateNames=byTranscript;}",
-        "else if(byTranscript.length>1){candidates=byTranscript.length;",
-        "candidateEvidence='session_transcript_continuity';",
-        "candidateNames=byTranscript;}",
-        "if(owner===''){out=String(t.getOutput());}",
-        "reportResult(JSON.stringify({found:true,",
-        "configuration_channel:out!==base,output:out,owner_name:owner,",
-        "owner_evidence:evidence,owner_candidates:candidates,",
-        "owner_candidate_evidence:candidateEvidence,",
-        "owner_candidate_names:candidateNames,",
-        "device_count:n}));}}catch(e){reportResult('ERROR:'+e);}",
-    ))
+    return "".join(
+        (
+            "try{var net=ipc.network();",
+            _terminal_resolver_js("__term", prefer_command_prompt),
+            "var d=net.getDevice(",
+            device_literal,
+            ");var t=__term(d);",
+            "if(!t||typeof t.getOutput!=='function'){",
+            "reportResult(JSON.stringify({found:false,",
+            "failure_reason:'IOS terminal unavailable'}));}else{",
+            "var base=",
+            json.dumps(baseline),
+            ";",
+            "var cmd=",
+            json.dumps(command),
+            ";",
+            # Anclar por el SUFIJO retenido, no por prefijo. Es la misma algebra de
+            # frescura que `fresh_command_window` ya midio en este build: `after`
+            # puede dejar de empezar por `before` sin haber perdido nada -- el pager
+            # borra su `--More--` al salir, y un buffer largo rueda por la cabeza.
+            # Exigir prefijo rechazaba justamente esas sesiones, que son frescas y
+            # atribuibles.
+            "var anchor=base;",
+            "while(anchor.length&&anchor.charCodeAt(anchor.length-1)<=32)"
+            "{anchor=anchor.substring(0,anchor.length-1);}",
+            "if(anchor.length>512){anchor=anchor.substring(anchor.length-512);}",
+            "var n=(typeof net.getDeviceCount==='function')?net.getDeviceCount():0;",
+            "var byObject=[],byTranscript=[],outObject='',outTranscript='';",
+            "for(var i=0;i<n;i++){var dev=null;",
+            "try{dev=net.getDeviceAt(i);}catch(de){dev=null;}",
+            "if(!dev)continue;var cl=__term(dev);",
+            "if(!cl||typeof cl.getOutput!=='function')continue;",
+            "var nm='';try{nm=String(dev.getName());}catch(ne){continue;}",
+            "var co='';try{co=String(cl.getOutput());}catch(oe){continue;}",
+            "if(cl===t){byObject.push(nm);outObject=co;}",
+            # Contexto retenido MAS el comando despachado detras de el. El gemelo
+            # ocioso no basta con compartir banner: tendria que haber recibido este
+            # mismo comando justo despues de este mismo contexto, y los despachos
+            # registrados van de a uno.
+            "if(anchor!==''){var at=co.indexOf(anchor);",
+            "if(at>=0&&co.substring(at+anchor.length).indexOf(cmd)>=0){",
+            "byTranscript.push(nm);outTranscript=co;}}}",
+            "var owner='',evidence='none',candidates=0,out='',",
+            "candidateEvidence='none',candidateNames=[];",
+            "if(byObject.length===1){owner=byObject[0];",
+            "evidence='terminal_object_identity';candidates=1;out=outObject;",
+            "candidateEvidence=evidence;candidateNames=byObject;}",
+            "else if(byObject.length>1){candidates=byObject.length;",
+            "candidateEvidence='terminal_object_identity';candidateNames=byObject;}",
+            "else if(byTranscript.length===1){owner=byTranscript[0];",
+            "evidence='session_transcript_continuity';candidates=1;",
+            "out=outTranscript;candidateEvidence=evidence;",
+            "candidateNames=byTranscript;}",
+            "else if(byTranscript.length>1){candidates=byTranscript.length;",
+            "candidateEvidence='session_transcript_continuity';",
+            "candidateNames=byTranscript;}",
+            "if(owner===''){out=String(t.getOutput());}",
+            "reportResult(JSON.stringify({found:true,",
+            "configuration_channel:out!==base,output:out,owner_name:owner,",
+            "owner_evidence:evidence,owner_candidates:candidates,",
+            "owner_candidate_evidence:candidateEvidence,",
+            "owner_candidate_names:candidateNames,",
+            "device_count:n}));}}catch(e){reportResult('ERROR:'+e);}",
+        )
+    )
 
 
 def dispatch_snapshot_js(command: str, *, prefer_command_prompt: bool) -> str:
@@ -2181,28 +2334,34 @@ def dispatch_snapshot_js(command: str, *, prefer_command_prompt: bool) -> str:
     -- un buffer que rueda solo pierde texto por la cabeza --, asi que basta su
     nombre, y el tamano no crece con transcripciones ajenas.
     """
-    return "".join((
-        "var __snap=null;try{var __snapNet=ipc.network();",
-        _terminal_resolver_js("__snapTerm", prefer_command_prompt),
-        "var __snapCmd=", json.dumps(command), ";",
-        "var __snapCount=(typeof __snapNet.getDeviceCount==='function')",
-        "?__snapNet.getDeviceCount():0;var __snapDevices=[];",
-        "for(var __snapI=0;__snapI<__snapCount;__snapI++){var __snapDev=null;",
-        "try{__snapDev=__snapNet.getDeviceAt(__snapI);}catch(__snapDe){__snapDev=null;}",
-        "var __snapName=null;try{if(__snapDev){__snapName=String(__snapDev.getName());}}",
-        "catch(__snapNe){__snapName=null;}",
-        "var __snapLine=__snapDev?__snapTerm(__snapDev):null;var __snapOut=null;",
-        "if(__snapLine&&typeof __snapLine.getOutput==='function'){",
-        "try{__snapOut=String(__snapLine.getOutput());}catch(__snapOe){__snapOut=null;}}",
-        "if(__snapOut===null){__snapDevices.push([__snapName,-1]);}",
-        "else if(__snapOut.indexOf(__snapCmd)<0){__snapDevices.push([__snapName,0]);}",
-        "else{var __snapEnd=__snapOut.length;",
-        "while(__snapEnd>0&&__snapOut.charCodeAt(__snapEnd-1)<=32){__snapEnd--;}",
-        "__snapDevices.push([__snapName,1,__snapEnd,__snapOut.substring(",
-        "Math.max(0,__snapEnd-", str(_DISPATCH_SNAPSHOT_TAIL), "),__snapEnd)]);}}",
-        "__snap={device_count:__snapCount,devices:__snapDevices};",
-        "}catch(__snapE){__snap=null;}",
-    ))
+    return "".join(
+        (
+            "var __snap=null;try{var __snapNet=ipc.network();",
+            _terminal_resolver_js("__snapTerm", prefer_command_prompt),
+            "var __snapCmd=",
+            json.dumps(command),
+            ";",
+            "var __snapCount=(typeof __snapNet.getDeviceCount==='function')",
+            "?__snapNet.getDeviceCount():0;var __snapDevices=[];",
+            "for(var __snapI=0;__snapI<__snapCount;__snapI++){var __snapDev=null;",
+            "try{__snapDev=__snapNet.getDeviceAt(__snapI);}catch(__snapDe){__snapDev=null;}",
+            "var __snapName=null;try{if(__snapDev){__snapName=String(__snapDev.getName());}}",
+            "catch(__snapNe){__snapName=null;}",
+            "var __snapLine=__snapDev?__snapTerm(__snapDev):null;var __snapOut=null;",
+            "if(__snapLine&&typeof __snapLine.getOutput==='function'){",
+            "try{__snapOut=String(__snapLine.getOutput());}catch(__snapOe){__snapOut=null;}}",
+            "if(__snapOut===null){__snapDevices.push([__snapName,-1]);}",
+            "else if(__snapOut.indexOf(__snapCmd)<0){__snapDevices.push([__snapName,0]);}",
+            "else{var __snapEnd=__snapOut.length;",
+            "while(__snapEnd>0&&__snapOut.charCodeAt(__snapEnd-1)<=32){__snapEnd--;}",
+            "__snapDevices.push([__snapName,1,__snapEnd,__snapOut.substring(",
+            "Math.max(0,__snapEnd-",
+            str(_DISPATCH_SNAPSHOT_TAIL),
+            "),__snapEnd)]);}}",
+            "__snap={device_count:__snapCount,devices:__snapDevices};",
+            "}catch(__snapE){__snap=null;}",
+        )
+    )
 
 
 def _dispatch_snapshot(value: object) -> dict[str, object] | None:
@@ -2274,65 +2433,75 @@ def dispatch_delta_attribution_js(
     que vuelve ambigua la lectura y nunca elige dueno.
     """
     snapshot = _dispatch_snapshot(dispatch_snapshot)
-    return "".join((
-        "try{var net=ipc.network();",
-        _terminal_resolver_js("__term", prefer_command_prompt),
-        "var d=net.getDevice(", device_literal, ");var t=__term(d);",
-        "if(!t||typeof t.getOutput!=='function'){",
-        "reportResult(JSON.stringify({found:false,",
-        "failure_reason:'IOS terminal unavailable'}));}else{",
-        "var base=", json.dumps(baseline), ";",
-        "var cmd=", json.dumps(command), ";",
-        "var snap=", json.dumps(snapshot), ";",
-        "var n=(typeof net.getDeviceCount==='function')?net.getDeviceCount():0;",
-        "var executed=[],executedOut=[],unanchored=[],refusal='none';",
-        "if(snap===null){refusal='dispatch_snapshot_unavailable';}else{",
-        # Alineado por nombre, no por indice: un device agregado durante la
-        # consulta corre los indices sin cambiar quien ejecuto.
-        "var prior={},priorCount={},seen={},current=[];",
-        "for(var p=0;p<snap.devices.length;p++){var sp=snap.devices[p];",
-        "if(sp[0]===null)continue;",
-        "priorCount['#'+sp[0]]=(priorCount['#'+sp[0]]||0)+1;prior['#'+sp[0]]=sp;}",
-        "for(var i=0;i<n;i++){var dev=null;",
-        "try{dev=net.getDeviceAt(i);}catch(de){dev=null;}",
-        "if(!dev)continue;var cl=__term(dev);",
-        "if(!cl||typeof cl.getOutput!=='function')continue;",
-        "var nm=null;try{nm=String(dev.getName());}catch(ne){nm=null;}",
-        "var co=null;try{co=String(cl.getOutput());}catch(oe){co=null;}",
-        "if(nm!==null){seen['#'+nm]=(seen['#'+nm]||0)+1;}",
-        "current.push([nm,co]);}",
-        "for(var c=0;c<current.length;c++){",
-        "var cn=current[c][0],cc=current[c][1],label=cn===null?'':cn;",
-        "var key=cn===null?null:'#'+cn;",
-        "var entry=(key!==null&&seen[key]===1&&priorCount[key]===1)?prior[key]:null;",
-        "if(cc===null){if(!entry||entry[1]!==-1){unanchored.push(label);}continue;}",
-        "if(!entry||entry[1]===-1){",
-        "if(cc.indexOf(cmd)>=0){unanchored.push(label);}continue;}",
-        "if(entry[1]===0){",
-        "if(cc.indexOf(cmd)>=0){executed.push(cn);executedOut.push(cc);}continue;}",
-        "var end=entry[2],tail=entry[3],hit=false;",
-        "if(cc.length>=end&&cc.substring(end-tail.length,end)===tail){",
-        "hit=cc.substring(end).indexOf(cmd)>=0;}",
-        "else{var at=cc.indexOf(tail);",
-        "if(at<0){if(cc.indexOf(cmd)>=0){unanchored.push(label);}continue;}",
-        "while(at>=0&&!hit){hit=cc.substring(at+tail.length).indexOf(cmd)>=0;",
-        "at=cc.indexOf(tail,at+1);}}",
-        "if(hit){executed.push(cn);executedOut.push(cc);}}}",
-        "var owner='',evidence='none',candidates=0,out='',",
-        "candidateEvidence='none',candidateNames=[];",
-        "if(refusal==='none'){candidateNames=executed.concat(unanchored);",
-        "candidates=candidateNames.length;",
-        "if(candidates>0){candidateEvidence='dispatch_transcript_delta';}",
-        "if(executed.length===1&&unanchored.length===0){owner=executed[0];",
-        "evidence='dispatch_transcript_delta';out=executedOut[0];}}",
-        "if(owner===''){out=String(t.getOutput());}",
-        "reportResult(JSON.stringify({found:true,",
-        "configuration_channel:out!==base,output:out,owner_name:owner,",
-        "owner_evidence:evidence,owner_candidates:candidates,",
-        "owner_candidate_evidence:candidateEvidence,",
-        "owner_candidate_names:candidateNames,owner_refusal:refusal,",
-        "device_count:n}));}}catch(e){reportResult('ERROR:'+e);}",
-    ))
+    return "".join(
+        (
+            "try{var net=ipc.network();",
+            _terminal_resolver_js("__term", prefer_command_prompt),
+            "var d=net.getDevice(",
+            device_literal,
+            ");var t=__term(d);",
+            "if(!t||typeof t.getOutput!=='function'){",
+            "reportResult(JSON.stringify({found:false,",
+            "failure_reason:'IOS terminal unavailable'}));}else{",
+            "var base=",
+            json.dumps(baseline),
+            ";",
+            "var cmd=",
+            json.dumps(command),
+            ";",
+            "var snap=",
+            json.dumps(snapshot),
+            ";",
+            "var n=(typeof net.getDeviceCount==='function')?net.getDeviceCount():0;",
+            "var executed=[],executedOut=[],unanchored=[],refusal='none';",
+            "if(snap===null){refusal='dispatch_snapshot_unavailable';}else{",
+            # Alineado por nombre, no por indice: un device agregado durante la
+            # consulta corre los indices sin cambiar quien ejecuto.
+            "var prior={},priorCount={},seen={},current=[];",
+            "for(var p=0;p<snap.devices.length;p++){var sp=snap.devices[p];",
+            "if(sp[0]===null)continue;",
+            "priorCount['#'+sp[0]]=(priorCount['#'+sp[0]]||0)+1;prior['#'+sp[0]]=sp;}",
+            "for(var i=0;i<n;i++){var dev=null;",
+            "try{dev=net.getDeviceAt(i);}catch(de){dev=null;}",
+            "if(!dev)continue;var cl=__term(dev);",
+            "if(!cl||typeof cl.getOutput!=='function')continue;",
+            "var nm=null;try{nm=String(dev.getName());}catch(ne){nm=null;}",
+            "var co=null;try{co=String(cl.getOutput());}catch(oe){co=null;}",
+            "if(nm!==null){seen['#'+nm]=(seen['#'+nm]||0)+1;}",
+            "current.push([nm,co]);}",
+            "for(var c=0;c<current.length;c++){",
+            "var cn=current[c][0],cc=current[c][1],label=cn===null?'':cn;",
+            "var key=cn===null?null:'#'+cn;",
+            "var entry=(key!==null&&seen[key]===1&&priorCount[key]===1)?prior[key]:null;",
+            "if(cc===null){if(!entry||entry[1]!==-1){unanchored.push(label);}continue;}",
+            "if(!entry||entry[1]===-1){",
+            "if(cc.indexOf(cmd)>=0){unanchored.push(label);}continue;}",
+            "if(entry[1]===0){",
+            "if(cc.indexOf(cmd)>=0){executed.push(cn);executedOut.push(cc);}continue;}",
+            "var end=entry[2],tail=entry[3],hit=false;",
+            "if(cc.length>=end&&cc.substring(end-tail.length,end)===tail){",
+            "hit=cc.substring(end).indexOf(cmd)>=0;}",
+            "else{var at=cc.indexOf(tail);",
+            "if(at<0){if(cc.indexOf(cmd)>=0){unanchored.push(label);}continue;}",
+            "while(at>=0&&!hit){hit=cc.substring(at+tail.length).indexOf(cmd)>=0;",
+            "at=cc.indexOf(tail,at+1);}}",
+            "if(hit){executed.push(cn);executedOut.push(cc);}}}",
+            "var owner='',evidence='none',candidates=0,out='',",
+            "candidateEvidence='none',candidateNames=[];",
+            "if(refusal==='none'){candidateNames=executed.concat(unanchored);",
+            "candidates=candidateNames.length;",
+            "if(candidates>0){candidateEvidence='dispatch_transcript_delta';}",
+            "if(executed.length===1&&unanchored.length===0){owner=executed[0];",
+            "evidence='dispatch_transcript_delta';out=executedOut[0];}}",
+            "if(owner===''){out=String(t.getOutput());}",
+            "reportResult(JSON.stringify({found:true,",
+            "configuration_channel:out!==base,output:out,owner_name:owner,",
+            "owner_evidence:evidence,owner_candidates:candidates,",
+            "owner_candidate_evidence:candidateEvidence,",
+            "owner_candidate_names:candidateNames,owner_refusal:refusal,",
+            "device_count:n}));}}catch(e){reportResult('ERROR:'+e);}",
+        )
+    )
 
 
 def classify_execution_identity(
@@ -2380,9 +2549,11 @@ def execution_identity_diagnostics(
 ) -> dict[str, object]:
     """Candidatos y rechazo de una atribucion. Es diagnostico: no certifica."""
     raw_names = attribution.get("owner_candidate_names")
-    names = tuple(
-        item for item in raw_names if isinstance(item, str) and item
-    ) if isinstance(raw_names, list) else ()
+    names = (
+        tuple(item for item in raw_names if isinstance(item, str) and item)
+        if isinstance(raw_names, list)
+        else ()
+    )
     try:
         refusal = DeviceIdentityRefusal(
             str(attribution.get("owner_refusal") or DeviceIdentityRefusal.NONE.value)
@@ -2391,7 +2562,8 @@ def execution_identity_diagnostics(
         refusal = DeviceIdentityRefusal.NONE
     return {
         "device_identity_candidate_evidence": _identity_evidence(
-            attribution.get("owner_candidate_evidence"), accepted_evidence,
+            attribution.get("owner_candidate_evidence"),
+            accepted_evidence,
         ).value,
         "device_identity_candidate_names": names,
         "device_identity_refusal": refusal.value,
@@ -2399,7 +2571,8 @@ def execution_identity_diagnostics(
 
 
 def _identity_evidence(
-    value: object, accepted: frozenset[DeviceIdentityEvidence],
+    value: object,
+    accepted: frozenset[DeviceIdentityEvidence],
 ) -> DeviceIdentityEvidence:
     """Una via desconocida, o ajena a este ejecutor, no se acepta como prueba."""
     try:
@@ -2418,7 +2591,9 @@ class ControlledIosExecutor:
         *,
         clock: Callable[[], float] = monotonic,
         sleeper: Callable[[float], None] = sleep,
+        remaining_budget: Callable[[], float] | None = None,
     ) -> None:
+        """Bind the registered IOS channel and bounded-wait controls."""
         self._send_and_wait = send_and_wait
         self._pager_quarantine: set[str] = set()
         # Reloj y espera inyectables: las cotas de la captura paginada se miden
@@ -2426,6 +2601,7 @@ class ControlledIosExecutor:
         # tiempo real que representan.
         self._clock = clock
         self._sleeper = sleeper
+        self._remaining_budget = remaining_budget
 
     def wait_until_ready(
         self,
@@ -2456,9 +2632,7 @@ class ControlledIosExecutor:
     ) -> IosCommandResult:
         """Despacha una consulta registrada, reintentando sólo corrupción probada."""
         if not isinstance(query_id, OperationalQueryId):
-            raise TypeError(
-                "Normal IOS execution accepts OperationalQueryId only."
-            )
+            raise TypeError("Normal IOS execution accepts OperationalQueryId only.")
         attempts = 1
         result = self._execute_once(device_name, query_id, interface=interface)
         while (
@@ -2476,9 +2650,7 @@ class ControlledIosExecutor:
     ) -> IosCommandResult:
         """Measure one closed read-only candidate outside the product registry."""
         if not isinstance(query_id, IosQualificationQueryId):
-            raise TypeError(
-                "IOS qualification accepts IosQualificationQueryId only."
-            )
+            raise TypeError("IOS qualification accepts IosQualificationQueryId only.")
         attempts = 1
         result = self._execute_once(device_name, query_id)
         while (
@@ -2493,9 +2665,7 @@ class ControlledIosExecutor:
     def qualification_command(query_id: IosQualificationQueryId) -> str:
         """Return a hard-coded candidate; never accepts caller-supplied IOS."""
         if not isinstance(query_id, IosQualificationQueryId):
-            raise TypeError(
-                "IOS qualification accepts IosQualificationQueryId only."
-            )
+            raise TypeError("IOS qualification accepts IosQualificationQueryId only.")
         return _QUALIFICATION_COMMANDS[query_id]
 
     @staticmethod
@@ -2506,7 +2676,9 @@ class ControlledIosExecutor:
         demuestra que ese comando corrompido no surtió efecto. Sin la segunda,
         reintentar sería reejecutar algo cuyo efecto no se conoce.
         """
-        if not is_command_corrupted(DispatchClassification(result.dispatch_classification)):
+        if not is_command_corrupted(
+            DispatchClassification(result.dispatch_classification)
+        ):
             return False
         return ios_rejection_reason(result.output) is not None
 
@@ -2531,7 +2703,14 @@ class ControlledIosExecutor:
         name, command_json = json.dumps(device_name), json.dumps(command)
         session = self._prepare_session(name)
         if session is not IosSessionState.EXEC_PROMPT_READY:
-            return IosCommandResult(device_name, query_id, False, failure_reason="IOS session state: " + session.value, duration_ms=int((monotonic() - started) * 1000), session_state=session)
+            return IosCommandResult(
+                device_name,
+                query_id,
+                False,
+                failure_reason="IOS session state: " + session.value,
+                duration_ms=int((monotonic() - started) * 1000),
+                session_state=session,
+            )
         restore_user_mode = False
         if (
             query_id in _PRIVILEGED_QUERIES
@@ -2544,7 +2723,9 @@ class ControlledIosExecutor:
                     lambda state: str(state.get("prompt") or "").strip().endswith("#"),
                 ):
                     return IosCommandResult(
-                        device_name, query_id, False,
+                        device_name,
+                        query_id,
+                        False,
                         failure_reason="IOS privileged EXEC mode was unavailable.",
                         duration_ms=int((monotonic() - started) * 1000),
                         session_state=session,
@@ -2558,25 +2739,58 @@ class ControlledIosExecutor:
                 self._enter(name, "disable")
             return replace(result, expected_prompt=expected_prompt)
 
-        js = "".join((
-            "try{var d=ipc.network().getDevice(", name, ");var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;",
-            "if(!t||typeof t.enterCommand!=='function'||typeof t.getOutput!=='function'){reportResult(JSON.stringify({ok:false,reason:'IOS terminal unavailable'}));}",
-            "else{var before=String(t.getOutput());var expectedPrompt=String(t.getPrompt());",
-            _PAGER_GUARD_JS,
-            "if(__pager){reportResult(JSON.stringify({ok:false,reason:'prompt_not_ready:pager_active'}));}",
-            "else{t.enterCommand(", command_json, ");",
-            "reportResult(JSON.stringify({ok:true,before:before,expected_prompt:expectedPrompt}));}}}catch(e){reportResult('ERROR:'+e);}",
-        ))
+        js = "".join(
+            (
+                "try{var d=ipc.network().getDevice(",
+                name,
+                ");var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;",
+                "if(!t||typeof t.enterCommand!=='function'||typeof t.getOutput!=='function'){reportResult(JSON.stringify({ok:false,reason:'IOS terminal unavailable'}));}",
+                "else{var before=String(t.getOutput());var expectedPrompt=String(t.getPrompt());",
+                _PAGER_GUARD_JS,
+                "if(__pager){reportResult(JSON.stringify({ok:false,reason:'prompt_not_ready:pager_active'}));}",
+                "else{t.enterCommand(",
+                command_json,
+                ");",
+                "reportResult(JSON.stringify({ok:true,before:before,expected_prompt:expectedPrompt}));}}}catch(e){reportResult('ERROR:'+e);}",
+            )
+        )
         raw = self._send_and_wait(js, 10.0)
         elapsed = int((monotonic() - started) * 1000)
         if raw is None:
-            return complete(IosCommandResult(device_name, query_id, False, failure_reason="IOS command submission timed out.", duration_ms=elapsed, session_state=session))
+            return complete(
+                IosCommandResult(
+                    device_name,
+                    query_id,
+                    False,
+                    failure_reason="IOS command submission timed out.",
+                    duration_ms=elapsed,
+                    session_state=session,
+                )
+            )
         if raw.startswith("ERROR:"):
-            return complete(IosCommandResult(device_name, query_id, False, failure_reason=raw, duration_ms=elapsed, session_state=session))
+            return complete(
+                IosCommandResult(
+                    device_name,
+                    query_id,
+                    False,
+                    failure_reason=raw,
+                    duration_ms=elapsed,
+                    session_state=session,
+                )
+            )
         try:
             state = json.loads(raw)
         except json.JSONDecodeError:
-            return complete(IosCommandResult(device_name, query_id, False, failure_reason="IOS terminal returned malformed JSON.", duration_ms=elapsed, session_state=session))
+            return complete(
+                IosCommandResult(
+                    device_name,
+                    query_id,
+                    False,
+                    failure_reason="IOS terminal returned malformed JSON.",
+                    duration_ms=elapsed,
+                    session_state=session,
+                )
+            )
         if not state.get("ok"):
             reason = str(state.get("reason") or "IOS terminal unavailable.")
             refused = reason.startswith("prompt_not_ready")
@@ -2585,26 +2799,43 @@ class ControlledIosExecutor:
                 # fallo de barrera, no de la consulta, y no deja el terminal en
                 # un estado ambiguo.
                 self._pager_quarantine.add(name)
-            return complete(IosCommandResult(
-                device_name, query_id, False, failure_reason=reason,
-                duration_ms=elapsed, session_state=session,
-                dispatch_classification=(
-                    DispatchClassification.PROMPT_NOT_READY.value if refused
-                    else DispatchClassification.TRANSPORT_FAILED.value
-                ),
-            ))
+            return complete(
+                IosCommandResult(
+                    device_name,
+                    query_id,
+                    False,
+                    failure_reason=reason,
+                    duration_ms=elapsed,
+                    session_state=session,
+                    dispatch_classification=(
+                        DispatchClassification.PROMPT_NOT_READY.value
+                        if refused
+                        else DispatchClassification.TRANSPORT_FAILED.value
+                    ),
+                )
+            )
         expected_prompt = str(state.get("expected_prompt") or "").strip()
         baseline = str(state.get("before") or "")
+
         def observe() -> dict:
-            read_js = "".join((
-                "try{var d=ipc.network().getDevice(", name, ");var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;",
-                "var o=t&&typeof t.getOutput==='function'?String(t.getOutput()):'';",
-                "reportResult(JSON.stringify({found:!!d,configuration_channel:o!==", json.dumps(baseline), ",output:o}));}",
-                "catch(e){reportResult('ERROR:'+e);}",
-            ))
+            read_js = "".join(
+                (
+                    "try{var d=ipc.network().getDevice(",
+                    name,
+                    ");var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;",
+                    "var o=t&&typeof t.getOutput==='function'?String(t.getOutput()):'';",
+                    "reportResult(JSON.stringify({found:!!d,configuration_channel:o!==",
+                    json.dumps(baseline),
+                    ",output:o}));}",
+                    "catch(e){reportResult('ERROR:'+e);}",
+                )
+            )
             observed = self._send_and_wait(read_js, 3.0)
             if observed is None or observed.startswith("ERROR:"):
-                return {"found": False, "failure_reason": observed or "IOS output timed out."}
+                return {
+                    "found": False,
+                    "failure_reason": observed or "IOS output timed out.",
+                }
             try:
                 current = json.loads(observed)
             except json.JSONDecodeError:
@@ -2633,12 +2864,18 @@ class ControlledIosExecutor:
             except json.JSONDecodeError:
                 return {"found": False}
 
-        convergence = StateConvergenceWaiter(observe, timeout_seconds=8.0).wait()
+        convergence = StateConvergenceWaiter(
+            observe,
+            timeout_seconds=self._bounded_wait(8.0),
+            clock=self._clock,
+            sleeper=self._sleeper,
+        ).wait()
         elapsed = int((monotonic() - started) * 1000)
         attribution = attribute()
         output = str(attribution.get("output") or "")
         identity = classify_execution_identity(
-            device_name, attribution,
+            device_name,
+            attribution,
             accepted_evidence=REGISTERED_QUERY_ATTRIBUTION_EVIDENCE,
         )
         if (
@@ -2649,15 +2886,21 @@ class ControlledIosExecutor:
             # como evidencia del pedido seria exactamente la sustitucion que
             # esta barrera existe para impedir, asi que no se devuelve: ningun
             # consumidor puede certificar al device pedido con esto.
-            return complete(IosCommandResult(
-                device_name, query_id, False,
-                failure_reason=(
-                    f"DEVICE_PROVENANCE_MISMATCH: requested {device_name!r} but "
-                    "the executing session is owned by "
-                    f"{identity['observed_device_name']!r}."
-                ),
-                duration_ms=elapsed, session_state=session, **identity,
-            ))
+            return complete(
+                IosCommandResult(
+                    device_name,
+                    query_id,
+                    False,
+                    failure_reason=(
+                        f"DEVICE_PROVENANCE_MISMATCH: requested {device_name!r} but "
+                        "the executing session is owned by "
+                        f"{identity['observed_device_name']!r}."
+                    ),
+                    duration_ms=elapsed,
+                    session_state=session,
+                    **identity,
+                )
+            )
         window = extract_terminal_command_window(baseline, output, command)
         classification, echoed = classify_echo(command, window.output)
         capture = _PagerCapture.not_encountered(window.output, output)
@@ -2675,7 +2918,9 @@ class ControlledIosExecutor:
                 and not is_command_corrupted(classification)
             ):
                 capture = self._capture_registered_pages(
-                    name, window=window.output, transcript=output,
+                    name,
+                    window=window.output,
+                    transcript=output,
                 )
             else:
                 capture = _PagerCapture.not_qualified(window.output, output)
@@ -2690,50 +2935,108 @@ class ControlledIosExecutor:
                 # `complete` también acá: sin esto, una cancelación de pager no
                 # confirmada dejaba el device en EXEC privilegiado para siempre,
                 # porque era el único retorno que no restauraba el modo.
-                return complete(IosCommandResult(
+                return complete(
+                    IosCommandResult(
+                        device_name,
+                        query_id,
+                        False,
+                        output=normalize_terminal_output(window.output),
+                        failure_reason=(
+                            "IOS pager cancellation could not be confirmed; "
+                            "the terminal session remains isolated from new queries."
+                        ),
+                        duration_ms=elapsed,
+                        session_state=IosSessionState.FAILED,
+                        fresh_output_observed=window.fresh,
+                        window_strategy=window.strategy,
+                        truncated_by_pager=True,
+                        pager_pages_captured=capture.pages,
+                        pager_continuation=capture.continuation.value,
+                        dispatch_classification=classification.value,
+                        echo_observed=echoed,
+                        **identity,
+                    )
+                )
+        if not convergence.configuration_channel:
+            return complete(
+                IosCommandResult(
                     device_name,
                     query_id,
                     False,
                     output=normalize_terminal_output(window.output),
-                    failure_reason=(
-                        "IOS pager cancellation could not be confirmed; "
-                        "the terminal session remains isolated from new queries."
-                    ),
+                    failure_reason="IOS command output did not converge.",
                     duration_ms=elapsed,
-                    session_state=IosSessionState.FAILED,
+                    session_state=session,
                     fresh_output_observed=window.fresh,
                     window_strategy=window.strategy,
-                    truncated_by_pager=True,
+                    truncated_by_pager=capture.truncated,
                     pager_pages_captured=capture.pages,
                     pager_continuation=capture.continuation.value,
                     dispatch_classification=classification.value,
                     echo_observed=echoed,
                     **identity,
-                ))
-        if not convergence.configuration_channel:
-            return complete(IosCommandResult(device_name, query_id, False, output=normalize_terminal_output(window.output), failure_reason="IOS command output did not converge.", duration_ms=elapsed, session_state=session, fresh_output_observed=window.fresh, window_strategy=window.strategy, truncated_by_pager=capture.truncated, pager_pages_captured=capture.pages, pager_continuation=capture.continuation.value, dispatch_classification=classification.value, echo_observed=echoed, **identity))
+                )
+            )
         if not window.fresh:
-            return complete(IosCommandResult(device_name, query_id, False, failure_reason="No fresh current-command output window was observed.", duration_ms=elapsed, session_state=session, window_strategy=window.strategy, dispatch_classification=classification.value, echo_observed=echoed, **identity))
+            return complete(
+                IosCommandResult(
+                    device_name,
+                    query_id,
+                    False,
+                    failure_reason="No fresh current-command output window was observed.",
+                    duration_ms=elapsed,
+                    session_state=session,
+                    window_strategy=window.strategy,
+                    dispatch_classification=classification.value,
+                    echo_observed=echoed,
+                    **identity,
+                )
+            )
         if is_command_corrupted(classification):
             # NO se clasifica como consulta rechazada: IOS jamás recibió la
             # consulta pedida, así que su `% Invalid input` no habla de ella.
-            return complete(IosCommandResult(
-                device_name, query_id, False,
-                output=normalize_terminal_output(window.output),
-                failure_reason=(
-                    f"COMMAND_DISPATCH_MISMATCH: requested {command!r} but the "
-                    f"terminal echoed {echoed!r}."
-                ),
-                duration_ms=elapsed, session_state=session,
-                fresh_output_observed=True, window_strategy=window.strategy,
+            return complete(
+                IosCommandResult(
+                    device_name,
+                    query_id,
+                    False,
+                    output=normalize_terminal_output(window.output),
+                    failure_reason=(
+                        f"COMMAND_DISPATCH_MISMATCH: requested {command!r} but the "
+                        f"terminal echoed {echoed!r}."
+                    ),
+                    duration_ms=elapsed,
+                    session_state=session,
+                    fresh_output_observed=True,
+                    window_strategy=window.strategy,
+                    truncated_by_pager=capture.truncated,
+                    pager_pages_captured=capture.pages,
+                    pager_continuation=capture.continuation.value,
+                    dispatch_classification=classification.value,
+                    echo_observed=echoed,
+                    **identity,
+                )
+            )
+        return complete(
+            IosCommandResult(
+                device_name,
+                query_id,
+                True,
+                output=normalize_terminal_output(capture.output),
+                failure_reason=capture.failure_reason,
+                duration_ms=elapsed,
+                session_state=session,
+                fresh_output_observed=True,
+                window_strategy=window.strategy,
                 truncated_by_pager=capture.truncated,
+                output_complete=capture.complete,
                 pager_pages_captured=capture.pages,
                 pager_continuation=capture.continuation.value,
                 dispatch_classification=classification.value,
                 echo_observed=echoed,
                 **identity,
-            ))
-        return complete(IosCommandResult(device_name, query_id, True, output=normalize_terminal_output(capture.output), failure_reason=capture.failure_reason, duration_ms=elapsed, session_state=session, fresh_output_observed=True, window_strategy=window.strategy, truncated_by_pager=capture.truncated, output_complete=capture.complete, pager_pages_captured=capture.pages, pager_continuation=capture.continuation.value, dispatch_classification=classification.value, echo_observed=echoed, **identity))
+            )
+        )
 
     @staticmethod
     def _registered_command(
@@ -2749,7 +3052,9 @@ class ControlledIosExecutor:
             return ControlledIosExecutor.qualification_command(query_id)
         if query_id in _INTERFACE_COMMANDS:
             if not _INTERFACE_NAME.fullmatch(interface):
-                raise ValueError("A registered interface query requires a valid interface name.")
+                raise ValueError(
+                    "A registered interface query requires a valid interface name."
+                )
             return _INTERFACE_COMMANDS[query_id].format(interface=interface)
         if interface:
             raise ValueError("This registered IOS query does not accept an interface.")
@@ -2786,49 +3091,66 @@ class ControlledIosExecutor:
         pages = 1
         if not has_active_pager(current):
             return _PagerCapture.failed(
-                assembled, pages, current,
+                assembled,
+                pages,
+                current,
                 "IOS output carried a pager marker without an active pager to "
                 "continue; the capture cannot be completed.",
             )
         while True:
             if pages >= _PAGER_MAX_PAGES:
                 return _PagerCapture.failed(
-                    assembled, pages, current,
+                    assembled,
+                    pages,
+                    current,
                     "IOS pager continuation exceeded its bounded page limit "
                     f"of {_PAGER_MAX_PAGES}.",
                 )
-            remaining = _PAGER_CAPTURE_DEADLINE_SECONDS - (self._clock() - started)
+            remaining = self._bounded_wait(
+                _PAGER_CAPTURE_DEADLINE_SECONDS - (self._clock() - started)
+            )
             if remaining <= 0:
                 return _PagerCapture.failed(
-                    assembled, pages, current,
+                    assembled,
+                    pages,
+                    current,
                     "IOS pager continuation exceeded its bounded deadline of "
                     f"{_PAGER_CAPTURE_DEADLINE_SECONDS:.0f}s.",
                 )
             if not self._advance_pager(name):
                 return _PagerCapture.failed(
-                    assembled, pages, current,
+                    assembled,
+                    pages,
+                    current,
                     "IOS pager continuation key was not delivered.",
                 )
             state = self._await_pager_progress(
                 name,
                 current,
-                timeout_seconds=min(_PAGER_PAGE_TIMEOUT_SECONDS, remaining),
+                timeout_seconds=self._bounded_wait(
+                    min(_PAGER_PAGE_TIMEOUT_SECONDS, remaining)
+                ),
             )
             if state is None:
                 return _PagerCapture.failed(
-                    assembled, pages, current,
-                    "IOS pager produced no continuation page within the "
-                    "bounded wait.",
+                    assembled,
+                    pages,
+                    current,
+                    "IOS pager produced no continuation page within the bounded wait.",
                 )
             if not state.get("found") or not state.get("terminal"):
                 return _PagerCapture.failed(
-                    assembled, pages, current,
+                    assembled,
+                    pages,
+                    current,
                     "IOS pager continuation lost the device terminal.",
                 )
             prompt = str(state.get("prompt") or "").strip()
             if session_prompt and prompt and prompt != session_prompt:
                 return _PagerCapture.failed(
-                    assembled, pages, current,
+                    assembled,
+                    pages,
+                    current,
                     "IOS pager continuation observed a different terminal "
                     f"session: {session_prompt!r} became {prompt!r}.",
                 )
@@ -2839,7 +3161,9 @@ class ControlledIosExecutor:
                 # anclaje o pertenece a otra sesión. Pegarlo igual sería
                 # reconstruir una lectura con un agujero adentro.
                 return _PagerCapture.failed(
-                    assembled, pages, current,
+                    assembled,
+                    pages,
+                    current,
                     "IOS pager continuation window could not be attributed to "
                     f"this capture ({page.strategy.value}).",
                 )
@@ -2850,13 +3174,8 @@ class ControlledIosExecutor:
                         "IOS pager produced no command continuation page "
                         "within the bounded wait."
                     )
-                elif not (
-                    has_active_pager(after)
-                    or terminal_is_idle(after)
-                ):
-                    reason = (
-                        "IOS pager continuation ended without a command prompt."
-                    )
+                elif not (has_active_pager(after) or terminal_is_idle(after)):
+                    reason = "IOS pager continuation ended without a command prompt."
                 else:
                     reason = (
                         "IOS pager continuation did not establish semantic "
@@ -2870,14 +3189,17 @@ class ControlledIosExecutor:
                 )
             if not captured.strip():
                 return _PagerCapture.failed(
-                    assembled, pages, after,
+                    assembled,
+                    pages,
+                    after,
                     "IOS pager continuation produced no new output.",
                 )
             if captured == previous_page:
                 return _PagerCapture.failed(
-                    assembled, pages, after,
-                    "IOS pager continuation repeated the same page without "
-                    "progress.",
+                    assembled,
+                    pages,
+                    after,
+                    "IOS pager continuation repeated the same page without progress.",
                 )
             assembled += captured
             previous_page = captured
@@ -2885,7 +3207,9 @@ class ControlledIosExecutor:
             pages += 1
             if len(assembled) > _PAGER_MAX_BYTES:
                 return _PagerCapture.failed(
-                    assembled, pages, current,
+                    assembled,
+                    pages,
+                    current,
                     "IOS pager continuation exceeded its bounded byte limit "
                     f"of {_PAGER_MAX_BYTES}.",
                 )
@@ -2895,7 +3219,9 @@ class ControlledIosExecutor:
                 # Ni pager ni prompt: no hay forma de saber si la salida
                 # terminó. Un final ambiguo no es un final.
                 return _PagerCapture.failed(
-                    assembled, pages, current,
+                    assembled,
+                    pages,
+                    current,
                     "IOS pager continuation ended without a command prompt.",
                 )
             return _PagerCapture.completed(assembled, pages, current)
@@ -2919,10 +3245,7 @@ class ControlledIosExecutor:
             captured = drop_pager_prompt(page.output) if page.fresh else ""
             state["configuration_channel"] = bool(
                 terminal_has_command_content(captured)
-                and (
-                    has_active_pager(after)
-                    or terminal_is_idle(after)
-                )
+                and (has_active_pager(after) or terminal_is_idle(after))
             )
             last = state
             return state
@@ -2938,10 +3261,7 @@ class ControlledIosExecutor:
         )
         return (
             last
-            if (
-                converged.configuration_channel
-                or last.get("pager_progress_observed")
-            )
+            if (converged.configuration_channel or last.get("pager_progress_observed"))
             else None
         )
 
@@ -2964,7 +3284,11 @@ class ControlledIosExecutor:
         return self._send_and_wait(js, 5.0) == '{"ok":true}'
 
     def _cancel_pager(self, name: str, paged_output: str) -> bool:
-        js = "try{var d=ipc.network().getDevice(" + name + ");var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;if(!t||typeof t.enterCommand!=='function'){reportResult('{\"ok\":false}');}else{t.enterCommand(String.fromCharCode(3));reportResult('{\"ok\":true}');}}catch(e){reportResult('ERROR:'+e);}"
+        js = (
+            "try{var d=ipc.network().getDevice("
+            + name
+            + ");var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;if(!t||typeof t.enterCommand!=='function'){reportResult('{\"ok\":false}');}else{t.enterCommand(String.fromCharCode(3));reportResult('{\"ok\":true}');}}catch(e){reportResult('ERROR:'+e);}"
+        )
         if self._send_and_wait(js, 5.0) != '{"ok":true}':
             return False
         return self._wait_for(
@@ -2993,21 +3317,37 @@ class ControlledIosExecutor:
             if _has_active_pager(str(state.get("output") or "")):
                 self._pager_quarantine.add(name)
                 return IosSessionState.FAILED
-        content = (str(state.get("prompt") or "") + "\n" + str(state.get("output") or "")).casefold()
+        content = (
+            str(state.get("prompt") or "") + "\n" + str(state.get("output") or "")
+        ).casefold()
         if self._is_exec_prompt(state):
             return IosSessionState.EXEC_PROMPT_READY
         if _SETUP_DIALOG in content:
             if not self._enter(name, "no"):
                 return IosSessionState.FAILED
-            if not self._wait_for(name, lambda current: "press return to get started" in str(current.get("output") or "").casefold()):
+            if not self._wait_for(
+                name,
+                lambda current: (
+                    "press return to get started"
+                    in str(current.get("output") or "").casefold()
+                ),
+            ):
                 return IosSessionState.TIMEOUT
             if not self._enter(name, ""):
                 return IosSessionState.FAILED
-            return IosSessionState.EXEC_PROMPT_READY if self._wait_for(name, self._is_exec_prompt) else IosSessionState.TIMEOUT
+            return (
+                IosSessionState.EXEC_PROMPT_READY
+                if self._wait_for(name, self._is_exec_prompt)
+                else IosSessionState.TIMEOUT
+            )
         if "press return to get started" in content:
             if not self._enter(name, ""):
                 return IosSessionState.FAILED
-            return IosSessionState.EXEC_PROMPT_READY if self._wait_for(name, self._is_exec_prompt) else IosSessionState.TIMEOUT
+            return (
+                IosSessionState.EXEC_PROMPT_READY
+                if self._wait_for(name, self._is_exec_prompt)
+                else IosSessionState.TIMEOUT
+            )
         return IosSessionState.FAILED
 
     @staticmethod
@@ -3016,7 +3356,11 @@ class ControlledIosExecutor:
         # getOutput() conserva el transcript completo, incluso el setup dialog
         # ya terminado. El prompt actual es la señal operacional; reinterpretar
         # el histórico como estado presente impedía llegar a Router>/Router#.
-        return bool(prompt and prompt.endswith((">", "#")) and _SETUP_DIALOG not in prompt.casefold())
+        return bool(
+            prompt
+            and prompt.endswith((">", "#"))
+            and _SETUP_DIALOG not in prompt.casefold()
+        )
 
     def _enter(self, name: str, command: str) -> bool:
         """Transición de modo (`enable`/`disable`) o respuesta al setup dialog.
@@ -3032,8 +3376,8 @@ class ControlledIosExecutor:
             "var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;"
             "if(!t||typeof t.enterCommand!=='function'){reportResult('{\"ok\":false}');}"
             "else{var before=String(t.getOutput());"
-            + _PAGER_GUARD_JS +
-            "if(__pager){reportResult('{\"ok\":false,\"reason\":\"pager_active\"}');}"
+            + _PAGER_GUARD_JS
+            + 'if(__pager){reportResult(\'{"ok":false,"reason":"pager_active"}\');}'
             "else{t.enterCommand(" + json.dumps(command) + ");"
             "reportResult('{\"ok\":true}');}}}catch(e){reportResult('ERROR:'+e);}"
         )
@@ -3041,7 +3385,11 @@ class ControlledIosExecutor:
         return response == '{"ok":true}'
 
     def _terminal_state(self, name: str) -> dict:
-        js = "try{var d=ipc.network().getDevice(" + name + ");var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;reportResult(JSON.stringify({found:!!d,booting:d&&typeof d.isBooting==='function'?!!d.isBooting():null,terminal:!!t,terminal_available:!!t,terminal_kind:'ios_command_line',prompt:t&&typeof t.getPrompt==='function'?String(t.getPrompt()):'',output:t&&typeof t.getOutput==='function'?String(t.getOutput()):''}));}catch(e){reportResult('ERROR:'+e);}"
+        js = (
+            "try{var d=ipc.network().getDevice("
+            + name
+            + ");var t=d&&typeof d.getCommandLine==='function'?d.getCommandLine():null;reportResult(JSON.stringify({found:!!d,booting:d&&typeof d.isBooting==='function'?!!d.isBooting():null,terminal:!!t,terminal_available:!!t,terminal_kind:'ios_command_line',prompt:t&&typeof t.getPrompt==='function'?String(t.getPrompt()):'',output:t&&typeof t.getOutput==='function'?String(t.getOutput()):''}));}catch(e){reportResult('ERROR:'+e);}"
+        )
         raw = self._send_and_wait(js, 3.0)
         try:
             return json.loads(raw or "{}")
@@ -3053,4 +3401,23 @@ class ControlledIosExecutor:
             current = self._terminal_state(name)
             current["configuration_channel"] = predicate(current)
             return current
-        return StateConvergenceWaiter(inspect, timeout_seconds=8.0).wait().configuration_channel
+
+        return (
+            StateConvergenceWaiter(
+                inspect,
+                timeout_seconds=self._bounded_wait(8.0),
+                clock=self._clock,
+                sleeper=self._sleeper,
+            )
+            .wait()
+            .configuration_channel
+        )
+
+    def _bounded_wait(self, seconds: float) -> float:
+        """Cap a nested waiter when this executor has a caller-owned budget."""
+        return min(
+            max(0.0, seconds),
+            max(0.0, self._remaining_budget())
+            if self._remaining_budget is not None
+            else float("inf"),
+        )

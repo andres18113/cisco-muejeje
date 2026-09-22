@@ -42,6 +42,7 @@ from ...domain.enterprise.models.discovery import DeviceInitializationState
 from ...domain.enterprise.models.forwarding import (
     AccessForwardingObservation,
     AccessForwardingRow,
+    AccessForwardingSampleEvidence,
 )
 from ...domain.enterprise.services.access_forwarding import FORWARDING_STATES
 from ...shared.utils import same_interface_name
@@ -297,10 +298,12 @@ class _BoundedTerminalChannel:
         self,
         send_and_wait: Callable[[str, float], str | None],
         clock: Callable[[], float],
+        sleeper: Callable[[float], None],
     ) -> None:
         """Wrap one channel; nothing is bounded until a sample opens."""
         self._send_and_wait = send_and_wait
         self._clock = clock
+        self._sleeper = sleeper
         self._remaining = 0
         self._deadline: float | None = None
         self.calls = 0
@@ -311,6 +314,20 @@ class _BoundedTerminalChannel:
         self._remaining = int(calls)
         self._deadline = deadline
         self.exhausted = False
+
+    def remaining_seconds(self) -> float:
+        """Return the current sample's unspent wall-clock allowance."""
+        return (
+            max(0.0, self._deadline - self._clock())
+            if self._deadline is not None
+            else float("inf")
+        )
+
+    def sleep(self, seconds: float) -> None:
+        """Bound an executor wait by the same absolute sample deadline."""
+        remaining = self.remaining_seconds()
+        if remaining > 0:
+            self._sleeper(min(seconds, remaining))
 
     def __call__(self, script: str, timeout: float) -> str | None:
         """Dispatch one call, or refuse it because the sample is spent."""
@@ -377,13 +394,24 @@ class PacketTracerEnterpriseConfigurationRuntime:
         )
         self._configuration = PacketTracerConfigurationRuntime(send)
         self._ios = ControlledIosExecutor(send_and_wait)
-        # The neutral forwarding observation is the only path that has to
-        # account for each of its nested calls, so it gets its own
-        # executor over a bounded channel. Every other query keeps the
+        # The neutral forwarding observation accounts for nested calls and
+        # auxiliary state reads through its own bounded channel. Other queries keep the
         # unbounded channel and the executor it always used, and this one
         # keeps its own pager quarantine across a run's observations.
-        self._forwarding_channel = _BoundedTerminalChannel(send_and_wait, clock)
-        self._forwarding_ios = ControlledIosExecutor(self._forwarding_channel)
+        self._forwarding_channel = _BoundedTerminalChannel(
+            send_and_wait, clock, sleeper
+        )
+        self._forwarding_ios = ControlledIosExecutor(
+            self._forwarding_channel,
+            clock=clock,
+            sleeper=self._forwarding_channel.sleep,
+            remaining_budget=self._forwarding_channel.remaining_seconds,
+        )
+        self._forwarding_simulation_time_observer = (
+            simulation_time_observer
+            or SimulationTraceRuntime(self._forwarding_channel).read_simulation_state
+        )
+        self._forwarding_aux_is_injected = simulation_time_observer is not None
         self._renderer = PacketTracerIosRenderer()
         self._targets: dict[str, RuntimeConfigurationTarget] = {}
         self._hostname_timeout = hostname_timeout_seconds
@@ -751,6 +779,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         deadline_seconds: float = ACCESS_FORWARDING_DEADLINE_SECONDS,
         interval_seconds: float = ACCESS_FORWARDING_INTERVAL_SECONDS,
         sample_calls: int = ACCESS_FORWARDING_SAMPLE_CALLS,
+        remaining_seconds: float | None = None,
     ) -> AccessForwardingObservation:
         """Observe one switch/VLAN group's exact interfaces, neutrally.
 
@@ -774,6 +803,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
         ):
             raise ValueError("access forwarding max_samples must be a non-negative int")
         numeric_bounds = (deadline_seconds, interval_seconds)
+        if remaining_seconds is not None:
+            numeric_bounds += (remaining_seconds,)
         if any(
             isinstance(value, bool)
             or not isinstance(value, (int, float))
@@ -789,7 +820,10 @@ class PacketTracerEnterpriseConfigurationRuntime:
         if sample_calls < 1:
             raise ValueError("access forwarding sample_calls must be positive")
         ceiling = max_samples
-        deadline_window = float(deadline_seconds)
+        deadline_window = min(
+            float(deadline_seconds),
+            float(remaining_seconds) if remaining_seconds is not None else float("inf"),
+        )
         interval = float(interval_seconds)
         started = self._clock()
         deadline = started + deadline_window
@@ -798,6 +832,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         budget_exhausted = False
         show: IosCommandResult | None = None
         rows: tuple[AccessForwardingRow, ...] = ()
+        history: list[AccessForwardingSampleEvidence] = []
         vlan_present = False
         authoritative = False
         deadline_reached = False
@@ -809,6 +844,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             # dispatch is capped by the time this observation has left and
             # refused past the sample's own call budget.
             self._forwarding_channel.open(calls=sample_calls, deadline=deadline)
+            calls_before = self._forwarding_channel.calls
             show = self._forwarding_ios.execute(
                 device_name,
                 OperationalQueryId.SHOW_SPANNING_TREE,
@@ -829,6 +865,21 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         _access_forwarding_row(instance, interface)
                         for interface in requested
                     )
+            history.append(
+                AccessForwardingSampleEvidence(
+                    elapsed_ms=int(max(0.0, self._clock() - started) * 1000),
+                    rows=rows,
+                    executed=show.executed,
+                    fresh_output_observed=show.fresh_output_observed,
+                    output_complete=show.output_complete,
+                    observed_device_name=show.observed_device_name,
+                    device_identity_provenance=show.device_identity_provenance,
+                    vlan_present=vlan_present,
+                    channel_calls=self._forwarding_channel.calls - calls_before,
+                    sample_budget_exhausted=self._forwarding_channel.exhausted,
+                    deadline_reached=deadline_reached,
+                )
+            )
             if rows and all(
                 item.matches == 1 and str(item.state).upper() in FORWARDING_STATES
                 for item in rows
@@ -841,6 +892,19 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 deadline_reached = True
                 break
             self._sleeper(min(interval, remaining))
+        auxiliary_calls = 0
+        simulation_time = "not_sampled"
+        if samples and self._clock() < deadline:
+            # The default reader performs one bridge call over the same bounded
+            # channel. An injected reader is an opaque auxiliary call; it is
+            # charged here and its elapsed time is checked before permission.
+            self._forwarding_channel.open(calls=1, deadline=deadline)
+            simulation_time = self._simulation_time_text()
+            auxiliary_calls = int(self._forwarding_aux_is_injected)
+            budget_exhausted |= self._forwarding_channel.exhausted
+        elif samples:
+            simulation_time = "not_sampled_deadline"
+        deadline_reached |= self._clock() >= deadline
         return AccessForwardingObservation(
             switch_name=device_name,
             vlan_id=vlan_id,
@@ -855,16 +919,15 @@ class PacketTracerEnterpriseConfigurationRuntime:
             ),
             vlan_present=vlan_present,
             samples=samples,
+            sample_history=tuple(history),
             max_samples=ceiling,
             deadline_seconds=deadline_window,
             elapsed_ms=int(max(0.0, self._clock() - started) * 1000),
             deadline_reached=deadline_reached,
             sample_call_budget=sample_calls,
-            channel_calls=self._forwarding_channel.calls,
+            channel_calls=self._forwarding_channel.calls + auxiliary_calls,
             sample_budget_exhausted=budget_exhausted,
-            simulation_time=(
-                self._simulation_time_text() if samples else "not_sampled"
-            ),
+            simulation_time=simulation_time,
             failure_reason=(
                 "sample_call_budget_exhausted"
                 if budget_exhausted and not authoritative
@@ -884,7 +947,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         when none was composed, which is a fact about this run rather than a
         claim that simulation time stood still.
         """
-        reader = self._simulation_time_observer
+        reader = self._forwarding_simulation_time_observer
         if reader is None:
             return "absent"
         try:

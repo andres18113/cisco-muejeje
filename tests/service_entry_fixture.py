@@ -293,10 +293,11 @@ class RecordingConfigurationRuntime:
         device_name: str,
         vlan_id: int,
         interfaces: Any,
+        **bounds: Any,
     ) -> AccessForwardingObservation:
         """Delegate the grouped forwarding query to the timed backend."""
         return self.forwarding.observe_access_forwarding(
-            device_name, vlan_id, interfaces
+            device_name, vlan_id, interfaces, **bounds
         )
 
 
@@ -457,6 +458,7 @@ class ForwardingBackend:
     clock: SimulatedClock = field(default_factory=SimulatedClock)
     forwards_at: float | None = 0.0
     calls: list[tuple[str, int, tuple[str, ...]]] = field(default_factory=list)
+    limits: list[dict[str, Any]] = field(default_factory=list)
     observed_device_name: str | None = None
     device_identity_provenance: str = "confirmed_unique"
     fresh_output_observed: bool = True
@@ -479,10 +481,12 @@ class ForwardingBackend:
         device_name: str,
         vlan_id: int,
         interfaces: Any,
+        **bounds: Any,
     ) -> AccessForwardingObservation:
         """Answer one grouped query from the clock, not from the call count."""
         requested = tuple(str(item) for item in interfaces)
         self.calls.append((device_name, vlan_id, requested))
+        self.limits.append(dict(bounds))
         if self.raises is not None:
             raise self.raises
         self.clock.advance(self.seconds_per_observation)

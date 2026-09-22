@@ -28,6 +28,7 @@ setting that turns the gate off.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from typing import Protocol
 
 from ...domain.enterprise.models.forwarding import AccessForwardingObservation
@@ -40,7 +41,6 @@ from ...domain.enterprise.services.service_access_readiness import (
     CAUSE_BUDGET_EXHAUSTED,
     CAUSE_OBSERVATION_FAILED,
     CAUSE_OBSERVER_UNAVAILABLE,
-    CAUSE_SAMPLE_BUDGET_EXHAUSTED,
     AccessReadinessGroupResult,
     AccessReadinessPlan,
     AccessReadinessRequirement,
@@ -50,13 +50,14 @@ from ...domain.enterprise.services.service_access_readiness import (
     unplaced_group_result,
 )
 
-#: How long every readiness observation of one invocation may take together,
-#: and how many groups it may observe. Both are checked before the next
-#: observation starts, so a plan with many groups cannot extend a run by
-#: multiplying individually bounded waits. The per-group bounds stay the
-#: observer own: samples, deadline, interval and per-sample call budget.
+#: Total wait and group ceilings for one invocation. The gate carries each
+#: remaining allowance into the runtime and rechecks it after every read.
 READINESS_TOTAL_BUDGET_SECONDS = 120.0
 READINESS_MAX_GROUPS = 4
+READINESS_GROUP_DEADLINE_SECONDS = 30.0
+READINESS_GROUP_MAX_SAMPLES = 31
+READINESS_GROUP_INTERVAL_SECONDS = 1.0
+READINESS_SAMPLE_CALLS = 6
 
 
 class ReadinessNotRequired:
@@ -90,8 +91,14 @@ class AccessForwardingObserver(Protocol):
         device_name: str,
         vlan_id: int,
         interfaces: Sequence[str],
+        *,
+        remaining_seconds: float,
+        max_samples: int,
+        deadline_seconds: float,
+        interval_seconds: float,
+        sample_calls: int,
     ) -> AccessForwardingObservation:
-        """Observe the exact interfaces of one switch and VLAN, bounded."""
+        """Observe one exact group with the caller's remaining time and policy."""
 
 
 class ServiceAccessReadinessGate:
@@ -192,7 +199,7 @@ class ServiceAccessReadinessGate:
     def _observe(
         self, requirement: AccessReadinessRequirement
     ) -> AccessReadinessGroupResult:
-        """Take this group one bounded sample, or name why it took none."""
+        """Take one bounded observation episode, or name why it took none."""
         if self._observer is None:
             return unobserved_group_result(
                 requirement, cause=CAUSE_OBSERVER_UNAVAILABLE
@@ -204,8 +211,9 @@ class ServiceAccessReadinessGate:
                 requirement,
                 cause=f"{CAUSE_BUDGET_EXHAUSTED}:groups={self._max_groups}",
             )
-        elapsed = self._clock() - self._started
-        if elapsed >= self._total_budget_seconds:
+        group_started = self._clock()
+        remaining = self._total_budget_seconds - (group_started - self._started)
+        if remaining <= 0:
             return unobserved_group_result(
                 requirement,
                 cause=(
@@ -224,6 +232,11 @@ class ServiceAccessReadinessGate:
                 switch_name,
                 requirement.vlan_id,
                 list(requirement.interfaces),
+                remaining_seconds=remaining,
+                max_samples=READINESS_GROUP_MAX_SAMPLES,
+                deadline_seconds=READINESS_GROUP_DEADLINE_SECONDS,
+                interval_seconds=READINESS_GROUP_INTERVAL_SECONDS,
+                sample_calls=READINESS_SAMPLE_CALLS,
             )
         except Exception as exc:
             # An observer that raised observed nothing. That is the absence of
@@ -232,6 +245,12 @@ class ServiceAccessReadinessGate:
                 requirement,
                 cause=f"{CAUSE_OBSERVATION_FAILED}:{type(exc).__name__}",
             )
+        if self._clock() - group_started >= min(
+            remaining, READINESS_GROUP_DEADLINE_SECONDS
+        ):
+            # The rows remain available, but the product deadline is a closed
+            # permission boundary even if an observer returned a late FWD.
+            observation = replace(observation, deadline_reached=True)
         mismatch = _envelope_mismatch(observation, switch_name, requirement)
         if mismatch:
             # A sample was taken, but not of this group. Treating it as a
@@ -239,20 +258,6 @@ class ServiceAccessReadinessGate:
             return unobserved_group_result(
                 requirement,
                 cause=f"{CAUSE_ANSWER_DOES_NOT_MATCH_REQUEST}:{mismatch}",
-            )
-        if observation.sample_budget_exhausted:
-            # The model documents this field as granting no permission. The
-            # shared admission rule does not yet enforce it, and the product
-            # path will not wait for that: an incomplete sample is refused
-            # here, in the layer that asked for it.
-            return observed_group_result(
-                requirement,
-                admitted=False,
-                dimension=CAUSE_SAMPLE_BUDGET_EXHAUSTED.upper(),
-                causes=(CAUSE_SAMPLE_BUDGET_EXHAUSTED,),
-                sample=access_forwarding_facts(
-                    observation, access_forwarding_admission(observation)
-                ),
             )
         admission = access_forwarding_admission(observation)
         return observed_group_result(

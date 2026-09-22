@@ -9,10 +9,12 @@ the current
 [Server-PT services brief](../../engineering/change-briefs/server-pt-services.md).
 A historical LIVE permission confers none on a new run.
 
-`source-manifest.json` records every archived file with its origin, byte count
-and SHA-256. Archived bytes are never normalized: `.gitattributes` marks these
-paths `-text -diff` so each checkout reproduces the recorded digest. Statuses
-are not restated here; read them in the current brief.
+`source-manifest.json` records archived file revisions with their origin, byte
+count and SHA-256. Its `revision_errata` identifies two D02 entries that refer
+to earlier revisions; the entries themselves remain unchanged. Archived bytes
+are never normalized: `.gitattributes` marks these paths `-text -diff` so each
+checkout reproduces the recorded digest. Statuses are not restated here; read
+them in the current brief.
 
 ## Where to look
 
@@ -75,6 +77,9 @@ the first three correction-ledger entries.
 [`evidence/campaign-d02-q3-q1-autofix-01/`](evidence/campaign-d02-q3-q1-autofix-01/README.md)
 appends amendment entry 4 and focused-closure entry 5 to that chain and replaces
 nothing in it.
+The [revision erratum](source-manifest.json) identifies the original
+README/ledger declarations at `a02c1e0` and their later versions at `65abf7b`.
+The ledger remains append-only and historical entries are unchanged.
 
 ## Campaign `SERVER-PT-DIAG-0EA-01`
 
@@ -85,10 +90,13 @@ members total 223,052 bytes. It carries the three D-DHCP/D-WEB attempt
 directories, the campaign index and `FINAL-MANIFEST.sha256`.
 [`evidence/campaign-diag-0ea-01/`](evidence/campaign-diag-0ea-01/README.md)
 adds one verification and one digest index to that chain and replaces nothing
-in it: 62 digests were recomputed against the package's own manifests with no
-mismatch, the three permanent attempt markers were recovered in place and match
-the digests the manifest already held, and the force-termination sequence is
-preserved as four dated statements rather than reconciled into one.
+in it. That addendum reported 62 matching digest comparisons against the
+operator-held package. The three permanent attempt markers match the digests
+the manifest already held, and the force-termination sequence is preserved as
+four dated statements rather than reconciled into one.
+The [source correction and original marker copies](evidence/campaign-diag-0ea-01/correction-02/README.md)
+separate per-attempt process lists from the later current-only census and record
+the unavailable original grant and post-restart census sources.
 
 ## Adding a record
 

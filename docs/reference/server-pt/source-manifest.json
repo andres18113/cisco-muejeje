@@ -230,6 +230,58 @@
       "archive_path": "evidence/campaign-diag-0ea-01/README.md",
       "bytes": 7389,
       "sha256": "ef425bc81675c2f49d63dd7672134648f827e6c952f235a82f971d844f85f456"
+    },
+    {
+      "source_name": "attempt-08a06b738839b6f48f4b24516089ac09.json",
+      "archive_path": "evidence/campaign-diag-0ea-01/correction-02/markers/attempt-08a06b738839b6f48f4b24516089ac09.json",
+      "bytes": 160,
+      "sha256": "3b102060e2dce6f0eccec5fd5dcfec2de4d51b18539e552383a6cdf742910aa1",
+      "origin": "copied byte-for-byte from %LOCALAPPDATA%\\packet-tracer-mcp\\bridge\\campaign on 2026-09-21"
+    },
+    {
+      "source_name": "attempt-1cec3a925255de16907519d1c2919fed.json",
+      "archive_path": "evidence/campaign-diag-0ea-01/correction-02/markers/attempt-1cec3a925255de16907519d1c2919fed.json",
+      "bytes": 160,
+      "sha256": "7d31cc42e809663868674d5c95f1546c2811f61b482a7f6a1a17f7d866aaaadb",
+      "origin": "copied byte-for-byte from %LOCALAPPDATA%\\packet-tracer-mcp\\bridge\\campaign on 2026-09-21"
+    },
+    {
+      "source_name": "attempt-f2148bbd568a49391a26e83c6efcc67e.json",
+      "archive_path": "evidence/campaign-diag-0ea-01/correction-02/markers/attempt-f2148bbd568a49391a26e83c6efcc67e.json",
+      "bytes": 160,
+      "sha256": "95e2de984b48ba37501b0ab4132d4e743e030e5636c3b05cc79ca01697149992",
+      "origin": "copied byte-for-byte from %LOCALAPPDATA%\\packet-tracer-mcp\\bridge\\campaign on 2026-09-21"
+    },
+    {
+      "source_name": "README.md",
+      "archive_path": "evidence/campaign-diag-0ea-01/correction-02/README.md",
+      "bytes": 3158,
+      "sha256": "bb52b4e77b233a678a0fc5ed429a79752a0adc444a4850789580c43f33773036",
+      "origin": "additive claim-source correction in this delivery, 2026-09-21"
+    }
+  ],
+  "revision_errata": [
+    {
+      "archive_path": "evidence/campaign-d02-q3-q1-autofix-01/README.md",
+      "original_declaration_revision": "a02c1e0894f4f25f51c26e686e917cb41e59e3745",
+      "original_bytes": 4494,
+      "original_sha256": "50eeaf86bb4dc43b5f4f94b33ddff6528bbb77ef7b8117922a1f9bec4ff36708",
+      "current_revision_from": "65abf7bd3dbdc5047c4d4601eb18d77dca84367b",
+      "current_blob": "a2225d699c37ef8df81960cedc45057d15dc061e",
+      "current_bytes": 6770,
+      "current_sha256": "e7dbc25129ac2c9bc77d96c6f0c617bce43f7b80aa6580eecf2b4e631af72150",
+      "scope": "mutable README index"
+    },
+    {
+      "archive_path": "evidence/campaign-d02-q3-q1-autofix-01/amendment-ledger.jsonl",
+      "original_declaration_revision": "a02c1e0894f4f25f51c26e686e917cb41e59e3745",
+      "original_bytes": 6687,
+      "original_sha256": "05db0a7a1dd31b065ecc7c671ebcd513f672ece6bff742c0a3eef642b2cba43d",
+      "current_revision_from": "65abf7bd3dbdc5047c4d4601eb18d77dca84367b",
+      "current_blob": "5556700d1390e4e90dec81c57494267e92a8b38a",
+      "current_bytes": 10110,
+      "current_sha256": "46dd6b7b7aae15add1afdd7fb4a31aa9cf00e7ea28f005399b86ea5795accf7d",
+      "scope": "append-only ledger revision; prior entries preserved"
     }
   ]
 }

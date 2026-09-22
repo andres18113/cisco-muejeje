@@ -183,6 +183,23 @@ class AccessForwardingRow:
 
 
 @dataclass(frozen=True)
+class AccessForwardingSampleEvidence:
+    """One read in a bounded switch/VLAN observation episode."""
+
+    elapsed_ms: int
+    rows: tuple[AccessForwardingRow, ...]
+    executed: bool
+    fresh_output_observed: bool
+    output_complete: bool
+    observed_device_name: str
+    device_identity_provenance: str
+    vlan_present: bool
+    channel_calls: int
+    sample_budget_exhausted: bool
+    deadline_reached: bool
+
+
+@dataclass(frozen=True)
 class AccessForwardingObservation:
     """One bounded switch/VLAN forwarding sample, with nothing inferred.
 
@@ -203,6 +220,7 @@ class AccessForwardingObservation:
     device_identity_provenance: str = ""
     vlan_present: bool = False
     samples: int = 0
+    sample_history: tuple[AccessForwardingSampleEvidence, ...] = ()
     max_samples: int = 0
     deadline_seconds: float = 0.0
     elapsed_ms: int = 0

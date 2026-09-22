@@ -883,11 +883,12 @@ def test_the_sample_bound_caps_the_nested_calls_the_deadline_cannot(composition)
     )
 
     assert observation.sample_budget_exhausted is True
-    assert observation.channel_calls <= 2 * ACCESS_FORWARDING_SAMPLE_CALLS
+    sample_calls = sum(item.channel_calls for item in observation.sample_history)
+    assert sample_calls <= 2 * ACCESS_FORWARDING_SAMPLE_CALLS
+    assert observation.channel_calls == sample_calls + 1
     assert observation.failure_reason == "sample_call_budget_exhausted"
-    # Every counted call is either one of the bounded sample calls or
-    # the one simulation-state read taken after the loop.
-    assert made.ledger.used == observation.channel_calls + 1
+    # The existing simulation-state read is now counted in the observation.
+    assert made.ledger.used == observation.channel_calls
 
 
 def test_a_crossed_deadline_stops_the_sampling_and_grants_nothing(composition):
