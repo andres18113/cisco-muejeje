@@ -44,7 +44,13 @@ from ...domain.enterprise.models.forwarding import (
     AccessForwardingRow,
     AccessForwardingSampleEvidence,
 )
-from ...domain.enterprise.services.access_forwarding import FORWARDING_STATES
+from ...domain.enterprise.services.access_forwarding import (
+    CAUSE_AUXILIARY_READ_AFTER_DEADLINE,
+    CAUSE_EPISODE_WINDOW_ENDED,
+    CAUSE_SAMPLE_AFTER_DEADLINE,
+    CAUSE_SAMPLE_BUDGET_EXHAUSTED,
+    FORWARDING_STATES,
+)
 from ...shared.utils import same_interface_name
 from ..generator.configuration_renderer import PacketTracerIosRenderer
 from .configuration_runtime import PacketTracerConfigurationRuntime
@@ -292,6 +298,13 @@ class _BoundedTerminalChannel:
     sample has left, and refuses past the sample's call budget. A refusal is
     returned as "no answer", which the executor already models, so the sample
     ends as an unobserved one instead of an unbounded one.
+
+    `remaining_seconds` is the port the executor bounds its nested waits with,
+    and it reports the EFFECTIVE allowance rather than the clock alone. Time
+    left on a channel that can no longer dispatch is not allowance: a waiter
+    that kept polling it would spin, because nothing it asks can change the
+    answer. So it is zero once the call budget is spent, once the deadline has
+    passed, and once the channel underneath has stopped granting calls at all.
     """
 
     def __init__(
@@ -308,6 +321,11 @@ class _BoundedTerminalChannel:
         self._deadline: float | None = None
         self.calls = 0
         self.exhausted = False
+        #: Whether the channel underneath refused terminally. It is a fact
+        #: about the invocation's own allowance, not about one sample, so it
+        #: survives the next `open()` instead of being asked again per sample.
+        self.stopped = False
+        self.stop_reason = ""
 
     def open(self, *, calls: int, deadline: float | None) -> None:
         """Start one sample with its own call budget and absolute deadline."""
@@ -315,13 +333,21 @@ class _BoundedTerminalChannel:
         self._deadline = deadline
         self.exhausted = False
 
-    def remaining_seconds(self) -> float:
-        """Return the current sample's unspent wall-clock allowance."""
+    def seconds_left(self) -> float:
+        """Return the wall-clock time between now and the sample's deadline."""
         return (
             max(0.0, self._deadline - self._clock())
             if self._deadline is not None
             else float("inf")
         )
+
+    def can_dispatch(self) -> bool:
+        """Return whether one more call could actually reach the channel."""
+        return not self.stopped and self._remaining > 0 and self.seconds_left() > 0
+
+    def remaining_seconds(self) -> float:
+        """Return the allowance a nested waiter may still spend polling."""
+        return self.seconds_left() if self.can_dispatch() else 0.0
 
     def sleep(self, seconds: float) -> None:
         """Bound an executor wait by the same absolute sample deadline."""
@@ -331,7 +357,7 @@ class _BoundedTerminalChannel:
 
     def __call__(self, script: str, timeout: float) -> str | None:
         """Dispatch one call, or refuse it because the sample is spent."""
-        if self._remaining <= 0:
+        if self.stopped or self._remaining <= 0:
             self.exhausted = True
             return None
         allowed = float(timeout)
@@ -342,7 +368,19 @@ class _BoundedTerminalChannel:
             return None
         self._remaining -= 1
         self.calls += 1
-        return self._send_and_wait(script, allowed)
+        try:
+            return self._send_and_wait(script, allowed)
+        except Exception as exc:
+            # The channel underneath refused or failed this dispatch. Whatever
+            # its type -- and this layer deliberately does not know the
+            # application's -- the caller that owns the budget has stopped
+            # granting calls, so the answer is the "no answer" the executor
+            # already models and the channel stops offering more. The type is
+            # kept so the episode can report which boundary ended it.
+            self.stopped = True
+            self.stop_reason = f"channel_refused:{type(exc).__name__}"
+            self.exhausted = True
+            return None
 
 
 class PacketTracerEnterpriseConfigurationRuntime:
@@ -794,6 +832,15 @@ class PacketTracerEnterpriseConfigurationRuntime:
         Sampling stops at the first sample whose every requested interface is
         forwarding. A sequence that never gets there is returned as it was
         observed; nothing is reconfigured to make it converge.
+
+        What is returned separates the observation from the decision. The
+        top-level rows, identity and budget fields describe the LAST sample,
+        because its rows are the ones a caller may act on; every sample keeps
+        its own record in the history. `episode_budget_exhausted` and
+        `episode_end_reason` describe the episode and never the last sample,
+        so a read that failed recoverably early cannot refuse a complete read
+        that followed it. `deadline_reached` with `deadline_cause` is the only
+        decision here: the window is closed, and by which boundary.
         """
         requested = tuple(dict.fromkeys(str(item) for item in interfaces if item))
         if (
@@ -820,25 +867,43 @@ class PacketTracerEnterpriseConfigurationRuntime:
         if sample_calls < 1:
             raise ValueError("access forwarding sample_calls must be positive")
         ceiling = max_samples
-        deadline_window = min(
-            float(deadline_seconds),
-            float(remaining_seconds) if remaining_seconds is not None else float("inf"),
+        group_window = float(deadline_seconds)
+        parent_window = (
+            float(remaining_seconds) if remaining_seconds is not None else float("inf")
+        )
+        deadline_window = min(group_window, parent_window)
+        deadline_scope = (
+            "group"
+            if group_window < parent_window
+            else "invocation_remaining"
+            if parent_window < group_window
+            else "group_equals_remaining"
         )
         interval = float(interval_seconds)
         started = self._clock()
         deadline = started + deadline_window
         samples = 0
         self._forwarding_channel.calls = 0
-        budget_exhausted = False
+        # Two budget facts, deliberately not one. The first describes the
+        # sample a decision will read; the second only says that something,
+        # somewhere in this episode, ended on its budget.
+        sample_budget_exhausted = False
+        episode_budget_exhausted = False
+        sample_after_deadline = False
+        episode_end_reason = ""
         show: IosCommandResult | None = None
         rows: tuple[AccessForwardingRow, ...] = ()
         history: list[AccessForwardingSampleEvidence] = []
         vlan_present = False
         authoritative = False
-        deadline_reached = False
         while samples < ceiling:
+            if self._forwarding_channel.stopped:
+                # Nothing below will answer again, so polling for it is not
+                # patience, it is a spin. The reason the channel gave is kept.
+                episode_end_reason = self._forwarding_channel.stop_reason
+                break
             if self._clock() >= deadline:
-                deadline_reached = True
+                episode_end_reason = "deadline"
                 break
             # The bound travels with the call, not around it: each nested
             # dispatch is capped by the time this observation has left and
@@ -850,10 +915,16 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 OperationalQueryId.SHOW_SPANNING_TREE,
             )
             samples += 1
-            budget_exhausted = budget_exhausted or self._forwarding_channel.exhausted
+            # This sample's own exhaustion replaces the previous sample's: it
+            # is the one whose rows the admission is about. The episode keeps
+            # the fact that an exhaustion happened, under its own name.
+            sample_budget_exhausted = self._forwarding_channel.exhausted
+            episode_budget_exhausted = (
+                episode_budget_exhausted or sample_budget_exhausted
+            )
             # An answer that arrived after the bounded window is late evidence
             # about this sample, not authority. It is kept and it grants nothing.
-            deadline_reached = self._clock() >= deadline
+            sample_after_deadline = self._clock() >= deadline
             authoritative = spanning_tree_sample_is_authoritative(show, device_name)
             vlan_present = False
             rows = ()
@@ -876,35 +947,56 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     device_identity_provenance=show.device_identity_provenance,
                     vlan_present=vlan_present,
                     channel_calls=self._forwarding_channel.calls - calls_before,
-                    sample_budget_exhausted=self._forwarding_channel.exhausted,
-                    deadline_reached=deadline_reached,
+                    sample_budget_exhausted=sample_budget_exhausted,
+                    deadline_reached=sample_after_deadline,
                 )
             )
             if rows and all(
                 item.matches == 1 and str(item.state).upper() in FORWARDING_STATES
                 for item in rows
             ):
+                episode_end_reason = "forwarding_sample_admitted"
                 break
             if samples >= ceiling:
+                episode_end_reason = "max_samples_reached"
                 break
             remaining = deadline - self._clock()
             if remaining <= 0:
-                deadline_reached = True
+                episode_end_reason = "deadline"
                 break
             self._sleeper(min(interval, remaining))
+        if not episode_end_reason:
+            episode_end_reason = (
+                "max_samples_reached" if ceiling else "no_sample_requested"
+            )
         auxiliary_calls = 0
+        auxiliary_budget_exhausted = False
+        auxiliary_read_after_deadline = False
         simulation_time = "not_sampled"
         if samples and self._clock() < deadline:
             # The default reader performs one bridge call over the same bounded
             # channel. An injected reader is an opaque auxiliary call; it is
             # charged here and its elapsed time is checked before permission.
+            # Both facts belong to the auxiliary read, never to the sample.
             self._forwarding_channel.open(calls=1, deadline=deadline)
             simulation_time = self._simulation_time_text()
             auxiliary_calls = int(self._forwarding_aux_is_injected)
-            budget_exhausted |= self._forwarding_channel.exhausted
+            auxiliary_budget_exhausted = self._forwarding_channel.exhausted
+            auxiliary_read_after_deadline = self._clock() >= deadline
         elif samples:
             simulation_time = "not_sampled_deadline"
-        deadline_reached |= self._clock() >= deadline
+        # The window is closed when a boundary closed it, and the boundary that
+        # did is the one reported. The order is most specific first: this
+        # sample's own lateness, then the auxiliary read's overrun, then the
+        # window simply ending. An episode that stopped for any other reason
+        # while the window was still open closes nothing.
+        deadline_cause = ""
+        if sample_after_deadline:
+            deadline_cause = CAUSE_SAMPLE_AFTER_DEADLINE
+        elif auxiliary_read_after_deadline:
+            deadline_cause = CAUSE_AUXILIARY_READ_AFTER_DEADLINE
+        elif self._clock() >= deadline:
+            deadline_cause = CAUSE_EPISODE_WINDOW_ENDED
         return AccessForwardingObservation(
             switch_name=device_name,
             vlan_id=vlan_id,
@@ -923,14 +1015,21 @@ class PacketTracerEnterpriseConfigurationRuntime:
             max_samples=ceiling,
             deadline_seconds=deadline_window,
             elapsed_ms=int(max(0.0, self._clock() - started) * 1000),
-            deadline_reached=deadline_reached,
+            deadline_reached=bool(deadline_cause),
+            deadline_cause=deadline_cause,
+            deadline_scope=deadline_scope,
             sample_call_budget=sample_calls,
             channel_calls=self._forwarding_channel.calls + auxiliary_calls,
-            sample_budget_exhausted=budget_exhausted,
+            sample_budget_exhausted=sample_budget_exhausted,
+            sample_after_deadline=sample_after_deadline,
+            episode_budget_exhausted=episode_budget_exhausted,
+            episode_end_reason=episode_end_reason,
+            auxiliary_budget_exhausted=auxiliary_budget_exhausted,
+            auxiliary_read_after_deadline=auxiliary_read_after_deadline,
             simulation_time=simulation_time,
             failure_reason=(
-                "sample_call_budget_exhausted"
-                if budget_exhausted and not authoritative
+                CAUSE_SAMPLE_BUDGET_EXHAUSTED
+                if sample_budget_exhausted and not authoritative
                 else (
                     (show.failure_reason if show is not None else "no_sample_taken")
                     or ("" if authoritative else "stp_sample_not_authoritative")

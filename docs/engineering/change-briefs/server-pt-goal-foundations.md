@@ -1937,6 +1937,7 @@ second is the stronger property for a gate whose whole job is to refuse.
 | 8 | `test_the_overlap_cause_names_the_containment_the_numbers_show` (three directions) |
 | 9 | `test_only_a_declared_access_port_action_produces_a_placement`, `test_the_real_access_port_action_type_is_the_one_derivation_accepts` |
 | exemption contract | `test_an_exemption_must_state_its_reason` |
+
 ## 2026-09-21 product-readiness time and evidence correction at `557195f` (risk L)
 
 The reviewed product gate can admit a result returned after its 120-second total
@@ -2047,3 +2048,260 @@ LIVE behavior remain unverified, and independent acceptance is still required.
 The exact delivery SHA/tree and clean delivery-gate result are recorded after
 the local commit; exact-SHA CI remains pending without a feature-branch
 publication grant.
+
+## 2026-09-21 sample/episode/phase boundary correction at `9aa8388` (risk L)
+
+The reviewed closure makes three lifetime mistakes and carries three bounded
+documentary defects. `observe_access_forwarding` folds every sample's call
+exhaustion into one cumulative flag, so an early incomplete read refuses a
+later complete, timely, correctly attributed FWD sample through the canonical
+domain rule. `deadline_reached` carries four different facts at once, so the
+shared rule publishes `sample_after_deadline` about samples that arrived on
+time. The nested IOS waiter snapshots its remaining allowance once, so after
+the effective budget is spent it polls locally without sleeping until an
+independent deadline that a stopped clock never reaches. The outcome is that a
+recoverable failed read stops invalidating a valid later sample, expiration
+stops polling promptly and names the boundary that actually expired, and the
+published source manifest identifies a revision that exists.
+
+Risk is L because this changes an authorization boundary, the durable evidence
+shape and a shared refusal contract. It is a focused correction of the reviewed
+closure and not a new readiness subsystem. Out of scope, explicitly: any Packet
+Tracer contact, process action or product bridge startup; capability promotion;
+attempt reset or Q-stage replay; a main merge or force push; a new public
+argument; a replacement transport or parser; the unintegrated pure DHCP
+assessment, which stays non-authorizing; and any unrelated refactor. This
+delta authorizes no LIVE work.
+
+### The four lifetimes this correction separates
+
+A fact is named for the thing it describes, and nothing wider.
+
+| Lifetime | What it may state | Fields |
+| --- | --- | --- |
+| Nested call | one channel dispatch was refused or capped | per-sample `channel_calls` |
+| Individual sample | this read's own completeness, identity and timeliness | `sample_budget_exhausted`, `sample_after_deadline`, per-sample `deadline_reached` |
+| Observation episode | why sampling stopped, and what happened anywhere in it | `episode_end_reason`, `episode_budget_exhausted`, `auxiliary_read_after_deadline`, `auxiliary_budget_exhausted` |
+| Invocation and phase | which parent boundary closed permission | `deadline_scope`, `deadline_cause`, aggregate `deadline_reached` |
+
+`sample_budget_exhausted` and `sample_after_deadline` are raw observations
+about the authorizing sample, which is the last sample, because its rows are
+the rows the admission reads. `episode_budget_exhausted` and
+`episode_end_reason` are episode diagnostics and never authorize or refuse on
+their own. `deadline_reached` stays the decision fact -- the permission window
+is closed -- and `deadline_cause` names which boundary closed it. Legacy
+records that carry neither new field keep their historical interpretation,
+because an empty `deadline_cause` still reads as `sample_after_deadline`.
+
+### Requirements and acceptance criteria
+
+| Requirement | Acceptance criterion | Acceptance test |
+| --- | --- | --- |
+| R1: an early read-only sample exhaustion does not refuse a later valid sample | the canonical rule admits the complete, fresh, attributed, in-budget, timely final FWD sample at 4 s and 26 s; the exhausted first sample stays in the history; zero HTTP before it; agreement after reload | `test_an_early_exhausted_read_does_not_refuse_a_later_valid_sample`, `test_an_early_exhausted_read_agrees_after_the_record_is_reloaded`, `test_public_http_follows_a_valid_sample_that_an_earlier_read_preceded`, `test_an_exhausted_final_forwarding_sample_still_refuses`, `test_an_episode_exhaustion_alone_never_refuses_the_authorizing_sample`, `test_an_exhausted_auxiliary_read_refuses_under_its_own_name`, `test_authority_loss_is_never_recovered_by_a_later_sample` |
+| R2: sample lateness, episode termination, parent boundary and auxiliary delay are distinct | each refused case names the boundary that actually expired and dispatches no HTTP, in the gate and in the stored projection | `test_a_timely_persistent_lis_episode_does_not_claim_a_late_sample`, `test_a_genuinely_late_sample_is_reported_late`, `test_a_timely_sample_refused_by_an_auxiliary_overrun_stays_timely`, `test_exhaustion_before_any_sample_names_itself`, `test_a_timely_admitted_sample_names_no_boundary_at_all`, `test_the_gate_and_its_stored_row_name_the_boundary_that_expired` (three cases), `test_the_gate_admits_the_timely_positive_and_names_no_boundary`, `test_public_workflow_sends_no_http_after_a_late_forwarding_answer`, `test_the_applicable_parent_boundary_is_recorded_with_its_scope`, `test_a_legacy_record_without_a_named_cause_keeps_its_interpretation`, `test_the_published_projection_separates_raw_facts_from_decisions` |
+| R3: a spent effective budget or a terminal refusal stops the nested waiter | bounded exit under a watchdog, no post-expiration dispatch, the primary cause preserved, the cleanup reserve untouched | `test_the_nested_waiter_stops_when_the_phase_allowance_is_spent`, `test_the_nested_waiter_stops_when_the_call_allowance_is_spent`, `test_a_terminal_refusal_stops_the_nested_waiter`, `test_normal_progress_is_unchanged_in_the_same_composition`, `test_a_readiness_waiter_without_a_control_polls_exactly_as_before`, `test_a_readiness_waiter_stops_on_a_spent_control_without_sleeping` |
+| R3b: the pager names the boundary that expired | a shorter caller allowance is reported as the caller's, not as the pager's own deadline | `test_a_shorter_caller_allowance_is_not_reported_as_the_pager_deadline`, `test_a_pager_capture_that_owns_the_expired_deadline_still_says_so` |
+| R4: published documentary and fixture facts are true | both manifest revisions resolve; the heading renders as a heading with its anchor; the default auxiliary reader is exercised against a valid controlled response | `test_the_manifest_revision_errata_identify_real_revisions`, `test_the_manifest_errata_bytes_and_digests_match_their_revisions`, `test_no_maintained_heading_is_swallowed_by_the_table_above_it`, `test_the_risk_l_headings_render_outside_the_tables_above_them`, `test_default_auxiliary_channel_call_is_counted_and_deadline_capped`, `test_an_unavailable_auxiliary_reader_is_reported_as_unreadable` |
+| P1: the shared absolute window is stated and enforced | a group starting at offset 106 of the 120-second window observes for at most 14 seconds | `test_a_late_group_inherits_only_the_remaining_shared_window`, `test_an_expired_shared_window_observes_nothing_at_all` |
+| P2: the durable record is measured, not assumed | the serialized record and response at a supported public topology limit are measured and recorded | `test_the_serialized_readiness_record_is_measured_at_a_supported_limit` |
+
+### Architectural impact and affected contracts
+
+`AccessForwardingObservation` gains seven additive fields with defaults, so
+every stored record and every existing constructor keeps working.
+`access_forwarding_admission` keeps its dimension order unchanged -- the
+DEADLINE dimension still precedes SAMPLE_CALL_BUDGET, and neither moves to
+obtain a preferred message -- and reads the authorizing sample's own flags
+instead of the episode's. `access_forwarding_facts` publishes the new fields
+beside the existing ones; no key is removed or renamed.
+
+`_BoundedTerminalChannel.remaining_seconds` is the existing port between the
+bounded channel and `ControlledIosExecutor`. Its contract becomes effective
+rather than purely temporal: it returns zero when the channel can no longer
+dispatch at all, because its call budget is spent, its deadline has passed, or
+the underlying transport refused terminally. Infrastructure catches `Exception`
+generically at that seam and records the refusal as a stop reason; it imports
+no application type. `DeviceReadinessWaiter` gains one optional keyword-only
+control, `remaining_seconds`, and re-reads it every iteration instead of
+trusting the construction-time snapshot; it stops without sleeping when the
+effective remaining time is not positive. No public product argument is added.
+
+### Invariants
+
+- No sample that refused before this change is admitted after it. The gate,
+  the envelope binding, the identity, freshness and completeness checks, the
+  sticky process-incarnation, ownership, uncertain-mutation and quarantine
+  facts, and the fail-closed order are unchanged.
+- Cumulative call accounting (`channel_calls`) and the complete bounded sample
+  history stay in the durable record. Nothing is truncated.
+- The shared absolute readiness window stays 120 seconds, measured from the
+  first readiness observation, and HTTP elapsed time between groups is neither
+  paused nor refunded. The 30-second group horizon is an upper bound: a group
+  starting at offset 106 has at most 14 seconds. This is not a new HTTP
+  transaction timeout and not a new expiration rule for memoized groups.
+- Enum wire and string values are unchanged; ordinary boot, Voice and ungated
+  IOS behavior keep the lifecycle helper and the defaults they had.
+- Historical ledger entries, manifests, campaign files and marker bytes keep
+  their bytes. The manifest erratum corrects a malformed revision identifier
+  only.
+
+### Test design
+
+Unit tests cover the domain admission rule over the new per-sample and episode
+fields. Integration tests cover the composed runtime, the bounded channel, the
+real IOS executor, the actual `OperationLedger`/`LedgeredTransport` pair with
+controlled time and an outer watchdog, and the gate. System tests cover the
+public workflow, the stored projection and its reload. Acceptance traceability
+is the table above. LIVE qualification is not applicable: this order authorizes
+none, and offline evidence cannot establish Packet Tracer behavior.
+
+### Scope owned by the touched files
+
+The nested-wait correction touches `device_lifecycle.py`, a small legacy module
+that was outside the Ruff boundary. Touching it means owning its current state,
+so this delivery adds the six missing docstrings and applies the configured
+formatter to that one file. Nothing in it is translated: the existing Spanish
+class docstrings are legacy content and stay as they are, while the docstrings
+this change adds are English, as the coding standard requires of new content.
+
+The pager-diagnostic regressions were deliberately NOT written into
+`test_e95_serial_orientation_pager_capture.py`. That file is legacy and
+carries thirty unrelated Ruff findings and a seventy-one line reformat, none of
+which this correction caused. The two regressions live with the other boundary
+tests instead and import that file's measured pager fakes, so the behaviour is
+exercised by the same terminals and no unrelated legacy file is reformatted.
+The boundary stays where it was; expanding it remains a separate change with
+its own debt assessment.
+
+### One deliberate narrowing, stated rather than discovered
+
+A terminal refusal stops the bounded channel for the rest of the invocation,
+not only for the sample that met it. One gate serves up to four groups through
+one runtime and therefore one channel, so a later group now reports that it
+took no sample rather than dispatching into a channel that already refused.
+This refuses strictly more than before -- previously the exception escaped the
+observation, the group was recorded as `observation_failed`, and the next
+group tried again -- and it is what makes the loop bounded. It is the right
+reading for the refusal this actually models: a ledger that has closed effects
+or spent its allowance does not reopen for the next group. A transport that
+raised transiently is treated the same way, which is the conservative
+direction, and it is recorded here so a reviewer weighs it rather than finding
+it.
+
+### Measured offline closure
+
+- The defect reproduces before the change and not after it. The early
+  exhaustion case is a first read that spends its six nested calls on a
+  terminal that never converges -- read-only, no key delivered, no pager
+  entered, no quarantine raised -- followed by a complete, fresh,
+  `confirmed_unique`, in-budget FWD sample. Before: `SAMPLE_CALL_BUDGET_EXHAUSTED`
+  with cause `sample_call_budget_exhausted`, although the observation's own
+  `failure_reason` was empty. After: admitted at `forwards_at` 4.0 s and
+  26.0 s, with the failed read retained as `sample_history[0]` and the whole
+  episode still marked `episode_budget_exhausted`.
+- A normal sample costs four nested channel calls against a budget of six, so
+  the exhaustion above is caused by the stalled read and not by the ceiling.
+- R3 reproduces as non-termination, which is what the reduced audit
+  described. With a 0.05-second phase allowance and a 0.02-second reserve, the
+  composed `OperationLedger`/`LedgeredTransport`/runtime never returned within
+  a twenty-second real watchdog: two dispatches reached the transport, four
+  ledger refusals were recorded, the simulated clock stopped at 0.030 s and
+  `capped_sleep` was never asked for a positive wait. The same composition
+  after the change returns immediately with two dispatches, one ledger refusal
+  and the clock still at 0.030 s. The dispatch count is identical before and
+  after, which is the point: this was a local late-stop defect and never extra
+  Packet Tracer commands. The whole boundary file, watchdogs included, runs in
+  under a second.
+- A terminal refusal underneath the bounded channel now ends the episode as
+  `channel_refused:OperationRefused` instead of escaping as an exception into
+  the generic readiness waiter, which used to catch it and keep polling. The
+  ledger's own half is unchanged and still asserted: three calls used, every
+  entry past the ceiling refused before dispatch.
+- The blast radius is exactly one executor. Of the ten `ControlledIosExecutor`
+  constructions in the package, only the neutral access-forwarding one passes
+  `remaining_budget`; every other path -- Voice, control plane, security,
+  probes, serial orientation, PoE and the CP-SCALE observers -- leaves the
+  control unbound, so its waiters read an unbounded allowance and behave
+  exactly as before. That equality is asserted rather than assumed.
+- The pager diagnostic distinguishes its two boundaries. Its own 25-second
+  deadline still reports "exceeded its bounded deadline of 25s"; a caller
+  allowance that runs out first now reports "stopped on the caller's remaining
+  allowance, before its own bounded deadline of 25s", measured with the clock
+  still below 25 s.
+- Both `original_declaration_revision` values are now the 40-character commit
+  `a02c1e0`. Verified against the stored Git objects, in binary, and not the
+  other way round: README 4,494 bytes / `50eeaf86...`, ledger 6,687 bytes /
+  `05db0a7a...` at `a02c1e0`; README 6,770 bytes / `e7dbc251...` (blob
+  `a2225d6`) and ledger 10,110 bytes / `46dd6b7b...` (blob `5556700`) at
+  `65abf7b`. No ledger entry, manifest, campaign file or marker byte changed.
+- Rendering is inspected, not inferred. In the site built by the project's own
+  MkDocs configuration, the previously swallowed heading renders as
+  `<h2 id="2026-09-21-product-readiness-time-and-evidence-correction-at-557195f-risk-l">`
+  with its permalink anchor, this delta's heading renders as its own `<h2>`
+  with a table-of-contents entry, and no risk-L heading remains inside a table
+  cell. Removing the blank line again makes both the source-level and the
+  rendered check fail, which is what makes them regressions.
+- The default auxiliary reader is exercised against a controlled simulation
+  state (`frames: 3`, `sim_time: 12.5`) and the observation reports
+  `sim_time:12.5;frames:3`, derived from that answer rather than from a fake
+  refusing a request it never implemented. An intentionally raising reader is
+  a separate case and reports `unreadable:RuntimeError`.
+- The shared window is stated and tested: with the 120-second allowance and a
+  group starting at offset 106, the observer receives `remaining_seconds=14.0`
+  beside the unchanged 30-second group horizon, and at offset 120 no
+  observation is taken at all. HTTP time between groups is neither paused nor
+  refunded, and nothing here is a new HTTP transaction timeout or a new
+  expiration rule for memoized groups.
+- The durable record is measured rather than assumed. At the supported public
+  ceiling -- 24 access ports, 31 samples per group, 4 groups -- one group's
+  serialized facts are 66,468 bytes compact and 120,224 bytes at the
+  `indent=2` the record store actually writes. A full invocation is therefore
+  265,872 bytes compact and 480,896 bytes on disk, which is 0.46 MiB. No limit
+  violation is demonstrated, so no evidence is truncated and no reporting
+  framework is added.
+
+| Verification | Result |
+| --- | --- |
+| Boundary, published-source, readiness, forwarding, diagnostic and pager tests | 206 passed |
+| Voice, IOS, forwarding, persistence, readiness, lifecycle and device areas | 1,388 passed, 2 skipped |
+| CP-SCALE realtime STP observation | 49 passed |
+| Full offline pytest (Python 3.12.10, checkout `.venv`) | 6,977 passed, 3 skipped, 3 unchanged deprecation warnings |
+| Namespace inventory | 0 active imports, 0 active string references, 0 unreviewed inert mentions |
+| MkDocs build and rendered-heading inspection | exit 0; two pre-existing missing-handoff warnings; 7 risk-L `<h2>` elements, all anchored |
+| Whitespace | `git diff --check` exit 0 |
+| Quality gate, worktree mode against `cisco/main` | 118 changed Python files gated, all checks passed |
+
+The three skips are environmental and unrelated to this change: symlink
+creation is refused for this account, and two Voice evidence tests find no
+retained raw run or qualification artefact in this checkout.
+
+### One intermittent failure observed, and what it is not
+
+`test_no_classified_family_names_a_module_that_stopped_dispatching`, a
+pre-existing architecture gate that walks every `src/packet_tracer_mcp/**/*.py`
+and re-derives which modules dispatch mutations, failed once in eight
+full-suite runs. It is reported here rather than filtered out, and it is not
+attributed to this change, on this evidence:
+
+- it passes in isolation, in every focused set, and in the last four
+  consecutive full runs;
+- the sweep it performs is stable across sixty consecutive enumerations in a
+  standalone process, with an empty stale set every time;
+- a per-test watcher over the whole suite recorded the package tree after each
+  of the 6,977 tests and found the same 351 modules at the same sizes
+  throughout, so no test changes the content the sweep reads;
+- running it together with the two test files this change adds, five times,
+  never reproduced it;
+- nothing this change touches is named by the gate, which classifies mutation
+  dispatchers, and the correction adds no dispatcher and removes no call.
+
+What remains is a transient directory-enumeration miss under `rglob` on this
+platform, which the gate would report as a family whose module "stopped
+dispatching". Making that gate robust to it is a separate change with its own
+brief; this delivery neither introduces it nor hides it.
+
+The delivery remains offline and self-reviewed. Packet Tracer capability and
+LIVE behaviour remain unverified; this order authorizes no LIVE work, and an
+offline suite cannot establish Packet Tracer behaviour. Exact-SHA CI remains
+pending without a feature-branch publication grant, and independent acceptance
+is still required. Delivery status is `READY_FOR_REVIEW`, not acceptance.

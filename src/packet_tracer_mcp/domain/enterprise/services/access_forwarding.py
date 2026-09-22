@@ -10,6 +10,12 @@ per sample: a port that is up, a green light and a forwarding row observed
 before the last topology change are auxiliary evidence, never a substitute for
 a fresh, complete, uniquely attributed row of the exact VLAN this question is
 about. Every dimension refuses on its own so the caller can say which one did.
+
+Per sample also means per sample when the news is bad. The rule reads the
+authorizing sample's own facts -- the last one, whose rows it is about -- and
+never an episode aggregate. An earlier read that failed recoverably is kept as
+a diagnostic and refuses nothing, while a boundary that really did close the
+window refuses under the name of the boundary that closed it.
 """
 
 from __future__ import annotations
@@ -48,6 +54,16 @@ DIMENSION_MISSING_INTERFACE = "MISSING_INTERFACE"
 DIMENSION_AMBIGUOUS_INTERFACE = "AMBIGUOUS_INTERFACE"
 DIMENSION_NON_FORWARDING = "NON_FORWARDING"
 DIMENSION_NONE = "NONE"
+
+#: The causes the two boundary dimensions report. Each names the lifetime it
+#: is about, so a reader never has to guess whether a refusal is about one
+#: read, the episode around it, or the parent allowance above both.
+CAUSE_SAMPLE_AFTER_DEADLINE = "sample_after_deadline"
+CAUSE_AUXILIARY_READ_AFTER_DEADLINE = "auxiliary_read_after_deadline"
+CAUSE_EPISODE_WINDOW_ENDED = "episode_window_ended_without_admissible_sample"
+CAUSE_GROUP_DEADLINE_REACHED = "group_deadline_reached"
+CAUSE_SAMPLE_BUDGET_EXHAUSTED = "sample_call_budget_exhausted"
+CAUSE_AUXILIARY_BUDGET_EXHAUSTED = "auxiliary_read_call_budget_exhausted"
 
 CONFIRMED_UNIQUE = "confirmed_unique"
 
@@ -135,16 +151,28 @@ def access_forwarding_admission(
             ),
         )
     if observation.deadline_reached:
-        # A row that arrived after the bounded window belongs to a sample the
-        # caller stopped waiting for. It is retained, and it authorizes nothing.
+        # The window is closed, so nothing here authorizes a request. Which
+        # boundary closed it is the observation's to state: a sample that
+        # really did arrive late, an auxiliary read that consumed the rest, a
+        # window that simply ended, or a parent bound the product applied.
+        # A record written before those names existed meant the late sample.
         return AccessForwardingAdmission(
-            False, DIMENSION_DEADLINE, causes=("sample_after_deadline",)
+            False,
+            DIMENSION_DEADLINE,
+            causes=(observation.deadline_cause or CAUSE_SAMPLE_AFTER_DEADLINE,),
         )
-    if observation.sample_budget_exhausted:
+    if observation.sample_budget_exhausted or observation.auxiliary_budget_exhausted:
+        # An earlier sample's exhaustion is deliberately absent from this
+        # test. It is retained as an episode diagnostic, and a read that
+        # failed recoverably never refuses the complete read that followed it.
         return AccessForwardingAdmission(
             False,
             DIMENSION_SAMPLE_BUDGET,
-            causes=("sample_call_budget_exhausted",),
+            causes=(
+                CAUSE_SAMPLE_BUDGET_EXHAUSTED
+                if observation.sample_budget_exhausted
+                else CAUSE_AUXILIARY_BUDGET_EXHAUSTED,
+            ),
         )
     if not observation.vlan_present:
         return AccessForwardingAdmission(
@@ -248,6 +276,17 @@ def access_forwarding_facts(
         "sample_call_budget": observation.sample_call_budget,
         "channel_calls": observation.channel_calls,
         "sample_budget_exhausted": observation.sample_budget_exhausted,
+        # Raw timeliness and budget facts about the authorizing sample, the
+        # episode diagnostics around it, the auxiliary read's own facts, and
+        # the applicable parent bound -- each under its own key, so a reader
+        # of the durable record never has to infer which one a flag meant.
+        "sample_after_deadline": observation.sample_after_deadline,
+        "episode_budget_exhausted": observation.episode_budget_exhausted,
+        "episode_end_reason": observation.episode_end_reason,
+        "auxiliary_budget_exhausted": observation.auxiliary_budget_exhausted,
+        "auxiliary_read_after_deadline": observation.auxiliary_read_after_deadline,
+        "deadline_scope": observation.deadline_scope,
+        "deadline_cause": observation.deadline_cause,
         "simulation_time": observation.simulation_time,
         "failure_reason": observation.failure_reason,
         "lights": [

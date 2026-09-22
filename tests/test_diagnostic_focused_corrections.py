@@ -34,7 +34,6 @@ from service_qualification_engine import (
 from packet_tracer_mcp.application.use_cases.qualify_server_services import (
     LedgeredTransport,
     OperationLedger,
-    OperationRefused,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     D_WEB_FORWARDING_SAMPLE_CALLS,
@@ -44,6 +43,9 @@ from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     MeasurementConclusion,
     MeasurementStatus,
     QualificationStage,
+)
+from packet_tracer_mcp.domain.enterprise.services.access_forwarding import (
+    access_forwarding_admission,
 )
 from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     ACCESS_FORWARDING_SAMPLE_CALLS,
@@ -847,7 +849,15 @@ def composition(tmp_path):
 
 
 def test_a_ledger_that_cannot_pay_refuses_the_next_nested_call(composition):
-    """Exhaustion is a refusal before dispatch, not an overspend to discover."""
+    """Exhaustion is a refusal before dispatch, and it ends the observation.
+
+    The ledger's half of this is unchanged: nothing past the ceiling is
+    dispatched, and every entry past it is a refusal. What the observation
+    does with that refusal is the correction. It used to travel out as an
+    exception, which the nested readiness waiter caught and then polled
+    through, so a spent ledger became a local loop. Now the bounded channel
+    carries it as the stop it is: the episode ends, and it names the boundary.
+    """
     made = composition("exhausted", terminal_response_delay_reads=40)
     ledger = OperationLedger(max_operations=3, max_seconds=900, clock=made.clock)
     made.ledger = ledger
@@ -862,16 +872,21 @@ def test_a_ledger_that_cannot_pay_refuses_the_next_nested_call(composition):
         sleeper=bound.capped_sleep,
     )
 
-    with pytest.raises(OperationRefused) as refused:
-        runtime.observe_access_forwarding("SW", 1, tuple(FORWARDING_ROWS))
+    observation = runtime.observe_access_forwarding("SW", 1, tuple(FORWARDING_ROWS))
 
-    assert refused.value.reason == "operation_budget_exhausted"
     # Every call past the ceiling was refused BEFORE dispatch, so the
-    # ledger never records more than it granted, and the refusal is
-    # what reaches the caller rather than a quietly short sample.
+    # ledger never records more than it granted.
     assert ledger.used == 3
     assert ledger.refused_calls >= 1
     assert all(item.refused for item in ledger.entries[3:])
+    assert {item.refused for item in ledger.entries[3:]} == {
+        "operation_budget_exhausted"
+    }
+    # The caller is told, rather than left with a quietly short sample: the
+    # episode stopped on the refusal and says which one ended it.
+    assert observation.episode_end_reason == "channel_refused:OperationRefused"
+    assert observation.sample_budget_exhausted is True
+    assert access_forwarding_admission(observation).admitted is False
 
 
 def test_the_sample_bound_caps_the_nested_calls_the_deadline_cannot(composition):

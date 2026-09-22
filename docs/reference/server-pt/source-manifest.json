@@ -263,7 +263,7 @@
   "revision_errata": [
     {
       "archive_path": "evidence/campaign-d02-q3-q1-autofix-01/README.md",
-      "original_declaration_revision": "a02c1e0894f4f25f51c26e686e917cb41e59e3745",
+      "original_declaration_revision": "a02c1e0894f425f51c26e686e917cb41e59e3745",
       "original_bytes": 4494,
       "original_sha256": "50eeaf86bb4dc43b5f4f94b33ddff6528bbb77ef7b8117922a1f9bec4ff36708",
       "current_revision_from": "65abf7bd3dbdc5047c4d4601eb18d77dca84367b",
@@ -274,7 +274,7 @@
     },
     {
       "archive_path": "evidence/campaign-d02-q3-q1-autofix-01/amendment-ledger.jsonl",
-      "original_declaration_revision": "a02c1e0894f4f25f51c26e686e917cb41e59e3745",
+      "original_declaration_revision": "a02c1e0894f425f51c26e686e917cb41e59e3745",
       "original_bytes": 6687,
       "original_sha256": "05db0a7a1dd31b065ecc7c671ebcd513f672ece6bff742c0a3eef642b2cba43d",
       "current_revision_from": "65abf7bd3dbdc5047c4d4601eb18d77dca84367b",

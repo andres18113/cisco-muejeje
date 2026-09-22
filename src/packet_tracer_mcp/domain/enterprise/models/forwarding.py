@@ -184,7 +184,14 @@ class AccessForwardingRow:
 
 @dataclass(frozen=True)
 class AccessForwardingSampleEvidence:
-    """One read in a bounded switch/VLAN observation episode."""
+    """One read in a bounded switch/VLAN observation episode.
+
+    Every field here is raw and belongs to THIS read. `channel_calls` counts
+    the nested dispatches it made, `sample_budget_exhausted` says it ended on
+    that budget rather than on its own completion, and `deadline_reached` says
+    it finished at or after the episode's window. None of the three describes
+    any other sample, and none of them describes the episode.
+    """
 
     elapsed_ms: int
     rows: tuple[AccessForwardingRow, ...]
@@ -207,6 +214,20 @@ class AccessForwardingObservation:
     separates -- execution, freshness, completeness and identity -- beside the
     per-interface rows, so the admission rule can refuse on each of them
     independently instead of collapsing them into one boolean.
+
+    Four lifetimes are kept apart, because a fact about one of them is not a
+    fact about the others:
+
+    * the authorizing sample, which is the last one, because its rows are the
+      rows a decision reads: `rows`, `executed`, `fresh_output_observed`,
+      `output_complete`, the identity pair, `sample_budget_exhausted` and
+      `sample_after_deadline`;
+    * the episode: `sample_history`, `samples`, `channel_calls`,
+      `episode_budget_exhausted`, `episode_end_reason`, and the auxiliary
+      read's own `auxiliary_budget_exhausted` and
+      `auxiliary_read_after_deadline`;
+    * the applicable parent bound: `deadline_seconds` with `deadline_scope`;
+    * the decision: `deadline_reached` with `deadline_cause`.
     """
 
     switch_name: str
@@ -224,7 +245,16 @@ class AccessForwardingObservation:
     max_samples: int = 0
     deadline_seconds: float = 0.0
     elapsed_ms: int = 0
+    #: The decision fact: this observation's permission window is closed, so
+    #: nothing it carries may authorize a request. `deadline_cause` names the
+    #: boundary that closed it; an empty cause is an older record, whose
+    #: historical meaning was always the late sample.
     deadline_reached: bool = False
+    #: Which boundary closed the window, or empty while it is open.
+    deadline_cause: str = ""
+    #: Which bound produced `deadline_seconds`: the group's own horizon, the
+    #: caller's remaining invocation allowance, or both at once.
+    deadline_scope: str = ""
     #: Every channel call one sample was allowed, and how many the whole
     #: observation actually made. A registered query is not one call:
     #: session preparation, the dispatch, output convergence, attribution
@@ -232,10 +262,25 @@ class AccessForwardingObservation:
     #: cap from outside, so they are bounded here and counted here.
     sample_call_budget: int = 0
     channel_calls: int = 0
-    #: True when a sample ended on that budget rather than on its own
-    #: completion. Such a sample is incomplete by construction: it is
-    #: reported as exactly that and grants no forwarding permission.
+    #: True when the AUTHORIZING sample ended on that budget rather than on
+    #: its own completion. Such a sample is incomplete by construction: it is
+    #: reported as exactly that and grants no forwarding permission. It says
+    #: nothing about any earlier sample, and no earlier sample says this.
     sample_budget_exhausted: bool = False
+    #: True when the authorizing sample finished at or after the window. It is
+    #: this read's own timeliness and never the episode's termination.
+    sample_after_deadline: bool = False
+    #: An episode diagnostic: some sample, anywhere in the history, ended on
+    #: its call budget. It is retained so a run can be explained, and it never
+    #: refuses on its own -- an earlier failed read is not this read.
+    episode_budget_exhausted: bool = False
+    #: Why sampling stopped: an admitted forwarding sample, the sample
+    #: ceiling, the window, or the channel that stopped granting calls.
+    episode_end_reason: str = ""
+    #: The auxiliary simulation-state read, separately: it is not a sample,
+    #: so its own exhaustion and its own overrun carry its own names.
+    auxiliary_budget_exhausted: bool = False
+    auxiliary_read_after_deadline: bool = False
     #: What the simulation-time reader reported, when the composition supplied
     #: one. `absent` means no such reader was composed, which is a statement
     #: about this run and never a claim that simulation time did not move.

@@ -585,17 +585,30 @@ class _TimedStpTerminal(_PagedTerminal):
         *,
         owner_name: str = SWITCH_NAME,
         owner_candidates: int = 1,
+        stalled_dispatches: tuple[int, ...] = (),
+        simulation_state: dict[str, object] | None = None,
     ):
         self.clock = clock
         self.forwards_at = forwards_at
         self.trace = trace
         self.owner_name = owner_name
         self.owner_candidates = owner_candidates
+        #: Dispatch ordinals whose command window never appears, so that one
+        #: sample spends its nested call budget on a read-only wait. No key is
+        #: sent and no pager is entered, so nothing is quarantined by it.
+        self.stalled_dispatches = stalled_dispatches
+        #: What the auxiliary simulation-state read answers. A fake that
+        #: refused it would report a fixture gap as a failed observation.
+        self.simulation_state = simulation_state
+        self.dispatches = 0
         self.timeouts: list[float] = []
         self.samples: list[tuple[float, str]] = []
         super().__init__([""], prompt=f"{SWITCH_NAME}#", command="show spanning-tree")
 
     def _emit_first_page(self) -> None:
+        self.dispatches += 1
+        if self.dispatches in self.stalled_dispatches:
+            return
         state = (
             "FWD"
             if self.forwards_at is not None and self.clock.now >= self.forwards_at
@@ -615,6 +628,10 @@ class _TimedStpTerminal(_PagedTerminal):
     def __call__(self, js: str, timeout: float) -> str:
         self.timeouts.append(timeout)
         self.clock.advance(min(timeout, 0.02))
+        if "ipc.simulation()" in js:
+            if self.simulation_state is None:
+                raise AssertionError("this terminal has no simulation reader")
+            return json.dumps(self.simulation_state)
         if "owner_candidate_evidence" in js:
             return json.dumps(
                 {
@@ -636,6 +653,7 @@ def _real_observer_run(
     *,
     owner_name: str = SWITCH_NAME,
     owner_candidates: int = 1,
+    stalled_dispatches: tuple[int, ...] = (),
 ):
     """Exercise public E5/E6 with the real neutral observer and IOS executor."""
     clock = SimulatedClock()
@@ -646,6 +664,7 @@ def _real_observer_run(
         trace,
         owner_name=owner_name,
         owner_candidates=owner_candidates,
+        stalled_dispatches=stalled_dispatches,
     )
     manifest, inventory = deployment_manifest()
 
@@ -742,6 +761,50 @@ def test_public_http_waits_for_a_real_timed_forwarding_sample(
     assert saved.operational_readiness == result.operational_readiness
 
 
+@pytest.mark.parametrize("forwards_at", [4.0, 26.0])
+def test_public_http_follows_a_valid_sample_that_an_earlier_read_preceded(
+    monkeypatch, tmp_path: Path, forwards_at: float
+):
+    """An early spent read delays the answer; it does not withhold it.
+
+    The first read of the episode ends on its nested call budget without
+    observing anything. What follows it is a complete, fresh, correctly
+    attributed, in-budget FWD sample inside the product horizon, and the
+    public HTTP-by-IP request is dispatched after that sample and only after
+    it. The failed read stays in the record as the failed read it was.
+    """
+    result, terminal, services, trace = _real_observer_run(
+        monkeypatch, tmp_path, forwards_at, stalled_dispatches=(1,)
+    )
+
+    readiness = result.operational_readiness[0]
+    sample = readiness["sample"]
+    assert readiness["status"] == READINESS_ADMITTED
+    assert sample["dimension"] == "NONE"
+    assert sample["rows"][0]["state"] == "FWD"
+
+    # The early failure is retained, and it is not the authorizing sample.
+    assert sample["episode_budget_exhausted"] is True
+    assert sample["sample_budget_exhausted"] is False
+    assert sample["sample_history"][0]["sample_budget_exhausted"] is True
+    assert sample["sample_history"][0]["rows"] == []
+    assert sample["sample_history"][-1]["sample_budget_exhausted"] is False
+    assert sample["deadline_reached"] is False
+    assert sample["deadline_cause"] == ""
+
+    # Nothing was requested before the sample that granted permission.
+    assert terminal.samples[-1][1] == "FWD"
+    assert terminal.samples[-1][0] >= forwards_at
+    assert terminal.samples[-1][0] < 30.0
+    assert trace.index("FWD") < trace.index("http_by_ip")
+    assert "http_by_ip" not in trace[: trace.index("FWD")]
+    assert any(item.startswith("svc/verify-http-ip") for item in services.verified)
+
+    # And the durable record agrees with what the run reported.
+    saved = ServiceRunRecordStore(tmp_path).load(DEPLOYMENT_ID, result.run_id)
+    assert saved.operational_readiness == result.operational_readiness
+
+
 @pytest.mark.parametrize(
     ("owner_name", "owner_candidates", "dimension"),
     [("FOREIGN-SW", 1, "EXECUTION"), ("", 2, "IDENTITY")],
@@ -830,9 +893,25 @@ def test_auxiliary_read_time_is_inside_the_product_permission_boundary():
 
 
 def test_default_auxiliary_channel_call_is_counted_and_deadline_capped():
-    """The production auxiliary reader uses the same bounded channel."""
+    """The production auxiliary reader uses the same bounded channel.
+
+    The reader is exercised against a real answer, so what the observation
+    reports is derived from that answer rather than from the fixture's refusal
+    to serve a request it never implemented. A fake that rejects a script is
+    not evidence that the reader works, and it is not evidence that it fails.
+    """
     clock = SimulatedClock()
-    terminal = _TimedStpTerminal(clock, 0.0, [])
+    terminal = _TimedStpTerminal(
+        clock,
+        0.0,
+        [],
+        simulation_state={
+            "mode": False,
+            "frames": 3,
+            "sim_time": 12.5,
+            "current_index": -1,
+        },
+    )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
@@ -850,23 +929,70 @@ def test_default_auxiliary_channel_call_is_counted_and_deadline_capped():
     assert gate.decide("http-1").admitted is True
     sample = gate.rows()[0]["sample"]
     assert sample["channel_calls"] == len(terminal.timeouts)
-    assert sample["simulation_time"] == "unreadable:AssertionError"
+    # Independently expected from the answer above, not read back from it.
+    assert sample["simulation_time"] == "sim_time:12.5;frames:3"
+    assert sample["auxiliary_budget_exhausted"] is False
     assert max(terminal.timeouts) <= 0.5
+
+
+def test_an_unavailable_auxiliary_reader_is_reported_as_unreadable():
+    """A reader that raises is named as unreadable, and grants nothing extra.
+
+    This is the separate case, exercised on purpose: the observation states
+    that simulation time could not be read and still decides on the sample.
+    """
+    clock = SimulatedClock()
+    terminal = _TimedStpTerminal(clock, 0.0, [])
+
+    def unavailable():
+        raise RuntimeError("the simulation reader is not available")
+
+    runtime = PacketTracerEnterpriseConfigurationRuntime(
+        query_inventory=lambda: [],
+        send=lambda _payload: True,
+        send_and_wait=terminal,
+        clock=clock,
+        sleeper=clock.advance,
+        simulation_time_observer=unavailable,
+    )
+    gate = ServiceAccessReadinessGate(
+        _plan(),
+        runtime,
+        clock=clock,
+        device_names={SWITCH: SWITCH_NAME},
+        total_budget_seconds=0.5,
+    )
+
+    assert gate.decide("http-1").admitted is True
+    sample = gate.rows()[0]["sample"]
+    assert sample["simulation_time"] == "unreadable:RuntimeError"
+    assert sample["auxiliary_budget_exhausted"] is False
 
 
 def test_public_workflow_sends_no_http_after_a_late_forwarding_answer(
     monkeypatch, tmp_path: Path
 ):
-    """A collaborator's returned FWD cannot cross the product deadline."""
+    """A collaborator's returned FWD cannot cross the product deadline.
+
+    The collaborator states nothing about its own timing, so the boundary that
+    closes here is the product's own group deadline, measured by the gate
+    around the call. That is what the refusal names: not a claim that the
+    collaborator's sample was late, which the gate cannot know.
+    """
     backend = ForwardingBackend(forwards_at=0.0, seconds_per_observation=31.0)
     module = importlib.import_module(
         "packet_tracer_mcp.application.use_cases.apply_enterprise_services"
     )
     monkeypatch.setattr(module, "monotonic", backend.clock)
     result, _configuration, services = _run(backend, tmp_path)
-    assert result.operational_readiness[0]["status"] == READINESS_REFUSED
-    assert result.operational_readiness[0]["dimension"] == "DEADLINE"
-    assert result.operational_readiness[0]["sample"]["rows"][0]["state"] == "FWD"
+    readiness = result.operational_readiness[0]
+    assert readiness["status"] == READINESS_REFUSED
+    assert readiness["dimension"] == "DEADLINE"
+    assert readiness["sample"]["rows"][0]["state"] == "FWD"
+    assert readiness["sample"]["deadline_cause"] == "group_deadline_reached"
+    assert readiness["causes"] == ["group_deadline_reached"]
+    # The parent bound closed; nothing here says the sample itself was late.
+    assert readiness["sample"]["sample_after_deadline"] is False
     assert not [
         item for item in services.verified if item.startswith("svc/verify-http")
     ]

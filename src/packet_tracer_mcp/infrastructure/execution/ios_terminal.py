@@ -2869,6 +2869,7 @@ class ControlledIosExecutor:
             timeout_seconds=self._bounded_wait(8.0),
             clock=self._clock,
             sleeper=self._sleeper,
+            remaining_seconds=self._remaining_budget,
         ).wait()
         elapsed = int((monotonic() - started) * 1000)
         attribution = attribute()
@@ -3106,16 +3107,26 @@ class ControlledIosExecutor:
                     "IOS pager continuation exceeded its bounded page limit "
                     f"of {_PAGER_MAX_PAGES}.",
                 )
-            remaining = self._bounded_wait(
-                _PAGER_CAPTURE_DEADLINE_SECONDS - (self._clock() - started)
-            )
+            own_remaining = _PAGER_CAPTURE_DEADLINE_SECONDS - (self._clock() - started)
+            remaining = self._bounded_wait(own_remaining)
             if remaining <= 0:
+                # Two different boundaries end this capture, and naming the
+                # wrong one sends a reader looking for a pager that was never
+                # slow. `_bounded_wait` also applies the caller's allowance,
+                # so the capture's own deadline is only the cause when the
+                # capture's own deadline is what actually ran out.
                 return _PagerCapture.failed(
                     assembled,
                     pages,
                     current,
-                    "IOS pager continuation exceeded its bounded deadline of "
-                    f"{_PAGER_CAPTURE_DEADLINE_SECONDS:.0f}s.",
+                    (
+                        "IOS pager continuation exceeded its bounded deadline "
+                        f"of {_PAGER_CAPTURE_DEADLINE_SECONDS:.0f}s."
+                        if own_remaining <= 0
+                        else "IOS pager continuation stopped on the caller's "
+                        "remaining allowance, before its own bounded deadline "
+                        f"of {_PAGER_CAPTURE_DEADLINE_SECONDS:.0f}s."
+                    ),
                 )
             if not self._advance_pager(name):
                 return _PagerCapture.failed(
@@ -3255,6 +3266,7 @@ class ControlledIosExecutor:
             timeout_seconds=timeout_seconds,
             clock=self._clock,
             sleeper=self._sleeper,
+            remaining_seconds=self._remaining_budget,
         ).wait()
         last["pager_progress_ready"] = bool(
             converged.configuration_channel,
@@ -3408,6 +3420,7 @@ class ControlledIosExecutor:
                 timeout_seconds=self._bounded_wait(8.0),
                 clock=self._clock,
                 sleeper=self._sleeper,
+                remaining_seconds=self._remaining_budget,
             )
             .wait()
             .configuration_channel

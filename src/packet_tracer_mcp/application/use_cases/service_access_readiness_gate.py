@@ -33,6 +33,7 @@ from typing import Protocol
 
 from ...domain.enterprise.models.forwarding import AccessForwardingObservation
 from ...domain.enterprise.services.access_forwarding import (
+    CAUSE_GROUP_DEADLINE_REACHED,
     access_forwarding_admission,
     access_forwarding_facts,
 )
@@ -250,7 +251,16 @@ class ServiceAccessReadinessGate:
         ):
             # The rows remain available, but the product deadline is a closed
             # permission boundary even if an observer returned a late FWD.
-            observation = replace(observation, deadline_reached=True)
+            # This is the PARENT bound closing, which is not a claim that the
+            # sample was late: a cause the observer already named is more
+            # specific than this one, so it is kept.
+            observation = replace(
+                observation,
+                deadline_reached=True,
+                deadline_cause=(
+                    observation.deadline_cause or CAUSE_GROUP_DEADLINE_REACHED
+                ),
+            )
         mismatch = _envelope_mismatch(observation, switch_name, requirement)
         if mismatch:
             # A sample was taken, but not of this group. Treating it as a
