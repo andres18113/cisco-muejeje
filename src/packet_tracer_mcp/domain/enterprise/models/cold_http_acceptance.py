@@ -682,6 +682,33 @@ def effect_scope_findings(
     dispatched. A material change needs a revised proposal and grant, never
     an extra action hidden inside the budget.
     """
+    found = list(closure_identity_findings(grant, closure))
+    if closure.retained:
+        found.append("retained_e5_actions:" + ",".join(closure.retained))
+    observed_e5 = sorted((_e5_signature(item) for item in closure.e5_actions), key=repr)
+    if observed_e5 != expected_e5_signatures(grant):
+        found.append("e5_closure_differs_from_grant")
+    if sorted(item.action_id for item in closure.e5_actions) != sorted(closure.mutated):
+        found.append("e5_closure_does_not_describe_the_mutated_scope")
+    unexpected_exclusions = sorted(
+        item.action_id
+        for item in closure.excluded_actions
+        if item.action_type != "configure_hostname"
+    )
+    if unexpected_exclusions:
+        found.append("non_hostname_exclusions:" + ",".join(unexpected_exclusions))
+    found.extend(_service_findings(grant, closure))
+    found.extend(_check_findings(grant, closure))
+    return tuple(found)
+
+
+def closure_identity_findings(grant, closure: ServiceEffectClosure) -> tuple[str, ...]:
+    """Bind a compiled closure to the granted deployment, channel, build and source.
+
+    Shared by every profile: the deployment, manifest and topology identities,
+    the fixed channel, the observed build, and a clean source tree equal to
+    the granted SHA and tree.
+    """
     found: list[str] = []
     identity = (
         (closure.deployment_id, grant.deployment_id, "deployment_id"),
@@ -704,22 +731,6 @@ def effect_scope_findings(
         found.append("source_tree_mismatch")
     if closure.source_dirty:
         found.append("source_tree_dirty")
-    if closure.retained:
-        found.append("retained_e5_actions:" + ",".join(closure.retained))
-    observed_e5 = sorted((_e5_signature(item) for item in closure.e5_actions), key=repr)
-    if observed_e5 != expected_e5_signatures(grant):
-        found.append("e5_closure_differs_from_grant")
-    if sorted(item.action_id for item in closure.e5_actions) != sorted(closure.mutated):
-        found.append("e5_closure_does_not_describe_the_mutated_scope")
-    unexpected_exclusions = sorted(
-        item.action_id
-        for item in closure.excluded_actions
-        if item.action_type != "configure_hostname"
-    )
-    if unexpected_exclusions:
-        found.append("non_hostname_exclusions:" + ",".join(unexpected_exclusions))
-    found.extend(_service_findings(grant, closure))
-    found.extend(_check_findings(grant, closure))
     return tuple(found)
 
 
@@ -897,6 +908,8 @@ class ColdHttpAcceptanceEnvelope(BaseModel):
     #: the deadline and of the publication boundary, and the first controlled
     #: boundary that was reached after the deadline, if any.
     temporal: dict[str, Any] = Field(default_factory=dict)
+    #: The derived scope of a scalable attempt: its digest, sizes and cost.
+    scope: dict[str, Any] = Field(default_factory=dict)
 
 
 #: What every envelope says about itself, whatever its outcome.

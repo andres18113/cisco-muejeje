@@ -38,7 +38,6 @@ observation and owned cleanup are exactly what must still be allowed.
 
 from __future__ import annotations
 
-import hashlib
 import secrets as _random
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -116,6 +115,8 @@ from ...domain.enterprise.models.service_run_record import (
 from ...domain.enterprise.models.service_runtime import ServiceApplicationResult
 from ...domain.enterprise.services.service_access_readiness import (
     HTTP_REQUEST_KINDS,
+    access_group_key,
+    continuity_group_key,
     derive_access_readiness_plan,
 )
 from ...domain.enterprise.services.service_capability_resolution import (
@@ -2677,7 +2678,7 @@ def _closure_readiness(
         switch = deployed_names.get(
             requirement.switch_device_id, requirement.switch_device_name
         )
-        label = f"access:{switch}:{requirement.vlan_id}"
+        label = access_group_key(switch, requirement.vlan_id)
         labels[requirement.key] = label
         groups.append(
             EffectClosureReadinessGroup(
@@ -2698,8 +2699,7 @@ def _closure_readiness(
             )
         }
         switches = [names[item] for item in component.switch_device_ids]
-        digest = hashlib.sha256(",".join(switches).encode("utf-8")).hexdigest()
-        label = f"trunk_continuity:{component.vlan_id}:{len(switches)}:{digest[:16]}"
+        label = continuity_group_key(component.vlan_id, switches)
         labels[continuity.key] = label
         groups.append(
             EffectClosureReadinessGroup(

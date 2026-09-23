@@ -7,7 +7,10 @@ from the coordinator, through the same path the offline tests drive.
 
 Nothing runs by default. Without `--execute` the adapter refuses before it
 reads anything, and without `PT_MCP_GOVERNED_ROOT` it refuses before it
-composes anything. Building the boundaries performs no I/O: the file mailbox is
+composes anything. `--prepare` is the one other mode: it derives the scope a
+schema 2 grant must name, offline, by running the product over a planning
+session that has no transport, and prints the derived grant fields; it
+contacts nothing and writes nothing. Building the boundaries performs no I/O: the file mailbox is
 opened only when the coordinator reaches its contact step, after local
 admission, and under pytest the real import-isolation preflight answers
 `TEST_PROCESS`, so the production wiring refuses before any channel exists.
@@ -21,6 +24,7 @@ JavaScript, IOS or bridge command is accepted from the operator.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -43,7 +47,13 @@ from ...application.use_cases.apply_enterprise_services import (
     ServiceInvocationBinding,
     TransportSelection,
 )
-from ...domain.enterprise.models.cold_http_acceptance import ACCEPTANCE_CHANNEL
+from ...application.use_cases.prepare_http_acceptance import (
+    prepare_http_acceptance,
+)
+from ...domain.enterprise.models.cold_http_acceptance import (
+    ACCEPTANCE_CHANNEL,
+    MARKER_PREFIX,
+)
 from ...domain.enterprise.models.service_qualification import (
     DiagnosticLifecycleObservation,
 )
@@ -177,8 +187,12 @@ def production_boundaries(governed_root: Path) -> AcceptanceBoundaries:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--prepare", action="store_true")
     parser.add_argument("--grant", default="")
     parser.add_argument("--intent", default="")
+    parser.add_argument("--deployment", default="")
+    parser.add_argument("--build", default="")
+    parser.add_argument("--attempt", default="")
     return parser
 
 
@@ -203,9 +217,12 @@ def main(
     *,
     environ: Mapping[str, str] | None = None,
     boundaries_factory=production_boundaries,
+    repository_reader=repository_identity,
 ) -> int:
     """Run one attempt and return 0 accepted, 1 not accepted or 2 refused."""
     args = _parser().parse_args(argv)
+    if args.prepare and not args.execute:
+        return _prepare(args, environ, repository_reader)
     if not args.execute:
         _print(_refusal("--execute is required; nothing was read or contacted."))
         return 2
@@ -235,3 +252,51 @@ def main(
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _prepare(
+    args: argparse.Namespace,
+    environ: Mapping[str, str] | None,
+    repository_reader=repository_identity,
+) -> int:
+    """Print the derived fields of a schema 2 grant; contact nothing."""
+    governed_root = governed_root_from_env(environ)
+    if governed_root is None:
+        _print(_refusal("PT_MCP_GOVERNED_ROOT must declare the governed checkout."))
+        return 2
+    if not (args.deployment and args.build and args.attempt and args.intent):
+        _print(
+            _refusal("--prepare needs --intent, --deployment, --build and --attempt.")
+        )
+        return 2
+    try:
+        intent_json = _read_text(args.intent, MAX_INTENT_JSON_BYTES)
+    except (OSError, ValueError) as exc:
+        _print(_refusal(f"input_unreadable:{type(exc).__name__}"))
+        return 2
+    repository = repository_reader(governed_root)
+    prepared = prepare_http_acceptance(
+        intent_json,
+        deployment_id=args.deployment,
+        build=args.build,
+        marker=MARKER_PREFIX + args.attempt,
+        manifest_store=DeploymentManifestStore(
+            governed_root.joinpath(*MANIFEST_DIRECTORY)
+        ),
+        source_tree=SourceTreeIdentity(
+            sha=repository.head,
+            tree=repository.tree,
+            dirty=repository.clean is not True,
+        ),
+    )
+    _print(
+        {
+            "mode": "prepare",
+            "findings": list(prepared.findings),
+            "product_refusal": prepared.product_refusal,
+            "grant_fields": prepared.grant_skeleton(),
+            "intent_sha256": hashlib.sha256(intent_json.encode("utf-8")).hexdigest(),
+            "cost": prepared.scope.cost.document() if prepared.scope else {},
+        }
+    )
+    return 0 if prepared.scope is not None else 2

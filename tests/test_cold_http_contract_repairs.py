@@ -461,3 +461,29 @@ def test_a_verdict_reached_after_the_deadline_names_the_verdict_boundary(
     assert result.envelope.clients and all(
         item.client in {PC1, PC2} for item in result.envelope.clients
     )
+
+
+def test_the_legacy_worst_case_fits_with_receiver_and_dispatch_cost(tmp_path: Path):
+    """A1 feasibility is not a zero-latency trace: every read and check costs time."""
+    harness = build_harness(tmp_path)
+    terminal = harness.terminal
+    terminal.ios_ready_after = 90.0
+    terminal.vlan_present_after = 5.0
+    terminal.endpoint_ready_after = 30.0
+    terminal.forwarding_after = 29.0
+    terminal.page_visible_after = 8.0
+    terminal.latency = lambda script: 0.05
+    # The Win32 reading measured on the delivery machine: max 15 ms.
+    harness.receiver.cost = 0.015
+
+    result = harness.run()
+
+    envelope = result.envelope
+    assert envelope.http_accepted is True, envelope.reasons
+    budget = envelope.budget
+    assert budget.receiver_observations == budget.used_operations
+    assert budget.receiver_observation_seconds == pytest.approx(
+        0.015 * budget.used_operations, rel=1e-6
+    )
+    assert budget.elapsed_seconds <= 420
+    assert envelope.temporal["publication_offset_seconds"] <= 420

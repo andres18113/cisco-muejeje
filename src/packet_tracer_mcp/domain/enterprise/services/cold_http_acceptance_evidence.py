@@ -30,6 +30,7 @@ from ..models.service_entry import ServiceEffectClosure, ServiceStage
 from ..models.service_qualification import OperationEntry
 from ..models.service_run_record import ServiceRunRecord
 from ..models.service_runtime import ObservationFact
+from .acceptance_evidence_index import LedgerIndex, verification_rows
 from .access_forwarding import CONFIRMED_UNIQUE, FORWARDING_STATES
 from .service_access_readiness import READINESS_ADMITTED
 
@@ -348,6 +349,7 @@ def ordering_findings(
     grant: ColdHttpGrant,
     expectation_by_client: Mapping[str, str],
     entries: Sequence[OperationEntry],
+    ledger: LedgerIndex | None = None,
 ) -> list[str]:
     """Check the dispatch order the acceptance requires, from the ledger alone.
 
@@ -356,21 +358,19 @@ def ordering_findings(
     a client's first request, no admitted FWD existed at that moment, however
     the page answered afterwards.
     """
-    dispatched = [(index, item) for index, item in enumerate(entries) if item.seq > 0]
+    ledger = ledger if ledger is not None else LedgerIndex.build(entries)
     found: list[str] = []
     unlabelled = sorted(
         {
-            item.purpose or "<none>"
-            for _, item in dispatched
-            if item.purpose not in _KNOWN_PURPOSES
-            and not item.purpose.startswith((E6_VERIFY_PREFIX, OWNED_RELEASE_PREFIX))
+            purpose or "<none>"
+            for purpose in ledger.purposes()
+            if purpose not in _KNOWN_PURPOSES
+            and not purpose.startswith((E6_VERIFY_PREFIX, OWNED_RELEASE_PREFIX))
         }
     )
     if unlabelled:
         found.append("unlabelled_dispatches:" + ",".join(unlabelled))
-
-    def positions(purpose: str) -> list[int]:
-        return [index for index, item in dispatched if item.purpose == purpose]
+    positions = ledger.positions
 
     e5_verify = positions(PURPOSE_E5_VERIFY)
     readiness = positions(PURPOSE_READINESS)
@@ -469,27 +469,62 @@ def client_outcome(
     entries: Sequence[OperationEntry],
     answers: Mapping[str, Sequence[str]],
     request_order: int | None = None,
+    *,
+    ledger: LedgerIndex | None = None,
+    rows: Mapping[str, Any] | None = None,
 ) -> ClientAcceptance:
-    """Judge one client's first request from the ledger, the answers and the row."""
+    """Judge one granted client's first request from indexed evidence."""
     client = grant.clients[client_index]
-    requests = [
-        item
-        for item in entries
-        if item.seq > 0 and item.purpose == E6_VERIFY_PREFIX + expectation_id
-    ]
-    releases = [
-        item
-        for item in entries
-        if item.seq > 0 and item.purpose == OWNED_RELEASE_PREFIX + expectation_id
-    ]
-    start_answers = answers.get(E6_VERIFY_PREFIX + expectation_id) or ()
-    release_answers = answers.get(OWNED_RELEASE_PREFIX + expectation_id) or ()
+    ledger = ledger if ledger is not None else LedgerIndex.build(entries)
+    rows = rows if rows is not None else verification_rows(record)
+    request_purpose = E6_VERIFY_PREFIX + expectation_id
+    release_purpose = OWNED_RELEASE_PREFIX + expectation_id
+    return judge_client_request(
+        name=client.name,
+        switch_port=client.switch_port,
+        expectation_id=expectation_id,
+        url=grant.url,
+        marker=grant.marker,
+        row=rows.get(expectation_id),
+        requests=ledger.dispatches(request_purpose),
+        releases=ledger.dispatches(release_purpose),
+        refused_releases=ledger.refusals(release_purpose),
+        start_answers=answers.get(request_purpose) or (),
+        release_answers=answers.get(release_purpose) or (),
+        request_order=request_order,
+    )
+
+
+def judge_client_request(
+    *,
+    name: str,
+    switch_port: str,
+    expectation_id: str,
+    url: str,
+    marker: str,
+    row: Any,
+    requests: Sequence[OperationEntry],
+    releases: Sequence[OperationEntry],
+    refused_releases: Sequence[OperationEntry],
+    start_answers: Sequence[str],
+    release_answers: Sequence[str],
+    request_order: int | None = None,
+) -> ClientAcceptance:
+    """Judge one client's first request from its own ledger slice and row.
+
+    The same judgement serves every profile: exactly one start first, the
+    selected URL as input, a native boolean `go()`, this client as owner, a
+    fresh marker observation, no marker before the request, one release, and
+    a record row that agrees with the raw answers. Without a row (the product
+    never returned one, as after an interruption) ownership is still derived
+    from the ledger and the raw answers, and the client is not accepted.
+    """
     start_answer = start_answers[0] if start_answers else ""
     content_before, start_payload = _start_answer_facts(start_answer)
     outcome = ClientAcceptance(
-        client=client.name,
+        client=name,
         expectation_id=expectation_id,
-        switch_port=client.switch_port,
+        switch_port=switch_port,
         first_dispatch_seq=requests[0].seq if requests else None,
         request_order=request_order,
         dispatches=len(requests),
@@ -499,22 +534,7 @@ def client_outcome(
         release_dispatches=len(releases),
     )
     findings: list[str] = []
-    row = None
-    if record is not None and record.service_result is not None:
-        row = next(
-            (
-                item
-                for item in record.service_result.verification_results
-                if item.expectation_id == expectation_id
-            ),
-            None,
-        )
     if row is None:
-        refused_releases = [
-            item
-            for item in entries
-            if item.refused and item.purpose == OWNED_RELEASE_PREFIX + expectation_id
-        ]
         outcome.release_outcome = ledger_release_outcome(
             requests,
             releases,
@@ -551,15 +571,15 @@ def client_outcome(
         # A timeout stays what it is: nothing was observed in the window. It
         # is inconclusive, and it is never evidence that the listener refused.
         findings.append(f"row_observation:{row.observation.value}:{row.cause}")
-    if outcome.selected_url != grant.url or not outcome.selected_url_is_input:
+    if outcome.selected_url != url or not outcome.selected_url_is_input:
         findings.append("selected_url_is_not_the_granted_input")
     if outcome.go_result is not True or outcome.go_result_type != "boolean":
         findings.append("native_go_result_not_boolean_true")
-    if outcome.owner_device != client.name or not outcome.owner_read:
+    if outcome.owner_device != name or not outcome.owner_read:
         findings.append("owner_not_observed_as_this_client")
     if outcome.client_mode != "http":
         findings.append("client_mode_not_http")
-    if observed.get("marker") != grant.marker:
+    if observed.get("marker") != marker:
         findings.append("row_marker_is_not_the_attempt_marker")
     if not performed or performed[0].label != "start":
         findings.append("first_dispatch_is_not_the_start")
@@ -575,7 +595,7 @@ def client_outcome(
         findings.append("deciding_inspection_not_fresh_content")
     if content_before is None:
         findings.append("before_content_not_observed")
-    elif grant.marker in content_before:
+    elif marker in content_before:
         findings.append("marker_present_before_request")
     if start_payload and start_payload.get("go_result") is not go_result:
         findings.append("row_go_result_contradicts_start_answer")
@@ -641,12 +661,17 @@ def evaluate_attempt(
         reasons.extend(record_identity_findings(grant, record, closure))
         reasons.extend(product_outcome_findings(record))
         reasons.extend(readiness_findings(grant, record))
-    evaluation.ordering = ordering_findings(grant, expectation_by_client, entries)
+    ledger = LedgerIndex.build(entries)
+    rows = verification_rows(record)
+    evaluation.ordering = ordering_findings(
+        grant, expectation_by_client, entries, ledger=ledger
+    )
     reasons.extend(evaluation.ordering)
     firsts = sorted(
-        (item.seq, item.purpose.removeprefix(E6_VERIFY_PREFIX))
-        for item in entries
-        if item.seq > 0 and item.purpose.startswith(E6_VERIFY_PREFIX)
+        (ledger.entries[positions[0]].seq, purpose.removeprefix(E6_VERIFY_PREFIX))
+        for purpose in ledger.purposes()
+        if purpose.startswith(E6_VERIFY_PREFIX)
+        for positions in [ledger.positions(purpose)]
     )
     order: dict[str, int] = {}
     for _seq, expectation in firsts:
@@ -662,6 +687,8 @@ def evaluate_attempt(
             entries,
             answers,
             request_order=order.get(expectation),
+            ledger=ledger,
+            rows=rows,
         )
         evaluation.clients.append(outcome)
         reasons.extend(f"{client.name}:{item}" for item in outcome.findings)

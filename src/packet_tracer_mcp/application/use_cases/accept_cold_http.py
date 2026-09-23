@@ -38,10 +38,12 @@ accepts that limitation and an exclusive disposable laboratory explicitly.
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
+from functools import partial
 from typing import Any
 
 from ...domain.enterprise.models.cold_http_acceptance import (
@@ -56,6 +58,7 @@ from ...domain.enterprise.models.cold_http_acceptance import (
     ColdHttpGrant,
     ColdHttpProposal,
     acceptance_refusal,
+    closure_identity_findings,
     effect_scope_findings,
     manifest_refusals,
     parse_grant,
@@ -64,6 +67,15 @@ from ...domain.enterprise.models.cold_http_acceptance import (
     repository_acceptance_refusals,
 )
 from ...domain.enterprise.models.deployment import DeploymentManifest
+from ...domain.enterprise.models.scalable_http_acceptance import (
+    SCALABLE_ENVELOPE_LIMITATIONS,
+    SCALABLE_GRANT_SCHEMA_VERSION,
+    AcceptanceScope,
+    ScalableHttpGrant,
+    derive_scope,
+    parse_scalable_grant,
+    scope_findings,
+)
 from ...domain.enterprise.models.service_entry import (
     ServiceEffectClosure,
     ServiceStage,
@@ -91,6 +103,14 @@ from ...domain.enterprise.services.cold_http_acceptance_evidence import (
     AcceptanceEvaluation,
     bounded_answer,
     evaluate_attempt,
+)
+from ...domain.enterprise.services.scalable_http_acceptance_evidence import (
+    READINESS_PREFIX,
+    evaluate_scalable_attempt,
+)
+from ...domain.enterprise.services.service_access_readiness import (
+    access_group_key,
+    continuity_group_key,
 )
 from ..ports.cold_http_acceptance import (
     AcceptanceEnvelopePort,
@@ -250,6 +270,9 @@ class AcceptanceResult:
                 envelope.budget.used_operations if envelope.budget else 0
             ),
             "cancellation": envelope.cancellation,
+            "profile": envelope.scope.get("profile", "cold_http_two_client_v1"),
+            "selected_clients": len(envelope.clients),
+            "accepted_clients": sum(1 for item in envelope.clients if item.accepted),
             "envelope_path": self.envelope_path,
             "envelope_persisted": self.persisted,
             "completion_seconds": round(self.completion_seconds, 3),
@@ -320,12 +343,25 @@ class _Halted:
 
 
 class _LabelledConfiguration:
-    """The E5 runtime, with each boundary's dispatches named in the ledger."""
+    """The E5 runtime, with each boundary's dispatches named in the ledger.
 
-    def __init__(self, inner: Any, ledger: OperationLedger, halted: _Halted) -> None:
+    A scalable attempt labels each readiness dispatch with the identity of the
+    group it observes, so the ordering oracle can require every group a
+    client's path names before that client's first request.
+    """
+
+    def __init__(
+        self,
+        inner: Any,
+        ledger: OperationLedger,
+        halted: _Halted,
+        *,
+        by_group: bool = False,
+    ) -> None:
         self._inner = inner
         self._ledger = ledger
         self._halted = halted
+        self._by_group = by_group
 
     def inventory(self):
         self._halted.check()
@@ -347,15 +383,30 @@ class _LabelledConfiguration:
         with self._ledger.purpose_of("e5_voice_forwarding"):
             return self._inner.wait_for_voice_access_forwarding(expectations)
 
-    def observe_access_forwarding(self, *args, **kwargs):
+    def observe_access_forwarding(self, device_name, vlan_id, *args, **kwargs):
         self._halted.check()
-        with self._ledger.purpose_of(PURPOSE_READINESS):
-            return self._inner.observe_access_forwarding(*args, **kwargs)
+        purpose = (
+            READINESS_PREFIX + access_group_key(device_name, vlan_id)
+            if self._by_group
+            else PURPOSE_READINESS
+        )
+        with self._ledger.purpose_of(purpose):
+            return self._inner.observe_access_forwarding(
+                device_name, vlan_id, *args, **kwargs
+            )
 
-    def observe_trunk_continuity(self, *args, **kwargs):
+    def observe_trunk_continuity(self, switches, vlan_id, *args, **kwargs):
         self._halted.check()
-        with self._ledger.purpose_of(PURPOSE_READINESS):
-            return self._inner.observe_trunk_continuity(*args, **kwargs)
+        purpose = (
+            READINESS_PREFIX
+            + continuity_group_key(vlan_id, [name for name, _ in switches])
+            if self._by_group
+            else PURPOSE_READINESS
+        )
+        with self._ledger.purpose_of(purpose):
+            return self._inner.observe_trunk_continuity(
+                switches, vlan_id, *args, **kwargs
+            )
 
 
 class _LabelledServices:
@@ -428,6 +479,8 @@ class _Attempt:
     receiver_seconds: float = 0.0
     #: `cancelled:<type>@<boundary>` once an interruption was caught.
     cancelled: str = ""
+    #: The scalable scope derived from the admitted closure, or None.
+    scope: AcceptanceScope | None = None
 
     def authority(self, purpose: str, deadline: float) -> str:
         """Decide one dispatch against the claim and the paired receiver.
@@ -520,7 +573,24 @@ class _Attempt:
     def admit_closure(self, closure: ServiceEffectClosure) -> str:
         """Compare the compiled closure with the grant, immediately before E1."""
         self.closure = closure
-        findings = effect_scope_findings(self.grant, closure)
+        if isinstance(self.grant, ScalableHttpGrant):
+            findings = [*closure_identity_findings(self.grant, closure)]
+            scope, derived = derive_scope(closure, self.grant.marker)
+            findings.extend(derived)
+            if scope is not None:
+                self.scope = scope
+                self.envelope.scope = {
+                    "profile": scope.profile,
+                    "scope_sha256": scope.digest(),
+                    "clients": len(scope.clients),
+                    "servers": [item.name for item in scope.servers],
+                    "groups": len(scope.groups),
+                    "cost": scope.cost.document(),
+                }
+                findings.extend(scope_findings(self.grant, scope))
+            findings = tuple(findings)
+        else:
+            findings = effect_scope_findings(self.grant, closure)
         self.envelope.closure = closure
         self.envelope.closure_findings = list(findings)
         if not findings:
@@ -575,9 +645,11 @@ def accept_cold_http(
         else {}
     )
     envelope.grant_sha256 = _sha256(request.grant_text)
-    grant, refusals = parse_grant(request.grant_document, boundaries.proposal)
+    grant, refusals = _parse(request.grant_document, boundaries.proposal)
     if grant is None:
         return _refused(envelope, list(refusals))
+    if isinstance(grant, ScalableHttpGrant):
+        envelope.limitations = list(SCALABLE_ENVELOPE_LIMITATIONS)
     envelope.attempt_id = grant.attempt_id
     envelope.authorization_id = grant.authorization_id
     envelope.product_input = {
@@ -671,6 +743,14 @@ def accept_cold_http(
         # envelope; this only covers a path that raised out of the attempt.
         if "release" not in envelope.campaign:
             _release_claim(attempt)
+
+
+def _parse(document: object, proposal: ColdHttpProposal):
+    """Parse a grant by its declared schema; schema 1 is the legacy profile."""
+    version = document.get("schema_version") if isinstance(document, Mapping) else None
+    if version == SCALABLE_GRANT_SCHEMA_VERSION:
+        return parse_scalable_grant(document)
+    return parse_grant(document, proposal)
 
 
 def _claimed(request: AcceptanceRequest, attempt: _Attempt) -> AcceptanceResult:
@@ -945,7 +1025,10 @@ def _labelled(binding: ServiceInvocationBinding, attempt: _Attempt):
         binding,
         runtimes=ServiceStageRuntimes(
             configuration=_LabelledConfiguration(
-                binding.runtimes.configuration, ledger, halted
+                binding.runtimes.configuration,
+                ledger,
+                halted,
+                by_group=isinstance(attempt.grant, ScalableHttpGrant),
             ),
             services=_LabelledServices(binding.runtimes.services, ledger, halted),
         ),
@@ -1096,7 +1179,16 @@ def _collect_evidence(
         )
         envelope.product["record_sha256"] = digest
         envelope.product["reloaded_record_path"] = record_path
-        envelope.readiness = [dict(item) for item in record.operational_readiness]
+        if isinstance(grant, ScalableHttpGrant):
+            # Shared evidence is kept once: the rows stay in the record this
+            # envelope cites by path and digest, and are referenced here.
+            rows = [dict(item) for item in record.operational_readiness]
+            envelope.product["readiness_rows"] = len(rows)
+            envelope.product["readiness_sha256"] = _sha256(
+                json.dumps(rows, sort_keys=True, default=str)
+            )
+        else:
+            envelope.readiness = [dict(item) for item in record.operational_readiness]
     except Exception as exc:
         problem = f"record_reload_failed:{type(exc).__name__}"
         record_problems.append(problem)
@@ -1163,9 +1255,13 @@ def _evaluate(
         *ledger_refusals[:MAX_NAMED_REFUSALS],
         *(f"postflight:{item}" for item in envelope.postflight_failures),
     ]
+    judge = (
+        partial(evaluate_scalable_attempt, attempt.grant, attempt.scope)
+        if isinstance(attempt.grant, ScalableHttpGrant)
+        else partial(evaluate_attempt, attempt.grant)
+    )
     try:
-        return evaluate_attempt(
-            attempt.grant,
+        return judge(
             closure=attempt.closure,
             record=record,
             record_problems=record_problems,
@@ -1267,7 +1363,13 @@ def _budget(
         max_seconds=grant.max_seconds,
         reserve_operations=grant.reserve_operations,
         reserve_seconds=grant.reserve_seconds,
-        arithmetic=dict(COLD_HTTP_ARITHMETIC),
+        arithmetic=(
+            dict(attempt.scope.cost.operation_lines)
+            if attempt.scope is not None
+            else {}
+            if isinstance(grant, ScalableHttpGrant)
+            else dict(COLD_HTTP_ARITHMETIC)
+        ),
         used_operations=ledger.used,
         refused_calls=ledger.refused_calls,
         reserve_used=ledger.reserve_used,

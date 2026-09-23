@@ -29,6 +29,7 @@ compiled component joins stays unplaced.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
@@ -775,3 +776,19 @@ def unobserved_continuity_result(
             for item in requirement.dependents
         ),
     )
+
+
+def access_group_key(switch_name: str, vlan_id: int) -> str:
+    """Return the text identity of one access group on deployed names."""
+    return f"access:{switch_name}:{vlan_id}"
+
+
+def continuity_group_key(vlan_id: int, switch_names: Sequence[str]) -> str:
+    """Return the text identity of one continuity group on deployed names.
+
+    The switch names are taken in the component's own order, which is the
+    order the gate reads them in, so the closure, the ledger label and the
+    record row name the same group the same way.
+    """
+    digest = hashlib.sha256(",".join(switch_names).encode("utf-8")).hexdigest()
+    return f"trunk_continuity:{vlan_id}:{len(switch_names)}:{digest[:16]}"
