@@ -20,6 +20,7 @@ import hashlib
 import json
 import math
 import re
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -133,7 +134,7 @@ def _names(
             )
             return ()
         names.append(item)
-    duplicates = sorted({item for item in names if names.count(item) > 1})
+    duplicates = sorted(name for name, count in Counter(names).items() if count > 1)
     if duplicates:
         found.append(
             acceptance_refusal(
@@ -514,6 +515,8 @@ class ReadinessGroupScope:
     switches: tuple[str, ...]
     interfaces: tuple[str, ...]
     dependents: tuple[str, ...]
+    #: Each compiled trunk link of a continuity group as its two ends.
+    links: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -639,6 +642,7 @@ def derive_scope(
             switches=tuple(item.switches),
             interfaces=tuple(item.interfaces),
             dependents=tuple(sorted(item.dependents)),
+            links=tuple(sorted(item.links)),
         )
         for item in sorted(closure.readiness_groups, key=lambda group: group.key)
     )

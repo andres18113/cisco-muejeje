@@ -118,6 +118,7 @@ from ...domain.enterprise.services.service_access_readiness import (
     access_group_key,
     continuity_group_key,
     derive_access_readiness_plan,
+    trunk_link_ends,
 )
 from ...domain.enterprise.services.service_capability_resolution import (
     provenance_by_key,
@@ -2716,6 +2717,15 @@ def _closure_readiness(
                     )
                 ),
                 dependents=[item.expectation_id for item in continuity.dependents],
+                links=sorted(
+                    trunk_link_ends(
+                        names[link.switch_a_id],
+                        link.interface_a,
+                        names[link.switch_b_id],
+                        link.interface_b,
+                    )
+                    for link in component.links
+                ),
             )
         )
     unplaced = {item.expectation_id for item in readiness.unplaced}

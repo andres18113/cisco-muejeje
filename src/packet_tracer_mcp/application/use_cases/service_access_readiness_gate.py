@@ -191,18 +191,19 @@ class _NarrowedResult:
     def __init__(self, first, second) -> None:
         self.first = first
         self.second = second
+        self._narrowed = {item.expectation_id for item in second.dependents}
         narrowed = {item.expectation_id: item for item in second.dependents}
         self.dependents = tuple(
             narrowed.get(item.expectation_id, item) for item in first.dependents
         )
 
-    def as_rows(self) -> list[dict[str, object]]:
-        second = self.second.as_row()
-        second["narrowed_from_group"] = True
-        return [self.first.as_row(), second]
+    def source(self, expectation_id: str):
+        """Return the observation whose verdict one dependent takes."""
+        return self.second if expectation_id in self._narrowed else self.first
 
 
-_GroupResult = AccessReadinessGroupResult | ContinuityGroupResult | _NarrowedResult
+_ObservedResult = AccessReadinessGroupResult | ContinuityGroupResult
+_GroupResult = _ObservedResult | _NarrowedResult
 
 
 class ServiceAccessReadinessGate:
@@ -235,6 +236,12 @@ class ServiceAccessReadinessGate:
         self._results: dict[GroupKey, _GroupResult] = {}
         self._superseded: list[_GroupResult] = []
         self._revisions: dict[GroupKey, int] = {}
+        #: Observer calls per group identity; the n-th is episode `ordinal` n.
+        self._episodes: dict[GroupKey, int] = {}
+        #: Per observation, keyed by the identity of the result object the
+        #: gate keeps for the rest of the invocation, the expectations it
+        #: decided and the group revision each decision was taken at.
+        self._decided: dict[int, dict[str, int]] = {}
         self._verdicts: dict[str, ReadinessDependentResult] = {}
         self._requirements = {item.key: item for item in plan.requirements}
         self._continuity = {item.key: item for item in plan.continuity}
@@ -291,6 +298,17 @@ class ServiceAccessReadinessGate:
             verdict = _verdict_of(result, expectation_id)
             if verdict is None:
                 return None
+            # The record names the one observation this decision used and the
+            # revision it was taken at, so evidence can bind the permission
+            # to that episode and nothing earlier or later.
+            source = (
+                result.source(expectation_id)
+                if isinstance(result, _NarrowedResult)
+                else result
+            )
+            self._decided.setdefault(id(source), {})[expectation_id] = self.revision(
+                key
+            )
             verdicts.append((key, verdict))
             if not verdict.admitted:
                 # The first refusing group decides; groups after it are not
@@ -352,10 +370,24 @@ class ServiceAccessReadinessGate:
         rows: list[dict[str, object]] = []
         for item in recorded:
             if isinstance(item, _NarrowedResult):
-                rows.extend(item.as_rows())
+                rows.append(self._rendered(item.first))
+                second = self._rendered(item.second)
+                second["narrowed_from_group"] = True
+                rows.append(second)
             else:
-                rows.append(item.as_row())
+                rows.append(self._rendered(item))
         return rows
+
+    def _rendered(self, result: _ObservedResult) -> dict[str, object]:
+        """Render one observation, marking the dependents it decided."""
+        row = result.as_row()
+        decided = self._decided.get(id(result))
+        if decided:
+            for dependent in row["dependents"]:
+                revision = decided.get(dependent["expectation_id"])
+                if revision is not None:
+                    dependent["decision"] = {"revision": revision}
+        return row
 
     # -- internals ------------------------------------------------------------
 
@@ -419,7 +451,7 @@ class ServiceAccessReadinessGate:
             interfaces=tuple(item for item in requirement.interfaces if item in subset),
             dependents=covered,
         )
-        second, _ = self._observe(narrowed)
+        second, _ = self._observe(narrowed, narrowed=True)
         return _NarrowedResult(first, second)
 
     def _continuity_group(self, requirement: ContinuityRequirement) -> _GroupResult:
@@ -442,7 +474,9 @@ class ServiceAccessReadinessGate:
         )
         if not covered or len(joined) >= len(pairs):
             return first
-        second, _ = self._observe_continuity(replace(requirement, dependents=covered))
+        second, _ = self._observe_continuity(
+            replace(requirement, dependents=covered), narrowed=True
+        )
         return _NarrowedResult(first, second)
 
     def _switch_names(self, requirement: ContinuityRequirement) -> dict[str, str]:
@@ -452,6 +486,20 @@ class ServiceAccessReadinessGate:
             for switch_id, name in zip(
                 component.switch_device_ids, component.switch_device_names, strict=True
             )
+        }
+
+    def _episode(self, key: GroupKey, *, narrowed: bool) -> dict[str, object]:
+        """Return the identity of one observer call about to be made for a group.
+
+        The acceptance composition labels that call's dispatches with the same
+        per-group ordinal, so a record row names the ledger positions it came
+        from.
+        """
+        self._episodes[key] = self._episodes.get(key, 0) + 1
+        return {
+            "ordinal": self._episodes[key],
+            "revision": self.revision(key),
+            "narrowed": narrowed,
         }
 
     def _admit_group(self) -> tuple[float, str]:
@@ -468,7 +516,7 @@ class ServiceAccessReadinessGate:
         return remaining, ""
 
     def _observe(
-        self, requirement: AccessReadinessRequirement
+        self, requirement: AccessReadinessRequirement, *, narrowed: bool = False
     ) -> tuple[AccessReadinessGroupResult, AccessForwardingObservation | None]:
         """Take one bounded observation episode, or name why it took none."""
         if self._observer is None:
@@ -487,6 +535,20 @@ class ServiceAccessReadinessGate:
         self.observations.append(
             (switch_name, requirement.vlan_id, requirement.interfaces)
         )
+        episode = self._episode(requirement.key, narrowed=narrowed)
+        result, observation = self._observed(
+            requirement, switch_name, remaining, group_started
+        )
+        return replace(result, episode=episode), observation
+
+    def _observed(
+        self,
+        requirement: AccessReadinessRequirement,
+        switch_name: str,
+        remaining: float,
+        group_started: float,
+    ) -> tuple[AccessReadinessGroupResult, AccessForwardingObservation | None]:
+        """Call the observer once and judge what it returned."""
         try:
             observation = self._observer.observe_access_forwarding(
                 switch_name,
@@ -548,7 +610,7 @@ class ServiceAccessReadinessGate:
         )
 
     def _observe_continuity(
-        self, requirement: ContinuityRequirement
+        self, requirement: ContinuityRequirement, *, narrowed: bool = False
     ) -> tuple[ContinuityGroupResult, TrunkContinuityObservation | None]:
         """Take one bounded continuity episode over one component."""
         if self._continuity_observer is None:
@@ -583,6 +645,23 @@ class ServiceAccessReadinessGate:
                 tuple(name for name, _ in switches),
             )
         )
+        episode = self._episode(requirement.key, narrowed=narrowed)
+        result, observation = self._observed_continuity(
+            requirement, names, switches, pairs, remaining, group_started
+        )
+        return replace(result, episode=episode), observation
+
+    def _observed_continuity(
+        self,
+        requirement: ContinuityRequirement,
+        names: Mapping[str, str],
+        switches: Sequence[tuple[str, Sequence[str]]],
+        pairs: Sequence[tuple[str, str]],
+        remaining: float,
+        group_started: float,
+    ) -> tuple[ContinuityGroupResult, TrunkContinuityObservation | None]:
+        """Call the continuity observer once and judge what it returned."""
+        component = requirement.component
         try:
             observation = self._continuity_observer.observe_trunk_continuity(
                 switches,

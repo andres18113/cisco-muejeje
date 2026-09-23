@@ -3,9 +3,9 @@
 Judging a thousand clients by scanning the whole ledger and every record row
 per client is quadratic in the evidence. These indexes are built in one pass
 each -- ledger entries by purpose, record verification rows by expectation,
-readiness rows by group identity -- so a client's judgement costs lookups in
-its own evidence, and the whole assembly is linear in the retained evidence
-plus the selected relationships.
+readiness episodes by group and ordinal -- so a client's judgement costs
+lookups in its own evidence, and the whole assembly is linear in the
+retained evidence plus the selected relationships.
 
 They hold references to the evidence, never copies or reinterpretations, and a
 lookup that finds nothing returns nothing rather than a default fact.
@@ -13,7 +13,7 @@ lookup that finds nothing returns nothing rather than a default fact.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -22,6 +22,8 @@ from ..models.service_run_record import ServiceRunRecord
 
 E6_VERIFY_PREFIX = "e6_verify:"
 OWNED_RELEASE_PREFIX = "owned_release:"
+#: A scalable readiness dispatch is `readiness:<group key>#<episode ordinal>`.
+READINESS_PREFIX = "readiness:"
 
 
 @dataclass
@@ -69,56 +71,21 @@ def verification_rows(record: ServiceRunRecord | None) -> dict[str, Any]:
     return rows
 
 
-@dataclass
-class ReadinessIndex:
-    """Readiness rows by group identity, with each row's dependents indexed."""
+def readiness_episode_spans(
+    ledger: LedgerIndex,
+) -> dict[str, dict[int, tuple[int, int]]]:
+    """Return, per group key and episode ordinal, its first and last dispatch.
 
-    access: dict[tuple[str, int], list[Mapping[str, Any]]] = field(default_factory=dict)
-    continuity: dict[tuple[int, frozenset[str]], list[Mapping[str, Any]]] = field(
-        default_factory=dict
-    )
-    dependents: dict[int, dict[str, Mapping[str, Any]]] = field(default_factory=dict)
-
-    @classmethod
-    def build(cls, rows: Sequence[object]) -> ReadinessIndex:
-        """Index each row once; a malformed row is skipped, never repaired."""
-        index = cls()
-        for row in rows:
-            if not isinstance(row, Mapping):
-                continue
-            dependents = {
-                str(item.get("expectation_id")): item
-                for item in (row.get("dependents") or [])
-                if isinstance(item, Mapping)
-            }
-            index.dependents[id(row)] = dependents
-            vlan = row.get("vlan_id")
-            if not isinstance(vlan, int):
-                continue
-            if row.get("kind") == "trunk_continuity":
-                names = row.get("switch_device_names")
-                if isinstance(names, list):
-                    key = (vlan, frozenset(str(item) for item in names))
-                    index.continuity.setdefault(key, []).append(row)
-            elif "kind" not in row:
-                name = row.get("switch_device_name")
-                if isinstance(name, str):
-                    index.access.setdefault((name, vlan), []).append(row)
-        return index
-
-    def dependent(
-        self, row: Mapping[str, Any], expectation_id: str
-    ) -> Mapping[str, Any] | None:
-        """Return one row's dependent entry for one expectation."""
-        return self.dependents.get(id(row), {}).get(expectation_id)
-
-    def admitting_row(
-        self, rows: Sequence[Mapping[str, Any]], expectation_id: str
-    ) -> Mapping[str, Any] | None:
-        """Return the last row of a group that admitted this expectation."""
-        chosen = None
-        for row in rows:
-            dependent = self.dependent(row, expectation_id)
-            if dependent is not None and dependent.get("admitted") is True:
-                chosen = row
-        return chosen
+    One pass over the ledger's purposes. A readiness purpose without a valid
+    `#<ordinal>` suffix names no episode and is not an episode of any group.
+    """
+    spans: dict[str, dict[int, tuple[int, int]]] = {}
+    for purpose in ledger.purposes():
+        if not purpose.startswith(READINESS_PREFIX):
+            continue
+        key, marker, ordinal = purpose[len(READINESS_PREFIX) :].rpartition("#")
+        if not marker or not key or not ordinal.isdigit():
+            continue
+        positions = ledger.positions(purpose)
+        spans.setdefault(key, {})[int(ordinal)] = (positions[0], positions[-1])
+    return spans

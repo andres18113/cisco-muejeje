@@ -367,8 +367,11 @@ class _LabelledConfiguration:
     """The E5 runtime, with each boundary's dispatches named in the ledger.
 
     A scalable attempt labels each readiness dispatch with the identity of the
-    group it observes, so the ordering oracle can require every group a
-    client's path names before that client's first request.
+    group it observes and the ordinal of that observation,
+    `readiness:<group key>#<n>`, counted per group exactly as the readiness
+    gate numbers its episodes (one per observer call, counted before anything
+    can refuse the call). The evaluator binds each client's permission to the
+    ledger positions of the one episode that decided it.
     """
 
     def __init__(
@@ -383,6 +386,13 @@ class _LabelledConfiguration:
         self._ledger = ledger
         self._halted = halted
         self._by_group = by_group
+        self._episodes: dict[str, int] = {}
+
+    def _readiness_purpose(self, key: str) -> str:
+        if not self._by_group:
+            return PURPOSE_READINESS
+        self._episodes[key] = self._episodes.get(key, 0) + 1
+        return f"{READINESS_PREFIX}{key}#{self._episodes[key]}"
 
     def inventory(self):
         self._halted.check()
@@ -405,25 +415,18 @@ class _LabelledConfiguration:
             return self._inner.wait_for_voice_access_forwarding(expectations)
 
     def observe_access_forwarding(self, device_name, vlan_id, *args, **kwargs):
+        purpose = self._readiness_purpose(access_group_key(device_name, vlan_id))
         self._halted.check()
-        purpose = (
-            READINESS_PREFIX + access_group_key(device_name, vlan_id)
-            if self._by_group
-            else PURPOSE_READINESS
-        )
         with self._ledger.purpose_of(purpose):
             return self._inner.observe_access_forwarding(
                 device_name, vlan_id, *args, **kwargs
             )
 
     def observe_trunk_continuity(self, switches, vlan_id, *args, **kwargs):
-        self._halted.check()
-        purpose = (
-            READINESS_PREFIX
-            + continuity_group_key(vlan_id, [name for name, _ in switches])
-            if self._by_group
-            else PURPOSE_READINESS
+        purpose = self._readiness_purpose(
+            continuity_group_key(vlan_id, [name for name, _ in switches])
         )
+        self._halted.check()
         with self._ledger.purpose_of(purpose):
             return self._inner.observe_trunk_continuity(
                 switches, vlan_id, *args, **kwargs

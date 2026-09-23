@@ -184,7 +184,8 @@ class EffectClosureReadinessGroup(BaseModel):
     `key` is the group's complete identity as text. An access group names its
     switch, VLAN and access interfaces; a continuity group names its VLAN,
     every switch of the compiled component and every trunk end, each as
-    `switch:interface`.
+    `switch:interface`, and in `links` each compiled trunk link as its two
+    ends (`trunk_link_ends`), so evidence can be checked edge by edge.
     """
 
     key: str
@@ -193,6 +194,7 @@ class EffectClosureReadinessGroup(BaseModel):
     switches: list[str] = Field(default_factory=list)
     interfaces: list[str] = Field(default_factory=list)
     dependents: list[str] = Field(default_factory=list)
+    links: list[str] = Field(default_factory=list)
 
 
 class EffectClosurePath(BaseModel):

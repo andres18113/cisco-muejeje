@@ -475,6 +475,11 @@ class AccessReadinessGroupResult:
     #: an empty mapping when no sample was taken. It is never synthesized.
     sample: Mapping[str, object] = field(default_factory=dict)
     dependents: tuple[ReadinessDependentResult, ...] = ()
+    #: Which observation this is, when an observer was called for it:
+    #: `ordinal` (1-based, per group identity), `revision` (the group's
+    #: dependency revision when it was observed) and `narrowed`. Empty when no
+    #: observer was called, and then never rendered.
+    episode: Mapping[str, object] = field(default_factory=dict)
 
     @property
     def admitted(self) -> bool:
@@ -483,7 +488,7 @@ class AccessReadinessGroupResult:
 
     def as_row(self) -> dict[str, object]:
         """Return the public readiness row, sample included."""
-        return {
+        row: dict[str, object] = {
             "switch_device_id": self.switch_device_id,
             "switch_device_name": self.switch_device_name,
             "vlan_id": self.vlan_id,
@@ -494,6 +499,9 @@ class AccessReadinessGroupResult:
             "sample": dict(self.sample),
             "dependents": [item.as_row() for item in self.dependents],
         }
+        if self.episode:
+            row["episode"] = dict(self.episode)
+        return row
 
 
 def _kind_value(kind: object) -> str:
@@ -675,6 +683,8 @@ class ContinuityGroupResult:
     causes: tuple[str, ...] = ()
     sample: Mapping[str, object] = field(default_factory=dict)
     dependents: tuple[ContinuityDependentResult, ...] = ()
+    #: The observation's identity, exactly as for an access group.
+    episode: Mapping[str, object] = field(default_factory=dict)
 
     @property
     def key(self) -> tuple[str, int, tuple[str, ...]]:
@@ -684,7 +694,7 @@ class ContinuityGroupResult:
     def as_row(self) -> dict[str, object]:
         """Return the public continuity row, sample included."""
         component = self.component
-        return {
+        row: dict[str, object] = {
             "kind": "trunk_continuity",
             "vlan_id": component.vlan_id,
             "switch_device_ids": list(component.switch_device_ids),
@@ -705,6 +715,9 @@ class ContinuityGroupResult:
             "sample": dict(self.sample),
             "dependents": [item.as_row() for item in self.dependents],
         }
+        if self.episode:
+            row["episode"] = dict(self.episode)
+        return row
 
 
 def _continuity_dependent(
@@ -792,3 +805,16 @@ def continuity_group_key(vlan_id: int, switch_names: Sequence[str]) -> str:
     """
     digest = hashlib.sha256(",".join(switch_names).encode("utf-8")).hexdigest()
     return f"trunk_continuity:{vlan_id}:{len(switch_names)}:{digest[:16]}"
+
+
+def trunk_link_ends(
+    switch_a: str, interface_a: str, switch_b: str, interface_b: str
+) -> str:
+    """Return one compiled trunk link as its two ends on deployed names.
+
+    The ends are `switch:interface`, ordered, so the closure, the derived scope
+    and an evaluator reading a record name the same link the same way whatever
+    end the compiler called `a`.
+    """
+    left, right = sorted((f"{switch_a}:{interface_a}", f"{switch_b}:{interface_b}"))
+    return f"{left}={right}"
