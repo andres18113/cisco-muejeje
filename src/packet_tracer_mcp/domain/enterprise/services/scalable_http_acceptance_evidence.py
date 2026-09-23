@@ -29,6 +29,7 @@ from .acceptance_evidence_index import (
     OWNED_RELEASE_PREFIX,
     READINESS_PREFIX,
     LedgerIndex,
+    readiness_episode,
     readiness_episode_spans,
     verification_rows,
 )
@@ -53,8 +54,8 @@ def _in_scope(
     if purpose in _FIXED_PURPOSES:
         return True
     if purpose.startswith(READINESS_PREFIX):
-        key, marker, ordinal = purpose[len(READINESS_PREFIX) :].rpartition("#")
-        return bool(marker) and key in groups and ordinal.isdigit() and int(ordinal) > 0
+        episode = readiness_episode(purpose)
+        return episode is not None and episode[0] in groups
     if purpose.startswith(E6_VERIFY_PREFIX):
         return purpose[len(E6_VERIFY_PREFIX) :] in checks
     if purpose.startswith(OWNED_RELEASE_PREFIX):

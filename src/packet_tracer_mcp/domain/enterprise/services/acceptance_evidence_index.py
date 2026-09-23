@@ -13,6 +13,7 @@ lookup that finds nothing returns nothing rather than a default fact.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -24,6 +25,7 @@ E6_VERIFY_PREFIX = "e6_verify:"
 OWNED_RELEASE_PREFIX = "owned_release:"
 #: A scalable readiness dispatch is `readiness:<group key>#<episode ordinal>`.
 READINESS_PREFIX = "readiness:"
+_CANONICAL_ORDINAL = re.compile(r"[1-9][0-9]*")
 
 
 @dataclass
@@ -76,16 +78,31 @@ def readiness_episode_spans(
 ) -> dict[str, dict[int, tuple[int, int]]]:
     """Return, per group key and episode ordinal, its first and last dispatch.
 
-    One pass over the ledger's purposes. A readiness purpose without a valid
-    `#<ordinal>` suffix names no episode and is not an episode of any group.
+    One pass over the ledger's purposes. Only a canonical label
+    (`readiness_episode`) names an episode, so no two purposes can name the
+    same one and no span is overwritten.
     """
     spans: dict[str, dict[int, tuple[int, int]]] = {}
     for purpose in ledger.purposes():
-        if not purpose.startswith(READINESS_PREFIX):
-            continue
-        key, marker, ordinal = purpose[len(READINESS_PREFIX) :].rpartition("#")
-        if not marker or not key or not ordinal.isdigit():
+        episode = readiness_episode(purpose)
+        if episode is None:
             continue
         positions = ledger.positions(purpose)
-        spans.setdefault(key, {})[int(ordinal)] = (positions[0], positions[-1])
+        spans.setdefault(episode[0], {})[episode[1]] = (positions[0], positions[-1])
     return spans
+
+
+def readiness_episode(purpose: str) -> tuple[str, int] | None:
+    """Return the group key and ordinal one readiness purpose names, if any.
+
+    The label is `readiness:<group key>#<ordinal>`, the ordinal a positive
+    decimal written without leading zeros, exactly as the labelled runtime
+    writes it. Any other spelling (`#01`, `#0`, `#+1`, non-ASCII digits)
+    names no episode.
+    """
+    if not purpose.startswith(READINESS_PREFIX):
+        return None
+    key, marker, ordinal = purpose[len(READINESS_PREFIX) :].rpartition("#")
+    if not marker or not key or not _CANONICAL_ORDINAL.fullmatch(ordinal):
+        return None
+    return key, int(ordinal)

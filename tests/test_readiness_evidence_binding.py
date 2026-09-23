@@ -623,12 +623,16 @@ def test_legitimate_narrowing_is_bound_to_the_narrowed_episode(
         f"readiness:access:{SW1}:10",
         "e6_verify:svc/verify-http-ip/not-selected",
         "owned_release:svc/verify-http-ip/not-selected",
+        f"readiness:access:{SW1}:10#01",
+        f"readiness:access:{SW1}:10#0",
     ],
     ids=[
         "foreign_group",
         "no_episode_ordinal",
         "unselected_request",
         "unselected_release",
+        "ordinal_spelled_with_a_leading_zero",
+        "ordinal_zero",
     ],
 )
 def test_a_dispatch_outside_the_derived_scope_refuses_the_attempt(immediate, purpose):
