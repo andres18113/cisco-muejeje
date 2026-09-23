@@ -270,8 +270,9 @@ class OperationLedger:
     """Count every engine operation against one stage ceiling.
 
     The counting unit is one command dispatched through the fixed transport,
-    whatever its result. Outside finalization the reserve is untouchable, and
-    each call's timeout is capped so that the reserved seconds survive too.
+    whatever its result. Outside finalization the reserve is untouchable,
+    except to a call admitted inside `protected_release`, and each call's
+    timeout is capped so that the reserved seconds survive too.
     """
 
     def __init__(
@@ -295,9 +296,16 @@ class OperationLedger:
         #: against, bound once before the invocation's first effect.
         self._effect_guard: Callable[[str, float], str] | None = None
         self._effect_scope = 0
+        #: Depth of the protected-release scope. Only a caller that owns an
+        #: owned-resource release opens it, and only around that one dispatch.
+        self._protected_release = 0
         self.phase = LedgerPhase.ADMISSION
         self.purpose = ""
         self.used = 0
+        #: Counted calls that were charged to the reserve rather than to the
+        #: ordinary allowance. Zero for every caller that never opens
+        #: `protected_release`, which keeps their arithmetic exactly as it was.
+        self.reserve_used = 0
         self.entries: list[OperationEntry] = []
 
     @property
@@ -363,13 +371,37 @@ class OperationLedger:
         finally:
             self._effect_scope -= 1
 
+    @contextmanager
+    def protected_release(self) -> Iterator[None]:
+        """Admit the calls inside the block against the reserve, one scope at a time.
+
+        This is for a caller that releases a resource the invocation owns
+        while ordinary work may still follow, which is why it is a scope and
+        not a phase: the invocation is never switched into finalization, and
+        the next call after the block is ordinary again. A call admitted here
+        is charged to the reserve, may use the absolute deadline, and is still
+        decided by the effect guard when one applies. It never makes reserve
+        available to anything outside the block.
+        """
+        self._protected_release += 1
+        try:
+            yield
+        finally:
+            self._protected_release -= 1
+
     def allowance(self) -> tuple[int, float]:
         """Return the operations and seconds the current phase may still use."""
-        final = self.phase is LedgerPhase.FINALIZATION
-        operations = self._max_operations - self.used
         deadline = self._start + self._max_seconds
-        if not final:
-            operations -= self._reserve_operations
+        if self._protected_release:
+            operations = self._reserve_operations - self.reserve_used
+        elif self.phase is LedgerPhase.FINALIZATION:
+            operations = self._max_operations - self.used
+        else:
+            operations = (
+                self._max_operations
+                - self._reserve_operations
+                - (self.used - self.reserve_used)
+            )
             deadline -= self._reserve_seconds
         seconds = deadline - self._clock()
         return operations, seconds
@@ -377,7 +409,7 @@ class OperationLedger:
     def deadline(self) -> float:
         """Return the absolute monotonic deadline for the active phase."""
         deadline = self._start + self._max_seconds
-        if self.phase is not LedgerPhase.FINALIZATION:
+        if self.phase is not LedgerPhase.FINALIZATION and not self._protected_release:
             deadline -= self._reserve_seconds
         return deadline
 
@@ -403,15 +435,25 @@ class OperationLedger:
         dispatch because the local authority observation spends wall-clock.
         """
         reason = ""
-        halted = not self._effects_open and self.phase not in (
-            LedgerPhase.FINALIZATION,
-            LedgerPhase.TERMINAL_OBSERVATION,
+        protected = bool(self._protected_release)
+        exhausted = (
+            "protected_reserve_exhausted" if protected else "operation_budget_exhausted"
+        )
+        phase = "protected_release" if protected else self.phase.value
+        halted = (
+            not self._effects_open
+            and not protected
+            and self.phase
+            not in (
+                LedgerPhase.FINALIZATION,
+                LedgerPhase.TERMINAL_OBSERVATION,
+            )
         )
         if halted:
             reason = f"effects_halted:{self._halt_reason}"
         operations, seconds = self.allowance()
         if not reason and operations < 1:
-            reason = "operation_budget_exhausted"
+            reason = exhausted
         if not reason and seconds <= 0:
             reason = "time_budget_exhausted"
         if not reason and self._effect_scope:
@@ -427,14 +469,14 @@ class OperationLedger:
         # pre-read allowance never authorizes the subsequent bridge dispatch.
         operations, seconds = self.allowance()
         if not reason and operations < 1:
-            reason = "operation_budget_exhausted"
+            reason = exhausted
         if not reason and seconds <= 0:
             reason = "time_budget_exhausted"
         if reason:
             self.entries.append(
                 OperationEntry(
                     seq=0,
-                    phase=self.phase.value,
+                    phase=phase,
                     call=call,
                     purpose=self.purpose,
                     started_offset_seconds=round(self.elapsed(), 3),
@@ -444,10 +486,12 @@ class OperationLedger:
             raise OperationRefused(reason)
         timeout = max(0.0, min(float(requested_timeout), seconds))
         self.used += 1
+        if protected:
+            self.reserve_used += 1
         self.entries.append(
             OperationEntry(
                 seq=self.used,
-                phase=self.phase.value,
+                phase=phase,
                 call=call,
                 purpose=self.purpose,
                 timeout_seconds=round(timeout, 3),

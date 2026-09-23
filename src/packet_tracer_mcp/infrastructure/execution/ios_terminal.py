@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from enum import Enum, StrEnum
 from time import monotonic, sleep
+from typing import Any
 
 from ...domain.enterprise.models.discovery import DeviceInitializationResult
 from .command_dispatch import (
@@ -2609,13 +2610,30 @@ class ControlledIosExecutor:
         *,
         timeout_seconds: float = 90.0,
         interval_seconds: float = 0.25,
+        clock: Callable[[], float] | None = None,
+        sleeper: Callable[[float], None] | None = None,
+        remaining_seconds: Callable[[], float] | None = None,
     ) -> DeviceInitializationResult:
-        """Espera el boot IOS con el waiter compartido, separado del SHOW."""
+        """Wait for IOS boot with the shared waiter, separate from any SHOW.
+
+        The clock, sleeper and remaining-allowance control are optional and
+        forwarded only when a caller that owns a shorter budget supplies them.
+        Without them the waiter keeps its own defaults, which every ordinary
+        composition relies on.
+        """
         name = json.dumps(device_name)
+        controls: dict[str, Any] = {}
+        if clock is not None:
+            controls["clock"] = clock
+        if sleeper is not None:
+            controls["sleeper"] = sleeper
+        if remaining_seconds is not None:
+            controls["remaining_seconds"] = remaining_seconds
         return IosBootWaiter(
             lambda: self._terminal_state(name),
             timeout_seconds=timeout_seconds,
             interval_seconds=interval_seconds,
+            **controls,
         ).wait()
 
     # Toda consulta registrada es un `show`: no muta nada, así que reintentar

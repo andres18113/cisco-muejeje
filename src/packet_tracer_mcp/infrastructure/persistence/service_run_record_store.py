@@ -17,6 +17,7 @@ what a partially completed run had already done.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from datetime import datetime
@@ -98,6 +99,59 @@ class ServiceRunRecordStore:
         record = self._load(self.path_for(deployment_id, run_id))
         self._require_identity(record, deployment_id=deployment_id, run_id=run_id)
         return record
+
+    def load_evidence(
+        self, deployment_id: str, run_id: str
+    ) -> tuple[ServiceRunRecord, str, str]:
+        """Read one record once and return it with its path and byte digest.
+
+        The digest is of the very bytes that were validated, so a caller that
+        cites the record by hash cites what it actually interpreted.
+        """
+        path = self.path_for(deployment_id, run_id)
+        try:
+            raw = path.read_bytes()
+            record = ServiceRunRecord.model_validate_json(raw.decode("utf-8"))
+        except (OSError, ValueError) as exc:
+            raise RunRecordPersistenceError(
+                f"Stored service run record is unreadable: {path}"
+            ) from exc
+        self._require_identity(
+            record, deployment_id=deployment_id, run_id=run_id, expected_path=path
+        )
+        return record, str(path), hashlib.sha256(raw).hexdigest()
+
+    def deployment_history(self, deployment_id: str) -> tuple[str, ...]:
+        """Name every stored entry of one deployment, whatever its status.
+
+        This is the read a fresh-history precondition needs, so it judges
+        nothing: a completed, refused, interrupted, malformed or half-written
+        record is history all the same, and so is a leftover temporary file.
+        A deployment directory that does not exist holds no history. One that
+        cannot be listed raises, because missing access is not an empty
+        history. The listing is bounded like the retention lookup.
+        """
+        if not deployment_id.strip():
+            raise RunRecordPersistenceError("A deployment identity is required.")
+        try:
+            directory = resolve_within(
+                self.base_dir, safe_name_component(deployment_id, UNBOUND_DIRECTORY)
+            )
+            if not directory.exists():
+                return ()
+            names = sorted(
+                item.name
+                for item in islice(directory.iterdir(), MAX_RETENTION_RECORDS + 1)
+            )
+        except (OSError, ValueError) as exc:
+            raise RunRecordPersistenceError(
+                "Could not inspect service run history."
+            ) from exc
+        if len(names) > MAX_RETENTION_RECORDS:
+            raise RunRecordPersistenceError(
+                "Service run history exceeds the bounded lookup budget."
+            )
+        return tuple(names)
 
     def retained_result_for(
         self,

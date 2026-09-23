@@ -16,7 +16,7 @@ import json
 import re
 import threading
 from collections.abc import Callable, Sequence
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from enum import Enum, StrEnum
 from ipaddress import ip_address, ip_network
@@ -757,6 +757,7 @@ class PacketTracerEnterpriseServiceRuntime:
         web_inspection_schedule: Sequence[float] | None = None,
         web_late_read_offset: float | None = None,
         budget_reader: Callable[[], tuple[int, float]] | None = None,
+        owned_release: (Callable[[str], AbstractContextManager[None]] | None) = None,
     ) -> None:
         """Bind the runtime to one inventory reader and one command channel.
 
@@ -786,6 +787,12 @@ class PacketTracerEnterpriseServiceRuntime:
         `budget_reader` lets the caller's operation ledger be recorded beside
         each observation. It is read, never consulted for permission: the
         ledger itself refuses a call the budget cannot pay for.
+
+        `owned_release` is entered, with the expectation id, around the one
+        release dispatch of an owned web client and around nothing else. It
+        lets a caller that owns a protected release reserve admit exactly
+        that dispatch against it without reading any script. When it refuses,
+        the release is reported as failed and ownership as unresolved.
         """
         self._sanitizer = EvidenceSanitizer()
         self._query_inventory = query_inventory
@@ -807,6 +814,7 @@ class PacketTracerEnterpriseServiceRuntime:
             float(web_late_read_offset) if web_late_read_offset is not None else None
         )
         self._budget_reader = budget_reader
+        self._owned_release = owned_release
 
     def inventory(self) -> list[RuntimeConfigurationTarget]:
         """Return the runtime inventory, normalized to typed targets."""
@@ -3840,15 +3848,21 @@ class PacketTracerEnterpriseServiceRuntime:
         if lease.state is ClientOwnership.ABSENT:
             return ReleaseOutcome(_RELEASE_NOTHING_OWNED, "client_not_created")
         client = json.dumps(expectation.client_device_name)
+        scope = (
+            self._owned_release(expectation.id)
+            if self._owned_release is not None
+            else nullcontext()
+        )
         try:
-            observation = self._observe(
-                self._background_http_release(
-                    expectation.id,
-                    client,
-                    category_errors=self._sanitizer.holds_values,
-                ),
-                3.0,
-            )
+            with scope:
+                observation = self._observe(
+                    self._background_http_release(
+                        expectation.id,
+                        client,
+                        category_errors=self._sanitizer.holds_values,
+                    ),
+                    3.0,
+                )
         except Exception as error:
             # A cleanup that raised replaces no primary fact: it is recorded
             # as its own failed cleanup.

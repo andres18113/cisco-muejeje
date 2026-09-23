@@ -81,7 +81,10 @@ from ...domain.enterprise.models.service_entry import (
     ClientCheckRow,
     ClientServiceOutcome,
     E5EffectScope,
+    EffectClosureAction,
+    EffectClosureCheck,
     OwnedResourceRelease,
+    ServiceEffectClosure,
     ServiceEntryOutcome,
     ServiceEntryRefusal,
     ServiceRunStatus,
@@ -205,6 +208,10 @@ class ServiceInvocationBinding:
     #: The one credential source of this session; the service runtime is bound
     #: to the same instance, so admission and dispatch see one value.
     secret_resolver: SecretResolver | None = None
+    #: Optional admission of the compiled effect closure, asked once after A10
+    #: and before E1. Only a governing caller composes it; it can refuse the
+    #: run before any effect and can never widen what the use case admits.
+    effect_admission: Callable[[ServiceEffectClosure], str] | None = None
 
 
 @dataclass
@@ -1339,8 +1346,10 @@ def apply_enterprise_services(
         source_tree = binding.source_tree
         inventory_reader = binding.inventory_reader
         secret_resolver = binding.secret_resolver
+        effect_admission = binding.effect_admission
     else:
         inventory_reader = None
+        effect_admission = None
 
     if (
         runtimes is None
@@ -1714,6 +1723,43 @@ def apply_enterprise_services(
             and not isinstance(action, SetEndpointStaticAddress)
         ),
     )
+
+    # -- A11: a governing caller's admission of the exact closure ---------
+    # Everything the run will dispatch is fixed by now and nothing has been
+    # dispatched. A caller that bound an admission sees the closure on the
+    # deployed names the manifest resolved; any answer but "" refuses here.
+    if effect_admission is not None:
+        closure = _effect_closure(
+            deployment_id=deployment_id,
+            manifest=manifest,
+            configuration_plan=configuration_plan,
+            service_plan=service_plan,
+            selected_plan=selected_plan,
+            mutation_scope=mutation_scope,
+            retained=retained_ids,
+            excluded=excluded,
+            deployed_names=deployed_names,
+            models=models,
+            environment_fingerprint=environment_fingerprint,
+            transport=transport_selection.channel,
+            source_tree=source_tree,
+            limitations=run.limitations,
+        )
+        try:
+            refusal_detail = str(effect_admission(closure) or "")
+        except Exception as exc:
+            refusal_detail = f"effect_admission_failed:{_external_cause(exc)}"
+        run.read(
+            "A11",
+            "effect_admission",
+            "refused" if refusal_detail else "admitted",
+        )
+        if refusal_detail:
+            return refuse(
+                "A11",
+                ServiceEntryRefusal.EFFECT_SCOPE_NOT_ADMITTED,
+                _sanitized(refusal_detail),
+            )
     return _execute(
         run,
         runtimes=runtimes,
@@ -2433,6 +2479,118 @@ def _unsupported_paths(
         if len(path_switches) > 1:
             unsupported.append(f"{service.id}:inter_switch")
     return sorted(unsupported)
+
+
+#: Fields that name where an action lives rather than what it sets. They are
+#: kept out of a closure's parameters so a plan display label can never be
+#: read as the deployed target, which the closure carries separately.
+_CLOSURE_LOCATION_FIELDS = frozenset(
+    {"id", "device_id", "device_name", "host_device_id", "host_device_name"}
+)
+
+
+def _closure_parameters(action: Any) -> dict[str, str | int | bool]:
+    """Keep the primitive compiled parameters of one action, as compiled."""
+    return {
+        key: value
+        for key, value in action.model_dump(mode="json").items()
+        if key not in _CLOSURE_LOCATION_FIELDS and isinstance(value, (str, int, bool))
+    }
+
+
+def _configuration_closure_action(
+    action: Any, deployed_names: Mapping[str, str], models: Mapping[str, str]
+) -> EffectClosureAction:
+    """Describe one E5 action on its deployed target."""
+    vlan = getattr(action, "vlan_id", None)
+    if vlan is None:
+        vlan = getattr(action, "data_vlan_id", None)
+    return EffectClosureAction(
+        action_id=action.id,
+        action_type=str(action.action_type.value),
+        device_name=deployed_names.get(action.device_id, ""),
+        model=models.get(action.device_id, ""),
+        interface=str(getattr(action, "interface", "") or ""),
+        vlan_id=vlan,
+        ipv4=str(getattr(action, "ipv4", "") or ""),
+        netmask=str(getattr(action, "netmask", "") or ""),
+        gateway=str(getattr(action, "gateway", "") or ""),
+        parameters=_closure_parameters(action),
+    )
+
+
+def _effect_closure(
+    *,
+    deployment_id: str,
+    manifest: DeploymentManifest,
+    configuration_plan: Any,
+    service_plan: ServicePlan,
+    selected_plan: ServicePlan,
+    mutation_scope: set[str],
+    retained: set[str],
+    excluded: set[str],
+    deployed_names: Mapping[str, str],
+    models: Mapping[str, str],
+    environment_fingerprint: EnvironmentFingerprint,
+    transport: str,
+    source_tree: SourceTreeIdentity,
+    limitations: Sequence[str],
+) -> ServiceEffectClosure:
+    """Describe what this admitted invocation will do, and on which targets."""
+    actions = {item.id: item for item in configuration_plan.actions}
+    return ServiceEffectClosure(
+        deployment_id=deployment_id,
+        manifest_hash=manifest.semantic_hash,
+        physical_topology_hash=manifest.physical_topology_hash,
+        configuration_semantic_hash=configuration_plan.semantic_hash,
+        # The same full compiled-plan hash the run record keeps, so a
+        # reloaded record can be bound to the closure that was admitted.
+        service_semantic_hash=service_plan.semantic_hash,
+        environment_fingerprint_hash=environment_fingerprint.semantic_hash,
+        observed_build=environment_fingerprint.backend_version,
+        transport=transport,
+        source_sha=source_tree.sha,
+        source_tree=source_tree.tree,
+        source_dirty=source_tree.dirty,
+        mutated=sorted(mutation_scope),
+        retained=sorted(retained),
+        excluded=sorted(excluded),
+        e5_actions=[
+            _configuration_closure_action(actions[item], deployed_names, models)
+            for item in sorted(mutation_scope)
+        ],
+        excluded_actions=[
+            _configuration_closure_action(actions[item], deployed_names, models)
+            for item in sorted(excluded)
+        ],
+        service_actions=[
+            EffectClosureAction(
+                action_id=action.id,
+                action_type=str(action.action_type.value),
+                device_name=deployed_names.get(action.host_device_id, ""),
+                model=models.get(action.host_device_id, ""),
+                parameters=_closure_parameters(action),
+            )
+            for action in selected_plan.actions
+        ],
+        checks=[
+            EffectClosureCheck(
+                expectation_id=item.id,
+                kind=item.kind.value,
+                evidence_kind=item.evidence_kind.value,
+                host_device_name=deployed_names.get(item.host_device_id, ""),
+                client_device_name=(
+                    deployed_names.get(item.client_device_id, "")
+                    if item.client_device_id
+                    else ""
+                ),
+                expected=dict(item.expected),
+            )
+            for item in selected_plan.verification_expectations
+        ],
+        selected_service_ids=[item.id for item in selected_plan.services],
+        limitations=sorted(set(limitations)),
+    )
 
 
 def _sanitized(detail: str, limit: int = 240) -> str:

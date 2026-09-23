@@ -1124,6 +1124,7 @@ def test_the_product_path_contains_no_destructive_vendor_call():
     S0 runtime and is unaffected; what may not appear here is the removal of a
     device, a pool, a user or a message.
     """
+    from packet_tracer_mcp.adapters import service_session
     from packet_tracer_mcp.adapters.mcp import service_tools
     from packet_tracer_mcp.application.use_cases import (
         apply_enterprise_services as entry,
@@ -1131,7 +1132,7 @@ def test_the_product_path_contains_no_destructive_vendor_call():
 
     corpus = "\n".join(
         Path(module.__file__).read_text(encoding="utf-8")
-        for module in (service_tools, entry)
+        for module in (service_tools, service_session, entry)
     )
     for forbidden in (
         "removeDevice",

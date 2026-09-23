@@ -2487,3 +2487,356 @@ dispatch-inventory test passed in the single normal full-suite run; that result
 does not establish the cause of its earlier intermittent failure. Clean
 exact-delivery validation and exact-SHA CI are delivery-stage and publication
 facts respectively, not relabelled from this provisional worktree run.
+
+## 2026-09-22 minimal cold-HTTP acceptance envelope after `4da4a10` (risk L)
+
+### Identity, instructions and problem
+
+The accepted input is clean branch `feature/server-pt-goal-foundations` at
+`4da4a100c95b4ccb25d983d33aa98101a366aa77`, tree
+`41a8b049120a935010342468650c0232320cb197`, with authoritative main
+`cisco/main` at `6263344e31ba3b0de6539d652f2cd06fc73a3562`. The work runs in
+the `Cisco-MCP-server-services-goal-foundations` worktree with its own `.venv`,
+as the only writer. `CLAUDE.md`, the imported `AGENTS.md` and this standard were
+present in the session's project-instruction context and were read from this
+checkout. The interactive `/context` check and a Codex loader check cannot be
+run from inside the session, so both remain pending observations rather than
+inferred successes.
+
+The preparation above specified, but did not build, the envelope that a LIVE
+cold-HTTP acceptance needs: the public tool has no outer ledger, no fixed
+authorized channel, no protected release reserve, no pre-effect binding of the
+compiled closure to a grant and no durable acceptance record. This block
+implements that envelope offline, around exactly one unchanged invocation of
+`apply_enterprise_services`. It authorizes nothing: no Packet Tracer contact or
+launch, no bridge start, no publication, merge or capability promotion.
+
+Risk stays L: it adds an authorization boundary, evidence persistence and three
+optional internal hooks on the product path, and it shares the production
+session composition between two routes.
+
+### Scope and explicit exclusions
+
+In scope: extraction of the product session composition; extraction of the
+registry's channel guards and targeted-inventory script so a fixed channel can
+reuse them; the default-off hooks named below; protected-release accounting in
+the existing `OperationLedger`; a bounded any-status history read on the run
+store; the domain grant, scope, ordering and verdict rules; the application
+coordinator; the envelope store; the out-of-band CLI adapter; tests; and this
+section.
+
+Excluded: LIVE work of any kind, D-WEB or any ping, DNS, hostname, HTTPS, DHCP
+or mail path, topology creation or removal, workspace restoration, a second
+service workflow, any change to the qualification coordinator beyond the
+additive ledger accounting, capability or catalogue changes, the public
+four-string MCP schema, and dependency updates. R1-R4, the three preparation
+follow-through items, historical evidence and the unintegrated DHCP assessment
+stay closed and non-authorizing.
+
+### Architecture decision
+
+```text
+CLI adapter ──► accept_cold_http (application) ──► apply_enterprise_services
+   │  composes         │ grant/scope/verdict rules (domain)       ▲ unchanged
+   │  production       │ OperationLedger + LedgeredTransport      │ use case
+   ▼  boundaries       ▼                                          │
+compose_service_session (adapters, shared with the MCP tool) ─────┘
+   └─ FixedChannelProductTransport ─► LedgeredTransport ─► FileBridge
+```
+
+- **One composition.** `adapters/service_session.py` owns
+  `compose_service_session`, the former `bind_session` closure plus the
+  source-tree observer. `register_service_tools` calls it with the picker
+  (lazy, after A1/A4, unchanged); the acceptance calls it with a selection that
+  was bound before any runtime existed. Both routes therefore reach the same
+  runtimes, compilers, applicators, readiness rule, HTTP scripts and stores.
+- **Fixed channel.** The only channel the envelope accepts is `file`. The grant
+  is checked against it before contact, the heartbeat is read before the ledger
+  exists, and `FixedChannelProductTransport` refuses any other channel name
+  instead of routing it, so a substituted channel fails before dispatch. The
+  ordinary picker is never consulted. Guards and the targeted inventory script
+  now live in `infrastructure/execution/product_channel.py`, used by the
+  registry closures and the fixed channel alike.
+- **Three minimal internal hooks, all default-off.** (1)
+  `ServiceInvocationBinding.effect_admission` is asked once, after A10 and
+  before E1, with the compiled `ServiceEffectClosure`; a non-empty answer or an
+  exception refuses with `effect_scope_not_admitted` before any effect. (2)
+  `PacketTracerEnterpriseServiceRuntime(owned_release=...)` enters a caller
+  scope around the single release dispatch in `_finalize_client`; nothing
+  inspects JavaScript. (3)
+  `PacketTracerEnterpriseConfigurationRuntime(wait_allowance=...)` hands the
+  runtime's clock, sleeper and that control to every E5 waiter and to the IOS
+  boot wait, which `ControlledIosExecutor.wait_until_ready` now accepts as
+  optional arguments. With the defaults, every existing composition builds the
+  same objects it built before.
+- **Ledger reuse.** The acceptance reuses `OperationLedger` and
+  `LedgeredTransport`. `OperationLedger.protected_release()` admits one call
+  against the reserve: it is charged to the reserve, capped by the absolute
+  deadline and still decided by the effect guard. Ordinary allowance becomes
+  `max - reserve - (used - reserve_used)`, which is the old value whenever no
+  protected release happened, so the qualification stages are unchanged. The
+  scope lasts one dispatch; it never switches the invocation into finalization.
+- **Authority per dispatch.** Every product dispatch runs inside one ledger
+  effect scope whose guard verifies the held campaign claim, a local file read
+  that costs time and no bridge operation. The first loss is sticky and refuses
+  every later call, protected releases included. Process continuity is the
+  lifecycle pairing before transport and after the product returns. Neither is
+  an in-band receiver fence.
+- **Labels, not parsing.** The coordinator wraps the binding's runtimes,
+  observer and inventory reader with ledger purposes (`a5_environment`,
+  `a8_inventory`, `a10_drift`, `e5_apply`, `e5_verify`, `readiness`,
+  `e6_apply`, `e6_verify:<expectation>`, `owned_release:<expectation>`). The
+  ordering oracle reads that ledger sequence together with the reloaded record.
+
+### Requirements and acceptance criteria
+
+| Requirement | Acceptance criterion |
+| --- | --- |
+| C1 Grant before anything | A missing, malformed or inconsistent grant, a channel other than `file`, a budget other than the frozen proposal, a marker other than `COLD_HTTP_<attempt>`, a URL other than `http://<server>/` or an unaccepted lab/fence limitation refuses before any reader, claim or transport. |
+| C2 Source, process and manifest | Import isolation must be `ISOLATED` in this process (pytest and foreign origins refuse); the checkout must be clean, published and equal to the granted SHA and tree; one Packet Tracer process must match the granted PID, path, build and incarnation with an empty mailbox; the stored manifest must equal the granted hash, topology hash and build. Each mismatch refuses before the channel is opened. |
+| C3 Fresh history, one attempt | The campaign claim and permanent attempt reservation are taken in the shared scope first. Any stored entry for the deployment, of any status, refuses; an unreadable history refuses; nothing is deleted. |
+| C4 Fixed channel | The file heartbeat must be fresh before the ledger is built; another channel name at any product call raises before dispatch; the record must name `file`. |
+| C5 Exact closure before E1 | The compiled closure must be the granted one: one VLAN, three access ports and three static endpoints on the granted names, ports, addresses and gateway with no DNS server, only hostname excluded, nothing retained, only HTTP enable and marked content on the server, and exactly the two granted by-IP HTTP fetches plus exactly one direct read. A tree-less or dirty source identity also refuses there. |
+| C6 Bounded, truthful execution | Every dispatch is counted once and admitted against one absolute deadline; E5 waits, readiness and HTTP polling end when allowance ends, without a local spin; the stop is reported by its boundary; no mutation is repeated or rerouted. |
+| C7 Protected release | Two release dispatches and the last forty seconds are reserved; ordinary calls never reach them; PC1's release does not end ordinary work for PC2; after ordinary exhaustion only owned releases dispatch; after authority loss none does, and ownership is reported unresolved. |
+| C8 Ordering oracle | Each client's first dispatch is its only start, it follows the last E5 readback and a readiness observation, itself after that readback, whose sample is authoritative and FWD on the exact granted switch, VLAN and ports; the first client the product tests completes before the next starts. A bypassed gate fails even when the page answers. |
+| C9 Durable interpretation | The reloaded `ServiceRunRecord` must agree with the public result and the grant (identity, source tree, status, scope, clients, releases, readiness history); a legacy record without a tree loads but cannot pass. |
+| C10 Evidence and verdict | One write-ahead envelope is begun before contact and completed once, never rewritten, referencing the record by path and SHA-256. Campaign completion and HTTP acceptance are separate fields; a timeout is inconclusive; release, persistence and postflight failures are kept apart from the primary failure. |
+| C11 Parity | The MCP route and the acceptance route produce the same product result on the same controlled terminal, apart from run identity, label, record path, clock-derived fields and the declared envelope overhead. |
+
+### Invariants
+
+- The public tool keeps exactly `intent_json`, `deployment_id`,
+  `packet_tracer_version` and `run_label`, and never receives a hook.
+- No acceptance code builds JavaScript, IOS or a URL of its own; its only
+  scripts are the product's and the extracted registry ones.
+- A refused call never reached the channel; a counted call reached it once.
+- Local reads (git, lifecycle, claim, stores) spend time, never operations.
+- The reserve is spent only inside `protected_release`, and only on releases.
+- Client release is not workspace restoration: the topology and page remain.
+
+### Budget arithmetic, recomputed from the executed code
+
+The proposal's breakdown was checked against the nested code as it actually
+dispatches, and two lines were wrong. E6 applies in two phase batches, HTTP
+enable at phase 20 and the marked content at phase 30, before its one direct
+read, so E6 costs 3 dispatches, not 2. A readiness window of 30 seconds sampled
+every second cannot start a 31st sample: the loop sees its deadline before the
+31st, so the enforced sample cap of six calls gives 30 x 6 + 1 = 181 dispatches,
+not 31 x 6 + 1 = 187. The frozen ceiling of 1,015 is therefore not raised and
+not reinterpreted; it covers the recomputed worst case with five operations of
+margin, and that margin authorizes nothing.
+
+| Boundary | Calls | Derivation |
+| --- | --- | --- |
+| A5 environment, A8 inventory, A10 drift | 5 | 1 + 1 cached targeted read + 3 endpoint reads |
+| E5 IOS boot wait | 361 | 90 s / 0.25 s, first read included |
+| E5 batches | 3 | 2 IOS phases + 1 endpoint payload |
+| E5 VLAN, access-port and endpoint readback | 387 | 21 + 3 + 3 x 121 |
+| Readiness | 181 | 30 samples x 6 nested calls + 1 auxiliary read |
+| E6 phase batches and direct read | 3 | enable batch, content batch, direct read |
+| Clients | 70 | 2 x (start + 33 inspections + release) |
+| Envelope overhead | 0 | local reads only, measured by the parity trace |
+| **Worst case** | **1,010** | 1,008 ordinary + 2 protected releases |
+| Frozen ceiling | 1,015 | 1,013 ordinary + 2 reserved; margin 5 |
+
+The executed worst case is a test, not only arithmetic: a controlled terminal
+that answers every bounded wait only on its last permitted read (IOS ready at
+90 s, VLAN at 5 s, each endpoint at 30 s, FWD at 29 s, the page at 8 s) is
+accepted after exactly 950 dispatches, which is the table with the simulator's
+measured 4 calls per readiness sample in place of the cap of 6
+(950 - 121 + 181 = 1,010).
+
+Worst-case wall clock from the per-call timeouts is about 400 seconds: two
+30-second lifecycle observations, 29 seconds of admission reads (10 + 10 +
+3 x 3), 93 seconds of IOS boot wait, 8 + 18 + 99 seconds of E5 readback, 30
+seconds of readiness, 25 seconds of E6 (two 10-second batches and a 5-second
+direct read) and 2 x 19 seconds of client fetches. The ordinary part, PC1's
+release included, is about 367 seconds against the 380-second ordinary
+deadline; the protected tail (PC2's 3-second release, the 30-second postflight
+and local completion) fits the 40-second reserve. These are timeouts added up,
+not measured LIVE durations. The ledger enforces the ceiling whatever the
+receiver does, so the contract is bounded execution and a truthful stop, not
+completion under every timing; the same worst-case run takes 231 simulated
+seconds.
+
+### Test design
+
+Unit: grant, closure, lifecycle, ordering and verdict rules; ledger protected
+accounting; the E5 wait control and IOS boot wait; the owned-release scope;
+the fixed channel; the any-status history read; the envelope store. Integration
+and system: the coordinator over the real shared composition, product use case,
+runtimes, readiness loop and stores, with only the terminal, clock, git,
+process table and campaign scope controlled. Acceptance-level cases follow the
+work order's list one by one, including the counterfactual gate bypass and the
+MCP/acceptance parity trace. LIVE acceptance is not an applicable level here.
+
+### What was delivered, path by path
+
+- `adapters/service_session.py` holds `compose_service_session`, the former
+  nested `bind_session`, and the source-tree observer. `SessionControls` is
+  its only extension point and every field defaults to `None`.
+- `adapters/mcp/service_tools.py` composes through it with the unchanged
+  picker policy and passes no control. `adapters/mcp/tool_registry.py` takes
+  its guards and targeted inventory script from
+  `infrastructure/execution/product_channel.py`, which also holds
+  `FixedChannelProductTransport`.
+- `adapters/cli/cold_http_acceptance.py` is the operator entry point.
+  `adapters/cli/service_qualification.py` publishes its existing repository
+  and runtime-identity readers for reuse instead of a copy.
+- `application/use_cases/accept_cold_http.py` and
+  `application/ports/cold_http_acceptance.py` are the coordinator and its
+  store contracts. `apply_enterprise_services.py` gains the A11 admission and
+  the closure builder; `qualify_server_services.py` gains protected-release
+  accounting.
+- `domain/enterprise/models/cold_http_acceptance.py` (grant, proposal,
+  admission and closure rules, envelope) and
+  `domain/enterprise/services/cold_http_acceptance_evidence.py` (reload,
+  identity, readiness, ordering and per-client judgement).
+  `domain/enterprise/models/service_entry.py` gains the closure models and
+  `effect_scope_not_admitted`.
+- `enterprise_configuration_runtime.py` (`wait_allowance`),
+  `ios_terminal.py` (optional boot-wait controls),
+  `enterprise_service_runtime.py` (`owned_release`),
+  `service_run_record_store.py` (`deployment_history`, `load_evidence`) and
+  the new `infrastructure/persistence/cold_http_acceptance_store.py`.
+- Tests: the public-route terminal moved to `tests/service_product_simulation.py`
+  and is shared; `tests/cold_http_acceptance_harness.py` adds time to it and
+  controls only git, the process table, the clock and the campaign scope;
+  `test_bounded_product_waits.py`, `test_cold_http_acceptance_rules.py`,
+  `test_cold_http_acceptance_boundaries.py` and
+  `test_cold_http_acceptance_route.py` are new; the store and surface suites
+  and the destructive-call corpus check are extended to the new modules.
+
+### Requirement-to-test mapping
+
+| Requirement | Tests |
+| --- | --- |
+| C1 | route `test_an_invalid_or_missing_grant_refuses_before_any_contact` (11 cases), `test_an_intent_other_than_the_granted_input_refuses`; rules `test_each_malformed_grant_field_is_named`, `test_a_missing_grant_field_is_missing_not_defaulted`, `test_the_granted_selection_must_be_one_segment_of_distinct_endpoints` |
+| C2 | route `test_a_source_mismatch_refuses_before_the_claim`, `test_a_process_mismatch_refuses_before_contact`, `test_a_pytest_or_foreign_process_refuses`, `test_a_manifest_other_than_the_granted_one_refuses`; boundaries `test_the_production_wiring_refuses_under_pytest_before_any_channel` |
+| C3 | route `test_an_attempt_identity_is_spent_once_and_never_reset`, `test_a_held_campaign_lock_refuses_and_is_left_as_found`, `test_any_prior_run_of_the_deployment_refuses_before_a_product_record`, `test_unreadable_history_is_not_empty_history`; store history tests |
+| C4 | route `test_an_unavailable_granted_channel_refuses_without_fallback`, `test_a_substituted_channel_refuses_before_any_dispatch`, `test_a_product_call_naming_another_channel_raises_before_dispatch`; boundaries fixed-channel tests |
+| C5 | route `test_a_source_identity_without_a_tree_refuses_before_effects`, `test_a_closure_the_grant_does_not_name_refuses_before_effects`, `test_a_dirty_executing_tree_refuses_before_effects`; rules `test_any_material_change_to_the_closure_is_a_finding` |
+| C6 | route `test_expiry_during_the_e5_boot_wait_stops_without_a_spin`, `test_expiry_during_readiness_stops_the_episode_and_starts_no_client`, `test_expiry_during_http_polling_keeps_the_protected_releases`, `test_every_bounded_wait_run_to_its_last_read_fits_the_frozen_ceiling`, `test_the_lifecycle_reads_share_the_attempt_deadline`; `test_bounded_product_waits.py`; rules arithmetic tests |
+| C7 | route `test_every_unresolved_release_exit_withholds_acceptance` (6 exits), `test_an_undelivered_start_is_still_finalized_by_one_release` (2), `test_a_client_that_was_never_created_needs_no_release_dispatch`, `test_an_early_release_leaves_ordinary_work_to_the_next_client`, `test_after_ordinary_exhaustion_only_owned_releases_dispatch`, `test_lost_authority_declines_every_later_dispatch_including_releases`; ledger and owned-release unit tests |
+| C8 | route `test_forwarding_at_the_first_sample_is_accepted`, `test_delayed_forwarding_is_accepted_only_after_it_was_observed` (4 s and 26 s), `test_persistent_listening_dispatches_no_request`, `test_forwarding_evidence_that_arrives_late_dispatches_no_request`, `test_foreign_or_ambiguous_forwarding_evidence_dispatches_no_request`, `test_each_client_has_exactly_one_first_request_in_the_products_order`, `test_a_bypassed_readiness_gate_fails_the_ordering_oracle`; rules oracle tests |
+| C9 | route `test_the_durable_record_is_reloaded_and_cited_by_its_bytes`, `test_a_record_that_contradicts_the_public_result_is_not_accepted`, `test_a_record_that_cannot_be_reloaded_is_not_accepted`; rules `test_a_legacy_record_without_a_tree_loads_but_cannot_pass` |
+| C10 | route `test_an_http_timeout_is_inconclusive_and_never_a_listener_refusal`, `test_a_product_persistence_failure_is_classified_apart`, `test_an_envelope_that_cannot_be_completed_withdraws_acceptance`, `test_a_postflight_that_does_not_pair_is_a_postflight_failure` (3), `test_an_unresolved_fire_and_forget_send_withholds_acceptance`, `test_the_envelope_names_what_it_does_not_claim`; envelope store tests |
+| C11 | route `test_the_mcp_route_and_the_acceptance_route_run_the_same_product`; boundaries `test_the_composition_is_lazy_and_inert_without_controls`, `test_the_public_tool_composes_no_governing_control`; the unchanged public-route surface suite |
+
+### Causal RED and what was not manufactured
+
+`tests/test_bounded_product_waits.py` was written first and failed 10 of its
+11 tests against the unchanged code: the E5 runtime took no allowance and its
+waiters polled a refusing channel on their own clock, `wait_until_ready`
+accepted no control, the E6 runtime had no release scope, and the ledger had
+no protected release or reserve accounting. The eleventh test is the
+inertness guard for the default composition and is meant to pass on both
+sides. The grant rules, coordinator, store, adapter and evidence judge are new
+behavior with no earlier version to fail against; their tests are positive
+and negative controls, and the counterfactual gate bypass is the negative
+control of the ordering oracle.
+
+### Independent review before delivery, and what it changed
+
+One read-only Codex review of the uncommitted diff (no writes, no test runs,
+one writer in this worktree) reported nine findings. Each was re-checked
+against the code before acting; eight were real and are fixed, one is a
+deliberate property of the product and is kept.
+
+| Finding | Disposition |
+| --- | --- |
+| A grant with `reserve_operations`, `reserve_seconds`, `max_*`, `vlan_id` or `prefix_length` equal to zero skipped its check (`if value`), so ordinary work could reach an unreserved ceiling | Fixed: the reader returns `None` only for a missing or malformed field and every read integer is compared, zero included |
+| A forwarding sample taken before the last E5 readback could admit a request | Fixed: `forwarding_observed_before_e5_readback_finished` |
+| Endpoint gateway and DNS server were compiled effects outside the granted signature; zero or two direct page reads passed | Fixed: the grant binds a segment `gateway`, no endpoint may receive a DNS server, and exactly one direct HTTP read on the server is admitted |
+| The readiness judgement trusted the recorded `admitted` flag | Fixed: execution, freshness, completeness, VLAN presence, observed device, `confirmed_unique` identity, window, VLAN and ports are re-read from the sample and from the deciding sample |
+| The reloaded record's service hash and selected E6 identities were not bound | Fixed: the closure carries the same full-plan service hash the record keeps, and both hash and selected ids must agree |
+| Completion checked and then replaced the envelope file, so two completions could race | Fixed: the terminal envelope is a second file created by one atomic no-overwrite link; the write-ahead file is never rewritten |
+| A malformed readiness row could raise out of the judge and leave the envelope unfinished | Fixed: row shapes are read defensively, and any judge failure becomes `evaluation_failed:<type>` in a completed envelope |
+| The claim was released after the verdict, so a failed release could sit beside `http_accepted: true` | Fixed: the claim is released before judgement and a failed release is a stop fact |
+| PC1 of the grant may be tested after PC2 | Kept: the product orders clients by expectation id, so "PC1" means the client it tests first. The oracle requires that client to be finished and released before the next one starts, and each client row reports its `request_order` |
+
+The 29 regression cases for the eight fixed findings were run against the
+code with the fixes reversed and all 29 failed, the zero-reserve grant among
+them; the store race is excluded from that count because its fix replaced
+the write path rather than a line, and its regression pre-creates the winning
+file and checks that it survives. With the fixes restored they all pass.
+
+### Residual limitations
+
+- The local authority check and the process pairing are not an in-band
+  receiver fence. A replacement Packet Tracer that answers mid-run is
+  detected by the postflight pairing, after the fact; the envelope then
+  withholds acceptance and says so.
+- The envelope judges the readiness sample the product parsed and recorded;
+  it keeps the raw client start and release answers, not the raw STP pages.
+- The public tool's own stores are relative to the MCP server's working
+  directory. The envelope reads and writes under `<governed root>/data`, so
+  the manifest must be persisted there and history elsewhere is not visible.
+- A fire-and-forget E5 send still pending at finalization withholds
+  acceptance; it cannot prove that the send did or did not execute.
+
+### Pending operator grant
+
+Nothing here authorizes a LIVE attempt. One needs a separate grant document,
+checked field by field before contact, naming exactly:
+
+- the clean delivery commit and tree of this successor, published as its
+  upstream, because the shared repository rule refuses an unpublished HEAD;
+- build `9.0.1.0858`, channel `file`, and the frozen ceiling 1,015 / 420 /
+  2 / 40;
+- a unique deployment id, its persisted manifest semantic and physical hashes
+  under `<governed root>/data/deployments`, with no stored run of any status
+  under `<governed root>/data/services/<deployment>`;
+- the runtime names, switch ports, VLAN, prefix, gateway and addresses that
+  manifest and the compiled plan resolve, since the fixture values are
+  proposals (the fixture compiles gateway `198.18.160.1` and no DNS server);
+- the SHA-256 of the exact intent file, whose page content is
+  `COLD_HTTP_<attempt>` and whose URL is `http://<server>/`;
+- a fresh 32-hex attempt id and the Packet Tracer PID, path and creation
+  identity read immediately before the attempt;
+- `exclusive_disposable_lab: true` and
+  `local_fence_limitation_accepted: true`.
+
+It runs from the checkout's own interpreter, never under pytest:
+`.venv\Scripts\python.exe -m packet_tracer_mcp.adapters.cli.cold_http_acceptance --execute --grant <grant> --intent <intent>`
+with `PT_MCP_GOVERNED_ROOT` set to the checkout. Fixture cleanup, workspace
+restoration and any second attempt need their own grants.
+
+### Measured offline verification
+
+Windows, Python 3.12.10, this checkout's `.venv`. No Packet Tracer process,
+bridge, mailbox or LIVE topology was contacted, launched or read.
+
+| Verification | Result |
+| --- | --- |
+| Hook RED before implementation (`test_bounded_product_waits.py`) | 10 failed, 1 passed (the inertness guard) |
+| Review regressions with the eight fixes reversed | 29 failed |
+| Acceptance-area suites on the final tree | 202 passed: bounded waits 11, route 80, rules 83, boundaries 28 |
+| Run-record store suite, extended | 44 passed |
+| Affected product, qualification, runtime, readiness, transport and surface groups (before the review fixes) | 1,911 passed |
+| Full offline pytest, first run (before the review fixes) | 7,162 passed, 3 skipped, 4 warnings, exit 0 |
+| Full offline pytest, final tree | 7,192 passed, 3 skipped, 3 warnings, exit 0 |
+| Provisional quality gate against `cisco/main` (`6263344`) | 132 changed Python files, zero mechanical exemptions, all checks passed |
+| Namespace inventory | 0 active imports, 0 active string references, 0 unreviewed inert mentions |
+| MkDocs | exit 0; the two pre-existing missing-handoff warnings |
+| Whitespace | `git diff --check` exit 0 |
+
+The three warnings of the final run are the pre-existing
+`PytestRemovedIn10Warning` class-fixture deprecations. The first run showed a
+fourth: a `PytestUnhandledThreadExceptionWarning` from a worker thread of
+`tests/test_native_ui_phone_control_driver.py`, a `PermissionError` on a
+temporary request file. That module and the driver it tests are untouched by
+this delivery and the test passed; the warning did not recur in the final run,
+which was run once for the final tree, not repeated to make it disappear, and
+its cause is not established here. The intermittent dispatch-inventory gate named in earlier sections
+passed in both full runs; that says nothing about its cause.
+
+The executed worst case, the parity trace and every route test drive the real
+composition over a controlled terminal and a fake clock. They establish the
+envelope's offline behavior and dispatch arithmetic, not Packet Tracer
+behavior, receiver timing or LIVE acceptance. Exact-SHA CI needs a separately
+authorized publication. The delivery commit and tree are reported in the
+handoff, because a commit cannot contain its own identity; the clean
+exact-delivery gate is run on that commit. Delivery status is
+`READY_FOR_REVIEW`, not acceptance.

@@ -106,6 +106,9 @@ class ServiceEntryRefusal(StrEnum):
     EFFECT_HALTED = "effect_halted"
     SECRET_TRANSPORT_UNAVAILABLE = "secret_transport_unavailable"
     SECRET_UNRESOLVED = "secret_unresolved"
+    #: Only a governing caller that binds an effect admission can produce this:
+    #: the compiled closure was not the one it authorized, so no effect ran.
+    EFFECT_SCOPE_NOT_ADMITTED = "effect_scope_not_admitted"
 
 
 class AdmissionRead(BaseModel):
@@ -142,6 +145,67 @@ class E5EffectScope(BaseModel):
     #: of their own. Disclosed rather than presented as equivalent to the
     #: endpoint drift observation.
     declarative_only: list[str] = Field(default_factory=list)
+
+
+class EffectClosureAction(BaseModel):
+    """One compiled action an admitted run is about to dispatch, on its target.
+
+    `device_name` is the deployed runtime name the manifest resolved, never a
+    plan display label. Typed E5 fields are named; a service action keeps its
+    primitive parameters as compiled.
+    """
+
+    action_id: str
+    action_type: str
+    device_name: str
+    model: str = ""
+    interface: str = ""
+    vlan_id: int | None = None
+    ipv4: str = ""
+    netmask: str = ""
+    gateway: str = ""
+    parameters: dict[str, str | int | bool] = Field(default_factory=dict)
+
+
+class EffectClosureCheck(BaseModel):
+    """One verification an admitted run will perform, on deployed names."""
+
+    expectation_id: str
+    kind: str
+    evidence_kind: str
+    host_device_name: str
+    client_device_name: str = ""
+    expected: dict[str, str | int | bool] = Field(default_factory=dict)
+
+
+class ServiceEffectClosure(BaseModel):
+    """Everything one invocation will do, fixed after A10 and before E1.
+
+    The product derives it from its own compiled plans and the manifest it
+    admitted; a governing caller may compare it with what it authorized. It is
+    a description of what is about to happen and grants nothing by itself.
+    """
+
+    deployment_id: str
+    manifest_hash: str
+    physical_topology_hash: str
+    configuration_semantic_hash: str
+    service_semantic_hash: str
+    environment_fingerprint_hash: str
+    observed_build: str
+    transport: str
+    source_sha: str
+    source_tree: str
+    source_dirty: bool
+    mutated: list[str] = Field(default_factory=list)
+    retained: list[str] = Field(default_factory=list)
+    excluded: list[str] = Field(default_factory=list)
+    e5_actions: list[EffectClosureAction] = Field(default_factory=list)
+    excluded_actions: list[EffectClosureAction] = Field(default_factory=list)
+    service_actions: list[EffectClosureAction] = Field(default_factory=list)
+    checks: list[EffectClosureCheck] = Field(default_factory=list)
+    selected_service_ids: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
 
 
 class OwnedResourceRelease(BaseModel):

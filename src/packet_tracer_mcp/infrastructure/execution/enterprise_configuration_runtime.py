@@ -10,6 +10,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from math import isfinite
 from time import monotonic, sleep
+from typing import Any
 
 from ...domain.enterprise.models.configuration import (
     ConfigurationAction,
@@ -407,8 +408,17 @@ class PacketTracerEnterpriseConfigurationRuntime:
         endpoint_dhcp_mode_observer=None,
         clock: Callable[[], float] = monotonic,
         sleeper: Callable[[float], None] = sleep,
+        wait_allowance: Callable[[], float] | None = None,
     ) -> None:
-        """Bind inventory, mutation and observation channels for one run."""
+        """Bind inventory, mutation and observation channels for one run.
+
+        `wait_allowance` is the optional control of a caller that owns a
+        shorter budget than this runtime's own waits. When it is supplied,
+        every E5 waiter and the IOS boot wait use this runtime's clock and
+        sleeper and stop as soon as the control reports nothing left, so a
+        refused read cannot be polled until the waiter's own timeout. Without
+        it, those waits keep the lifecycle defaults they always had.
+        """
         self._query_inventory = query_inventory
         self._send = send
         self._send_and_wait = send_and_wait
@@ -431,7 +441,17 @@ class PacketTracerEnterpriseConfigurationRuntime:
             or PacketTracerEndpointDhcpModeObserver(send_and_wait)
         )
         self._configuration = PacketTracerConfigurationRuntime(send)
-        self._ios = ControlledIosExecutor(send_and_wait)
+        self._wait_allowance = wait_allowance
+        self._ios = (
+            ControlledIosExecutor(
+                send_and_wait,
+                clock=clock,
+                sleeper=sleeper,
+                remaining_budget=wait_allowance,
+            )
+            if wait_allowance is not None
+            else ControlledIosExecutor(send_and_wait)
+        )
         # The neutral forwarding observation accounts for nested calls and
         # auxiliary state reads through its own bounded channel. Other queries keep the
         # unbounded channel and the executor it always used, and this one
@@ -658,6 +678,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             inspect,
             timeout_seconds=self._trunk_timeout,
             interval_seconds=self._convergence_interval,
+            **self._wait_controls(),
         ).wait()
 
         learning_extension_candidate = (
@@ -1308,8 +1329,23 @@ class PacketTracerEnterpriseConfigurationRuntime:
         ]
 
     def _wait_for_ios(self, device_name: str) -> bool:
-        readiness = self._ios.wait_until_ready(device_name)
+        readiness = self._ios.wait_until_ready(device_name, **self._wait_controls())
         return readiness.state is DeviceInitializationState.OPERATIONAL_READY
+
+    def _wait_controls(self) -> dict[str, Any]:
+        """Return the waiter controls a composed allowance requires, or none.
+
+        An empty mapping keeps a waiter's own clock and sleeper, which is the
+        ordinary composition. With a control, the waiter shares this runtime's
+        clock and sleeper and ends when the caller's allowance ends.
+        """
+        if self._wait_allowance is None:
+            return {}
+        return {
+            "clock": self._clock,
+            "sleeper": self._sleeper,
+            "remaining_seconds": self._wait_allowance,
+        }
 
     @staticmethod
     def _endpoint_call(action: SetEndpointStaticAddress | SetEndpointDhcp) -> str:
@@ -1708,6 +1744,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             inspect,
             timeout_seconds=self._trunk_timeout,
             interval_seconds=self._convergence_interval,
+            **self._wait_controls(),
         ).wait()
         learning_boundary_refresh_performed = False
         learning_boundary_refresh_complete = False
@@ -2104,6 +2141,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             inspect,
             timeout_seconds=self._hostname_timeout,
             interval_seconds=self._convergence_interval,
+            **self._wait_controls(),
         ).wait()
         actual = str(last_observed.get("actual_hostname") or "")
         evidence_method = str(
@@ -2265,6 +2303,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             inspect,
             timeout_seconds=self._vlan_timeout,
             interval_seconds=self._convergence_interval,
+            **self._wait_controls(),
         ).wait()
         verified = convergence.configuration_channel
         return RuntimeVerification(
@@ -2738,6 +2777,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             inspect,
             timeout_seconds=timeout_seconds,
             interval_seconds=self._convergence_interval,
+            **self._wait_controls(),
         ).wait()
         show = latest["show"]
         converged = observed.state is DeviceInitializationState.CONFIGURATION_READY
@@ -2913,6 +2953,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             inspect,
             timeout_seconds=self._endpoint_timeout,
             interval_seconds=self._convergence_interval,
+            **self._wait_controls(),
         ).wait()
         observed = dict(latest)
         if not observed.get("port_found"):

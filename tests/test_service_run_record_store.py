@@ -664,3 +664,79 @@ def test_a_failed_replacement_leaves_the_last_valid_record_in_place(
     surviving = store.load(_DEPLOYMENT, "run-1")
     assert surviving.persisted_stage is ServiceStage.CONFIGURATION_APPLY
     assert not list(Path(tmp_path, _DEPLOYMENT).glob("*.tmp"))
+
+
+# -- any-status deployment history --------------------------------------------
+
+
+def test_a_deployment_without_a_directory_has_no_history(tmp_path: Path):
+    """No stored entry is the one answer that means an empty history."""
+    assert ServiceRunRecordStore(tmp_path).deployment_history(_DEPLOYMENT) == ()
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        ServiceRunStatus.VERIFIED,
+        ServiceRunStatus.REFUSED,
+        ServiceRunStatus.UNKNOWN,
+    ],
+)
+def test_any_stored_record_is_history_whatever_its_status(
+    tmp_path: Path, status: ServiceRunStatus
+):
+    """A refused or interrupted record is history exactly like a verified one."""
+    store = ServiceRunRecordStore(tmp_path)
+    store.begin(_record(status=status, stage=ServiceStage.ADMISSION))
+
+    assert store.deployment_history(_DEPLOYMENT) == ("run-1.json",)
+
+
+def test_malformed_and_temporary_entries_are_history_too(tmp_path: Path):
+    """Nothing under the deployment is skipped for being unreadable."""
+    directory = tmp_path / _DEPLOYMENT
+    directory.mkdir()
+    (directory / "broken.json").write_text("{", encoding="utf-8")
+    (directory / ".run-2.json.abc.tmp").write_text("", encoding="utf-8")
+
+    history = ServiceRunRecordStore(tmp_path).deployment_history(_DEPLOYMENT)
+
+    assert history == (".run-2.json.abc.tmp", "broken.json")
+
+
+def test_unbound_admission_records_are_not_this_deployments_history(
+    tmp_path: Path,
+):
+    """Records filed apart for lack of identity belong to no deployment."""
+    store = ServiceRunRecordStore(tmp_path)
+    store.begin(_record(deployment_id="", stage=ServiceStage.ADMISSION))
+
+    assert store.deployment_history(_DEPLOYMENT) == ()
+
+
+def test_a_history_that_cannot_be_listed_is_unknown_not_empty(tmp_path: Path):
+    """A deployment path that is not a listable directory raises typed."""
+    (tmp_path / _DEPLOYMENT).write_text("not a directory", encoding="utf-8")
+
+    with pytest.raises(RunRecordPersistenceError, match="history"):
+        ServiceRunRecordStore(tmp_path).deployment_history(_DEPLOYMENT)
+
+
+def test_the_history_listing_is_bounded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """An unbounded directory is refused rather than read in full."""
+    monkeypatch.setattr(service_run_record_store, "MAX_RETENTION_RECORDS", 2)
+    directory = tmp_path / _DEPLOYMENT
+    directory.mkdir()
+    for index in range(3):
+        (directory / f"run-{index}.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(RunRecordPersistenceError, match="bounded"):
+        ServiceRunRecordStore(tmp_path).deployment_history(_DEPLOYMENT)
+
+
+def test_an_empty_deployment_identity_has_no_history_to_ask_for(tmp_path: Path):
+    """Asking about no deployment is a caller error, not an empty answer."""
+    with pytest.raises(RunRecordPersistenceError, match="identity"):
+        ServiceRunRecordStore(tmp_path).deployment_history("  ")

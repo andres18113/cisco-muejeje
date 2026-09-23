@@ -429,7 +429,8 @@ def fixture_plans(
     return tuple(devices), tuple(links)
 
 
-def _repository(governed_root: Path) -> RepositoryIdentity:
+def repository_identity(governed_root: Path) -> RepositoryIdentity:
+    """Observe the executing checkout once, naming every read that failed."""
     observed = GitSourceReader().read(governed_root)
     errors = "; ".join(
         item
@@ -457,7 +458,8 @@ def _isolation(governed_root: Path) -> IsolationObservation:
     return IsolationObservation(result.isolated, result.state.value, result.detail)
 
 
-def _runtime_identity() -> RuntimeIdentity:
+def runtime_identity() -> RuntimeIdentity:
+    """Report the interpreter and the loaded package origin of this process."""
     # Read the loaded package; importing it here would create what we audit.
     package = sys.modules.get(PRODUCTION_NAMESPACE)
     return RuntimeIdentity(
@@ -586,8 +588,8 @@ def production_boundaries(governed_root: Path) -> QualificationBoundaries:
     return QualificationBoundaries(
         execution_mode=ExecutionMode.LIVE,
         isolation=lambda: _isolation(governed_root),
-        runtime_identity=_runtime_identity,
-        repository=lambda: _repository(governed_root),
+        runtime_identity=runtime_identity,
+        repository=lambda: repository_identity(governed_root),
         record_store=QualificationRecordStore(
             governed_root.joinpath(*RECORD_DIRECTORY)
         ),

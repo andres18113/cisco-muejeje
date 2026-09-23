@@ -102,6 +102,12 @@ from ...infrastructure.execution.packet_tracer_physical_runtime import (
     PacketTracerPhysicalTopologyRuntime,
 )
 from ...infrastructure.execution.probe_runtime import PacketTracerBridgeProbeRuntime
+from ...infrastructure.execution.product_channel import (
+    fire_and_forget_guard,
+    parse_inventory_devices,
+    targeted_inventory_js,
+    waited_guard,
+)
 from ...infrastructure.execution.service_environment import (
     SERVICE_ENVIRONMENT_JS,
     parse_service_environment,
@@ -931,7 +937,7 @@ def register_tools(
         respuesta; el path que sí espera (_bridge_send_and_wait) usa su propio catch que
         reporta el error vía reportResult() para no colgarse hasta el timeout.
         """
-        return "try{" + js + "}catch(__pterr){}"
+        return fire_and_forget_guard(js)
 
     def _bridge_identity() -> str:
         """Quién está escuchando en el puerto: 'ours' | 'foreign' | 'none'.
@@ -1620,9 +1626,7 @@ def register_tools(
           valor y lo escribe al res; acá se manda el js "crudo" con su try/catch.
         """
         ch = channel if channel is not None else _pick_channel()
-        guarded = (
-            "try{" + js_call + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
-        )
+        guarded = waited_guard(js_call)
         if ch == "http":
             return correlated_http_send_and_wait(
                 guarded,
@@ -1644,9 +1648,7 @@ def register_tools(
     ) -> BridgeDispatchOutcome:
         """Dispatch on one fixed channel without collapsing transport facts."""
         ch = channel if channel is not None else _pick_channel()
-        guarded = (
-            "try{" + js_call + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
-        )
+        guarded = waited_guard(js_call)
         if ch == "http":
 
             def status_only_post(
@@ -2927,23 +2929,7 @@ def register_tools(
 
     def _targeted_live_devices_js(device_names: Sequence[str]) -> str:
         """Build one target-filtered inventory read that detects ambiguity."""
-        names = json.dumps(list(dict.fromkeys(device_names)))
-        return (
-            "var net=ipc.network();var names="
-            + names
-            + ",wanted={},arr=[];for(var w=0;w<names.length;w++){wanted[names[w]]=true;}"
-            "for(var i=0;i<net.getDeviceCount();i++){var d=net.getDeviceAt(i);"
-            "if(!d||!wanted[String(d.getName())]){continue;}"
-            "var pc=d.getPortCount(),ports=[];for(var j=0;j<pc;j++){"
-            "var p=d.getPortAt(j),ip='',mask='',up=false,linked=false;"
-            "try{ip=p.getIpAddress()||'';}catch(pe){}"
-            "try{mask=p.getSubnetMask()||'';}catch(pe){}"
-            "try{up=(typeof p.isPortUp==='function')?p.isPortUp():false;}catch(pe){}"
-            "try{linked=(p.getLink()!=null);}catch(pe){}"
-            "ports.push({name:p.getName(),ip:ip,mask:mask,up:up,linked:linked});}"
-            "arr.push({name:d.getName(),model:d.getModel(),ports:ports});}"
-            "reportResult(JSON.stringify({devices:arr,links:null}));"
-        )
+        return targeted_inventory_js(device_names)
 
     def _live_devices(
         device_names: Sequence[str] = (),
@@ -2961,13 +2947,7 @@ def register_tools(
             else _LIVE_DEVICES_JS
         )
         result = _bridge_send_and_wait(script, timeout=10.0, channel=channel)
-        if not result or result.startswith("PT_ERROR") or result.startswith("ERROR"):
-            return []
-        try:
-            data = json.loads(result)
-            return data.get("devices", []) or []
-        except Exception:
-            return []
+        return parse_inventory_devices(result)
 
     def _query_pt_devices() -> list[dict]:
         """Alias compat de _live_devices (nombre usado por las pre-checks de módulos/ACL/NAT)."""
