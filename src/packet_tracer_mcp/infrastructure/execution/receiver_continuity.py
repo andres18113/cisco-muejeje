@@ -52,7 +52,7 @@ class ReceiverBindingDeclined(LookupError):
     `reason` is one stable token: `process_api_unavailable`,
     `preflight_not_paired`, `primary_handle_refused`,
     `primary_creation_time_unreadable`, `primary_image_path_differs`,
-    `process_table_unreadable`, `cohort_ambiguous:<detail>`,
+    `process_table_unreadable[:<cause>]`, `cohort_ambiguous:<detail>`,
     `helper_handle_refused`, `helper_unreadable`, `confirmation_differs` or
     `primary_exited`.
     """
@@ -70,6 +70,19 @@ class ProcessTableRow:
     pid: int
     parent_pid: int
     image_name: str
+
+
+class ProcessTableUnreadable(OSError):
+    """A process census failed before its documented end of enumeration."""
+
+    cause: str
+    rows_read: int
+
+    def __init__(self, cause: str, rows_read: int) -> None:
+        """Carry a stable failure token and diagnostic partial-row count."""
+        super().__init__(cause)
+        self.cause = cause
+        self.rows_read = rows_read
 
 
 class ProcessApi(Protocol):
@@ -91,7 +104,10 @@ class ProcessApi(Protocol):
         """Close one handle; never raises."""
 
     def snapshot(self) -> list[ProcessTableRow] | None:
-        """List the process table, or return None when it cannot be read."""
+        """Return the complete table or raise `ProcessTableUnreadable`.
+
+        Other implementations may return None when unreadable with unknown cause.
+        """
 
 
 def _same_path(left: str, right: str) -> bool:
@@ -169,7 +185,12 @@ class HandleBoundReceiverContinuity:
                 raise ReceiverBindingDeclined("primary_creation_time_unreadable")
             if not _same_path(api.image_path(handle), preflight.process_path):
                 raise ReceiverBindingDeclined("primary_image_path_differs")
-            table = api.snapshot()
+            try:
+                table = api.snapshot()
+            except ProcessTableUnreadable as exc:
+                raise ReceiverBindingDeclined(
+                    f"process_table_unreadable:{exc.cause}"
+                ) from exc
             if table is None:
                 raise ReceiverBindingDeclined("process_table_unreadable")
             images = [row for row in table if _is_packet_tracer(row)]
@@ -235,7 +256,12 @@ class HandleBoundReceiverContinuity:
             return DiagnosticLifecycleObservation(error="receiver_exited")
         created = self._api.creation_time(handle)
         path = self._api.image_path(handle)
-        table = self._api.snapshot()
+        try:
+            table = self._api.snapshot()
+        except ProcessTableUnreadable as exc:
+            return DiagnosticLifecycleObservation(
+                error=f"process_table_unreadable:{exc.cause}"
+            )
         if table is None:
             return DiagnosticLifecycleObservation(error="process_table_unreadable")
         pid = self._preflight.process_id
@@ -314,6 +340,7 @@ _SYNCHRONIZE = 0x00100000
 _WAIT_OBJECT_0 = 0x0
 _WAIT_TIMEOUT = 0x102
 _TH32CS_SNAPPROCESS = 0x2
+_ERROR_NO_MORE_FILES = 18
 _MAX_PATH = 260
 
 
@@ -426,17 +453,33 @@ class WindowsProcessApi:
         except OSError:
             pass
 
-    def snapshot(self) -> list[ProcessTableRow] | None:
-        """List every process id, parent id and image name."""
+    def snapshot(self) -> list[ProcessTableRow]:
+        """List the complete process table or raise `ProcessTableUnreadable`.
+
+        `Process32NextW` returning false is the documented end of enumeration
+        only when `GetLastError` is `ERROR_NO_MORE_FILES`. The binding uses
+        `use_last_error=True`, so ctypes keeps a private copy of the error that
+        it swaps immediately around each foreign call: the copy is cleared
+        before each call and read right after a false return, before the
+        `CloseHandle` cleanup (itself a call through this binding) replaces it.
+        """
+        ctypes.set_last_error(0)
         snapshot = self._kernel32.CreateToolhelp32Snapshot(_TH32CS_SNAPPROCESS, 0)
         if not snapshot or snapshot == self._invalid:
-            return None
+            error = ctypes.get_last_error()
+            raise ProcessTableUnreadable(
+                f"toolhelp_snapshot_failed:winerror={error}", 0
+            )
         rows: list[ProcessTableRow] = []
         try:
             entry = _ProcessEntry32W()
             entry.dwSize = ctypes.sizeof(_ProcessEntry32W)
+            ctypes.set_last_error(0)
             if not self._kernel32.Process32FirstW(snapshot, ctypes.byref(entry)):
-                return None
+                error = ctypes.get_last_error()
+                raise ProcessTableUnreadable(
+                    f"process32first_failed:winerror={error}", 0
+                )
             while True:
                 rows.append(
                     ProcessTableRow(
@@ -445,8 +488,15 @@ class WindowsProcessApi:
                         image_name=str(entry.szExeFile),
                     )
                 )
+                ctypes.set_last_error(0)
                 if not self._kernel32.Process32NextW(snapshot, ctypes.byref(entry)):
-                    break
+                    error = ctypes.get_last_error()
+                    if error == _ERROR_NO_MORE_FILES:
+                        break
+                    raise ProcessTableUnreadable(
+                        f"process32next_failed:winerror={error}:rows={len(rows)}",
+                        len(rows),
+                    )
         finally:
             self._kernel32.CloseHandle(snapshot)
         return rows
