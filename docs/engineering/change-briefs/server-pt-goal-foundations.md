@@ -3483,3 +3483,203 @@ A first LIVE scalable attempt should be the smallest multi-access case (the
 30-client, two-access-switch campus) before any larger one. Fixture cleanup,
 workspace restoration, a second attempt, routed paths and capability
 promotion each need their own grant.
+
+## 2026-09-23 acceptance-boundary closure after `cc272c9` (risk L)
+
+### Identity and instructions
+
+Input: clean `feature/server-pt-goal-foundations` at
+`cc272c94eed434ae3fee73b92e1cd5188cd0eef7`, tree
+`93ad8ab8886a79c6fbaea05cacd93c370caa0dd4`, implementation parent `7736546`,
+with `cisco/main` resolving to `6263344e31ba3b0de6539d652f2cd06fc73a3562` and
+an ancestor of HEAD. The package resolves to this checkout's `src` from its own
+`.venv` (Python 3.12.10). `AGENTS.md`, `CLAUDE.md` and the standard were read
+from this checkout and still have the digests recorded above (`a9f0e384...`,
+`29312201...`, `2de0d5b2...`); `/context` and a Codex loader listing cannot be
+observed from this session and stay pending. The work order
+`Unified_CC272C9_Acceptance_Closure.md` authorizes offline fixes, causal
+autofix, tests and local commits only: no Packet Tracer contact, bridge
+startup, process launch or termination against Packet Tracer, LIVE attempt,
+topology cleanup, claim reset, historical-record edit, publication, merge or
+capability promotion. Historical Q/D limits are unchanged. Windows tests touch
+only processes they own.
+
+### Problem and intended outcome
+
+The reviewed commit is correct on its working N-client path but its acceptance
+boundary is weaker than its record claims, in four families:
+
+1. **R1 - evidence is not derived from raw observations.** `_joined` trusts a
+   continuity round's `usable_links` summary, so a round labelled complete with
+   no readings, or with unexecuted, foreign or wrong-VLAN readings, joins its
+   endpoints. `_access_findings` reads the top-level sample and ignores whether
+   the retained history agrees with it. `scalable_ordering_findings` accepts
+   the first observation of a group before a request, even when the
+   observation that actually admitted the client came afterwards.
+2. **R2 - a failed Windows census is read as a complete one.** Every false
+   `Process32NextW` ends enumeration as if it were the documented end, so an
+   error after the primary row can hide a second receiver.
+3. **R3 - timeliness is decided before publication.** `_judge` decides the
+   deadline; `_complete` then assembles the budget and the store reloads,
+   serializes, flushes and links without deciding again, so an on-time verdict
+   can be linked as an accepted envelope after the deadline.
+4. **R4 - consumers are not linear.** The evaluator rebuilds the scope group
+   map per client, re-derives each component's graph per dependent and
+   computes `max(e5_verify)` inside the client loop (N(N+1) visits of N E5
+   entries); `_names` calls `names.count` per name.
+
+The outcome is one delivery that closes all four, keeps the working
+N-client/multi-access path and both profiles, and leaves a reproducible
+offline acceptance package.
+
+### Scope and explicit exclusions
+
+In scope: the readiness gate's evidence identity, the acceptance ledger labels,
+the closure and scope readiness-group model, the scalable evaluator and its
+indexes, the handle-bound receiver's Windows census, the coordinator's
+finalization and publication protocol, the envelope store, the acceptance
+result and CLI summary, tests, the scale benchmark and this section.
+
+Excluded: routing, DHCP, HTTPS, mail, events, wireless, a replacement runtime or
+service workflow, a second IOS parser, schema 1 rules and its frozen
+`1015/420/2/40` proposal, the bridge, the MCP four-input signature, CP-SCALE
+data, historical evidence and other worktrees. Schema 2 still verifies existing
+trunks and transit VLANs and configures none. Nothing claims complete campus
+installation or cross-site connectivity.
+
+### Design delta
+
+**R1 - one evidence contract from raw observation to per-client decision.**
+
+- *Episode identity (additive, product).* Every readiness episode for which the
+  gate called an observer carries `episode: {ordinal, revision, narrowed}` on
+  its record row: `ordinal` is the 1-based count of observer calls for that
+  group identity, `revision` the group's dependency revision when it was
+  observed, and `narrowed` whether it is the narrowing episode. Each dependent
+  entry whose verdict the gate actually used when it decided that expectation
+  gains `decision: {revision}`, the group's revision at decision time. Rows
+  without an episode (no observer call) carry none. Nothing else in a row
+  changes.
+- *Ledger correlation (acceptance composition).* The scalable labelled runtime
+  names readiness dispatches `readiness:<group key>#<ordinal>`, counting
+  observer calls per group key exactly as the gate does, so each row's episode
+  maps to the exact ledger positions it dispatched.
+- *Edge endpoints in the derived scope.* The closure's continuity group gains
+  `links` (each compiled trunk link as its two `switch:interface` ends,
+  canonically ordered), carried into `ReadinessGroupScope`. The scalable scope
+  digest therefore changes; no schema 2 grant was ever issued.
+- *Raw re-derivation, once per episode row.* Access: the recorded sample is
+  parsed strictly into an `AccessForwardingObservation` (duplicate interface
+  rows are ambiguous and refused), bound to the group's switch, VLAN and
+  interface set, required to agree with the last entry of its history
+  (rows, execution, freshness, completeness, identity, VLAN instance, call
+  budget, lateness, and `samples == len(history)`), and admitted only by the
+  canonical `access_forwarding_admission`. Recorded `admitted`, `dimension` and
+  `forwarding_interfaces` labels must agree with the re-derivation.
+  Continuity: the row's switches and links must equal the derived scope; the
+  deciding round's raw readings are parsed strictly (exactly one reading per
+  component switch, no foreign switch, exactly one entry per trunk port and no
+  foreign port, `complete` agreeing with the readings), and the canonical
+  `trunk_continuity_verdicts` over `usable_links` decides every dependent pair
+  at once. The recorded `usable_links`, `complete` and
+  `authoritative_readings` summaries must agree with the re-derivation. A
+  summary is never permission.
+- *Per-client binding.* For each group a client's path names: exactly one
+  dependent entry with a `decision` mark (none or several refuse), the
+  expectation listed once in that row, the decision revision equal to the
+  episode revision, the dependent admitted by the re-derivation (its ports
+  forwarding, or its switch pair joined), the episode's ledger dispatches all
+  before the client's first request, and no episode of a later revision of
+  that group dispatched before that request. Legitimate narrowing, shared
+  group reuse and later revalidation for other clients are decided per
+  client; later valid work never invalidates an earlier correctly authorized
+  request. An older record without episode identity stays readable and cannot
+  be accepted.
+
+**R2 - only the documented end completes a census.** `WindowsProcessApi.snapshot`
+sets the ctypes private error to 0 before each `Process32FirstW` and
+`Process32NextW`, and reads `ctypes.get_last_error()` immediately after a false
+return, before any cleanup call can replace it (the kernel32 binding uses
+`use_last_error=True`, whose private copy is swapped immediately after each
+foreign call). A census is complete only when `Process32NextW` returns false
+with `ERROR_NO_MORE_FILES` (18), the documented end. A failed first read or any
+other error raises `ProcessTableUnreadable` with a stable cause
+(`toolhelp_snapshot_failed`, `process32first_failed` or
+`process32next_failed`, the Win32 error and the number of rows read, which is
+diagnostic and authorizes nothing); the snapshot handle is closed on every
+path. Binding declines as `process_table_unreadable:<cause>`; a per-dispatch
+reading is `process_table_unreadable:<cause>`, which the existing rule turns
+into a sticky authority loss, so no later effect or release reaches the
+channel. This defect is not claimed as the cause of the recorded native access
+violations.
+
+**R3 - one publication boundary for cancellation and timeliness.** Publication
+stays the terminal link. Every controlled step that shapes the published bytes
+consumes the one absolute deadline, in order: record reload, claim release,
+verdict, budget assembly, write-ahead begin (when still owed), and inside the
+store the begun-envelope reload, serialization and flush, the last
+immediately before the link. The store's `complete` takes a `checkpoint`
+callback, called after each of its steps; when a checkpoint finds the deadline
+passed while the payload claims acceptance, it refuses, nothing is linked, and
+the coordinator publishes the same evidence with acceptance withheld as
+`acceptance_deadline_exceeded:<boundary>`. A link that cannot be preempted is
+not claimed to be: after it returns, the coordinator records an independent,
+write-once publication fact (`<attempt>.publication.json`) binding the terminal
+file's SHA-256, the deadline, the decision offset, the last checkpoint before
+the link and the instant the link returned. The link instant is known only to
+lie between those two; the attempt is accepted only when the terminal verdict
+is accepted and the link returned within the deadline. The terminal envelope's
+`http_accepted` is therefore the provisional verdict; `AcceptanceResult`, its
+exit code and the CLI summary report the claim. An interruption before the
+link still completes one cancellation envelope; one after the link leaves the
+published verdict and records the fact from the store's own answer, with the
+interruption named in it. A completed envelope is never rewritten. The first
+failure stays the primary failure; later persistence errors are listed apart.
+
+**R4 - linear consumers.** One evaluation context is built per attempt: the
+scope group map, per-row validated evidence (one canonical admission per
+access episode, one connectivity derivation per continuity episode), the
+ledger boundary maxima (`max(e5_verify)`, `max(e6_apply)`, first readiness
+dispatch) and, per group, the earliest dispatch of each later revision. Each
+client then costs lookups in its own relationships. `_names` counts once.
+
+### Requirements and acceptance criteria
+
+| Id | Acceptance criterion |
+| --- | --- |
+| R1a | A continuity row whose deciding round has no raw readings, or unexecuted, foreign, duplicated or wrong-VLAN readings, refuses its dependents whatever its `complete`, `admitted` or `usable_links` labels say |
+| R1b | An access row whose sample disagrees with its retained history, lacks required fields, repeats an interface or contradicts its own labels refuses |
+| R1c | A client admitted only by an episode dispatched after its first request (early LIS, request, later FWD) is refused; an absent, duplicated or foreign decision refuses |
+| R1d | A decision older than its group's revision, or superseded by a later revision dispatched before the request, refuses |
+| R1e | Redundant trunks with an STP-blocked unused link, legitimate narrowing, a shared group reused by many clients, later unrelated observations and the unchanged campus stay accepted, through the real evaluator and the whole envelope |
+| R2a | The shipped Windows adapter returns a census only at `ERROR_NO_MORE_FILES`; a first-read failure, a failure after the primary and a failure before a second Packet Tracer row are unreadable with their cause; the snapshot handle is closed every time |
+| R2b | Through the governed route, an unreadable census at binding declines with its cause, and one at a dispatch stops that dispatch and every later effect and release |
+| R3a | Timely success is accepted and records its publication fact |
+| R3b | A late reload, late evaluation, late budget assembly, late reload/serialization/flush inside the store each withhold acceptance, name their boundary, keep the evidence and link one non-accepted envelope |
+| R3c | A link that returns after the deadline leaves the provisional verdict and a fact that does not establish acceptance |
+| R3d | A persistence error and interruptions immediately before and after the link keep one terminal envelope, keep the first failure primary, and never rewrite a completed envelope |
+| R4a | Visits of E5 entries, readiness rows, dependents and component links, and connectivity builds, grow linearly with clients, groups, E5 entries and shared components |
+| R4b | The 2/20/200/1,000 end-to-end cases, delayed and persistent non-forwarding included, still represent every client and are measured again |
+
+### Invariants
+
+- A label, summary or count in a record is never permission; only a re-derived
+  raw observation is.
+- One observation decides one dependent's permission for one group, bound to
+  its episode, revision and ledger positions.
+- A census is complete only at the documented end of enumeration.
+- Acceptance is never published when the run already knows its allowance is
+  gone, and a completed envelope is never rewritten.
+- Schema 1 decisions and its frozen proposal are unchanged; historical
+  evidence is untouched; the product still configures no trunk, transit VLAN
+  or gateway.
+
+### Test design
+
+Unit: strict parsers and re-derivation per row; the binding rules; the Win32
+adapter over a controlled kernel32; the store's checkpoints. Integration and
+system: the real coordinator, stores, ledger, readiness gate, product and
+evaluator over the plan-driven SIMULATED campus, with whole-envelope fault
+injection. Scale: deterministic visit and build counts over growing synthetic
+evidence, and the existing end-to-end benchmark. LIVE acceptance is not
+applicable to this delivery.
