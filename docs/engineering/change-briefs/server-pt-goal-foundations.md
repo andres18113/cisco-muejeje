@@ -3055,3 +3055,431 @@ process on Windows). Integration and system: the real coordinator, stores,
 shared composition, product use case, runtimes and readiness loop over a
 plan-driven simulated terminal, labelled as simulated Packet Tracer. LIVE
 acceptance is not applicable to this delivery.
+
+### Current projection
+
+What holds for a governed HTTP-by-IP acceptance attempt after this block,
+superseding the earlier blocks where they differ:
+
+- **Two profiles.** Schema 1 is the legacy two-client profile with its frozen
+  `1015/420/2/40` ceiling and rules. Schema 2, `http_by_ip_scalable_v1`,
+  selects every client of every eligible service, and its grant must equal the
+  scope, digest and cost that `--prepare` derives from the real product.
+- **Authority per dispatch.** Every governed dispatch, protected releases
+  included, is decided by the held claim and a fresh handle-bound receiver
+  reading. A missing, changed or ambiguous reading ends authority for the
+  rest of the attempt. A receiver that cannot be handle-bound refuses before
+  contact and names why.
+- **One terminal envelope per reserved attempt.** Refusals after the
+  reservation, cancellations and interruptions all end in exactly one
+  terminal envelope; a cancellation is the primary result and is re-raised.
+  The terminal link is the publication point.
+- **Time.** The deadline covers the evidence join. Late evidence is kept,
+  acceptance is refused, and the boundary that crossed it is named.
+- **Product admission.** Static, same-site, same-segment wired paths over one
+  access switch or a multi-access L2 component. Routed paths refuse before
+  any effect with the named missing contract.
+- **Readiness per dependency.** Access groups per switch and VLAN, trunk
+  continuity per component, bounded narrowing, invalidation by revision. A
+  failed group blocks only its dependents; lost authority stops the whole
+  invocation.
+- **Evidence.** Offline and SIMULATED only. No capability, LIVE claim or
+  published CI result changes here.
+
+### Design refinements made during implementation
+
+The design above was recorded before any production edit. The refinements
+below followed from facts found while implementing or from the independent
+reviews; each is inside the approved contract and each has its own
+regression.
+
+- **Dependency-local readiness needs narrowing.** The canonical access rule
+  admits a group only when every requested port forwards, so one client's
+  non-forwarding port would have refused every client of its switch, and one
+  isolated switch every pair of its component. After a refused episode whose
+  last sample was structurally clean (every requested row present exactly
+  once, authoritative apart from port states), the gate asks one fresh,
+  bounded episode about exactly the forwarding subset, or the joined pairs.
+  It is a different group identity, it admits only the dependents it fully
+  covers, and it never rescues the failing port or pair. A page that omits or
+  repeats a requested row seeds no narrowing. Each group may therefore take
+  two episodes; the derived gate ceilings (still exactly 4 / 120 s for a plan
+  that fits them) and the cost model both count two.
+- **Continuity follows the access rule's timeliness.** Only an episode that
+  ended because a complete, timely round joined every required pair admits;
+  a window that ran out admits nothing, and the pairs its last timely round
+  joined are only a narrowing hint.
+- **The receiver fallback is refused, not priced.** A full lifecycle reading
+  per dispatch is a correct check but launches local helpers and has no
+  per-dispatch bound; neither budget covers it. An attempt records its
+  receiver mode and refuses before contact unless the reading is
+  handle-bound. The fallback remains the composition's answer where no handle
+  can be held. A declined binding raises `ReceiverBindingDeclined` with one
+  stable reason (`process_api_unavailable`, `preflight_not_paired`,
+  `primary_handle_refused`, `primary_creation_time_unreadable`,
+  `primary_image_path_differs`, `process_table_unreadable`,
+  `cohort_ambiguous:<detail>`, `helper_handle_refused`, `helper_unreadable`,
+  `confirmation_differs`, `primary_exited`), and the refusal and the
+  envelope's `process_preflight.receiver_binding_declined` both keep it.
+- **The terminal link is the publication point.** After an interruption the
+  outcome of a store write is unknown, so the store decides it: a linked
+  write-ahead envelope of this invocation (same attempt and `started_at`) is
+  adopted, never begun twice, and a linked terminal envelope means the
+  attempt completed before the interruption, so its published verdict stands
+  and nothing retries against the immutable file. An interruption before the
+  terminal link completes the attempt as a cancellation.
+- **The claim is interruption-safe and recoverable.** Claim files are written
+  to a private temporary file and hard-linked in whole, so ownership is always
+  readable. A reserved attempt always keeps its permanent marker. After an
+  interruption inside `claim` the lock stays only when the caller chose the
+  holder and can recover the claim; every other lock of that claim is
+  removed. The acceptance coordinator chooses the holder and calls `recover`
+  after any failed claim. A recovered interruption completes as
+  `cancelled:<Type>@during:campaign_claim`, and a recovered ordinary error is
+  refused after the claim as `campaign_claim_outcome_unknown:<Type>:<reason>`.
+  A reservation that cannot be read back is unknown, never absent: nothing is
+  written for it, and the lock that names the chosen holder is removed. A
+  lock that cannot be read or removed is reported as a second refusal reason,
+  `campaign_lock_may_remain:<holder>:<cause>`, or as a note on the
+  interruption. The diagnostics' call is unchanged and never strands the
+  lock.
+- **Shared evidence once.** A scalable envelope cites the product record by
+  path and digest and references its readiness rows by count and digest
+  instead of copying them; the closure, the ledger and every per-client
+  outcome stay whole. The legacy envelope keeps its copy.
+- **One site's capacity is the planner's.** The real planner cannot place
+  more than about 400 clients on one site (its two distribution switches run
+  out of uplink ports at 500), so the 1,000-client case spreads clients over
+  three sites, each with its own Server-PT and HTTP service, and every
+  client-to-server path stays inside its site.
+
+### The routed blocker, stated exactly
+
+A separate server segment is compiled as SVIs on the site's 3560 distribution
+switch. The derived routed closure names both gateway interfaces and the
+trunk components on each side. Two contracts are missing: no registered E5
+action enables IPv4 routing on that device, and no registered observable reads
+its connected or static routing table (`show ip route` is registered only as
+`show ip route ospf`, `eigrp` and `rip`). Routed dependents therefore refuse
+at A8 as
+`routed_path_unobservable:ipv4_routing_action_and_route_table_reader_unregistered`
+before any effect. Nothing here enables routing, reads a route, or reports
+routed completion; closing it needs a registered E5 routing action and a
+registered route-table reader, each confirmed against the Packet Tracer
+reference before implementation.
+
+### Independent review before delivery, and what it changed
+
+A read-only Codex adversarial review of `7736546...c2fd2e6` returned
+*needs-attention* with four findings. Each was re-checked against the code;
+all four were real and are fixed in `602a877`, with regressions that fail when
+the fix is disabled. Self-review found a fifth.
+
+| Finding | Disposition |
+| --- | --- |
+| A progress helper that exits can hand its process id to another Packet Tracer, which the id-only check would accept (high) | Fixed: the helper is held by its own handle for the life of the binding, so its id cannot be reused, and each reading re-checks its parent and creation time |
+| An interruption after the reservation but before or during the write-ahead begin leaves no terminal envelope (high) | Fixed: one attempt-level handler covers every interval after the reservation, completes the envelope once as a cancellation named by phase, and re-raises |
+| A second interruption during the verdict or the terminal write skips publication (high) | Fixed by the same handler; the first interruption stays the named one and a partial terminal write is retried once |
+| The cost model prices the full-lifecycle fallback as a bounded reading (medium) | Fixed: attempts refuse before contact unless the receiver mode is handle-bound; the fallback is named in the refusal |
+| Self-review: a narrowed episode could exhaust the derived episode ceiling and starve a later group | Fixed: two episodes per group in the ceilings, matching the cost model |
+
+A second read-only Codex adversarial review, of `c2fd2e6...602a877`, returned
+*needs-attention* with three new findings. Each was re-checked against the
+code and reproduced by a regression before the fix; all three are fixed in
+`270090c`.
+
+| Finding | Disposition |
+| --- | --- |
+| An interruption after a store link leaves the attempt uncompleted: after the write-ahead link no terminal envelope is ever written, and after the terminal link the handler contradicts the stored verdict and retries against the immutable file (high) | Fixed: the store decides the unknown outcome (`stored`); a linked write-ahead is adopted, and a linked terminal envelope is the publication point, left as the attempt's verdict. Regressions interrupt immediately after each link |
+| An interruption inside `claim` can leave the campaign lock held, or a spent attempt marker with no envelope (high) | Fixed: whole-payload claim files, rollback of an unreserved lock, and recovery of a reserved claim by the holder the coordinator chose. Markers are never deleted. Regressions interrupt after each claim-side creation and mid-payload |
+| The bounded-mode refusal discards why the handle could not be held (medium) | Fixed: `ReceiverBindingDeclined` carries a stable reason into the fallback, the refusal and the envelope |
+
+A third read-only Codex adversarial review of `602a877...270090c` returned
+*needs-attention* with two findings. Both were real and are fixed in
+`eed576f`, each with a regression that failed first.
+
+| Finding | Disposition |
+| --- | --- |
+| The diagnostics call `claim` without choosing a holder, so an interruption after the reservation kept a lock nobody could recover or release (high) | Fixed in the coordinator: a lock is kept only for a caller that chose its holder; any other lock of an interrupted claim is removed, and the permanent marker stays. The diagnostics call is unchanged. Before these fixes an interruption anywhere in the claim left the lock |
+| An ordinary exception after the reservation (for example a coordinator wrapper timing out) was treated as a refusal before reservation, leaving the lock held and no envelope (medium) | Fixed: on any claim error the coordinator first recovers the reservation of the holder it chose. A recovered attempt is refused after the claim as `campaign_claim_outcome_unknown:<Type>`, with its terminal envelope and the lock released |
+
+A fourth review, of `270090c...eed576f`, returned *needs-attention* with
+one finding, fixed in `27e1b2e` with regressions that failed first.
+
+| Finding | Disposition |
+| --- | --- |
+| A reservation whose marker cannot be read back was answered as absent, so a claim that reserved and then failed left the chosen holder's lock held, the marker spent and nothing recorded (high) | Fixed: `recover` answers the claim, None only as proof of no reservation, or an error when the marker cannot be read. Whenever no claim is recovered, the coordinator removes a lock that names its own holder (`abandon`), never a marker. An unknown reservation is not written for, since it may not be this invocation's; its refusal is `campaign_claim_outcome_unknown:<Type>:reservation_unreadable:<claim reason>`, and the unpersisted result records the holder so the operator can match the marker |
+
+A fifth review, of `eed576f...27e1b2e`, returned one medium finding, fixed in
+`9c71225` with regressions that failed first.
+
+| Finding | Disposition |
+| --- | --- |
+| A lock that cannot be read or removed after a failed claim was swallowed, so the operator saw the claim refusal but not the lock that would refuse every later claim (medium) | Fixed: `abandon` answers `released` or `not_held` and raises when the lock cannot be read or removed. The coordinator records the outcome, adds `campaign_lock_may_remain:<holder>:<cause>` as a second refusal reason carried by the CLI summary, and attaches the same text as a note to an interruption. An unknown reservation is still never written for |
+
+The diagnostics still do not record an envelope for an attempt interrupted
+inside its own claim; the spent marker refuses its identity afterwards. That
+is their existing evidence contract, outside this work order.
+
+What stays uncovered: an interruption that lands inside a recovery or
+rollback step itself, or between a system call returning and Python recording
+its result, and an uncatchable process kill. Whatever those leave is
+fail-closed: a held lock refuses later campaigns until an operator removes it,
+and a spent marker refuses the attempt identity.
+
+### What was delivered, path by path
+
+- **A1.** `application/ports/cold_http_acceptance.py` adds the
+  `ReceiverContinuity` port. `infrastructure/execution/receiver_continuity.py`
+  holds the handle-bound Win32 reader (query/synchronize handle, creation time,
+  image path, toolhelp process table; primary plus at most the helper present
+  at binding). `accept_cold_http.py` binds it before any channel, reads it in
+  `_Attempt.authority` for every governed dispatch, and stops the labelled
+  boundaries after a loss; `receiver_continuity_findings` in
+  `domain/enterprise/models/cold_http_acceptance.py` is the rule. The CLI
+  composes `bind_production_receiver` (handle, or one full lifecycle reading
+  per dispatch carrying the `ReceiverBindingDeclined` reason, which the
+  coordinator refuses).
+- **A2-A4.** `accept_cold_http.py`: early write-ahead begin, begin-before-complete
+  ordering, `persisted` and `completion_seconds` on the result, cancellation
+  handling in `_contact_bound`, `_finalize` and one attempt-level handler,
+  store-decided recovery of an interrupted write (`stored` on the envelope
+  port and `cold_http_acceptance_store.py`), claim recovery, `_TemporalContract`,
+  citation of unreturned product records; `campaign_coordination.py` writes
+  whole-payload claim files, removes on interruption any lock its caller
+  cannot recover, and adds a caller-chosen holder, a three-way `recover` and
+  `abandon`; `enterprise_service_runtime.py`
+  makes the one release on an interruption; the envelope gains
+  `cancellation`, `temporal` and per-dispatch receiver counters.
+- **B.** `domain/enterprise/services/service_path_closure.py` (placements,
+  paired trunk links, per-VLAN components, path classification, the routed
+  contract); `trunk_continuity.py` (readings, usable edges, window-scoped
+  verdicts, narrowing hint); `service_access_readiness.py` (dependency groups,
+  continuity requirements and results, group keys); `access_forwarding.py`
+  (`forwarding_subset`); `service_access_readiness_gate.py` (multi-group
+  verdicts, narrowing, revisions, derived limits);
+  `enterprise_configuration_runtime.py` (`observe_trunk_continuity`, bounded
+  endpoint chunks); `apply_enterprise_services.py` (path admission, closure
+  paths and groups, gate wiring); `apply_services.py` (invalidation after E6
+  batches); `service_entry.py` (closure path and group models).
+- **Scalable profile.** `domain/enterprise/models/scalable_http_acceptance.py`
+  (schema 2 grant, scope, digest, cost model, scope findings);
+  `services/acceptance_evidence_index.py` (indexes built once);
+  `services/scalable_http_acceptance_evidence.py` (per-client readiness
+  re-derivation, per-group ordering oracle); `cold_http_acceptance_evidence.py`
+  (shared `judge_client_request`, indexed legacy evaluation);
+  `application/use_cases/prepare_http_acceptance.py` (planning session) and
+  `--prepare` in the CLI.
+- **Tests.** `test_cold_http_contract_repairs.py`, `test_receiver_continuity.py`,
+  `test_campaign_claim_interruption.py`, `test_campus_service_paths.py`,
+  `test_readiness_dependency_groups.py`,
+  `test_bounded_endpoint_batches.py`, `test_scalable_http_acceptance.py`,
+  `test_http_acceptance_scale.py`; the plan-driven SIMULATED campus
+  (`campus_product_simulation.py`), the scalable harness and the benchmark
+  runner `http_acceptance_scale_benchmark.py`.
+
+### Requirement-to-test mapping
+
+| Requirement | Tests |
+| --- | --- |
+| R-A1 | repairs `test_no_governed_dispatch_reaches_a_replaced_receiver` (5 replacements x 3 milestones), `test_every_governed_dispatch_is_decided_by_its_own_fresh_reading`, `test_a_failed_read_sample_with_an_unchanged_receiver_is_still_accepted`, `test_a_receiver_that_cannot_be_bound_refuses_before_contact`, `test_lost_campaign_ownership_still_blocks_every_later_effect`, `test_a_reading_that_spends_the_last_second_refuses_only_that_dispatch`, `test_the_legacy_worst_case_fits_with_receiver_and_dispatch_cost`, rule tests; scalable `test_a_replaced_receiver_stops_the_whole_invocation` |
+| R-A1c | `test_receiver_continuity.py` (32: fake process tables, a reused helper id, every declined binding with its reason, plus the real Win32 reads on this process and a child it starts and stops); repairs `test_an_unbounded_receiver_reading_is_refused_before_contact`, `test_a_declined_binding_names_its_reason_in_the_refusal_and_the_envelope` |
+| R-A2 | repairs `test_a_reserved_refusal_is_reloaded_with_its_identity_and_reason` (process, history, manifest), `test_an_unwritable_store_is_a_persistence_failure_not_a_refusal_reason`, `test_a_refusal_before_reservation_owes_no_envelope` |
+| R-A3 | repairs `test_an_interruption_after_ownership_finalizes_once_and_propagates` (start, inspection, release), `test_an_interruption_during_finalization_is_never_an_acceptance`, `test_an_interruption_outside_the_product_still_completes_one_envelope` (process read, manifest, channel), `test_every_interruption_after_reservation_leaves_a_terminal_envelope` (begin, verdict, terminal write), `test_an_interruption_after_the_write_ahead_link_still_completes_the_attempt`, `test_an_interruption_after_the_terminal_link_leaves_the_published_verdict`, `test_an_interruption_inside_the_claim_leaves_nothing_unaccounted` (lock, marker), `test_an_ordinary_claim_error_after_the_reservation_is_a_recorded_refusal`, `test_an_unreadable_reservation_after_a_failed_claim_leaves_no_lock` (ordinary error, interruption), `test_a_refused_claim_over_an_unreadable_marker_keeps_its_reason`, `test_a_lock_that_cannot_be_removed_after_a_failed_claim_is_reported` (ordinary error, interruption), `test_a_second_run_of_a_cancelled_attempt_is_still_refused`; `test_campaign_claim_interruption.py` (11) |
+| R-A4 | repairs `test_a_reload_that_crosses_the_deadline_withholds_acceptance`, `test_an_on_time_evidence_join_is_accepted`, `test_a_verdict_reached_after_the_deadline_names_the_verdict_boundary` |
+| R-B1/B2 | scalable `test_the_prepared_scope_names_every_selected_client_and_its_cost`, `test_a_malformed_scalable_grant_refuses_before_any_contact` (9), `test_a_schema_two_grant_is_never_read_as_the_legacy_profile`, `test_a_grant_that_differs_from_the_derived_scope_refuses_before_e1` (5), `test_the_prepare_command_prints_the_derived_grant_fields`, `test_a_legacy_grant_keeps_its_frozen_ceiling_and_rules`; the unchanged legacy suites |
+| R-B3 | scalable `test_selected_clients_are_each_accepted_once_in_the_products_order` (2, 20, 30), scale `test_two_hundred_clients_on_one_site_through_the_whole_envelope`, `test_a_thousand_clients_over_three_sites_through_the_whole_envelope` |
+| R-B4/B7 | campus `test_a_multi_access_campus_is_verified_through_the_public_tool`, `test_a_routed_server_segment_is_refused_before_any_effect`, `test_the_routed_closure_names_the_gateways_it_would_need`; `test_service_path_admission.py` (unchanged guards); scalable `test_a_routed_campus_is_refused_by_the_product_before_any_effect` |
+| R-B5/B6 | `test_readiness_dependency_groups.py` (17), campus `test_every_request_follows_every_group_its_path_names`, `test_an_unreadable_switch_off_the_forwarding_path_blocks_nobody`, `test_a_fault_in_an_unselected_branch_is_never_observed`; scalable `test_every_selected_client_stays_represented_when_trunks_fail`, `test_one_clients_fault_is_its_own`, `test_a_fault_in_an_unselected_branch_does_not_interfere`, `test_a_bypassed_readiness_gate_fails_the_per_group_ordering_oracle` |
+| R-C1 | scalable `test_the_executed_worst_case_fits_the_derived_model`, `test_the_cost_profile_matches_the_constants_the_product_executes`, `wrong_budget` refusal |
+| R-C2/C3 | scalable `test_the_evaluator_indexes_the_ledger_once`; `test_bounded_endpoint_batches.py` (3) |
+| R-C4 | scale `test_the_generated_campus_is_larger_than_the_cp_scale_reference`; the benchmark below |
+| R-D1 | legacy `test_the_mcp_route_and_the_acceptance_route_run_the_same_product`; scalable `test_the_public_tool_and_the_scalable_envelope_run_the_same_product`; the full offline suite (qualification, Voice, namespace and surface suites unchanged) |
+
+### Causal RED: each repaired behavior disabled on its own
+
+All 34 rows were re-run against the final code commit `9c71225`. Each row
+patched one behavior out, ran only its selected regressions, and restored the
+bytes. Afterwards every selected file passed again and `git status` was
+empty, so the tree was byte-identical to the commit.
+
+| Disabled behavior | Selected regressions failing |
+| --- | --- |
+| A1 receiver reading in the dispatch guard | 16 of 16 |
+| A2 early begin and begin-before-complete, both reverted | 3 of 3 |
+| A2 early begin only (completion order kept) | 0 of 3: the corrected order alone keeps the reason; the two fixes are redundant by design |
+| A3 cancellation handling in the product call | 3 of 16: the attempt-level handler added after review 1 now completes the other interruptions on its own |
+| A3 E6 release on interruption | 2 of 3 (the third is the interruption *at* the release, which must not release twice) |
+| A4 temporal contract | 2 of 2 |
+| B4 multi-access admission | 3 of 3 |
+| B7 routed refusal | 2 of 2 |
+| B5 narrowing | 3 of 3 |
+| B5 revision invalidation | 1 of 1 |
+| B6 continuity dependency | 2 of 2 |
+| B2 client-set comparison | 2 of 2 |
+| C1 budget binding | 1 of 1 |
+| C2 ledger index built per client | 1 of 1 |
+| C3 endpoint chunking | 2 of 3 (the third is the within-one-chunk control) |
+| B3 per-group ordering oracle | 1 of 1 |
+| Review 1: helper identity re-check | 2 of 2 |
+| Review 1: attempt-level cancellation handler | 6 of 6 |
+| Review 1: bounded receiver mode | 1 of 1 |
+| Self-review: two episodes per group in the ceilings | 1 of 1 |
+| Review 2: write-ahead recovery from the store | 1 of 1 |
+| Review 2: terminal publication point | 1 of 1 |
+| Review 2: rollback of an unreserved lock | 1 of 3: the coordinator-level regression; at attempt level the later `abandon` also removes the lock, and the third is the reserved case |
+| Review 2: claim recovery by the chosen holder | 1 of 2 (the other is the unreserved case) |
+| Review 2: whole-payload claim files | 1 of 1 |
+| Review 2: reason kept in the refusal | 1 of 1 |
+| Review 2: reason carried by the fallback | 2 of 2 |
+| Review 3: release of an unrecoverable lock | 1 of 1 |
+| Review 3: recovery after an ordinary claim error | 1 of 1 |
+| Review 4: an unreadable reservation answered as absent | 3 of 4 (the interruption case is also covered by `abandon`) |
+| Review 4: removal of this holder's own lock (`abandon`) | 2 of 2 |
+| Review 4: the claim's reason kept in an unknown refusal | 2 of 3 (the interruption case has no refusal) |
+| Review 5: an unreadable lock answered as not held | 1 of 1 |
+| Review 5: a lock that may remain, reported | 2 of 2 |
+
+A2's original defect reproduces with both fixes reverted: the real store
+refuses `begin` on an envelope whose `completed_at` is already set, so the
+refusal's reason was never written.
+
+### Scale evidence, and what produced each number
+
+Every campus below is what the real planner and compiler produce for the
+intent; the acceptance route, composition, product, runtimes, readiness gate,
+ledger, evaluator and stores are the production ones. Packet Tracer is
+SIMULATED by `tests/campus_product_simulation.py` (per-VLAN spanning tree from
+the compiled trunks, the measured page formats) with a fake clock; nothing
+here is Packet Tracer behaviour, timing or capacity.
+
+| Clients | Sites | Devices | Links | Switches | Access groups | Continuity components |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2 | 1 | 4 | 3 | 1 | 1 | none |
+| 20 | 1 | 25 | 26 | 4 | 1 | none (all on one access switch) |
+| 30 | 1 | 35 | 36 | 4 | 2 | one of 4 switches |
+| 200 | 1 | 215 | 225 | 14 | 9 | one of 14 switches |
+| 1,000 | 3 | 1,066 | 1,114 | 63 | 42 | three of 21 switches |
+
+The maintained CP-SCALE reference, composed read-only through its
+maintained helper, declares 314 devices and 219 links; the generated
+1,000-client campus declares 1,066 and 1,114. That is a larger compiled
+fixture, not evidence that Packet Tracer can hold it.
+
+Measured with `tests/http_acceptance_scale_benchmark.py` at `eed576f` (`27e1b2e` and `9c71225` change only the failed-claim path, which no row reaches) on Windows-11-10.0.26200-SP0, Python 3.12.10, this checkout's `.venv`, with nothing else running: every dispatch costs 0.05 simulated seconds and every receiver reading 0.015 s (the measured Win32 maximum), so no row is a zero-latency trace. Immediate FWD forwards at once; delayed FWD forwards 26 s after each switch is first read and trunks 12 s after the first trunk read; persistent non-FWD never forwards any access port. Envelope and record sizes are the persisted files; peak memory is Python allocations under `tracemalloc` for the whole attempt; wall and evaluator seconds are this machine's.
+
+| Clients | Behaviour | Accepted | Represented / never started | Operations used / ceiling | Receiver readings (s) | Simulated s / ceiling | Wall s | Evaluator s | Peak MiB | Envelope MB | Record MB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2 | immediate fwd | yes | 2 / 0 | 30 / 1,191 | 30 (0.45) | 2.95 / 530 | 0.226 | 0.002 | 1.0 | 0.04 | 0.06 |
+| 2 | delayed fwd | yes | 2 / 0 | 114 / 1,191 | 114 (1.71) | 29.41 / 530 | 0.278 | 0.004 | 1.3 | 0.07 | 0.08 |
+| 2 | persistent non fwd | no | 2 / 2 | 115 / 1,191 | 115 (1.725) | 32.235 / 530 | 0.27 | 0.004 | 1.3 | 0.07 | 0.08 |
+| 20 | immediate fwd | yes | 20 / 0 | 138 / 4,035 | 138 (2.07) | 9.97 / 1,770 | 0.379 | 0.009 | 3.6 | 0.17 | 0.32 |
+| 20 | delayed fwd | yes | 20 / 0 | 222 / 4,035 | 222 (3.33) | 36.43 / 1,770 | 0.562 | 0.024 | 4.3 | 0.20 | 0.40 |
+| 20 | persistent non fwd | no | 20 / 20 | 169 / 4,035 | 169 (2.535) | 35.745 / 1,770 | 0.538 | 0.026 | 3.9 | 0.19 | 0.38 |
+| 200 | immediate fwd | yes | 200 / 0 | 1,349 / 43,654 | 1,349 (20.235) | 88.685 / 16,079 | 2.581 | 0.14 | 28.2 | 1.55 | 2.93 |
+| 200 | delayed fwd | yes | 200 / 0 | 2,273 / 43,654 | 2,273 (34.095) | 340.745 / 16,079 | 4.486 | 0.26 | 37.0 | 1.89 | 3.79 |
+| 200 | persistent non fwd | no | 200 / 200 | 1,512 / 43,654 | 1,512 (22.68) | 313.12 / 16,079 | 4.372 | 0.227 | 31.0 | 1.68 | 3.49 |
+| 1,000 | immediate fwd | yes | 1000 / 0 | 6,666 / 213,164 | 6,666 (99.99) | 434.29 / 78,922 | 20.047 | 0.805 | 137.5 | 7.67 | 14.50 |
+| 1,000 | delayed fwd | yes | 1000 / 0 | 10,362 / 213,164 | 10,362 (155.43) | 1558.53 / 78,922 | 29.932 | 1.294 | 169.4 | 9.01 | 18.65 |
+| 1,000 | persistent non fwd | no | 1000 / 1000 | 7,236 / 213,164 | 7,236 (108.54) | 1469.26 / 78,922 | 28.474 | 1.211 | 151.2 | 8.26 | 17.29 |
+
+### Measured offline verification
+
+Everything below ran in this checkout's own `.venv` (Python 3.12.10) on
+Windows 11, against `cisco/main` resolving to `6263344`. The last code commit
+is `9c71225`; the commit that adds this block changes only this brief.
+
+| Check | Result |
+| --- | --- |
+| Full offline suite at `9c71225` | 7,355 passed, 3 skipped, 3 warnings (the existing class-scoped-fixture deprecation in two `test_e95_*` files) in 469 s; the tree was clean before and after |
+| Earlier full runs, oldest first | 7,280 passed after the multi-access commit; one run on `c2fd2e6` ended in the native access violation described below (log kept); 7,327 passed, 3 skipped at `602a877`; 7,345 passed, 3 skipped at `270090c`, provisional because files were edited while it ran; 7,347 passed, 3 skipped at `eed576f`; 7,352 passed, 3 skipped at `27e1b2e`, provisional because causal patches ran during it |
+| Affected suites (38 files: coordination, acceptance, qualification, diagnostics, receiver, bridge security) | 1,115 passed on the tree committed as `270090c` |
+| Focused suites at `9c71225` (claim interruption, receiver, contract repairs, diagnostic corrections, acceptance boundaries) | 168 passed |
+| Causal RED at `9c71225` | 34 of 34 disabled behaviors caught (table above); every restored file passes, and `git status` was empty afterwards |
+| Quality gate, worktree mode, `--base cisco/main` | 150 Ruff-gated files; lint and format pass |
+| Namespace inventory | 0 active legacy references, 0 unreviewed inert mentions |
+| MkDocs build | passes with the two warnings that already exist on `cisco/main` |
+| `git diff --check` | clean |
+| Delivery gate on the delivery commit | reported in the handoff: a commit cannot record its own gate |
+| Exact-SHA CI | pending; nothing was published |
+
+Six read-only Codex adversarial reviews ran; the first five findings tables
+are above. The sixth, of `27e1b2e...9c71225`, returned *approve* with no
+material findings: a failed lock read or unlink reaches the refusal reasons or
+the interruption note, and the claim's own reason stays first. These reviews
+are advisory; none of them is the independent audit the standard requires.
+
+### Residual limitations
+
+- Offline only. The campus terminal is a simulation: its spanning tree is
+  deterministic (root by name, breadth-first tree), its trunk and
+  spanning-tree pages follow recorded 9.0.1.0858 formats, and its timing is a
+  fake clock. `observe_trunk_continuity` is new runtime code over a registered
+  query and the same bounded executor as the forwarding observer; it has
+  never read a live switch.
+- The interval between a receiver reading and the receiver executing the
+  command is unfenced, as before. An interruption inside a recovery or
+  rollback step itself, one between a system call returning and Python
+  recording its result, and an uncatchable kill are not covered; what they
+  leave is fail-closed (a held lock or a spent marker).
+- The terminal link is the publication point: an interruption that lands
+  after it propagates, and the stored verdict, accepted or not, is the
+  attempt's.
+- Readiness episodes run one group at a time, so delayed forwarding costs
+  time linearly in the number of groups (measured above). A plan whose
+  derived ceiling is hours is honest about it; it is not evidence that such a
+  run is practical.
+- Evidence grows linearly with clients (the product record dominates, mostly
+  E5 per-action readback). Nothing was truncated to reduce it.
+- Trunks, transit VLANs and gateways are proven, never configured, by the
+  service path; a campus whose E5 configuration was not applied first is
+  refused per dependency by readiness, not repaired.
+- Routed paths are refused with the exact missing contract above.
+- A schema 2 grant must list exactly the product's selection (every client
+  of every eligible service); it cannot select a subset.
+- An intermittent native access violation ended two combined test processes
+  during this work (one full-suite run, in
+  `tests/test_cp_scale_live_architecture.py`'s AST walk, which runs before any
+  code this delivery adds native calls to; one targeted run whose top frames
+  were not retained). The same files pass alone and in later runs. Its cause
+  is not established here, and its disappearance proves nothing.
+- The Win32 reads were exercised against this Python process and a child it
+  owns, never against Packet Tracer.
+
+### Pending operator grants
+
+Nothing here authorizes a LIVE attempt, a publication or a merge. The
+delivery commit must be published before any attempt, because the repository
+rule refuses an unpublished HEAD; exact-SHA CI is pending that publication.
+
+A **schema 1** (legacy two-client) attempt still needs the grant listed in
+the previous block, and now also a handle-bound receiver: the executing
+process must be able to open the paired Packet Tracer PID for query and
+synchronize (same user), and the Packet Tracer cohort must be the primary
+plus at most the helper it started, or the attempt refuses before contact
+with `receiver_mode_not_bounded:lifecycle_per_dispatch:<reason>`, the reason
+naming what to correct.
+
+A **schema 2** (scalable) attempt needs, in order:
+
+1. The deployment's E5 configuration applied by the enterprise execution
+   path, so trunks and transit VLANs exist; the service path only proves them.
+2. The manifest persisted under `<governed root>/data/deployments`, and no
+   stored run of the deployment under `<governed root>/data/services`.
+3. `.venv\Scripts\python.exe -m packet_tracer_mcp.adapters.cli.cold_http_acceptance --prepare --intent <intent> --deployment <id> --build 9.0.1.0858 --attempt <32-hex>`
+   with `PT_MCP_GOVERNED_ROOT` set, on the published delivery commit. It
+   contacts nothing and prints the derived `servers`, `clients`,
+   `scope_sha256` and budget.
+4. A grant document with `schema_version: 2`, `profile:
+   http_by_ip_scalable_v1`, those derived fields unchanged, the
+   authorization id, attempt id, published SHA and tree, build, channel
+   `file`, deployment and manifest hashes, the intent digest, marker
+   `COLD_HTTP_<attempt>`, the Packet Tracer PID, path and creation identity
+   read immediately before the attempt, and both laboratory flags `true`.
+5. `... cold_http_acceptance --execute --grant <grant> --intent <intent>` from
+   the checkout's own interpreter, never under pytest.
+
+A first LIVE scalable attempt should be the smallest multi-access case (the
+30-client, two-access-switch campus) before any larger one. Fixture cleanup,
+workspace restoration, a second attempt, routed paths and capability
+promotion each need their own grant.
