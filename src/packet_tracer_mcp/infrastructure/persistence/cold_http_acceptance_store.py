@@ -150,16 +150,31 @@ class ColdHttpAcceptanceStore:
         return str(path)
 
     def load_publication(self, attempt_id: str) -> AcceptancePublication:
-        """Return the recorded publication fact of one attempt."""
+        """Return the recorded publication fact of one attempt.
+
+        The fact is returned only while it still describes this store's
+        terminal envelope byte for byte: same file name and same SHA-256.
+        Otherwise it raises, because a fact about other bytes proves nothing
+        about these.
+        """
         path = self.publication_path_for(attempt_id)
+        terminal = self.completed_path_for(attempt_id)
         try:
-            return AcceptancePublication.model_validate_json(
+            found = AcceptancePublication.model_validate_json(
                 path.read_text(encoding="utf-8")
             )
+            digest = hashlib.sha256(terminal.read_bytes()).hexdigest()
         except (OSError, ValueError) as exc:
             raise RunRecordPersistenceError(
                 f"Publication fact is unreadable: {type(exc).__name__}"
             ) from exc
+        if Path(found.terminal_path).name != terminal.name or (
+            found.terminal_sha256 != digest
+        ):
+            raise RunRecordPersistenceError(
+                "The publication fact does not describe this terminal envelope."
+            )
+        return found
 
     def stored(
         self, envelope: ColdHttpAcceptanceEnvelope, *, completed: bool

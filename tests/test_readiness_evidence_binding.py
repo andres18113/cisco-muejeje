@@ -611,3 +611,48 @@ def test_legitimate_narrowing_is_bound_to_the_narrowed_episode(
     decided = [item for item in narrowed[0]["dependents"] if "decision" in item]
     assert decided and all(item["admitted"] for item in decided)
     assert victim.expectation_id not in {item["expectation_id"] for item in decided}
+
+
+# -- every dynamic dispatch names the derived scope ---------------------------------
+
+
+@pytest.mark.parametrize(
+    "purpose",
+    [
+        "readiness:access:FOREIGN-SW:10#1",
+        f"readiness:access:{SW1}:10",
+        "e6_verify:svc/verify-http-ip/not-selected",
+        "owned_release:svc/verify-http-ip/not-selected",
+    ],
+    ids=[
+        "foreign_group",
+        "no_episode_ordinal",
+        "unselected_request",
+        "unselected_release",
+    ],
+)
+def test_a_dispatch_outside_the_derived_scope_refuses_the_attempt(immediate, purpose):
+    """A readiness observation or a request the scope never named is out of scope."""
+    entries = list(immediate["entries"])
+    last_e5 = max(
+        position for position, item in enumerate(entries) if item.purpose == "e5_verify"
+    )
+    template = next(item for item in entries if item.purpose.startswith(READINESS))
+    entries.insert(last_e5 + 1, template.model_copy(update={"purpose": purpose}))
+
+    evaluation = _judge(immediate, entries=entries)
+
+    assert any(
+        item.startswith("dispatches_outside_scope:") and purpose in item
+        for item in evaluation.ordering
+    ), evaluation.ordering
+    assert any(
+        item.startswith("dispatches_outside_scope:") for item in evaluation.reasons
+    )
+
+
+def test_every_dispatch_of_the_unchanged_campus_names_the_scope(immediate):
+    """Counter-control: requests, releases, direct checks and episodes all scoped."""
+    evaluation = _judge(immediate)
+
+    assert evaluation.ordering == []

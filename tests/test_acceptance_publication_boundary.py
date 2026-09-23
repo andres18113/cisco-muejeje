@@ -368,3 +368,50 @@ def test_an_interruption_while_recording_the_fact_still_records_it(
     assert stored.http_accepted is True
     assert publication.observed_by == "interruption_recovery"
     assert publication_claim(stored, publication) == (True, "")
+
+
+# -- a stored fact is re-derived, never trusted ------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("update", "why"),
+    [
+        (
+            {"link_returned_offset_seconds": 421.0},
+            "publication_fact_contradicts_its_offsets",
+        ),
+        ({"provisional_http_accepted": False}, "publication_fact_is_not_this_envelope"),
+        (
+            {"link_within_deadline": False, "http_accepted": True},
+            "publication_fact_contradicts_its_offsets",
+        ),
+    ],
+)
+def test_a_contradictory_publication_fact_establishes_nothing(
+    tmp_path: Path, update, why
+):
+    """The claim derives timeliness from the fact's own offsets."""
+    harness = build_harness(tmp_path)
+    result = harness.run()
+    assert result.accepted is True
+    envelope = harness.envelope_store.load(ATTEMPT)
+    stored = harness.envelope_store.load_publication(ATTEMPT)
+
+    claim = publication_claim(envelope, stored.model_copy(update=update))
+
+    assert claim == (False, why)
+
+
+def test_a_fact_whose_terminal_bytes_changed_cannot_be_loaded(tmp_path: Path):
+    """The fact is bound to the terminal file's digest when it is read back."""
+    from packet_tracer_mcp.application.ports.service_run_record import (
+        RunRecordPersistenceError,
+    )
+
+    harness = build_harness(tmp_path)
+    assert harness.run().accepted is True
+    terminal = harness.envelope_store.completed_path_for(ATTEMPT)
+    terminal.write_bytes(terminal.read_bytes() + b" ")
+
+    with pytest.raises(RunRecordPersistenceError, match="terminal envelope"):
+        harness.envelope_store.load_publication(ATTEMPT)

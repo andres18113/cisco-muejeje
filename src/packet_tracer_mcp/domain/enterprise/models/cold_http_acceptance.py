@@ -961,7 +961,10 @@ def publication_claim(
 
     The terminal envelope carries the provisional verdict; the publication
     fact says whether it was published in time. Both must be this
-    invocation's and agree.
+    invocation's and agree. Timeliness is derived again from the fact's own
+    offsets; a fact whose recorded booleans disagree with them establishes
+    nothing. The terminal file's digest is checked where the fact is read
+    back from the store.
     """
     if not envelope.http_accepted:
         return False, "terminal_verdict_not_accepted"
@@ -973,10 +976,17 @@ def publication_claim(
         or publication.provisional_http_accepted is not envelope.http_accepted
     ):
         return False, "publication_fact_is_not_this_envelope"
-    if not publication.link_within_deadline:
+    within = (
+        publication.link_returned_offset_seconds <= publication.deadline_offset_seconds
+    )
+    if (
+        publication.link_within_deadline is not within
+        or publication.http_accepted
+        is not (publication.provisional_http_accepted and within)
+    ):
+        return False, "publication_fact_contradicts_its_offsets"
+    if not within:
         return False, "publication_not_established_within_deadline"
-    if not publication.http_accepted:
-        return False, "publication_fact_not_accepted"
     return True, ""
 
 

@@ -46,6 +46,23 @@ _FIXED_PURPOSES = frozenset(
 )
 
 
+def _in_scope(
+    purpose: str, groups: set[str], requests: set[str], checks: set[str]
+) -> bool:
+    """Whether one dispatched purpose names the derived scope exactly."""
+    if purpose in _FIXED_PURPOSES:
+        return True
+    if purpose.startswith(READINESS_PREFIX):
+        key, marker, ordinal = purpose[len(READINESS_PREFIX) :].rpartition("#")
+        return bool(marker) and key in groups and ordinal.isdigit() and int(ordinal) > 0
+    if purpose.startswith(E6_VERIFY_PREFIX):
+        return purpose[len(E6_VERIFY_PREFIX) :] in checks
+    if purpose.startswith(OWNED_RELEASE_PREFIX):
+        return purpose[len(OWNED_RELEASE_PREFIX) :] in requests
+    # Reported as unlabelled, not twice.
+    return True
+
+
 def scalable_ordering_findings(
     scope: AcceptanceScope,
     ledger: LedgerIndex,
@@ -72,6 +89,21 @@ def scalable_ordering_findings(
     )
     if unlabelled:
         found.append("unlabelled_dispatches:" + ",".join(unlabelled[:8]))
+    # A labelled dispatch still has to name the derived scope: a readiness
+    # episode of one of its groups, or a request, release or direct check of
+    # one of its expectations. Anything else was done outside the scope.
+    groups = {item.key for item in scope.groups}
+    selected = {item.expectation_id for item in scope.clients}
+    checks = selected | {
+        item.direct_check for item in scope.servers if item.direct_check
+    }
+    outside = sorted(
+        purpose
+        for purpose in ledger.purposes()
+        if not _in_scope(purpose, groups, selected, checks)
+    )
+    if outside:
+        found.append("dispatches_outside_scope:" + ",".join(outside[:8]))
     e5_verify = ledger.positions("e5_verify")
     e6_apply = ledger.positions("e6_apply")
     # Positions are in ledger order, so each boundary's last dispatch is its
