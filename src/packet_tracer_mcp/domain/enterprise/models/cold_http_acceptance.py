@@ -904,12 +904,80 @@ class ColdHttpAcceptanceEnvelope(BaseModel):
     #: `cancelled:<type>@<boundary>` when an interruption ended the attempt;
     #: it is the primary failure and never coexists with acceptance.
     cancellation: str = ""
-    #: The one absolute deadline carried through the evidence join: offsets of
-    #: the deadline and of the publication boundary, and the first controlled
-    #: boundary that was reached after the deadline, if any.
+    #: The one absolute deadline carried to publication: offsets (from the
+    #: attempt's start) of the deadline, the verdict and the decision written
+    #: here, and the first controlled boundary reached after the deadline, if
+    #: any. The terminal link is the publication point and happens after this
+    #: envelope was serialized, so its instant is not in it: the publication
+    #: fact recorded beside it bounds that instant.
     temporal: dict[str, Any] = Field(default_factory=dict)
     #: The derived scope of a scalable attempt: its digest, sizes and cost.
     scope: dict[str, Any] = Field(default_factory=dict)
+
+
+#: Schema of the write-once publication fact recorded after a terminal link.
+PUBLICATION_SCHEMA_VERSION = 1
+
+
+class AcceptancePublication(BaseModel):
+    """When one terminal envelope was published, as closely as it is known.
+
+    The terminal link cannot be preempted and cannot record its own instant.
+    It happened after `link_checked_offset_seconds` (the last controlled
+    checkpoint before it, or None when an interrupted invocation recovered
+    the link from the store) and no later than `link_returned_offset_seconds`
+    (the first instant after it that this invocation observed). Only that
+    upper bound is compared with the deadline: acceptance is established when
+    the terminal verdict is accepted and the upper bound is within the
+    deadline, and otherwise it is not established, whatever the terminal
+    envelope's provisional verdict says. Offsets count from the attempt's
+    start.
+    """
+
+    schema_version: int = PUBLICATION_SCHEMA_VERSION
+    attempt_id: str
+    started_at: datetime
+    terminal_path: str
+    terminal_sha256: str = ""
+    provisional_http_accepted: bool
+    deadline_offset_seconds: float
+    decided_offset_seconds: float | None = None
+    link_checked_offset_seconds: float | None = None
+    link_returned_offset_seconds: float
+    link_within_deadline: bool
+    http_accepted: bool
+    #: `coordinator`, or `interruption_recovery` when the terminal link was
+    #: found after an interruption and this fact was recorded from the store.
+    observed_by: str
+    #: The interruption that arrived after the link, if any; it does not
+    #: change a published verdict.
+    interruption: str = ""
+
+
+def publication_claim(
+    envelope: ColdHttpAcceptanceEnvelope, publication: AcceptancePublication | None
+) -> tuple[bool, str]:
+    """Decide whether one published attempt is accepted, and why not.
+
+    The terminal envelope carries the provisional verdict; the publication
+    fact says whether it was published in time. Both must be this
+    invocation's and agree.
+    """
+    if not envelope.http_accepted:
+        return False, "terminal_verdict_not_accepted"
+    if publication is None:
+        return False, "publication_fact_absent"
+    if (
+        publication.attempt_id != envelope.attempt_id
+        or publication.started_at != envelope.started_at
+        or publication.provisional_http_accepted is not envelope.http_accepted
+    ):
+        return False, "publication_fact_is_not_this_envelope"
+    if not publication.link_within_deadline:
+        return False, "publication_not_established_within_deadline"
+    if not publication.http_accepted:
+        return False, "publication_fact_not_accepted"
+    return True, ""
 
 
 #: What every envelope says about itself, whatever its outcome.

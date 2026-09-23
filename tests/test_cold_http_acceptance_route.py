@@ -931,7 +931,7 @@ def test_an_envelope_that_cannot_be_completed_withdraws_acceptance(
     harness = build_harness(tmp_path)
     store = harness.envelope_store
 
-    def failing(envelope):
+    def failing(envelope, **_checkpoint):
         raise RunRecordPersistenceError("read-only")
 
     monkeypatch.setattr(store, "complete", failing)

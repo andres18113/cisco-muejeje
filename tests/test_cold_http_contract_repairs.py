@@ -416,7 +416,8 @@ def test_a_reload_that_crosses_the_deadline_withholds_acceptance(
     assert envelope.http_accepted is False
     assert "acceptance_deadline_exceeded:record_reload" in envelope.reasons
     assert envelope.temporal["exceeded_at"] == "record_reload"
-    assert envelope.temporal["publication_offset_seconds"] > 420
+    assert envelope.temporal["verdict_offset_seconds"] > 420
+    assert result.accepted is False
     assert envelope.budget.elapsed_seconds > 420
     # The late evidence is kept, and it is still what the verdict read.
     assert len(envelope.product["record_sha256"]) == 64
@@ -486,7 +487,9 @@ def test_the_legacy_worst_case_fits_with_receiver_and_dispatch_cost(tmp_path: Pa
         0.015 * budget.used_operations, rel=1e-6
     )
     assert budget.elapsed_seconds <= 420
-    assert envelope.temporal["publication_offset_seconds"] <= 420
+    assert envelope.temporal["decided_offset_seconds"] <= 420
+    assert result.publication.link_returned_offset_seconds <= 420
+    assert result.accepted is True
 
 
 def test_a_reading_that_spends_the_last_second_refuses_only_that_dispatch(
@@ -700,7 +703,14 @@ def test_an_interruption_after_the_terminal_link_leaves_the_published_verdict(
     assert sorted(item.name for item in store.base_dir.iterdir()) == [
         f"{ATTEMPT}.completed.json",
         f"{ATTEMPT}.json",
+        f"{ATTEMPT}.publication.json",
     ]
+    # The fact is recorded from the store's answer; the link was in time.
+    publication = store.load_publication(ATTEMPT)
+    assert publication.observed_by == "interruption_recovery"
+    assert publication.interruption == "KeyboardInterrupt"
+    assert publication.link_within_deadline is True
+    assert publication.http_accepted is True
     assert not (harness.coordinator.scope / LOCK_NAME).exists()
 
 

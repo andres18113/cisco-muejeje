@@ -54,6 +54,7 @@ from ...domain.enterprise.models.cold_http_acceptance import (
     COLD_HTTP_PROPOSAL,
     ENVELOPE_LIMITATIONS,
     AcceptanceBudget,
+    AcceptancePublication,
     AcceptanceRefusal,
     AcceptanceSubject,
     CampaignOutcome,
@@ -66,6 +67,7 @@ from ...domain.enterprise.models.cold_http_acceptance import (
     manifest_refusals,
     parse_grant,
     process_refusals,
+    publication_claim,
     receiver_continuity_findings,
     repository_acceptance_refusals,
 )
@@ -259,14 +261,32 @@ class AcceptanceResult:
     #: envelope was due, because nothing was reserved; `False` after a
     #: reservation is a persistence failure, never an ordinary refusal.
     persisted: bool | None = None
-    #: Wall clock the terminal write itself took, after the publication
-    #: boundary. It cannot be inside the envelope it wrote.
+    #: Wall clock the terminal write itself took, after the decision it
+    #: carries. It cannot be inside the envelope it wrote.
     completion_seconds: float = 0.0
+    #: When the terminal envelope was linked, as closely as it is known, and
+    #: where that fact was recorded; or why it could not be recorded.
+    publication: AcceptancePublication | None = None
+    publication_path: str = ""
+    publication_failure: str = ""
+
+    @property
+    def accepted(self) -> bool:
+        """Whether acceptance is established: a kept verdict, published in time.
+
+        The terminal envelope's `http_accepted` is the provisional verdict
+        decided before its link; the publication fact says whether the link
+        returned within the deadline.
+        """
+        return (
+            self.persisted is True
+            and publication_claim(self.envelope, self.publication)[0]
+        )
 
     @property
     def exit_code(self) -> int:
         """Return 0 accepted, 1 completed or stopped without acceptance, 2 refused."""
-        if self.envelope.http_accepted:
+        if self.accepted:
             return 0
         if self.envelope.campaign_outcome is CampaignOutcome.REFUSED:
             return 2
@@ -275,10 +295,22 @@ class AcceptanceResult:
     def compact_summary(self) -> dict[str, Any]:
         """Return the JSON-ready summary an operator sees."""
         envelope = self.envelope
+        publication = self.publication
         return {
             "attempt_id": envelope.attempt_id,
             "campaign_outcome": envelope.campaign_outcome.value,
-            "http_accepted": envelope.http_accepted,
+            "http_accepted": self.accepted,
+            "provisional_http_accepted": envelope.http_accepted,
+            "publication": (
+                ""
+                if self.persisted is not True
+                else publication_claim(envelope, publication)[1] or "accepted"
+            ),
+            "publication_path": self.publication_path,
+            "publication_failure": self.publication_failure,
+            "link_returned_offset_seconds": (
+                publication.link_returned_offset_seconds if publication else None
+            ),
             "primary_failure": envelope.primary_failure,
             "reasons": list(envelope.reasons),
             "admission": [item.model_dump(mode="json") for item in envelope.admission],
@@ -510,6 +542,17 @@ class _Attempt:
     #: Where the attempt is: admission, product, finalization or publication.
     #: An interruption is named by it when no dispatch names it better.
     phase: str = "admission"
+    #: The one temporal contract carried to publication, once it exists.
+    temporal: _TemporalContract | None = None
+    #: The clock at the last checkpoint passed before the terminal link.
+    link_checked: float | None = None
+    publication: AcceptancePublication | None = None
+    publication_path: str = ""
+    publication_failure: str = ""
+    #: Set once nothing more is owed after the terminal write: its
+    #: publication fact was recorded (or failed with a named reason), or no
+    #: terminal envelope was linked at all.
+    publication_done: bool = False
 
     def authority(self, purpose: str, deadline: float) -> str:
         """Decide one dispatch against the claim and the paired receiver.
@@ -808,7 +851,7 @@ def accept_cold_http(
             if stuck:
                 exc.add_note(stuck)
             boundary = "during:campaign_claim"
-        if attempt.claim is not None and not attempt.completed:
+        if attempt.claim is not None and not attempt.publication_done:
             _cancelled_outside_the_product(attempt, exc, boundary)
         raise
     finally:
@@ -897,7 +940,9 @@ def _cancelled_outside_the_product(
 
     The terminal link is the publication point. If this invocation's terminal
     envelope is already stored, the attempt completed before the interruption
-    and its published verdict stands: nothing contradicts or rewrites it.
+    and its published verdict stands: nothing contradicts or rewrites it. What
+    is still owed is its publication fact, recorded from the store's answer:
+    the link happened no later than now.
     """
     envelope = attempt.envelope
     published = _stored(attempt, completed=True)
@@ -905,6 +950,17 @@ def _cancelled_outside_the_product(
         attempt.envelope_path = published
         attempt.completed = True
         _close_receiver(attempt)
+        _record_publication(
+            attempt,
+            returned=attempt.boundaries.clock(),
+            observed_by="interruption_recovery",
+            interruption=type(error).__name__,
+        )
+        return
+    if attempt.completed:
+        # The terminal write was attempted and nothing was linked; its
+        # persistence failure is already recorded, and nothing is retried.
+        attempt.publication_done = True
         return
     if boundary is None and attempt.phase == "admission":
         boundary = "after:" + (
@@ -1242,16 +1298,37 @@ class _TemporalContract:
     A local operation cannot always be preempted, so the contract is not that
     it stops on time; it is that its lateness is observed. The first boundary
     reached after the deadline is kept, and acceptance is refused from it.
+    The boundaries run from the evidence join to the last checkpoint before
+    the terminal link; the link itself is bounded by the publication fact.
     """
 
-    def __init__(self, deadline: float, clock: Callable[[], float]) -> None:
+    def __init__(
+        self, deadline: float, clock: Callable[[], float], started: float
+    ) -> None:
         self.deadline = deadline
         self._clock = clock
+        self.started = started
         self.exceeded_at = ""
+
+    @classmethod
+    def of(cls, attempt: _Attempt) -> _TemporalContract:
+        """Return the attempt's contract, creating it from its ledger once."""
+        if attempt.temporal is None:
+            clock, ledger = attempt.boundaries.clock, attempt.ledger
+            attempt.temporal = cls(ledger.deadline(), clock, clock() - ledger.elapsed())
+        return attempt.temporal
 
     def cross(self, boundary: str) -> None:
         if not self.exceeded_at and self._clock() > self.deadline:
             self.exceeded_at = boundary
+
+    def offset(self, instant: float) -> float:
+        """Return one clock reading as seconds since the attempt started."""
+        return round(instant - self.started, 3)
+
+
+class _PublicationWithheld(RuntimeError):
+    """A checkpoint before the terminal link found the allowance gone."""
 
 
 def _finalize(
@@ -1267,7 +1344,7 @@ def _finalize(
     """
     ledger = attempt.ledger
     attempt.phase = "finalization"
-    temporal = _TemporalContract(ledger.deadline(), attempt.boundaries.clock)
+    temporal = _TemporalContract.of(attempt)
     summary = result.compact_summary() if result is not None else None
     interrupted: BaseException | None = None
     ledger_refusals: list[str] = []
@@ -1306,7 +1383,7 @@ def _finalize(
     # which completes the envelope as a cancellation if this did not.
     attempt.phase = "publication"
     _judge(attempt, result, evaluation, ledger_refusals, temporal)
-    completed = _complete(attempt, product_summary=summary)
+    completed = _complete(attempt, product_summary=summary, temporal=temporal)
     if interrupted is not None:
         raise interrupted
     return completed
@@ -1482,7 +1559,7 @@ def _judge(
     temporal: _TemporalContract,
 ) -> None:
     """Write the verdict and the facts it rests on into the envelope."""
-    envelope, ledger = attempt.envelope, attempt.ledger
+    envelope = attempt.envelope
     envelope.clients = evaluation.clients
     envelope.ordering = evaluation.ordering
     envelope.release_failures = [
@@ -1493,15 +1570,14 @@ def _judge(
     reasons = list(evaluation.reasons)
     if attempt.cancelled:
         reasons.insert(0, attempt.cancelled)
-    # The publication boundary: nothing after this point can change the
-    # verdict, and the terminal write that follows is not claimed to be
-    # preemptible. It is still inside the one absolute deadline or it is late.
-    temporal.cross("publication")
-    started = attempt.boundaries.clock() - ledger.elapsed()
+    # The verdict is provisional until publication: the budget assembly and
+    # the terminal write still consume the same deadline, and `_complete`
+    # withholds acceptance if any of them finds it gone.
     envelope.temporal = {
-        "deadline_offset_seconds": round(temporal.deadline - started, 3),
-        "publication_offset_seconds": round(ledger.elapsed(), 3),
+        "deadline_offset_seconds": temporal.offset(temporal.deadline),
+        "verdict_offset_seconds": temporal.offset(attempt.boundaries.clock()),
         "exceeded_at": temporal.exceeded_at,
+        "publication_point": "terminal_link",
     }
     if temporal.exceeded_at:
         reasons.append(f"acceptance_deadline_exceeded:{temporal.exceeded_at}")
@@ -1604,7 +1680,9 @@ def _release_claim(attempt: _Attempt) -> None:
 
 
 def _complete(
-    attempt: _Attempt, product_summary: dict[str, Any] | None = None
+    attempt: _Attempt,
+    product_summary: dict[str, Any] | None = None,
+    temporal: _TemporalContract | None = None,
 ) -> AcceptanceResult:
     """Release the claim, then write the terminal envelope exactly once.
 
@@ -1613,11 +1691,20 @@ def _complete(
     write-ahead envelope, before `completed_at` is set. What still cannot be
     kept is a persistence failure: nothing on disk claims acceptance and the
     caller is told the envelope was not persisted.
+
+    Every step that shapes the published bytes consumes the one deadline:
+    budget assembly, a late begin, and inside the store the begun envelope's
+    reload, the serialization and the flush. Past it, acceptance is withheld
+    and the same evidence is published as late, naming the boundary. The
+    link itself is not claimed to be preemptible; the publication fact
+    recorded after it bounds its instant.
     """
     envelope = attempt.envelope
     boundaries = attempt.boundaries
+    temporal = temporal or _TemporalContract.of(attempt)
     _release_claim(attempt)
     envelope.budget = _budget(attempt.grant, attempt.ledger, attempt)
+    temporal.cross("budget")
     path = attempt.envelope_path
     persisted = False
     try:
@@ -1630,30 +1717,126 @@ def _complete(
             else:
                 path = boundaries.envelope_store.begin(envelope)
             attempt.envelope_begun = True
+            temporal.cross("envelope_begin")
     except Exception as exc:
         envelope.persistence_failures.append(f"envelope_not_begun:{type(exc).__name__}")
     envelope.completed_at = boundaries.now()
+    _decide(attempt, temporal)
+
+    def checkpoint(boundary: str) -> None:
+        temporal.cross(boundary)
+        if temporal.exceeded_at and envelope.http_accepted:
+            raise _PublicationWithheld(boundary)
+        attempt.link_checked = boundaries.clock()
+
     started = boundaries.clock()
     if attempt.envelope_begun:
         try:
-            path = boundaries.envelope_store.complete(envelope)
+            try:
+                path = boundaries.envelope_store.complete(
+                    envelope, checkpoint=checkpoint
+                )
+            except _PublicationWithheld:
+                # Nothing was linked. The same evidence is published late.
+                _decide(attempt, temporal)
+                path = boundaries.envelope_store.complete(envelope)
             persisted = True
         except Exception as exc:
             envelope.persistence_failures.append(
                 f"envelope_not_completed:{type(exc).__name__}"
             )
+    returned = boundaries.clock()
     if not persisted and envelope.http_accepted:
         # The verdict cannot stand on evidence that was not kept.
         envelope.http_accepted = False
         envelope.reasons.append("envelope_not_persisted")
     attempt.completed = True
+    if persisted:
+        attempt.envelope_path = path
+        _record_publication(attempt, returned=returned, observed_by="coordinator")
+    attempt.publication_done = True
     return AcceptanceResult(
         envelope=envelope,
         envelope_path=path,
         product_summary=product_summary,
         persisted=persisted,
-        completion_seconds=max(0.0, boundaries.clock() - started),
+        completion_seconds=max(0.0, returned - started),
+        publication=attempt.publication,
+        publication_path=attempt.publication_path,
+        publication_failure=attempt.publication_failure,
     )
+
+
+def _decide(attempt: _Attempt, temporal: _TemporalContract) -> None:
+    """Fix the decision the terminal envelope carries, at this instant.
+
+    A deadline already passed withholds acceptance, keeps the evidence and
+    names the boundary; the first failure stays the primary one.
+    """
+    envelope = attempt.envelope
+    if temporal.exceeded_at:
+        reason = f"acceptance_deadline_exceeded:{temporal.exceeded_at}"
+        if reason not in envelope.reasons:
+            envelope.reasons.append(reason)
+        if envelope.http_accepted:
+            envelope.http_accepted = False
+        if not envelope.primary_failure:
+            envelope.primary_failure = _bounded(reason)
+    envelope.temporal.update(
+        {
+            "deadline_offset_seconds": temporal.offset(temporal.deadline),
+            "decided_offset_seconds": temporal.offset(attempt.boundaries.clock()),
+            "exceeded_at": temporal.exceeded_at,
+            "publication_point": "terminal_link",
+        }
+    )
+
+
+def _record_publication(
+    attempt: _Attempt, *, returned: float, observed_by: str, interruption: str = ""
+) -> None:
+    """Record once when this invocation's terminal envelope was linked.
+
+    The link happened after the last checkpoint and no later than `returned`;
+    only that upper bound is compared with the deadline. A fact already
+    stored for this invocation is adopted, never written twice. A fact that
+    cannot be recorded leaves acceptance unestablished, with its reason.
+    """
+    envelope, store = attempt.envelope, attempt.boundaries.envelope_store
+    temporal = _TemporalContract.of(attempt)
+    try:
+        stored = store.stored_publication(envelope)
+        if stored:
+            attempt.publication_path = stored
+            attempt.publication = store.load_publication(envelope.attempt_id)
+        else:
+            within = returned <= temporal.deadline
+            decided = envelope.temporal.get("decided_offset_seconds")
+            attempt.publication_path, attempt.publication = store.record_publication(
+                AcceptancePublication(
+                    attempt_id=envelope.attempt_id,
+                    started_at=envelope.started_at,
+                    terminal_path=attempt.envelope_path,
+                    provisional_http_accepted=envelope.http_accepted,
+                    deadline_offset_seconds=temporal.offset(temporal.deadline),
+                    decided_offset_seconds=(
+                        decided if isinstance(decided, int | float) else None
+                    ),
+                    link_checked_offset_seconds=(
+                        temporal.offset(attempt.link_checked)
+                        if attempt.link_checked is not None
+                        else None
+                    ),
+                    link_returned_offset_seconds=temporal.offset(returned),
+                    link_within_deadline=within,
+                    http_accepted=envelope.http_accepted and within,
+                    observed_by=observed_by,
+                    interruption=interruption,
+                )
+            )
+    except Exception as exc:
+        attempt.publication_failure = f"publication_not_recorded:{type(exc).__name__}"
+    attempt.publication_done = True
 
 
 def _refused(

@@ -8,9 +8,11 @@ which, and so the domain never learns about files.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Protocol
 
 from ...domain.enterprise.models.cold_http_acceptance import (
+    AcceptancePublication,
     ColdHttpAcceptanceEnvelope,
 )
 from ...domain.enterprise.models.service_qualification import (
@@ -38,8 +40,20 @@ class AcceptanceEnvelopePort(Protocol):
     def begin(self, envelope: ColdHttpAcceptanceEnvelope) -> str:
         """Create the envelope before any contact; raise if it exists."""
 
-    def complete(self, envelope: ColdHttpAcceptanceEnvelope) -> str:
-        """Write the terminal envelope once; a completed one is immutable."""
+    def complete(
+        self,
+        envelope: ColdHttpAcceptanceEnvelope,
+        *,
+        checkpoint: Callable[[str], None] | None = None,
+    ) -> str:
+        """Write the terminal envelope once; a completed one is immutable.
+
+        `checkpoint(boundary)` is called after each controlled step that
+        shapes the published bytes (`envelope_reload`,
+        `envelope_serialization`, `envelope_flush`, the last immediately before
+        the terminal link). If it raises, nothing is linked and the exception
+        propagates.
+        """
 
     def stored(
         self, envelope: ColdHttpAcceptanceEnvelope, *, completed: bool
@@ -49,6 +63,21 @@ class AcceptanceEnvelopePort(Protocol):
         It decides an interrupted write whose outcome is unknown; an
         unreadable stored file raises instead of answering.
         """
+
+    def record_publication(
+        self, publication: AcceptancePublication
+    ) -> tuple[str, AcceptancePublication]:
+        """Record, once, when this invocation's terminal envelope was linked.
+
+        The store binds the fact to the terminal file's digest and returns
+        the path and the recorded fact.
+        """
+
+    def stored_publication(self, envelope: ColdHttpAcceptanceEnvelope) -> str | None:
+        """Return this invocation's publication fact path, or None."""
+
+    def load_publication(self, attempt_id: str) -> AcceptancePublication:
+        """Return one attempt's recorded publication fact; raise if unreadable."""
 
 
 class ReceiverContinuity(Protocol):
