@@ -424,6 +424,43 @@ def _start_answer_facts(answer: str) -> tuple[str | None, dict[str, Any]]:
     return (before[:MAX_ANSWER_CHARS] if isinstance(before, str) else None), payload
 
 
+def _answer_payload(answer: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(answer)
+    except (TypeError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def ledger_release_outcome(
+    requests: Sequence[OperationEntry],
+    releases: Sequence[OperationEntry],
+    refused_releases: Sequence[OperationEntry],
+    start_answer: str,
+    release_answer: str,
+) -> str:
+    """Say what the ledger and the raw answers establish about one release.
+
+    Used when the product never returned a row for the client, as after an
+    interruption. It mirrors the product's own finalization vocabulary and
+    never infers a deletion the answer did not report.
+    """
+    if not requests:
+        return ""
+    if releases:
+        payload = _answer_payload(release_answer)
+        if not payload:
+            return "release_unanswered"
+        if payload.get("deleted") is True:
+            return "released"
+        if _answer_payload(start_answer).get("owned") is True:
+            return "release_unverified"
+        return "ownership_unknown"
+    if refused_releases:
+        return "release_refused"
+    return "release_not_dispatched"
+
+
 def client_outcome(
     grant: ColdHttpGrant,
     client_index: int,
@@ -473,7 +510,21 @@ def client_outcome(
             None,
         )
     if row is None:
+        refused_releases = [
+            item
+            for item in entries
+            if item.refused and item.purpose == OWNED_RELEASE_PREFIX + expectation_id
+        ]
+        outcome.release_outcome = ledger_release_outcome(
+            requests,
+            releases,
+            refused_releases,
+            start_answer,
+            outcome.release_answer,
+        )
         outcome.findings = ["no_verification_row"]
+        if requests and outcome.release_outcome != "released":
+            outcome.findings.append("client_ownership_unresolved")
         return outcome
     observed = row.observed
     go_result = observed.get("go_result")

@@ -2840,3 +2840,218 @@ authorized publication. The delivery commit and tree are reported in the
 handoff, because a commit cannot contain its own identity; the clean
 exact-delivery gate is run on that commit. Delivery status is
 `READY_FOR_REVIEW`, not acceptance.
+
+## 2026-09-22 execution-contract repair and scalable HTTP-by-IP profile after `7736546` (risk L)
+
+### Identity and instructions
+
+Input: clean `feature/server-pt-goal-foundations` at
+`77365460a6caaf85f5caec5fee20d70eec3a2d61`, tree
+`cbd22ffd9811edd3ad74236b696b4cd641822ebd`, reviewed parent `4da4a10`, with
+`cisco/main` resolving to `6263344e31ba3b0de6539d652f2cd06fc73a3562` and an
+ancestor of HEAD. The package resolves to this checkout's `src` from its own
+`.venv`. `AGENTS.md`, `CLAUDE.md` and the standard were read from this checkout
+and still have the digests recorded above (`a9f0e384...`, `29312201...`,
+`2de0d5b2...`); `/context` and a Codex loader listing cannot be observed from
+this session and stay pending. The work order
+`Unified_ServerPT_HTTP_Safety_and_Scale_Opus55_GPT6Sol.md` authorizes offline
+implementation, tests and local commits only: no Packet Tracer contact, launch
+or mutation, no publication, merge, claim reset, capability promotion, bridge
+protocol change or CP-SCALE mutation. Existing Q/D attempts stay consumed.
+
+### Problem and intended outcome
+
+Four defects make the one-attempt envelope weaker than its record claims, and
+the product it governs is still limited to one access switch:
+
+1. `_Attempt.authority` decides each dispatch against the campaign claim only.
+   A replacement Packet Tracer that polls the same mailbox receives every later
+   product command until postflight notices it.
+2. `_complete` sets `completed_at` and then calls `begin` on an unbegun
+   envelope, which the store refuses, so a reserved attempt refused on process,
+   history or manifest admission leaves no durable reason.
+3. `_contact` and `_verify_http` handle `Exception` only; a `KeyboardInterrupt`
+   after a client was created skips its release and the terminal envelope.
+4. The deadline check precedes the record reload, the claim release and the
+   verdict, so a verdict can be published after the absolute limit.
+
+Beyond repair, two clients are the legacy smoke profile, not a product
+invariant. The outcome is one delivery where A1-A4 are closed with causal
+regressions, the public product admits plan-derived N-client and multi-access
+same-VLAN paths with per-dependency evidence, a versioned scalable acceptance
+profile derives its scope and budget from the manifest and compiled plans, and
+the cost of evaluation and evidence scales with the work.
+
+### Scope and explicit exclusions
+
+In scope: the acceptance coordinator, its ports, envelope store use and CLI
+(`--prepare` is added); the receiver-continuity reader; the E6 client
+finalization; the product's path admission, readiness plan, readiness gate and
+E5 endpoint batching; a registered trunk-continuity observation; the domain
+path, continuity, scope, cost and evaluator rules; tests, a plan-driven campus
+simulator and a scale benchmark; this section.
+
+Excluded: LIVE work, wireless, dynamic-routing qualification, DNS/hostname
+paths, mail, DHCP acquisition, HTTPS, a replacement service runtime, a second
+product path, changes to E5 trunk verification semantics, to the bridge or to
+the MCP four-input signature, and mutation of CP-SCALE fixtures, evidence or
+other worktrees. Routed completion is not claimed (see B7).
+
+### Design delta
+
+**A1 - receiver continuity per governed dispatch.** The ledger already asks
+`_Attempt.authority` immediately before each effect-scope dispatch, protected
+releases included, and recomputes allowance after it. The guard now also takes
+one fresh receiver observation, bounded by the dispatch's absolute deadline and
+the local observation cap, and compares it with the preflight incarnation using
+the existing `diagnostic_lifecycle_continuity` rule (mailbox traffic excluded,
+as in the diagnostic `live_authority`) plus the granted build binding. Missing,
+changed, ambiguous (zero or several Packet Tracer processes) or unreadable
+observations lose authority irreversibly; claim loss still does. Postflight
+stays. The receiver port is `AcceptanceBoundaries.bind_receiver(preflight,
+deadline) -> ReceiverContinuity`. Its default re-reads the full lifecycle per
+dispatch (correct but slow). Production composes a Windows handle-bound reader:
+after preflight it opens a query/synchronize handle on the paired PID, confirms
+the pairing with one more full read (PID and creation identity unchanged, so
+the handle names that incarnation; Windows does not reuse a PID while a handle
+is open), and then answers each dispatch from a fresh read of that handle
+(not signalled, same creation time, same image path) and of the process table
+(exactly one Packet Tracer image, that PID). Versions are properties of the
+bound image and are carried from the confirmed pairing; nothing about
+permission is cached. The interval between the local check and the receiver
+executing the command remains unfenced and is declared.
+
+**A2 - durable reserved refusals.** The write-ahead envelope is begun right
+after the claim and permanent reservation, before the process, history and
+manifest reads. Every later refusal completes it once with its reason.
+`_complete` never sets `completed_at` before a begin exists, and the store's
+incomplete-begin invariant is unchanged. A begin that fails is a persistence
+failure (`envelope_persisted: false`), reported apart from ordinary refusals.
+
+**A3 - cancellation is terminal.** `_verify_http` attempts the owned release on
+a non-`Exception` interruption exactly once (never when the interruption hit
+the release itself) and re-raises. The coordinator catches `BaseException`
+after the claim: it stops ordinary work, finalizes the envelope with
+`cancelled:<type>@<boundary>` as the primary failure, derives unresolved
+ownership from the ledger and tap, never converts to success, and re-raises
+the original exception. An interruption inside finalization still completes
+the envelope. An uncatchable kill is not covered.
+
+**A4 - one temporal contract through publication.** The absolute attempt
+deadline is checked at the publication boundary, after the record reload, the
+claim release and the verdict and immediately before the terminal write. Past
+it, acceptance is withheld as `acceptance_deadline_exceeded:<boundary>` while
+the reloaded evidence is kept. `elapsed_at_verdict_seconds` and
+`completion_seconds` are recorded; the write itself is not claimed to be
+preemptible.
+
+**B1 - versioned profiles.** Grant schema 1 stays the legacy two-client smoke
+profile with its frozen 1,015 / 420 / 2 / 40 proposal and unchanged rules.
+Schema 2 is the scalable profile `http_by_ip_scalable_v1`: it names the
+selected client and server deployed names, the digest of the derived scope and
+an explicit budget equal to the derived proposal. A schema 1 grant or envelope
+is never read as schema 2.
+
+**B2 - derived scope.** The product closure (`ServiceEffectClosure`) gains the
+per-client dependency paths and readiness groups on deployed names. The
+acceptance scope (server, clients, placements, paths, groups, E5 signatures,
+checks, cost model) is derived from it and hashed canonically. A schema 2 grant
+must list exactly the selected client set; duplicates, omissions, foreign
+names, a scope digest or budget other than the derived ones, and any client
+whose binding or path is unobservable refuse at A11, before E1. `--prepare`
+computes the same scope offline from the stored manifest and intent.
+
+**B3 - N clients.** No client-position branch remains. Each selected client
+has one first request, one outcome and one bounded release charged to the
+protected reserve, whose size is the selected client count. The product's
+deterministic order is kept and clients stay sequential.
+
+**B4 - public admission.** `_unsupported_paths` classifies each selected
+client-to-server dependency from the compiled plans. A same-VLAN path between
+two access switches is admitted when the compiled trunk links carrying that
+VLAN connect them. The foundation identity, model, static/DHCP, site and
+single-placement guards are unchanged, and a routed path still refuses at A8.
+
+**B5 - dependency readiness.** The readiness plan yields access groups per
+`(switch, VLAN)` and trunk-continuity groups per `(VLAN, component)`. A
+dependent names every group its path needs and is admitted only when all admit
+it; a failed shared group blocks its dependents only. Memo keys are the
+complete identity (semantic switch ids, deployed names, VLAN, interface set)
+plus a dependency revision that `invalidate_devices` advances. Group ceiling
+and time budget are derived from the plan and equal the legacy 4 / 120 s
+whenever the plan fits them.
+
+**B6 - trunk continuity.** A new bounded runtime observation reads the
+registered `show interfaces trunk` on each switch of the component per round,
+through the same bounded channel as the forwarding observer. An edge is usable
+only when both ends are fresh, complete, uniquely attributed, trunking, and
+carry the VLAN as allowed, active and forwarding. A dependent is admitted when
+its client and server switches are connected by usable edges in a timely,
+authoritative round; an unreadable switch makes its edges unusable. Rounds
+stop when every required pair is connected or the window closes. STP-blocked
+redundant trunks are therefore not failures, which is why trunks stay outside
+the governed E5 closure: the E5 trunk readback requires forwarding on every
+trunk and would refuse the planner's own redundant campus.
+
+**B7 - routed paths, the named blocker.** The planner routes a separate server
+segment through SVIs on a 3560. No registered E5 action enables IPv4 routing on
+that device and no registered observable reads its routing table (`show ip
+route` is registered only filtered by OSPF, EIGRP and RIP). Routed dependents
+therefore refuse at A8 as
+`routed_path_unobservable:ipv4_routing_action_and_route_table_reader_unregistered`,
+with the derived gateway interfaces and trunk components named. No routed
+completion is reported.
+
+**C1 - cost model.** A pure model derives, from unique E5 actions, IOS devices
+and phases, endpoint sends, readbacks, readiness groups and their bounded
+samples, continuity rounds, selected client checks and releases: ordinary
+operations, reserved release operations, ordinary seconds, polling windows and
+reserved finalization seconds. The legacy table stays the schema 1 proposal;
+schema 2 requires the grant to equal the derived proposal. An executed worst
+case must not exceed it.
+
+**C2 - linear evaluation.** The evaluator builds one index of ledger entries by
+purpose and expectation and one of record rows by expectation, then judges each
+client from them.
+
+**C3 - bounded batches.** Endpoint addressing is sent in chunks of at most 64
+calls, each its own batch id, so script size is bounded and a failed chunk
+marks only its actions.
+
+### Requirements and acceptance criteria
+
+| Id | Acceptance criterion | Tests |
+| --- | --- | --- |
+| R-A1 | After a replacement at a transport milestone (different PID, same PID with a new incarnation, receiver gone, two receivers, unreadable identity) no later governed dispatch, protected release included, reaches the terminal; authority loss is sticky and named; a failed product read with an unchanged receiver is still accepted; claim loss still blocks | `test_cold_http_contract_repairs.py` |
+| R-A1c | The handle-bound reader detects exit, a second image and a changed path, charges its cost, and falls back to a full read when it cannot bind | `test_receiver_continuity.py` |
+| R-A2 | A refusal after reservation on process, history and manifest admission reloads from the real store with its attempt id and reason; an unwritable store is a persistence failure, not an ordinary refusal | `test_cold_http_contract_repairs.py` |
+| R-A3 | Interruption during start, inspection, release and record reload leaves one terminal envelope with the cancellation primary, at most one release dispatch per client, no acceptance, and the original exception re-raised | `test_cold_http_contract_repairs.py` |
+| R-A4 | A successful run whose record reload crosses the deadline is not accepted and keeps its evidence; an on-time control is accepted | `test_cold_http_contract_repairs.py` |
+| R-B1/B2 | Schema 2 grants refuse duplicates, omissions, foreign clients, a wrong scope digest or budget and unobservable bindings before E1; schema 1 behaviour is unchanged | `test_scalable_http_acceptance.py`, existing acceptance suites |
+| R-B3 | 2, 20, 200 and 1,000 selected clients each get one first request, one outcome and one release, in the product order | `test_http_acceptance_scale.py` |
+| R-B4/B7 | Multi-access same-VLAN paths are admitted by the public tool; routed paths refuse before any effect naming the contract; other guards unchanged | `test_service_path_closure.py`, `test_http_acceptance_scale.py` |
+| R-B5/B6 | Faults on a shared trunk, one client port and an unrelated branch block exactly their dependents; every selected client stays represented; memo reuse and invalidation follow identity and revision | `test_readiness_dependency_groups.py`, `test_trunk_continuity.py`, `test_http_acceptance_scale.py` |
+| R-C1 | The derived model covers the executed worst case; schema 1 values are untouched | `test_scalable_http_acceptance.py` |
+| R-C2/C3 | Evaluation is linear in retained evidence; endpoint sends are bounded and partial | `test_http_acceptance_scale.py`, `test_bounded_endpoint_batches.py` |
+| R-C4 | Campus at least as large as CP-SCALE in declared devices and links, and growth for immediate, delayed and persistent non-FWD, measured with authority-check cost | `test_http_acceptance_scale.py`, benchmark below |
+| R-D1 | MCP and acceptance routes agree on the same controlled backend; default-off hooks leave legacy, qualification, Voice and namespace behaviour unchanged | existing parity and surface suites |
+
+### Invariants
+
+- The public tool keeps its four inputs and composes no control.
+- No acceptance code builds JavaScript, IOS or URLs of its own.
+- One observation decides one dispatch; nothing about permission is reused.
+- A schema 1 grant is decided exactly as before, frozen budget included.
+- Nothing outside the admitted closure is mutated; trunks, transit VLANs and
+  SVIs are proven, never configured, by the service path.
+- A refused call never reached the channel; a counted call reached it once.
+- Historical evidence is not rewritten; failed evidence is kept.
+
+### Test design
+
+Unit: path classification, continuity rule, readiness plan and gate, scope and
+cost derivation, evaluator indexes, receiver reader (fakes plus the current
+process on Windows). Integration and system: the real coordinator, stores,
+shared composition, product use case, runtimes and readiness loop over a
+plan-driven simulated terminal, labelled as simulated Packet Tracer. LIVE
+acceptance is not applicable to this delivery.

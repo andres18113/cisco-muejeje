@@ -408,6 +408,9 @@ class ClientLease:
     """
 
     state: ClientOwnership = ClientOwnership.NONE
+    #: Set when the one bounded release attempt begins. An interruption that
+    #: arrives after it began never starts a second one.
+    finalization_started: bool = False
 
 
 @dataclass(frozen=True)
@@ -3409,20 +3412,31 @@ class PacketTracerEnterpriseServiceRuntime:
             )
         lease = ClientLease()
         try:
-            row = self._web_fetch(expectation, scheme, lease)
-        except Exception as error:
-            # Caught HERE, not in `verify`: a reader that raised observed
-            # nothing, and the client it may already own still has to be
-            # released before this row leaves the reader.
-            row = self._observed(
-                expectation,
-                observation=ObservationFact.INCONCLUSIVE,
-                method=f"{scheme}_client_fresh_content",
-                claim_level=claim,
-                cause=f"exception:{type(error).__name__}",
-                message="The web reader raised before completing its observation.",
-            )
-        return self._with_release(row, self._finalize_client(expectation, lease))
+            try:
+                row = self._web_fetch(expectation, scheme, lease)
+            except Exception as error:
+                # Caught HERE, not in `verify`: a reader that raised observed
+                # nothing, and the client it may already own still has to be
+                # released before this row leaves the reader.
+                row = self._observed(
+                    expectation,
+                    observation=ObservationFact.INCONCLUSIVE,
+                    method=f"{scheme}_client_fresh_content",
+                    claim_level=claim,
+                    cause=f"exception:{type(error).__name__}",
+                    message="The web reader raised before completing its observation.",
+                )
+            return self._with_release(row, self._finalize_client(expectation, lease))
+        except Exception:
+            raise
+        except BaseException:
+            # An interruption (KeyboardInterrupt, SystemExit) is not an
+            # observation and is never absorbed. The owned client still gets
+            # its one bounded release, unless the interruption hit that very
+            # release, and then the interruption continues outward.
+            if not lease.finalization_started:
+                self._finalize_client(expectation, lease)
+            raise
 
     def _web_fetch(self, expectation, scheme: str, lease: ClientLease):
         """Observe one web fetch, recording ownership in `lease` as it moves.
@@ -3843,6 +3857,7 @@ class PacketTracerEnterpriseServiceRuntime:
         command that may still execute late can leave a client this process
         will never see.
         """
+        lease.finalization_started = True
         if lease.state is ClientOwnership.NONE:
             return ReleaseOutcome(_RELEASE_NOTHING_OWNED, "no_client_requested")
         if lease.state is ClientOwnership.ABSENT:

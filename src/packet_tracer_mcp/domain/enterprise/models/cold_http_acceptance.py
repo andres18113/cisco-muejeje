@@ -31,6 +31,7 @@ from .service_qualification import (
     OperationEntry,
     QualificationRefusal,
     RefusalKind,
+    diagnostic_lifecycle_continuity,
     is_exact_packet_tracer_build,
     is_full_sha,
 )
@@ -568,6 +569,34 @@ def process_refusals(
     return tuple(found)
 
 
+def receiver_continuity_findings(
+    build: str,
+    preflight: DiagnosticLifecycleObservation | None,
+    observed: DiagnosticLifecycleObservation,
+) -> tuple[str, ...]:
+    """Decide whether one per-dispatch reading still names the paired receiver.
+
+    The rule is the diagnostic continuity rule, taken before a dispatch rather
+    than after the run: PID, image path, versions and creation identity must be
+    exactly the preflight ones, and an error (no process, several, unreadable,
+    late) is unknown and never the same process. Mailbox traffic is this
+    attempt's own in-flight work and is not identity, so it is excluded here
+    and judged at postflight. The granted build is re-read from the reading
+    itself, so a reading that names no build never passes on the preflight's.
+    """
+    found = [
+        item
+        for item in diagnostic_lifecycle_continuity(preflight, observed)
+        if not item.startswith("mailbox:")
+    ]
+    if not observed.error and build not in (
+        observed.product_version,
+        observed.file_version,
+    ):
+        found.append("process_instance:build_not_observed")
+    return tuple(found)
+
+
 def manifest_refusals(
     grant: ColdHttpGrant,
     *,
@@ -800,6 +829,11 @@ class AcceptanceBudget(BaseModel):
     reserve_used: int = 0
     elapsed_seconds: float = 0.0
     local_observation_seconds: float = 0.0
+    #: Per-dispatch receiver readings and the wall clock they cost. They are
+    #: local reads, never bridge operations, and they are part of the time the
+    #: attempt spent.
+    receiver_observations: int = 0
+    receiver_observation_seconds: float = 0.0
     entries: list[OperationEntry] = Field(default_factory=list)
 
 
@@ -856,6 +890,13 @@ class ColdHttpAcceptanceEnvelope(BaseModel):
     http_accepted: bool = False
     reasons: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
+    #: `cancelled:<type>@<boundary>` when an interruption ended the attempt;
+    #: it is the primary failure and never coexists with acceptance.
+    cancellation: str = ""
+    #: The one absolute deadline carried through the evidence join: offsets of
+    #: the deadline and of the publication boundary, and the first controlled
+    #: boundary that was reached after the deadline, if any.
+    temporal: dict[str, Any] = Field(default_factory=dict)
 
 
 #: What every envelope says about itself, whatever its outcome.

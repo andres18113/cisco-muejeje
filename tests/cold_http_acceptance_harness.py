@@ -431,6 +431,49 @@ class FakeLifecycle:
         return self.observations[0]
 
 
+@dataclass
+class FakeReceiver:
+    """The paired receiver as each governed dispatch reads it.
+
+    It answers from the same observation shape the production readers use.
+    `replace_with` stands for whatever happened to the process table: a new
+    PID, a new incarnation under the same PID, no process, two processes, or
+    an identity that cannot be read. `cost` is the local time one reading
+    spends, so feasibility is never shown only by a zero-latency trace.
+    """
+
+    clock: FakeClock
+    observation: DiagnosticLifecycleObservation
+    cost: float = 0.0
+    checks: int = 0
+    deadlines: list[float] = field(default_factory=list)
+    bound_to: DiagnosticLifecycleObservation | None = None
+    closed: bool = False
+    bind_error: Exception | None = None
+
+    def bind(self, preflight: DiagnosticLifecycleObservation, deadline: float):
+        """Bind to the preflight pairing, as the composition would."""
+        if self.bind_error is not None:
+            raise self.bind_error
+        self.bound_to = preflight
+        return self
+
+    def observe(self, deadline: float) -> DiagnosticLifecycleObservation:
+        """Return the current reading, spending its local cost."""
+        self.checks += 1
+        self.deadlines.append(deadline)
+        self.clock.now += self.cost
+        return self.observation
+
+    def replace_with(self, observation: DiagnosticLifecycleObservation) -> None:
+        """Make every later reading describe another process state."""
+        self.observation = observation
+
+    def close(self) -> None:
+        """Release the binding."""
+        self.closed = True
+
+
 def paired_process(**overrides: Any) -> DiagnosticLifecycleObservation:
     """Return the granted Packet Tracer incarnation with a quiet mailbox."""
     values: dict[str, Any] = {
@@ -474,6 +517,7 @@ class Harness:
     boundaries: AcceptanceBoundaries
     source: SourceTreeIdentity
     intent_json: str
+    receiver: FakeReceiver
     opened_channels: list[str] = field(default_factory=list)
 
     def grant(self, **overrides: Any) -> dict[str, Any]:
@@ -514,6 +558,7 @@ def build_harness(tmp_path: Path, **boundary_overrides: Any) -> Harness:
     _topology, inventory = deployed_topology()
     terminal = ColdHttpTerminal(tmp_path, inventory, clock)
     lifecycle = FakeLifecycle(clock, [paired_process()])
+    receiver = FakeReceiver(clock, paired_process())
     source = SourceTreeIdentity(sha=SHA, tree=TREE, dirty=False)
     harness_holder: dict[str, Harness] = {}
 
@@ -544,6 +589,7 @@ def build_harness(tmp_path: Path, **boundary_overrides: Any) -> Harness:
         clock=clock,
         sleep=clock.sleep,
         now=lambda: datetime(2026, 9, 22, 12, 0, tzinfo=UTC),
+        bind_receiver=receiver.bind,
     )
     boundaries = replace(boundaries, **boundary_overrides)
     harness = Harness(
@@ -558,6 +604,7 @@ def build_harness(tmp_path: Path, **boundary_overrides: Any) -> Harness:
         boundaries=boundaries,
         source=source,
         intent_json=cold_http_intent(),
+        receiver=receiver,
     )
     harness_holder["h"] = harness
     return harness

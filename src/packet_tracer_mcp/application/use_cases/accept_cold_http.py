@@ -12,16 +12,23 @@ the order around that call:
    attempt reservation are taken in the shared scope, one Packet Tracer
    incarnation is paired with an empty mailbox, the deployment must have no
    stored run of any status, and the stored manifest must be the granted one.
-   The write-ahead envelope is created last. A refusal here dispatched nothing.
-2. **One fixed channel.** The granted channel is opened and its liveness read
-   before a ledger or a runtime exists. Every product dispatch then passes one
-   `OperationLedger`: counted once, admitted against one absolute deadline,
-   decided against the held campaign claim, and labelled by the product
-   boundary that made it. The compiled closure is compared with the grant
-   before E1. Only owned client releases may spend the protected reserve.
+   A refusal here dispatched nothing. The write-ahead envelope is begun as
+   soon as the attempt identity is reserved, so every later refusal is kept
+   with its reason.
+2. **One fixed channel.** The paired receiver is bound, then the granted
+   channel is opened and its liveness read before a ledger or a runtime
+   exists. Every product dispatch then passes one `OperationLedger`: counted
+   once, admitted against one absolute deadline, decided against the held
+   campaign claim and a fresh reading of the paired receiver, and labelled by
+   the product boundary that made it. The compiled closure is compared with
+   the grant before E1. Only owned client releases may spend the protected
+   reserve.
 3. **Finalization and judgement.** The mailbox is paired again, the run record
    is reloaded and compared with the public result, the dispatch order is
-   checked from the ledger, and the envelope is completed once.
+   checked from the ledger, the one absolute deadline is checked at the
+   publication boundary, and the envelope is completed once. An interruption
+   after the claim is finalized the same way, as a cancellation, and then
+   re-raised.
 
 The local checks are not an in-band receiver fence, and nothing here claims
 exactly-once execution or the exclusion of a replacement process. The grant
@@ -53,6 +60,7 @@ from ...domain.enterprise.models.cold_http_acceptance import (
     manifest_refusals,
     parse_grant,
     process_refusals,
+    receiver_continuity_findings,
     repository_acceptance_refusals,
 )
 from ...domain.enterprise.models.deployment import DeploymentManifest
@@ -84,11 +92,16 @@ from ...domain.enterprise.services.cold_http_acceptance_evidence import (
     bounded_answer,
     evaluate_attempt,
 )
-from ..ports.cold_http_acceptance import AcceptanceEnvelopePort, AcceptanceRunRecordPort
+from ..ports.cold_http_acceptance import (
+    AcceptanceEnvelopePort,
+    AcceptanceRunRecordPort,
+    ReceiverContinuity,
+)
 from ..ports.service_qualification import OpenedTransport, QualificationTransport
 from ..ports.service_run_record import DeploymentManifestPort
 from .apply_enterprise_services import (
     MAX_INTENT_JSON_BYTES,
+    ServiceEffectHalted,
     ServiceInvocationBinding,
     ServiceStageRuntimes,
     apply_enterprise_services,
@@ -104,6 +117,10 @@ MAX_DETAIL = 240
 #: A dispatch refused by the ledger after the product began is a stop fact.
 #: Only the first few are named in the verdict; the ledger keeps all of them.
 MAX_NAMED_REFUSALS = 4
+#: A receiver reading that cannot even start because the phase has no time
+#: left refuses that one dispatch without deciding authority: nothing was
+#: observed, and the next phase (a protected release) may still observe.
+RECEIVER_NOT_ADMITTED = "receiver_observation_not_admitted:time_budget_exhausted"
 
 
 def _bounded(value: object) -> str:
@@ -166,6 +183,28 @@ class AcceptanceBoundaries:
     now: Callable[[], datetime]
     proposal: ColdHttpProposal = COLD_HTTP_PROPOSAL
     local_observation_seconds: float = LOCAL_OBSERVATION_TIMEOUT_SECONDS
+    #: Binds the paired receiver for the per-dispatch reading. `None` reads
+    #: the full lifecycle for every dispatch, which is correct and slow.
+    bind_receiver: (
+        Callable[[DiagnosticLifecycleObservation, float], ReceiverContinuity] | None
+    ) = None
+
+
+class LifecycleReceiverContinuity:
+    """Answer every governed dispatch with one full lifecycle reading."""
+
+    def __init__(
+        self, lifecycle: Callable[[float | None], DiagnosticLifecycleObservation]
+    ) -> None:
+        """Bind the full lifecycle reader."""
+        self._lifecycle = lifecycle
+
+    def observe(self, deadline: float) -> DiagnosticLifecycleObservation:
+        """Return one full reading within the dispatch deadline."""
+        return self._lifecycle(deadline)
+
+    def close(self) -> None:
+        """Hold nothing, release nothing."""
 
 
 @dataclass
@@ -175,6 +214,13 @@ class AcceptanceResult:
     envelope: ColdHttpAcceptanceEnvelope
     envelope_path: str = ""
     product_summary: dict[str, Any] | None = None
+    #: Whether the terminal envelope reached the store. `None` means no
+    #: envelope was due, because nothing was reserved; `False` after a
+    #: reservation is a persistence failure, never an ordinary refusal.
+    persisted: bool | None = None
+    #: Wall clock the terminal write itself took, after the publication
+    #: boundary. It cannot be inside the envelope it wrote.
+    completion_seconds: float = 0.0
 
     @property
     def exit_code(self) -> int:
@@ -203,7 +249,10 @@ class AcceptanceResult:
             "operations_used": (
                 envelope.budget.used_operations if envelope.budget else 0
             ),
+            "cancellation": envelope.cancellation,
             "envelope_path": self.envelope_path,
+            "envelope_persisted": self.persisted,
+            "completion_seconds": round(self.completion_seconds, 3),
         }
 
 
@@ -251,30 +300,55 @@ class _EvidenceTap:
         raise AttributeError(name)
 
 
+class _Halted:
+    """Stop a labelled boundary once the attempt has lost authority.
+
+    After the first loss every later dispatch would be refused by the ledger
+    anyway. Stopping at the boundary instead means the product sees one halt
+    per boundary rather than a refused call per client, so a lost receiver or
+    claim stops the whole invocation without a single further dispatch.
+    """
+
+    def __init__(self, ledger: OperationLedger, lost: Callable[[], str]) -> None:
+        self._ledger = ledger
+        self._lost = lost
+
+    def check(self) -> None:
+        reason = self._lost()
+        if reason:
+            raise ServiceEffectHalted(f"execution_authority_lost:{reason}")
+
+
 class _LabelledConfiguration:
     """The E5 runtime, with each boundary's dispatches named in the ledger."""
 
-    def __init__(self, inner: Any, ledger: OperationLedger) -> None:
+    def __init__(self, inner: Any, ledger: OperationLedger, halted: _Halted) -> None:
         self._inner = inner
         self._ledger = ledger
+        self._halted = halted
 
     def inventory(self):
+        self._halted.check()
         with self._ledger.purpose_of(PURPOSE_INVENTORY):
             return self._inner.inventory()
 
     def apply_actions(self, actions):
+        self._halted.check()
         with self._ledger.purpose_of(PURPOSE_E5_APPLY):
             return self._inner.apply_actions(actions)
 
     def verify(self, expectations):
+        self._halted.check()
         with self._ledger.purpose_of(PURPOSE_E5_VERIFY):
             return self._inner.verify(expectations)
 
     def wait_for_voice_access_forwarding(self, expectations):
+        self._halted.check()
         with self._ledger.purpose_of("e5_voice_forwarding"):
             return self._inner.wait_for_voice_access_forwarding(expectations)
 
     def observe_access_forwarding(self, *args, **kwargs):
+        self._halted.check()
         with self._ledger.purpose_of(PURPOSE_READINESS):
             return self._inner.observe_access_forwarding(*args, **kwargs)
 
@@ -282,19 +356,23 @@ class _LabelledConfiguration:
 class _LabelledServices:
     """The E6 runtime, with each boundary's dispatches named in the ledger."""
 
-    def __init__(self, inner: Any, ledger: OperationLedger) -> None:
+    def __init__(self, inner: Any, ledger: OperationLedger, halted: _Halted) -> None:
         self._inner = inner
         self._ledger = ledger
+        self._halted = halted
 
     def inventory(self):
+        self._halted.check()
         with self._ledger.purpose_of(PURPOSE_INVENTORY):
             return self._inner.inventory()
 
     def apply_actions(self, actions):
+        self._halted.check()
         with self._ledger.purpose_of(PURPOSE_E6_APPLY):
             return self._inner.apply_actions(actions)
 
     def verify(self, expectation):
+        self._halted.check()
         with self._ledger.purpose_of(E6_VERIFY_PREFIX + expectation.id):
             return self._inner.verify(expectation)
 
@@ -302,11 +380,13 @@ class _LabelledServices:
 class _LabelledObserver:
     """The admission drift reader, named as such in the ledger."""
 
-    def __init__(self, inner: Any, ledger: OperationLedger) -> None:
+    def __init__(self, inner: Any, ledger: OperationLedger, halted: _Halted) -> None:
         self._inner = inner
         self._ledger = ledger
+        self._halted = halted
 
     def observe(self, runtime_device_name: str, interface: str):
+        self._halted.check()
         with self._ledger.purpose_of(PURPOSE_DRIFT):
             return self._inner.observe(runtime_device_name, interface)
 
@@ -338,10 +418,21 @@ class _Attempt:
     closure: ServiceEffectClosure | None = None
     effects_began: bool = False
     stop_facts: list[str] = field(default_factory=list)
+    receiver: ReceiverContinuity | None = None
+    receiver_observations: int = 0
+    receiver_seconds: float = 0.0
+    #: `cancelled:<type>@<boundary>` once an interruption was caught.
+    cancelled: str = ""
 
     def authority(self, purpose: str, deadline: float) -> str:
-        """Decide one dispatch against the held claim; the first loss is sticky."""
-        del purpose, deadline
+        """Decide one dispatch against the claim and the paired receiver.
+
+        Both are re-read for every governed dispatch, protected releases
+        included. The first loss is sticky: a window in which another process
+        may have answered cannot be closed retroactively. A reading that could
+        not start for lack of time refuses only this dispatch.
+        """
+        del purpose
         if self.authority_lost:
             return self.authority_lost
         try:
@@ -350,10 +441,62 @@ class _Attempt:
             )
         except Exception as exc:
             reasons = (f"campaign_claim:unverifiable:{type(exc).__name__}",)
+        if not reasons:
+            reasons = self.receiver_findings(deadline)
+            if reasons == (RECEIVER_NOT_ADMITTED,):
+                return RECEIVER_NOT_ADMITTED
         if reasons:
             self.authority_lost = _bounded(reasons[0])
             self.stop_facts.append(f"authority_lost:{self.authority_lost}")
         return self.authority_lost
+
+    def receiver_findings(self, deadline: float) -> tuple[str, ...]:
+        """Take one bounded reading of the paired receiver and judge it."""
+        if self.receiver is None:
+            return ("process_instance:receiver_not_bound",)
+        clock = self.boundaries.clock
+        bound = min(
+            float(deadline), clock() + self.boundaries.local_observation_seconds
+        )
+        if clock() >= bound:
+            return (RECEIVER_NOT_ADMITTED,)
+        started = clock()
+        try:
+            observed = self.receiver.observe(bound)
+        except Exception as exc:
+            observed = DiagnosticLifecycleObservation(
+                error=f"receiver_read_failed:{type(exc).__name__}"
+            )
+        finished = clock()
+        spent = max(0.0, finished - started)
+        self.receiver_observations += 1
+        self.receiver_seconds += spent
+        self.local_observation_seconds += spent
+        if finished > bound and not observed.error:
+            observed = DiagnosticLifecycleObservation(
+                error="local_observation_deadline_exceeded:receiver"
+            )
+        return receiver_continuity_findings(self.grant.build, self.preflight, observed)
+
+    def lost(self) -> str:
+        """Return the sticky authority loss, or ""."""
+        return self.authority_lost
+
+    def cancel(self, error: BaseException, boundary: str = "") -> None:
+        """Keep the first interruption, named by the boundary it hit.
+
+        Inside the product the boundary is the purpose of the last dispatch
+        the ledger saw, which is the one in flight or the one just finished.
+        """
+        if self.cancelled:
+            return
+        last = boundary or next(
+            (item.purpose for item in reversed(self.ledger.entries) if item.purpose),
+            "",
+        )
+        self.cancelled = _bounded(
+            f"cancelled:{type(error).__name__}@{last or 'coordinator'}"
+        )
 
     def wait_allowance(self) -> float:
         """Report what a nested product wait may still spend; nothing after loss."""
@@ -528,6 +671,24 @@ def accept_cold_http(
 def _claimed(request: AcceptanceRequest, attempt: _Attempt) -> AcceptanceResult:
     """Finish local admission while the campaign claim is held."""
     grant, envelope, boundaries = attempt.grant, attempt.envelope, attempt.boundaries
+    # The attempt identity is spent from here on, so its write-ahead envelope
+    # exists before the next read: whatever refuses it later is kept with its
+    # reason instead of disappearing with an unbegun envelope.
+    try:
+        attempt.envelope_path = boundaries.envelope_store.begin(envelope)
+        attempt.envelope_begun = True
+    except Exception as exc:
+        return _refused_after_claim(
+            attempt,
+            [
+                acceptance_refusal(
+                    RefusalKind.NOT_PERMITTED,
+                    AcceptanceSubject.ENVELOPE,
+                    f"envelope_not_writable:{type(exc).__name__}",
+                )
+            ],
+        )
+    envelope.checks.append("envelope_begun")
     deadline = min(
         boundaries.clock() + boundaries.local_observation_seconds,
         attempt.ledger.deadline(),
@@ -601,28 +762,70 @@ def _claimed(request: AcceptanceRequest, attempt: _Attempt) -> AcceptanceResult:
     )
     if found:
         return _refused_after_claim(attempt, found)
-    try:
-        attempt.envelope_path = boundaries.envelope_store.begin(envelope)
-        attempt.envelope_begun = True
-    except Exception as exc:
-        return _refused_after_claim(
-            attempt,
-            [
-                acceptance_refusal(
-                    RefusalKind.NOT_PERMITTED,
-                    AcceptanceSubject.ENVELOPE,
-                    f"envelope_not_writable:{type(exc).__name__}",
-                )
-            ],
-        )
-    envelope.checks.append("envelope_begun")
     return _contact(request, attempt, manifest)
+
+
+def _bind_receiver(attempt: _Attempt) -> str:
+    """Bind the paired receiver before any channel exists; return why not."""
+    boundaries = attempt.boundaries
+    deadline = min(
+        boundaries.clock() + boundaries.local_observation_seconds,
+        attempt.ledger.deadline(),
+    )
+    bind = boundaries.bind_receiver
+    started = boundaries.clock()
+    try:
+        if bind is None:
+            attempt.receiver = LifecycleReceiverContinuity(boundaries.lifecycle)
+        else:
+            attempt.receiver = bind(attempt.preflight, deadline)
+    except Exception as exc:
+        return f"receiver_binding_failed:{type(exc).__name__}"
+    finally:
+        attempt.local_observation_seconds += max(0.0, boundaries.clock() - started)
+    attempt.envelope.checks.append("receiver_bound")
+    attempt.envelope.process_preflight["receiver_binding"] = type(
+        attempt.receiver
+    ).__name__
+    return ""
+
+
+def _close_receiver(attempt: _Attempt) -> None:
+    receiver, attempt.receiver = attempt.receiver, None
+    if receiver is None:
+        return
+    try:
+        receiver.close()
+    except Exception as exc:
+        attempt.envelope.postflight_failures.append(
+            f"receiver_close:{type(exc).__name__}"
+        )
 
 
 def _contact(
     request: AcceptanceRequest, attempt: _Attempt, manifest: DeploymentManifest
 ) -> AcceptanceResult:
-    """Open the granted channel and run the one product invocation over it."""
+    """Bind the paired receiver, then run the product over the granted channel."""
+    unbound = _bind_receiver(attempt)
+    if unbound:
+        return _refused_after_claim(
+            attempt,
+            [
+                acceptance_refusal(
+                    RefusalKind.UNOBSERVABLE, AcceptanceSubject.PROCESS, unbound
+                )
+            ],
+        )
+    try:
+        return _contact_bound(request, attempt, manifest)
+    finally:
+        _close_receiver(attempt)
+
+
+def _contact_bound(
+    request: AcceptanceRequest, attempt: _Attempt, manifest: DeploymentManifest
+) -> AcceptanceResult:
+    """Run the product over the granted channel while the receiver is bound."""
     grant, envelope, boundaries = attempt.grant, attempt.envelope, attempt.boundaries
     ledger = attempt.ledger
     try:
@@ -667,6 +870,7 @@ def _contact(
     )
     result: ServiceStageResult | None = None
     product_error = ""
+    interrupted: BaseException | None = None
     try:
         session = boundaries.session_factory(channel)
 
@@ -690,11 +894,32 @@ def _contact(
         # The product never raises by contract; if it did, the primary fact
         # is that the invocation did not return, and that is what is kept.
         product_error = f"product_invocation_raised:{type(exc).__name__}"
+    except BaseException as exc:
+        # An interruption is not an error to absorb. The product's own client
+        # finalizer already made its one release attempt on the way out; this
+        # stops ordinary work, finalizes the envelope as a cancellation and
+        # re-raises the original exception.
+        attempt.cancel(exc)
+        interrupted = exc
     ledger.enter(LedgerPhase.FINALIZATION)
-    if bound.settle_pending_sends():
-        attempt.stop_facts.append("fire_and_forget_send_unresolved")
-    _close(attempt, opened)
-    return _finalize(attempt, tap, result, product_error)
+    try:
+        if bound.settle_pending_sends():
+            attempt.stop_facts.append("fire_and_forget_send_unresolved")
+        _close(attempt, opened)
+        _close_receiver(attempt)
+        completed = _finalize(attempt, tap, result, product_error)
+    except BaseException as late:
+        # `_finalize` completes the envelope on its own interruption and
+        # re-raises it; the first interruption stays the one that propagates.
+        if interrupted is None:
+            raise
+        attempt.envelope.postflight_failures.append(
+            f"interrupted_again:{type(late).__name__}"
+        )
+        raise interrupted from late
+    if interrupted is not None:
+        raise interrupted
+    return completed
 
 
 def _labelled(binding: ServiceInvocationBinding, attempt: _Attempt):
@@ -710,17 +935,18 @@ def _labelled(binding: ServiceInvocationBinding, attempt: _Attempt):
                 raise RuntimeError("The composed session has no inventory reader.")
             return reader(names)
 
+    halted = _Halted(ledger, attempt.lost)
     return replace(
         binding,
         runtimes=ServiceStageRuntimes(
             configuration=_LabelledConfiguration(
-                binding.runtimes.configuration, ledger
+                binding.runtimes.configuration, ledger, halted
             ),
-            services=_LabelledServices(binding.runtimes.services, ledger),
+            services=_LabelledServices(binding.runtimes.services, ledger, halted),
         ),
         record_store=attempt.boundaries.record_store,
         endpoint_observer=(
-            _LabelledObserver(binding.endpoint_observer, ledger)
+            _LabelledObserver(binding.endpoint_observer, ledger, halted)
             if binding.endpoint_observer is not None
             else None
         ),
@@ -731,16 +957,87 @@ def _labelled(binding: ServiceInvocationBinding, attempt: _Attempt):
     )
 
 
+class _TemporalContract:
+    """Carry the one absolute deadline through every controlled boundary.
+
+    A local operation cannot always be preempted, so the contract is not that
+    it stops on time; it is that its lateness is observed. The first boundary
+    reached after the deadline is kept, and acceptance is refused from it.
+    """
+
+    def __init__(self, deadline: float, clock: Callable[[], float]) -> None:
+        self.deadline = deadline
+        self._clock = clock
+        self.exceeded_at = ""
+
+    def cross(self, boundary: str) -> None:
+        if not self.exceeded_at and self._clock() > self.deadline:
+            self.exceeded_at = boundary
+
+
 def _finalize(
     attempt: _Attempt,
     tap: _EvidenceTap,
     result: ServiceStageResult | None,
     product_error: str,
 ) -> AcceptanceResult:
-    """Pair the process again, reload the record, judge, and complete once."""
-    grant, envelope, boundaries = attempt.grant, attempt.envelope, attempt.boundaries
+    """Pair the process again, reload the record, judge, and complete once.
+
+    An interruption anywhere in here still completes the envelope, as a
+    cancellation, and is then re-raised; it never becomes an acceptance.
+    """
     ledger = attempt.ledger
-    deadline = ledger.deadline()
+    temporal = _TemporalContract(ledger.deadline(), attempt.boundaries.clock)
+    summary = result.compact_summary() if result is not None else None
+    interrupted: BaseException | None = None
+    ledger_refusals: list[str] = []
+    evaluation = AcceptanceEvaluation()
+    try:
+        record, record_path, record_problems = _collect_evidence(
+            attempt, result, product_error, temporal
+        )
+        # The claim is released before the verdict, because its release is a
+        # finalization result like any other: a lock that another writer holds
+        # or that cannot be read says the exclusion did not cover this run to
+        # its end.
+        _release_claim(attempt)
+        temporal.cross("claim_release")
+        ledger_refusals = [
+            f"ledger_refused:{item.refused}@{item.purpose or 'none'}"
+            for item in ledger.entries
+            if item.refused
+        ]
+        evaluation = _evaluate(
+            attempt,
+            tap,
+            record=record,
+            record_path=record_path,
+            record_problems=record_problems,
+            summary=summary,
+            ledger_refusals=ledger_refusals,
+        )
+        temporal.cross("verdict")
+    except Exception:
+        raise
+    except BaseException as exc:
+        attempt.cancel(exc, "finalization")
+        interrupted = exc
+    _judge(attempt, result, evaluation, ledger_refusals, temporal)
+    completed = _complete(attempt, product_summary=summary)
+    if interrupted is not None:
+        raise interrupted
+    return completed
+
+
+def _collect_evidence(
+    attempt: _Attempt,
+    result: ServiceStageResult | None,
+    product_error: str,
+    temporal: _TemporalContract,
+) -> tuple[ServiceRunRecord | None, str, list[str]]:
+    """Take the postflight reading and reload the durable record, once each."""
+    grant, envelope, boundaries = attempt.grant, attempt.envelope, attempt.boundaries
+    deadline = attempt.ledger.deadline()
     if boundaries.clock() >= deadline:
         envelope.postflight_failures.append(
             "postflight_not_admitted:time_budget_exhausted"
@@ -759,74 +1056,137 @@ def _finalize(
     envelope.postflight_failures.extend(
         f"continuity:{item}" for item in envelope.continuity
     )
+    temporal.cross("postflight")
 
-    summary = result.compact_summary() if result is not None else None
     record: ServiceRunRecord | None = None
     record_path = ""
     record_problems: list[str] = []
     if product_error:
         record_problems.append(product_error)
-    if result is not None:
-        envelope.product = {
-            "run_id": result.run_id,
-            "record_path": result.record_path,
-            "status": result.status.value,
-            "refusal_code": result.refusal_code.value,
-            "blocked_reason": result.blocked_reason,
-            "persisted_stage": (
-                result.persisted_stage.value if result.persisted_stage else None
-            ),
-            "persist_error": result.persist_error,
-            "duration_ms": result.duration_ms,
-        }
-        if result.persist_error:
-            envelope.persistence_failures.append(
-                f"product_record:{_bounded(result.persist_error)}"
-            )
-        try:
-            record, record_path, digest = boundaries.record_store.load_evidence(
-                grant.deployment_id, result.run_id
-            )
-            envelope.product["record_sha256"] = digest
-            envelope.product["reloaded_record_path"] = record_path
-            envelope.readiness = [dict(item) for item in record.operational_readiness]
-        except Exception as exc:
-            problem = f"record_reload_failed:{type(exc).__name__}"
-            record_problems.append(problem)
-            envelope.persistence_failures.append(problem)
+    if result is None:
+        # The product never returned, so no run id reached this coordinator.
+        # Whatever it wrote ahead is still cited by path and bytes.
+        _cite_unreturned_records(attempt)
+        temporal.cross("record_reload")
+        return record, record_path, record_problems
+    envelope.product = {
+        "run_id": result.run_id,
+        "record_path": result.record_path,
+        "status": result.status.value,
+        "refusal_code": result.refusal_code.value,
+        "blocked_reason": result.blocked_reason,
+        "persisted_stage": (
+            result.persisted_stage.value if result.persisted_stage else None
+        ),
+        "persist_error": result.persist_error,
+        "duration_ms": result.duration_ms,
+    }
+    if result.persist_error:
+        envelope.persistence_failures.append(
+            f"product_record:{_bounded(result.persist_error)}"
+        )
+    try:
+        record, record_path, digest = boundaries.record_store.load_evidence(
+            grant.deployment_id, result.run_id
+        )
+        envelope.product["record_sha256"] = digest
+        envelope.product["reloaded_record_path"] = record_path
+        envelope.readiness = [dict(item) for item in record.operational_readiness]
+    except Exception as exc:
+        problem = f"record_reload_failed:{type(exc).__name__}"
+        record_problems.append(problem)
+        envelope.persistence_failures.append(problem)
+    temporal.cross("record_reload")
+    return record, record_path, record_problems
 
-    # The claim is released before the verdict, because its release is a
-    # finalization result like any other: a lock that another writer holds or
-    # that cannot be read says the exclusion did not cover this run to its end.
-    _release_claim(attempt)
-    ledger_refusals = [
-        f"ledger_refused:{item.refused}@{item.purpose or 'none'}"
-        for item in ledger.entries
-        if item.refused
-    ]
+
+#: At most this many unreturned product records are cited; a fresh-history
+#: attempt can have written exactly one.
+MAX_CITED_UNRETURNED_RECORDS = 4
+
+
+def _cite_unreturned_records(attempt: _Attempt) -> None:
+    """Cite, by path and digest, what a product that never returned wrote."""
+    grant, envelope = attempt.grant, attempt.envelope
+    store = attempt.boundaries.record_store
+    try:
+        names = store.deployment_history(grant.deployment_id)
+    except Exception as exc:
+        envelope.persistence_failures.append(
+            f"product_history_unreadable:{type(exc).__name__}"
+        )
+        return
+    cited: list[dict[str, Any]] = []
+    for name in names[:MAX_CITED_UNRETURNED_RECORDS]:
+        if not name.endswith(".json"):
+            continue
+        try:
+            record, path, digest = store.load_evidence(
+                grant.deployment_id, name.removesuffix(".json")
+            )
+        except Exception as exc:
+            cited.append({"entry": name, "error": type(exc).__name__})
+            continue
+        cited.append(
+            {
+                "run_id": record.run_id,
+                "record_path": path,
+                "record_sha256": digest,
+                "persisted_stage": (
+                    record.persisted_stage.value if record.persisted_stage else None
+                ),
+                "completed": record.completed_at is not None,
+            }
+        )
+    envelope.product["unreturned_records"] = cited
+
+
+def _evaluate(
+    attempt: _Attempt,
+    tap: _EvidenceTap,
+    *,
+    record: ServiceRunRecord | None,
+    record_path: str,
+    record_problems: list[str],
+    summary: dict[str, Any] | None,
+    ledger_refusals: list[str],
+) -> AcceptanceEvaluation:
+    """Run the judge over every independent source; a judge failure is kept."""
+    envelope = attempt.envelope
     stop_facts = [
         *attempt.stop_facts,
         *ledger_refusals[:MAX_NAMED_REFUSALS],
         *(f"postflight:{item}" for item in envelope.postflight_failures),
     ]
     try:
-        evaluation = evaluate_attempt(
-            grant,
+        return evaluate_attempt(
+            attempt.grant,
             closure=attempt.closure,
             record=record,
             record_problems=record_problems,
             summary=summary,
             record_path=record_path,
-            entries=ledger.entries,
+            entries=attempt.ledger.entries,
             answers=tap.answers,
             stop_facts=stop_facts,
         )
     except Exception as exc:
         # Evidence the judge cannot even read is not evidence of acceptance.
         # The attempt still ends with a recorded, terminal envelope.
-        evaluation = AcceptanceEvaluation(
+        return AcceptanceEvaluation(
             reasons=[*stop_facts, f"evaluation_failed:{type(exc).__name__}"]
         )
+
+
+def _judge(
+    attempt: _Attempt,
+    result: ServiceStageResult | None,
+    evaluation: AcceptanceEvaluation,
+    ledger_refusals: list[str],
+    temporal: _TemporalContract,
+) -> None:
+    """Write the verdict and the facts it rests on into the envelope."""
+    envelope, ledger = attempt.envelope, attempt.ledger
     envelope.clients = evaluation.clients
     envelope.ordering = evaluation.ordering
     envelope.release_failures = [
@@ -834,17 +1194,34 @@ def _finalize(
         for item in evaluation.clients
         if item.release_outcome != "released"
     ]
-    envelope.reasons = list(evaluation.reasons)
-    envelope.http_accepted = evaluation.accepted
+    reasons = list(evaluation.reasons)
+    if attempt.cancelled:
+        reasons.insert(0, attempt.cancelled)
+    # The publication boundary: nothing after this point can change the
+    # verdict, and the terminal write that follows is not claimed to be
+    # preemptible. It is still inside the one absolute deadline or it is late.
+    temporal.cross("publication")
+    started = attempt.boundaries.clock() - ledger.elapsed()
+    envelope.temporal = {
+        "deadline_offset_seconds": round(temporal.deadline - started, 3),
+        "publication_offset_seconds": round(ledger.elapsed(), 3),
+        "exceeded_at": temporal.exceeded_at,
+    }
+    if temporal.exceeded_at:
+        reasons.append(f"acceptance_deadline_exceeded:{temporal.exceeded_at}")
+    envelope.reasons = reasons
+    envelope.cancellation = attempt.cancelled
+    envelope.http_accepted = not reasons
     envelope.campaign_outcome = _campaign_outcome(attempt, result, ledger_refusals)
-    envelope.primary_failure = _primary_failure(attempt, result, evaluation.reasons)
-    return _complete(attempt, product_summary=summary)
+    envelope.primary_failure = _primary_failure(attempt, result, reasons)
 
 
 def _campaign_outcome(
     attempt: _Attempt, result: ServiceStageResult | None, ledger_refusals: list[str]
 ) -> CampaignOutcome:
     """Separate how the campaign ended from whether HTTP was accepted."""
+    if attempt.cancelled:
+        return CampaignOutcome.STOPPED
     if not attempt.effects_began and (
         result is None or result.stage is ServiceStage.ADMISSION
     ):
@@ -863,6 +1240,8 @@ def _primary_failure(
     attempt: _Attempt, result: ServiceStageResult | None, reasons: Sequence[str]
 ) -> str:
     """Keep the first fact that stopped or failed the attempt, unchanged."""
+    if attempt.cancelled:
+        return attempt.cancelled
     if attempt.authority_lost:
         return _bounded(f"authority_lost:{attempt.authority_lost}")
     refused = next((item for item in attempt.ledger.entries if item.refused), None)
@@ -889,6 +1268,8 @@ def _budget(
         reserve_used=ledger.reserve_used,
         elapsed_seconds=round(ledger.elapsed(), 3),
         local_observation_seconds=round(attempt.local_observation_seconds, 3),
+        receiver_observations=attempt.receiver_observations,
+        receiver_observation_seconds=round(attempt.receiver_seconds, 3),
         entries=list(ledger.entries),
     )
 
@@ -923,30 +1304,46 @@ def _release_claim(attempt: _Attempt) -> None:
 def _complete(
     attempt: _Attempt, product_summary: dict[str, Any] | None = None
 ) -> AcceptanceResult:
-    """Release the claim, then write the terminal envelope exactly once."""
+    """Release the claim, then write the terminal envelope exactly once.
+
+    The store's order is kept: a write-ahead envelope exists before a terminal
+    one. If the early begin failed, it is attempted once more here, as a
+    write-ahead envelope, before `completed_at` is set. What still cannot be
+    kept is a persistence failure: nothing on disk claims acceptance and the
+    caller is told the envelope was not persisted.
+    """
     envelope = attempt.envelope
+    boundaries = attempt.boundaries
     _release_claim(attempt)
     envelope.budget = _budget(attempt.grant, attempt.ledger, attempt)
-    envelope.completed_at = attempt.boundaries.now()
     path = attempt.envelope_path
+    persisted = False
     try:
         if not attempt.envelope_begun:
-            path = attempt.boundaries.envelope_store.begin(envelope)
+            path = boundaries.envelope_store.begin(envelope)
             attempt.envelope_begun = True
-        path = attempt.boundaries.envelope_store.complete(envelope)
     except Exception as exc:
-        # The verdict cannot stand on evidence that was not kept. The outcome
-        # is reported to the caller, and nothing on disk claims acceptance.
-        envelope.persistence_failures.append(
-            f"envelope_not_completed:{type(exc).__name__}"
-        )
-        if envelope.http_accepted:
-            envelope.http_accepted = False
-            envelope.reasons.append("envelope_not_persisted")
+        envelope.persistence_failures.append(f"envelope_not_begun:{type(exc).__name__}")
+    envelope.completed_at = boundaries.now()
+    started = boundaries.clock()
+    if attempt.envelope_begun:
+        try:
+            path = boundaries.envelope_store.complete(envelope)
+            persisted = True
+        except Exception as exc:
+            envelope.persistence_failures.append(
+                f"envelope_not_completed:{type(exc).__name__}"
+            )
+    if not persisted and envelope.http_accepted:
+        # The verdict cannot stand on evidence that was not kept.
+        envelope.http_accepted = False
+        envelope.reasons.append("envelope_not_persisted")
     return AcceptanceResult(
         envelope=envelope,
         envelope_path=path,
         product_summary=product_summary,
+        persisted=persisted,
+        completion_seconds=max(0.0, boundaries.clock() - started),
     )
 
 

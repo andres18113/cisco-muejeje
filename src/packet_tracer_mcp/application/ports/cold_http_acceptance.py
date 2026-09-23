@@ -13,6 +13,9 @@ from typing import Protocol
 from ...domain.enterprise.models.cold_http_acceptance import (
     ColdHttpAcceptanceEnvelope,
 )
+from ...domain.enterprise.models.service_qualification import (
+    DiagnosticLifecycleObservation,
+)
 from ...domain.enterprise.models.service_run_record import ServiceRunRecord
 from .service_run_record import ServiceRunRecordPort
 
@@ -37,3 +40,20 @@ class AcceptanceEnvelopePort(Protocol):
 
     def complete(self, envelope: ColdHttpAcceptanceEnvelope) -> str:
         """Write the terminal envelope once; a completed one is immutable."""
+
+
+class ReceiverContinuity(Protocol):
+    """One fresh local reading of the bound receiver, taken per governed dispatch.
+
+    `observe` answers with the same observation shape the lifecycle reader
+    produces, so the one continuity rule decides it. It never contacts Packet
+    Tracer, never caches a verdict and reports ambiguity as an error; it must
+    return within `deadline` or say that it overran. `close` releases whatever
+    local resources the binding holds.
+    """
+
+    def observe(self, deadline: float) -> DiagnosticLifecycleObservation:
+        """Return one fresh reading of the receiver the attempt bound."""
+
+    def close(self) -> None:
+        """Release the binding's local resources; never raises."""

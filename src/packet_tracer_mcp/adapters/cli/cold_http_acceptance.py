@@ -29,11 +29,13 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
+from ...application.ports.cold_http_acceptance import ReceiverContinuity
 from ...application.ports.service_qualification import OpenedTransport
 from ...application.use_cases.accept_cold_http import (
     AcceptanceBoundaries,
     AcceptanceChannel,
     AcceptanceRequest,
+    LifecycleReceiverContinuity,
     accept_cold_http,
 )
 from ...application.use_cases.apply_enterprise_services import (
@@ -42,6 +44,9 @@ from ...application.use_cases.apply_enterprise_services import (
     TransportSelection,
 )
 from ...domain.enterprise.models.cold_http_acceptance import ACCEPTANCE_CHANNEL
+from ...domain.enterprise.models.service_qualification import (
+    DiagnosticLifecycleObservation,
+)
 from ...domain.enterprise.models.service_run_record import SourceTreeIdentity
 from ...infrastructure.execution.file_bridge import FileBridge
 from ...infrastructure.execution.import_isolation_preflight import (
@@ -49,6 +54,9 @@ from ...infrastructure.execution.import_isolation_preflight import (
     governed_root_from_env,
 )
 from ...infrastructure.execution.product_channel import FixedChannelProductTransport
+from ...infrastructure.execution.receiver_continuity import (
+    HandleBoundReceiverContinuity,
+)
 from ...infrastructure.execution.service_qualification_lifecycle import (
     PacketTracerDiagnosticLifecycleReader,
 )
@@ -121,13 +129,28 @@ def _close_channel(opened: OpenedTransport) -> None:
         stop()
 
 
+def bind_production_receiver(
+    preflight: DiagnosticLifecycleObservation,
+    deadline: float,
+    *,
+    lifecycle: Callable[[float | None], DiagnosticLifecycleObservation],
+) -> ReceiverContinuity:
+    """Hold a handle on the paired process, or read the full lifecycle.
+
+    The fallback is the same check at its full cost, never a weaker one.
+    """
+    bound = HandleBoundReceiverContinuity.bind(preflight, deadline, lifecycle=lifecycle)
+    return bound if bound is not None else LifecycleReceiverContinuity(lifecycle)
+
+
 def production_boundaries(governed_root: Path) -> AcceptanceBoundaries:
     """Compose the LIVE boundaries; constructing them performs no I/O."""
+    lifecycle = PacketTracerDiagnosticLifecycleReader().read
     return AcceptanceBoundaries(
         import_preflight=ImportIsolationPreflight(governed_root),
         runtime_identity=runtime_identity,
         repository=lambda: repository_identity(governed_root),
-        lifecycle=PacketTracerDiagnosticLifecycleReader().read,
+        lifecycle=lifecycle,
         # Exclusion is taken beside the mailbox, which is what two checkouts
         # share, never in a record directory neither of them can see.
         campaign_coordinator=FileCampaignCoordinator(),
@@ -147,6 +170,7 @@ def production_boundaries(governed_root: Path) -> AcceptanceBoundaries:
         clock=time.monotonic,
         sleep=time.sleep,
         now=lambda: datetime.now(UTC),
+        bind_receiver=partial(bind_production_receiver, lifecycle=lifecycle),
     )
 
 
