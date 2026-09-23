@@ -189,20 +189,39 @@ class FileCampaignCoordinator:
             attempt_id=attempt_id,
         )
 
-    def abandon(self, *, holder: str) -> bool:
+    def abandon(self, *, holder: str) -> str:
         """Remove the campaign lock only while it names `holder`.
 
-        It is for a caller whose claim failed with an unknown reservation: the
-        lock it may hold is provably its own, and no attempt marker is ever
-        touched. Return whether a lock was removed.
+        It is for a caller whose claim failed without handing back a claim:
+        a lock that names its holder is provably its own, and no attempt marker
+        is ever touched. Return `released`, or `not_held` when the lock is
+        absent or names another holder. Raise `CampaignCoordinationError` when
+        the lock cannot be read or removed, because then it may remain.
         """
         if not holder or safe_name_component(holder, "") != holder:
-            return False
+            return "not_held"
         try:
             lock_path = resolve_within(self._scope, LOCK_NAME)
-        except ValueError:
-            return False
-        return self._remove_own(lock_path, holder)
+            stored = json.loads(lock_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return "not_held"
+        except (OSError, ValueError) as exc:
+            raise CampaignCoordinationError(
+                f"campaign_lock_unreadable:{type(exc).__name__}"
+            ) from exc
+        if not isinstance(stored, dict) or not isinstance(stored.get("holder"), str):
+            raise CampaignCoordinationError("campaign_lock_unreadable:malformed")
+        if stored["holder"] != holder:
+            return "not_held"
+        try:
+            lock_path.unlink()
+        except FileNotFoundError:
+            return "not_held"
+        except OSError as exc:
+            raise CampaignCoordinationError(
+                f"campaign_lock_not_removed:{type(exc).__name__}"
+            ) from exc
+        return "released"
 
     def verify(self, claim: CampaignClaim) -> tuple[str, ...]:
         """Name what the shared scope now says about this claim, if anything.

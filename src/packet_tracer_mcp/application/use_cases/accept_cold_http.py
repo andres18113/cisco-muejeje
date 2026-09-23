@@ -755,7 +755,7 @@ def accept_cold_http(
         except Exception as exc:
             # A claim can fail after it reserved the attempt (an outcome it
             # could not report); only this holder's reservation says so.
-            unknown = _recover_claim(attempt, holder, exc)
+            unknown, stuck = _recover_claim(attempt, holder, exc)
             if attempt.claim is not None:
                 return _refused_after_claim(
                     attempt,
@@ -770,19 +770,23 @@ def accept_cold_http(
                 )
             # Nothing is written for a reservation that is not provably this
             # invocation's; an unknown one is named, never called absent.
-            return _refused(
-                envelope,
-                [
+            refusals = [
+                acceptance_refusal(
+                    RefusalKind.NOT_PERMITTED,
+                    AcceptanceSubject.CAMPAIGN,
+                    f"campaign_claim_outcome_unknown:{type(exc).__name__}"
+                    f":reservation_unreadable:{exc}"
+                    if unknown
+                    else f"campaign_not_exclusive:{exc}",
+                )
+            ]
+            if stuck:
+                refusals.append(
                     acceptance_refusal(
-                        RefusalKind.NOT_PERMITTED,
-                        AcceptanceSubject.CAMPAIGN,
-                        f"campaign_claim_outcome_unknown:{type(exc).__name__}"
-                        f":reservation_unreadable:{exc}"
-                        if unknown
-                        else f"campaign_not_exclusive:{exc}",
+                        RefusalKind.NOT_PERMITTED, AcceptanceSubject.CAMPAIGN, stuck
                     )
-                ],
-            )
+                )
+            return _refused(envelope, refusals)
         envelope.checks.append("campaign_claim")
         summary = getattr(attempt.claim, "compact_summary", None)
         envelope.campaign = {"claim": summary() if callable(summary) else {}}
@@ -797,7 +801,9 @@ def accept_cold_http(
         # reserved; the coordinator already rolled back a lock that was not.
         boundary = None
         if attempt.claim is None:
-            _recover_claim(attempt, holder, exc)
+            _, stuck = _recover_claim(attempt, holder, exc)
+            if stuck:
+                exc.add_note(stuck)
             boundary = "during:campaign_claim"
         if attempt.claim is not None and not attempt.completed:
             _cancelled_outside_the_product(attempt, exc, boundary)
@@ -809,19 +815,22 @@ def accept_cold_http(
             _release_claim(attempt)
 
 
-def _recover_claim(attempt: _Attempt, holder: str, error: BaseException) -> str:
+def _recover_claim(
+    attempt: _Attempt, holder: str, error: BaseException
+) -> tuple[str, str]:
     """Take back the reservation an unfinished claim made for this holder.
 
-    Return nothing when the claim was recovered or this holder provably
-    reserved nothing, and why otherwise the reservation is unknown. An unknown
-    reservation is never written for, since it may not be this invocation's.
-    Whenever no claim is recovered, a campaign lock that names this holder is
-    removed: it is provably its own, and nothing else could release it.
+    Return why the reservation is unknown and why a lock of this holder may
+    remain; both are empty when the claim was recovered, or when this holder
+    provably reserved nothing and holds no lock. An unknown reservation is
+    never written for, since it may not be this invocation's. Whenever no claim
+    is recovered, a campaign lock that names this holder is removed: it is
+    provably its own, and nothing else could release it.
     """
     coordinator = attempt.boundaries.campaign_coordinator
     recover = getattr(coordinator, "recover", None)
     if not callable(recover):
-        return ""
+        return "", ""
     unknown = ""
     try:
         claim = recover(attempt_id=attempt.grant.attempt_id, holder=holder)
@@ -835,21 +844,25 @@ def _recover_claim(attempt: _Attempt, holder: str, error: BaseException) -> str:
             "claim": summary() if callable(summary) else {},
             "recovered_after": type(error).__name__,
         }
-        return ""
-    released = False
+        return "", ""
+    lock = "not_held"
     abandon = getattr(coordinator, "abandon", None)
     if callable(abandon):
         try:
-            released = bool(abandon(holder=holder))
-        except Exception:
-            released = False
-    if unknown or released:
+            lock = str(abandon(holder=holder))
+        except Exception as exc:
+            lock = "unknown:" + _bounded(str(exc) or type(exc).__name__)
+    if unknown or lock != "not_held":
         attempt.envelope.campaign = {
             "holder": holder,
             "reservation": unknown or "not_reserved",
-            "lock": "released" if released else "not_removed",
+            "lock": lock,
         }
-    return unknown
+    stuck = ""
+    if lock.startswith("unknown:"):
+        # Every later claim refuses while it stays; the operator must see it.
+        stuck = f"campaign_lock_may_remain:{holder}:{lock.removeprefix('unknown:')}"
+    return unknown, stuck
 
 
 def _stored(attempt: _Attempt, *, completed: bool) -> str:

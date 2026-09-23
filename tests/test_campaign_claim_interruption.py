@@ -156,12 +156,24 @@ def test_abandon_removes_only_this_holders_lock_and_never_a_marker(
     coordinator = FileCampaignCoordinator(scope)
     coordinator.claim(attempt_id=ATTEMPT, holder=HOLDER)
 
-    assert coordinator.abandon(holder="0" * 32) is False
+    assert coordinator.abandon(holder="0" * 32) == "not_held"
     assert (scope / LOCK_NAME).exists()
-    assert coordinator.abandon(holder=HOLDER) is True
+    assert coordinator.abandon(holder=HOLDER) == "released"
     assert not (scope / LOCK_NAME).exists()
     assert _marker(scope).exists()
-    assert coordinator.abandon(holder=HOLDER) is False
+    assert coordinator.abandon(holder=HOLDER) == "not_held"
+
+
+def test_abandon_reports_a_lock_it_cannot_read(tmp_path: Path):
+    """A lock whose holder cannot be read may be this holder's: never silent."""
+    scope = tmp_path / "campaign"
+    scope.mkdir()
+    (scope / LOCK_NAME).write_text("{", encoding="utf-8")
+
+    with pytest.raises(CampaignCoordinationError, match="campaign_lock_unreadable"):
+        FileCampaignCoordinator(scope).abandon(holder=HOLDER)
+
+    assert (scope / LOCK_NAME).read_text(encoding="utf-8") == "{"
 
 
 @pytest.mark.parametrize("holder", ["", "../x", "a b"])

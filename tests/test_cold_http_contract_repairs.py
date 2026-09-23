@@ -844,6 +844,63 @@ def test_an_unreadable_reservation_after_a_failed_claim_leaves_no_lock(
     assert harness.terminal.log == []
 
 
+@pytest.mark.parametrize("failure", ["ordinary", "interruption"])
+def test_a_lock_that_cannot_be_removed_after_a_failed_claim_is_reported(
+    tmp_path: Path, failure: str
+):
+    """A3: a campaign lock that may remain is named where the operator reads."""
+    from dataclasses import replace
+
+    from packet_tracer_mcp.infrastructure.persistence.campaign_coordination import (
+        CampaignCoordinationError,
+    )
+
+    harness = build_harness(tmp_path)
+    scope = harness.coordinator.scope
+    marker = scope / f"attempt-{ATTEMPT}.json"
+
+    class StuckLock:
+        """A claim that reserved and failed, and a lock that will not go."""
+
+        def __init__(self, inner) -> None:
+            self.inner = inner
+            self.holder = ""
+
+        def claim(self, **kwargs):
+            self.holder = self.inner.claim(**kwargs).holder
+            marker.write_text("{", encoding="utf-8")
+            if failure == "ordinary":
+                raise TimeoutError("claim outcome unknown")
+            raise KeyboardInterrupt
+
+        def abandon(self, **kwargs):
+            raise CampaignCoordinationError("campaign_lock_not_removed:PermissionError")
+
+        def __getattr__(self, name):
+            return getattr(self.inner, name)
+
+    stuck = StuckLock(harness.coordinator)
+    harness.boundaries = replace(harness.boundaries, campaign_coordinator=stuck)
+
+    if failure == "ordinary":
+        result = harness.run()
+        reasons = result.compact_summary()["reasons"]
+        assert any(
+            "campaign_lock_not_removed:PermissionError" in item and stuck.holder in item
+            for item in reasons
+        ), reasons
+        assert result.envelope.campaign["lock"].startswith("unknown:")
+    else:
+        with pytest.raises(KeyboardInterrupt) as interrupted:
+            harness.run()
+        notes = " ".join(getattr(interrupted.value, "__notes__", []))
+        assert "campaign_lock_not_removed:PermissionError" in notes
+        assert stuck.holder in notes
+
+    assert (scope / LOCK_NAME).exists()
+    assert not harness.envelope_store.path_for(ATTEMPT).exists()
+
+
 def test_a_refused_claim_over_an_unreadable_marker_keeps_its_reason(tmp_path: Path):
     """A2: an unknown reservation adds to the claim's reason, never replaces it."""
     harness = build_harness(tmp_path)
