@@ -3683,3 +3683,483 @@ evaluator over the plan-driven SIMULATED campus, with whole-envelope fault
 injection. Scale: deterministic visit and build counts over growing synthetic
 evidence, and the existing end-to-end benchmark. LIVE acceptance is not
 applicable to this delivery.
+
+### Design refinements made during implementation
+
+The design above was committed (`496bfd5`) before any production edit. The
+refinements below are inside that contract; each has a regression.
+
+- **Two counters, one sequence.** The gate numbers an episode when it calls
+  its observer; the scalable labelled runtime numbers the calls it receives
+  per group key, before anything can refuse them. Every gate observer call
+  reaches that runtime exactly once, so both count the same events. The
+  evaluator does not assume it: a ledger episode that no record row carries is
+  `readiness_episode_unrecorded`, and a row episode with no ledger dispatch is
+  `readiness_episode_not_dispatched`, for every decision of that group.
+- **Decision marks by retained result.** The gate keeps every observation it
+  made for its whole invocation (current, superseded and narrowed), so the
+  identity of the result object it decided with is stable while it renders
+  the rows; the mark is written only onto that observation's dependent entry.
+- **Foreign rows are not read.** A row whose identity is not a group of the
+  derived scope cannot speak for any client. A row of a scoped group that fails
+  validation refuses every decision it carries, not only the faulted port.
+- **The ledger oracle keeps its own view.** `scalable_ordering_findings` still
+  requires, from the ledger alone, some episode of every group before a
+  client's first request; which episode admitted the client, and when, is now
+  bound per client by `readiness_evidence`.
+- **Recovery adopts, never duplicates.** A publication fact already stored for
+  this invocation is adopted by a recovering handler, never written twice.
+- **Scope digest.** Adding link ends changes every schema 2 scope digest. No
+  schema 2 grant was ever issued, and a grant must equal the scope the
+  executing commit derives, so nothing issued is invalidated.
+- **R2 delegation.** The Windows census fix and its tests were implemented by a
+  delegated Codex task in an isolated worktree (`wip/r2-windows-census`,
+  its own `.venv`); it could not commit there because the worktree's index
+  lies outside its sandbox. The diff was reviewed and integrated here with two
+  changes: the private error is also cleared before `CreateToolhelp32Snapshot`,
+  and the binding-failure route test composes the real
+  `bind_production_receiver`. The dispatch-failure route test keeps a binder
+  that mirrors it on the harness's fake clock, because the production reader
+  compares deadlines on the monotonic clock its coordinator uses.
+- **Rows are read twice.** The existing reload comparison serializes the record
+  once more; the visit counts below include it.
+
+### What was delivered, path by path
+
+- **R1.** `domain/enterprise/services/readiness_evidence.py` (new: strict
+  parsers, per-row validation, decision index, per-group supersession,
+  per-client binding); `scalable_http_acceptance_evidence.py` (uses it, keeps
+  the ledger oracle); `acceptance_evidence_index.py` (`READINESS_PREFIX`,
+  `readiness_episode_spans`; the superseded `ReadinessIndex` is removed);
+  `service_access_readiness.py` (`episode` on group results, `trunk_link_ends`);
+  `service_access_readiness_gate.py` (episode ordinals and revisions, decision
+  marks); `accept_cold_http.py` (`readiness:<key>#<ordinal>` labels);
+  `service_entry.py` and `apply_enterprise_services.py` (closure link ends);
+  `scalable_http_acceptance.py` (scope link ends).
+- **R2.** `infrastructure/execution/receiver_continuity.py`
+  (`ProcessTableUnreadable`, the documented end, capture before cleanup, the
+  binding and per-dispatch causes).
+- **R3.** `accept_cold_http.py` (`_TemporalContract.of`, `_decide`, the
+  checkpointed `_complete`, `_record_publication`, recovery,
+  `AcceptanceResult.accepted`, the CLI summary);
+  `infrastructure/persistence/cold_http_acceptance_store.py` (checkpoints,
+  `record_publication`, `stored_publication`, `load_publication`);
+  `application/ports/cold_http_acceptance.py`;
+  `domain/enterprise/models/cold_http_acceptance.py` (`AcceptancePublication`,
+  `publication_claim`, temporal fields).
+- **R4.** `readiness_evidence.py` and `scalable_http_acceptance_evidence.py`
+  (built once, hoisted maxima, one bounded reference per client for group
+  faults); `trunk_continuity.py` (`usable_links` indexes readings and ports
+  once); `_names` in `scalable_http_acceptance.py`.
+- **Review corrections.** `readiness_evidence.py` (exact trunk-port sets,
+  first-fault rows, `evidence_findings`); `scalable_http_acceptance_evidence.py`
+  (every dispatched purpose must name the scope); `cold_http_acceptance.py`
+  (`publication_claim` derives timeliness from the fact's offsets);
+  `cold_http_acceptance_store.py` (`load_publication` checks the terminal
+  file's name and SHA-256); `acceptance_evidence_index.py`
+  (`readiness_episode`, the one canonical label parser).
+- **Tests.** `test_readiness_evidence_binding.py` (36),
+  `test_acceptance_evaluation_linearity.py` (9),
+  `test_windows_process_census.py` (13), `test_acceptance_publication_boundary.py`
+  (16); updated `test_cold_http_contract_repairs.py` (temporal key names, the
+  publication fact after a post-link interruption) and
+  `test_cold_http_acceptance_route.py` (a store fake that accepts the new
+  keyword); `tests/http_acceptance_scale_benchmark.py` (the claim, per-case
+  processes, RSS, publication size, source identity).
+
+### Shared contracts and schema changes
+
+| Contract | Change | Compatibility |
+| --- | --- | --- |
+| Readiness record row | adds `episode` (observed rows only) and dependent `decision` | additive; legacy readers ignore them |
+| Scalable ledger purpose | `readiness:<key>` becomes `readiness:<key>#<ordinal>` | scalable profile only; the legacy label is unchanged |
+| Closure readiness group, `ReadinessGroupScope` | adds `links` | additive; schema 2 scope digests change |
+| `AcceptanceEnvelopePort.complete` | adds keyword `checkpoint` | fakes must accept the keyword |
+| `AcceptanceEnvelopePort` | adds `record_publication`, `stored_publication`, `load_publication` | new write-once `<attempt>.publication.json` |
+| Envelope `temporal` | `publication_offset_seconds` (it was the verdict instant) becomes `verdict_offset_seconds`; adds `decided_offset_seconds`, `publication_point` | no historical envelope exists |
+| Envelope `http_accepted` | now the provisional verdict | the claim is `publication_claim(envelope, fact)` |
+| `AcceptanceResult` | adds `accepted`, `publication`, `publication_path`, `publication_failure`; `exit_code` uses `accepted` | CLI summary `http_accepted` is the claim, `provisional_http_accepted` the verdict |
+| `ProcessApi.snapshot` | may raise `ProcessTableUnreadable` | `None` still accepted from other implementations |
+
+### Requirement-to-test mapping
+
+| Requirement | Tests |
+| --- | --- |
+| R1a | binding `test_a_positive_continuity_summary_over_bad_readings_refuses` (no, unexecuted, foreign, wrong-VLAN, repeated, missing-switch, late readings and a missing port of an STP-blocked trunk), `test_a_link_that_is_not_in_the_derived_scope_refuses`, `test_the_whole_envelope_refuses_incomplete_continuity_evidence` (no readings, missing port) |
+| R1b | binding `test_an_access_sample_that_its_history_does_not_support_refuses` (history not fresh, foreign, absent, miscounted, repeated interface, contradicted labels, missing field) |
+| R1c | binding `test_a_request_between_listening_and_forwarding_samples_is_refused`, `test_a_second_admitting_row_for_the_same_decision_is_ambiguous`, `test_a_client_listed_twice_in_one_row_is_refused`, `test_a_client_without_a_decision_is_refused`, `test_an_older_record_without_episode_identity_cannot_be_accepted`, `test_a_dispatch_outside_the_derived_scope_refuses_the_attempt` (foreign group, no ordinal, a leading-zero or zero ordinal, unselected request and release), `test_every_dispatch_of_the_unchanged_campus_names_the_scope`; scalable `test_a_bypassed_readiness_gate_fails_the_per_group_ordering_oracle` |
+| R1d | binding `test_a_decision_older_than_its_group_revision_is_stale`, `test_a_later_revision_dispatched_before_a_request_supersedes_it` (earlier requests stay accepted) |
+| R1e | binding `test_the_unchanged_campus_is_accepted_with_blocked_redundant_trunks`, `test_delayed_forwarding_is_accepted_from_its_admitting_sample`, `test_each_decision_names_the_episode_and_revision_the_gate_used`, `test_legitimate_narrowing_is_bound_to_the_narrowed_episode`; the existing scalable, campus and scale suites |
+| R2a | census `test_documented_end_returns_every_row_and_closes_once`, `test_first_read_failure_is_unreadable_even_for_no_more_files` (0, 5, 18), `test_failure_after_primary_reports_one_row_and_closes_once`, `test_failure_before_second_receiver_declines_bind_and_observe`, `test_false_next_without_error_is_unreadable`, `test_next_error_is_captured_before_close_replaces_it`, `test_invalid_snapshot_has_no_handle_to_close`; the unchanged `test_receiver_continuity.py` (real Win32 self/child, same-PID and helper incarnation) |
+| R2b | census `test_governed_route_refuses_binding_failure_before_channel`, `test_governed_route_stops_at_failed_dispatch_and_owned_releases` |
+| R3a | publication `test_a_timely_attempt_is_accepted_with_its_publication_fact`; repairs `test_an_on_time_evidence_join_is_accepted`, `test_the_legacy_worst_case_fits_with_receiver_and_dispatch_cost` |
+| R3b | publication `test_a_step_after_the_verdict_that_crosses_the_deadline_withholds_acceptance` (budget, reload, serialization, flush); repairs `test_a_reload_that_crosses_the_deadline_withholds_acceptance`, `test_a_verdict_reached_after_the_deadline_names_the_verdict_boundary` |
+| R3c | publication `test_a_link_that_returns_after_the_deadline_does_not_establish_acceptance` |
+| R3d | publication `test_a_persistence_error_withdraws_a_timely_verdict`, `test_a_late_decision_whose_late_write_fails_keeps_the_first_failure_primary`, `test_an_interruption_immediately_before_the_link_is_a_cancellation`, `test_an_interruption_immediately_after_the_link_keeps_the_published_verdict` (in time, late), `test_an_interruption_while_recording_the_fact_still_records_it`, `test_a_contradictory_publication_fact_establishes_nothing`, `test_a_fact_whose_terminal_bytes_changed_cannot_be_loaded`; repairs `test_every_interruption_after_reservation_leaves_a_terminal_envelope`, `test_an_interruption_after_the_terminal_link_leaves_the_published_verdict`; route `test_an_envelope_that_cannot_be_completed_withdraws_acceptance` |
+| R4a | linearity `test_the_evidence_grows_in_every_dimension`, `test_each_episode_is_derived_once_and_each_element_read_a_bounded_number_of_times` (30/1, 90/3, 240/3), `test_the_counting_apparatus_sees_a_per_client_scan`, `test_degraded_evidence_is_reported_once_not_copied_per_client`, `test_one_growing_component_is_derived_with_linear_inner_lookups` (10, 100, 1,000 switches) |
+| R4b | scale `test_two_hundred_clients_on_one_site_through_the_whole_envelope`, `test_a_thousand_clients_over_three_sites_through_the_whole_envelope`; the benchmark below |
+
+### RED before the fix, then causal RED on the fix
+
+RED first, against the code the design commit `496bfd5` carries (identical to
+`cc272c9` outside the brief):
+
+- **R1.** The new binding module run against the old evaluator: 25 of 27
+  failed and the two counter-controls passed. For the format-independent
+  faults the old evaluator *accepted* the faulted evidence: every multi-access
+  client with a continuity round that had no, unexecuted, foreign, repeated,
+  wrong-VLAN or missing-switch readings; every client of a switch whose
+  history was not fresh, was foreign, was miscounted or whose labels
+  contradicted the sample; the client whose request was moved between its
+  episode's LIS and FWD samples; and, end to end, the envelope whose product
+  recorded a joined summary with no readings. The other failures need the new
+  episode identity and fail for that reason, not as reproductions.
+- **R3.** A scratch reproduction (not committed) over the old coordinator
+  and store, run in the delegated `496bfd5` worktree, whose only changes were
+  the uncommitted R2 files, which R3 does not touch: after an on-time
+  verdict, a budget assembly or a serialization that ended at 501 s linked an
+  envelope with `http_accepted: true` and exit code 0 under the 420 s
+  contract, `exceeded_at` empty and `publication_offset_seconds: 1.0` (the
+  verdict instant).
+- **R2.** The delegated task reported 12 of 13 new tests failing with only
+  `snapshot()` reverted; that count is its own report. The causal rows below
+  were run here.
+- **R4.** The work order's own measurement (N(N+1) visits of N E5 entries) is
+  the RED; the control test shows the counting apparatus measures a per-client
+  maximum as exactly clients x E5 entries.
+
+Causal RED at `afa7ddf`, the last code commit: each row patched one
+behavior out of `src/`, ran only its selected regressions and restored the
+bytes (checked by SHA-256). The restored selection then passed 66 of 66 and
+`git status` was empty. The first 19 rows were also run at `98e9c99` with the
+same counts.
+
+| Disabled behavior | Selected regressions failing |
+| --- | --- |
+| R1 continuity re-derivation (row findings and pair join ignored) | 9 of 9 |
+| R1 access re-derivation and history agreement ignored | 7 of 7 |
+| R1 episode dispatched before the request | 1 of 1 |
+| R1 later revision supersedes | 1 of 1 |
+| R1 decision revision equals episode revision | 1 of 1 |
+| R1 ambiguous decisions refused | 1 of 1 |
+| R1 repeated dependents refused | 1 of 1 |
+| R1 gate decision marks | 3 of 3 |
+| R1 ledger episode ordinals | 2 of 2 |
+| R1 derived scope link ends | 1 of 1 |
+| R4 E5 boundary maximum per client | 3 of 3 |
+| R4 readiness evidence built per client | 3 of 3 |
+| R2 only `ERROR_NO_MORE_FILES` ends a census | 6 of 13 (the other 7 are the normal end, first-read and invalid-handle cases, which that line does not decide) |
+| R2 private error cleared before `Process32NextW` | 1 of 1 |
+| R3 budget assembly consumes the deadline | 1 of 4 (the other three name other boundaries) |
+| R3 store checkpoints withhold a late publication | 4 of 5 (the fifth is the budget boundary) |
+| R3 link upper bound compared with the deadline | 2 of 3 (the third is the in-time control) |
+| R3 recovery records the owed publication fact | 4 of 4 |
+| R3 result reports the claim, not the provisional verdict | 1 of 1 |
+| Review: each reading answers exactly its trunk ports | 2 of 2 |
+| Review: a group inconsistency is one bounded reference per client | 1 of 1 |
+| Review: the first reading fault names the row | 1 of 1 |
+| Review: readings indexed once per derivation | 3 of 3 |
+| Final review: every dispatched purpose names the scope | 6 of 6 |
+| Final review: the claim derives timeliness from the fact's offsets | 1 of 3 (the other two are the provisional-verdict and boolean checks) |
+| Final review: a fact is read back only with its terminal digest | 1 of 1 |
+| Focused review: only the canonical episode label names an episode | 1 of 1 |
+
+### Linear evaluation, counted
+
+Evidence captured from real attempts over SIMULATED campuses; the evaluator
+judged it with counting containers (`test_acceptance_evaluation_linearity.py`), at `52bc051`.
+
+| Clients / sites | Groups | Components | Ledger entries | E5 entries | Entry visits | Position visits | E5 visits | Per-client-max control | Admissions / connectivity builds |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 30 / 1 | 3 | 1 | 223 | 64 | 313 | 277 | 1 | 1,920 | 2 / 1 |
+| 90 / 3 | 9 | 3 | 664 | 192 | 934 | 829 | 1 | 17,280 | 6 / 3 |
+| 240 / 3 | 15 | 3 | 1,668 | 498 | 2,388 | 2,191 | 1 | 119,520 | 12 / 3 |
+
+Rows, links and deciding-round readings are each handed out exactly twice
+(the evaluation and the reload comparison); dependents at most three times.
+One canonical derivation runs per episode, never per client or dependent.
+
+One large component, counted inside the canonical rule (a ring of VLAN 10
+trunks, `test_one_growing_component_is_derived_with_linear_inner_lookups`):
+
+| Switches | Reading visits before | After | Port visits after |
+| --- | --- | --- | --- |
+| 10 | 230 | 30 | 40 |
+| 100 | 20,300 | 300 | 400 |
+| 1,000 | 2,003,000 | 3,000 | 4,000 |
+
+Degraded evidence (one shared group with 10 and then 100 unrecorded ledger
+episodes, repeated-ordinal rows and foreign readings): before the correction
+the largest per-client finding list grew from 32 to 302; now it is the same at
+both sizes and each group fault is reported once for the attempt.
+
+### Independent review before delivery, and what it changed
+
+Read-only Codex adversarial reviews, run while nothing wrote the tree. They are
+advisory; none of them is the independent audit the standard requires. Every
+finding was re-checked against the code and reproduced by a failing regression
+before its fix.
+
+- **Review 1** (composed, `cc272c9..98e9c99`): its output was truncated by the
+  coordinator's own launch command, which kept only the last lines; only its
+  last finding survived, and it was run again.
+- **Review 2** (the same scope, full output kept): *needs-attention*; no
+  material R2 or R3 issue.
+- **Review 3** (composed, `cc272c9..f51281f`, after the first corrections):
+  *needs-attention*.
+- **Review 4** (focused on the corrections, `98e9c99..52bc051`):
+  *needs-attention*, one finding.
+
+| Finding | Disposition |
+| --- | --- |
+| Group inconsistencies are copied into every client of the group, so degraded evidence costs clients x faults (medium, review 1) | Real, and wider: a row's per-reading faults were copied too (32 findings per client at 10 faults, 302 at 100). Row validation stops at its first fault; each group inconsistency is reported once for the attempt and each client carries one bounded reference (`f51281f`) |
+| A continuity reading that omits one port of an STP-blocked, unused trunk still passes every summary check, so the client is admitted over the alternate path (high, review 2) | Real: accepted by the evaluator and by the whole envelope. Each reading must answer exactly the trunk ports of its switch, once each (`f51281f`) |
+| The canonical `usable_links` finds each link end by scanning the round's readings, so one episode costs links x switches (medium, review 2) | Real: 230, 20,300 and 2,003,000 reading visits for rings of 10, 100 and 1,000 switches. Readings and ports are indexed once per derivation with the same first-match semantics; now 3 reading and 4 port visits per switch. The product gate shares the rule (`f51281f`) |
+| A dispatch whose purpose has a known prefix passes the ledger oracle even when it names a group or expectation outside the derived scope (high, review 3) | Real, and older than this delivery: four such dispatches produced no finding. Every dispatched purpose must name the scope exactly (`dispatches_outside_scope`); an unselected client's request is an effect outside the admitted scope (`52bc051`) |
+| `publication_claim` trusts a fact's stored booleans, and a fact is read back without checking the terminal file (medium, review 3) | Real: a fact whose returned offset exceeds its deadline, and a changed terminal file, were both still accepted. Timeliness is derived from the fact's own offsets; `load_publication` returns a fact only while the terminal file keeps its name and SHA-256, which also governs a recovering handler's adoption (`52bc051`) |
+| `readiness:<group>#01` passes the scope check as episode 1 and, dispatched before the real `#1`, has its span overwritten (high, review 4) | Real: judged with no finding. One parser accepts only the canonical label the runtime writes, for both the span index and the scope check (`afa7ddf`) |
+
+The last correction, `afa7ddf`, was self-reviewed and caught by causal RED but
+was not re-reviewed by Codex: the standard does not ask for review rounds
+until one is silent, and its change is one parser used in two places.
+
+### Scale evidence, re-measured on the final code
+
+`tests/http_acceptance_scale_benchmark.py` at `afa7ddf` (tree `1ed8e4a8`),
+clean, Windows-11-10.0.26200-SP0, Python 3.12.10, this checkout's `.venv`,
+nothing else running. Each case ran in its own interpreter process. Packet
+Tracer is SIMULATED by `tests/campus_product_simulation.py` on a fake clock:
+every dispatch costs 0.05 simulated seconds and every receiver reading 0.015 s,
+so no row is a zero-latency trace. Behaviours are as in the previous block
+(immediate FWD; access ports forwarding 26 s and trunks 12 s after first read;
+access ports never forwarding). "Response" is the product's returned summary,
+"summary" the acceptance CLI summary, "fact" the publication fact; record,
+envelope and fact sizes are the persisted files. The Python peak is
+`tracemalloc` over the attempt alone; RSS is the process's working set before
+and after the attempt and its peak, which includes compiling the campus and
+the tracemalloc bookkeeping.
+
+| Clients | Behaviour | Accepted | Represented / never started | Operations / ceiling | Receiver readings (s) | Simulated s / ceiling | Wall s | Evaluator s | Python peak MiB | RSS before / after / peak MiB | Response / summary KB | Record MB | Envelope MB | Fact bytes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2 | immediate fwd | yes | 2 / 0 | 30 / 1,191 | 30 (0.45) | 2.95 / 530 | 0.227 | 0.002 | 1.1 | 66.8 / 69.3 / 69.3 | 6.9 / 1.1 | 0.06 | 0.04 | 670 |
+| 2 | delayed fwd | yes | 2 / 0 | 114 / 1,191 | 114 (1.71) | 29.41 / 530 | 0.261 | 0.005 | 1.3 | 66.9 / 68.2 / 69.8 | 18.2 / 1.1 | 0.08 | 0.07 | 673 |
+| 2 | persistent non fwd | no | 2 / 2 | 115 / 1,191 | 115 (1.725) | 32.235 / 530 | 0.283 | 0.005 | 1.3 | 66.7 / 68.3 / 69.9 | 19.4 / 3.1 | 0.08 | 0.07 | 678 |
+| 20 | immediate fwd | yes | 20 / 0 | 138 / 4,035 | 138 (2.07) | 9.97 / 1,770 | 0.361 | 0.008 | 3.6 | 68.0 / 71.1 / 75.6 | 31.4 / 1.1 | 0.32 | 0.17 | 671 |
+| 20 | delayed fwd | yes | 20 / 0 | 222 / 4,035 | 222 (3.33) | 36.43 / 1,770 | 0.516 | 0.021 | 4.3 | 68.6 / 72.2 / 78.1 | 72.5 / 1.1 | 0.41 | 0.20 | 674 |
+| 20 | persistent non fwd | no | 20 / 20 | 169 / 4,035 | 169 (2.535) | 35.745 / 1,770 | 0.53 | 0.022 | 4.0 | 68.2 / 71.5 / 76.9 | 77.1 / 20.7 | 0.38 | 0.20 | 679 |
+| 200 | immediate fwd | yes | 200 / 0 | 1,349 / 43,654 | 1,349 (20.235) | 88.685 / 16,079 | 2.499 | 0.176 | 28.6 | 76.8 / 95.4 / 125.5 | 428.2 / 1.1 | 2.97 | 1.56 | 678 |
+| 200 | delayed fwd | yes | 200 / 0 | 2,273 / 43,654 | 2,273 (34.095) | 340.745 / 16,079 | 3.984 | 0.262 | 35.6 | 76.7 / 103.6 / 141.7 | 829.4 / 1.1 | 3.82 | 1.89 | 681 |
+| 200 | persistent non fwd | no | 200 / 200 | 1,512 / 43,654 | 1,512 (22.68) | 313.12 / 16,079 | 4.783 | 0.371 | 31.4 | 76.5 / 101.0 / 136.7 | 855.7 / 213.4 | 3.50 | 1.77 | 680 |
+| 1,000 | immediate fwd | yes | 1000 / 0 | 6,666 / 213,164 | 6,666 (99.99) | 434.29 / 78,922 | 28.944 | 0.907 | 139.4 | 110.4 / 200.3 / 344.2 | 2,131.8 / 1.1 | 14.69 | 7.68 | 678 |
+| 1,000 | delayed fwd | yes | 1000 / 0 | 10,362 / 213,164 | 10,362 (155.43) | 1558.53 / 78,922 | 42.914 | 1.881 | 171.8 | 110.1 / 227.0 / 433.2 | 4,076.3 / 1.1 | 18.83 | 9.03 | 681 |
+| 1,000 | persistent non fwd | no | 1000 / 1000 | 7,236 / 213,164 | 7,236 (108.54) | 1469.26 / 78,922 | 38.963 | 1.744 | 152.4 | 110.6 / 206.3 / 414.7 | 4,250.5 / 1,092.3 | 17.35 | 8.70 | 683 |
+
+Terminal dispatches equal the operations used in every row, and each equals
+the receiver readings: one reading decided each dispatch. The product did the
+same work as at `eed576f` (operations and simulated seconds are identical row
+by row). The evaluator is slower than there (0.907 s instead of 0.805 s, and
+1.881 s instead of 1.294 s, at 1,000 clients) because it now parses and
+re-derives every episode; its growth is bounded by the counts above, not by
+these wall times. Wall time rose too (fresh interpreter per case); it is this
+machine's and no claim. The acceptance summary is about 1 KB when every
+client is accepted and grows with the named refusals otherwise; the product's
+own response dominates the transfer and is unchanged by this block. Nothing
+was sampled or truncated.
+
+### The first LIVE candidate: offline procedure and evidence inventory
+
+Not executed. The candidate is the 30-client, two-access-switch campus, not a
+product limit. A read-only delegated investigation mapped the registered
+paths; every claim below that shapes the procedure was re-checked against the
+code before it was written here.
+
+**The candidate, as the real planner compiles it** (SIMULATED plans, the
+`campus_payload(30)` intent): one site, 35 devices, 36 links; one Server-PT and
+30 static PCs in VLAN 10; `HQ-DEFAULT-ACCESS-SW-01` (24 clients) and
+`HQ-DEFAULT-ACCESS-SW-02` (6 clients and the server) behind
+`HQ-DIST-SW-01/02`; five compiled trunk links in one component. The derived
+scope has three readiness groups (two access, one continuity over four
+switches and five links), local and L2 multi-access paths, and a derived
+budget of 7,849 operations, 2,792 s, 30 reserved release operations and 40
+reserved seconds. A LIVE deployment's manifest identities, and therefore its
+scope digest, are its own; `--prepare` on the real manifest is authoritative.
+
+**Procedure over registered paths, up to (not including) `--execute`:**
+
+1. *Intent.* The exact attempt-marked intent (`http_content` equal to
+   `COLD_HTTP_<attempt>`). Only the test helper `campus_payload` produces it.
+2. *Physical (E4).* `pt_live_deploy(plan_json, ...)` is the registered path
+   with observed readback (devices, module port effects, link peers and
+   ports); it persists the manifest and prints its path and hashes. Cable type
+   is unobservable by its reader and stays unverified.
+3. *E5 prerequisites.* Trunks and transit VLANs must already exist; schema 2
+   only proves them through trunk continuity at run time.
+4. *Manifest.* The manifest must be under
+   `<PT_MCP_GOVERNED_ROOT>/data/deployments` with the deployment id the grant
+   names.
+5. *Service-history freshness.* `<governed root>\data\services\<deployment>`
+   must list nothing (`Get-ChildItem -LiteralPath <dir> -Force -Name`); any
+   entry, whatever its state, refuses as
+   `the deployment already has stored runs`, and an unlistable directory
+   refuses as `history_unreadable:<type>`.
+6. *Derived scope.* On the published delivery commit, with
+   `PT_MCP_GOVERNED_ROOT` set:
+   `.venv\Scripts\python.exe -m packet_tracer_mcp.adapters.cli.cold_http_acceptance --prepare --intent <intent> --deployment <id> --build 9.0.1.0858 --attempt <32-hex>`.
+   It contacts nothing and prints the derived grant fields, `intent_sha256`
+   and the cost.
+7. *Grant.* A schema 2 document (fields below), then `--execute` from the
+   checkout's own interpreter, never under pytest, under its own LIVE grant.
+
+**Missing setup contracts, precisely.** Each blocks a complete, verifiable
+operator procedure today; none is closed here.
+
+| Step | What is missing | Where it shows |
+| --- | --- | --- |
+| Intent | A maintained, non-test producer of the attempt-marked 30-client intent | `tests/campus_product_simulation.py::campus_payload` is the only producer |
+| Plan handoff | A registered export of the complete enterprise `TopologyPlan` bound to that intent | `pt_compose_enterprise_reference` returns a summary; `pt_live_deploy` needs `plan_json` |
+| Deployment identity | A deployment id schema 2 accepts | `EnterprisePhysicalTopologyDeployer.deploy` defaults to `deployment/<hash16>` and `pt_live_deploy` passes none; the `/` fails the grant's `safe_name_component` check |
+| Manifest root | One root shared by deployment and acceptance | `pt_live_deploy` saves with `DeploymentManifestStore()` (relative to the MCP process's working directory); acceptance reads `<governed root>/data/deployments` |
+| Prior E5 proof | A registered, evidenced way to establish trunks and transit VLANs before an attempt without leaving a service run | `pt_apply_enterprise_services` configures only VLANs, access ports and endpoint addressing and writes a `data/services` record that makes history non-empty; the full configuration applicator (`execute_enterprise_reference`) has no registered LIVE entry point |
+| Physical evidence | A durable E4 evidence inventory beyond the manifest | the deployer's item results and journal are returned in memory; the tool persists the manifest only |
+
+An operator statement that E5 is applied is not observed forwarding: the
+attempt reads history, the manifest and its own run, and trunk continuity is
+decided only from its own fresh readings.
+
+**Evidence inventory of one attempt** (all under the governed root):
+the grant document and its SHA-256; the `--prepare` output; the manifest file;
+the Packet Tracer process reading taken immediately before; the campaign
+claim and the permanent attempt marker; the write-ahead envelope
+`<attempt>.json`; the terminal envelope `<attempt>.completed.json` (ledger,
+per-dispatch receiver counters, per-client outcomes, readiness citation by
+count and digest, temporal record); the publication fact
+`<attempt>.publication.json`; and the product record under
+`data/services/<deployment>/`, cited by path and digest, whose readiness rows
+carry episode identity and decision marks.
+
+**Remaining LIVE-grant fields.** `schema_version: 2`, `profile:
+http_by_ip_scalable_v1`, and unchanged from `--prepare`: `deployment_id`,
+`manifest_hash`, `physical_topology_hash`, `servers`, `clients`,
+`scope_sha256`, `max_operations`, `max_seconds`, `reserve_operations`,
+`reserve_seconds`, and `intent_sha256`. Operator-chosen: `authorization_id`,
+`attempt_id` and `marker: COLD_HTTP_<attempt_id>`. From the published,
+clean executing checkout: `sha` and `tree`. From the instance: `build`
+(exact), `channel: file`, and `process_id`, `process_path`,
+`process_incarnation` read immediately before. Operator decisions:
+`exclusive_disposable_lab: true` and `local_fence_limitation_accepted: true`.
+Before any of this: a publication grant for the delivery commit (the
+repository rule refuses an unpublished HEAD) and exact-SHA CI.
+
+### Current projection
+
+What holds for a governed HTTP-by-IP acceptance attempt after this block,
+superseding the earlier blocks where they differ:
+
+- **Readiness is re-derived.** A scalable client is admitted by a group only
+  through the one episode the gate decided it with: raw readings parsed
+  strictly, bound to the derived switch, VLAN, interfaces and link ends,
+  decided again by the canonical rules, at the decided revision, dispatched
+  wholly before the client's first request and not superseded before it.
+  Labels, summaries and counts never grant. Older records without episode
+  identity are readable and not accepted.
+- **A census is complete only at `ERROR_NO_MORE_FILES`.** Any other ending is
+  unreadable with its cause; at binding it declines, at a dispatch it ends
+  authority for the rest of the attempt.
+- **Publication decides timeliness.** Every controlled step up to the last
+  checkpoint before the terminal link consumes the deadline; past it the same
+  evidence is published with acceptance withheld and the boundary named. The
+  link is bounded by a write-once publication fact; acceptance is established
+  only when the terminal verdict is accepted and the link returned within the
+  deadline. The envelope's `http_accepted` is the provisional verdict;
+  `AcceptanceResult.accepted`, the exit code and the CLI summary report the
+  claim.
+- **Evaluation is linear.** One derivation per episode; per-client work is
+  lookups in its own relationships.
+- **Unchanged.** Schema 1's rules and frozen `1015/420/2/40` proposal; routed
+  paths refused as
+  `routed_path_unobservable:ipv4_routing_action_and_route_table_reader_unregistered`;
+  trunks, transit VLANs and gateways proven, never configured; no routing,
+  DHCP, HTTPS, mail, events or wireless; no claim of complete campus
+  installation or of cross-site connectivity from independently served sites.
+- **Evidence.** Offline, with SIMULATED Packet Tracer; the Win32 reads observed
+  only this Python process and processes it owns. No capability, LIVE claim or
+  published CI result changes here.
+
+### Residual limitations
+
+- The terminal link is bounded, not timed: a link that returns late leaves an
+  immutable envelope whose provisional verdict says accepted and a fact that
+  says acceptance is not established. A reader must use both; the CLI summary
+  and `publication_claim` do.
+- A crash between the terminal link and the publication fact leaves no fact;
+  acceptance is then not established. A later invocation of the same attempt
+  identity is refused by its spent marker, so nothing can add the fact later.
+- The gate's episode ordinal and the labelled runtime's counter are two
+  counters of the same calls; a composition that routed an observer call
+  around the labelled runtime would be refused (`readiness_episode_unrecorded`
+  or `readiness_episode_not_dispatched`), never accepted.
+- Record rows name switches by the names the compiled plan and the observer
+  use; the evaluator requires them to equal the derived scope's deployed names,
+  as before. A deployment whose runtime names differ from its compiled names
+  would be refused, not repaired.
+- An interruption inside a recovery step itself, between a system call
+  returning and Python recording it, or an uncatchable kill remains
+  uncovered; what it leaves is fail-closed.
+- The receiver interval between a reading and the receiver executing the
+  command is unfenced, as before.
+- The Windows census was exercised against a controlled kernel32 and against
+  this process and its own children, never against Packet Tracer. Whether it
+  explains the recorded native access violations is not established, and the
+  earlier crash logs are kept.
+- Trunk continuity and readiness were only ever observed against the
+  SIMULATED campus terminal.
+
+### Measured offline verification
+
+Everything below ran in this checkout's own `.venv` (Python 3.12.10) on
+Windows 11, against `cisco/main` resolving to `6263344`. The last code commit
+is `afa7ddf`; the commit that adds these sections changes only this brief.
+
+| Check | Result |
+| --- | --- |
+| Full offline suite at `afa7ddf` | 7,429 passed, 3 skipped, 3 warnings (the existing class-scoped-fixture deprecation) in 611 s; empty stderr; the tree was clean before and after |
+| Earlier full runs, each on a clean committed tree | 7,412 passed at `98e9c99`; 7,418 at `f51281f`; 7,427 at `52bc051` (all 3 skipped) |
+| Causal RED at `afa7ddf` | 27 of 27 disabled behaviors caught (table above); the restored selection passed 66 of 66 and `git status` was empty |
+| Quality gate, worktree mode, `--base cisco/main` | 155 Ruff-gated files at `afa7ddf`; lint and format pass |
+| Namespace inventory | 0 active legacy references, 0 unreviewed inert mentions |
+| MkDocs build | passes with the two warnings that already exist on `cisco/main` |
+| `git diff --check` | clean |
+| Scale benchmark | `afa7ddf`, clean (table above) |
+| Delivery gate on the delivery commit | reported in the handoff: a commit cannot record its own gate |
+| Exact-SHA CI | pending; nothing was published |
+
+### Pending operator grants
+
+Nothing here authorizes a LIVE attempt, a publication or a merge.
+
+1. **Publication.** The delivery commit must be published before any attempt,
+   because the repository rule refuses an unpublished HEAD; exact-SHA CI is
+   pending that publication.
+2. **The first scalable LIVE attempt** (the 30-client candidate) needs, beyond
+   its own LIVE grant, a decision on each missing setup contract listed above:
+   either a registered path that closes it, or an explicit operator procedure
+   the grant names. Until then no complete, verifiable operator procedure
+   exists, and a grant naming a deployment id that contains `/` refuses at
+   parsing.
+3. **The grant fields** are those listed above; the Packet Tracer process
+   reading and the published SHA and tree are taken immediately before the
+   attempt.
+4. **A schema 1 attempt** keeps the requirements of the previous block and now
+   also gets a publication fact; acceptance is the claim, not the provisional
+   verdict.
+
+Fixture cleanup, workspace restoration, a second attempt, routed paths and
+capability promotion each need their own grant.
+
+### Delivery identity
+
+Branch `feature/server-pt-goal-foundations`, reviewed base `cc272c9`, commits
+`496bfd5` (design), `56c3a4f` (R2), `5cc46da` (R1 and R4), `98e9c99` (R3),
+`f51281f`, `52bc051` and `afa7ddf` (review corrections), then this brief.
+Status: READY_FOR_REVIEW. Self-review and the Codex reviews are not the
+independent audit the standard requires.
