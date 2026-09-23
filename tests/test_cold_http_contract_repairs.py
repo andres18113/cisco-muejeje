@@ -780,7 +780,9 @@ def test_an_ordinary_claim_error_after_the_reservation_is_a_recorded_refusal(
     result = harness.run()
 
     envelope = result.envelope
-    assert "campaign_claim_outcome_unknown:TimeoutError" in envelope.primary_failure
+    assert envelope.primary_failure.endswith(
+        "campaign_claim_outcome_unknown:TimeoutError:claim outcome unknown"
+    )
     assert envelope.campaign_outcome is CampaignOutcome.REFUSED
     assert result.persisted is True
     assert harness.envelope_store.load(ATTEMPT).completed_at is not None
@@ -788,6 +790,77 @@ def test_an_ordinary_claim_error_after_the_reservation_is_a_recorded_refusal(
     assert not (scope / LOCK_NAME).exists()
     assert (scope / f"attempt-{ATTEMPT}.json").exists()
     assert harness.terminal.log == []
+
+
+@pytest.mark.parametrize("failure", ["ordinary", "interruption"])
+def test_an_unreadable_reservation_after_a_failed_claim_leaves_no_lock(
+    tmp_path: Path, failure: str
+):
+    """A3: an unknown reservation writes nothing for it and strands no lock."""
+    from dataclasses import replace
+
+    harness = build_harness(tmp_path)
+    scope = harness.coordinator.scope
+    marker = scope / f"attempt-{ATTEMPT}.json"
+
+    class UnreadableAfterClaim:
+        """A claim that took effect, failed, and left its marker unreadable."""
+
+        def __init__(self, inner) -> None:
+            self.inner = inner
+
+        def claim(self, **kwargs):
+            self.inner.claim(**kwargs)
+            marker.write_text("{", encoding="utf-8")
+            if failure == "ordinary":
+                raise TimeoutError("claim outcome unknown")
+            raise KeyboardInterrupt
+
+        def __getattr__(self, name):
+            return getattr(self.inner, name)
+
+    harness.boundaries = replace(
+        harness.boundaries,
+        campaign_coordinator=UnreadableAfterClaim(harness.coordinator),
+    )
+
+    if failure == "ordinary":
+        result = harness.run()
+        envelope = result.envelope
+        assert envelope.primary_failure.endswith(
+            "campaign_claim_outcome_unknown:TimeoutError:reservation_unreadable"
+            ":claim outcome unknown"
+        )
+        assert result.persisted is None
+        assert envelope.campaign["lock"] == "released"
+        assert len(envelope.campaign["holder"]) == 32
+    else:
+        with pytest.raises(KeyboardInterrupt):
+            harness.run()
+
+    assert not (scope / LOCK_NAME).exists()
+    assert marker.read_text(encoding="utf-8") == "{"
+    assert not harness.envelope_store.path_for(ATTEMPT).exists()
+    assert harness.terminal.log == []
+
+
+def test_a_refused_claim_over_an_unreadable_marker_keeps_its_reason(tmp_path: Path):
+    """A2: an unknown reservation adds to the claim's reason, never replaces it."""
+    harness = build_harness(tmp_path)
+    scope = harness.coordinator.scope
+    scope.mkdir(parents=True, exist_ok=True)
+    marker = scope / f"attempt-{ATTEMPT}.json"
+    marker.write_text("{", encoding="utf-8")
+
+    result = harness.run()
+
+    failure = result.envelope.primary_failure
+    assert "reservation_unreadable" in failure
+    assert failure.endswith("campaign_attempt_already_reserved")
+    assert result.persisted is None
+    assert not (scope / LOCK_NAME).exists()
+    assert marker.read_text(encoding="utf-8") == "{"
+    assert not harness.envelope_store.path_for(ATTEMPT).exists()
 
 
 def test_a_declined_binding_names_its_reason_in_the_refusal_and_the_envelope(

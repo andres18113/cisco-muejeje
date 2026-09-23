@@ -125,16 +125,43 @@ def test_an_interruption_while_writing_leaves_no_partial_file(
 
 
 def test_recovery_never_answers_for_an_unreadable_marker(tmp_path: Path):
-    """Ownership that cannot be read is not ownership."""
+    """An unreadable marker is an unknown reservation, never an absent one."""
     scope = tmp_path / "campaign"
     scope.mkdir()
     _marker(scope).write_text("{", encoding="utf-8")
 
-    assert (
+    with pytest.raises(CampaignCoordinationError, match="reservation_unreadable"):
         FileCampaignCoordinator(scope).recover(attempt_id=ATTEMPT, holder=HOLDER)
-        is None
-    )
+
     assert _marker(scope).read_text(encoding="utf-8") == "{"
+
+
+def test_recovery_answers_none_only_for_an_absent_or_foreign_marker(
+    tmp_path: Path,
+):
+    """None is proof that this holder reserved nothing."""
+    scope = tmp_path / "campaign"
+    coordinator = FileCampaignCoordinator(scope)
+
+    assert coordinator.recover(attempt_id=ATTEMPT, holder=HOLDER) is None
+    coordinator.claim(attempt_id=ATTEMPT, holder="0" * 32)
+    assert coordinator.recover(attempt_id=ATTEMPT, holder=HOLDER) is None
+
+
+def test_abandon_removes_only_this_holders_lock_and_never_a_marker(
+    tmp_path: Path,
+):
+    """A lock that names this holder is this holder's to remove; nothing else."""
+    scope = tmp_path / "campaign"
+    coordinator = FileCampaignCoordinator(scope)
+    coordinator.claim(attempt_id=ATTEMPT, holder=HOLDER)
+
+    assert coordinator.abandon(holder="0" * 32) is False
+    assert (scope / LOCK_NAME).exists()
+    assert coordinator.abandon(holder=HOLDER) is True
+    assert not (scope / LOCK_NAME).exists()
+    assert _marker(scope).exists()
+    assert coordinator.abandon(holder=HOLDER) is False
 
 
 @pytest.mark.parametrize("holder", ["", "../x", "a b"])

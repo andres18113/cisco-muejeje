@@ -152,11 +152,13 @@ class FileCampaignCoordinator:
         )
 
     def recover(self, *, attempt_id: str, holder: str) -> CampaignClaim | None:
-        """Return the claim an interrupted `claim` reserved for `holder`, if any.
+        """Return the claim an unfinished `claim` reserved for `holder`, if any.
 
         Only an attempt marker that names this holder is a reservation of its
-        own; an absent, unreadable or foreign one recovers nothing. Nothing is
-        created or deleted here.
+        own. None is proof that it reserved nothing: the marker is absent or
+        names another holder. A marker that exists but cannot be read raises
+        `CampaignCoordinationError`, because then the reservation is unknown.
+        Nothing is created or deleted here.
         """
         if not attempt_id or safe_name_component(attempt_id, "") != attempt_id:
             return None
@@ -167,7 +169,17 @@ class FileCampaignCoordinator:
             attempt_path = resolve_within(self._scope, f"attempt-{attempt_id}.json")
         except ValueError:
             return None
-        if not self._names(attempt_path, holder):
+        try:
+            stored = json.loads(attempt_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError) as exc:
+            raise CampaignCoordinationError(
+                f"campaign_reservation_unreadable:{type(exc).__name__}"
+            ) from exc
+        if not isinstance(stored, dict) or not isinstance(stored.get("holder"), str):
+            raise CampaignCoordinationError("campaign_reservation_unreadable:malformed")
+        if stored["holder"] != holder:
             return None
         return CampaignClaim(
             scope=self._scope,
@@ -176,6 +188,21 @@ class FileCampaignCoordinator:
             holder=holder,
             attempt_id=attempt_id,
         )
+
+    def abandon(self, *, holder: str) -> bool:
+        """Remove the campaign lock only while it names `holder`.
+
+        It is for a caller whose claim failed with an unknown reservation: the
+        lock it may hold is provably its own, and no attempt marker is ever
+        touched. Return whether a lock was removed.
+        """
+        if not holder or safe_name_component(holder, "") != holder:
+            return False
+        try:
+            lock_path = resolve_within(self._scope, LOCK_NAME)
+        except ValueError:
+            return False
+        return self._remove_own(lock_path, holder)
 
     def verify(self, claim: CampaignClaim) -> tuple[str, ...]:
         """Name what the shared scope now says about this claim, if anything.
