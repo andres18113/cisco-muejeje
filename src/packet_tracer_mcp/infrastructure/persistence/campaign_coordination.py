@@ -88,17 +88,18 @@ class FileCampaignCoordinator:
         caller refuses; nothing existing is deleted on the way out.
 
         An interruption (any exception that is not a coordination refusal)
-        leaves only what its caller can account for. A lock whose attempt this
-        holder did not reserve is removed again. A reserved attempt keeps its
-        marker and its lock: the caller that chose `holder` gets the claim back
-        from `recover` to finish the attempt and release it. Without a chosen
-        holder a fresh one is drawn, and such a claim cannot be recovered.
+        leaves only what its caller can account for. A reserved attempt keeps
+        its permanent marker. Its lock is kept only for a caller that chose
+        `holder`, which gets the claim back from `recover` to finish the attempt
+        and release it; every other lock of this holder is removed again,
+        because nobody else could ever release it.
         """
         safe_attempt = safe_name_component(attempt_id, "")
         if not attempt_id or safe_attempt != attempt_id:
             raise CampaignCoordinationError(
                 "campaign_attempt_identity_is_not_a_safe_name"
             )
+        recoverable = holder is not None
         if holder is None:
             holder = uuid4().hex
         elif not holder or safe_name_component(holder, "") != holder:
@@ -137,9 +138,9 @@ class FileCampaignCoordinator:
             raise
         except BaseException:
             # Every file here exists only with its whole payload, so what this
-            # holder owns is readable. An unreserved attempt must not leave the
-            # campaign held; a reserved one is the caller's to finish.
-            if not self._names(attempt_path, holder):
+            # holder owns is readable. The campaign stays held only for a
+            # reservation its caller can recover and finish.
+            if not recoverable or not self._names(attempt_path, holder):
                 self._remove_own(lock_path, holder)
             raise
         return CampaignClaim(

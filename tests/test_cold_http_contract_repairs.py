@@ -751,6 +751,45 @@ def test_an_interruption_inside_the_claim_leaves_nothing_unaccounted(
     assert "campaign_attempt_already_reserved" in harness.run().envelope.primary_failure
 
 
+def test_an_ordinary_claim_error_after_the_reservation_is_a_recorded_refusal(
+    tmp_path: Path,
+):
+    """A2/A3: a claim that failed after reserving still spends and records."""
+    from dataclasses import replace
+
+    harness = build_harness(tmp_path)
+    scope = harness.coordinator.scope
+
+    class OutcomeUnknown:
+        """A coordinator wrapper whose claim times out after it took effect."""
+
+        def __init__(self, inner) -> None:
+            self.inner = inner
+
+        def claim(self, **kwargs):
+            self.inner.claim(**kwargs)
+            raise TimeoutError("claim outcome unknown")
+
+        def __getattr__(self, name):
+            return getattr(self.inner, name)
+
+    harness.boundaries = replace(
+        harness.boundaries, campaign_coordinator=OutcomeUnknown(harness.coordinator)
+    )
+
+    result = harness.run()
+
+    envelope = result.envelope
+    assert "campaign_claim_outcome_unknown:TimeoutError" in envelope.primary_failure
+    assert envelope.campaign_outcome is CampaignOutcome.REFUSED
+    assert result.persisted is True
+    assert harness.envelope_store.load(ATTEMPT).completed_at is not None
+    assert envelope.campaign["release"] == "released"
+    assert not (scope / LOCK_NAME).exists()
+    assert (scope / f"attempt-{ATTEMPT}.json").exists()
+    assert harness.terminal.log == []
+
+
 def test_a_declined_binding_names_its_reason_in_the_refusal_and_the_envelope(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

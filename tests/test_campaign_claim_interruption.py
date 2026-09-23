@@ -80,6 +80,23 @@ def test_an_interruption_after_the_marker_leaves_a_recoverable_claim(
         FileCampaignCoordinator(scope).claim(attempt_id=ATTEMPT)
 
 
+def test_an_unrecoverable_reservation_does_not_keep_the_campaign_held(
+    tmp_path: Path,
+):
+    """Without a caller-chosen holder nobody could release the lock, so it goes."""
+    scope = tmp_path / "campaign"
+    coordinator = _InterruptedAfter(scope, _marker(scope).name)
+
+    with pytest.raises(KeyboardInterrupt):
+        coordinator.claim(attempt_id=ATTEMPT)
+
+    assert not (scope / LOCK_NAME).exists()
+    assert _marker(scope).exists()
+    with pytest.raises(CampaignCoordinationError, match="already_reserved"):
+        FileCampaignCoordinator(scope).claim(attempt_id=ATTEMPT)
+    assert FileCampaignCoordinator(scope).claim(attempt_id="f" * 32).holder
+
+
 def test_an_interruption_while_writing_leaves_no_partial_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

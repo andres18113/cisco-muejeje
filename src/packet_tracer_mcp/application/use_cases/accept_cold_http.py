@@ -753,6 +753,20 @@ def accept_cold_http(
                 attempt_id=grant.attempt_id, holder=holder
             )
         except Exception as exc:
+            # A claim can fail after it reserved the attempt (an outcome it
+            # could not report); only this holder's reservation says so.
+            _recover_claim(attempt, holder, exc)
+            if attempt.claim is not None:
+                return _refused_after_claim(
+                    attempt,
+                    [
+                        acceptance_refusal(
+                            RefusalKind.NOT_PERMITTED,
+                            AcceptanceSubject.CAMPAIGN,
+                            "campaign_claim_outcome_unknown:" + type(exc).__name__,
+                        )
+                    ],
+                )
             return _refused(
                 envelope,
                 [
@@ -777,7 +791,7 @@ def accept_cold_http(
         # reserved; the coordinator already rolled back a lock that was not.
         boundary = None
         if attempt.claim is None:
-            _recover_claim(attempt, holder)
+            _recover_claim(attempt, holder, exc)
             boundary = "during:campaign_claim"
         if attempt.claim is not None and not attempt.completed:
             _cancelled_outside_the_product(attempt, exc, boundary)
@@ -789,8 +803,8 @@ def accept_cold_http(
             _release_claim(attempt)
 
 
-def _recover_claim(attempt: _Attempt, holder: str) -> None:
-    """Take back the reservation an interrupted claim made for this holder."""
+def _recover_claim(attempt: _Attempt, holder: str, error: BaseException) -> None:
+    """Take back the reservation an unfinished claim made for this holder."""
     recover = getattr(attempt.boundaries.campaign_coordinator, "recover", None)
     if not callable(recover):
         return
@@ -804,7 +818,7 @@ def _recover_claim(attempt: _Attempt, holder: str) -> None:
     summary = getattr(claim, "compact_summary", None)
     attempt.envelope.campaign = {
         "claim": summary() if callable(summary) else {},
-        "recovered": "claim_interrupted_after_reservation",
+        "recovered_after": type(error).__name__,
     }
 
 
