@@ -8,10 +8,10 @@ never replayed on a different bridge channel.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
-import json
+from enum import Enum, StrEnum
 
 from ...domain.enterprise.models.deployment import runtime_target_fingerprint
 from ...domain.enterprise.models.evidence import (
@@ -21,6 +21,9 @@ from ...domain.enterprise.models.evidence import (
 )
 from ...domain.enterprise.models.execution import MutationDisposition
 from ...domain.enterprise.models.physical_deployment import (
+    PhysicalDeploymentItemStatus,
+    PhysicalDeploymentResult,
+    PhysicalDeploymentStatus,
     PhysicalDeviceObservation,
     PhysicalLinkObservation,
     PhysicalModuleEffectCapability,
@@ -33,7 +36,7 @@ from ...domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceObservation,
     port_classes,
 )
-from ...domain.models.plans import DevicePlan, LinkPlan, ModulePlan
+from ...domain.models.plans import DevicePlan, LinkPlan, ModulePlan, TopologyPlan
 from ..catalog.modules import resolve_module
 from ..generator.ptbuilder_generator import (
     generate_device_command,
@@ -53,11 +56,12 @@ from .topology_observation import (
     verify_exact_link_convergence,
 )
 
-
 SendAndWait = Callable[[str, float], str | None]
 
 
-class _MutationAckStatus(str, Enum):
+class _MutationAckStatus(StrEnum):
+    __str__ = Enum.__str__
+
     ACKNOWLEDGED = "acknowledged"
     REJECTED = "rejected"
     UNKNOWN = "unknown"
@@ -94,18 +98,96 @@ class PacketTracerPhysicalTopologyRuntime:
         observation_timeout_seconds: float = 4.0,
         factory_module_preparer: PacketTracerFactoryModulePreparer | None = None,
     ) -> None:
+        """Bind one physical runtime to the caller's exact command channel."""
         self._send_and_wait = send_and_wait
         self._mutation_timeout_seconds = max(0.1, mutation_timeout_seconds)
         self._observation_timeout_seconds = max(0.1, observation_timeout_seconds)
         self._factory_module_preparer = factory_module_preparer
         self._factory_module_preparations: dict[
-            str, FactoryModulePreparationResult,
+            str,
+            FactoryModulePreparationResult,
         ] = {}
         self._module_baselines: dict[str, _ModuleRuntimeState] = {}
         self._owned_device_attempts: set[str] = set()
         self._owned_new_devices: set[str] = set()
 
+    def adopt_verified_deployment_for_cleanup(
+        self, topology: TopologyPlan, deployment: PhysicalDeploymentResult
+    ) -> frozenset[str]:
+        """Recover only exact E4-created device names for a later cleanup phase.
+
+        The caller must separately prove the same PT process incarnation and
+        an exclusive cleanup claim. This method verifies the stored E4 object,
+        its manifest and its journal before populating this runtime's existing
+        one-shot removal gate. It never contacts Packet Tracer or removes a
+        device by itself.
+        """
+        if self._owned_device_attempts or self._owned_new_devices:
+            raise ValueError("cleanup runtime already holds creation attempts")
+        manifest = deployment.manifest
+        journal = deployment.execution_journal
+        if (
+            deployment.status is not PhysicalDeploymentStatus.VERIFIED
+            or deployment.errors
+            or manifest is None
+            or deployment.physical_topology_hash != topology.physical_identity_hash
+            or manifest.physical_topology_hash != topology.physical_identity_hash
+            or manifest.deployment_id != deployment.deployment_id
+            or manifest.environment_fingerprint != deployment.environment_fingerprint
+            or journal.deployment_id != deployment.deployment_id
+            or journal.plan_id != (topology.id or topology.name)
+            or journal.preflight_errors
+        ):
+            raise ValueError("cleanup ownership requires a verified E4 identity")
+        devices = {_device_id(device): device for device in topology.devices}
+        rows = [
+            item
+            for item in deployment.item_results
+            if item.target_kind is PhysicalObjectKind.DEVICE
+        ]
+        entries = [
+            item
+            for item in journal.entries
+            if item.action_id.startswith("ensure-device:")
+        ]
+        bindings = {item.semantic_device_id: item for item in manifest.bindings}
+        if (
+            len(rows) != len(devices)
+            or len(entries) != len(devices)
+            or len(bindings) != len(devices)
+            or {item.target_id for item in rows} != set(devices)
+            or {item.action_id for item in entries}
+            != {f"ensure-device:{identifier}" for identifier in devices}
+            or set(bindings) != set(devices)
+        ):
+            raise ValueError("cleanup ownership requires complete verified E4 rows")
+        by_id = {item.target_id: item for item in rows}
+        by_action = {item.action_id: item for item in entries}
+        for identifier, device in devices.items():
+            row = by_id[identifier]
+            entry = by_action[f"ensure-device:{identifier}"]
+            binding = bindings[identifier]
+            if (
+                row.status is not PhysicalDeploymentItemStatus.OBSERVED
+                or row.disposition is not MutationDisposition.CHANGED
+                or row.applied is not True
+                or row.observed is not True
+                or entry.disposition is not MutationDisposition.CHANGED
+                or entry.inverse_available is not True
+                or entry.inverse_action_id != f"remove-device:{identifier}"
+                or binding.deployed_name != device.name
+                or binding.model != device.model
+            ):
+                raise ValueError(
+                    "cleanup ownership requires changed observed device rows"
+                )
+        owned = frozenset(device.name for device in devices.values())
+        self._owned_device_attempts.update(owned)
+        self._owned_new_devices.update(owned)
+        return owned
+
     def ensure_device(self, device: DevicePlan) -> PhysicalMutationResult:
+        """Create one absent device once and retain its owned attempt."""
         target_id = _device_id(device)
         observation = self.observe_device(device)
         if observation.observed:
@@ -125,7 +207,8 @@ class PacketTracerPhysicalTopologyRuntime:
                     inverse_available=device.name in self._owned_new_devices,
                     inverse_action_id=(
                         f"remove-device:{target_id}"
-                        if device.name in self._owned_new_devices else ""
+                        if device.name in self._owned_new_devices
+                        else ""
                     ),
                     message=preparation_error,
                 )
@@ -183,7 +266,6 @@ class PacketTracerPhysicalTopologyRuntime:
 
     def _prepare_owned_factory_modules(self, device: DevicePlan) -> str:
         """Gate only devices created by this runtime; retries remain one-shot."""
-
         if (
             self._factory_module_preparer is None
             or device.name not in self._owned_new_devices
@@ -198,7 +280,9 @@ class PacketTracerPhysicalTopologyRuntime:
         except Exception as exc:
             return (
                 "Required factory preparation failed closed: "
-                + type(exc).__name__ + ": " + str(exc)
+                + type(exc).__name__
+                + ": "
+                + str(exc)
             )
         self._factory_module_preparations[device.name] = preparation
         if getattr(preparation, "ready", None) is not True:
@@ -209,6 +293,7 @@ class PacketTracerPhysicalTopologyRuntime:
         return ""
 
     def observe_device(self, device: DevicePlan) -> PhysicalDeviceObservation:
+        """Read one exact device's name, model and complete port inventory."""
         target_id = _device_id(device)
         raw = self._send_and_wait(
             _device_observation_js(device.name),
@@ -236,7 +321,11 @@ class PacketTracerPhysicalTopologyRuntime:
         name = payload.get("name")
         model = payload.get("model")
         ports = payload.get("ports")
-        if not isinstance(name, str) or not isinstance(model, str) or not isinstance(ports, list):
+        if (
+            not isinstance(name, str)
+            or not isinstance(model, str)
+            or not isinstance(ports, list)
+        ):
             return PhysicalDeviceObservation(
                 target_id=target_id,
                 observed=False,
@@ -270,7 +359,6 @@ class PacketTracerPhysicalTopologyRuntime:
 
     def remove_device(self, device: DevicePlan) -> PhysicalMutationResult:
         """Remove an exact disposable device attempted by this runtime instance."""
-
         target_id = _device_id(device)
         if device.name not in self._owned_device_attempts:
             return _failure(
@@ -295,7 +383,10 @@ class PacketTracerPhysicalTopologyRuntime:
                 PhysicalObjectKind.DEVICE,
                 "Cleanup pre-readback was inconclusive: " + observation.message,
             )
-        if observation.deployed_name != device.name or observation.model != device.model:
+        if (
+            observation.deployed_name != device.name
+            or observation.model != device.model
+        ):
             return _failure(
                 target_id,
                 PhysicalObjectKind.DEVICE,
@@ -331,12 +422,10 @@ class PacketTracerPhysicalTopologyRuntime:
 
     def supports_module_observation(self) -> bool:
         """Packet Tracer has no verified exact module/slot getter in this backend."""
-
         return False
 
     def observe_workspace(self) -> PhysicalWorkspaceObservation:
         """Inventory the whole workspace without mutating Packet Tracer."""
-
         raw = self._send_and_wait(
             _workspace_observation_js(),
             self._observation_timeout_seconds,
@@ -388,15 +477,17 @@ class PacketTracerPhysicalTopologyRuntime:
                     message="malformed_workspace_device",
                 )
             normalized_ports = sorted(set(ports), key=str.casefold)
-            devices.append(PhysicalWorkspaceDeviceObservation(
-                name=name,
-                model=model,
-                ports=normalized_ports,
-                backend_managed=(
-                    model.strip().casefold() == "power distribution device"
-                    and not normalized_ports
-                ),
-            ))
+            devices.append(
+                PhysicalWorkspaceDeviceObservation(
+                    name=name,
+                    model=model,
+                    ports=normalized_ports,
+                    backend_managed=(
+                        model.strip().casefold() == "power distribution device"
+                        and not normalized_ports
+                    ),
+                )
+            )
 
         for item in raw_links:
             if not isinstance(item, dict) or item.get("unreadable") is True:
@@ -407,8 +498,11 @@ class PacketTracerPhysicalTopologyRuntime:
                     message="unreadable_workspace_link",
                 )
             values = [
-                item.get("class_name"), item.get("a_device"), item.get("a_port"),
-                item.get("b_device"), item.get("b_port"),
+                item.get("class_name"),
+                item.get("a_device"),
+                item.get("a_port"),
+                item.get("b_device"),
+                item.get("b_port"),
             ]
             if item.get("kind") != "link" or any(
                 not isinstance(value, str) for value in values
@@ -434,13 +528,15 @@ class PacketTracerPhysicalTopologyRuntime:
                     links=links,
                     message="malformed_workspace_link",
                 )
-            links.append(PhysicalWorkspaceLinkObservation(
-                class_name=class_name,
-                device_a=device_a,
-                port_a=port_a,
-                device_b=device_b,
-                port_b=port_b,
-            ))
+            links.append(
+                PhysicalWorkspaceLinkObservation(
+                    class_name=class_name,
+                    device_a=device_a,
+                    port_a=port_a,
+                    device_b=device_b,
+                    port_b=port_b,
+                )
+            )
 
         return PhysicalWorkspaceObservation(
             devices=sorted(devices, key=lambda item: item.identity_key()),
@@ -454,7 +550,6 @@ class PacketTracerPhysicalTopologyRuntime:
         device: DevicePlan,
     ) -> PhysicalModuleEffectCapability:
         """Describe the narrow effect proof available for a catalogued module."""
-
         target_id = _module_id(module)
         spec = resolve_module(module.module)
         if spec is None:
@@ -513,7 +608,6 @@ class PacketTracerPhysicalTopologyRuntime:
 
     def ensure_module(self, module: ModulePlan) -> PhysicalMutationResult:
         """Ensure a catalogued module effect without replaying ambiguous mutation."""
-
         target_id = _module_id(module)
         spec = resolve_module(module.module)
         if spec is None or not spec.ports_added:
@@ -621,7 +715,6 @@ class PacketTracerPhysicalTopologyRuntime:
 
     def observe_module_effect(self, module: ModulePlan) -> PhysicalModuleObservation:
         """Read a fresh port inventory and keep requested and observed identity separate."""
-
         target_id = _module_id(module)
         baseline = self._module_baselines.get(target_id)
         if baseline is None:
@@ -658,7 +751,9 @@ class PacketTracerPhysicalTopologyRuntime:
         expected_ports = sorted(set(spec.ports_added), key=str.casefold)
         expected_set = set(expected_ports)
         after_set = set(after.ports)
-        observed_expected = sorted(expected_set.intersection(after_set), key=str.casefold)
+        observed_expected = sorted(
+            expected_set.intersection(after_set), key=str.casefold
+        )
         added = sorted(after_set.difference(baseline.ports), key=str.casefold)
         observed_classes = port_classes(observed_expected)
         expected_classes = port_classes(expected_ports)
@@ -674,10 +769,9 @@ class PacketTracerPhysicalTopologyRuntime:
         # The tree is kept below as raw evidence and read by nothing.
         # TD-MODULE-SLOT-001, branch B.
         slot_ports_after = set(_ports_in_requested_slot(after.ports, module.slot))
-        effect_observed = (
-            slot_ports_after == expected_set
-            and set(expected_classes).issubset(observed_classes)
-        )
+        effect_observed = slot_ports_after == expected_set and set(
+            expected_classes
+        ).issubset(observed_classes)
         return PhysicalModuleObservation(
             target_id=target_id,
             device_name=after.device_name,
@@ -774,9 +868,8 @@ class PacketTracerPhysicalTopologyRuntime:
                     device_name=device_name,
                     message="malformed_module_slot_type_observation",
                 )
-            if (
-                port_count is not None
-                and (isinstance(port_count, bool) or not isinstance(port_count, (int, float)))
+            if port_count is not None and (
+                isinstance(port_count, bool) or not isinstance(port_count, (int, float))
             ):
                 return _ModuleRuntimeState(
                     observed=False,
@@ -784,13 +877,15 @@ class PacketTracerPhysicalTopologyRuntime:
                     message="malformed_module_port_count_observation",
                 )
             identity = _observable_module_identity(raw_identity)
-            slots.append(_ObservedModuleSlot(
-                observed_module_number=number or "",
-                slot_type_code=slot_type or "",
-                port_count=(int(port_count) if port_count is not None else None),
-                observed_module_identity=identity,
-                identity_observable=bool(identity),
-            ))
+            slots.append(
+                _ObservedModuleSlot(
+                    observed_module_number=number or "",
+                    slot_type_code=slot_type or "",
+                    port_count=(int(port_count) if port_count is not None else None),
+                    observed_module_identity=identity,
+                    identity_observable=bool(identity),
+                )
+            )
         return _ModuleRuntimeState(
             observed=True,
             device_name=name,
@@ -802,6 +897,7 @@ class PacketTracerPhysicalTopologyRuntime:
         )
 
     def ensure_link(self, link: LinkPlan) -> PhysicalMutationResult:
+        """Create an absent exact link once after checking both ports."""
         target_id = _link_id(link)
         expectation = _link_expectation(link)
         precheck = parse_exact_link_readback(
@@ -855,6 +951,7 @@ class PacketTracerPhysicalTopologyRuntime:
         )
 
     def observe_link(self, link: LinkPlan) -> PhysicalLinkObservation:
+        """Read both ends of one link until the bounded convergence limit."""
         target_id = _link_id(link)
         convergence = verify_exact_link_convergence(
             self._send_and_wait,
@@ -873,9 +970,7 @@ class PacketTracerPhysicalTopologyRuntime:
         identifier_a = convergence.observation.runtime_link_identifier_a
         identifier_b = convergence.observation.runtime_link_identifier_b
         identifier_observed = bool(
-            convergence.verified
-            and identifier_a
-            and identifier_a == identifier_b
+            convergence.verified and identifier_a and identifier_a == identifier_b
         )
         return PhysicalLinkObservation(
             target_id=target_id,
@@ -900,7 +995,8 @@ class PacketTracerPhysicalTopologyRuntime:
         trusted_command: str,
     ) -> tuple[_MutationAckStatus, str]:
         script = (
-            "try{" + trusted_command
+            "try{"
+            + trusted_command
             + "reportResult(JSON.stringify({ack:true}));}"
             + "catch(__e){reportResult(JSON.stringify({ack:false,error:String(__e)}));}"
         )
@@ -917,7 +1013,9 @@ class PacketTracerPhysicalTopologyRuntime:
             error = payload.get("error")
             return (
                 _MutationAckStatus.REJECTED,
-                error if isinstance(error, str) and error else "explicit negative acknowledgement",
+                error
+                if isinstance(error, str) and error
+                else "explicit negative acknowledgement",
             )
         return (
             _MutationAckStatus.UNKNOWN,
@@ -929,7 +1027,8 @@ class PacketTracerPhysicalTopologyRuntime:
         trusted_command: str,
     ) -> tuple[_MutationAckStatus, str, bool | None]:
         script = (
-            "try{" + trusted_command
+            "try{"
+            + trusted_command
             + "reportResult(JSON.stringify(__mcpModuleMutationReceipt));}"
             + "catch(__e){reportResult(JSON.stringify({ack:false,error:String(__e)}));}"
         )
@@ -952,7 +1051,9 @@ class PacketTracerPhysicalTopologyRuntime:
             error = payload.get("error")
             return (
                 _MutationAckStatus.REJECTED,
-                error if isinstance(error, str) and error else "explicit negative receipt",
+                error
+                if isinstance(error, str) and error
+                else "explicit negative receipt",
                 False,
             )
         return (
@@ -964,7 +1065,6 @@ class PacketTracerPhysicalTopologyRuntime:
 
 def _remove_device_command(device: DevicePlan) -> str:
     """Build checked cleanup JavaScript from serialized caller-controlled fields."""
-
     name = json.dumps(device.name, ensure_ascii=False)
     model = json.dumps(device.model, ensure_ascii=False)
     return (
@@ -987,7 +1087,6 @@ def _remove_device_command(device: DevicePlan) -> str:
 
 def _workspace_observation_js() -> str:
     """Build the strict read-only inventory used by the live safety gate."""
-
     return (
         "try{var __n=ipc.network(),__items=[],__links=[];"
         "for(var __i=0;__i<__n.getDeviceCount();__i++){try{"
@@ -1041,7 +1140,6 @@ def _device_observation_js(device_name: str) -> str:
 
 def _module_effect_observation_js(device_name: str) -> str:
     """Build read-only module-tree and device-port observation JavaScript."""
-
     name = json.dumps(device_name, ensure_ascii=False)
     return (
         "try{var __d=ipc.network().getDevice(" + name + ");"
@@ -1092,9 +1190,7 @@ def _module_id(module: ModulePlan) -> str:
 
 
 def _link_id(link: LinkPlan) -> str:
-    return link.id or (
-        f"{link.device_a}:{link.port_a}->{link.device_b}:{link.port_b}"
-    )
+    return link.id or (f"{link.device_a}:{link.port_a}->{link.device_b}:{link.port_b}")
 
 
 def _observable_module_identity(value: object) -> str:
@@ -1111,7 +1207,6 @@ def _expected_ports_match_requested_slot(
     requested_slot: str,
 ) -> bool:
     """Require every catalogued interface name to encode the requested slot."""
-
     slot = requested_slot.strip()
     if not slot or not ports:
         return False
@@ -1133,7 +1228,6 @@ def _ports_in_requested_slot(
     requested_slot: str,
 ) -> list[str]:
     """Return ports in the exact numeric namespace governed by one slot."""
-
     result: list[str] = []
     slot = requested_slot.strip()
     for port in ports:

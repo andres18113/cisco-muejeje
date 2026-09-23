@@ -407,6 +407,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
         vlan_timeout_seconds: float = 5.0,
         endpoint_timeout_seconds: float = 30.0,
         trunk_timeout_seconds: float = TRUNK_FORWARDING_CONVERGENCE_TIMEOUT_SECONDS,
+        ios_boot_timeout_seconds: float = 90.0,
+        ios_query_max_calls: int | None = None,
+        ios_query_max_seconds: float | None = None,
         l3_timeout_seconds: float = 8.0,
         convergence_interval_seconds: float = 0.25,
         ios_readiness: Callable[[str], bool] | None = None,
@@ -458,9 +461,15 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 clock=clock,
                 sleeper=sleeper,
                 remaining_budget=wait_allowance,
+                max_query_calls=ios_query_max_calls,
+                max_query_seconds=ios_query_max_seconds,
             )
             if wait_allowance is not None
-            else ControlledIosExecutor(send_and_wait)
+            else ControlledIosExecutor(
+                send_and_wait,
+                max_query_calls=ios_query_max_calls,
+                max_query_seconds=ios_query_max_seconds,
+            )
         )
         # The neutral forwarding observation accounts for nested calls and
         # auxiliary state reads through its own bounded channel. Other queries keep the
@@ -486,6 +495,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
         self._vlan_timeout = vlan_timeout_seconds
         self._endpoint_timeout = endpoint_timeout_seconds
         self._trunk_timeout = trunk_timeout_seconds
+        if not isfinite(ios_boot_timeout_seconds) or ios_boot_timeout_seconds < 0:
+            raise ValueError("IOS boot bound must be finite and nonnegative")
+        self._ios_boot_timeout = ios_boot_timeout_seconds
         self._l3_timeout = l3_timeout_seconds
         self._convergence_interval = convergence_interval_seconds
         self._ios_readiness = ios_readiness or self._wait_for_ios
@@ -1450,7 +1462,11 @@ class PacketTracerEnterpriseConfigurationRuntime:
         ]
 
     def _wait_for_ios(self, device_name: str) -> bool:
-        readiness = self._ios.wait_until_ready(device_name, **self._wait_controls())
+        readiness = self._ios.wait_until_ready(
+            device_name,
+            timeout_seconds=self._ios_boot_timeout,
+            **self._wait_controls(),
+        )
         return readiness.state is DeviceInitializationState.OPERATIONAL_READY
 
     def _wait_controls(self) -> dict[str, Any]:

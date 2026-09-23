@@ -8,6 +8,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from enum import Enum, StrEnum
+from math import isfinite
 from time import monotonic, sleep
 from typing import Any
 
@@ -2593,9 +2594,31 @@ class ControlledIosExecutor:
         clock: Callable[[], float] = monotonic,
         sleeper: Callable[[float], None] = sleep,
         remaining_budget: Callable[[], float] | None = None,
+        max_query_calls: int | None = None,
+        max_query_seconds: float | None = None,
     ) -> None:
         """Bind the registered IOS channel and bounded-wait controls."""
-        self._send_and_wait = send_and_wait
+        if max_query_calls is not None and (
+            isinstance(max_query_calls, bool)
+            or not isinstance(max_query_calls, int)
+            or max_query_calls < 1
+        ):
+            raise ValueError("IOS query bridge-call ceiling must be positive")
+        if max_query_seconds is not None and (
+            isinstance(max_query_seconds, bool)
+            or not isinstance(max_query_seconds, (int, float))
+            or not isfinite(max_query_seconds)
+            or max_query_seconds <= 0
+        ):
+            raise ValueError("IOS query wall deadline must be positive and finite")
+        self._raw_send_and_wait = send_and_wait
+        self._max_query_calls = max_query_calls
+        self._max_query_seconds = max_query_seconds
+        self._query_calls_remaining: int | None = None
+        self._query_call_exhausted = False
+        self._query_deadline: float | None = None
+        self._query_time_exhausted = False
+        self._send_and_wait = self._bounded_send_and_wait
         self._pager_quarantine: set[str] = set()
         # Reloj y espera inyectables: las cotas de la captura paginada se miden
         # en lugar de dormirse, y una regresion puede recorrerlas sin gastar el
@@ -2603,6 +2626,24 @@ class ControlledIosExecutor:
         self._clock = clock
         self._sleeper = sleeper
         self._remaining_budget = remaining_budget
+
+    def _bounded_send_and_wait(self, script: str, timeout: float) -> str | None:
+        if self._query_deadline is not None:
+            remaining = self._query_deadline - self._clock()
+            if remaining <= 0:
+                self._query_time_exhausted = True
+                return None
+            timeout = min(timeout, remaining)
+        if self._query_calls_remaining is not None:
+            if self._query_calls_remaining <= 0:
+                self._query_call_exhausted = True
+                return None
+            self._query_calls_remaining -= 1
+        answer = self._raw_send_and_wait(script, timeout)
+        if self._query_deadline is not None and self._clock() > self._query_deadline:
+            self._query_time_exhausted = True
+            return None
+        return answer
 
     def wait_until_ready(
         self,
@@ -2651,15 +2692,41 @@ class ControlledIosExecutor:
         """Despacha una consulta registrada, reintentando sólo corrupción probada."""
         if not isinstance(query_id, OperationalQueryId):
             raise TypeError("Normal IOS execution accepts OperationalQueryId only.")
-        attempts = 1
-        result = self._execute_once(device_name, query_id, interface=interface)
-        while (
-            attempts < self._READ_ONLY_DISPATCH_ATTEMPTS
-            and self._is_retryable_corruption(result)
-        ):
-            attempts += 1
+        self._query_calls_remaining = self._max_query_calls
+        self._query_call_exhausted = False
+        self._query_deadline = (
+            self._clock() + self._max_query_seconds
+            if self._max_query_seconds is not None
+            else None
+        )
+        self._query_time_exhausted = False
+        try:
+            attempts = 1
             result = self._execute_once(device_name, query_id, interface=interface)
-        return replace(result, dispatch_attempts=attempts)
+            while (
+                attempts < self._READ_ONLY_DISPATCH_ATTEMPTS
+                and not self._query_call_exhausted
+                and not self._query_time_exhausted
+                and self._is_retryable_corruption(result)
+            ):
+                attempts += 1
+                result = self._execute_once(device_name, query_id, interface=interface)
+            if self._query_call_exhausted:
+                result = replace(
+                    result,
+                    executed=False,
+                    failure_reason="IOS query bridge-call ceiling exhausted.",
+                )
+            if self._query_time_exhausted:
+                result = replace(
+                    result,
+                    executed=False,
+                    failure_reason="IOS query wall deadline exhausted.",
+                )
+            return replace(result, dispatch_attempts=attempts)
+        finally:
+            self._query_calls_remaining = None
+            self._query_deadline = None
 
     def qualify(
         self,
@@ -3450,5 +3517,8 @@ class ControlledIosExecutor:
             max(0.0, seconds),
             max(0.0, self._remaining_budget())
             if self._remaining_budget is not None
+            else float("inf"),
+            max(0.0, self._query_deadline - self._clock())
+            if self._query_deadline is not None
             else float("inf"),
         )

@@ -74,7 +74,12 @@ class SimulatedSwitch:
 class CampusNetwork:
     """The wired network one compiled configuration plan describes."""
 
-    def __init__(self, configuration_plan: Any, deployed_names: dict[str, str]):
+    def __init__(
+        self,
+        configuration_plan: Any,
+        deployed_names: dict[str, str],
+        foundation_action_ids: set[str] | None = None,
+    ):
         """Build every switch from the compiled E5 actions and deployed names."""
         self.switches: dict[str, SimulatedSwitch] = {}
         self.down_links: set[str] = set()
@@ -87,6 +92,12 @@ class CampusNetwork:
 
         for action in configuration_plan.actions:
             kind = action.action_type.value
+            if (
+                foundation_action_ids is not None
+                and kind in {"create_vlan", "configure_trunk"}
+                and action.id not in foundation_action_ids
+            ):
+                continue
             if kind == "create_vlan":
                 switch(action.device_id, action.device_name).vlans.add(action.vlan_id)
             elif kind == "configure_access_port":
@@ -479,14 +490,21 @@ def compose_campus(payload: dict[str, Any]) -> CampusPlans:
 
 
 def campus_terminal(
-    tmp_path: Path, plans: CampusPlans, clock: FakeClock
+    tmp_path: Path,
+    plans: CampusPlans,
+    clock: FakeClock,
+    foundation_action_ids: set[str] | None = None,
 ) -> CampusTerminal:
     """Return a simulated terminal for exactly this campus."""
     return CampusTerminal(
         tmp_path,
         plans.inventory,
         clock,
-        CampusNetwork(plans.configuration_plan, plans.deployed_names),
+        CampusNetwork(
+            plans.configuration_plan,
+            plans.deployed_names,
+            foundation_action_ids=foundation_action_ids,
+        ),
     )
 
 

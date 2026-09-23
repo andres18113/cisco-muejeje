@@ -402,6 +402,103 @@ def test_a_contradictory_publication_fact_establishes_nothing(
     assert claim == (False, why)
 
 
+def test_a_stored_fact_cannot_extend_the_authorized_deadline(tmp_path: Path):
+    """The reader rejects a coherent fact whose return missed the real budget."""
+    harness = build_harness(tmp_path)
+    assert harness.run().accepted is True
+    store = harness.envelope_store
+    envelope = store.load(ATTEMPT)
+    original = store.load_publication(ATTEMPT)
+    assert envelope.grant["max_seconds"] == 420
+    assert envelope.budget is not None
+    assert envelope.budget.max_seconds == 420
+    assert envelope.temporal["deadline_offset_seconds"] == 420
+
+    extended = original.model_copy(
+        update={
+            "deadline_offset_seconds": 1000.0,
+            "link_returned_offset_seconds": 500.0,
+            "link_within_deadline": True,
+            "http_accepted": True,
+        }
+    )
+    store.publication_path_for(ATTEMPT).write_text(
+        extended.model_dump_json(), encoding="utf-8"
+    )
+    reloaded = store.load_publication(ATTEMPT)
+
+    assert publication_claim(envelope, reloaded) == (
+        False,
+        "publication_deadline_not_authorized",
+    )
+
+
+@pytest.mark.parametrize(
+    "temporal_update",
+    [
+        {"deadline_offset_seconds": None},
+        {"verdict_offset_seconds": float("nan")},
+        {"decided_offset_seconds": float("inf")},
+        {"decided_offset_seconds": -1.0},
+    ],
+    ids=[
+        "missing_deadline",
+        "nonfinite_verdict",
+        "nonfinite_decision",
+        "negative_decision",
+    ],
+)
+def test_missing_or_invalid_envelope_time_cannot_publish_acceptance(
+    tmp_path: Path, temporal_update: dict[str, float | None]
+):
+    """Every required envelope time must be finite and coherent."""
+    harness = build_harness(tmp_path)
+    assert harness.run().accepted is True
+    store = harness.envelope_store
+    envelope = store.load(ATTEMPT)
+    publication = store.load_publication(ATTEMPT)
+    altered = envelope.model_copy(
+        update={"temporal": {**envelope.temporal, **temporal_update}}
+    )
+
+    assert publication_claim(altered, publication) == (
+        False,
+        "publication_temporal_contract_invalid",
+    )
+
+
+def test_a_fact_returning_before_its_own_decision_cannot_publish(tmp_path: Path):
+    """An internally true deadline flag cannot repair inverted event order."""
+    harness = build_harness(tmp_path)
+    assert harness.run().accepted is True
+    store = harness.envelope_store
+    envelope = store.load(ATTEMPT)
+    publication = store.load_publication(ATTEMPT)
+    altered = publication.model_copy(update={"link_returned_offset_seconds": -1.0})
+
+    assert publication_claim(envelope, altered) == (
+        False,
+        "publication_temporal_contract_invalid",
+    )
+
+
+def test_an_unbounded_grant_integer_cannot_crash_the_publication_reader(tmp_path: Path):
+    """A malformed retained budget is a refusal, even beyond float range."""
+    harness = build_harness(tmp_path)
+    assert harness.run().accepted is True
+    store = harness.envelope_store
+    envelope = store.load(ATTEMPT)
+    publication = store.load_publication(ATTEMPT)
+    altered = envelope.model_copy(
+        update={"grant": {**envelope.grant, "max_seconds": 10**1000}}
+    )
+
+    assert publication_claim(altered, publication) == (
+        False,
+        "publication_deadline_not_authorized",
+    )
+
+
 def test_a_fact_whose_terminal_bytes_changed_cannot_be_loaded(tmp_path: Path):
     """The fact is bound to the terminal file's digest when it is read back."""
     from packet_tracer_mcp.application.ports.service_run_record import (

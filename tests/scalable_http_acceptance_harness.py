@@ -39,7 +39,7 @@ from cold_http_acceptance_harness import (
     paired_process,
     published_checkout,
 )
-from service_entry_fixture import BACKEND_VERSION, DEPLOYMENT_ID, IsolationPreflight
+from service_entry_fixture import BACKEND_VERSION, IsolationPreflight
 
 from packet_tracer_mcp.adapters.cli.cold_http_acceptance import (
     acceptance_session,
@@ -147,6 +147,7 @@ def build_scalable_harness(
     sites: int = 1,
     server_segment_role: str = "data",
     plans: CampusPlans | None = None,
+    foundation_action_ids: set[str] | None = None,
     **boundary_overrides: Any,
 ) -> ScalableHarness:
     """Compose the production boundaries over one simulated campus."""
@@ -157,7 +158,9 @@ def build_scalable_harness(
     )
     root = tmp_path / "checkout"
     clock = FakeClock()
-    terminal = campus_terminal(tmp_path, plans, clock)
+    terminal = campus_terminal(
+        tmp_path, plans, clock, foundation_action_ids=foundation_action_ids
+    )
     lifecycle = FakeLifecycle(clock, [paired_process()])
     receiver = FakeReceiver(clock, paired_process())
     source = SourceTreeIdentity(sha=SHA, tree=TREE, dirty=False)
@@ -174,7 +177,7 @@ def build_scalable_harness(
     manifest_store.save_verified(plans.manifest)
     prepared = prepare_http_acceptance(
         plans.intent_json,
-        deployment_id=DEPLOYMENT_ID,
+        deployment_id=plans.manifest.deployment_id,
         build=BACKEND_VERSION,
         marker=MARKER,
         manifest_store=manifest_store,

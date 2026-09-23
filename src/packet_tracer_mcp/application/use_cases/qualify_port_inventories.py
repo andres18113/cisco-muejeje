@@ -43,13 +43,15 @@ linea base con el mismo predicado que usa el producto.
 from __future__ import annotations
 
 import secrets
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
+from dataclasses import dataclass
 
+from ...domain.enterprise.models.execution import MutationDisposition
 from ...domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceObservation,
     physical_workspace_restoration_matches,
 )
-from ...domain.enterprise.models.execution import MutationDisposition
 from ...domain.enterprise.models.port_inventory import BackendVerifiedPortInventory
 from ...domain.models.plans import DevicePlan, ModulePlan
 from ...infrastructure.catalog.measured_port_inventories import module_state_token
@@ -70,12 +72,14 @@ class PortInventoryTarget:
 
     @property
     def module_state(self) -> tuple[str, ...]:
+        """Return the requested module and slot as one state token."""
         if not self.module:
             return ()
         return (module_state_token(self.module, self.slot),)
 
     @property
     def label(self) -> str:
+        """Render the exact model and optional module state."""
         state = ", ".join(self.module_state)
         return f"{self.model}[{state}]" if state else self.model
 
@@ -125,6 +129,8 @@ class PortInventoryMeasurement:
 
 @dataclass(frozen=True)
 class PortInventoryQualificationResult:
+    """Retain measurements, owned cleanup and baseline restoration."""
+
     measurements: tuple[PortInventoryMeasurement, ...] = ()
     baseline_inventory: PhysicalWorkspaceObservation | None = None
     final_inventory: PhysicalWorkspaceObservation | None = None
@@ -134,19 +140,32 @@ class PortInventoryQualificationResult:
 
     @property
     def usable_measurements(self) -> tuple[PortInventoryMeasurement, ...]:
+        """Return only measurements that can support a catalog review."""
         return tuple(item for item in self.measurements if item.usable)
 
 
 class PortInventoryQualifier:
     """Cualifica inventarios de puertos con dispositivos desechables propios."""
 
-    def __init__(self, physical, *, name_token: str = "") -> None:
+    def __init__(
+        self,
+        physical,
+        *,
+        name_token: str = "",
+        cleanup_scope: Callable[[], AbstractContextManager[None]] | None = None,
+    ) -> None:
+        """Bind the physical runtime and optional owned cleanup reserve."""
         self._physical = physical
         self._token = name_token or secrets.token_hex(3)
+        self._cleanup_scope = cleanup_scope or nullcontext
 
     def qualify(
-        self, targets, *, require_empty_workspace: bool = True,
+        self,
+        targets,
+        *,
+        require_empty_workspace: bool = True,
     ) -> PortInventoryQualificationResult:
+        """Measure each disposable target and always attempt owned cleanup."""
         targets = list(targets)
         errors: list[str] = []
         measurements: list[PortInventoryMeasurement] = []
@@ -204,14 +223,18 @@ class PortInventoryQualifier:
         )
 
     def _measure(
-        self, target: PortInventoryTarget, device: DevicePlan,
+        self,
+        target: PortInventoryTarget,
+        device: DevicePlan,
     ) -> tuple[PortInventoryMeasurement, bool]:
         try:
             creation = self._physical.ensure_device(device)
         except Exception as exc:
             return (
                 PortInventoryMeasurement(
-                    target=target, observed=False, interfaces_observed=False,
+                    target=target,
+                    observed=False,
+                    interfaces_observed=False,
                     message=f"device_creation_raised: {type(exc).__name__}: {exc}",
                 ),
                 # La llamada pudo despacharse antes de perder su recibo. El
@@ -222,7 +245,9 @@ class PortInventoryQualifier:
         if not creation.applied:
             return (
                 PortInventoryMeasurement(
-                    target=target, observed=False, interfaces_observed=False,
+                    target=target,
+                    observed=False,
+                    interfaces_observed=False,
                     message=f"device_not_created: {creation.message}",
                 ),
                 creation.disposition is MutationDisposition.UNKNOWN,
@@ -231,7 +256,9 @@ class PortInventoryQualifier:
         module_applied: bool | None = None
         if target.module:
             module = ModulePlan(
-                device=device.name, slot=target.slot, module=target.module,
+                device=device.name,
+                slot=target.slot,
+                module=target.module,
             )
             try:
                 insertion = self._physical.ensure_module(module)
@@ -245,7 +272,9 @@ class PortInventoryQualifier:
                 # existen. Medir igual y pincharlo seria evidencia falsa.
                 return (
                     PortInventoryMeasurement(
-                        target=target, observed=False, interfaces_observed=False,
+                        target=target,
+                        observed=False,
+                        interfaces_observed=False,
                         module_applied=False,
                         message=f"module_not_applied: {module_message}",
                     ),
@@ -257,7 +286,9 @@ class PortInventoryQualifier:
         except Exception as exc:
             return (
                 PortInventoryMeasurement(
-                    target=target, observed=False, interfaces_observed=False,
+                    target=target,
+                    observed=False,
+                    interfaces_observed=False,
                     module_applied=module_applied,
                     message=f"observation_raised: {type(exc).__name__}: {exc}",
                 ),
@@ -278,6 +309,10 @@ class PortInventoryQualifier:
 
     # -- limpieza ------------------------------------------------------
     def _cleanup(self, created, baseline):
+        with self._cleanup_scope():
+            return self._cleanup_owned(created, baseline)
+
+    def _cleanup_owned(self, created, baseline):
         removed: list[str] = []
         errors: list[str] = []
         for device in reversed(created):
@@ -289,7 +324,9 @@ class PortInventoryQualifier:
             if result.applied:
                 removed.append(device.name)
             elif result.disposition is not MutationDisposition.NO_OP:
-                errors.append(f"Cleanup did not apply for {device.name!r}: {result.message}")
+                errors.append(
+                    f"Cleanup did not apply for {device.name!r}: {result.message}"
+                )
 
         try:
             final = self._physical.observe_workspace()

@@ -62,7 +62,7 @@ SCALABLE_ENVELOPE_LIMITATIONS = (
     "client_release_is_not_workspace_restoration",
     "product_topology_and_server_page_remain_by_design",
     "clients_run_sequentially_and_may_affect_shared_state_before_the_next",
-    "trunks_transit_vlans_and_gateways_are_proven_never_configured",
+    "trunks_transit_vlans_and_gateways_not_configured_by_acceptance",
     "routed_paths_are_not_supported_by_this_profile",
 )
 

@@ -15,6 +15,7 @@ never sees. Every rule fails closed: an absent or unobservable value refuses.
 from __future__ import annotations
 
 import ipaddress
+import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -961,10 +962,9 @@ def publication_claim(
 
     The terminal envelope carries the provisional verdict; the publication
     fact says whether it was published in time. Both must be this
-    invocation's and agree. Timeliness is derived again from the fact's own
-    offsets; a fact whose recorded booleans disagree with them establishes
-    nothing. The terminal file's digest is checked where the fact is read
-    back from the store.
+    invocation's and agree. Timeliness is derived again from the authorized
+    budget, envelope temporal record and fact offsets. The terminal file's
+    digest is checked where the fact is read back from the store.
     """
     if not envelope.http_accepted:
         return False, "terminal_verdict_not_accepted"
@@ -976,6 +976,23 @@ def publication_claim(
         or publication.provisional_http_accepted is not envelope.http_accepted
     ):
         return False, "publication_fact_is_not_this_envelope"
+
+    def finite_offset(value: object) -> bool:
+        if not isinstance(value, int | float) or isinstance(value, bool):
+            return False
+        try:
+            return math.isfinite(value) and value >= 0
+        except OverflowError:
+            return False
+
+    if not all(
+        finite_offset(value)
+        for value in (
+            publication.deadline_offset_seconds,
+            publication.link_returned_offset_seconds,
+        )
+    ):
+        return False, "publication_temporal_contract_invalid"
     within = (
         publication.link_returned_offset_seconds <= publication.deadline_offset_seconds
     )
@@ -985,6 +1002,42 @@ def publication_claim(
         is not (publication.provisional_http_accepted and within)
     ):
         return False, "publication_fact_contradicts_its_offsets"
+    budget_seconds = envelope.budget.max_seconds if envelope.budget else None
+    grant_seconds = envelope.grant.get("max_seconds")
+    temporal = envelope.temporal
+    deadline = temporal.get("deadline_offset_seconds")
+    verdict = temporal.get("verdict_offset_seconds")
+    decided = temporal.get("decided_offset_seconds")
+    if not finite_offset(deadline):
+        return False, "publication_temporal_contract_invalid"
+    if (
+        not finite_offset(budget_seconds)
+        or not finite_offset(grant_seconds)
+        or budget_seconds <= 0
+        or budget_seconds != grant_seconds
+        or budget_seconds != deadline
+        or publication.deadline_offset_seconds != deadline
+    ):
+        return False, "publication_deadline_not_authorized"
+    checked = publication.link_checked_offset_seconds
+    if (
+        not finite_offset(verdict)
+        or not finite_offset(decided)
+        or not finite_offset(publication.decided_offset_seconds)
+        or publication.decided_offset_seconds != decided
+        or not (verdict <= decided <= publication.link_returned_offset_seconds)
+        or (
+            checked is not None
+            and (
+                not finite_offset(checked)
+                or not (decided <= checked <= publication.link_returned_offset_seconds)
+            )
+        )
+        or (checked is None and publication.observed_by != "interruption_recovery")
+        or temporal.get("publication_point") != "terminal_link"
+        or bool(temporal.get("exceeded_at"))
+    ):
+        return False, "publication_temporal_contract_invalid"
     if not within:
         return False, "publication_not_established_within_deadline"
     return True, ""

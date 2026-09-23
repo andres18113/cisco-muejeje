@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import math
 import re
 import time
 from collections.abc import Callable
@@ -12,16 +13,16 @@ from ...application.use_cases.capability_discovery import PacketTracerProbeRunti
 from ...domain.enterprise.models.capabilities import CapabilityStatus, EvidenceSource
 from ...domain.enterprise.models.discovery import (
     CapabilityBackend,
-    CapabilityVerificationMethod,
     CapabilityProbeResult,
+    CapabilityVerificationMethod,
     DeviceInitializationState,
+    Layer3ProbeStrategy,
+    MultilayerDimension,
     ProbeDefinition,
     ProbeEnvironment,
     ProbeExecutionStatus,
     RuntimeDeviceDescriptor,
     RuntimeDeviceObservation,
-    Layer3ProbeStrategy,
-    MultilayerDimension,
     RuntimeModuleDescriptor,
     RuntimePortDescriptor,
     encode_inventory_observation,
@@ -29,9 +30,21 @@ from ...domain.enterprise.models.discovery import (
     semantic_inventory_fingerprint,
 )
 from ...infrastructure.catalog.devices import resolve_model
-from ...shared.constants import PT_CONNECT_TYPE, PT_DEVICE_TYPE, PT_DEVICE_TYPE_DEFAULT
+from ...shared.constants import (
+    CAPABILITY_PROBE_IPV4_ADDRESS,
+    CAPABILITY_PROBE_IPV4_MASK,
+    CAPABILITY_PROBE_VLAN_ID,
+    CAPABILITY_PROBE_VLAN_NAME,
+    PT_CONNECT_TYPE,
+    PT_DEVICE_TYPE,
+    PT_DEVICE_TYPE_DEFAULT,
+)
 from .configuration_runtime import PacketTracerConfigurationRuntime
-from .device_lifecycle import DeviceReadinessWaiter, IosBootWaiter, StateConvergenceWaiter
+from .device_lifecycle import (
+    DeviceReadinessWaiter,
+    IosBootWaiter,
+    StateConvergenceWaiter,
+)
 from .ios_terminal import (
     ControlledIosExecutor,
     InterfaceStatusRow,
@@ -40,13 +53,6 @@ from .ios_terminal import (
     parse_show_ip_interface,
     parse_show_ip_interface_brief,
 )
-from ...shared.constants import (
-    CAPABILITY_PROBE_IPV4_ADDRESS,
-    CAPABILITY_PROBE_IPV4_MASK,
-    CAPABILITY_PROBE_VLAN_ID,
-    CAPABILITY_PROBE_VLAN_NAME,
-)
-
 
 _INTERFACE_TYPE = re.compile(r"^[A-Za-z-]+")
 
@@ -69,7 +75,9 @@ def _is_backend_managed_device(item: dict) -> bool:
 
 def _backend_managed_identity(item: dict) -> str:
     """Identidad estable para poder detectar que uno preexistente desapareció."""
-    return f"{str(item.get('model') or '').strip()}/{str(item.get('name') or '').strip()}"
+    return (
+        f"{str(item.get('model') or '').strip()}/{str(item.get('name') or '').strip()}"
+    )
 
 
 # Estrategia L3 por modelo. Declarada, no deducida: un 2960 soporta VLANs sin
@@ -101,7 +109,8 @@ def layer3_strategy_for(runtime_model: str) -> Layer3ProbeStrategy:
     resolved = resolve_model(runtime_model)
     key = resolved.pt_type if resolved else runtime_model
     declared = _LAYER3_STRATEGY_BY_MODEL.get(
-        key, _LAYER3_STRATEGY_BY_MODEL.get(runtime_model),
+        key,
+        _LAYER3_STRATEGY_BY_MODEL.get(runtime_model),
     )
     if declared is not None:
         return declared
@@ -192,18 +201,32 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         send: Callable[[str], bool] | None = None,
         transport_channel: str | Callable[[], str] = "",
         extension_version: str = "",
+        operational_readiness_seconds: float = 90.0,
     ) -> None:
+        """Bind exact transport callbacks and the selected boot observation cap."""
+        if (
+            not math.isfinite(operational_readiness_seconds)
+            or operational_readiness_seconds < 0
+        ):
+            raise ValueError(
+                "operational readiness bound must be finite and nonnegative"
+            )
         self._send_and_wait = send_and_wait
         self._packet_tracer_version = packet_tracer_version
         self._transport_channel = transport_channel
         self._extension_version = extension_version
-        self._configuration = PacketTracerConfigurationRuntime(send or (lambda _: False))
+        self._operational_readiness_seconds = operational_readiness_seconds
+        self._configuration = PacketTracerConfigurationRuntime(
+            send or (lambda _: False)
+        )
         self._ios = ControlledIosExecutor(send_and_wait)
 
     def packet_tracer_version(self) -> str | None:
+        """Return the exact build declared by this runtime composition."""
         return self._packet_tracer_version
 
     def probe_environment(self) -> ProbeEnvironment:
+        """Describe the backend and bound transport without contacting it."""
         transport = (
             self._transport_channel()
             if callable(self._transport_channel)
@@ -252,7 +275,8 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             else:
                 normalized.append(item)
         return encode_inventory_observation(
-            semantic_inventory_fingerprint(normalized), backend_managed,
+            semantic_inventory_fingerprint(normalized),
+            backend_managed,
         )
 
     def wait_for_inventory_fingerprint(
@@ -273,46 +297,60 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
 
     def discover_models(self) -> list[RuntimeDeviceDescriptor] | None:
+        """Report that this bridge has no verified model enumerator."""
         return None
 
-    def create_temporary_device(self, runtime_model: str, temporary_name: str) -> RuntimeDeviceObservation:
+    def create_temporary_device(
+        self, runtime_model: str, temporary_name: str
+    ) -> RuntimeDeviceObservation:
+        """Create one exact disposable model and retain its observed identity."""
         model = json.dumps(runtime_model)
         name = json.dumps(temporary_name)
         catalog_model = resolve_model(runtime_model)
-        device_type = PT_DEVICE_TYPE.get(catalog_model.category, PT_DEVICE_TYPE_DEFAULT) if catalog_model else PT_DEVICE_TYPE_DEFAULT
-        js = "".join((
-            "try{"
-            "var __model=", model, ";var __name=", name,
-            ";var __type=", json.dumps(device_type), ";var __net=ipc.network();",
-            "if(__net.getDevice(__name)){reportResult(JSON.stringify({error:'duplicate probe name'}));}"
-            "else if(typeof lwAddDevice!=='function'){reportResult(JSON.stringify({error:'lwAddDevice unavailable'}));}"
-            "else{lwAddDevice(__name,__type,__model,9000,9000);var __d=__net.getDevice(__name);"
-            "if(!__d){reportResult(JSON.stringify({found:false}));}else{var __ports=[];"
-            "for(var __i=0;__i<__d.getPortCount();__i++){try{var __p=__d.getPortAt(__i);"
-            "if(__p){var __entry={name:__p.getName(),"
-            "bandwidth_kbps:(typeof __p.getBandwidth==='function')?__p.getBandwidth():null,"
-            "power_admin_observed:false,power_admin_enabled:null,"
-            "power_runtime_observed:false,power_runtime_on:null};"
-            "try{if(typeof __p.getPower==='function'){var __admin=__p.getPower();"
-            "if(typeof __admin==='boolean'){__entry.power_admin_observed=true;"
-            "__entry.power_admin_enabled=__admin;}}}catch(__pae){}"
-            "try{if(typeof __p.isPowerOn==='function'){var __runtime=__p.isPowerOn();"
-            "if(typeof __runtime==='boolean'){__entry.power_runtime_observed=true;"
-            "__entry.power_runtime_on=__runtime;}}}catch(__pre){}"
-            "__ports.push(__entry);}}catch(__pe){}}"
-            # La lectura de módulos va en su propio try: si falla, la creación
-            # sigue siendo válida y el slot simplemente queda sin observar.
-            "var __mods=[];try{var __root=__d.getRootModule();"
-            "if(__root){for(var __s=0;__s<__root.getModuleCount();__s++){"
-            "var __m=__root.getModuleAt(__s);if(!__m){continue;}var __entry={};"
-            "try{__entry.name=String(__m.getModuleNameAsString());}catch(__me){__entry.name='';}"
-            "try{__entry.slot=String(__m.getModuleNumber());}catch(__me){__entry.slot='';}"
-            "try{__entry.slot_type_code=String(__root.getSlotTypeAt(__s));}catch(__me){__entry.slot_type_code='';}"
-            "try{__entry.port_count=__m.getPortCount();}catch(__me){__entry.port_count=0;}"
-            "__mods.push(__entry);}}}catch(__re){__mods=[];}"
-            "reportResult(JSON.stringify({found:true,runtime_id:(typeof __d.getModel==='function')?__d.getModel():__model,display_name:__d.getName(),ports:__ports,modules:__mods}));}}"
-            "}catch(__e){reportResult('ERROR:'+__e); }"
-        ))
+        device_type = (
+            PT_DEVICE_TYPE.get(catalog_model.category, PT_DEVICE_TYPE_DEFAULT)
+            if catalog_model
+            else PT_DEVICE_TYPE_DEFAULT
+        )
+        js = "".join(
+            (
+                "try{var __model=",
+                model,
+                ";var __name=",
+                name,
+                ";var __type=",
+                json.dumps(device_type),
+                ";var __net=ipc.network();",
+                "if(__net.getDevice(__name)){reportResult(JSON.stringify({error:'duplicate probe name'}));}"
+                "else if(typeof lwAddDevice!=='function'){reportResult(JSON.stringify({error:'lwAddDevice unavailable'}));}"
+                "else{lwAddDevice(__name,__type,__model,9000,9000);var __d=__net.getDevice(__name);"
+                "if(!__d){reportResult(JSON.stringify({found:false}));}else{var __ports=[];"
+                "for(var __i=0;__i<__d.getPortCount();__i++){try{var __p=__d.getPortAt(__i);"
+                "if(__p){var __entry={name:__p.getName(),"
+                "bandwidth_kbps:(typeof __p.getBandwidth==='function')?__p.getBandwidth():null,"
+                "power_admin_observed:false,power_admin_enabled:null,"
+                "power_runtime_observed:false,power_runtime_on:null};"
+                "try{if(typeof __p.getPower==='function'){var __admin=__p.getPower();"
+                "if(typeof __admin==='boolean'){__entry.power_admin_observed=true;"
+                "__entry.power_admin_enabled=__admin;}}}catch(__pae){}"
+                "try{if(typeof __p.isPowerOn==='function'){var __runtime=__p.isPowerOn();"
+                "if(typeof __runtime==='boolean'){__entry.power_runtime_observed=true;"
+                "__entry.power_runtime_on=__runtime;}}}catch(__pre){}"
+                "__ports.push(__entry);}}catch(__pe){}}"
+                # La lectura de módulos va en su propio try: si falla, la creación
+                # sigue siendo válida y el slot simplemente queda sin observar.
+                "var __mods=[];try{var __root=__d.getRootModule();"
+                "if(__root){for(var __s=0;__s<__root.getModuleCount();__s++){"
+                "var __m=__root.getModuleAt(__s);if(!__m){continue;}var __entry={};"
+                "try{__entry.name=String(__m.getModuleNameAsString());}catch(__me){__entry.name='';}"
+                "try{__entry.slot=String(__m.getModuleNumber());}catch(__me){__entry.slot='';}"
+                "try{__entry.slot_type_code=String(__root.getSlotTypeAt(__s));}catch(__me){__entry.slot_type_code='';}"
+                "try{__entry.port_count=__m.getPortCount();}catch(__me){__entry.port_count=0;}"
+                "__mods.push(__entry);}}}catch(__re){__mods=[];}"
+                "reportResult(JSON.stringify({found:true,runtime_id:(typeof __d.getModel==='function')?__d.getModel():__model,display_name:__d.getName(),ports:__ports,modules:__mods}));}}"
+                "}catch(__e){reportResult('ERROR:'+__e); }",
+            )
+        )
         data = self._json_result(js, timeout=15.0)
         if data.get("error"):
             return RuntimeDeviceObservation(error=str(data["error"]))
@@ -328,22 +366,30 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             ],
         )
         if observation.found:
-            return observation.model_copy(update={
-                "initialization": self._wait_for_operational_readiness(temporary_name, runtime_model),
-            })
+            return observation.model_copy(
+                update={
+                    "initialization": self._wait_for_operational_readiness(
+                        temporary_name, runtime_model
+                    ),
+                }
+            )
         return observation
 
     def delete_temporary_device(self, temporary_name: str) -> bool:
+        """Remove the exact temporary name and observe its absence."""
         name = json.dumps(temporary_name)
-        js = "".join((
-            "try{var __name=", name,
-            ";var __d=ipc.network().getDevice(__name);"
-            "if(!__d){reportResult(JSON.stringify({deleted:true}));}"
-            "else{var __lw=ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();"
-            "if(typeof __lw.removeDevice!=='function'){reportResult(JSON.stringify({deleted:false}));}"
-            "else{__lw.removeDevice(__d.getName());reportResult(JSON.stringify({deleted:!ipc.network().getDevice(__name)}));}}"
-            "}catch(__e){reportResult('ERROR:'+__e); }"
-        ))
+        js = "".join(
+            (
+                "try{var __name=",
+                name,
+                ";var __d=ipc.network().getDevice(__name);"
+                "if(!__d){reportResult(JSON.stringify({deleted:true}));}"
+                "else{var __lw=ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();"
+                "if(typeof __lw.removeDevice!=='function'){reportResult(JSON.stringify({deleted:false}));}"
+                "else{__lw.removeDevice(__d.getName());reportResult(JSON.stringify({deleted:!ipc.network().getDevice(__name)}));}}"
+                "}catch(__e){reportResult('ERROR:'+__e); }",
+            )
+        )
         return bool(self._json_result(js, timeout=10.0).get("deleted"))
 
     def probe_capability(
@@ -378,17 +424,27 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             ),
         )
 
-    def _probe_configuration_channel(self, temporary_name: str, definition: ProbeDefinition) -> CapabilityProbeResult:
+    def _probe_configuration_channel(
+        self, temporary_name: str, definition: ProbeDefinition
+    ) -> CapabilityProbeResult:
         readiness = self._wait_for_readiness(temporary_name)
         if not readiness.configuration_channel:
             return self._failure(
-                definition, ProbeExecutionStatus.TIMEOUT if readiness.state.value == "timeout" else ProbeExecutionStatus.SKIPPED,
-                readiness.failure_reason or "The official configureIosDevice channel was not ready for the temporary device.",
+                definition,
+                ProbeExecutionStatus.TIMEOUT
+                if readiness.state.value == "timeout"
+                else ProbeExecutionStatus.SKIPPED,
+                readiness.failure_reason
+                or "The official configureIosDevice channel was not ready for the temporary device.",
             )
         return CapabilityProbeResult(
-            probe_id=definition.id, model="", capability=definition.capability,
-            status=CapabilityStatus.SUPPORTED, execution_status=ProbeExecutionStatus.VERIFIED,
-            evidence_source=EvidenceSource.PACKET_TRACER_RUNTIME, verified=True,
+            probe_id=definition.id,
+            model="",
+            capability=definition.capability,
+            status=CapabilityStatus.SUPPORTED,
+            execution_status=ProbeExecutionStatus.VERIFIED,
+            evidence_source=EvidenceSource.PACKET_TRACER_RUNTIME,
+            verified=True,
             verification_method=CapabilityVerificationMethod.DIRECT_RUNTIME_API,
             raw_summary=(
                 "Official configureIosDevice channel available after "
@@ -396,90 +452,166 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             ),
         )
 
-    def _probe_vlan_manager(self, temporary_name: str, definition: ProbeDefinition) -> CapabilityProbeResult:
+    def _probe_vlan_manager(
+        self, temporary_name: str, definition: ProbeDefinition
+    ) -> CapabilityProbeResult:
         name = json.dumps(temporary_name)
-        js = "".join((
-            "try{var __d=ipc.network().getDevice(", name, ");",
-            "var __vm=__d&&typeof __d.getProcess==='function'?__d.getProcess('VlanManager'):null;",
-            "reportResult(JSON.stringify({found:!!__d,vlan_manager:!!__vm}));",
-            "}catch(__e){reportResult('ERROR:'+__e);}",
-        ))
+        js = "".join(
+            (
+                "try{var __d=ipc.network().getDevice(",
+                name,
+                ");",
+                "var __vm=__d&&typeof __d.getProcess==='function'?__d.getProcess('VlanManager'):null;",
+                "reportResult(JSON.stringify({found:!!__d,vlan_manager:!!__vm}));",
+                "}catch(__e){reportResult('ERROR:'+__e);}",
+            )
+        )
         try:
             data = self._json_result(js, timeout=12.0)
         except TimeoutError as exc:
             return self._failure(definition, ProbeExecutionStatus.TIMEOUT, str(exc))
         except RuntimeError as exc:
-            return self._failure(definition, ProbeExecutionStatus.PACKET_TRACER_ERROR, str(exc))
-        status = CapabilityStatus.SUPPORTED if data.get("vlan_manager") else CapabilityStatus.UNSUPPORTED
+            return self._failure(
+                definition, ProbeExecutionStatus.PACKET_TRACER_ERROR, str(exc)
+            )
+        status = (
+            CapabilityStatus.SUPPORTED
+            if data.get("vlan_manager")
+            else CapabilityStatus.UNSUPPORTED
+        )
         return CapabilityProbeResult(
-            probe_id=definition.id, model="", capability=definition.capability, status=status,
+            probe_id=definition.id,
+            model="",
+            capability=definition.capability,
+            status=status,
             execution_status=ProbeExecutionStatus.VERIFIED,
-            evidence_source=EvidenceSource.CONTROLLED_PROBE, verified=True,
+            evidence_source=EvidenceSource.CONTROLLED_PROBE,
+            verified=True,
             verification_method=CapabilityVerificationMethod.OBJECT_STATE,
-            raw_summary="VlanManager present." if status is CapabilityStatus.SUPPORTED else "VlanManager is absent on the probe device.",
+            raw_summary="VlanManager present."
+            if status is CapabilityStatus.SUPPORTED
+            else "VlanManager is absent on the probe device.",
         )
 
-    def _probe_vlan(self, temporary_name: str, definition: ProbeDefinition) -> CapabilityProbeResult:
-        create = "\n".join(("enable", "configure terminal", f"vlan {CAPABILITY_PROBE_VLAN_ID}", f"name {CAPABILITY_PROBE_VLAN_NAME}", "end"))
+    def _probe_vlan(
+        self, temporary_name: str, definition: ProbeDefinition
+    ) -> CapabilityProbeResult:
+        create = "\n".join(
+            (
+                "enable",
+                "configure terminal",
+                f"vlan {CAPABILITY_PROBE_VLAN_ID}",
+                f"name {CAPABILITY_PROBE_VLAN_NAME}",
+                "end",
+            )
+        )
         if not self._configuration.configure_ios(temporary_name, create):
-            return self._failure(definition, ProbeExecutionStatus.BRIDGE_ERROR, "Official configuration channel rejected the VLAN payload.")
+            return self._failure(
+                definition,
+                ProbeExecutionStatus.BRIDGE_ERROR,
+                "Official configuration channel rejected the VLAN payload.",
+            )
         configured = self._wait_for_vlan(temporary_name, present=True)
-        cleanup_payload = "\n".join(("enable", "configure terminal", f"no vlan {CAPABILITY_PROBE_VLAN_ID}", "end"))
-        cleanup_sent = self._configuration.configure_ios(temporary_name, cleanup_payload)
+        cleanup_payload = "\n".join(
+            (
+                "enable",
+                "configure terminal",
+                f"no vlan {CAPABILITY_PROBE_VLAN_ID}",
+                "end",
+            )
+        )
+        cleanup_sent = self._configuration.configure_ios(
+            temporary_name, cleanup_payload
+        )
         cleanup = cleanup_sent and self._wait_for_vlan(temporary_name, present=False)
         if not configured or not cleanup:
-            return self._failure(definition, ProbeExecutionStatus.VERIFY_FAILED, "VLAN configure/read-back/cleanup evidence was incomplete.", configured=configured)
+            return self._failure(
+                definition,
+                ProbeExecutionStatus.VERIFY_FAILED,
+                "VLAN configure/read-back/cleanup evidence was incomplete.",
+                configured=configured,
+            )
         return CapabilityProbeResult(
-            probe_id=definition.id, model="", capability=definition.capability, status=CapabilityStatus.SUPPORTED,
-            execution_status=ProbeExecutionStatus.VERIFIED, evidence_source=EvidenceSource.CONTROLLED_PROBE,
-            configured=True, verified=True, observed_value=CAPABILITY_PROBE_VLAN_ID,
+            probe_id=definition.id,
+            model="",
+            capability=definition.capability,
+            status=CapabilityStatus.SUPPORTED,
+            execution_status=ProbeExecutionStatus.VERIFIED,
+            evidence_source=EvidenceSource.CONTROLLED_PROBE,
+            configured=True,
+            verified=True,
+            observed_value=CAPABILITY_PROBE_VLAN_ID,
             verification_method=CapabilityVerificationMethod.CLI_PLUS_READBACK,
             raw_summary="VLAN configured through configureIosDevice, read back through VlanManager, and removed successfully.",
         )
 
     def _probe_trunk(
-        self, temporary_name: str, definition: ProbeDefinition,
+        self,
+        temporary_name: str,
+        definition: ProbeDefinition,
     ) -> CapabilityProbeResult:
         ports = self._physical_access_ports(temporary_name, 1)
         if not ports:
             return self._failure(
-                definition, ProbeExecutionStatus.VERIFY_FAILED,
+                definition,
+                ProbeExecutionStatus.VERIFY_FAILED,
                 "No physical Ethernet port was observed for the trunk probe.",
             )
         interface = ports[0]
-        configure = "\n".join((
-            "enable", "configure terminal", f"interface {interface}",
-            "switchport trunk encapsulation dot1q", "switchport mode trunk",
-            "no shutdown", "end",
-        ))
+        configure = "\n".join(
+            (
+                "enable",
+                "configure terminal",
+                f"interface {interface}",
+                "switchport trunk encapsulation dot1q",
+                "switchport mode trunk",
+                "no shutdown",
+                "end",
+            )
+        )
         if not self._configuration.configure_ios(temporary_name, configure):
             return self._failure(
-                definition, ProbeExecutionStatus.BRIDGE_ERROR,
+                definition,
+                ProbeExecutionStatus.BRIDGE_ERROR,
                 "Official configuration channel rejected the trunk payload.",
             )
         configured = self._wait_for_admin_mode(
-            temporary_name, interface, _TRUNK_ADMIN_OP_MODE,
+            temporary_name,
+            interface,
+            _TRUNK_ADMIN_OP_MODE,
         )
-        cleanup = "\n".join((
-            "enable", "configure terminal", f"interface {interface}",
-            "switchport mode access", "shutdown", "end",
-        ))
+        cleanup = "\n".join(
+            (
+                "enable",
+                "configure terminal",
+                f"interface {interface}",
+                "switchport mode access",
+                "shutdown",
+                "end",
+            )
+        )
         cleanup_sent = self._configuration.configure_ios(temporary_name, cleanup)
         cleaned = cleanup_sent and self._wait_for_admin_mode(
-            temporary_name, interface, _ACCESS_ADMIN_OP_MODE,
+            temporary_name,
+            interface,
+            _ACCESS_ADMIN_OP_MODE,
         )
         if not configured or not cleaned:
             return self._failure(
-                definition, ProbeExecutionStatus.VERIFY_FAILED,
+                definition,
+                ProbeExecutionStatus.VERIFY_FAILED,
                 "Trunk configure/read-back/cleanup evidence was incomplete.",
                 configured=configured,
             )
         return CapabilityProbeResult(
-            probe_id=definition.id, model="", capability=definition.capability,
+            probe_id=definition.id,
+            model="",
+            capability=definition.capability,
             status=CapabilityStatus.SUPPORTED,
             execution_status=ProbeExecutionStatus.VERIFIED,
             evidence_source=EvidenceSource.CONTROLLED_PROBE,
-            configured=True, verified=True,
+            configured=True,
+            verified=True,
             verification_method=CapabilityVerificationMethod.CLI_PLUS_READBACK,
             raw_summary=(
                 "Trunk administrative mode was configured through "
@@ -489,32 +621,48 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         )
 
     def _wait_for_admin_mode(
-        self, temporary_name: str, interface: str, expected: int,
+        self,
+        temporary_name: str,
+        interface: str,
+        expected: int,
     ) -> bool:
         name = json.dumps(temporary_name)
         port = json.dumps(interface)
 
         def inspect() -> dict:
-            js = "".join((
-                "try{var __d=ipc.network().getDevice(", name, ");",
-                "var __p=__d&&typeof __d.getPort==='function'?__d.getPort(",
-                port, "):null;var __mode=null;",
-                "if(__p&&typeof __p.getAdminOpMode==='function'){",
-                "__mode=Number(__p.getAdminOpMode());}",
-                "reportResult(JSON.stringify({found:!!__d,port_found:!!__p,",
-                "admin_op_mode:__mode,configuration_channel:__mode===",
-                str(expected), "}));}catch(__e){reportResult('ERROR:'+__e);}",
-            ))
+            js = "".join(
+                (
+                    "try{var __d=ipc.network().getDevice(",
+                    name,
+                    ");",
+                    "var __p=__d&&typeof __d.getPort==='function'?__d.getPort(",
+                    port,
+                    "):null;var __mode=null;",
+                    "if(__p&&typeof __p.getAdminOpMode==='function'){",
+                    "__mode=Number(__p.getAdminOpMode());}",
+                    "reportResult(JSON.stringify({found:!!__d,port_found:!!__p,",
+                    "admin_op_mode:__mode,configuration_channel:__mode===",
+                    str(expected),
+                    "}));}catch(__e){reportResult('ERROR:'+__e);}",
+                )
+            )
             return self._json_result(js, timeout=3.0)
 
-        return StateConvergenceWaiter(
-            inspect, timeout_seconds=8.0,
-        ).wait().configuration_channel
+        return (
+            StateConvergenceWaiter(
+                inspect,
+                timeout_seconds=8.0,
+            )
+            .wait()
+            .configuration_channel
+        )
 
     def _probe_cme(
-        self, temporary_name: str, definition: ProbeDefinition,
+        self,
+        temporary_name: str,
+        definition: ProbeDefinition,
     ) -> CapabilityProbeResult:
-        """Does this build accept `telephony-service` and read its table back?
+        """Check whether this build accepts `telephony-service` and reads it back.
 
         That is the whole question a model-level capability can answer. Whether
         one phone registered is not a property of the router and is observed per
@@ -528,39 +676,64 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         target = self._layer3_target(temporary_name)
         if target is None or target[1]:
             return self._failure(
-                definition, ProbeExecutionStatus.SKIPPED,
+                definition,
+                ProbeExecutionStatus.SKIPPED,
                 "No routed physical interface is available for the CME slice.",
             )
         interface = target[0]
         configured = False
         rows: list = []
         try:
-            payload = "\n".join((
-                "enable", "configure terminal", f"interface {interface}",
-                f"ip address {_CME_PROBE_ADDRESS} {_CME_PROBE_MASK}",
-                "no shutdown", "exit",
-                "telephony-service",
-                " max-ephones 1", " max-dn 1",
-                f" ip source-address {_CME_PROBE_ADDRESS} port {_CME_PROBE_PORT}",
-                " exit",
-                "ephone-dn 1", f" number {_CME_PROBE_EXTENSION}", " exit",
-                "ephone 1", f" mac-address {_CME_PROBE_MAC}", " type 7960",
-                " button 1:1", " exit", "end",
-            ))
+            payload = "\n".join(
+                (
+                    "enable",
+                    "configure terminal",
+                    f"interface {interface}",
+                    f"ip address {_CME_PROBE_ADDRESS} {_CME_PROBE_MASK}",
+                    "no shutdown",
+                    "exit",
+                    "telephony-service",
+                    " max-ephones 1",
+                    " max-dn 1",
+                    f" ip source-address {_CME_PROBE_ADDRESS} port {_CME_PROBE_PORT}",
+                    " exit",
+                    "ephone-dn 1",
+                    f" number {_CME_PROBE_EXTENSION}",
+                    " exit",
+                    "ephone 1",
+                    f" mac-address {_CME_PROBE_MAC}",
+                    " type 7960",
+                    " button 1:1",
+                    " exit",
+                    "end",
+                )
+            )
             configured = self._configuration.configure_ios(temporary_name, payload)
             if configured:
                 rows = self._wait_for_ephone_row(temporary_name)
         finally:
             # The device is disposable, but leaving CME behind would make the
             # next probe's baseline a different router than the one it measured.
-            self._configuration.configure_ios(temporary_name, "\n".join((
-                "enable", "configure terminal",
-                "no ephone 1", "no ephone-dn 1", "no telephony-service",
-                f"interface {interface}", "no ip address", "shutdown", "end",
-            )))
+            self._configuration.configure_ios(
+                temporary_name,
+                "\n".join(
+                    (
+                        "enable",
+                        "configure terminal",
+                        "no ephone 1",
+                        "no ephone-dn 1",
+                        "no telephony-service",
+                        f"interface {interface}",
+                        "no ip address",
+                        "shutdown",
+                        "end",
+                    )
+                ),
+            )
         if not configured:
             return self._failure(
-                definition, ProbeExecutionStatus.BRIDGE_ERROR,
+                definition,
+                ProbeExecutionStatus.BRIDGE_ERROR,
                 "The official configuration channel rejected the CME payload.",
             )
         if not rows:
@@ -568,18 +741,22 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             # evidence of support: without a table there is nothing to verify a
             # registration against later.
             return self._failure(
-                definition, ProbeExecutionStatus.VERIFY_FAILED,
+                definition,
+                ProbeExecutionStatus.VERIFY_FAILED,
                 "`show ephone` produced no parseable row after the controlled "
                 "CME configuration, so no registration read-back path exists.",
                 configured=True,
             )
         row = rows[0]
         return CapabilityProbeResult(
-            probe_id=definition.id, model="", capability=definition.capability,
+            probe_id=definition.id,
+            model="",
+            capability=definition.capability,
             status=CapabilityStatus.SUPPORTED,
             execution_status=ProbeExecutionStatus.VERIFIED,
             evidence_source=EvidenceSource.CONTROLLED_PROBE,
-            configured=True, verified=True,
+            configured=True,
+            verified=True,
             verification_method=CapabilityVerificationMethod.CLI_PLUS_READBACK,
             raw_summary=(
                 "A controlled telephony-service instance was accepted and its "
@@ -601,24 +778,34 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         def inspect() -> dict:
             nonlocal latest
             result = self._ios.execute(temporary_name, OperationalQueryId.SHOW_EPHONE)
-            latest = [
-                item for item in parse_show_ephone(result.output)
-                if str(item.extension) == _CME_PROBE_EXTENSION
-            ] if result.executed else []
+            latest = (
+                [
+                    item
+                    for item in parse_show_ephone(result.output)
+                    if str(item.extension) == _CME_PROBE_EXTENSION
+                ]
+                if result.executed
+                else []
+            )
             return {"configuration_channel": bool(latest)}
 
         DeviceReadinessWaiter(
-            inspect, timeout_seconds=20.0, interval_seconds=1.0,
+            inspect,
+            timeout_seconds=20.0,
+            interval_seconds=1.0,
         ).wait()
         return latest
 
     def _probe_dhcp_server(
-        self, temporary_name: str, definition: ProbeDefinition,
+        self,
+        temporary_name: str,
+        definition: ProbeDefinition,
     ) -> CapabilityProbeResult:
         target = self._layer3_target(temporary_name)
         if target is None or target[1]:
             return self._failure(
-                definition, ProbeExecutionStatus.SKIPPED,
+                definition,
+                ProbeExecutionStatus.SKIPPED,
                 "No routed physical interface is available for the DHCP behavior slice.",
             )
         interface = target[0]
@@ -627,17 +814,24 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         lease: dict[str, str] | None = None
         endpoint_removed = False
         try:
-            payload = "\n".join((
-                "enable", "configure terminal", f"interface {interface}",
-                f"ip address {_DHCP_PROBE_GATEWAY} {_DHCP_PROBE_MASK}",
-                "no shutdown", "exit",
-                f"ip dhcp excluded-address {_DHCP_PROBE_GATEWAY}",
-                f"ip dhcp pool {_DHCP_PROBE_POOL}",
-                f"network {_DHCP_PROBE_NETWORK} {_DHCP_PROBE_MASK}",
-                f"default-router {_DHCP_PROBE_GATEWAY}", "end",
-            ))
+            payload = "\n".join(
+                (
+                    "enable",
+                    "configure terminal",
+                    f"interface {interface}",
+                    f"ip address {_DHCP_PROBE_GATEWAY} {_DHCP_PROBE_MASK}",
+                    "no shutdown",
+                    "exit",
+                    f"ip dhcp excluded-address {_DHCP_PROBE_GATEWAY}",
+                    f"ip dhcp pool {_DHCP_PROBE_POOL}",
+                    f"network {_DHCP_PROBE_NETWORK} {_DHCP_PROBE_MASK}",
+                    f"default-router {_DHCP_PROBE_GATEWAY}",
+                    "end",
+                )
+            )
             configured = self._configuration.configure_ios(
-                temporary_name, payload,
+                temporary_name,
+                payload,
             )
             if (
                 configured
@@ -651,9 +845,7 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
                 endpoint_removed = self.delete_temporary_device(endpoint)
             except Exception:
                 endpoint_removed = False
-        verified = bool(
-            configured and lease is not None and endpoint_removed
-        )
+        verified = bool(configured and lease is not None and endpoint_removed)
         if not verified:
             reason = (
                 "DHCP server behavior was not demonstrated by a fresh client lease."
@@ -661,15 +853,20 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
                 else "The DHCP lease was observed but disposable client cleanup failed."
             )
             return self._failure(
-                definition, ProbeExecutionStatus.VERIFY_FAILED, reason,
+                definition,
+                ProbeExecutionStatus.VERIFY_FAILED,
+                reason,
                 configured=configured,
             )
         return CapabilityProbeResult(
-            probe_id=definition.id, model="", capability=definition.capability,
+            probe_id=definition.id,
+            model="",
+            capability=definition.capability,
             status=CapabilityStatus.SUPPORTED,
             execution_status=ProbeExecutionStatus.VERIFIED,
             evidence_source=EvidenceSource.CONTROLLED_PROBE,
-            configured=True, verified=True,
+            configured=True,
+            verified=True,
             verification_method=CapabilityVerificationMethod.SIMULATION_TRACE,
             raw_summary=(
                 "A disposable client obtained fresh IPv4/mask state from the "
@@ -688,24 +885,34 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
 
         def inspect() -> dict:
             nonlocal latest
-            js = "".join((
-                "try{var __d=ipc.network().getDevice(", name, ");var __p=null;",
-                "if(__d){for(var __i=0;__i<__d.getPortCount();__i++){",
-                "var __candidate=__d.getPortAt(__i);if(__candidate&&",
-                "typeof __candidate.getIpAddress==='function'){__p=__candidate;break;}}}",
-                "var __ip=__p?String(__p.getIpAddress()):'';",
-                "var __mask=__p?String(__p.getSubnetMask()):'';",
-                "reportResult(JSON.stringify({found:!!__d,port_found:!!__p,",
-                "ipv4:__ip,netmask:__mask}));}",
-                "catch(__e){reportResult('ERROR:'+__e);}",
-            ))
+            js = "".join(
+                (
+                    "try{var __d=ipc.network().getDevice(",
+                    name,
+                    ");var __p=null;",
+                    "if(__d){for(var __i=0;__i<__d.getPortCount();__i++){",
+                    "var __candidate=__d.getPortAt(__i);if(__candidate&&",
+                    "typeof __candidate.getIpAddress==='function'){__p=__candidate;break;}}}",
+                    "var __ip=__p?String(__p.getIpAddress()):'';",
+                    "var __mask=__p?String(__p.getSubnetMask()):'';",
+                    "reportResult(JSON.stringify({found:!!__d,port_found:!!__p,",
+                    "ipv4:__ip,netmask:__mask}));}",
+                    "catch(__e){reportResult('ERROR:'+__e);}",
+                )
+            )
             latest = self._json_result(js, timeout=3.0)
             latest["configuration_channel"] = self._dhcp_lease_matches(latest)
             return latest
 
-        converged = StateConvergenceWaiter(
-            inspect, timeout_seconds=30.0, interval_seconds=0.5,
-        ).wait().configuration_channel
+        converged = (
+            StateConvergenceWaiter(
+                inspect,
+                timeout_seconds=30.0,
+                interval_seconds=0.5,
+            )
+            .wait()
+            .configuration_channel
+        )
         if not converged or not self._dhcp_lease_matches(latest):
             return None
         return {
@@ -720,71 +927,133 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         try:
             address = ipaddress.ip_address(str(observation.get("ipv4") or ""))
             network = ipaddress.ip_network(
-                f"{_DHCP_PROBE_NETWORK}/{_DHCP_PROBE_PREFIX}", strict=True,
+                f"{_DHCP_PROBE_NETWORK}/{_DHCP_PROBE_PREFIX}",
+                strict=True,
             )
         except ValueError:
             return False
-        return (
-            address in network
-            and address not in {
-                network.network_address,
-                network.broadcast_address,
-                ipaddress.ip_address(_DHCP_PROBE_GATEWAY),
-            }
-        )
+        return address in network and address not in {
+            network.network_address,
+            network.broadcast_address,
+            ipaddress.ip_address(_DHCP_PROBE_GATEWAY),
+        }
 
-    def _probe_layer3(self, temporary_name: str, definition: ProbeDefinition) -> CapabilityProbeResult:
+    def _probe_layer3(
+        self, temporary_name: str, definition: ProbeDefinition
+    ) -> CapabilityProbeResult:
         target = self._layer3_target(temporary_name)
         if target is None:
-            return self._failure(definition, ProbeExecutionStatus.SKIPPED, "No model-specific IPv4 probe target is available for this device.")
+            return self._failure(
+                definition,
+                ProbeExecutionStatus.SKIPPED,
+                "No model-specific IPv4 probe target is available for this device.",
+            )
         interface, is_svi = target
-        session_show = self._ios.execute(temporary_name, OperationalQueryId.SHOW_IP_INTERFACE_BRIEF)
+        session_show = self._ios.execute(
+            temporary_name, OperationalQueryId.SHOW_IP_INTERFACE_BRIEF
+        )
         if not session_show.executed:
             return self._failure(
-                definition, ProbeExecutionStatus.VERIFY_FAILED,
-                "IOS session could not reach a fresh operational SHOW before configuration: " + session_show.failure_reason,
+                definition,
+                ProbeExecutionStatus.VERIFY_FAILED,
+                "IOS session could not reach a fresh operational SHOW before configuration: "
+                + session_show.failure_reason,
             )
         address, mask, vlan_id = self._layer3_probe_values(is_svi)
         lines = ["enable", "configure terminal"]
         if is_svi:
             lines.append(f"vlan {vlan_id}")
-        lines.extend((f"interface {interface}", f"ip address {address} {mask}", "no shutdown", "end"))
+        lines.extend(
+            (
+                f"interface {interface}",
+                f"ip address {address} {mask}",
+                "no shutdown",
+                "end",
+            )
+        )
         if not self._configuration.configure_ios(temporary_name, "\n".join(lines)):
-            return self._failure(definition, ProbeExecutionStatus.BRIDGE_ERROR, "Official configuration channel rejected the IPv4 payload.")
-        show_configured = self._wait_for_ios_address(temporary_name, interface, address, present=True)
-        configured = bool(show_configured and self._show_has_address(show_configured, interface, address, present=True))
-        cleanup = "\n".join(("enable", "configure terminal", f"interface {interface}", "no ip address", "shutdown", "end"))
+            return self._failure(
+                definition,
+                ProbeExecutionStatus.BRIDGE_ERROR,
+                "Official configuration channel rejected the IPv4 payload.",
+            )
+        show_configured = self._wait_for_ios_address(
+            temporary_name, interface, address, present=True
+        )
+        configured = bool(
+            show_configured
+            and self._show_has_address(
+                show_configured, interface, address, present=True
+            )
+        )
+        cleanup = "\n".join(
+            (
+                "enable",
+                "configure terminal",
+                f"interface {interface}",
+                "no ip address",
+                "shutdown",
+                "end",
+            )
+        )
         cleanup_sent = self._configuration.configure_ios(temporary_name, cleanup)
-        show_cleaned = self._wait_for_ios_address(temporary_name, interface, address, present=False) if cleanup_sent else None
-        cleaned = bool(show_cleaned and self._show_has_address(show_cleaned, interface, address, present=False))
+        show_cleaned = (
+            self._wait_for_ios_address(
+                temporary_name, interface, address, present=False
+            )
+            if cleanup_sent
+            else None
+        )
+        cleaned = bool(
+            show_cleaned
+            and self._show_has_address(show_cleaned, interface, address, present=False)
+        )
         if not configured or not cleaned:
             details = ["IPv4 configure/read-back/cleanup evidence was incomplete."]
             if not show_configured.executed:
                 details.append("configured show: " + show_configured.failure_reason)
             elif not configured:
-                details.append("configured show rows: " + self._show_summary(show_configured))
+                details.append(
+                    "configured show rows: " + self._show_summary(show_configured)
+                )
             if show_cleaned is not None and not show_cleaned.executed:
                 details.append("cleanup show: " + show_cleaned.failure_reason)
             elif show_cleaned is not None and not cleaned:
                 details.append("cleanup show rows: " + self._show_summary(show_cleaned))
-            return self._failure(definition, ProbeExecutionStatus.VERIFY_FAILED, " ".join(details), configured=configured)
+            return self._failure(
+                definition,
+                ProbeExecutionStatus.VERIFY_FAILED,
+                " ".join(details),
+                configured=configured,
+            )
         return CapabilityProbeResult(
-            probe_id=definition.id, model="", capability=definition.capability, status=CapabilityStatus.SUPPORTED,
-            execution_status=ProbeExecutionStatus.VERIFIED, evidence_source=EvidenceSource.CONTROLLED_PROBE,
-            configured=True, verified=True, verification_method=CapabilityVerificationMethod.CLI_PLUS_READBACK,
+            probe_id=definition.id,
+            model="",
+            capability=definition.capability,
+            status=CapabilityStatus.SUPPORTED,
+            execution_status=ProbeExecutionStatus.VERIFIED,
+            evidence_source=EvidenceSource.CONTROLLED_PROBE,
+            configured=True,
+            verified=True,
+            verification_method=CapabilityVerificationMethod.CLI_PLUS_READBACK,
             raw_summary="IPv4 interface configured through configureIosDevice, read back through registered IOS show, and cleared successfully.",
         )
 
-    def _wait_for_ios_address(self, temporary_name: str, interface: str, address: str, *, present: bool):
+    def _wait_for_ios_address(
+        self, temporary_name: str, interface: str, address: str, *, present: bool
+    ):
         """Espera evidencia operacional fresca, no sólo la aceptación asíncrona del CLI."""
         latest = None
 
         def inspect() -> dict:
             nonlocal latest
-            latest = self._ios.execute(temporary_name, OperationalQueryId.SHOW_IP_INTERFACE_BRIEF)
+            latest = self._ios.execute(
+                temporary_name, OperationalQueryId.SHOW_IP_INTERFACE_BRIEF
+            )
             return {
                 "found": latest.executed,
-                "configuration_channel": latest.executed and self._show_has_address(latest, interface, address, present=present),
+                "configuration_channel": latest.executed
+                and self._show_has_address(latest, interface, address, present=present),
             }
 
         StateConvergenceWaiter(inspect, timeout_seconds=8.0).wait()
@@ -802,54 +1071,108 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
     @staticmethod
     def _show_summary(show) -> str:
         rows = parse_show_ip_interface_brief(show.output)
-        return ", ".join(row.interface + "=" + row.ip_address for row in rows[:8]) or "no parsed rows"
+        return (
+            ", ".join(row.interface + "=" + row.ip_address for row in rows[:8])
+            or "no parsed rows"
+        )
 
     @staticmethod
     def _layer3_probe_values(is_svi: bool) -> tuple[str, str, int]:
         if is_svi:
-            return _MULTILAYER_PROBE_IPV4_ADDRESS, _MULTILAYER_PROBE_IPV4_MASK, _MULTILAYER_PROBE_VLAN_ID
-        return CAPABILITY_PROBE_IPV4_ADDRESS, CAPABILITY_PROBE_IPV4_MASK, CAPABILITY_PROBE_VLAN_ID
+            return (
+                _MULTILAYER_PROBE_IPV4_ADDRESS,
+                _MULTILAYER_PROBE_IPV4_MASK,
+                _MULTILAYER_PROBE_VLAN_ID,
+            )
+        return (
+            CAPABILITY_PROBE_IPV4_ADDRESS,
+            CAPABILITY_PROBE_IPV4_MASK,
+            CAPABILITY_PROBE_VLAN_ID,
+        )
 
     def _wait_for_readiness(self, temporary_name: str):
-        return DeviceReadinessWaiter(lambda: self._initialization_state(temporary_name)).wait()
+        return DeviceReadinessWaiter(
+            lambda: self._initialization_state(temporary_name)
+        ).wait()
 
     def _wait_for_operational_readiness(self, temporary_name: str, runtime_model: str):
         terminal_kind = self._terminal_kind_for(runtime_model)
-        return IosBootWaiter(lambda: self._initialization_state(temporary_name, terminal_kind)).wait()
+        return IosBootWaiter(
+            lambda: self._initialization_state(temporary_name, terminal_kind),
+            timeout_seconds=self._operational_readiness_seconds,
+        ).wait()
 
     @staticmethod
     def _terminal_kind_for(runtime_model: str) -> str:
         model = resolve_model(runtime_model)
-        return "pc_command_prompt" if model and model.category in {"pc", "server", "laptop"} else "ios_command_line"
+        return (
+            "pc_command_prompt"
+            if model and model.category in {"pc", "server", "laptop"}
+            else "ios_command_line"
+        )
 
-    def _initialization_state(self, temporary_name: str, terminal_kind: str = "ios_command_line") -> dict:
+    def _initialization_state(
+        self, temporary_name: str, terminal_kind: str = "ios_command_line"
+    ) -> dict:
         name = json.dumps(temporary_name)
-        getter = "getCommandPrompt" if terminal_kind == "pc_command_prompt" else "getCommandLine"
-        js = "".join((
-            "try{var __d=ipc.network().getDevice(", name, ");",
-            "var __terminal=__d&&typeof __d.", getter, "==='function'?__d.", getter, "():null;",
-            "var __vm=__d&&typeof __d.getProcess==='function'?__d.getProcess('VlanManager'):null;",
-            "var __power=__d&&typeof __d.getPower==='function'?!!__d.getPower():null;",
-            "var __booting=__d&&typeof __d.isBooting==='function'?!!__d.isBooting():null;",
-            "reportResult(JSON.stringify({found:!!__d,power:__power,booting:__booting,command_prompt:", "true" if terminal_kind == "pc_command_prompt" else "false", "&&!!__terminal,terminal_available:!!__terminal,terminal_kind:", json.dumps(terminal_kind), ",configuration_channel:!!__d&&typeof configureIosDevice==='function',components_seen:__vm?['VlanManager']:[]}));",
-            "}catch(__e){reportResult('ERROR:'+__e);}",
-        ))
+        getter = (
+            "getCommandPrompt"
+            if terminal_kind == "pc_command_prompt"
+            else "getCommandLine"
+        )
+        js = "".join(
+            (
+                "try{var __d=ipc.network().getDevice(",
+                name,
+                ");",
+                "var __terminal=__d&&typeof __d.",
+                getter,
+                "==='function'?__d.",
+                getter,
+                "():null;",
+                "var __vm=__d&&typeof __d.getProcess==='function'?__d.getProcess('VlanManager'):null;",
+                "var __power=__d&&typeof __d.getPower==='function'?!!__d.getPower():null;",
+                "var __booting=__d&&typeof __d.isBooting==='function'?!!__d.isBooting():null;",
+                "reportResult(JSON.stringify({found:!!__d,power:__power,booting:__booting,command_prompt:",
+                "true" if terminal_kind == "pc_command_prompt" else "false",
+                "&&!!__terminal,terminal_available:!!__terminal,terminal_kind:",
+                json.dumps(terminal_kind),
+                ",configuration_channel:!!__d&&typeof configureIosDevice==='function',components_seen:__vm?['VlanManager']:[]}));",
+                "}catch(__e){reportResult('ERROR:'+__e);}",
+            )
+        )
         return self._json_result(js, timeout=3.0)
 
     def _wait_for_vlan(self, temporary_name: str, *, present: bool) -> bool:
         name = json.dumps(temporary_name)
         vlan = json.dumps(CAPABILITY_PROBE_VLAN_ID)
+
         def inspect() -> dict:
-            js = "".join((
-                "try{var __d=ipc.network().getDevice(", name, ");var __vm=__d&&typeof __d.getProcess==='function'?__d.getProcess('VlanManager'):null;var __found=false;",
-                "if(__vm){for(var __i=0;__i<__vm.getVlanCount();__i++){var __v=__vm.getVlanAt(__i);if(__v&&__v.getVlanNumber()===", vlan, "){__found=true;}}}",
-                "reportResult(JSON.stringify({found:!!__d,configuration_channel:__found===", "true" if present else "false", "}));}catch(__e){reportResult('ERROR:'+__e);}",
-            ))
+            js = "".join(
+                (
+                    "try{var __d=ipc.network().getDevice(",
+                    name,
+                    ");var __vm=__d&&typeof __d.getProcess==='function'?__d.getProcess('VlanManager'):null;var __found=false;",
+                    "if(__vm){for(var __i=0;__i<__vm.getVlanCount();__i++){var __v=__vm.getVlanAt(__i);if(__v&&__v.getVlanNumber()===",
+                    vlan,
+                    "){__found=true;}}}",
+                    "reportResult(JSON.stringify({found:!!__d,configuration_channel:__found===",
+                    "true" if present else "false",
+                    "}));}catch(__e){reportResult('ERROR:'+__e);}",
+                )
+            )
             return self._json_result(js, timeout=3.0)
-        return StateConvergenceWaiter(inspect, timeout_seconds=8.0).wait().configuration_channel
+
+        return (
+            StateConvergenceWaiter(inspect, timeout_seconds=8.0)
+            .wait()
+            .configuration_channel
+        )
 
     def _probe_multilayer_intervlan(
-        self, temporary_name: str, definition: ProbeDefinition,
+        self,
+        temporary_name: str,
+        definition: ProbeDefinition,
     ) -> CapabilityProbeResult:
         """Construye dos VLANs con SVI y demuestra (o no) el forwarding entre ellas.
 
@@ -860,13 +1183,15 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         model = self._observed_model(temporary_name)
         if layer3_strategy_for(model) is not Layer3ProbeStrategy.SVI:
             return self._failure(
-                definition, ProbeExecutionStatus.SKIPPED,
+                definition,
+                ProbeExecutionStatus.SKIPPED,
                 f"Model {model!r} does not declare the SVI layer-3 strategy.",
             )
         access_ports = self._physical_access_ports(temporary_name, 2)
         if len(access_ports) < 2:
             return self._failure(
-                definition, ProbeExecutionStatus.VERIFY_FAILED,
+                definition,
+                ProbeExecutionStatus.VERIFY_FAILED,
                 "Fewer than two physical access ports were observed for the slice.",
             )
 
@@ -874,7 +1199,10 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         endpoints = (f"{temporary_name}_PCA", f"{temporary_name}_PCB")
         try:
             built = self._build_multilayer_slice(
-                temporary_name, access_ports, endpoints, dimensions,
+                temporary_name,
+                access_ports,
+                endpoints,
+                dimensions,
             )
             if not built:
                 return self._multilayer_result(definition, dimensions, model)
@@ -885,7 +1213,10 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         return self._multilayer_result(definition, dimensions, model)
 
     def _build_multilayer_slice(
-        self, switch: str, ports: list[str], endpoints: tuple[str, str],
+        self,
+        switch: str,
+        ports: list[str],
+        endpoints: tuple[str, str],
         dimensions: dict[str, str],
     ) -> bool:
         vlans = (_MULTILAYER_SLICE_VLAN_A, _MULTILAYER_SLICE_VLAN_B)
@@ -896,40 +1227,59 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         for vlan in vlans:
             lines.append(f"vlan {vlan}")
             lines.append("exit")
-        for port, vlan in zip(ports, vlans):
-            lines.extend((
-                f"interface {port}", "switchport mode access",
-                f"switchport access vlan {vlan}", "no shutdown", "exit",
-            ))
-        for vlan, gateway in zip(vlans, gateways):
-            lines.extend((
-                f"interface Vlan{vlan}",
-                f"ip address {gateway} {_MULTILAYER_SLICE_MASK}",
-                "no shutdown", "exit",
-            ))
+        for port, vlan in zip(ports, vlans, strict=False):
+            lines.extend(
+                (
+                    f"interface {port}",
+                    "switchport mode access",
+                    f"switchport access vlan {vlan}",
+                    "no shutdown",
+                    "exit",
+                )
+            )
+        for vlan, gateway in zip(vlans, gateways, strict=False):
+            lines.extend(
+                (
+                    f"interface Vlan{vlan}",
+                    f"ip address {gateway} {_MULTILAYER_SLICE_MASK}",
+                    "no shutdown",
+                    "exit",
+                )
+            )
         lines.extend(("ip routing", "end"))
         if not self._configuration.configure_ios(switch, "\n".join(lines)):
-            dimensions[MultilayerDimension.SVI_CONFIGURATION.value] = "config_apply_failed"
+            dimensions[MultilayerDimension.SVI_CONFIGURATION.value] = (
+                "config_apply_failed"
+            )
             return False
         dimensions[MultilayerDimension.SVI_CONFIGURATION.value] = "applied"
 
-        for name, host, gateway in zip(endpoints, hosts, gateways):
+        for name, _host, _gateway in zip(endpoints, hosts, gateways, strict=False):
             if not self._create_probe_endpoint(name):
-                dimensions[MultilayerDimension.ENDPOINT_GATEWAY.value] = "endpoint_create_failed"
+                dimensions[MultilayerDimension.ENDPOINT_GATEWAY.value] = (
+                    "endpoint_create_failed"
+                )
                 return False
-        for name, port in zip(endpoints, ports):
+        for name, port in zip(endpoints, ports, strict=False):
             if not self._link_probe_endpoint(name, switch, port):
-                dimensions[MultilayerDimension.ENDPOINT_GATEWAY.value] = "endpoint_link_failed"
+                dimensions[MultilayerDimension.ENDPOINT_GATEWAY.value] = (
+                    "endpoint_link_failed"
+                )
                 return False
-        for name, host, gateway in zip(endpoints, hosts, gateways):
+        for name, host, gateway in zip(endpoints, hosts, gateways, strict=False):
             self._configuration.configure_endpoint_ipv4(
-                name, host, _MULTILAYER_SLICE_MASK, gateway,
+                name,
+                host,
+                _MULTILAYER_SLICE_MASK,
+                gateway,
             )
         dimensions[MultilayerDimension.ENDPOINT_GATEWAY.value] = "configured"
         return True
 
     def _observe_multilayer_state(
-        self, switch: str, dimensions: dict[str, str],
+        self,
+        switch: str,
+        dimensions: dict[str, str],
     ) -> None:
         """Espera acotada a que las SVI aparezcan y converjan."""
         expected = (
@@ -944,27 +1294,33 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             attempts += 1
             for vlan, _gateway in expected:
                 show = self._ios.execute(
-                    switch, OperationalQueryId.SHOW_IP_INTERFACE,
+                    switch,
+                    OperationalQueryId.SHOW_IP_INTERFACE,
                     interface=f"Vlan{vlan}",
                 )
-                rows[vlan] = parse_show_ip_interface(show.output) if show.executed else None
+                rows[vlan] = (
+                    parse_show_ip_interface(show.output) if show.executed else None
+                )
             ready = all(
-                rows.get(vlan) is not None
-                and rows[vlan].protocol.casefold() == "up"
+                rows.get(vlan) is not None and rows[vlan].protocol.casefold() == "up"
                 for vlan, _gateway in expected
             )
             if ready or time.monotonic() >= deadline:
                 break
             time.sleep(0.5)
         dimensions["convergence_attempts"] = str(attempts)
-        dimensions["convergence_elapsed_ms"] = str(int((time.monotonic() - started) * 1000))
+        dimensions["convergence_elapsed_ms"] = str(
+            int((time.monotonic() - started) * 1000)
+        )
 
         present, addressed, admin_up, protocol_up = [], [], [], []
         for vlan, gateway in expected:
             row = rows.get(vlan)
             present.append(row is not None)
             addressed.append(bool(row) and row.ip_address.strip() == gateway)
-            admin_up.append(bool(row) and "administratively down" not in row.status.casefold())
+            admin_up.append(
+                bool(row) and "administratively down" not in row.status.casefold()
+            )
             protocol_up.append(bool(row) and row.protocol.casefold() == "up")
         dimensions[MultilayerDimension.SVI_CONFIGURATION.value] = (
             "observed" if all(present) else "svi_absent_from_readback"
@@ -980,7 +1336,9 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         )
 
     def _observe_multilayer_behavior(
-        self, endpoints: tuple[str, str], dimensions: dict[str, str],
+        self,
+        endpoints: tuple[str, str],
+        dimensions: dict[str, str],
     ) -> None:
         from .typed_ping import TypedPingExecutor
 
@@ -990,29 +1348,40 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
 
         def reach(source: str, destination: str, budget: float):
             return bounded_reach(
-                lambda: ping.ping(source, destination), retry_budget_seconds=budget,
+                lambda: ping.ping(source, destination),
+                retry_budget_seconds=budget,
             )
 
-        gateway_a, retries_a, spent_a = reach(endpoints[0], _MULTILAYER_SLICE_GATEWAY_A, 20.0)
-        gateway_b, retries_b, spent_b = reach(endpoints[1], _MULTILAYER_SLICE_GATEWAY_B, 20.0)
+        gateway_a, retries_a, spent_a = reach(
+            endpoints[0], _MULTILAYER_SLICE_GATEWAY_A, 20.0
+        )
+        gateway_b, retries_b, spent_b = reach(
+            endpoints[1], _MULTILAYER_SLICE_GATEWAY_B, 20.0
+        )
         dimensions["gateway_ping_retries"] = f"{retries_a}/{retries_b}"
         # "0 reintentos" ya no es ambiguo: se dice aparte si el presupuesto se
         # agotó, porque "no hizo falta" y "no se pudo" son estados distintos.
-        exhausted = [
-            name for name, spent in (("a", spent_a), ("b", spent_b)) if spent
-        ]
+        exhausted = [name for name, spent in (("a", spent_a), ("b", spent_b)) if spent]
         dimensions["gateway_retry_budget"] = (
             "exhausted:" + ",".join(exhausted) if exhausted else "not_exhausted"
         )
-        dimensions["endpoint_a_to_svi"] = "reachable" if gateway_a.reachable else "unreachable"
-        dimensions["endpoint_b_to_svi"] = "reachable" if gateway_b.reachable else "unreachable"
+        dimensions["endpoint_a_to_svi"] = (
+            "reachable" if gateway_a.reachable else "unreachable"
+        )
+        dimensions["endpoint_b_to_svi"] = (
+            "reachable" if gateway_b.reachable else "unreachable"
+        )
         if not (gateway_a.reachable and gateway_b.reachable):
             # Sin baseline hacia la propia puerta de enlace, un fallo entre VLANs
             # no probaría nada sobre el enrutamiento.
-            dimensions[MultilayerDimension.INTERVLAN_FORWARDING.value] = "no_gateway_baseline"
+            dimensions[MultilayerDimension.INTERVLAN_FORWARDING.value] = (
+                "no_gateway_baseline"
+            )
             dimensions[MultilayerDimension.IP_ROUTING.value] = "unproven"
             return
-        crossed, retries_x, _spent_x = reach(endpoints[0], _MULTILAYER_SLICE_HOST_B, 20.0)
+        crossed, retries_x, _spent_x = reach(
+            endpoints[0], _MULTILAYER_SLICE_HOST_B, 20.0
+        )
         dimensions["intervlan_ping_retries"] = str(retries_x)
         dimensions[MultilayerDimension.INTERVLAN_FORWARDING.value] = (
             "reachable" if crossed.reachable else "unreachable"
@@ -1024,50 +1393,73 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
             dimensions[MultilayerDimension.INTERVLAN_FORWARDING.value] = "stale_output"
 
     def _multilayer_result(
-        self, definition: ProbeDefinition, dimensions: dict[str, str], model: str,
+        self,
+        definition: ProbeDefinition,
+        dimensions: dict[str, str],
+        model: str,
     ) -> CapabilityProbeResult:
         forwarding = dimensions.get(MultilayerDimension.INTERVLAN_FORWARDING.value)
         verified = forwarding == "reachable"
-        summary = "; ".join(f"{key}={value}" for key, value in sorted(dimensions.items()))
+        summary = "; ".join(
+            f"{key}={value}" for key, value in sorted(dimensions.items())
+        )
         return CapabilityProbeResult(
-            probe_id=definition.id, model=model, capability=definition.capability,
+            probe_id=definition.id,
+            model=model,
+            capability=definition.capability,
             status=CapabilityStatus.SUPPORTED if verified else CapabilityStatus.UNKNOWN,
             execution_status=(
-                ProbeExecutionStatus.VERIFIED if verified
+                ProbeExecutionStatus.VERIFIED
+                if verified
                 else ProbeExecutionStatus.VERIFY_FAILED
             ),
             evidence_source=EvidenceSource.CONTROLLED_PROBE,
             configured=dimensions.get(
                 MultilayerDimension.SVI_CONFIGURATION.value,
-            ) in {"applied", "observed"},
+            )
+            in {"applied", "observed"},
             verified=verified,
             verification_method=CapabilityVerificationMethod.SIMULATION_TRACE,
             raw_summary=summary,
-            failure_reason="" if verified else f"Inter-VLAN forwarding was not demonstrated: {summary}",
+            failure_reason=""
+            if verified
+            else f"Inter-VLAN forwarding was not demonstrated: {summary}",
             dimensions=dimensions,
         )
 
     def _physical_access_ports(self, temporary_name: str, count: int) -> list[str]:
         name = json.dumps(temporary_name)
-        js = "".join((
-            "try{var __d=ipc.network().getDevice(", name, ");var __out=[];",
-            "for(var __i=0;__d&&__i<__d.getPortCount();__i++){var __p=__d.getPortAt(__i);",
-            "if(!__p){continue;}var __n=String(__p.getName());",
-            "if(__n.indexOf('Vlan')===0||__n.indexOf('Loopback')===0){continue;}",
-            "if(__n.indexOf('Ethernet')<0){continue;}__out.push(__n);}",
-            "reportResult(JSON.stringify({ports:__out}));}catch(__e){reportResult('ERROR:'+__e);}",
-        ))
+        js = "".join(
+            (
+                "try{var __d=ipc.network().getDevice(",
+                name,
+                ");var __out=[];",
+                "for(var __i=0;__d&&__i<__d.getPortCount();__i++){var __p=__d.getPortAt(__i);",
+                "if(!__p){continue;}var __n=String(__p.getName());",
+                "if(__n.indexOf('Vlan')===0||__n.indexOf('Loopback')===0){continue;}",
+                "if(__n.indexOf('Ethernet')<0){continue;}__out.push(__n);}",
+                "reportResult(JSON.stringify({ports:__out}));}catch(__e){reportResult('ERROR:'+__e);}",
+            )
+        )
         ports = self._json_result(js, timeout=5.0).get("ports", [])
         return [str(item) for item in ports][:count] if isinstance(ports, list) else []
 
     def _create_probe_endpoint(self, name: str) -> bool:
         payload = json.dumps(name)
-        js = "".join((
-            "try{if(typeof lwAddDevice!=='function'){reportResult(JSON.stringify({created:false}));}",
-            "else{lwAddDevice(", payload, ",", str(PT_DEVICE_TYPE.get("pc", PT_DEVICE_TYPE_DEFAULT)), ",\"PC-PT\",9100,9100);",
-            "reportResult(JSON.stringify({created:!!ipc.network().getDevice(", payload, ")}));}}",
-            "catch(__e){reportResult('ERROR:'+__e);}",
-        ))
+        js = "".join(
+            (
+                "try{if(typeof lwAddDevice!=='function'){reportResult(JSON.stringify({created:false}));}",
+                "else{lwAddDevice(",
+                payload,
+                ",",
+                str(PT_DEVICE_TYPE.get("pc", PT_DEVICE_TYPE_DEFAULT)),
+                ',"PC-PT",9100,9100);',
+                "reportResult(JSON.stringify({created:!!ipc.network().getDevice(",
+                payload,
+                ")}));}}",
+                "catch(__e){reportResult('ERROR:'+__e);}",
+            )
+        )
         if not self._json_result(js, timeout=15.0).get("created"):
             return False
         # Un endpoint recién creado existe antes de que su CommandPrompt sirva.
@@ -1078,19 +1470,31 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         return readiness.state is DeviceInitializationState.OPERATIONAL_READY
 
     def _link_probe_endpoint(self, endpoint: str, switch: str, port: str) -> bool:
-        js = "".join((
-            "try{if(typeof lwAddLink!=='function'){reportResult(JSON.stringify({linked:false}));}",
-            "else{lwAddLink(", json.dumps(endpoint), ",\"FastEthernet0\",",
-            json.dumps(switch), ",", json.dumps(port), ",",
-            str(PT_CONNECT_TYPE["straight"]), ");",
-            "var __p=ipc.network().getDevice(", json.dumps(endpoint), ").getPort(\"FastEthernet0\");",
-            "reportResult(JSON.stringify({linked:!!(__p&&__p.getLink())}));}}",
-            "catch(__e){reportResult('ERROR:'+__e);}",
-        ))
+        js = "".join(
+            (
+                "try{if(typeof lwAddLink!=='function'){reportResult(JSON.stringify({linked:false}));}",
+                "else{lwAddLink(",
+                json.dumps(endpoint),
+                ',"FastEthernet0",',
+                json.dumps(switch),
+                ",",
+                json.dumps(port),
+                ",",
+                str(PT_CONNECT_TYPE["straight"]),
+                ");",
+                "var __p=ipc.network().getDevice(",
+                json.dumps(endpoint),
+                ').getPort("FastEthernet0");',
+                "reportResult(JSON.stringify({linked:!!(__p&&__p.getLink())}));}}",
+                "catch(__e){reportResult('ERROR:'+__e);}",
+            )
+        )
         return bool(self._json_result(js, timeout=15.0).get("linked"))
 
     def _teardown_multilayer_slice(
-        self, switch: str, endpoints: tuple[str, str],
+        self,
+        switch: str,
+        endpoints: tuple[str, str],
     ) -> None:
         """Borra sólo lo que creó este slice; el switch lo retira el framework."""
         for name in endpoints:
@@ -1112,21 +1516,29 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
 
     def _observed_model(self, temporary_name: str) -> str:
         name = json.dumps(temporary_name)
-        js = "".join((
-            "try{var __d=ipc.network().getDevice(", name, ");",
-            "reportResult(JSON.stringify({model:__d&&typeof __d.getModel==='function'?String(__d.getModel()):''}));}",
-            "catch(__e){reportResult('ERROR:'+__e);}",
-        ))
+        js = "".join(
+            (
+                "try{var __d=ipc.network().getDevice(",
+                name,
+                ");",
+                "reportResult(JSON.stringify({model:__d&&typeof __d.getModel==='function'?String(__d.getModel()):''}));}",
+                "catch(__e){reportResult('ERROR:'+__e);}",
+            )
+        )
         return str(self._json_result(js, timeout=5.0).get("model") or "")
 
     def _first_ethernet_port(self, temporary_name: str) -> str:
         name = json.dumps(temporary_name)
-        js = "".join((
-            "try{var __d=ipc.network().getDevice(", name, ");var __ifaces=[];",
-            "for(var __i=0;__d&&__i<__d.getPortCount();__i++){var __p=__d.getPortAt(__i);",
-            "if(__p&&String(__p.getName()).indexOf('Ethernet')>=0){__ifaces.push(String(__p.getName()));}}",
-            "reportResult(JSON.stringify({interfaces:__ifaces}));}catch(__e){reportResult('ERROR:'+__e);}",
-        ))
+        js = "".join(
+            (
+                "try{var __d=ipc.network().getDevice(",
+                name,
+                ");var __ifaces=[];",
+                "for(var __i=0;__d&&__i<__d.getPortCount();__i++){var __p=__d.getPortAt(__i);",
+                "if(__p&&String(__p.getName()).indexOf('Ethernet')>=0){__ifaces.push(String(__p.getName()));}}",
+                "reportResult(JSON.stringify({interfaces:__ifaces}));}catch(__e){reportResult('ERROR:'+__e);}",
+            )
+        )
         observed = self._json_result(js, timeout=5.0).get("interfaces", [])
         if not isinstance(observed, list):
             return ""
@@ -1145,39 +1557,72 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         # is present; capability is still established only by configure/readback.
         return min(interfaces, key=preference) if interfaces else ""
 
-    def _wait_for_ip(self, temporary_name: str, interface: str, *, present: bool) -> bool:
+    def _wait_for_ip(
+        self, temporary_name: str, interface: str, *, present: bool
+    ) -> bool:
         name, port = json.dumps(temporary_name), json.dumps(interface)
+
         def inspect() -> dict:
-            js = "".join((
-                "try{var __d=ipc.network().getDevice(", name, ");var __p=__d&&typeof __d.getPort==='function'?__d.getPort(", port, "):null;",
-                "if(!__p&&__d){for(var __i=0;__i<__d.getPortCount();__i++){var __candidate=__d.getPortAt(__i);if(__candidate&&String(__candidate.getName()).toLowerCase()===String(", port, ").toLowerCase()){__p=__candidate;break;}}}",
-                "var __match=!!__p&&__p.getIpAddress()===", json.dumps(CAPABILITY_PROBE_IPV4_ADDRESS), "&&__p.getSubnetMask()===", json.dumps(CAPABILITY_PROBE_IPV4_MASK), ";",
-                "reportResult(JSON.stringify({found:!!__d,configuration_channel:__match===", "true" if present else "false", "}));}catch(__e){reportResult('ERROR:'+__e);}",
-            ))
+            js = "".join(
+                (
+                    "try{var __d=ipc.network().getDevice(",
+                    name,
+                    ");var __p=__d&&typeof __d.getPort==='function'?__d.getPort(",
+                    port,
+                    "):null;",
+                    "if(!__p&&__d){for(var __i=0;__i<__d.getPortCount();__i++){var __candidate=__d.getPortAt(__i);if(__candidate&&String(__candidate.getName()).toLowerCase()===String(",
+                    port,
+                    ").toLowerCase()){__p=__candidate;break;}}}",
+                    "var __match=!!__p&&__p.getIpAddress()===",
+                    json.dumps(CAPABILITY_PROBE_IPV4_ADDRESS),
+                    "&&__p.getSubnetMask()===",
+                    json.dumps(CAPABILITY_PROBE_IPV4_MASK),
+                    ";",
+                    "reportResult(JSON.stringify({found:!!__d,configuration_channel:__match===",
+                    "true" if present else "false",
+                    "}));}catch(__e){reportResult('ERROR:'+__e);}",
+                )
+            )
             return self._json_result(js, timeout=3.0)
-        return StateConvergenceWaiter(inspect, timeout_seconds=8.0).wait().configuration_channel
+
+        return (
+            StateConvergenceWaiter(inspect, timeout_seconds=8.0)
+            .wait()
+            .configuration_channel
+        )
 
     @staticmethod
     def _failure(
-        definition: ProbeDefinition, execution_status: ProbeExecutionStatus, reason: str, configured: bool = False,
+        definition: ProbeDefinition,
+        execution_status: ProbeExecutionStatus,
+        reason: str,
+        configured: bool = False,
     ) -> CapabilityProbeResult:
         return CapabilityProbeResult(
-            probe_id=definition.id, model="", capability=definition.capability,
-            execution_status=execution_status, evidence_source=EvidenceSource.CONTROLLED_PROBE,
-            configured=configured, failure_reason=reason,
+            probe_id=definition.id,
+            model="",
+            capability=definition.capability,
+            execution_status=execution_status,
+            evidence_source=EvidenceSource.CONTROLLED_PROBE,
+            configured=configured,
+            failure_reason=reason,
         )
 
     def _json_result(self, js: str, timeout: float) -> dict:
         raw = self._send_and_wait(js, timeout)
         if raw is None:
-            raise TimeoutError("Packet Tracer bridge did not respond before the probe timeout.")
+            raise TimeoutError(
+                "Packet Tracer bridge did not respond before the probe timeout."
+            )
         if raw.startswith(("ERROR:", "PT_ERROR:")):
             raise RuntimeError(raw.split(":", 1)[1].strip())
         try:
             value = json.loads(raw)
         except json.JSONDecodeError as exc:
             summary = raw.replace("\r", " ").replace("\n", " ")[:300]
-            raise RuntimeError("Packet Tracer returned malformed probe JSON: " + summary) from exc
+            raise RuntimeError(
+                "Packet Tracer returned malformed probe JSON: " + summary
+            ) from exc
         if not isinstance(value, dict):
             raise RuntimeError("Packet Tracer returned a non-object probe response.")
         return value
@@ -1204,12 +1649,18 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
         name = str(value.get("name", ""))
         match = _INTERFACE_TYPE.match(name)
         bandwidth = value.get("bandwidth_kbps")
-        logical = bool(re.match(r"^(Vlan|Loopback|Tunnel|Port-channel|BVI)", name, re.IGNORECASE))
+        logical = bool(
+            re.match(r"^(Vlan|Loopback|Tunnel|Port-channel|BVI)", name, re.IGNORECASE)
+        )
         power_admin = _strict_observed_bool(
-            value, "power_admin_observed", "power_admin_enabled",
+            value,
+            "power_admin_observed",
+            "power_admin_enabled",
         )
         power_runtime = _strict_observed_bool(
-            value, "power_runtime_observed", "power_runtime_on",
+            value,
+            "power_runtime_observed",
+            "power_runtime_on",
         )
         complete = power_admin is not None and power_runtime is not None
         poe_status = (
@@ -1236,7 +1687,9 @@ class PacketTracerBridgeProbeRuntime(PacketTracerProbeRuntime):
 
 
 def _strict_observed_bool(
-    value: dict, observed_key: str, value_key: str,
+    value: dict,
+    observed_key: str,
+    value_key: str,
 ) -> bool | None:
     if value.get(observed_key) is not True:
         return None

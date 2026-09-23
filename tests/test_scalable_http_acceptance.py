@@ -200,6 +200,22 @@ def test_selected_clients_are_each_accepted_once_in_the_products_order(
     assert envelope.budget.used_operations <= envelope.budget.max_operations
 
 
+def test_scalable_envelope_describes_acceptance_effects_after_separate_l2_setup(
+    tmp_path: Path, campus30
+):
+    """The product record does not deny trunk work performed by setup."""
+    harness = build_scalable_harness(tmp_path, CAMPUS, plans=campus30)
+
+    envelope = _accepted(harness.run())
+
+    assert "trunks_transit_vlans_and_gateways_not_configured_by_acceptance" in (
+        envelope.limitations
+    )
+    assert "trunks_transit_vlans_and_gateways_are_proven_never_configured" not in (
+        envelope.limitations
+    )
+
+
 def test_every_selected_client_stays_represented_when_trunks_fail(
     tmp_path: Path, campus30
 ):

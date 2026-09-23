@@ -7,7 +7,7 @@ It deliberately contains no Packet Tracer API or JavaScript details.
 from __future__ import annotations
 
 from collections import Counter
-from enum import Enum
+from enum import Enum, StrEnum
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -26,19 +26,28 @@ from .execution import (
 )
 
 
-class PhysicalObjectKind(str, Enum):
+class PhysicalObjectKind(StrEnum):
+    """Kind of one planned physical object."""
+
+    __str__ = Enum.__str__
     DEVICE = "device"
     MODULE = "module"
     LINK = "link"
 
 
-class PhysicalDeploymentStatus(str, Enum):
+class PhysicalDeploymentStatus(StrEnum):
+    """Overall E4 result without inferring from a partial readback."""
+
+    __str__ = Enum.__str__
     VERIFIED = "verified"
     PARTIAL = "partial"
     FAILED = "failed"
 
 
-class PhysicalDeploymentItemStatus(str, Enum):
+class PhysicalDeploymentItemStatus(StrEnum):
+    """Outcome of one physical target's mutation and observation."""
+
+    __str__ = Enum.__str__
     NOT_ATTEMPTED = "not_attempted"
     APPLIED = "applied"
     SATISFIED = "satisfied"
@@ -46,7 +55,10 @@ class PhysicalDeploymentItemStatus(str, Enum):
     FAILED = "failed"
 
 
-class PhysicalDeploymentFailureCode(str, Enum):
+class PhysicalDeploymentFailureCode(StrEnum):
+    """Typed reason a physical deployment did not verify."""
+
+    __str__ = Enum.__str__
     NONE = "none"
     INVALID_TOPOLOGY = "invalid_topology"
     PHYSICAL_HASH_MISMATCH = "physical_hash_mismatch"
@@ -132,7 +144,6 @@ def port_classes(ports: list[str] | tuple[str, ...]) -> list[str]:
     conventions, and the evidence contract needs them to decide which newly
     appeared ports are plausibly the requested module's effect.
     """
-
     classes: set[str] = set()
     for port in ports:
         lowered = port.casefold()
@@ -222,7 +233,6 @@ class PhysicalModuleObservation(BaseModel):
         than from the ``expected_port_classes`` field, so blanking that field
         cannot widen what counts as unexplained.
         """
-
         relevant = set(port_classes(self.expected_ports))
         if not relevant:
             return []
@@ -243,7 +253,6 @@ class PhysicalModuleObservation(BaseModel):
         unrequested module effect of the same class is an ambiguous result, not
         a successful one.
         """
-
         expected = set(self.expected_ports)
         if not expected:
             return False
@@ -260,7 +269,6 @@ class PhysicalModuleObservation(BaseModel):
         evidence that is present but does not establish the effect is FAILED.
         Both fail closed against a gate that requires VERIFIED.
         """
-
         if (
             not self.observed
             or not self.port_inventory_observed
@@ -288,6 +296,7 @@ class PhysicalWorkspaceDeviceObservation(BaseModel):
     backend_managed: bool = False
 
     def identity_key(self) -> tuple[str, str, tuple[str, ...]]:
+        """Return a stable exact name, model and port identity."""
         return self.name, self.model, tuple(sorted(set(self.ports), key=str.casefold))
 
 
@@ -301,9 +310,12 @@ class PhysicalWorkspaceLinkObservation(BaseModel):
     port_b: str = ""
 
     def identity_key(self) -> tuple[str, tuple[tuple[str, str], tuple[str, str]]]:
-        endpoints = tuple(sorted(
-            ((self.device_a, self.port_a), (self.device_b, self.port_b)),
-        ))
+        """Return a direction-independent link endpoint identity."""
+        endpoints = tuple(
+            sorted(
+                ((self.device_a, self.port_a), (self.device_b, self.port_b)),
+            )
+        )
         return self.class_name, endpoints
 
 
@@ -322,17 +334,21 @@ class PhysicalWorkspaceObservation(BaseModel):
 
     @property
     def semantic_devices(self) -> list[PhysicalWorkspaceDeviceObservation]:
+        """Return devices not classified as backend managed."""
         return [item for item in self.devices if not item.backend_managed]
 
     @property
     def backend_managed_devices(self) -> list[PhysicalWorkspaceDeviceObservation]:
+        """Return exact backend managed inventory entries."""
         return [item for item in self.devices if item.backend_managed]
 
     @property
     def safe_for_disposable_mutation(self) -> bool:
+        """Report only complete semantic emptiness, without granting effects."""
         return self.observed and not self.semantic_devices and not self.links
 
     def compact_summary(self) -> dict[str, object]:
+        """Retain the complete workspace identity in a serializable report."""
         return {
             "observed": self.observed,
             "semantic_device_count": len(self.semantic_devices),
@@ -350,12 +366,24 @@ class PhysicalWorkspaceObservation(BaseModel):
         }
 
 
+class ServerPtCleanupResult(BaseModel):
+    """Typed owned-device cleanup and two independent workspace readings."""
+
+    attempt_id: str
+    deployment_id: str = ""
+    precleanup: PhysicalWorkspaceObservation | None = None
+    removals: list[PhysicalMutationResult] = Field(default_factory=list)
+    first_restoration: PhysicalWorkspaceObservation | None = None
+    second_restoration: PhysicalWorkspaceObservation | None = None
+    restored: bool = False
+    errors: list[str] = Field(default_factory=list)
+
+
 def physical_workspace_restoration_matches(
     baseline: PhysicalWorkspaceObservation,
     observed: PhysicalWorkspaceObservation,
 ) -> bool:
     """Compare semantic inventory exactly while allowing new retained PDDs."""
-
     if not baseline.observed or not observed.observed:
         return False
     baseline_semantic = Counter(
@@ -383,6 +411,8 @@ def physical_workspace_restoration_matches(
 
 
 class PhysicalDeploymentItemResult(BaseModel):
+    """One E4 target's typed mutation and readback result."""
+
     target_id: str
     target_kind: PhysicalObjectKind
     status: PhysicalDeploymentItemStatus = PhysicalDeploymentItemStatus.NOT_ATTEMPTED
@@ -393,6 +423,8 @@ class PhysicalDeploymentItemResult(BaseModel):
 
 
 class PhysicalDeploymentResult(BaseModel):
+    """Complete E4 outcome, including manifest, journal and evidence."""
+
     topology_id: str
     physical_topology_hash: str
     deployment_id: str
@@ -407,6 +439,7 @@ class PhysicalDeploymentResult(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
     def compact_summary(self) -> dict[str, object]:
+        """Return the concise public E4 report without dropping full fields."""
         counts: dict[str, int] = {}
         for item in self.item_results:
             counts[item.status.value] = counts.get(item.status.value, 0) + 1
@@ -421,6 +454,8 @@ class PhysicalDeploymentResult(BaseModel):
             "manifest": self.manifest.compact_summary() if self.manifest else None,
             "dirty_state": self.dirty_state.value,
             "execution_journal": self.execution_journal.compact_summary(),
-            "evidence_records": [item.compact_summary() for item in self.evidence_records],
+            "evidence_records": [
+                item.compact_summary() for item in self.evidence_records
+            ],
             "errors": list(self.errors),
         }
