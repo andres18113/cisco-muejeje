@@ -29,6 +29,21 @@ from packet_tracer_mcp.domain.enterprise.services import (
 from packet_tracer_mcp.domain.enterprise.services import (
     scalable_http_acceptance_evidence as evaluator,
 )
+from packet_tracer_mcp.domain.enterprise.services.readiness_evidence import (
+    row_group_key,
+)
+from packet_tracer_mcp.domain.enterprise.services.service_path_closure import (
+    L2Component,
+    TrunkLink,
+)
+from packet_tracer_mcp.domain.enterprise.services.trunk_continuity import (
+    TrunkContinuityObservation,
+    TrunkContinuityRound,
+    TrunkPortReading,
+    TrunkSwitchReading,
+    trunk_continuity_verdicts,
+    usable_links,
+)
 
 #: (clients, sites): each site is one shared continuity component.
 SIZES = ((30, 1), (90, 3), (240, 3))
@@ -230,3 +245,160 @@ def test_the_counting_apparatus_sees_a_per_client_scan(evidence):
             max(e5)
         measured = _size(captured)
         assert counts["e5"] == measured["clients"] * measured["e5_verify"]
+
+
+def _degraded(captured: dict[str, Any], faults: int):
+    """Give one shared continuity group `faults` of each kind of bad evidence.
+
+    Ledger episodes that no row records and rows that repeat an episode
+    ordinal are faults of the group; readings of foreign switches are faults
+    of one row. None of them may be copied into every client's findings.
+    """
+    rows = copy.deepcopy(
+        [dict(row) for row in captured["record"].operational_readiness]
+    )
+    entries = list(captured["entries"])
+    continuity = next(row for row in rows if row.get("kind"))
+    key = row_group_key(continuity)
+    template = next(
+        item for item in entries if item.purpose.startswith(f"readiness:{key}#")
+    )
+    entries.extend(
+        template.model_copy(update={"purpose": f"readiness:{key}#{ordinal}"})
+        for ordinal in range(2, faults + 2)
+    )
+    for _ in range(faults):
+        repeated = copy.deepcopy(continuity)
+        for dependent in repeated["dependents"]:
+            dependent.pop("decision", None)
+        rows.append(repeated)
+    readings = continuity["sample"]["rounds"][-1]["readings"]
+    readings.extend(
+        dict(readings[0], switch_name=f"FOREIGN-{index}") for index in range(faults)
+    )
+    return key, rows, entries
+
+
+def test_degraded_evidence_is_reported_once_not_copied_per_client(evidence):
+    """Per-client output stays bounded however many faults a shared group has."""
+    captured = evidence[(90, 3)]
+    scope = captured["scope"]
+    outcomes = {}
+    for faults in (10, 100):
+        key, rows, entries = _degraded(captured, faults)
+        record = captured["record"].model_copy(update={"operational_readiness": rows})
+        summary = copy.deepcopy(captured["summary"])
+        summary["operational_readiness"] = copy.deepcopy(rows)
+        outcomes[faults] = evaluator.evaluate_scalable_attempt(
+            captured["grant"],
+            scope,
+            closure=captured["closure"],
+            record=record,
+            record_problems=list(captured["record_problems"]),
+            summary=summary,
+            record_path=captured["record_path"],
+            entries=entries,
+            answers=captured["answers"],
+            stop_facts=list(captured["stop_facts"]),
+        )
+    faulted = {client.name for client in scope.clients if key in client.groups}
+    few, many = outcomes[10], outcomes[100]
+    for evaluation in (few, many):
+        by_name = {item.client: item for item in evaluation.clients}
+        assert faulted and all(not by_name[name].accepted for name in faulted)
+        assert any(by_name[name].accepted for name in by_name if name not in faulted)
+    # Each client's own findings do not grow with the number of faults ...
+    assert max(len(item.findings) for item in many.clients) == max(
+        len(item.findings) for item in few.clients
+    )
+    # ... and the attempt reports each group fault once.
+    growth = len(many.reasons) - len(few.reasons)
+    assert 0 < growth <= 2 * (100 - 10)
+
+
+class CountingTuple(tuple):
+    """A tuple that counts every element it hands out, by tag."""
+
+    def __new__(cls, items, tag: str, counts: Counter):
+        """Hold the elements and the shared counter they are charged to."""
+        made = super().__new__(cls, items)
+        made._tag, made._counts = tag, counts
+        return made
+
+    def __iter__(self):
+        """Yield each element, counting it."""
+        for item in super().__iter__():
+            self._counts[self._tag] += 1
+            yield item
+
+
+def _ring(switches: int, counts: Counter):
+    """One VLAN 10 ring of `switches` switches, every trunk read forwarding."""
+    ids = tuple(f"sw-{index:04d}" for index in range(switches))
+    names = {item: item.upper() for item in ids}
+    links = tuple(
+        TrunkLink(
+            link_id=f"link-{index:04d}",
+            switch_a_id=ids[index],
+            switch_a_name=names[ids[index]],
+            interface_a="Gi0/2",
+            switch_b_id=ids[(index + 1) % switches],
+            switch_b_name=names[ids[(index + 1) % switches]],
+            interface_b="Gi0/1",
+            allowed_vlans=(10,),
+        )
+        for index in range(switches)
+    )
+    component = L2Component(10, ids, tuple(names[item] for item in ids), links)
+    readings = CountingTuple(
+        (
+            TrunkSwitchReading(
+                switch_name=names[item],
+                executed=True,
+                fresh_output_observed=True,
+                output_complete=True,
+                observed_device_name=names[item],
+                device_identity_provenance="confirmed_unique",
+                ports=CountingTuple(
+                    (
+                        TrunkPortReading(port, 1, "trunking", (10,), (10,), (10,))
+                        for port in ("Gi0/1", "Gi0/2")
+                    ),
+                    "ports",
+                    counts,
+                ),
+            )
+            for item in ids
+        ),
+        "readings",
+        counts,
+    )
+    round_ = TrunkContinuityRound(0, 0, readings, True)
+    return component, names, round_
+
+
+@pytest.mark.parametrize("switches", (10, 100, 1000))
+def test_one_growing_component_is_derived_with_linear_inner_lookups(switches: int):
+    """The canonical rule reads each switch and trunk port a bounded number of times."""
+    counts: Counter = Counter()
+    component, names, round_ = _ring(switches, counts)
+
+    usable = usable_links(component, names, round_)
+    observation = TrunkContinuityObservation(
+        10,
+        component.switch_device_names,
+        (round_,),
+        episode_end_reason="required_pairs_joined",
+    )
+    verdicts = trunk_continuity_verdicts(
+        component,
+        names,
+        observation,
+        [(component.switch_device_ids[0], component.switch_device_ids[-1])],
+    )
+
+    assert len(usable) == switches
+    assert all(item.admitted for item in verdicts)
+    # Two derivations (the check and the verdict) and the settledness test.
+    assert counts["readings"] <= 3 * switches
+    assert counts["ports"] <= 2 * 2 * switches

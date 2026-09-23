@@ -140,19 +140,32 @@ def usable_links(
     names: Mapping[str, str],
     round_: TrunkContinuityRound,
 ) -> tuple[str, ...]:
-    """Return the ids of the links one round shows forwarding the VLAN."""
+    """Return the ids of the links one round shows forwarding the VLAN.
+
+    Each reading and each of its ports is looked up once, the first match
+    winning exactly as `reading` and `port` do, so one derivation costs the
+    round's readings plus its ports plus the component's links.
+    """
+    readings: dict[str, TrunkSwitchReading] = {}
+    for reading in round_.readings:
+        readings.setdefault(reading.switch_name, reading)
+    ports: dict[str, dict[str, TrunkPortReading]] = {}
+    for name, reading in readings.items():
+        table = ports.setdefault(name, {})
+        for port in reading.ports:
+            table.setdefault(port.interface, port)
     usable: list[str] = []
     for link in component.links:
-        readings = (
-            round_.reading(names.get(link.switch_a_id, link.switch_a_name)),
-            round_.reading(names.get(link.switch_b_id, link.switch_b_name)),
+        ends = (
+            (names.get(link.switch_a_id, link.switch_a_name), link.interface_a),
+            (names.get(link.switch_b_id, link.switch_b_name), link.interface_b),
         )
-        ports = (
-            readings[0].port(link.interface_a) if readings[0] else None,
-            readings[1].port(link.interface_b) if readings[1] else None,
-        )
-        if all(item is not None and item.authoritative for item in readings) and all(
-            item is not None and item.carries(component.vlan_id) for item in ports
+        if all(
+            name in readings
+            and readings[name].authoritative
+            and interface in ports[name]
+            and ports[name][interface].carries(component.vlan_id)
+            for name, interface in ends
         ):
             usable.append(link.link_id)
     return tuple(usable)

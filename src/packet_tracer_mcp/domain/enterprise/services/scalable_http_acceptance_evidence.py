@@ -150,6 +150,9 @@ def evaluate_scalable_attempt(
         reasons.extend(reload_differences(record, summary, expected_path=record_path))
         reasons.extend(record_identity_findings(grant, record, closure))
         reasons.extend(product_outcome_findings(record))
+        # Faults of the record's readiness evidence itself, each named once;
+        # the clients they touch carry one bounded reference each.
+        reasons.extend(readiness.evidence_findings())
     evaluation.ordering = scalable_ordering_findings(scope, ledger, spans)
     reasons.extend(evaluation.ordering)
     firsts: dict[str, int] = {}

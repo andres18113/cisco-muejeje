@@ -251,6 +251,20 @@ def _stale_but_authoritative_count(row):
         reading["after_deadline"] = True
 
 
+def _missing_unused_port(row):
+    """Drop one end of a trunk spanning tree blocks; every summary still agrees."""
+    deciding = _deciding(row)
+    names = dict(zip(row["switch_device_ids"], row["switch_device_names"], strict=True))
+    blocked = next(
+        link for link in row["links"] if link["link_id"] not in deciding["usable_links"]
+    )
+    name, interface = names[blocked["switch_a_id"]], blocked["interface_a"]
+    reading = next(item for item in deciding["readings"] if item["switch_name"] == name)
+    reading["ports"] = [
+        port for port in reading["ports"] if port["interface"] != interface
+    ]
+
+
 @pytest.mark.parametrize(
     ("fault", "fragment"),
     [
@@ -261,6 +275,7 @@ def _stale_but_authoritative_count(row):
         (_repeated_reading, "continuity_reading_repeated"),
         (_missing_switch, "continuity_completeness_contradicted"),
         (_stale_but_authoritative_count, "continuity_summary_contradicts_readings"),
+        (_missing_unused_port, "continuity_ports_not_the_trunks"),
     ],
 )
 def test_a_positive_continuity_summary_over_bad_readings_refuses(
@@ -533,21 +548,26 @@ def test_a_later_revision_dispatched_before_a_request_supersedes_it(immediate):
 # -- the whole envelope ---------------------------------------------------------------
 
 
-def test_the_whole_envelope_refuses_a_summary_without_readings(
-    tmp_path: Path, campus30, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("fault", [_no_readings, _missing_unused_port])
+def test_the_whole_envelope_refuses_incomplete_continuity_evidence(
+    tmp_path: Path, campus30, monkeypatch: pytest.MonkeyPatch, fault
 ):
-    """R1a end to end: the product records a joined summary and no readings."""
+    """R1a end to end: an incomplete continuity reading is never permission.
+
+    The product records a joined summary without its readings, or without one
+    port of a trunk that spanning tree blocks.
+    """
     gate = service_access_readiness_gate.ServiceAccessReadinessGate
     real_rows = gate.rows
 
-    def summary_only(self):
+    def faulted(self):
         rendered = real_rows(self)
         for row in rendered:
             if row.get("kind") == "trunk_continuity" and row["sample"].get("rounds"):
-                row["sample"]["rounds"][-1]["readings"] = []
+                fault(row)
         return rendered
 
-    monkeypatch.setattr(gate, "rows", summary_only)
+    monkeypatch.setattr(gate, "rows", faulted)
     harness = build_scalable_harness(tmp_path, CLIENTS, plans=campus30)
 
     result = harness.run()

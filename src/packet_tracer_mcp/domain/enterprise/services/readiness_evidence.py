@@ -467,17 +467,20 @@ def _deciding_round(
     }
     counts = Counter(item.switch_name for item in parsed)
     for reading in parsed:
-        if reading.switch_name not in by_name:
-            found.append(f"continuity_reading_foreign:{reading.switch_name}:{key}")
-        elif counts[reading.switch_name] > 1:
-            found.append(f"continuity_reading_repeated:{reading.switch_name}:{key}")
+        # The first fault names the row: a reading of a switch outside the
+        # component, a second reading of one switch, or a reading that does
+        # not answer exactly the trunk ports of its switch once each (the
+        # runtime asks every one, so a missing port is an unanswered one).
+        name = reading.switch_name
         ports = Counter(item.interface for item in reading.ports)
-        if any(value > 1 for value in ports.values()) or not set(ports) <= by_name.get(
-            reading.switch_name, set()
-        ):
-            found.append(f"continuity_ports_not_the_trunks:{reading.switch_name}:{key}")
-    if found:
-        return None
+        if name not in by_name:
+            found.append(f"continuity_reading_foreign:{name}:{key}")
+        elif counts[name] > 1:
+            found.append(f"continuity_reading_repeated:{name}:{key}")
+        elif set(ports) != by_name[name] or any(value > 1 for value in ports.values()):
+            found.append(f"continuity_ports_not_the_trunks:{name}:{key}")
+        if found:
+            return None
     if complete != (set(counts) == set(by_name)):
         found.append(f"continuity_completeness_contradicted:{key}")
         return None
@@ -623,6 +626,14 @@ class ReadinessEvidence:
             evidence.later[key] = (ordered, list(reversed(suffix)))
         return evidence
 
+    def evidence_findings(self) -> list[str]:
+        """Return every group-level inconsistency, each once, in group order.
+
+        A repeated episode ordinal and a ledger episode no row records are
+        faults of the record itself, not of any one client's path.
+        """
+        return [item for key in self.groups for item in self.group_findings[key]]
+
     def _superseded_from(self, key: str, revision: int) -> int | None:
         """Return the earliest dispatch of any episode of a later revision."""
         ordered, suffix = self.later.get(key, ([], []))
@@ -651,7 +662,12 @@ class ReadinessEvidence:
         first_request: int | None,
     ) -> list[str]:
         key, expectation = group.key, client.expectation_id
-        found = list(self.group_findings.get(key, ()))
+        found: list[str] = []
+        if self.group_findings.get(key):
+            # Each inconsistency is reported once for the attempt
+            # (`evidence_findings`); every client of the group gets one
+            # bounded reference to it, never a copy of the list.
+            found.append(f"readiness_group_evidence_inconsistent:{key}")
         if expectation not in self.members.get(key, frozenset()):
             found.append(f"readiness_dependent_not_in_scope:{key}")
         if (key, expectation) in self.repeated:
