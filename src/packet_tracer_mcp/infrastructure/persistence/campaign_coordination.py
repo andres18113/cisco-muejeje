@@ -76,7 +76,7 @@ class FileCampaignCoordinator:
         """Return the coordination directory this coordinator uses."""
         return self._scope
 
-    def claim(self, *, attempt_id: str) -> CampaignClaim:
+    def claim(self, *, attempt_id: str, holder: str | None = None) -> CampaignClaim:
         """Hold the campaign exclusively and reserve this attempt, atomically.
 
         The two exclusive creations happen in one order and are not separable:
@@ -86,12 +86,23 @@ class FileCampaignCoordinator:
 
         Raises `CampaignCoordinationError` when either is already held. The
         caller refuses; nothing existing is deleted on the way out.
+
+        An interruption (any exception that is not a coordination refusal)
+        leaves only what its caller can account for. A lock whose attempt this
+        holder did not reserve is removed again. A reserved attempt keeps its
+        marker and its lock: the caller that chose `holder` gets the claim back
+        from `recover` to finish the attempt and release it. Without a chosen
+        holder a fresh one is drawn, and such a claim cannot be recovered.
         """
         safe_attempt = safe_name_component(attempt_id, "")
         if not attempt_id or safe_attempt != attempt_id:
             raise CampaignCoordinationError(
                 "campaign_attempt_identity_is_not_a_safe_name"
             )
+        if holder is None:
+            holder = uuid4().hex
+        elif not holder or safe_name_component(holder, "") != holder:
+            raise CampaignCoordinationError("campaign_holder_is_not_a_safe_name")
         try:
             self._scope.mkdir(parents=True, exist_ok=True, mode=0o700)
             lock_path = resolve_within(self._scope, LOCK_NAME)
@@ -104,24 +115,59 @@ class FileCampaignCoordinator:
             raise CampaignCoordinationError(
                 f"campaign_scope_escaped:{type(exc).__name__}"
             ) from exc
-        holder = uuid4().hex
         payload = {
             "holder": holder,
             "attempt_id": attempt_id,
             "pid": os.getpid(),
             "claimed_at": datetime.now(UTC).isoformat(),
         }
-        self._create_exclusive(lock_path, payload, "campaign_already_claimed")
         try:
-            self._create_exclusive(
-                attempt_path, payload, "campaign_attempt_already_reserved"
-            )
+            self._create_exclusive(lock_path, payload, "campaign_already_claimed")
+            try:
+                self._create_exclusive(
+                    attempt_path, payload, "campaign_attempt_already_reserved"
+                )
+            except CampaignCoordinationError:
+                # The attempt is not ours, so neither is the campaign. The lock
+                # we just created is ours and only ours, so removing it here is
+                # not a reclaim of somebody else's file.
+                self._remove_own(lock_path, holder)
+                raise
         except CampaignCoordinationError:
-            # The attempt is not ours, so neither is the campaign. The lock we
-            # just created is ours and only ours, so removing it here is not a
-            # reclaim of somebody else's file.
-            self._remove_own(lock_path, holder)
             raise
+        except BaseException:
+            # Every file here exists only with its whole payload, so what this
+            # holder owns is readable. An unreserved attempt must not leave the
+            # campaign held; a reserved one is the caller's to finish.
+            if not self._names(attempt_path, holder):
+                self._remove_own(lock_path, holder)
+            raise
+        return CampaignClaim(
+            scope=self._scope,
+            lock_path=lock_path,
+            attempt_path=attempt_path,
+            holder=holder,
+            attempt_id=attempt_id,
+        )
+
+    def recover(self, *, attempt_id: str, holder: str) -> CampaignClaim | None:
+        """Return the claim an interrupted `claim` reserved for `holder`, if any.
+
+        Only an attempt marker that names this holder is a reservation of its
+        own; an absent, unreadable or foreign one recovers nothing. Nothing is
+        created or deleted here.
+        """
+        if not attempt_id or safe_name_component(attempt_id, "") != attempt_id:
+            return None
+        if not holder or safe_name_component(holder, "") != holder:
+            return None
+        try:
+            lock_path = resolve_within(self._scope, LOCK_NAME)
+            attempt_path = resolve_within(self._scope, f"attempt-{attempt_id}.json")
+        except ValueError:
+            return None
+        if not self._names(attempt_path, holder):
+            return None
         return CampaignClaim(
             scope=self._scope,
             lock_path=lock_path,
@@ -177,24 +223,46 @@ class FileCampaignCoordinator:
     def _create_exclusive(
         self, path: Path, payload: dict[str, object], reason: str
     ) -> None:
+        """Create `path` with its whole payload in one step, or not at all.
+
+        The payload is written to a private temporary file and then linked in
+        without overwriting, so an interruption can never leave a claim file
+        whose holder cannot be read back.
+        """
+        temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
         try:
-            handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        except FileExistsError as exc:
-            raise CampaignCoordinationError(reason) from exc
-        except OSError as exc:
-            raise CampaignCoordinationError(
-                f"campaign_claim_failed:{type(exc).__name__}"
-            ) from exc
+            try:
+                handle = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                    json.dump(payload, stream)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            except OSError as exc:
+                raise CampaignCoordinationError(
+                    f"campaign_claim_unwritable:{type(exc).__name__}"
+                ) from exc
+            try:
+                os.link(temporary, path)
+            except FileExistsError as exc:
+                raise CampaignCoordinationError(reason) from exc
+            except OSError as exc:
+                raise CampaignCoordinationError(
+                    f"campaign_claim_failed:{type(exc).__name__}"
+                ) from exc
+        finally:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    @staticmethod
+    def _names(path: Path, holder: str) -> bool:
+        """Say whether `path` exists and names `holder`; unreadable is no."""
         try:
-            with os.fdopen(handle, "w", encoding="utf-8") as stream:
-                json.dump(payload, stream)
-        except OSError as exc:
-            # The file is ours -- nothing else could have created it -- so
-            # clearing a half-written claim of our own is not a reclaim.
-            self._remove_own(path, str(payload["holder"]))
-            raise CampaignCoordinationError(
-                f"campaign_claim_unwritable:{type(exc).__name__}"
-            ) from exc
+            stored = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        return isinstance(stored, dict) and stored.get("holder") == holder
 
     @staticmethod
     def _remove_own(path: Path, holder: str) -> bool:

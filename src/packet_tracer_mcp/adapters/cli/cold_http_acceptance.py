@@ -66,6 +66,7 @@ from ...infrastructure.execution.import_isolation_preflight import (
 from ...infrastructure.execution.product_channel import FixedChannelProductTransport
 from ...infrastructure.execution.receiver_continuity import (
     HandleBoundReceiverContinuity,
+    ReceiverBindingDeclined,
 )
 from ...infrastructure.execution.service_qualification_lifecycle import (
     PacketTracerDiagnosticLifecycleReader,
@@ -147,10 +148,15 @@ def bind_production_receiver(
 ) -> ReceiverContinuity:
     """Hold a handle on the paired process, or read the full lifecycle.
 
-    The fallback is the same check at its full cost, never a weaker one.
+    The fallback is the same check at its full cost, never a weaker one, and
+    it carries the reason the handle could not be held.
     """
-    bound = HandleBoundReceiverContinuity.bind(preflight, deadline, lifecycle=lifecycle)
-    return bound if bound is not None else LifecycleReceiverContinuity(lifecycle)
+    try:
+        return HandleBoundReceiverContinuity.bind(
+            preflight, deadline, lifecycle=lifecycle
+        )
+    except ReceiverBindingDeclined as declined:
+        return LifecycleReceiverContinuity(lifecycle, declined=declined.reason)
 
 
 def production_boundaries(governed_root: Path) -> AcceptanceBoundaries:

@@ -65,6 +65,29 @@ class ColdHttpAcceptanceStore:
         self._create(path, envelope, "A completed acceptance envelope is immutable.")
         return str(path)
 
+    def stored(
+        self, envelope: ColdHttpAcceptanceEnvelope, *, completed: bool
+    ) -> str | None:
+        """Return the path this invocation stored at one stage, or None.
+
+        An invocation is its attempt identity and its `started_at`; a file of
+        another invocation, or none, answers None. An unreadable file raises,
+        because whether it is this invocation's cannot be known.
+        """
+        if completed:
+            path = self.completed_path_for(envelope.attempt_id)
+        else:
+            path = self.path_for(envelope.attempt_id)
+        if not path.exists():
+            return None
+        found = self._read(path)
+        if (
+            found.attempt_id != envelope.attempt_id
+            or found.started_at != envelope.started_at
+        ):
+            return None
+        return str(path)
+
     def load(self, attempt_id: str) -> ColdHttpAcceptanceEnvelope:
         """Return the terminal envelope, or the write-ahead one if none exists."""
         completed = self.completed_path_for(attempt_id)

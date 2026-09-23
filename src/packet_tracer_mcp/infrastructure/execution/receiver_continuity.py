@@ -46,6 +46,23 @@ from ...domain.enterprise.models.service_qualification import (
 PACKET_TRACER_IMAGE_PREFIX = "packettracer"
 
 
+class ReceiverBindingDeclined(LookupError):
+    """No handle-bound binding exists for the paired process, and why.
+
+    `reason` is one stable token: `process_api_unavailable`,
+    `preflight_not_paired`, `primary_handle_refused`,
+    `primary_creation_time_unreadable`, `primary_image_path_differs`,
+    `process_table_unreadable`, `cohort_ambiguous:<detail>`,
+    `helper_handle_refused`, `helper_unreadable`, `confirmation_differs` or
+    `primary_exited`.
+    """
+
+    def __init__(self, reason: str) -> None:
+        """Carry the one reason the binding was declined."""
+        super().__init__(reason)
+        self.reason = reason
+
+
 @dataclass(frozen=True)
 class ProcessTableRow:
     """One process-table entry, as the operating system listed it."""
@@ -125,34 +142,36 @@ class HandleBoundReceiverContinuity:
         lifecycle: Callable[[float | None], DiagnosticLifecycleObservation],
         api: ProcessApi | None = None,
         clock: Callable[[], float] = monotonic,
-    ) -> HandleBoundReceiverContinuity | None:
-        """Bind the paired incarnation, or return None when it cannot.
+    ) -> HandleBoundReceiverContinuity:
+        """Bind the paired incarnation, or raise `ReceiverBindingDeclined`.
 
-        None tells the composition to fall back to one full lifecycle reading
-        per dispatch, which is never a weaker check. It is returned whenever
-        this process cannot hold a handle on the paired process, cannot read
-        its creation time, image or process table, finds a cohort other than
-        the primary and at most one helper it started, or the confirming
-        reading does not show the same incarnation.
+        A declined binding names its reason, and the composition falls back to
+        one full lifecycle reading per dispatch, which is never a weaker check.
+        It is declined whenever this process cannot hold a handle on the paired
+        process, cannot read its creation time, image or process table, finds
+        a cohort other than the primary and at most one helper it started, or
+        the confirming reading does not show the same incarnation. Nothing is
+        held after a decline.
         """
         api = api if api is not None else windows_process_api()
         pid = preflight.process_id
-        if api is None or preflight.error or not pid:
-            return None
+        if api is None:
+            raise ReceiverBindingDeclined("process_api_unavailable")
+        if preflight.error or not pid:
+            raise ReceiverBindingDeclined("preflight_not_paired")
         handle = api.open(pid)
         if handle is None:
-            return None
+            raise ReceiverBindingDeclined("primary_handle_refused")
         helper_handle = None
         try:
             created = api.creation_time(handle)
-            path = api.image_path(handle)
+            if created is None:
+                raise ReceiverBindingDeclined("primary_creation_time_unreadable")
+            if not _same_path(api.image_path(handle), preflight.process_path):
+                raise ReceiverBindingDeclined("primary_image_path_differs")
             table = api.snapshot()
-            if (
-                created is None
-                or not _same_path(path, preflight.process_path)
-                or table is None
-            ):
-                raise LookupError("binding_unreadable")
+            if table is None:
+                raise ReceiverBindingDeclined("process_table_unreadable")
             images = [row for row in table if _is_packet_tracer(row)]
             helpers = [
                 row.pid for row in images if row.pid != pid and row.parent_pid == pid
@@ -160,8 +179,16 @@ class HandleBoundReceiverContinuity:
             others = [
                 row.pid for row in images if row.pid != pid and row.parent_pid != pid
             ]
-            if pid not in {row.pid for row in images} or others or len(helpers) > 1:
-                raise LookupError("binding_ambiguous")
+            if pid not in {row.pid for row in images}:
+                raise ReceiverBindingDeclined("cohort_ambiguous:primary_absent")
+            if others:
+                raise ReceiverBindingDeclined(
+                    f"cohort_ambiguous:foreign_packet_tracer:{len(others)}"
+                )
+            if len(helpers) > 1:
+                raise ReceiverBindingDeclined(
+                    f"cohort_ambiguous:helpers:{len(helpers)}"
+                )
             helper_created = None
             if helpers:
                 # Held for as long as the binding lives: Windows does not give
@@ -169,22 +196,22 @@ class HandleBoundReceiverContinuity:
                 # can only ever be this helper.
                 helper_handle = api.open(helpers[0])
                 if helper_handle is None:
-                    raise LookupError("helper_unbindable")
+                    raise ReceiverBindingDeclined("helper_handle_refused")
                 helper_created = api.creation_time(helper_handle)
                 if helper_created is None or not _same_path(
                     api.image_path(helper_handle), preflight.process_path
                 ):
-                    raise LookupError("helper_unreadable")
+                    raise ReceiverBindingDeclined("helper_unreadable")
             confirmed = lifecycle(deadline)
             if confirmed.error or _identity(confirmed) != _identity(preflight):
-                raise LookupError("binding_not_confirmed")
+                raise ReceiverBindingDeclined("confirmation_differs")
             if api.exited(handle) is not False:
-                raise LookupError("binding_exited")
-        except LookupError:
+                raise ReceiverBindingDeclined("primary_exited")
+        except BaseException:
             api.close(handle)
             if helper_handle is not None:
                 api.close(helper_handle)
-            return None
+            raise
         return cls(
             preflight,
             api=api,

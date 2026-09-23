@@ -637,3 +637,157 @@ def test_every_interruption_after_reservation_leaves_a_terminal_envelope(
     if where != "begin":
         assert stored.cancellation.endswith("@publication")
     assert not (harness.coordinator.scope / LOCK_NAME).exists()
+
+
+# -- Interruptions after an effect already happened ---------------------------------
+
+
+class _InterruptAfter:
+    """Call through once, then raise one KeyboardInterrupt: the effect happened."""
+
+    def __init__(self, inner) -> None:
+        self.inner = inner
+        self.calls = 0
+
+    def __call__(self, *args, **kwargs):
+        self.calls += 1
+        result = self.inner(*args, **kwargs)
+        if self.calls == 1:
+            raise KeyboardInterrupt
+        return result
+
+
+def test_an_interruption_after_the_write_ahead_link_still_completes_the_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A3: the stored write-ahead envelope is recovered, never begun twice."""
+    harness = build_harness(tmp_path)
+    store = harness.envelope_store
+    begin = _InterruptAfter(store.begin)
+    monkeypatch.setattr(store, "begin", begin)
+
+    with pytest.raises(KeyboardInterrupt):
+        harness.run()
+
+    stored = store.load(ATTEMPT)
+    assert begin.calls == 1
+    assert stored.completed_at is not None
+    assert stored.cancellation.startswith("cancelled:KeyboardInterrupt@")
+    assert stored.primary_failure == stored.cancellation
+    assert stored.http_accepted is False
+    assert stored.persistence_failures == []
+    assert harness.terminal.log == []
+    assert not (harness.coordinator.scope / LOCK_NAME).exists()
+
+
+def test_an_interruption_after_the_terminal_link_leaves_the_published_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A3/A4: the terminal link is the publication point, never rewritten."""
+    harness = build_harness(tmp_path)
+    store = harness.envelope_store
+    complete = _InterruptAfter(store.complete)
+    monkeypatch.setattr(store, "complete", complete)
+
+    with pytest.raises(KeyboardInterrupt):
+        harness.run()
+
+    stored = store.load(ATTEMPT)
+    assert complete.calls == 1
+    assert stored.http_accepted is True
+    assert stored.cancellation == ""
+    assert stored.persistence_failures == []
+    assert sorted(item.name for item in store.base_dir.iterdir()) == [
+        f"{ATTEMPT}.completed.json",
+        f"{ATTEMPT}.json",
+    ]
+    assert not (harness.coordinator.scope / LOCK_NAME).exists()
+
+
+@pytest.mark.parametrize("created", ["lock", "marker"])
+def test_an_interruption_inside_the_claim_leaves_nothing_unaccounted(
+    tmp_path: Path, created: str
+):
+    """A3: a lock without a reservation is rolled back; a reservation completes."""
+    from dataclasses import replace
+
+    from packet_tracer_mcp.infrastructure.persistence.campaign_coordination import (
+        FileCampaignCoordinator,
+    )
+
+    harness = build_harness(tmp_path)
+    scope = harness.coordinator.scope
+    marker = scope / f"attempt-{ATTEMPT}.json"
+    name = LOCK_NAME if created == "lock" else marker.name
+
+    class Interrupted(FileCampaignCoordinator):
+        def _create_exclusive(self, path, payload, reason):
+            super()._create_exclusive(path, payload, reason)
+            if path.name == name:
+                raise KeyboardInterrupt
+
+    harness.boundaries = replace(
+        harness.boundaries, campaign_coordinator=Interrupted(scope)
+    )
+    with pytest.raises(KeyboardInterrupt):
+        harness.run()
+
+    assert not (scope / LOCK_NAME).exists()
+    assert harness.terminal.log == []
+    harness.boundaries = replace(
+        harness.boundaries, campaign_coordinator=harness.coordinator
+    )
+    if created == "lock":
+        assert not marker.exists()
+        assert not harness.envelope_store.path_for(ATTEMPT).exists()
+        assert harness.run().envelope.http_accepted is True
+        return
+    stored = harness.envelope_store.load(ATTEMPT)
+    assert stored.completed_at is not None
+    assert stored.cancellation == "cancelled:KeyboardInterrupt@during:campaign_claim"
+    assert stored.primary_failure == stored.cancellation
+    assert stored.campaign["release"] == "released"
+    assert stored.http_accepted is False
+    assert "campaign_attempt_already_reserved" in harness.run().envelope.primary_failure
+
+
+def test_a_declined_binding_names_its_reason_in_the_refusal_and_the_envelope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A1: the fallback is refused with the reason the handle could not be held."""
+    from dataclasses import replace
+    from functools import partial
+
+    from packet_tracer_mcp.adapters.cli.cold_http_acceptance import (
+        bind_production_receiver,
+    )
+    from packet_tracer_mcp.infrastructure.execution import receiver_continuity
+
+    monkeypatch.setattr(receiver_continuity, "windows_process_api", lambda: None)
+    harness = build_harness(tmp_path)
+    harness.boundaries = replace(
+        harness.boundaries,
+        bind_receiver=partial(
+            bind_production_receiver, lifecycle=harness.boundaries.lifecycle
+        ),
+    )
+
+    result = harness.run()
+
+    envelope = result.envelope
+    assert harness.opened_channels == []
+    assert harness.terminal.log == []
+    assert (
+        "receiver_mode_not_bounded:lifecycle_per_dispatch:process_api_unavailable"
+        in envelope.primary_failure
+    )
+    assert envelope.process_preflight["receiver_binding_declined"] == (
+        "process_api_unavailable"
+    )
+    assert result.persisted is True
+    assert (
+        harness.envelope_store.load(ATTEMPT).process_preflight[
+            "receiver_binding_declined"
+        ]
+        == "process_api_unavailable"
+    )

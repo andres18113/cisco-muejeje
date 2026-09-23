@@ -30,6 +30,7 @@ from packet_tracer_mcp.domain.enterprise.models.cold_http_acceptance import (
 from packet_tracer_mcp.infrastructure.execution.receiver_continuity import (
     HandleBoundReceiverContinuity,
     ProcessTableRow,
+    ReceiverBindingDeclined,
     windows_process_api,
 )
 
@@ -181,25 +182,48 @@ def test_a_reading_that_overruns_its_deadline_is_unobservable():
 
 
 @pytest.mark.parametrize(
-    "setup",
+    ("setup", "reason"),
     [
-        lambda api: setattr(api, "open_refused", True),
-        lambda api: setattr(api, "created", None),
-        lambda api: setattr(api, "path", r"C:\elsewhere\PacketTracer.exe"),
-        lambda api: setattr(api, "table_readable", False),
-        lambda api: api.rows.append(ProcessTableRow(999, 1, "PacketTracer.exe")),
-        lambda api: api.rows.append(ProcessTableRow(998, PRIMARY, "PacketTracer.exe")),
-        lambda api: setattr(api, "exited_state", True),
+        (lambda api: setattr(api, "open_refused", True), "primary_handle_refused"),
+        (lambda api: setattr(api, "created", None), "primary_creation_time_unreadable"),
+        (
+            lambda api: setattr(api, "path", r"C:\elsewhere\PacketTracer.exe"),
+            "primary_image_path_differs",
+        ),
+        (
+            lambda api: setattr(api, "table_readable", False),
+            "process_table_unreadable",
+        ),
+        (
+            lambda api: api.rows.append(ProcessTableRow(999, 1, "PacketTracer.exe")),
+            "cohort_ambiguous:foreign_packet_tracer:1",
+        ),
+        (
+            lambda api: api.rows.append(
+                ProcessTableRow(998, PRIMARY, "PacketTracer.exe")
+            ),
+            "cohort_ambiguous:helpers:2",
+        ),
+        (
+            lambda api: api.rows.remove(
+                ProcessTableRow(PRIMARY, 1, "PacketTracer.exe")
+            ),
+            "cohort_ambiguous:primary_absent",
+        ),
+        (lambda api: setattr(api, "exited_state", True), "primary_exited"),
     ],
 )
-def test_an_unconfirmable_binding_is_declined_and_releases_its_handle(setup):
-    """No binding means the full reading per dispatch, never a weaker check."""
+def test_an_unconfirmable_binding_is_declined_and_releases_its_handle(
+    setup, reason: str
+):
+    """A declined binding names why, and holds nothing afterwards."""
     api = FakeProcessApi()
     setup(api)
 
-    bound, _ = _bind(api)
+    with pytest.raises(ReceiverBindingDeclined) as declined:
+        _bind(api)
 
-    assert bound is None
+    assert declined.value.reason == reason
     assert api.closed == len(api.opened)
 
 
@@ -207,12 +231,62 @@ def test_a_confirming_reading_of_another_incarnation_declines_the_binding():
     """A handle opened on a reused slot is never bound."""
     api = FakeProcessApi()
 
-    bound, _ = _bind(
-        api, confirmed=paired_process(process_incarnation="2026-09-22T10:00:00Z")
-    )
+    with pytest.raises(ReceiverBindingDeclined) as declined:
+        _bind(api, confirmed=paired_process(process_incarnation="2026-09-22T10:00:00Z"))
 
-    assert bound is None
+    assert declined.value.reason == "confirmation_differs"
     assert api.closed == len(api.opened) == 2
+
+
+@pytest.mark.parametrize(
+    ("preflight", "api", "reason"),
+    [
+        (paired_process(), None, "process_api_unavailable"),
+        (paired_process(error="lifecycle_unreadable"), "fake", "preflight_not_paired"),
+        (paired_process(process_id=None), "fake", "preflight_not_paired"),
+    ],
+)
+def test_a_binding_that_cannot_start_names_why(monkeypatch, preflight, api, reason):
+    """No process API, or no paired process to hold, is its own reason."""
+    from packet_tracer_mcp.infrastructure.execution import receiver_continuity
+
+    monkeypatch.setattr(receiver_continuity, "windows_process_api", lambda: None)
+    fake = FakeProcessApi() if api == "fake" else None
+
+    with pytest.raises(ReceiverBindingDeclined) as declined:
+        HandleBoundReceiverContinuity.bind(
+            preflight, 10.0**9, lifecycle=lambda deadline: preflight, api=fake
+        )
+
+    assert declined.value.reason == reason
+    assert fake is None or fake.opened == []
+
+
+@pytest.mark.parametrize(
+    ("helper", "reason"),
+    [("refused", "helper_handle_refused"), ("unreadable", "helper_unreadable")],
+)
+def test_a_helper_that_cannot_be_held_declines_the_binding(helper: str, reason: str):
+    """The helper is held for the binding's life, or there is no binding."""
+
+    class HelperApi(FakeProcessApi):
+        def open(self, pid: int):
+            if pid == HELPER and helper == "refused":
+                return None
+            return super().open(pid)
+
+        def creation_time(self, handle):
+            if handle.pid == HELPER and helper == "unreadable":
+                return None
+            return super().creation_time(handle)
+
+    api = HelperApi()
+
+    with pytest.raises(ReceiverBindingDeclined) as declined:
+        _bind(api)
+
+    assert declined.value.reason == reason
+    assert api.closed == len(api.opened)
 
 
 def test_close_releases_the_handle_once_and_later_readings_fail_closed():
@@ -241,6 +315,7 @@ def test_the_production_composition_falls_back_to_full_readings(monkeypatch):
     receiver = bind_production_receiver(paired_process(), 5.0, lifecycle=lifecycle)
 
     assert isinstance(receiver, LifecycleReceiverContinuity)
+    assert receiver.binding_declined == "process_api_unavailable"
     receiver.observe(7.0)
     receiver.observe(8.0)
     assert readings == [7.0, 8.0]

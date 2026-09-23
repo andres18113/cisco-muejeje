@@ -41,6 +41,15 @@ class AcceptanceEnvelopePort(Protocol):
     def complete(self, envelope: ColdHttpAcceptanceEnvelope) -> str:
         """Write the terminal envelope once; a completed one is immutable."""
 
+    def stored(
+        self, envelope: ColdHttpAcceptanceEnvelope, *, completed: bool
+    ) -> str | None:
+        """Return the path this invocation stored at one stage, or None.
+
+        It decides an interrupted write whose outcome is unknown; an
+        unreadable stored file raises instead of answering.
+        """
+
 
 class ReceiverContinuity(Protocol):
     """One fresh local reading of the bound receiver, taken per governed dispatch.

@@ -27,8 +27,10 @@ the order around that call:
    is reloaded and compared with the public result, the dispatch order is
    checked from the ledger, the one absolute deadline is checked at the
    publication boundary, and the envelope is completed once. An interruption
-   after the claim is finalized the same way, as a cancellation, and then
-   re-raised.
+   after the attempt is reserved, the claim's own reservation included, is
+   finalized the same way, as a cancellation, and then re-raised. The terminal
+   link is the publication point: an interruption that lands after it leaves
+   the published verdict as the attempt's, and nothing rewrites it.
 
 The local checks are not an in-band receiver fence, and nothing here claims
 exactly-once execution or the exclusion of a replacement process. The grant
@@ -45,6 +47,7 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from functools import partial
 from typing import Any
+from uuid import uuid4
 
 from ...domain.enterprise.models.cold_http_acceptance import (
     COLD_HTTP_ARITHMETIC,
@@ -227,10 +230,15 @@ class LifecycleReceiverContinuity:
     mode = "lifecycle_per_dispatch"
 
     def __init__(
-        self, lifecycle: Callable[[float | None], DiagnosticLifecycleObservation]
+        self,
+        lifecycle: Callable[[float | None], DiagnosticLifecycleObservation],
+        *,
+        declined: str = "handle_binding_not_composed",
     ) -> None:
-        """Bind the full lifecycle reader."""
+        """Bind the full lifecycle reader and the reason no handle is held."""
         self._lifecycle = lifecycle
+        #: Why the handle-bound reader was not used; refusals name it.
+        self.binding_declined = declined
 
     def observe(self, deadline: float) -> DiagnosticLifecycleObservation:
         """Return one full reading within the dispatch deadline."""
@@ -736,22 +744,25 @@ def accept_cold_http(
     )
     if found:
         return _refused(envelope, list(found))
+    # Chosen here, so that a claim interrupted after it reserved the attempt
+    # can still be recovered and finished by this invocation.
+    holder = uuid4().hex
     try:
-        attempt.claim = boundaries.campaign_coordinator.claim(
-            attempt_id=grant.attempt_id
-        )
-    except Exception as exc:
-        return _refused(
-            envelope,
-            [
-                acceptance_refusal(
-                    RefusalKind.NOT_PERMITTED,
-                    AcceptanceSubject.CAMPAIGN,
-                    f"campaign_not_exclusive:{exc}",
-                )
-            ],
-        )
-    try:
+        try:
+            attempt.claim = boundaries.campaign_coordinator.claim(
+                attempt_id=grant.attempt_id, holder=holder
+            )
+        except Exception as exc:
+            return _refused(
+                envelope,
+                [
+                    acceptance_refusal(
+                        RefusalKind.NOT_PERMITTED,
+                        AcceptanceSubject.CAMPAIGN,
+                        f"campaign_not_exclusive:{exc}",
+                    )
+                ],
+            )
         envelope.checks.append("campaign_claim")
         summary = getattr(attempt.claim, "compact_summary", None)
         envelope.campaign = {"claim": summary() if callable(summary) else {}}
@@ -762,8 +773,14 @@ def accept_cold_http(
         # An interruption after the reservation and outside the product call
         # (a local admission read, the receiver binding, the channel) still
         # ends in one terminal envelope, as a cancellation, and propagates.
-        if not attempt.completed:
-            _cancelled_outside_the_product(attempt, exc)
+        # One inside the claim owes an envelope only if the attempt was
+        # reserved; the coordinator already rolled back a lock that was not.
+        boundary = None
+        if attempt.claim is None:
+            _recover_claim(attempt, holder)
+            boundary = "during:campaign_claim"
+        if attempt.claim is not None and not attempt.completed:
+            _cancelled_outside_the_product(attempt, exc, boundary)
         raise
     finally:
         # Every ordinary path released the claim before completing the
@@ -772,23 +789,68 @@ def accept_cold_http(
             _release_claim(attempt)
 
 
-def _cancelled_outside_the_product(attempt: _Attempt, error: BaseException) -> None:
+def _recover_claim(attempt: _Attempt, holder: str) -> None:
+    """Take back the reservation an interrupted claim made for this holder."""
+    recover = getattr(attempt.boundaries.campaign_coordinator, "recover", None)
+    if not callable(recover):
+        return
+    try:
+        claim = recover(attempt_id=attempt.grant.attempt_id, holder=holder)
+    except Exception:
+        return
+    if claim is None:
+        return
+    attempt.claim = claim
+    summary = getattr(claim, "compact_summary", None)
+    attempt.envelope.campaign = {
+        "claim": summary() if callable(summary) else {},
+        "recovered": "claim_interrupted_after_reservation",
+    }
+
+
+def _stored(attempt: _Attempt, *, completed: bool) -> str:
+    """Return this invocation's stored envelope at one stage, or nothing.
+
+    After an interruption the outcome of a store write is unknown; the store
+    is what decides it. An unreadable answer is treated as not stored, and the
+    write that follows is refused by the store rather than duplicated.
+    """
+    try:
+        found = attempt.boundaries.envelope_store.stored(
+            attempt.envelope, completed=completed
+        )
+    except Exception:
+        return ""
+    return str(found or "")
+
+
+def _cancelled_outside_the_product(
+    attempt: _Attempt, error: BaseException, boundary: str | None = None
+) -> None:
     """Complete the envelope of an attempt interrupted outside the product.
 
     It covers every interval after the reservation that the product's own
-    cancellation path does not: local admission, receiver binding, channel
-    opening, and a second interruption during the verdict or the terminal
-    write. The first interruption stays the named one; nothing here can turn
-    the attempt into an acceptance.
+    cancellation path does not: the claim itself once it reserved, local
+    admission, receiver binding, channel opening, and a second interruption
+    during the verdict or the terminal write. The first interruption stays the
+    named one; nothing here can turn the attempt into an acceptance.
+
+    The terminal link is the publication point. If this invocation's terminal
+    envelope is already stored, the attempt completed before the interruption
+    and its published verdict stands: nothing contradicts or rewrites it.
     """
     envelope = attempt.envelope
-    if attempt.phase == "admission":
+    published = _stored(attempt, completed=True)
+    if published:
+        attempt.envelope_path = published
+        attempt.completed = True
+        _close_receiver(attempt)
+        return
+    if boundary is None and attempt.phase == "admission":
         boundary = "after:" + (
             envelope.checks[-1] if envelope.checks else "reservation"
         )
-    else:
-        boundary = attempt.phase
-    attempt.cancel(error, boundary)
+    attempt.cancel(error, boundary or attempt.phase)
     envelope.cancellation = attempt.cancelled
     envelope.reasons = [
         attempt.cancelled,
@@ -930,10 +992,16 @@ def _bind_receiver(attempt: _Attempt) -> str:
     ).__name__
     mode = str(getattr(attempt.receiver, "mode", "") or "unknown")
     attempt.envelope.process_preflight["receiver_mode"] = mode
+    declined = str(getattr(attempt.receiver, "binding_declined", "") or "")
+    if declined:
+        attempt.envelope.process_preflight["receiver_binding_declined"] = declined
     if mode != BOUNDED_RECEIVER_MODE:
         # A correct reading whose cost the granted budget does not price is
         # not admitted: the run would stop on time, never complete honestly.
-        return f"receiver_mode_not_bounded:{mode}"
+        # The reason the handle could not be held is what the operator fixes.
+        return f"receiver_mode_not_bounded:{mode}" + (
+            f":{declined}" if declined else ""
+        )
     return ""
 
 
@@ -1494,7 +1562,13 @@ def _complete(
     persisted = False
     try:
         if not attempt.envelope_begun:
-            path = boundaries.envelope_store.begin(envelope)
+            # An interrupted begin may already have linked its file; the
+            # store decides, and a stored write-ahead is never begun twice.
+            recovered = _stored(attempt, completed=False)
+            if recovered:
+                path = attempt.envelope_path = recovered
+            else:
+                path = boundaries.envelope_store.begin(envelope)
             attempt.envelope_begun = True
     except Exception as exc:
         envelope.persistence_failures.append(f"envelope_not_begun:{type(exc).__name__}")
