@@ -95,20 +95,28 @@ CONTINUITY_MAX_ROUNDS = 31
 CONTINUITY_INTERVAL_SECONDS = 1.0
 
 
-def readiness_limits(plan: AccessReadinessPlan) -> tuple[int, float]:
-    """Derive the group ceiling and total wait one plan may use.
+#: Episodes one group may take: its own, and at most one narrowed episode.
+EPISODES_PER_GROUP = 2
 
-    Every group may take its own full window, so the total is the group count
-    times the window, never less than the legacy total. A plan that fits the
-    legacy ceilings gets exactly the legacy ceilings.
+
+def readiness_limits(plan: AccessReadinessPlan) -> tuple[int, float]:
+    """Derive the episode ceiling and total wait one plan may use.
+
+    Every group may take its own full window and one narrowed window, so the
+    ceiling is twice the group count and the total is that many windows,
+    never less than the legacy values. A plan that fits the legacy ceilings
+    gets exactly the legacy ceilings.
     """
     groups = plan.group_count
     return (
-        max(READINESS_MAX_GROUPS, groups),
+        max(READINESS_MAX_GROUPS, EPISODES_PER_GROUP * groups),
         max(
             READINESS_TOTAL_BUDGET_SECONDS,
-            len(plan.requirements) * READINESS_GROUP_DEADLINE_SECONDS
-            + len(plan.continuity) * CONTINUITY_GROUP_DEADLINE_SECONDS,
+            EPISODES_PER_GROUP
+            * (
+                len(plan.requirements) * READINESS_GROUP_DEADLINE_SECONDS
+                + len(plan.continuity) * CONTINUITY_GROUP_DEADLINE_SECONDS
+            ),
         ),
     )
 

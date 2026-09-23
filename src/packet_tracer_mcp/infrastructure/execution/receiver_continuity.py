@@ -16,7 +16,9 @@ for as long as it is held. The binding is confirmed by one more full reading
 taken after the handle was opened; after that, each dispatch reads the handle
 (not exited, same creation time, same image path) and the process table (no
 Packet Tracer image other than the bound primary and the helper present at
-binding). Each reading is fresh. Versions are properties of the bound image and
+binding). The helper is held by its own handle too, so its process id cannot be
+reused by another process while the binding lives, and a row claiming that id
+must still be the primary's child with the helper's creation time. Each reading is fresh. Versions are properties of the bound image and
 are carried from the confirmed pairing; no permission is cached.
 
 Neither reader is an in-band fence. Between the reading and the receiver
@@ -86,7 +88,11 @@ def _is_packet_tracer(row: ProcessTableRow) -> bool:
 
 
 class HandleBoundReceiverContinuity:
-    """Answer each dispatch from a held handle and a fresh process table."""
+    """Answer each dispatch from held handles and a fresh process table."""
+
+    #: The receiver mode a governed attempt requires: a bounded local reading
+    #: per dispatch. The full-lifecycle fallback is a different mode.
+    mode = "handle_bound"
 
     def __init__(
         self,
@@ -96,6 +102,8 @@ class HandleBoundReceiverContinuity:
         handle: object,
         creation_time: int,
         helper_pid: int | None,
+        helper_handle: object | None = None,
+        helper_creation_time: int | None = None,
         clock: Callable[[], float] = monotonic,
     ) -> None:
         """Hold one confirmed binding; use `bind` to create one."""
@@ -104,6 +112,8 @@ class HandleBoundReceiverContinuity:
         self._handle: object | None = handle
         self._creation_time = creation_time
         self._helper_pid = helper_pid
+        self._helper_handle: object | None = helper_handle
+        self._helper_creation_time = helper_creation_time
         self._clock = clock
 
     @classmethod
@@ -132,6 +142,7 @@ class HandleBoundReceiverContinuity:
         handle = api.open(pid)
         if handle is None:
             return None
+        helper_handle = None
         try:
             created = api.creation_time(handle)
             path = api.image_path(handle)
@@ -151,6 +162,19 @@ class HandleBoundReceiverContinuity:
             ]
             if pid not in {row.pid for row in images} or others or len(helpers) > 1:
                 raise LookupError("binding_ambiguous")
+            helper_created = None
+            if helpers:
+                # Held for as long as the binding lives: Windows does not give
+                # a held process id to another process, so a row with this id
+                # can only ever be this helper.
+                helper_handle = api.open(helpers[0])
+                if helper_handle is None:
+                    raise LookupError("helper_unbindable")
+                helper_created = api.creation_time(helper_handle)
+                if helper_created is None or not _same_path(
+                    api.image_path(helper_handle), preflight.process_path
+                ):
+                    raise LookupError("helper_unreadable")
             confirmed = lifecycle(deadline)
             if confirmed.error or _identity(confirmed) != _identity(preflight):
                 raise LookupError("binding_not_confirmed")
@@ -158,6 +182,8 @@ class HandleBoundReceiverContinuity:
                 raise LookupError("binding_exited")
         except LookupError:
             api.close(handle)
+            if helper_handle is not None:
+                api.close(helper_handle)
             return None
         return cls(
             preflight,
@@ -165,6 +191,8 @@ class HandleBoundReceiverContinuity:
             handle=handle,
             creation_time=created,
             helper_pid=helpers[0] if helpers else None,
+            helper_handle=helper_handle,
+            helper_creation_time=helper_created,
             clock=clock,
         )
 
@@ -185,10 +213,17 @@ class HandleBoundReceiverContinuity:
             return DiagnosticLifecycleObservation(error="process_table_unreadable")
         pid = self._preflight.process_id
         images = [row for row in table if _is_packet_tracer(row)]
-        allowed = {pid, self._helper_pid}
+        helper_valid = self._helper_still_bound(images, pid)
+        allowed = {pid, self._helper_pid} if helper_valid else {pid}
         foreign = [row for row in images if row.pid not in allowed]
         if pid not in {row.pid for row in images} or foreign:
-            count = len([row for row in images if row.pid != self._helper_pid])
+            count = len(
+                [
+                    row
+                    for row in images
+                    if not (helper_valid and row.pid == self._helper_pid)
+                ]
+            )
             return DiagnosticLifecycleObservation(
                 error=f"packet_tracer_process_count:{count}"
             )
@@ -211,11 +246,28 @@ class HandleBoundReceiverContinuity:
             ),
         )
 
+    def _helper_still_bound(self, images, pid: int | None) -> bool:
+        """Whether a row with the helper's id is still that helper, or absent."""
+        if self._helper_pid is None or self._helper_handle is None:
+            return False
+        rows = [row for row in images if row.pid == self._helper_pid]
+        if not rows:
+            return True
+        return bool(
+            len(rows) == 1
+            and rows[0].parent_pid == pid
+            and self._api.exited(self._helper_handle) is False
+            and self._api.creation_time(self._helper_handle)
+            == self._helper_creation_time
+        )
+
     def close(self) -> None:
-        """Close the held handle once."""
+        """Close every held handle once."""
         handle, self._handle = self._handle, None
-        if handle is not None:
-            self._api.close(handle)
+        helper, self._helper_handle = self._helper_handle, None
+        for item in (handle, helper):
+            if item is not None:
+                self._api.close(item)
 
 
 def _identity(observed: DiagnosticLifecycleObservation) -> tuple[object, ...]:

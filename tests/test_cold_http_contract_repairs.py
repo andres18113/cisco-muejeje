@@ -487,3 +487,153 @@ def test_the_legacy_worst_case_fits_with_receiver_and_dispatch_cost(tmp_path: Pa
     )
     assert budget.elapsed_seconds <= 420
     assert envelope.temporal["publication_offset_seconds"] <= 420
+
+
+def test_a_reading_that_spends_the_last_second_refuses_only_that_dispatch(
+    tmp_path: Path,
+):
+    """A1: allowance is recomputed after the local reading, before dispatch."""
+    from dataclasses import replace
+
+    from packet_tracer_mcp.domain.enterprise.models.cold_http_acceptance import (
+        ColdHttpProposal,
+    )
+
+    harness = build_harness(tmp_path)
+    harness.terminal.page_visible_after = 8.0
+    # The first start happens 0.5 s in, so the ordinary window closes within
+    # the 30 s a single local reading may take.
+    max_seconds = 60
+    harness.boundaries = replace(
+        harness.boundaries, proposal=ColdHttpProposal(1015, max_seconds, 2, 40)
+    )
+    ordinary_deadline = 1000.0 + max_seconds - 40
+    spent = {"armed": False, "used": False}
+    original = harness.receiver.observe
+
+    def observe(deadline: float):
+        if spent["armed"] and not spent["used"]:
+            spent["used"] = True
+            harness.receiver.cost = ordinary_deadline - harness.clock.now
+            try:
+                return original(deadline)
+            finally:
+                harness.receiver.cost = 0.0
+        return original(deadline)
+
+    harness.receiver.observe = observe
+
+    def arm(kind: str) -> None:
+        if kind == "http_start":
+            spent["armed"] = True
+
+    harness.terminal.on_dispatch = arm
+
+    result = harness.run(grant=harness.grant(max_seconds=max_seconds))
+
+    envelope = result.envelope
+    refused = [item for item in envelope.budget.entries if item.refused]
+    assert refused[0].refused == "time_budget_exhausted"
+    assert not envelope.primary_failure.startswith("authority_lost")
+    started = next(item for item in envelope.clients if item.dispatches)
+    assert started.release_dispatches == 1
+    assert started.release_outcome == "released"
+    assert envelope.http_accepted is False
+
+
+@pytest.mark.parametrize("boundary", ["process_preflight", "manifest", "channel"])
+def test_an_interruption_outside_the_product_still_completes_one_envelope(
+    tmp_path: Path, boundary: str
+):
+    """A3: after the reservation, every interruption ends in a terminal envelope."""
+    from dataclasses import replace
+
+    harness = build_harness(tmp_path)
+
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    if boundary == "process_preflight":
+        harness.boundaries = replace(harness.boundaries, lifecycle=interrupted)
+    elif boundary == "manifest":
+        harness.boundaries = replace(
+            harness.boundaries,
+            manifest_store=type(
+                "Interrupted", (), {"latest_by_deployment_id": interrupted}
+            )(),
+        )
+    else:
+        harness.boundaries = replace(harness.boundaries, open_channel=interrupted)
+
+    with pytest.raises(KeyboardInterrupt):
+        harness.run()
+
+    stored = harness.envelope_store.load(ATTEMPT)
+    assert stored.completed_at is not None
+    assert stored.primary_failure.startswith("cancelled:KeyboardInterrupt@after:")
+    assert stored.http_accepted is False
+    assert stored.campaign_outcome is CampaignOutcome.STOPPED
+    assert not (harness.coordinator.scope / LOCK_NAME).exists()
+    assert harness.terminal.log == []
+
+
+def test_an_unbounded_receiver_reading_is_refused_before_contact(tmp_path: Path):
+    """A1: a correct but unpriced full reading per dispatch is not admitted."""
+    from dataclasses import replace
+
+    harness = build_harness(tmp_path)
+    harness.boundaries = replace(harness.boundaries, bind_receiver=None)
+
+    result = harness.run()
+
+    assert harness.opened_channels == []
+    assert harness.terminal.log == []
+    envelope = result.envelope
+    assert "receiver_mode_not_bounded:lifecycle_per_dispatch" in (
+        envelope.primary_failure
+    )
+    assert envelope.process_preflight["receiver_mode"] == "lifecycle_per_dispatch"
+    assert result.persisted is True
+
+
+class _InterruptOnce:
+    """Raise one KeyboardInterrupt from a wrapped call, then behave normally."""
+
+    def __init__(self, inner) -> None:
+        self.inner = inner
+        self.fired = False
+
+    def __call__(self, *args, **kwargs):
+        if not self.fired:
+            self.fired = True
+            raise KeyboardInterrupt
+        return self.inner(*args, **kwargs)
+
+
+@pytest.mark.parametrize("where", ["begin", "judge", "complete"])
+def test_every_interruption_after_reservation_leaves_a_terminal_envelope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str
+):
+    """A3: the write-ahead begin, the verdict and the terminal write included."""
+    harness = build_harness(tmp_path)
+    store = harness.envelope_store
+    if where == "begin":
+        monkeypatch.setattr(store, "begin", _InterruptOnce(store.begin))
+    elif where == "complete":
+        monkeypatch.setattr(store, "complete", _InterruptOnce(store.complete))
+    else:
+        monkeypatch.setattr(
+            accept_cold_http, "_judge", _InterruptOnce(accept_cold_http._judge)
+        )
+
+    with pytest.raises(KeyboardInterrupt):
+        harness.run()
+
+    stored = store.load(ATTEMPT)
+    assert stored.completed_at is not None
+    assert stored.http_accepted is False
+    assert stored.cancellation.startswith("cancelled:KeyboardInterrupt@")
+    assert stored.primary_failure == stored.cancellation
+    if where != "begin":
+        assert stored.cancellation.endswith("@publication")
+    assert not (harness.coordinator.scope / LOCK_NAME).exists()

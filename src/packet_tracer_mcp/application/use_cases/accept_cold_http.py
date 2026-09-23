@@ -210,8 +210,21 @@ class AcceptanceBoundaries:
     ) = None
 
 
+#: The only receiver mode a governed attempt may run with: a bounded local
+#: reading per dispatch. Both profiles' time budgets are priced on it.
+BOUNDED_RECEIVER_MODE = "handle_bound"
+
+
 class LifecycleReceiverContinuity:
-    """Answer every governed dispatch with one full lifecycle reading."""
+    """Answer every governed dispatch with one full lifecycle reading.
+
+    It is a correct check and the fallback where no handle can be held, but a
+    full reading launches local helpers and has no per-dispatch bound, so
+    neither profile's time budget covers it; an attempt refuses before
+    contact when this is the only binding available.
+    """
+
+    mode = "lifecycle_per_dispatch"
 
     def __init__(
         self, lifecycle: Callable[[float | None], DiagnosticLifecycleObservation]
@@ -481,6 +494,11 @@ class _Attempt:
     cancelled: str = ""
     #: The scalable scope derived from the admitted closure, or None.
     scope: AcceptanceScope | None = None
+    #: Set once the terminal envelope write was attempted, whatever it gave.
+    completed: bool = False
+    #: Where the attempt is: admission, product, finalization or publication.
+    #: An interruption is named by it when no dispatch names it better.
+    phase: str = "admission"
 
     def authority(self, purpose: str, deadline: float) -> str:
         """Decide one dispatch against the claim and the paired receiver.
@@ -733,16 +751,54 @@ def accept_cold_http(
                 )
             ],
         )
-    envelope.checks.append("campaign_claim")
-    summary = getattr(attempt.claim, "compact_summary", None)
-    envelope.campaign = {"claim": summary() if callable(summary) else {}}
     try:
+        envelope.checks.append("campaign_claim")
+        summary = getattr(attempt.claim, "compact_summary", None)
+        envelope.campaign = {"claim": summary() if callable(summary) else {}}
         return _claimed(request, attempt)
+    except Exception:
+        raise
+    except BaseException as exc:
+        # An interruption after the reservation and outside the product call
+        # (a local admission read, the receiver binding, the channel) still
+        # ends in one terminal envelope, as a cancellation, and propagates.
+        if not attempt.completed:
+            _cancelled_outside_the_product(attempt, exc)
+        raise
     finally:
         # Every ordinary path released the claim before completing the
         # envelope; this only covers a path that raised out of the attempt.
         if "release" not in envelope.campaign:
             _release_claim(attempt)
+
+
+def _cancelled_outside_the_product(attempt: _Attempt, error: BaseException) -> None:
+    """Complete the envelope of an attempt interrupted outside the product.
+
+    It covers every interval after the reservation that the product's own
+    cancellation path does not: local admission, receiver binding, channel
+    opening, and a second interruption during the verdict or the terminal
+    write. The first interruption stays the named one; nothing here can turn
+    the attempt into an acceptance.
+    """
+    envelope = attempt.envelope
+    if attempt.phase == "admission":
+        boundary = "after:" + (
+            envelope.checks[-1] if envelope.checks else "reservation"
+        )
+    else:
+        boundary = attempt.phase
+    attempt.cancel(error, boundary)
+    envelope.cancellation = attempt.cancelled
+    envelope.reasons = [
+        attempt.cancelled,
+        *(item for item in envelope.reasons if item != attempt.cancelled),
+    ]
+    envelope.primary_failure = attempt.cancelled
+    envelope.http_accepted = False
+    envelope.campaign_outcome = CampaignOutcome.STOPPED
+    _close_receiver(attempt)
+    _complete(attempt)
 
 
 def _parse(document: object, proposal: ColdHttpProposal):
@@ -872,6 +928,12 @@ def _bind_receiver(attempt: _Attempt) -> str:
     attempt.envelope.process_preflight["receiver_binding"] = type(
         attempt.receiver
     ).__name__
+    mode = str(getattr(attempt.receiver, "mode", "") or "unknown")
+    attempt.envelope.process_preflight["receiver_mode"] = mode
+    if mode != BOUNDED_RECEIVER_MODE:
+        # A correct reading whose cost the granted budget does not price is
+        # not admitted: the run would stop on time, never complete honestly.
+        return f"receiver_mode_not_bounded:{mode}"
     return ""
 
 
@@ -964,6 +1026,7 @@ def _contact_bound(
                 binding = session()
             return _labelled(binding, attempt)
 
+        attempt.phase = "product"
         with ledger.effect_of("product"):
             result = apply_enterprise_services(
                 request.intent_json,
@@ -1075,6 +1138,7 @@ def _finalize(
     cancellation, and is then re-raised; it never becomes an acceptance.
     """
     ledger = attempt.ledger
+    attempt.phase = "finalization"
     temporal = _TemporalContract(ledger.deadline(), attempt.boundaries.clock)
     summary = result.compact_summary() if result is not None else None
     interrupted: BaseException | None = None
@@ -1110,6 +1174,9 @@ def _finalize(
     except BaseException as exc:
         attempt.cancel(exc, "finalization")
         interrupted = exc
+    # An interruption from here on is caught by the attempt's own handler,
+    # which completes the envelope as a cancellation if this did not.
+    attempt.phase = "publication"
     _judge(attempt, result, evaluation, ledger_refusals, temporal)
     completed = _complete(attempt, product_summary=summary)
     if interrupted is not None:
@@ -1445,6 +1512,7 @@ def _complete(
         # The verdict cannot stand on evidence that was not kept.
         envelope.http_accepted = False
         envelope.reasons.append("envelope_not_persisted")
+    attempt.completed = True
     return AcceptanceResult(
         envelope=envelope,
         envelope_path=path,

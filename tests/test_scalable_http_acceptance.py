@@ -448,3 +448,38 @@ def test_the_prepare_command_prints_the_derived_grant_fields(
     assert fields["max_operations"] == harness.prepared.scope.cost.max_operations
     assert printed["intent_sha256"] == harness.grant()["intent_sha256"]
     assert harness.terminal.log == []
+
+
+_CLOCK_KEYS = {"elapsed_ms", "duration_ms", "run_id", "run_label", "record_path"}
+
+
+def _without_clock(value):
+    if isinstance(value, dict):
+        return {
+            key: _without_clock(item)
+            for key, item in value.items()
+            if key not in _CLOCK_KEYS
+        }
+    if isinstance(value, list):
+        return [_without_clock(item) for item in value]
+    return value
+
+
+def test_the_public_tool_and_the_scalable_envelope_run_the_same_product(
+    tmp_path: Path, campus30, monkeypatch: pytest.MonkeyPatch
+):
+    """R-D1: same composition, same dispatches, same result on one campus."""
+    import json
+
+    from campus_product_simulation import run_public_campus
+
+    harness = build_scalable_harness(tmp_path / "acceptance", CAMPUS, plans=campus30)
+    accepted = harness.run()
+    assert accepted.envelope.http_accepted is True, accepted.envelope.reasons[:5]
+
+    public, terminal = run_public_campus(tmp_path / "public", monkeypatch, campus30)
+
+    assert _without_clock(public) == _without_clock(
+        json.loads(json.dumps(accepted.product_summary))
+    )
+    assert [kind for _, kind in terminal.log] == harness.product_dispatches()

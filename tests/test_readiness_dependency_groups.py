@@ -60,9 +60,9 @@ def _plan(campus):
 
 @dataclass
 class PortBackend(ForwardingBackend):
-    """The shared timed backend, with ports that never forward."""
+    """The shared timed backend, with `(switch, port)` pairs that never forward."""
 
-    never: set[str] = field(default_factory=set)
+    never: set[tuple[str, str]] = field(default_factory=set)
 
     def observe_access_forwarding(self, device_name, vlan_id, interfaces, **bounds):
         """Answer as the timed backend does, then hold the named ports in LIS."""
@@ -75,7 +75,11 @@ class PortBackend(ForwardingBackend):
                 AccessForwardingRow(
                     interface=row.interface,
                     matches=row.matches,
-                    state="LIS" if row.interface in self.never else row.state,
+                    state=(
+                        "LIS"
+                        if (device_name, row.interface) in self.never
+                        else row.state
+                    ),
                     role=row.role,
                 )
                 for row in observed.rows
@@ -236,7 +240,8 @@ def test_a_narrowed_episode_admits_only_the_dependents_it_fully_covers(campus):
             if other is not dependent
         )
     )
-    gate, backend = _gate(campus, backend=PortBackend(never={client_port}))
+    switch = campus.deployed_names[requirement.switch_device_id]
+    gate, backend = _gate(campus, backend=PortBackend(never={(switch, client_port)}))
 
     verdicts = {
         item.expectation_id: gate.decide(item.expectation_id)
@@ -250,7 +255,9 @@ def test_a_narrowed_episode_admits_only_the_dependents_it_fully_covers(campus):
         if expectation != victim.expectation_id
         and len(plan.groups_by_expectation[expectation]) == 1
     )
-    narrowed = backend.calls[1]
+    on_switch = [call for call in backend.calls if call[0] == switch]
+    assert len(on_switch) == 2  # the refused episode, then the narrowed one
+    narrowed = on_switch[1]
     assert client_port not in narrowed[2]
     rows = [row for row in gate.rows() if row.get("narrowed_from_group")]
     assert rows and client_port not in rows[0]["requested_interfaces"]
@@ -272,11 +279,12 @@ def test_the_legacy_ceilings_hold_for_a_plan_that_fits_them(campus):
     )
     big = compose_campus(campus_payload(200))
     plan = _plan(big)
-    groups, seconds = readiness_limits(plan)
-    assert (
-        groups == len(plan.requirements) + len(plan.continuity) > READINESS_MAX_GROUPS
-    )
-    assert seconds == 30.0 * groups
+    episodes, seconds = readiness_limits(plan)
+    groups = len(plan.requirements) + len(plan.continuity)
+    assert groups > READINESS_MAX_GROUPS
+    # One own episode and at most one narrowed episode per group.
+    assert episodes == 2 * groups
+    assert seconds == 30.0 * episodes
 
 
 # -- the continuity rule --------------------------------------------------------------
@@ -392,3 +400,34 @@ def test_an_unsettled_episode_grants_nothing_but_names_the_joined_pairs():
     assert verdicts[0].cause == CAUSE_WINDOW_ENDED_UNSETTLED
     assert verdicts[1].dimension == CONTINUITY_NO_PATH
     assert joined_pairs(_component(), NAMES, observation, pairs) == (("a", "b"),)
+
+
+def test_a_narrowed_group_never_starves_a_later_group():
+    """Each group may take a narrowed second episode inside the derived ceilings."""
+    big = compose_campus(campus_payload(200))
+    plan = _plan(big)
+    first = plan.requirements[0]
+    victim, port = next(
+        (dependent, interface)
+        for dependent in first.dependents
+        for interface in dependent.interfaces
+        if all(
+            interface not in other.interfaces
+            for other in first.dependents
+            if other is not dependent
+        )
+    )
+    backend = PortBackend(never={(big.deployed_names[first.switch_device_id], port)})
+    gate = ServiceAccessReadinessGate(
+        plan,
+        backend,
+        clock=backend.clock,
+        device_names=big.deployed_names,
+        continuity_observer=ContinuityBackend(),
+    )
+
+    verdicts = {item: gate.decide(item) for item in plan.groups_by_expectation}
+
+    refused = {key for key, verdict in verdicts.items() if not verdict.admitted}
+    assert refused == {victim.expectation_id}
+    assert not any("budget_exhausted" in verdict.cause for verdict in verdicts.values())

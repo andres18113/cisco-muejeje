@@ -38,9 +38,21 @@ PRIMARY = 4242
 HELPER = 5151
 
 
+@dataclass(frozen=True)
+class _Handle:
+    """An opaque handle that remembers which process it was opened on."""
+
+    pid: int
+
+
 @dataclass
 class FakeProcessApi:
-    """A process table the test edits between readings."""
+    """A process table the test edits between readings.
+
+    `exited_state`, `created` and `path` describe the paired primary; the
+    helper keeps its own fixed identity, so a change to the primary never
+    passes for a change to the helper.
+    """
 
     rows: list[ProcessTableRow] = field(
         default_factory=lambda: [
@@ -62,19 +74,19 @@ class FakeProcessApi:
         if self.open_refused:
             return None
         self.opened.append(pid)
-        return object()
+        return _Handle(pid)
 
     def exited(self, handle) -> bool | None:
-        """Report the scripted exit state."""
-        return self.exited_state
+        """Report the scripted exit state of the primary; the helper lives."""
+        return self.exited_state if handle.pid == PRIMARY else False
 
     def creation_time(self, handle) -> int | None:
-        """Report the scripted creation time."""
-        return self.created
+        """Report the scripted creation time of the primary."""
+        return self.created if handle.pid == PRIMARY else 555
 
     def image_path(self, handle) -> str:
-        """Report the scripted image path."""
-        return self.path
+        """Report the scripted image path of the primary."""
+        return self.path if handle.pid == PRIMARY else PROCESS_PATH
 
     def close(self, handle) -> None:
         """Count one closed handle."""
@@ -109,7 +121,7 @@ def test_a_confirmed_binding_answers_as_the_paired_incarnation():
 
     assert isinstance(bound, HandleBoundReceiverContinuity)
     assert len(readings) == 1  # one confirming full reading, then none
-    assert api.opened == [PRIMARY]
+    assert api.opened == [PRIMARY, HELPER]  # the helper is held too
     for _ in range(3):
         assert _judge(bound) == ()
     assert len(readings) == 1
@@ -200,7 +212,7 @@ def test_a_confirming_reading_of_another_incarnation_declines_the_binding():
     )
 
     assert bound is None
-    assert api.closed == 1
+    assert api.closed == len(api.opened) == 2
 
 
 def test_close_releases_the_handle_once_and_later_readings_fail_closed():
@@ -211,7 +223,7 @@ def test_close_releases_the_handle_once_and_later_readings_fail_closed():
     bound.close()
     bound.close()
 
-    assert api.closed == 1
+    assert api.closed == 2  # the primary and the helper, each once
     assert bound.observe(10.0**9).error == "receiver_binding_closed"
 
 
@@ -310,3 +322,83 @@ def test_one_win32_reading_costs_milliseconds_not_a_powershell_launch():
     costs.sort()
     # Generous: the measured median on the delivery machine is about 5 ms.
     assert costs[len(costs) // 2] < 0.25
+
+
+class PerProcessApi:
+    """A process table whose handles keep naming the process they opened."""
+
+    def __init__(self) -> None:
+        """Start with the paired primary and its progress helper."""
+        self.table: dict[int, dict] = {}
+        self.closed: list[dict] = []
+        self.spawn(PRIMARY, parent=1, created=100)
+        self.spawn(HELPER, parent=PRIMARY, created=200)
+
+    def spawn(self, pid: int, *, parent: int, created: int) -> None:
+        """Put a live Packet Tracer image at `pid`; an old holder keeps its own."""
+        self.table[pid] = {
+            "pid": pid,
+            "parent": parent,
+            "created": created,
+            "alive": True,
+            "path": PROCESS_PATH,
+        }
+
+    def exit(self, pid: int) -> None:
+        """End the process at `pid`; held handles see it exited."""
+        self.table.pop(pid)["alive"] = False
+
+    def open(self, pid: int):
+        """Open a handle that keeps naming this very process."""
+        return self.table.get(pid)
+
+    def exited(self, handle) -> bool | None:
+        """Report whether the held process ended."""
+        return not handle["alive"]
+
+    def creation_time(self, handle) -> int | None:
+        """Report the held process's creation time."""
+        return handle["created"]
+
+    def image_path(self, handle) -> str:
+        """Report the held process's image."""
+        return handle["path"]
+
+    def close(self, handle) -> None:
+        """Remember the closed handle."""
+        self.closed.append(handle)
+
+    def snapshot(self):
+        """List the live processes."""
+        return [
+            ProcessTableRow(item["pid"], item["parent"], "PacketTracer.exe")
+            for item in self.table.values()
+        ]
+
+
+@pytest.mark.parametrize("parent", [1, PRIMARY])
+def test_a_reused_helper_pid_is_never_the_bound_helper(parent: int):
+    """The helper exits and another Packet Tracer takes its id: a new receiver."""
+    api = PerProcessApi()
+    bound = HandleBoundReceiverContinuity.bind(
+        paired_process(), 10.0**9, lifecycle=lambda deadline: paired_process(), api=api
+    )
+    assert _judge(bound) == ()
+
+    api.exit(HELPER)
+    api.spawn(HELPER, parent=parent, created=999)
+
+    found = _judge(bound)
+    assert any("packet_tracer_process_count" in item for item in found), found
+
+
+def test_the_helper_is_held_and_released_with_the_binding():
+    """Both handles are held while bound and closed once."""
+    api = PerProcessApi()
+    bound = HandleBoundReceiverContinuity.bind(
+        paired_process(), 10.0**9, lifecycle=lambda deadline: paired_process(), api=api
+    )
+
+    bound.close()
+
+    assert sorted(item["pid"] for item in api.closed) == [PRIMARY, HELPER]

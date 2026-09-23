@@ -445,6 +445,8 @@ class FakeReceiver:
     clock: FakeClock
     observation: DiagnosticLifecycleObservation
     cost: float = 0.0
+    #: It stands for the bounded handle reader, whose mode both budgets price.
+    mode: str = "handle_bound"
     checks: int = 0
     deadlines: list[float] = field(default_factory=list)
     bound_to: DiagnosticLifecycleObservation | None = None
