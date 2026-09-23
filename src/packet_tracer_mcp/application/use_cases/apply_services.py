@@ -604,6 +604,9 @@ class ServiceApplicator:
                         )
                         for item in batch
                     }
+                # Whatever the batch did, it may have changed its hosts; a
+                # readiness answer that depended on them is observed again.
+                self._invalidate_readiness(item.host_device_id for item in batch)
                 for item in batch:
                     mutation = mutations.get(item.id)
                     if mutation is None:
@@ -1094,6 +1097,11 @@ class ServiceApplicator:
             ],
             recovery_limitations,
         )
+
+    def _invalidate_readiness(self, device_ids) -> None:
+        """Advance the revision of every readiness group these devices touch."""
+        if isinstance(self._readiness, ServiceAccessReadinessGate):
+            self._readiness.invalidate_devices(device_ids)
 
     def _readiness_verdict(
         self,

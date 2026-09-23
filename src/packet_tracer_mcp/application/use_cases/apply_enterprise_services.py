@@ -38,6 +38,7 @@ observation and owned cleanup are exactly what must still be allowed.
 
 from __future__ import annotations
 
+import hashlib
 import secrets as _random
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -83,6 +84,8 @@ from ...domain.enterprise.models.service_entry import (
     E5EffectScope,
     EffectClosureAction,
     EffectClosureCheck,
+    EffectClosurePath,
+    EffectClosureReadinessGroup,
     OwnedResourceRelease,
     ServiceEffectClosure,
     ServiceEntryOutcome,
@@ -112,12 +115,18 @@ from ...domain.enterprise.models.service_run_record import (
 )
 from ...domain.enterprise.models.service_runtime import ServiceApplicationResult
 from ...domain.enterprise.services.service_access_readiness import (
+    HTTP_REQUEST_KINDS,
     derive_access_readiness_plan,
 )
 from ...domain.enterprise.services.service_capability_resolution import (
     provenance_by_key,
     resolve_action_capability,
     resolve_verification_capability,
+)
+from ...domain.enterprise.services.service_path_closure import (
+    PathKind,
+    PathTopology,
+    classify_path,
 )
 from ...infrastructure.catalog.service_capabilities import (
     capability_snapshot_hash,
@@ -138,6 +147,7 @@ from .foundational_evidence import derive_service_foundational_statuses
 from .service_access_readiness_gate import (
     AccessForwardingObserver,
     ServiceAccessReadinessGate,
+    TrunkContinuityObserver,
 )
 
 #: The E5 row representations that mean "this action's effect is unknown".
@@ -296,6 +306,16 @@ class _GatedConfigurationRuntime:
             interval_seconds=interval_seconds,
             sample_calls=sample_calls,
         )
+
+    def observe_trunk_continuity(
+        self, switches: Sequence[Any], vlan_id: int, **bounds: Any
+    ) -> Any:
+        """Observe one component's trunk continuity; a read, so always permitted.
+
+        Raises `AttributeError` when the composed runtime has no such reader,
+        which the readiness gate turns into a named refusal.
+        """
+        return self.inner.observe_trunk_continuity(switches, vlan_id, **bounds)
 
 
 @dataclass
@@ -694,6 +714,18 @@ def _access_forwarding_observer(
     """
     composed = getattr(runtime, "inner", runtime)
     reader = getattr(composed, "observe_access_forwarding", None)
+    return runtime if callable(reader) else None  # type: ignore[return-value]
+
+
+def _trunk_continuity_observer(runtime: object) -> TrunkContinuityObserver | None:
+    """Return the composed continuity observer, or nothing when there is none.
+
+    The same structural question as the forwarding observer, asked of the
+    runtime inside the mutation-gate wrapper. `None` does not relax anything:
+    a continuity group without an observer refuses its dependents.
+    """
+    composed = getattr(runtime, "inner", runtime)
+    reader = getattr(composed, "observe_trunk_continuity", None)
     return runtime if callable(reader) else None  # type: ignore[return-value]
 
 
@@ -1577,8 +1609,8 @@ def apply_enterprise_services(
         return refuse(
             "A8",
             ServiceEntryRefusal.SERVICE_PATH_UNSUPPORTED,
-            "The selected path is outside the static, same-site, same-segment, "
-            "single-access-switch S1 contract: " + ", ".join(unsupported),
+            "The selected path is outside the static, same-site, same-segment "
+            "wired contract: " + ", ".join(unsupported),
         )
 
     # -- A9: credentials, before any user-state mutation (R-SEC-01) -------
@@ -1931,6 +1963,7 @@ def _execute(
         _access_forwarding_observer(configuration_runtime),
         clock=monotonic,
         device_names=deployed_names,
+        continuity_observer=_trunk_continuity_observer(configuration_runtime),
     )
 
     # -- E4: the E6 application --------------------------------------------
@@ -2404,18 +2437,25 @@ def _unsupported_paths(
     plan: ServicePlan,
     services: Sequence[ServiceDefinition],
 ) -> list[str]:
-    """Name selected paths outside the bounded static single-switch contract.
+    """Name selected paths outside the bounded static wired contract.
 
-    R-NET-01. Same-subnet addressing is what this slice supports, and saying
-    so is different from claiming that a routed client would work. A routed
-    path is slice S1c and needs L3 ownership this one does not have; adding a
-    routing feature so a fixture passes would be building the wrong product to
-    satisfy a test.
+    R-NET-01. Each selected client-to-server dependency must be a static (or
+    delegated DHCP) endpoint pair of the service's site and segment, each end
+    placed by exactly one access switch, joined either on one access switch
+    or through compiled trunk links that carry the segment's VLAN between two
+    access switches. The trunk path is not assumed from the compilation: the
+    readiness gate proves it before any dependent request. A routed path is
+    refused with the exact contract it lacks: the planner routes it through
+    gateway interfaces on an L3 device, and no registered E5 action enables
+    routing there and no registered observable reads the routing table.
+    Adding a routing feature so a fixture passes would be building the wrong
+    product to satisfy a test.
     """
     requirements: dict[str, list[Any]] = {}
     for item in plan.foundational_requirements:
         requirements.setdefault(item.device_id, []).append(item)
     actions = {item.id: item for item in configuration_plan.actions}
+    topology = PathTopology(configuration_plan.actions)
     delegated_clients = {
         client_id: (service.site_id, service.segment_id)
         for service in services
@@ -2442,13 +2482,15 @@ def _unsupported_paths(
 
     unsupported: list[str] = []
     for service in services:
-        path_switches: set[str] = set()
+        placed: set[str] = set()
+        segments: dict[str, str] = {}
         for device_id in [service.host_device_id, *service.client_device_ids]:
             matches = requirements.get(device_id, [])
             if len(matches) != 1:
                 unsupported.append(f"{service.id}:{device_id}:foundation_identity")
                 continue
             requirement = matches[0]
+            segments[device_id] = requirement.segment_id
             expected_model = (
                 "Server-PT" if device_id == service.host_device_id else "PC-PT"
             )
@@ -2470,14 +2512,30 @@ def _unsupported_paths(
                 continue
             if action.site_id != service.site_id:
                 unsupported.append(f"{service.id}:{device_id}:foreign_site")
-            if requirement.segment_id != service.segment_id:
-                unsupported.append(f"{service.id}:{device_id}:routed")
-            switches = access_switches(action.id)
-            if len(switches) != 1:
+            if (
+                device_id == service.host_device_id
+                and requirement.segment_id != service.segment_id
+            ):
+                unsupported.append(f"{service.id}:{device_id}:host_segment")
+            if len(access_switches(action.id)) != 1:
                 unsupported.append(f"{service.id}:{device_id}:switching_prerequisite")
-            path_switches.update(switches)
-        if len(path_switches) > 1:
-            unsupported.append(f"{service.id}:inter_switch")
+                continue
+            placed.add(device_id)
+        if service.host_device_id not in placed:
+            continue
+        for client_id in service.client_device_ids:
+            if client_id not in placed:
+                continue
+            path = classify_path(
+                topology,
+                client_device_id=client_id,
+                host_device_id=service.host_device_id,
+                segments=segments,
+            )
+            if path.kind is PathKind.ROUTED:
+                unsupported.append(f"{service.id}:{client_id}:{path.reason}")
+            elif path.kind is PathKind.UNPLACED:
+                unsupported.append(f"{service.id}:{client_id}:{path.reason}")
     return sorted(unsupported)
 
 
@@ -2538,6 +2596,9 @@ def _effect_closure(
 ) -> ServiceEffectClosure:
     """Describe what this admitted invocation will do, and on which targets."""
     actions = {item.id: item for item in configuration_plan.actions}
+    paths, readiness_groups = _closure_readiness(
+        configuration_plan, selected_plan, deployed_names
+    )
     return ServiceEffectClosure(
         deployment_id=deployment_id,
         manifest_hash=manifest.semantic_hash,
@@ -2590,7 +2651,115 @@ def _effect_closure(
         ],
         selected_service_ids=[item.id for item in selected_plan.services],
         limitations=sorted(set(limitations)),
+        paths=paths,
+        readiness_groups=readiness_groups,
     )
+
+
+def _closure_readiness(
+    configuration_plan: Any,
+    selected_plan: ServicePlan,
+    deployed_names: Mapping[str, str],
+) -> tuple[list[EffectClosurePath], list[EffectClosureReadinessGroup]]:
+    """Describe each request's path and the readiness groups it will wait on.
+
+    It is the same derivation the readiness gate will run over the same
+    compiled plans, rendered on the deployed names the manifest resolved.
+    """
+    readiness = derive_access_readiness_plan(
+        configuration_actions=configuration_plan.actions,
+        verification_expectations=selected_plan.verification_expectations,
+    )
+    placements = PathTopology(configuration_plan.actions).placements
+    labels: dict[Any, str] = {}
+    groups: list[EffectClosureReadinessGroup] = []
+    for requirement in readiness.requirements:
+        switch = deployed_names.get(
+            requirement.switch_device_id, requirement.switch_device_name
+        )
+        label = f"access:{switch}:{requirement.vlan_id}"
+        labels[requirement.key] = label
+        groups.append(
+            EffectClosureReadinessGroup(
+                key=label,
+                kind="access",
+                vlan_id=requirement.vlan_id,
+                switches=[switch],
+                interfaces=list(requirement.interfaces),
+                dependents=[item.expectation_id for item in requirement.dependents],
+            )
+        )
+    for continuity in readiness.continuity:
+        component = continuity.component
+        names = {
+            switch_id: deployed_names.get(switch_id, name)
+            for switch_id, name in zip(
+                component.switch_device_ids, component.switch_device_names, strict=True
+            )
+        }
+        switches = [names[item] for item in component.switch_device_ids]
+        digest = hashlib.sha256(",".join(switches).encode("utf-8")).hexdigest()
+        label = f"trunk_continuity:{component.vlan_id}:{len(switches)}:{digest[:16]}"
+        labels[continuity.key] = label
+        groups.append(
+            EffectClosureReadinessGroup(
+                key=label,
+                kind="trunk_continuity",
+                vlan_id=component.vlan_id,
+                switches=switches,
+                interfaces=sorted(
+                    f"{names[end]}:{interface}"
+                    for link in component.links
+                    for end, interface in (
+                        (link.switch_a_id, link.interface_a),
+                        (link.switch_b_id, link.interface_b),
+                    )
+                ),
+                dependents=[item.expectation_id for item in continuity.dependents],
+            )
+        )
+    unplaced = {item.expectation_id for item in readiness.unplaced}
+    paths: list[EffectClosurePath] = []
+    for expectation in selected_plan.verification_expectations:
+        if expectation.kind not in HTTP_REQUEST_KINDS:
+            continue
+        keys = readiness.groups_by_expectation.get(expectation.id, ())
+        client = placements.get(expectation.client_device_id or "", [])
+        host = placements.get(expectation.host_device_id, [])
+        client_at = client[0] if len(client) == 1 else None
+        host_at = host[0] if len(host) == 1 else None
+        kind = (
+            "unplaced"
+            if expectation.id in unplaced or not keys
+            else "l2_multi_access"
+            if len(keys) > 1
+            else "local_access"
+        )
+        paths.append(
+            EffectClosurePath(
+                expectation_id=expectation.id,
+                client_device_name=deployed_names.get(
+                    expectation.client_device_id or "", ""
+                ),
+                host_device_name=deployed_names.get(expectation.host_device_id, ""),
+                kind=kind,
+                vlan_id=client_at.vlan_id if client_at is not None else None,
+                client_switch=(
+                    deployed_names.get(client_at.switch_device_id, "")
+                    if client_at is not None
+                    else ""
+                ),
+                client_port=client_at.interface if client_at is not None else "",
+                host_switch=(
+                    deployed_names.get(host_at.switch_device_id, "")
+                    if host_at is not None
+                    else ""
+                ),
+                host_port=host_at.interface if host_at is not None else "",
+                groups=[labels[key] for key in keys if key in labels],
+            )
+        )
+    return paths, groups
 
 
 def _sanitized(detail: str, limit: int = 240) -> str:

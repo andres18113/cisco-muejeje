@@ -18,6 +18,13 @@ An endpoint the plan never puts on an access port is not silently dropped from
 the required set. It becomes a named unresolved endpoint, which makes the
 requirement unsatisfiable and blocks its dependents, because a path whose ports
 cannot be identified is not a path anybody observed.
+
+A request between two access switches in one VLAN depends on three groups: the
+client's access group, the server's access group and the trunk continuity of
+the compiled component that joins them. Each group is observed once per
+invocation and shared by every dependent that names it; a dependent is
+admitted only when every group it names admits it. A request whose switches no
+compiled component joins stays unplaced.
 """
 
 from __future__ import annotations
@@ -26,6 +33,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from ..models.service_plan import ServiceVerificationKind
+from .service_path_closure import L2Component, PathTopology
 
 #: The one configuration action type that places endpoints on a switch access
 #: port. Compared as its wire value so this module stays independent of the
@@ -102,6 +110,42 @@ class AccessReadinessRequirement:
 
 
 @dataclass(frozen=True)
+class ContinuityDependent:
+    """One expectation whose two access switches a component must join."""
+
+    expectation_id: str
+    service_id: str
+    kind: ServiceVerificationKind
+    client_device_id: str
+    host_device_id: str
+    client_switch_id: str
+    host_switch_id: str
+
+
+@dataclass(frozen=True)
+class ContinuityRequirement:
+    """One compiled L2 component to observe once, and what waits on it."""
+
+    component: L2Component
+    dependents: tuple[ContinuityDependent, ...] = ()
+
+    @property
+    def key(self) -> tuple[str, int, tuple[str, ...]]:
+        """Return the complete identity one continuity observation answers."""
+        return self.component.key
+
+    @property
+    def vlan_id(self) -> int:
+        """Return the VLAN the component carries."""
+        return self.component.vlan_id
+
+
+#: One group identity: `(switch_id, vlan)` for an access group, and
+#: `("trunk_continuity", vlan, switch_ids)` for a continuity group.
+GroupKey = tuple
+
+
+@dataclass(frozen=True)
 class AccessReadinessPlan:
     """Every group one invocation must observe, plus what it could not place."""
 
@@ -109,22 +153,33 @@ class AccessReadinessPlan:
     #: Expectations whose endpoints the plan places on no access port at all,
     #: so they belong to no group and cannot be observed into readiness.
     unplaced: tuple[ReadinessDependent, ...] = ()
-    #: Group keys as the derivation produced them, per expectation id. The
-    #: applicator resolves a dependent through this map, so an expectation can
-    #: never be matched to a group by name or by position.
-    group_by_expectation: Mapping[str, tuple[str, int]] = field(default_factory=dict)
+    #: Every group each expectation depends on, in the order they are decided:
+    #: the client's access group, the server's access group, then continuity.
+    #: The gate resolves a dependent only through this map, so an expectation
+    #: can never be matched to a group by name or by position.
+    groups_by_expectation: Mapping[str, tuple[GroupKey, ...]] = field(
+        default_factory=dict
+    )
+    continuity: tuple[ContinuityRequirement, ...] = ()
 
     @property
     def gated_expectation_ids(self) -> tuple[str, ...]:
         """Return every expectation this plan gates, in derivation order."""
         return tuple(
-            [
-                dependent.expectation_id
-                for requirement in self.requirements
-                for dependent in requirement.dependents
-            ]
-            + [dependent.expectation_id for dependent in self.unplaced]
+            dict.fromkeys(
+                [
+                    dependent.expectation_id
+                    for requirement in self.requirements
+                    for dependent in requirement.dependents
+                ]
+                + [dependent.expectation_id for dependent in self.unplaced]
+            )
         )
+
+    @property
+    def group_count(self) -> int:
+        """Return how many distinct groups this plan can ask about."""
+        return len(self.requirements) + len(self.continuity)
 
 
 def access_port_placements(
@@ -177,15 +232,20 @@ def derive_access_readiness_plan(
     configuration_actions: Iterable[object],
     verification_expectations: Sequence[object],
 ) -> AccessReadinessPlan:
-    """Group the HTTP-family expectations by the switch/VLAN they depend on.
+    """Group the HTTP-family expectations by every group their path needs.
 
-    One group per `(switch, VLAN)`, holding the union of the interfaces its
-    dependents need, so the observation cost follows the topology and not the
-    client count. Grouping is by the switch's semantic device id, which is the
-    identity the plan assigns; the deployed name travels with the group for the
-    query and for the report, and is never what the group is keyed on.
+    One access group per `(switch, VLAN)`, holding the union of the interfaces
+    its dependents need on that switch, so the observation cost follows the
+    topology and not the client count. A request inside one group is the
+    legacy single-segment path. A request between two access switches of one
+    VLAN also depends on the continuity group of the compiled component that
+    joins them. Grouping is by the semantic device ids the plan assigns; the
+    deployed name travels with the group for the query and for the report, and
+    is never what a group is keyed on.
     """
-    placements = access_port_placements(configuration_actions)
+    actions = list(configuration_actions)
+    placements = access_port_placements(actions)
+    topology: PathTopology | None = None
     by_endpoint: dict[str, list[AccessPortPlacement]] = {}
     for placement in placements:
         for endpoint_id in placement.endpoint_ids:
@@ -194,14 +254,21 @@ def derive_access_readiness_plan(
     grouped: dict[tuple[str, int], list[ReadinessDependent]] = {}
     names: dict[tuple[str, int], str] = {}
     interfaces: dict[tuple[str, int], set[str]] = {}
+    continuity: dict[GroupKey, tuple[L2Component, list[ContinuityDependent]]] = {}
     unplaced: list[ReadinessDependent] = []
-    group_by_expectation: dict[str, tuple[str, int]] = {}
+    groups_by_expectation: dict[str, tuple[GroupKey, ...]] = {}
+
+    def join(key: tuple[str, int], dependent: ReadinessDependent, name: str) -> None:
+        grouped.setdefault(key, []).append(dependent)
+        names.setdefault(key, name)
+        interfaces.setdefault(key, set()).update(dependent.interfaces)
 
     for expectation in verification_expectations:
         kind = getattr(expectation, "kind", None)
         if kind not in HTTP_REQUEST_KINDS:
             continue
         expectation_id = str(getattr(expectation, "id", "") or "")
+        service_id = str(getattr(expectation, "service_id", "") or "")
         host_id = str(getattr(expectation, "host_device_id", "") or "")
         client_id = str(getattr(expectation, "client_device_id", "") or "")
         # Both ends of the request travel through their own access port. A
@@ -212,31 +279,95 @@ def derive_access_readiness_plan(
             placement for item in wanted for placement in by_endpoint.get(item, ())
         ]
         unresolved = tuple(item for item in wanted if not by_endpoint.get(item))
-        keys = {
-            (placement.switch_device_id, placement.vlan_id) for placement in resolved
-        }
-        dependent = ReadinessDependent(
-            expectation_id=expectation_id,
-            service_id=str(getattr(expectation, "service_id", "") or ""),
-            kind=kind,
-            client_device_id=client_id,
-            host_device_id=host_id,
-            interfaces=tuple(
-                dict.fromkeys(placement.interface for placement in resolved)
-            ),
-            unresolved_endpoint_ids=unresolved,
+        keys = list(
+            dict.fromkeys(
+                (placement.switch_device_id, placement.vlan_id)
+                for placement in resolved
+            )
         )
-        if len(keys) != 1:
-            # No placement at all, or a path this bounded topology does not
-            # support: one request spanning two switches or two VLANs is not a
-            # single-segment path and no one grouped sample describes it.
-            unplaced.append(dependent)
+
+        def dependent(
+            on: tuple[str, int] | None = None,
+            *,
+            missing: tuple[str, ...] = unresolved,
+            chosen: list[AccessPortPlacement] = resolved,
+            identifier: str = expectation_id,
+            service: str = service_id,
+            request_kind: object = kind,
+            client: str = client_id,
+            host: str = host_id,
+        ) -> ReadinessDependent:
+            return ReadinessDependent(
+                expectation_id=identifier,
+                service_id=service,
+                kind=request_kind,  # type: ignore[arg-type]
+                client_device_id=client,
+                host_device_id=host,
+                interfaces=tuple(
+                    dict.fromkeys(
+                        placement.interface
+                        for placement in chosen
+                        if on is None
+                        or (placement.switch_device_id, placement.vlan_id) == on
+                    )
+                ),
+                unresolved_endpoint_ids=missing,
+            )
+
+        if len(keys) == 1:
+            key = keys[0]
+            join(key, dependent(), resolved[0].switch_device_name)
+            groups_by_expectation[expectation_id] = (key,)
             continue
-        key = next(iter(keys))
-        grouped.setdefault(key, []).append(dependent)
-        names.setdefault(key, resolved[0].switch_device_name)
-        interfaces.setdefault(key, set()).update(dependent.interfaces)
-        group_by_expectation[expectation_id] = key
+        joined = None
+        if (
+            len(keys) == 2
+            and not unresolved
+            and client_id
+            and host_id
+            and len(by_endpoint.get(client_id, ())) == 1
+            and len(by_endpoint.get(host_id, ())) == 1
+            and keys[0][1] == keys[1][1]
+        ):
+            if topology is None:
+                topology = PathTopology(actions)
+            client_key = (
+                by_endpoint[client_id][0].switch_device_id,
+                by_endpoint[client_id][0].vlan_id,
+            )
+            host_key = (
+                by_endpoint[host_id][0].switch_device_id,
+                by_endpoint[host_id][0].vlan_id,
+            )
+            component = topology.component_of(client_key[1], client_key[0])
+            if component is not None and host_key[0] in set(
+                component.switch_device_ids
+            ):
+                joined = (client_key, host_key, component)
+        if joined is None:
+            # No placement at all, or a path this derivation cannot join: a
+            # request spanning two switches that no compiled component
+            # connects, or two VLANs, is not observable as one path.
+            unplaced.append(dependent())
+            continue
+        client_key, host_key, component = joined
+        client_placement = by_endpoint[client_id][0]
+        host_placement = by_endpoint[host_id][0]
+        join(client_key, dependent(client_key), client_placement.switch_device_name)
+        join(host_key, dependent(host_key), host_placement.switch_device_name)
+        bucket = continuity.setdefault(component.key, (component, []))
+        bucket[1].append(
+            ContinuityDependent(
+                expectation_id=expectation_id,
+                service_id=service_id,
+                kind=kind,  # type: ignore[arg-type]
+                client_device_id=client_id,
+                host_device_id=host_id,
+                client_switch_id=client_key[0],
+                host_switch_id=host_key[0],
+            )
+        )
+        groups_by_expectation[expectation_id] = (client_key, host_key, component.key)
 
     requirements = tuple(
         AccessReadinessRequirement(
@@ -261,7 +392,11 @@ def derive_access_readiness_plan(
     return AccessReadinessPlan(
         requirements=requirements,
         unplaced=tuple(unplaced),
-        group_by_expectation=dict(group_by_expectation),
+        groups_by_expectation=dict(groups_by_expectation),
+        continuity=tuple(
+            ContinuityRequirement(component=component, dependents=tuple(items))
+            for component, items in continuity.values()
+        ),
     )
 
 
@@ -496,5 +631,147 @@ def unplaced_group_result(
                 cause=CAUSE_PATH_NOT_SINGLE_SEGMENT,
             )
             for dependent in dependents
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class ContinuityDependentResult:
+    """Whether one dependent's two access switches were joined, and why not."""
+
+    expectation_id: str
+    service_id: str
+    kind: str
+    client_device_id: str
+    host_device_id: str
+    client_switch_id: str
+    host_switch_id: str
+    admitted: bool
+    cause: str = ""
+
+    def as_row(self) -> dict[str, object]:
+        """Return the public per-client continuity row."""
+        return {
+            "expectation_id": self.expectation_id,
+            "service_id": self.service_id,
+            "kind": self.kind,
+            "client_device_id": self.client_device_id,
+            "host_device_id": self.host_device_id,
+            "client_switch_id": self.client_switch_id,
+            "host_switch_id": self.host_switch_id,
+            "admitted": self.admitted,
+            "cause": self.cause,
+        }
+
+
+@dataclass(frozen=True)
+class ContinuityGroupResult:
+    """One continuity observation of one component, and its dependents."""
+
+    component: L2Component
+    status: str
+    dimension: str
+    causes: tuple[str, ...] = ()
+    sample: Mapping[str, object] = field(default_factory=dict)
+    dependents: tuple[ContinuityDependentResult, ...] = ()
+
+    @property
+    def key(self) -> tuple[str, int, tuple[str, ...]]:
+        """Return the identity this result answers."""
+        return self.component.key
+
+    def as_row(self) -> dict[str, object]:
+        """Return the public continuity row, sample included."""
+        component = self.component
+        return {
+            "kind": "trunk_continuity",
+            "vlan_id": component.vlan_id,
+            "switch_device_ids": list(component.switch_device_ids),
+            "switch_device_names": list(component.switch_device_names),
+            "links": [
+                {
+                    "link_id": link.link_id,
+                    "switch_a_id": link.switch_a_id,
+                    "interface_a": link.interface_a,
+                    "switch_b_id": link.switch_b_id,
+                    "interface_b": link.interface_b,
+                }
+                for link in component.links
+            ],
+            "status": self.status,
+            "dimension": self.dimension,
+            "causes": list(self.causes),
+            "sample": dict(self.sample),
+            "dependents": [item.as_row() for item in self.dependents],
+        }
+
+
+def _continuity_dependent(
+    dependent: ContinuityDependent, *, admitted: bool, cause: str
+) -> ContinuityDependentResult:
+    return ContinuityDependentResult(
+        expectation_id=dependent.expectation_id,
+        service_id=dependent.service_id,
+        kind=_kind_value(dependent.kind),
+        client_device_id=dependent.client_device_id,
+        host_device_id=dependent.host_device_id,
+        client_switch_id=dependent.client_switch_id,
+        host_switch_id=dependent.host_switch_id,
+        admitted=admitted,
+        cause="" if admitted else cause,
+    )
+
+
+def observed_continuity_result(
+    requirement: ContinuityRequirement,
+    *,
+    verdicts: Mapping[tuple[str, str], tuple[bool, str, str]],
+    sample: Mapping[str, object],
+) -> ContinuityGroupResult:
+    """Bind each dependent to its own pair's verdict from one observation.
+
+    `verdicts` maps `(client_switch, host_switch)` to `(admitted, dimension,
+    cause)`. A dependent whose pair has no verdict is not admitted.
+    """
+    dependents = tuple(
+        _continuity_dependent(
+            item,
+            admitted=verdicts.get(
+                (item.client_switch_id, item.host_switch_id), (False,)
+            )[0],
+            cause=verdicts.get(
+                (item.client_switch_id, item.host_switch_id),
+                (False, "NOT_OBSERVED", "pair_not_decided"),
+            )[2],
+        )
+        for item in requirement.dependents
+    )
+    refused = [verdict for verdict in verdicts.values() if not verdict[0]]
+    return ContinuityGroupResult(
+        component=requirement.component,
+        status=(
+            READINESS_ADMITTED
+            if dependents and all(item.admitted for item in dependents)
+            else READINESS_REFUSED
+        ),
+        dimension=refused[0][1] if refused else "NONE",
+        causes=tuple(dict.fromkeys(verdict[2] for verdict in refused)),
+        sample=dict(sample),
+        dependents=dependents,
+    )
+
+
+def unobserved_continuity_result(
+    requirement: ContinuityRequirement, *, cause: str
+) -> ContinuityGroupResult:
+    """State that a component has no observation, and why."""
+    return ContinuityGroupResult(
+        component=requirement.component,
+        status=READINESS_NOT_OBSERVED,
+        dimension=DIMENSION_NOT_OBSERVED,
+        causes=(cause,),
+        dependents=tuple(
+            _continuity_dependent(item, admitted=False, cause=cause)
+            for item in requirement.dependents
         ),
     )

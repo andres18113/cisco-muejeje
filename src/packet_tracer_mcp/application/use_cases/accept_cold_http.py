@@ -352,6 +352,11 @@ class _LabelledConfiguration:
         with self._ledger.purpose_of(PURPOSE_READINESS):
             return self._inner.observe_access_forwarding(*args, **kwargs)
 
+    def observe_trunk_continuity(self, *args, **kwargs):
+        self._halted.check()
+        with self._ledger.purpose_of(PURPOSE_READINESS):
+            return self._inner.observe_trunk_continuity(*args, **kwargs)
+
 
 class _LabelledServices:
     """The E6 runtime, with each boundary's dispatches named in the ledger."""

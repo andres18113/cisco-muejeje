@@ -308,3 +308,38 @@ def access_forwarding_facts(
         # evidence beside it into a forwarding or reachability claim.
         "light_status_is_auxiliary": True,
     }
+
+
+def forwarding_subset(observation: AccessForwardingObservation) -> tuple[str, ...]:
+    """Name the requested interfaces the last sample showed forwarding.
+
+    This grants nothing. It is only defined for a last sample that is itself
+    authoritative apart from its port states (executed, fresh, complete,
+    attributed to exactly this switch, VLAN instance present, within its call
+    budget, and every requested interface present exactly once), and it names
+    the interfaces a narrowed, fresh episode may be asked about after other
+    interfaces of the group kept this one from admitting. A page that omits or
+    repeats a requested row is not a clean sample of any subset.
+    """
+    if not (
+        observation.samples
+        and observation.executed
+        and observation.fresh_output_observed
+        and observation.output_complete
+        and observation.observed_device_name == observation.switch_name
+        and observation.device_identity_provenance == CONFIRMED_UNIQUE
+        and observation.vlan_present
+        and not observation.sample_budget_exhausted
+    ):
+        return ()
+    rows = {item.interface: item for item in observation.rows}
+    if any(
+        item not in rows or rows[item].matches != 1
+        for item in observation.requested_interfaces
+    ):
+        return ()
+    return tuple(
+        item
+        for item in observation.requested_interfaces
+        if str(rows[item].state).upper() in FORWARDING_STATES
+    )

@@ -52,6 +52,12 @@ from ...domain.enterprise.services.access_forwarding import (
     CAUSE_SAMPLE_BUDGET_EXHAUSTED,
     FORWARDING_STATES,
 )
+from ...domain.enterprise.services.trunk_continuity import (
+    TrunkContinuityObservation,
+    TrunkContinuityRound,
+    TrunkPortReading,
+    TrunkSwitchReading,
+)
 from ...shared.utils import same_interface_name
 from ..generator.configuration_renderer import PacketTracerIosRenderer
 from .configuration_runtime import PacketTracerConfigurationRuntime
@@ -97,6 +103,10 @@ _IOS_ACTIONS = (
     ConfigureEthernetLinkMode,
 )
 _ENDPOINT_ACTIONS = (SetEndpointStaticAddress, SetEndpointDhcp)
+#: Endpoint addressing calls per fire-and-forget send. One call renders to
+#: about two hundred bytes, so one script stays near thirteen kilobytes however
+#: many endpoints a plan addresses; a plan within it sends exactly as before.
+MAX_ENDPOINT_CALLS_PER_SEND = 64
 
 
 # A trunk verification now claims operational STP forwarding, not merely that
@@ -1058,6 +1068,113 @@ class PacketTracerEnterpriseConfigurationRuntime:
             ),
         )
 
+    def observe_trunk_continuity(
+        self,
+        switches: Sequence[tuple[str, Sequence[str]]],
+        vlan_id: int,
+        *,
+        settled: Callable[[TrunkContinuityRound], bool],
+        remaining_seconds: float,
+        max_rounds: int,
+        deadline_seconds: float,
+        interval_seconds: float,
+        sample_calls: int,
+    ) -> TrunkContinuityObservation:
+        """Read the registered trunk table of every listed switch, per round.
+
+        One round reads each switch once with the registered `show interfaces
+        trunk` query, through the same bounded channel as the forwarding
+        observer: each reading has its own call budget and every call is capped
+        by the window. Rounds stop when `settled` accepts a complete round, when
+        the window closes, when the round ceiling is reached, or when the
+        channel stops granting calls; nothing is reconfigured to make a path
+        appear. Each reading keeps only the requested trunk interfaces, and a
+        reading that is late, incomplete, not fresh or not attributed to
+        exactly its switch is kept as such and authorizes nothing.
+        """
+        if isinstance(max_rounds, bool) or not isinstance(max_rounds, int):
+            raise ValueError("trunk continuity max_rounds must be an int")
+        if sample_calls < 1:
+            raise ValueError("trunk continuity sample_calls must be positive")
+        requested = tuple((str(name), tuple(ports)) for name, ports in switches)
+        window = min(float(deadline_seconds), float(remaining_seconds))
+        started = self._clock()
+        deadline = started + window
+        rounds: list[TrunkContinuityRound] = []
+        calls = 0
+        end_reason = ""
+        while len(rounds) < max_rounds:
+            if self._forwarding_channel.stopped:
+                end_reason = self._forwarding_channel.stop_reason
+                break
+            if self._clock() >= deadline:
+                end_reason = "deadline"
+                break
+            readings: list[TrunkSwitchReading] = []
+            for name, ports in requested:
+                if self._forwarding_channel.stopped or self._clock() >= deadline:
+                    break
+                self._forwarding_channel.open(calls=sample_calls, deadline=deadline)
+                before = self._forwarding_channel.calls
+                show = self._forwarding_ios.execute(
+                    name, OperationalQueryId.SHOW_INTERFACES_TRUNK
+                )
+                spent = self._forwarding_channel.calls - before
+                calls += spent
+                rows = (
+                    parse_show_interfaces_trunk(show.output)
+                    if show.executed and show.output_complete
+                    else []
+                )
+                readings.append(
+                    TrunkSwitchReading(
+                        switch_name=name,
+                        executed=show.executed,
+                        fresh_output_observed=show.fresh_output_observed,
+                        output_complete=show.output_complete,
+                        observed_device_name=show.observed_device_name,
+                        device_identity_provenance=show.device_identity_provenance,
+                        ports=tuple(
+                            _trunk_port_reading(rows, port, self._same_interface)
+                            for port in ports
+                        ),
+                        channel_calls=spent,
+                        call_budget_exhausted=self._forwarding_channel.exhausted,
+                        after_deadline=self._clock() >= deadline,
+                        failure_reason=show.failure_reason,
+                    )
+                )
+            round_ = TrunkContinuityRound(
+                index=len(rounds),
+                elapsed_ms=int(max(0.0, self._clock() - started) * 1000),
+                readings=tuple(readings),
+                complete=len(readings) == len(requested),
+            )
+            rounds.append(round_)
+            if round_.complete and settled(round_):
+                end_reason = "required_pairs_joined"
+                break
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                end_reason = "deadline"
+                break
+            if len(rounds) < max_rounds:
+                self._sleeper(min(float(interval_seconds), remaining))
+        if not end_reason:
+            end_reason = "max_rounds_reached"
+        closed = self._clock() >= deadline
+        return TrunkContinuityObservation(
+            vlan_id=vlan_id,
+            switch_names=tuple(name for name, _ in requested),
+            rounds=tuple(rounds),
+            deadline_seconds=window,
+            elapsed_ms=int(max(0.0, self._clock() - started) * 1000),
+            deadline_reached=closed,
+            deadline_cause="continuity_window_ended" if closed else "",
+            episode_end_reason=end_reason,
+            channel_calls=calls,
+        )
+
     def _simulation_time_text(self) -> str:
         """Report the simulation-time reader, when the composition has one.
 
@@ -1289,17 +1406,21 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         batch_id=batch_id,
                     )
 
-        if endpoints:
-            payload = "".join(
-                self._endpoint_call(action)
-                for action in sorted(
-                    endpoints,
-                    key=lambda item: item.id,
-                )
-            )
+        ordered = sorted(endpoints, key=lambda item: item.id)
+        chunks = [
+            ordered[start : start + MAX_ENDPOINT_CALLS_PER_SEND]
+            for start in range(0, len(ordered), MAX_ENDPOINT_CALLS_PER_SEND)
+        ]
+        for index, chunk in enumerate(chunks):
+            # Script size is bounded by the call count of one send. A chunk
+            # the engine refuses marks only its own actions; the others keep
+            # their own outcome, and a lone chunk keeps the historical id.
+            payload = "".join(self._endpoint_call(action) for action in chunk)
             applied = bool(payload) and self._send(payload)
-            batch_id = "endpoints:" + str(int(endpoints[0].phase))
-            for action in endpoints:
+            batch_id = "endpoints:" + str(int(chunk[0].phase))
+            if len(chunks) > 1:
+                batch_id += f":{index}"
+            for action in chunk:
                 results[action.id] = RuntimeActionMutation(
                     action_id=action.id,
                     applied=applied,
@@ -3151,6 +3272,36 @@ class PacketTracerEnterpriseConfigurationRuntime:
     @staticmethod
     def _same_interface(observed: str, expected: str) -> bool:
         return same_interface_name(observed, expected)
+
+
+def _trunk_port_reading(
+    rows: Sequence[Any],
+    interface: str,
+    same: Callable[[str, str], bool],
+) -> TrunkPortReading:
+    """Keep what one trunk table says about one requested interface."""
+    matching = [row for row in rows if same(row.interface, interface)]
+    row = matching[0] if len(matching) == 1 else None
+    return TrunkPortReading(
+        interface=interface,
+        matches=len(matching),
+        status=str(row.status) if row is not None else "",
+        allowed_vlans=(
+            tuple(row.allowed_vlans)
+            if row is not None and row.allowed_vlans is not None
+            else None
+        ),
+        active_vlans=(
+            tuple(row.active_vlans)
+            if row is not None and row.active_vlans is not None
+            else None
+        ),
+        forwarding_vlans=(
+            tuple(row.forwarding_vlans)
+            if row is not None and row.forwarding_vlans is not None
+            else None
+        ),
+    )
 
 
 def _field_status(value: object, read, matches) -> FieldVerificationStatus:

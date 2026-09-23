@@ -178,6 +178,38 @@ class EffectClosureCheck(BaseModel):
     expected: dict[str, str | int | bool] = Field(default_factory=dict)
 
 
+class EffectClosureReadinessGroup(BaseModel):
+    """One readiness group the invocation may observe, on deployed names.
+
+    `key` is the group's complete identity as text. An access group names its
+    switch, VLAN and access interfaces; a continuity group names its VLAN,
+    every switch of the compiled component and every trunk end, each as
+    `switch:interface`.
+    """
+
+    key: str
+    kind: str
+    vlan_id: int
+    switches: list[str] = Field(default_factory=list)
+    interfaces: list[str] = Field(default_factory=list)
+    dependents: list[str] = Field(default_factory=list)
+
+
+class EffectClosurePath(BaseModel):
+    """One selected client-to-server request and every group it waits on."""
+
+    expectation_id: str
+    client_device_name: str
+    host_device_name: str
+    kind: str
+    vlan_id: int | None = None
+    client_switch: str = ""
+    client_port: str = ""
+    host_switch: str = ""
+    host_port: str = ""
+    groups: list[str] = Field(default_factory=list)
+
+
 class ServiceEffectClosure(BaseModel):
     """Everything one invocation will do, fixed after A10 and before E1.
 
@@ -206,6 +238,10 @@ class ServiceEffectClosure(BaseModel):
     checks: list[EffectClosureCheck] = Field(default_factory=list)
     selected_service_ids: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
+    #: The per-request dependency closure and the readiness groups it names,
+    #: derived from the same compiled plans the run will execute.
+    paths: list[EffectClosurePath] = Field(default_factory=list)
+    readiness_groups: list[EffectClosureReadinessGroup] = Field(default_factory=list)
 
 
 class OwnedResourceRelease(BaseModel):
