@@ -92,6 +92,7 @@ from ...domain.enterprise.models.service_qualification import (
     LOCAL_OBSERVATION_TIMEOUT_SECONDS,
     DiagnosticLifecycleObservation,
     RefusalKind,
+    RefusalSubject,
     RepositoryIdentity,
     diagnostic_lifecycle_continuity,
     repository_refusals,
@@ -189,6 +190,38 @@ class AcceptanceChannel:
 
 
 @dataclass(frozen=True)
+class ExperimentalSourceAuthority:
+    """Validated campaign permission for one attempt to run an unpublished HEAD.
+
+    Only a caller that has already validated an experimental campaign's
+    charter, its open episode, the episode's exact checkpoint, its ledger
+    admission and the sealed grant constructs this, and only through the
+    internal `AcceptanceBoundaries`. The public adapter never sets it, a grant
+    field alone never implies it, and it waives exactly one rule: that the
+    executed HEAD be published as its upstream. The exact clean HEAD and tree,
+    isolation, process, scope, budget and publication-receipt rules remain.
+    """
+
+    campaign_id: str
+    episode: int
+    attempt_id: str
+    authorization_id: str
+    sha: str
+    tree: str
+
+    def permits(self, grant: object) -> bool:
+        """Whether this authority is for exactly this experimental grant."""
+        return bool(
+            isinstance(grant, ScalableHttpGrant)
+            and grant.execution_purpose == EXPERIMENTAL_PURPOSE
+            and self.campaign_id
+            and self.episode >= 1
+            and (self.attempt_id, self.authorization_id, self.sha, self.tree)
+            == (grant.attempt_id, grant.authorization_id, grant.sha, grant.tree)
+        )
+
+
+@dataclass(frozen=True)
 class AcceptanceBoundaries:
     """Every external boundary one attempt reaches, injected by the adapter."""
 
@@ -215,6 +248,9 @@ class AcceptanceBoundaries:
     bind_receiver: (
         Callable[[DiagnosticLifecycleObservation, float], ReceiverContinuity] | None
     ) = None
+    #: Set only by an experimental campaign's internal composition, after it
+    #: validated its authority; see `ExperimentalSourceAuthority`.
+    experimental_authority: ExperimentalSourceAuthority | None = None
 
 
 #: The only receiver mode a governed attempt may run with: a bounded local
@@ -814,8 +850,36 @@ def accept_cold_http(
     repository = boundaries.repository()
     envelope.source = asdict(repository)
     envelope.checks.append("repository")
+    authority = boundaries.experimental_authority
+    if authority is not None and not authority.permits(grant):
+        # Present but not for this experimental grant: a delivery grant, or
+        # another attempt, authorization, SHA or tree. Never a partial waiver.
+        return _refused(
+            envelope,
+            [
+                acceptance_refusal(
+                    RefusalKind.MISMATCH,
+                    AcceptanceSubject.CAMPAIGN,
+                    "experimental_authority_does_not_match_grant",
+                )
+            ],
+        )
+    unpublished_permitted = authority is not None
+    envelope.source["publication_required"] = not unpublished_permitted
+    if authority is not None:
+        envelope.source["experimental_authority"] = asdict(authority)
+        envelope.checks.append("experimental_source_authority")
     found = repository_acceptance_refusals(
-        repository_refusals(repository, grant.sha, grant.tree)
+        tuple(
+            item
+            for item in repository_refusals(repository, grant.sha, grant.tree)
+            # Only the publication of the exact clean HEAD and tree is waived,
+            # and only under validated campaign authority for this grant.
+            if not (
+                unpublished_permitted
+                and item.subject is RefusalSubject.REPOSITORY_UPSTREAM
+            )
+        )
     )
     if found:
         return _refused(envelope, list(found))

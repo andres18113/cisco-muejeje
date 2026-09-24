@@ -23,9 +23,15 @@ from io import StringIO
 from pathlib import Path
 
 from ...application.ports.service_qualification import OpenedTransport
-from ...application.use_cases.accept_cold_http import MEASURED_EXIT_CODE
+from ...application.use_cases.accept_cold_http import (
+    MEASURED_EXIT_CODE,
+    ExperimentalSourceAuthority,
+)
 from ...application.use_cases.cleanup_server_pt_commissioning import (
     run_server_pt_cleanup,
+)
+from ...application.use_cases.deploy_enterprise_topology import (
+    disposable_workspace_error,
 )
 from ...application.use_cases.prepare_server_pt_commissioning import (
     prepare_server_pt_commissioning,
@@ -65,6 +71,8 @@ from ...application.use_cases.server_pt_process_evidence import (
     exit_evidence_findings,
     exit_was_forced,
     launch_evidence_findings,
+    launched_blank,
+    observed_process_findings,
 )
 from ...application.use_cases.server_pt_second_attempt import second_attempt_findings
 from ...application.use_cases.setup_server_pt_commissioning import (
@@ -99,6 +107,9 @@ from ...infrastructure.execution.probe_runtime import PacketTracerBridgeProbeRun
 from ...infrastructure.execution.product_channel import FixedChannelProductTransport
 from ...infrastructure.execution.server_pt_campaign_authority import read_exact_ci
 from ...infrastructure.execution.server_pt_phase_channel import GovernedPhaseChannel
+from ...infrastructure.execution.server_pt_process_control import (
+    PowerShellOwnedProcessControl,
+)
 from ...infrastructure.execution.service_qualification_lifecycle import (
     PacketTracerDiagnosticLifecycleReader,
 )
@@ -125,6 +136,14 @@ CHARTER_SHA256 = C31_CAMPAIGN.charter_sha256
 FASTLOOP_CHARTER_SHA256 = FASTLOOP_CAMPAIGN.charter_sha256
 #: One episode plan or closing is operator-written JSON; bound what it may be.
 _LEDGER_INPUT_LIMIT = 16 * 1024
+#: The OS helper that observes, closes and terminates one exact PID.
+_PROCESS_CONTROL = PowerShellOwnedProcessControl
+#: How long a graceful close may take before the owned process may be forced,
+#: and how long the exit after a termination is awaited. Bounded both ways.
+RETIREMENT_GRACE_SECONDS = 60.0
+RETIREMENT_EXIT_WAIT_SECONDS = 30.0
+_RETIREMENT_POLL_SECONDS = 1.0
+_retirement_sleep = time.sleep
 
 
 def _charter_digest(campaign: ServerPtCampaign) -> str:
@@ -144,6 +163,7 @@ def _parser() -> argparse.ArgumentParser:
     phase.add_argument("--record-correction", action="store_true")
     phase.add_argument("--record-launch", action="store_true")
     phase.add_argument("--record-exit", action="store_true")
+    phase.add_argument("--retire", action="store_true")
     phase.add_argument("--open-episode", action="store_true")
     phase.add_argument("--close-episode", action="store_true")
     phase.add_argument("--ledger-status", action="store_true")
@@ -239,7 +259,11 @@ def main(
         or args.cleanup
         or args.record_launch
         or args.record_exit
+        or args.retire
     ):
+        if args.retire and not campaign.experimental:
+            _print({"outcome": "refused", "reason": "retire_is_experimental_only"})
+            return 2
         if campaign.experimental:
             if args.ci_run:
                 _print(
@@ -249,7 +273,9 @@ def main(
             if not args.charter:
                 _print({"outcome": "refused", "reason": "charter_required"})
                 return 2
-            if args.episode < 1 and not (args.record_launch or args.record_exit):
+            if args.episode < 1 and not (
+                args.record_launch or args.record_exit or args.retire
+            ):
                 _print({"outcome": "refused", "reason": "episode_required"})
                 return 2
         elif not args.ci_run or not args.charter:
@@ -273,6 +299,8 @@ def main(
             return _record_exit(
                 root, args.attempt, args.ci_run, args.close_evidence, campaign
             )
+        if args.retire:
+            return _retire(root, args.attempt, campaign)
         if args.qualify:
             return _qualify(root, args.attempt, args.ci_run, campaign, args.episode)
         if args.setup:
@@ -716,6 +744,25 @@ def _record_launch(
         findings = launch_evidence_findings(launch, preflight.process)
         if findings:
             raise ValueError("launch capture does not prove campaign ownership")
+        observed: dict[str, object] = {}
+        if campaign.experimental:
+            # The command line and title that later bound a retirement are
+            # read from the operating system here, never taken from the
+            # capture; a capture that disagrees with them is refused.
+            reading = _PROCESS_CONTROL().observe(preflight.process.process_id)
+            if (
+                reading.error
+                or not reading.present
+                or reading.process_path != preflight.process.process_path
+                or reading.process_incarnation != preflight.process.process_incarnation
+                or launch.get("command_line") != reading.command_line
+                or launch.get("main_window_title") != reading.main_window_title
+            ):
+                raise ValueError("launch capture differs from the observed process")
+            observed = {
+                "observed_command_line": reading.command_line,
+                "observed_main_window_title": reading.main_window_title,
+            }
         document = {
             **launch,
             "capture_sha256": hashlib.sha256(raw).hexdigest(),
@@ -726,6 +773,7 @@ def _record_launch(
             "source_sha": preflight.source.head if preflight.source else "",
             "source_tree": preflight.source.tree if preflight.source else "",
             "ci_run_id": preflight.ci.run_id if preflight.ci else 0,
+            **observed,
         }
         path = store.save_process_launch(attempt_id, document)
         status = {
@@ -735,6 +783,8 @@ def _record_launch(
             "process_id": preflight.process.process_id,
             "launch_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         }
+        if campaign.experimental:
+            status["blank_document_proven"] = launched_blank(document)
         archive = _refresh_archive(store, status)
         if archive:
             raise ValueError("owned launch archive is unverified")
@@ -814,7 +864,9 @@ def _record_exit(
             launch,
             close,
             process_count=len(observed.processes),
-            allow_forced=campaign.experimental,
+            # A capture never carries a force; only `--retire` observes and
+            # performs one, and it records its own evidence.
+            allow_forced=False,
         )
         if findings:
             raise ValueError("graceful process exit is unverified")
@@ -844,6 +896,184 @@ def _record_exit(
         }
         archive = _refresh_archive(store, status)
         if archive:
+            raise ValueError("process exit archive is unverified")
+    except (OSError, ValueError) as exc:
+        _print({"outcome": "refused", "reason": f"process_exit:{type(exc).__name__}"})
+        return 2
+    _print(status)
+    return 0
+
+
+def _retirement_basis(
+    store: ServerPtCommissioningStore, attempt_id: str
+) -> tuple[str, str]:
+    """Return the disposition and the durable workspace-ownership basis.
+
+    Every basis rests on the campaign's own indexed records: a restored owned
+    cleanup; an empty disposable baseline observed before any campaign
+    effect; or, before setup, the blank launch with any preliminary phase
+    archived. Anything else raises: ownership is then not established, and
+    no force may follow. Retiring the process never proves restoration.
+    """
+    try:
+        store.require_immutable_phase(attempt_id, "cleanup", "restored")
+        return "exited", "owned_cleanup_restored"
+    except (OSError, ValueError):
+        pass
+    if attempt_id not in store.setup_attempt_ids():
+        try:
+            status = store.load_phase_status(attempt_id, "prequalification")
+        except (OSError, ValueError):
+            if store.record_path_for(attempt_id, "prequalification-grant").exists():
+                return "exited_before_setup", "blank_launch_interrupted_preliminary"
+            return "exited_before_setup", "blank_launch_without_phase"
+        store.require_immutable_phase(
+            attempt_id, "prequalification", str(status.get("outcome"))
+        )
+        return "exited_before_setup", "blank_launch_archived_preliminary"
+    if disposable_workspace_error(store.load_baseline(attempt_id)):
+        raise ValueError("setup baseline is not an empty disposable workspace")
+    try:
+        setup = store.load_phase_status(attempt_id, "setup")
+    except (OSError, ValueError):
+        return "exited_interrupted", "empty_baseline_before_interrupted_setup"
+    store.require_immutable_phase(attempt_id, "setup", str(setup.get("outcome")))
+    return "exited_dirty", "empty_baseline_then_campaign_effects"
+
+
+def _await_absence(control, pid: int, seconds: float) -> bool:
+    """Poll one PID until the OS reports it absent, within a bounded wait."""
+    deadline = time.monotonic() + seconds
+    while True:
+        reading = control.observe(pid)
+        if not reading.error and not reading.present:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        _retirement_sleep(_RETIREMENT_POLL_SECONDS)
+
+
+def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
+    """Retire the campaign-launched disposable Packet Tracer of one attempt.
+
+    A bounded CloseMainWindow comes first. Only if the process is still
+    present afterwards, and a fresh OS reading still matches the launch's
+    observed PID, image, creation time, command line and title, and the
+    workspace-ownership basis is established from indexed records, is that
+    exact PID terminated. The exit is then observed and recorded with its
+    basis; a refused or unobserved retirement is recorded as an attempt.
+    """
+    store = ServerPtCommissioningStore(root, campaign.campaign_id)
+    if _adopt_ledger_residue(store, campaign):
+        _print({"outcome": "refused", "reason": "prior_archive_unverified"})
+        return 2
+    try:
+        launch = store.load_process_launch(attempt_id)
+        if launch.get("execution_purpose") != campaign.purpose.value:
+            raise ValueError("launch was not recorded by this campaign")
+        disposition, basis = _retirement_basis(store, attempt_id)
+        source = repository_identity(root)
+        if source_authority_findings(campaign, source, None) or (
+            source.head,
+            source.tree,
+        ) != (launch.get("source_sha"), launch.get("source_tree")):
+            raise ValueError("retirement source differs from the launch")
+        pid = launch["pid"]
+        if isinstance(pid, bool) or not isinstance(pid, int):
+            raise ValueError("launch PID is malformed")
+    except (OSError, ValueError, KeyError) as exc:
+        _print(
+            {
+                "outcome": "refused",
+                "reason": f"retirement_unestablished:{type(exc).__name__}",
+            }
+        )
+        return 2
+    control = _PROCESS_CONTROL()
+    first = observed_process_findings(launch, control.observe(pid))
+    if first:
+        _print({"outcome": "refused", "reasons": list(first)})
+        return 2
+    requested_at = datetime.now(UTC).isoformat()
+    requested = control.request_close(pid)
+    exited = _await_absence(control, pid, RETIREMENT_GRACE_SECONDS)
+    forced: dict[str, object] | None = None
+    refusal: tuple[str, ...] = ()
+    if not exited:
+        again = control.observe(pid)
+        refusal = observed_process_findings(launch, again)
+        if not refusal:
+            forced = {
+                "method": "Stop-Process",
+                "pid": pid,
+                "rechecked_process_path": again.process_path,
+                "rechecked_process_incarnation": again.process_incarnation,
+                "rechecked_command_line": again.command_line,
+                "rechecked_window_title": again.main_window_title,
+                "disposable_workspace_rechecked": True,
+                "ownership_basis": basis,
+                "requested_at_utc": datetime.now(UTC).isoformat(),
+            }
+            forced["terminate_requested"] = control.terminate(pid)
+            exited = _await_absence(control, pid, RETIREMENT_EXIT_WAIT_SECONDS)
+    count = control.census()
+    close: dict[str, object] = {
+        "pid": pid,
+        "process_path": launch.get("process_path"),
+        "process_incarnation": launch.get("process_incarnation"),
+        "method": "CloseMainWindow",
+        "requested": requested,
+        "requested_at_utc": requested_at,
+        "graceful_wait_seconds": RETIREMENT_GRACE_SECONDS,
+        "actual_exit_observed": exited,
+        "process_count": count,
+        "observed_at_utc": datetime.now(UTC).isoformat(),
+        "ownership_basis": basis,
+    }
+    if forced is not None:
+        close["forced_termination"] = forced
+    findings = exit_evidence_findings(
+        launch, close, process_count=count, allow_forced=True
+    )
+    if refusal or findings:
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        attempt = {
+            **close,
+            "refusal": list(refusal),
+            "findings": list(findings),
+            "campaign_id": campaign.campaign_id,
+            "execution_purpose": campaign.purpose.value,
+        }
+        try:
+            store.save_retirement_attempt(attempt_id, stamp, attempt)
+            store.refresh_index()
+        except (OSError, ValueError) as exc:
+            attempt["attempt_unrecorded"] = type(exc).__name__
+        _print({"outcome": "refused", **attempt})
+        return 2
+    if forced is not None:
+        disposition += "_forced"
+    document = {
+        **close,
+        "disposition": disposition,
+        "source_sha": source.head,
+        "source_tree": source.tree,
+        "ci_run_id": 0,
+        "campaign_id": campaign.campaign_id,
+        "charter_sha256": _charter_digest(campaign),
+        "execution_purpose": campaign.purpose.value,
+    }
+    try:
+        path = store.save_process_exit(attempt_id, document)
+        status = {
+            "phase": "retirement",
+            "outcome": disposition,
+            "attempt_id": attempt_id,
+            "process_id": pid,
+            "ownership_basis": basis,
+            "exit_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+        if _refresh_archive(store, status):
             raise ValueError("process exit archive is unverified")
     except (OSError, ValueError) as exc:
         _print({"outcome": "refused", "reason": f"process_exit:{type(exc).__name__}"})
@@ -1594,7 +1824,27 @@ def _accept(
             recorded_channels.append(recorded)
             return OpenedTransport(channel, recorded, opened.live, opened.detail)
 
-        return replace(boundaries, open_channel=open_recorded)
+        return replace(
+            boundaries,
+            open_channel=open_recorded,
+            experimental_authority=authority,
+        )
+
+    # Validated above: the charter, the open episode, its exact checkpoint
+    # (ledger admission), the fresh experimental preflight and the sealed
+    # grant. A delivery campaign passes none, so publication stays required.
+    authority = (
+        ExperimentalSourceAuthority(
+            campaign_id=campaign.campaign_id,
+            episode=episode,
+            attempt_id=attempt_id,
+            authorization_id=str(sealed.grant["authorization_id"]),
+            sha=preflight.source.head,
+            tree=preflight.source.tree,
+        )
+        if campaign.experimental
+        else None
+    )
 
     output = StringIO()
     reason = ""

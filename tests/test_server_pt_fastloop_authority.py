@@ -541,6 +541,8 @@ def _launch() -> dict[str, object]:
         "process_incarnation": process.process_incarnation,
         "main_window_title": "Cisco Packet Tracer",
         "command_line": f'"{process.process_path}" ',
+        "observed_main_window_title": "Cisco Packet Tracer",
+        "observed_command_line": f'"{process.process_path}" ',
     }
 
 
@@ -562,8 +564,10 @@ def _forced(**overrides) -> dict[str, object]:
         "pid": launch["pid"],
         "rechecked_process_path": launch["process_path"],
         "rechecked_process_incarnation": launch["process_incarnation"],
-        "rechecked_window_title": launch["main_window_title"],
+        "rechecked_command_line": launch["observed_command_line"],
+        "rechecked_window_title": launch["observed_main_window_title"],
         "disposable_workspace_rechecked": True,
+        "ownership_basis": "owned_cleanup_restored",
         "requested_at_utc": OPENED.isoformat(),
     }
     value.update(overrides)
@@ -600,6 +604,8 @@ def test_graceful_exit_is_unchanged_and_forced_exit_is_its_own_record():
             )
         },
         {"forced_termination": _forced(rechecked_window_title="")},
+        {"forced_termination": _forced(rechecked_command_line="PacketTracer.exe x")},
+        {"forced_termination": _forced(ownership_basis="")},
         {"forced_termination": _forced(), "graceful_wait_seconds": 0},
         {"forced_termination": _forced(), "graceful_wait_seconds": 600},
     ],
@@ -616,17 +622,22 @@ def test_a_forced_exit_must_name_the_rechecked_owned_process(change):
 @pytest.mark.parametrize(
     "launch_change",
     [
-        {"main_window_title": "Cisco Packet Tracer - C:\\coursework.pkt"},
-        {"main_window_title": ""},
-        {"command_line": '"C:\\PacketTracer.exe" C:\\coursework.pkt'},
-        {"command_line": None},
+        {"observed_main_window_title": "Cisco Packet Tracer - C:\\coursework.pkt"},
+        {"observed_main_window_title": ""},
+        {"observed_command_line": '"C:\\PacketTracer.exe" C:\\coursework.pkt'},
+        {"observed_command_line": None},
+        # What a capture claimed is never the evidence; only observed fields.
+        {"observed_command_line": None, "command_line": '"C:\\x.exe"'},
     ],
 )
 def test_a_forced_exit_needs_a_launch_that_proves_a_blank_document(launch_change):
-    """A launch that opened or names a document never permits a force."""
+    """A launch that opened, or names, a document never permits a force."""
     launch = {**_launch(), **launch_change}
     close = _close(
-        forced_termination=_forced(rechecked_window_title=launch["main_window_title"]),
+        forced_termination=_forced(
+            rechecked_window_title=launch["observed_main_window_title"],
+            rechecked_command_line=launch["observed_command_line"],
+        ),
         graceful_wait_seconds=30.0,
     )
 
@@ -836,6 +847,23 @@ def test_a_ledger_record_stranded_before_indexing_is_adopted_alone(tmp_path):
         "archive_inventory_changed",
     )
     store.ledger_path_for(f"episode-0001-{OTHER}-cleanup-result").unlink()
+    # Two unindexed records cannot vouch for each other: the governed order
+    # indexes an admission before its phase can write a result.
+    store.save_ledger_record(
+        f"episode-0001-{ATTEMPT}-acceptance-admission",
+        _admission("acceptance", 7849),
+    )
+    store.save_ledger_record(
+        f"episode-0001-{ATTEMPT}-acceptance-result", _result("acceptance", 400)
+    )
+    assert store.adopt_ledger_residue(ledger_record_findings) == (
+        "archive_inventory_changed",
+    )
+    store.ledger_path_for(f"episode-0001-{ATTEMPT}-acceptance-admission").unlink()
+    assert store.adopt_ledger_residue(ledger_record_findings) == (
+        "archive_inventory_changed",
+    )
+    store.ledger_path_for(f"episode-0001-{ATTEMPT}-acceptance-result").unlink()
 
     stray = (
         tmp_path / "data" / "commissioning" / FASTLOOP_CAMPAIGN.campaign_id / "x.json"
@@ -1041,8 +1069,7 @@ def test_an_experimental_setup_seals_and_measures_through_the_same_product(
     )
 
 
-def test_an_experimental_product_grant_still_needs_a_published_head(tmp_path):
-    """The purpose marks records; it does not relax the product's source rule."""
+def _unpublished_harness(tmp_path):
     from cold_http_acceptance_harness import published_checkout
     from scalable_http_acceptance_harness import build_scalable_harness
 
@@ -1051,12 +1078,113 @@ def test_an_experimental_product_grant_still_needs_a_published_head(tmp_path):
         harness.boundaries,
         repository=lambda: replace(published_checkout(), upstream_head="c" * 40),
     )
+    return harness
+
+
+def _authority(grant, **overrides):
+    from packet_tracer_mcp.application.use_cases.accept_cold_http import (
+        ExperimentalSourceAuthority,
+    )
+
+    values = {
+        "campaign_id": FASTLOOP_CAMPAIGN.campaign_id,
+        "episode": 1,
+        "attempt_id": grant["attempt_id"],
+        "authorization_id": grant["authorization_id"],
+        "sha": grant["sha"],
+        "tree": grant["tree"],
+    }
+    values.update(overrides)
+    return ExperimentalSourceAuthority(**values)
+
+
+def test_an_unpublished_experimental_grant_without_authority_is_refused(tmp_path):
+    """A purpose field alone never waives publication: the public path."""
+    harness = _unpublished_harness(tmp_path)
 
     result = harness.run(grant=harness.grant(execution_purpose="experimental"))
 
-    assert result.accepted is False
-    assert "http_start" not in harness.product_dispatches()
+    assert result.measured is False and result.accepted is False
+    assert harness.product_dispatches() == []
     assert any(item.subject.value == "repository" for item in result.envelope.admission)
+
+
+def test_validated_authority_admits_the_unpublished_checkpoint_it_names(tmp_path):
+    """Exact clean HEAD and tree, unpublished, reach the product and measure."""
+    harness = _unpublished_harness(tmp_path)
+    grant = harness.grant(execution_purpose="experimental")
+    harness.boundaries = replace(
+        harness.boundaries, experimental_authority=_authority(grant)
+    )
+
+    result = harness.run(grant=grant)
+
+    assert result.measured is True
+    assert result.accepted is False
+    assert result.exit_code == MEASURED_EXIT_CODE
+    assert "http_start" in harness.product_dispatches()
+    assert result.envelope.source["publication_required"] is False
+    assert result.envelope.source["upstream_head"] == "c" * 40
+    assert "experimental_source_authority" in result.envelope.checks
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"sha": "d" * 40},
+        {"tree": "e" * 40},
+        {"attempt_id": "f" * 32},
+        {"authorization_id": "SERVER-PT-C31-0123456789abcdef"},
+        {"campaign_id": ""},
+        {"episode": 0},
+    ],
+)
+def test_authority_for_anything_else_refuses_before_contact(tmp_path, override):
+    """Foreign, partial or mismatched authority is a refusal, never a waiver."""
+    harness = _unpublished_harness(tmp_path)
+    grant = harness.grant(execution_purpose="experimental")
+    harness.boundaries = replace(
+        harness.boundaries, experimental_authority=_authority(grant, **override)
+    )
+
+    result = harness.run(grant=grant)
+
+    assert result.measured is False
+    assert harness.product_dispatches() == []
+    assert any(
+        "experimental_authority_does_not_match_grant" in item.detail
+        for item in result.envelope.admission
+    )
+
+
+def test_authority_with_a_delivery_grant_is_a_conflict_not_a_waiver(tmp_path):
+    """Conflicting purposes refuse before contact, published or not."""
+    from scalable_http_acceptance_harness import build_scalable_harness
+
+    harness = build_scalable_harness(tmp_path, 2)
+    grant = harness.grant()
+    harness.boundaries = replace(
+        harness.boundaries, experimental_authority=_authority(grant)
+    )
+
+    result = harness.run(grant=grant)
+
+    assert result.accepted is False
+    assert harness.product_dispatches() == []
+
+
+def test_the_published_delivery_path_is_unchanged(tmp_path):
+    """Positive control: no authority, delivery grant, published HEAD."""
+    from scalable_http_acceptance_harness import build_scalable_harness
+
+    harness = build_scalable_harness(tmp_path, 2)
+
+    result = harness.run()
+
+    assert result.accepted is True
+    assert result.exit_code == 0
+    assert result.envelope.source["publication_required"] is True
+    assert EXPERIMENTAL_ENVELOPE_LIMITATION not in result.envelope.limitations
 
 
 def test_a_product_grant_names_a_known_purpose_or_is_refused(tmp_path):
@@ -1072,25 +1200,231 @@ def test_a_product_grant_names_a_known_purpose_or_is_refused(tmp_path):
     assert EXPERIMENTAL_ENVELOPE_LIMITATION not in result.envelope.limitations
 
 
-def test_an_experimental_attempt_retires_as_forced_before_setup(
-    fastloop_cli, tmp_path: Path, capsys, monkeypatch
-):
-    """Launch, then a bounded graceful close that had to be forced.
+class _FakeControl:
+    """The OS as the retirement flow sees it: one PID, and what happens to it."""
 
-    The record keeps both facts: which process was launched, and that its
-    exit was forced after the graceful request. It is never `exited`.
-    """
+    def __init__(self, *, closes=True, title_after_close=None, terminates=True):
+        process = _process()
+        self.present = True
+        self.title = "Cisco Packet Tracer"
+        self.command_line = f'"{process.process_path}" '
+        self.path = process.process_path
+        self.incarnation = process.process_incarnation
+        self.closes = closes
+        self.title_after_close = title_after_close
+        self.terminates = terminates
+        self.calls: list[str] = []
+
+    def __call__(self):
+        return self
+
+    def observe(self, pid):
+        from packet_tracer_mcp.infrastructure.execution.server_pt_process_control import (
+            OwnedProcessObservation,
+        )
+
+        self.calls.append("observe")
+        if not self.present:
+            return OwnedProcessObservation(pid, present=False)
+        return OwnedProcessObservation(
+            pid,
+            present=True,
+            process_path=self.path,
+            process_incarnation=self.incarnation,
+            command_line=self.command_line,
+            main_window_title=self.title,
+        )
+
+    def request_close(self, pid):
+        self.calls.append("close")
+        if self.closes:
+            self.present = False
+        elif self.title_after_close is not None:
+            self.title = self.title_after_close
+        return True
+
+    def terminate(self, pid):
+        self.calls.append("terminate")
+        if self.terminates:
+            self.present = False
+        return self.terminates
+
+    def census(self):
+        return 0 if not self.present else 1
+
+
+@pytest.fixture
+def launched(fastloop_cli, tmp_path: Path, capsys, monkeypatch):
+    """Record one experimental launch whose capture matches the OS reading."""
     from packet_tracer_mcp.adapters.cli.server_pt_live_phase import PhasePreflight
 
     cli, charter, env = fastloop_cli
-    process = _process()
     monkeypatch.setattr(
         cli,
         "phase_preflight",
         lambda *_args, **_kwargs: PhasePreflight(
-            _checkpoint(), None, process, campaign=FASTLOOP_CAMPAIGN
+            _checkpoint(), None, _process(), campaign=FASTLOOP_CAMPAIGN
         ),
     )
+    monkeypatch.setattr(cli, "RETIREMENT_GRACE_SECONDS", 0.01)
+    monkeypatch.setattr(cli, "RETIREMENT_EXIT_WAIT_SECONDS", 0.0)
+    monkeypatch.setattr(cli, "_retirement_sleep", lambda _seconds: None)
+    control = _FakeControl()
+    monkeypatch.setattr(cli, "_PROCESS_CONTROL", control)
+    capture = tmp_path / "launch.json"
+    capture.write_text(
+        json.dumps(
+            {
+                **{
+                    key: value
+                    for key, value in _launch().items()
+                    if not key.startswith("observed_")
+                },
+                "created_by_campaign": True,
+                "workspace_kind": "disposable_declared",
+                "launch_method": "Start-Process",
+            }
+        ),
+        encoding="utf-8",
+    )
+    base = ["--campaign", "fastloop", "--attempt", ATTEMPT, "--charter", str(charter)]
+    code, owned = _run(
+        cli, ["--record-launch", *base, "--launch-evidence", str(capture)], env, capsys
+    )
+    assert code == 0, owned
+    assert owned["blank_document_proven"] is True
+    return cli, env, base, control, capture
+
+
+def test_a_launch_capture_that_disagrees_with_the_os_is_refused(
+    fastloop_cli, tmp_path: Path, capsys, monkeypatch
+):
+    """The retirement evidence is observed at launch, never taken as claimed."""
+    from packet_tracer_mcp.adapters.cli.server_pt_live_phase import PhasePreflight
+
+    cli, charter, env = fastloop_cli
+    monkeypatch.setattr(
+        cli,
+        "phase_preflight",
+        lambda *_args, **_kwargs: PhasePreflight(
+            _checkpoint(), None, _process(), campaign=FASTLOOP_CAMPAIGN
+        ),
+    )
+    control = _FakeControl()
+    control.title = "Cisco Packet Tracer - C:\\coursework.pkt"
+    monkeypatch.setattr(cli, "_PROCESS_CONTROL", control)
+    capture = tmp_path / "launch.json"
+    capture.write_text(
+        json.dumps(
+            {
+                "pid": 123,
+                "process_path": _process().process_path,
+                "process_incarnation": _process().process_incarnation,
+                "main_window_title": "Cisco Packet Tracer",
+                "command_line": control.command_line,
+                "created_by_campaign": True,
+                "workspace_kind": "disposable_declared",
+                "launch_method": "Start-Process",
+            }
+        ),
+        encoding="utf-8",
+    )
+    base = ["--campaign", "fastloop", "--attempt", ATTEMPT, "--charter", str(charter)]
+
+    code, refused = _run(
+        cli, ["--record-launch", *base, "--launch-evidence", str(capture)], env, capsys
+    )
+
+    assert code == 2
+    assert refused["reason"] == "launch_evidence:ValueError"
+
+
+def test_a_graceful_close_retires_without_force(launched, capsys, tmp_path: Path):
+    """The owned process closed on request: exited, nothing terminated."""
+    cli, env, base, control, _capture = launched
+
+    code, retired = _run(cli, ["--retire", *base], env, capsys)
+
+    assert code == 0, retired
+    assert retired["outcome"] == "exited_before_setup"
+    assert "terminate" not in control.calls
+    record = ServerPtCommissioningStore(
+        tmp_path, FASTLOOP_CAMPAIGN.campaign_id
+    ).load_process_exit(ATTEMPT)
+    assert "forced_termination" not in record
+    assert record["ownership_basis"] == "blank_launch_without_phase"
+
+
+def test_an_ignored_close_is_forced_only_after_a_fresh_matching_reading(
+    launched, capsys, tmp_path: Path
+):
+    """Bounded graceful attempt, identical fresh reading, exact PID, observed exit."""
+    cli, env, base, control, _capture = launched
+    control.closes = False
+
+    code, retired = _run(cli, ["--retire", *base], env, capsys)
+
+    assert code == 0, retired
+    assert retired["outcome"] == "exited_before_setup_forced"
+    assert control.calls.index("close") < control.calls.index("terminate")
+    store = ServerPtCommissioningStore(tmp_path, FASTLOOP_CAMPAIGN.campaign_id)
+    forced = store.load_process_exit(ATTEMPT)["forced_termination"]
+    assert forced["ownership_basis"] == "blank_launch_without_phase"
+    assert forced["rechecked_window_title"] == "Cisco Packet Tracer"
+    assert store.verify_index() == ()
+
+
+def test_conflicting_document_evidence_prevents_the_force(
+    launched, capsys, tmp_path: Path
+):
+    """A title that changed after the close request stops everything."""
+    cli, env, base, control, _capture = launched
+    control.closes = False
+    control.title_after_close = "Cisco Packet Tracer - C:\\coursework.pkt"
+
+    code, refused = _run(cli, ["--retire", *base], env, capsys)
+
+    assert code == 2
+    assert "terminate" not in control.calls
+    assert "process_document_title_changed" in refused["refusal"]
+    store = ServerPtCommissioningStore(tmp_path, FASTLOOP_CAMPAIGN.campaign_id)
+    assert not store.record_path_for(ATTEMPT, "process-exit").exists()
+
+
+def test_unestablished_workspace_ownership_prevents_any_retirement_effect(
+    launched, capsys, tmp_path: Path
+):
+    """A setup grant without its empty baseline: no close, no force."""
+    cli, env, base, control, _capture = launched
+    bundle = prepare_server_pt_commissioning(30, "COLD_HTTP_" + ATTEMPT)
+    store = ServerPtCommissioningStore(tmp_path, FASTLOOP_CAMPAIGN.campaign_id)
+    store.save_phase_grant(
+        ATTEMPT,
+        derive_server_pt_phase_grant(
+            "setup",
+            ATTEMPT,
+            _checkpoint(),
+            _process(),
+            None,
+            bundle_sha256="c" * 64,
+            prequalification_sha256="d" * 64,
+            bundle=bundle,
+            campaign=FASTLOOP_CAMPAIGN,
+        ),
+    )
+    store.refresh_index()
+    control.calls.clear()
+
+    code, refused = _run(cli, ["--retire", *base], env, capsys)
+
+    assert code == 2
+    assert refused["reason"].startswith("retirement_unestablished:")
+    assert control.calls == []
+
+
+def test_record_exit_never_admits_a_forced_capture(launched, capsys, tmp_path: Path):
+    """A capture cannot carry a force; only the observed retirement can."""
+    cli, env, base, _control, _capture = launched
 
     class _Census:
         def __init__(self, **_kwargs):
@@ -1099,40 +1433,22 @@ def test_an_experimental_attempt_retires_as_forced_before_setup(
         def read(self):
             return type("Observed", (), {"error": "", "processes": ()})()
 
-    monkeypatch.setattr(cli, "PowerShellPacketTracerProcessReader", _Census)
-    launch = tmp_path / "launch.json"
-    launch.write_text(
-        json.dumps(
-            {
-                **_launch(),
-                "created_by_campaign": True,
-                "workspace_kind": "disposable_declared",
-                "launch_method": "Start-Process",
-            }
-        ),
-        encoding="utf-8",
-    )
-    close = tmp_path / "close.json"
-    close.write_text(
-        json.dumps(_close(forced_termination=_forced(), graceful_wait_seconds=30.0)),
-        encoding="utf-8",
-    )
-    base = ["--campaign", "fastloop", "--attempt", ATTEMPT, "--charter", str(charter)]
+    cli_module = cli
+    original = cli_module.PowerShellPacketTracerProcessReader
+    cli_module.PowerShellPacketTracerProcessReader = _Census
+    try:
+        close = tmp_path / "close.json"
+        close.write_text(
+            json.dumps(
+                _close(forced_termination=_forced(), graceful_wait_seconds=30.0)
+            ),
+            encoding="utf-8",
+        )
+        code, refused = _run(
+            cli, ["--record-exit", *base, "--close-evidence", str(close)], env, capsys
+        )
+    finally:
+        cli_module.PowerShellPacketTracerProcessReader = original
 
-    code, owned = _run(
-        cli, ["--record-launch", *base, "--launch-evidence", str(launch)], env, capsys
-    )
-    assert code == 0, owned
-    code, retired = _run(
-        cli, ["--record-exit", *base, "--close-evidence", str(close)], env, capsys
-    )
-
-    assert code == 0, retired
-    assert retired["outcome"] == "exited_before_setup_forced"
-    store = ServerPtCommissioningStore(tmp_path, FASTLOOP_CAMPAIGN.campaign_id)
-    record = store.load_process_exit(ATTEMPT)
-    assert record["execution_purpose"] == "experimental"
-    assert record["ci_run_id"] == 0
-    assert record["forced_termination"]["method"] == "Stop-Process"
-    assert store.load_process_launch(ATTEMPT)["execution_purpose"] == "experimental"
-    assert store.verify_index() == ()
+    assert code == 2
+    assert refused["reason"] == "process_exit:ValueError"

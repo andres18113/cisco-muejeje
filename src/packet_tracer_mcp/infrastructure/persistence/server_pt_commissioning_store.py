@@ -477,6 +477,14 @@ class ServerPtCommissioningStore:
         """Retain the graceful close request and observed process exit."""
         return self._save_mapping(attempt_id, "process-exit", document)
 
+    def save_retirement_attempt(
+        self, attempt_id: str, stamp: str, document: Mapping[str, object]
+    ) -> Path:
+        """Retain one retirement attempt that did not end in an admitted exit."""
+        if not re.fullmatch(r"[0-9]{8}T[0-9]{6}Z", stamp):
+            raise ValueError("retirement attempt stamp is not a compact UTC time")
+        return self._save_mapping(attempt_id, "retirement-attempt-" + stamp, document)
+
     def load_process_exit(self, attempt_id: str) -> dict[str, object]:
         """Reload the indexed observed exit of the campaign-owned process."""
         return self._load_mapping(attempt_id, "process-exit")
@@ -717,11 +725,14 @@ class ServerPtCommissioningStore:
         A ledger record is written before the index is refreshed; a hard stop
         between the two leaves a valid write-once record the index does not
         name, and every later phase, cleanup included, would then refuse the
-        archive. Adoption happens only when nothing indexed is missing or
-        changed, and every unindexed file is a `.json` directly under the
-        ledger whose content `record_findings(name, record, records)` accepts
-        as the complete record its name implies. A temporary or unknown file
-        is refused as it is; `refresh_index` proves the prior bytes again.
+        archive. The governed order refreshes the index after every ledger
+        write, so one interrupted refresh leaves at most ONE such record, and
+        its parents are already indexed. Adoption therefore requires nothing
+        indexed to be missing or changed, exactly one unindexed file, a
+        `.json` directly under the ledger, and `record_findings(name, record,
+        indexed_records)` to accept it as the complete record its name implies
+        against indexed parents only. Temporary, unknown, several or mutually
+        supporting files are refused as they are.
         """
         findings = self.verify_index()
         if findings != ("archive_inventory_changed",):
@@ -729,18 +740,20 @@ class ServerPtCommissioningStore:
         indexed = {str(item["path"]) for item in self._indexed_entries()}
         actual = self._archive_paths()
         extra = set(actual) - indexed
-        if indexed - set(actual) or not extra:
+        if indexed - set(actual) or len(extra) != 1:
             return findings
+        path = actual[next(iter(extra))]
         ledger = resolve_within(self._campaign_dir(), "ledger")
+        if path.parent != ledger or path.suffix != ".json":
+            return findings
         records = self.ledger_records()
-        for name in extra:
-            path = actual[name]
-            if (
-                path.parent != ledger
-                or path.suffix != ".json"
-                or record_findings(path.stem, records.get(path.stem, {}), records)
-            ):
-                return findings
+        indexed_records = {
+            stem: value
+            for stem, value in records.items()
+            if self.ledger_path_for(stem).relative_to(self.root).as_posix() in indexed
+        }
+        if record_findings(path.stem, records.get(path.stem, {}), indexed_records):
+            return findings
         self.refresh_index()
         return self.verify_index()
 

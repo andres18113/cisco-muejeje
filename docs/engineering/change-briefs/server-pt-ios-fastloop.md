@@ -234,3 +234,42 @@ A focused re-review of `3ef6d49` found three further gaps, each verified.
    content is the campaign's own; what anyone else typed into it cannot be
    observed without contacting Packet Tracer, which the exclusive disposable
    lab rule covers instead.
+
+## Addendum 01: unpublished experimental checkpoint, version 4
+
+The operator approved option 1 in `SERVER-PT-IOS-FASTLOOP-01 — Addendum 01`
+(relayed to the lead; its text is kept verbatim with the campaign evidence).
+Only two conditions are waived for an authorized experimental episode: that
+the executed checkpoint be remotely published, and that its full CI finish
+before contact. Source identity, freshness, ownership, readiness, outcome
+uncertainty, evidence publication, finalization and integrity checks, the
+result-publication receipt and its deadline, all remain.
+
+The waiver is carried by validated campaign authority through the existing
+internal path, never by a flag. `ExperimentalSourceAuthority` is an internal
+field of `AcceptanceBoundaries`; only the campaign CLI's composition sets it,
+after the charter digest, the open episode, the ledger admission of that
+episode's exact HEAD and tree, the experimental preflight and the sealed
+experimental grant have all been validated. The product then drops only the
+`repository_upstream` refusal, and only when the authority names exactly the
+grant's attempt, authorization, SHA and tree. An authority that is present
+but does not match, or accompanies a delivery grant, refuses before contact.
+The public product CLI never sets it, so an experimental grant presented
+there, or a missing upstream, still needs publication. The envelope records
+`publication_required`, the observed upstream and the authority it used.
+
+The first review's premise that title equality proved a blank document is
+superseded: a title is auxiliary. Retirement of an experimental attempt is
+the CLI's `--retire`, which observes rather than trusts captures. The launch
+record stores the command line and window title the CLI read from the
+operating system; `--retire` refuses before any effect unless a fresh
+reading still matches PID, image, creation time, command line and title and
+a workspace-ownership basis is established from indexed records (restored
+owned cleanup; an empty disposable baseline observed before campaign
+effects; or, before setup, the blank launch with any preliminary phase
+archived). It requests `CloseMainWindow`, waits a bounded time, and only
+then, after a second matching reading, terminates that exact PID and records
+`_forced` with its basis. Changed, unreadable or conflicting evidence
+prevents the force and is recorded as a retirement attempt. `--record-exit`
+never admits a forced capture. Retirement never proves restoration, and an
+interrupted setup without device-level evidence stays unresolved.
