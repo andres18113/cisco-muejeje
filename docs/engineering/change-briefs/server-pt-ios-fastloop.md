@@ -273,3 +273,38 @@ then, after a second matching reading, terminates that exact PID and records
 prevents the force and is recorded as a retirement attempt. `--record-exit`
 never admits a forced capture. Retirement never proves restoration, and an
 interrupted setup without device-level evidence stays unresolved.
+
+## LIVE episode 1, version 5
+
+Episode 1 ran checkpoint `1d086aa` (tree `1e709da5`), four commits ahead of
+its upstream `3552d6d`, unpublished and without CI, under the work order
+(`3ed40bd1`) and Addendum 01 (`594c8b28`). One campaign-launched disposable
+Packet Tracer 9.0.1.0858 (PID 3248) ran attempt `b118c848`:
+
+| Phase | Result | Operations |
+| --- | --- | --- |
+| Prequalification | `ready_for_catalog_review` | 25 |
+| Setup | `ready` (35 devices, 36 links, VLAN/trunk foundations) | 260 |
+| Acceptance | `measured`, exit 3: 30 selected, 30 accepted, 30 released | 264 |
+| Cleanup | `restored` (35 removed, two observations equal the empty baseline) | 73 |
+
+Every client fetched `http://198.18.160.2/` and observed the fresh attempt
+marker; the envelope's publication link returned at 78.4 s of a 2,792 s
+deadline, and it records `publication_required: false` with the validated
+authority. The readiness rows confirm the diagnosis: SW-02 took six samples
+of exactly seven calls each, `LRN` for five and `FWD` at 18.5 s (43 calls of
+its 181); SW-01 was `FWD` on its first seven-call sample; trunk continuity
+joined in one round of four single-page reads. The episode charged 622
+operations and 549.5 s of the campaign allowance.
+
+Retirement is not recorded in the archive. `--retire` refused before any
+effect with `process_document_title_changed`: the process shows two visible
+windows, `Cisco Packet Tracer` and `Logs - MCP BUILDER`, and .NET's main
+window title switched between them after launch. The lead then made one
+graceful `CloseMainWindow` request, answered no prompt, issued no
+termination, and observed the exit with no Packet Tracer process and an
+empty mailbox. Recording that lead-authored capture, and replacing the title
+guard with a visible-window-set rule for later episodes, were both denied by
+the platform permission policy; they await the operator. Until then the
+exit of PID 3248 is observed but not archived, and `--retire` as delivered
+cannot be relied on for this build.
