@@ -5,6 +5,8 @@ from __future__ import annotations
 import itertools
 import json
 
+from test_enterprise_configuration import _fixture
+
 from packet_tracer_mcp.application.use_cases.compile_configuration import (
     compile_enterprise_configuration,
 )
@@ -17,12 +19,12 @@ from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     FieldVerificationStatus,
 )
+from packet_tracer_mcp.infrastructure.execution import (
+    enterprise_configuration_runtime as configuration_runtime_module,
+)
 from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     PacketTracerEnterpriseConfigurationRuntime,
     voice_access_learning_extension_is_authorized,
-)
-from packet_tracer_mcp.infrastructure.execution import (
-    enterprise_configuration_runtime as configuration_runtime_module,
 )
 from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
     IosCommandResult,
@@ -31,8 +33,6 @@ from packet_tracer_mcp.infrastructure.execution.ios_terminal import (
 from packet_tracer_mcp.infrastructure.execution.simulation_trace_runtime import (
     SimulationStateObservation,
 )
-
-from test_enterprise_configuration import _fixture
 
 
 def _plan():
@@ -62,7 +62,8 @@ def _inventory(topology):
                 {"name": port}
                 for link in topology.links
                 for endpoint_id, port in (
-                    (link.device_a_id, link.port_a), (link.device_b_id, link.port_b),
+                    (link.device_a_id, link.port_a),
+                    (link.device_b_id, link.port_b),
                 )
                 if endpoint_id == device.id
             ],
@@ -72,6 +73,7 @@ def _inventory(topology):
 
 
 def test_runtime_batches_ios_per_device_phase_and_endpoints_in_one_safe_call():
+    """Verify runtime batches ios per device phase and endpoints in one safe call."""
     topology, plan = _plan()
     sent: list[str] = []
     runtime = PacketTracerEnterpriseConfigurationRuntime(
@@ -99,11 +101,15 @@ def test_runtime_batches_ios_per_device_phase_and_endpoints_in_one_safe_call():
 
 
 def test_runtime_inventory_normalizes_port_objects_and_strings():
+    """Verify runtime inventory normalizes port objects and strings."""
     runtime = PacketTracerEnterpriseConfigurationRuntime(
-        query_inventory=lambda: [{
-            "name": "SW1", "model": "2960-24TT",
-            "ports": [{"name": "FastEthernet0/1"}, "GigabitEthernet0/1"],
-        }],
+        query_inventory=lambda: [
+            {
+                "name": "SW1",
+                "model": "2960-24TT",
+                "ports": [{"name": "FastEthernet0/1"}, "GigabitEthernet0/1"],
+            }
+        ],
         send=lambda _payload: True,
         send_and_wait=lambda _payload, _timeout: None,
     )
@@ -115,20 +121,24 @@ def test_runtime_inventory_normalizes_port_objects_and_strings():
 
 
 def test_vlan_verifier_uses_existing_vlan_manager_and_bounded_convergence():
+    """Verify vlan verifier uses existing vlan manager and bounded convergence."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
-        if item.kind.value == "vlan"
+        item for item in plan.verification_expectations if item.kind.value == "vlan"
     )
-    responses = iter((
-        '{"found":true,"port_found":true,"configuration_channel":false,"present":false}',
-        '{"found":true,"port_found":true,"configuration_channel":true,"present":true}',
-    ))
+    responses = iter(
+        (
+            '{"found":true,"port_found":true,"configuration_channel":false,"present":false}',
+            '{"found":true,"port_found":true,"configuration_channel":true,"present":true}',
+        )
+    )
     payloads: list[str] = []
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
-        send_and_wait=lambda payload, _timeout: payloads.append(payload) or next(responses),
+        send_and_wait=lambda payload, _timeout: (
+            payloads.append(payload) or next(responses)
+        ),
         convergence_interval_seconds=0,
     )
 
@@ -142,6 +152,7 @@ def test_vlan_verifier_uses_existing_vlan_manager_and_bounded_convergence():
 
 
 def test_hostname_verifier_requires_exact_fresh_ios_prompt_identity():
+    """Verify hostname verifier requires exact fresh ios prompt identity."""
     expectation = VerificationExpectation(
         id="verify-hostname",
         action_id="hostname",
@@ -150,11 +161,13 @@ def test_hostname_verifier_requires_exact_fresh_ios_prompt_identity():
         device_name="HQ-DIST-SW-01",
         expected={"hostname": "HQ-DIST-SW-01"},
     )
-    observed = json.dumps({
-        "found": True,
-        "terminal": True,
-        "prompt": expectation.expected["hostname"] + "#",
-    })
+    observed = json.dumps(
+        {
+            "found": True,
+            "terminal": True,
+            "prompt": expectation.expected["hostname"] + "#",
+        }
+    )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
@@ -170,6 +183,7 @@ def test_hostname_verifier_requires_exact_fresh_ios_prompt_identity():
 
 
 def test_hostname_verifier_uses_terminal_output_when_pt_prompt_field_is_empty():
+    """Verify hostname verifier uses terminal output when pt prompt field is empty."""
     expectation = VerificationExpectation(
         id="verify-hostname-output",
         action_id="hostname-output",
@@ -178,15 +192,16 @@ def test_hostname_verifier_uses_terminal_output_when_pt_prompt_field_is_empty():
         device_name="HQ-DIST-SW-01",
         expected={"hostname": "HQ-DIST-SW-01"},
     )
-    observed = json.dumps({
-        "found": True,
-        "terminal": True,
-        "prompt": "",
-        "output": (
-            "Switch#\nHQ-DIST-SW-01#\n"
-            "%SYS-5-CONFIG_I: Configured from console"
-        ),
-    })
+    observed = json.dumps(
+        {
+            "found": True,
+            "terminal": True,
+            "prompt": "",
+            "output": (
+                "Switch#\nHQ-DIST-SW-01#\n%SYS-5-CONFIG_I: Configured from console"
+            ),
+        }
+    )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
@@ -202,6 +217,7 @@ def test_hostname_verifier_uses_terminal_output_when_pt_prompt_field_is_empty():
 
 
 def test_hostname_verifier_prefers_exact_packet_tracer_device_getter():
+    """Verify hostname verifier prefers exact packet tracer device getter."""
     expectation = VerificationExpectation(
         id="verify-hostname-getter",
         action_id="hostname-getter",
@@ -210,14 +226,16 @@ def test_hostname_verifier_prefers_exact_packet_tracer_device_getter():
         device_name="HQ-DIST-SW-01",
         expected={"hostname": "HQ-DIST-SW-01"},
     )
-    observed = json.dumps({
-        "found": True,
-        "terminal": True,
-        "hostname_supported": True,
-        "hostname": "HQ-DIST-SW-01",
-        "prompt": "",
-        "output": "",
-    })
+    observed = json.dumps(
+        {
+            "found": True,
+            "terminal": True,
+            "hostname_supported": True,
+            "hostname": "HQ-DIST-SW-01",
+            "prompt": "",
+            "output": "",
+        }
+    )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
@@ -233,17 +251,21 @@ def test_hostname_verifier_prefers_exact_packet_tracer_device_getter():
 
 
 def test_l3_verifier_uses_controlled_fresh_show_window():
+    """Verify l3 verifier uses controlled fresh show window."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.required_query == "show_ip_interface_brief"
     )
-    responses = iter((
-        '{"found":true,"booting":false,"terminal":true,"prompt":"R1#","output":"R1#"}',
-        '{"ok":true,"before":"R1#"}',
-        '{"found":true,"port_found":true,"configuration_channel":true,"output":"R1#show ip interface brief\\nInterface IP-Address OK? Method Status Protocol\\nGig0/0.10 198.18.150.1 YES manual up up\\nR1#"}',
-        '{"found":true,"port_found":true,"configuration_channel":true,"output":"R1#show ip interface brief\\nInterface IP-Address OK? Method Status Protocol\\nGig0/0.10 198.18.150.1 YES manual up up\\nR1#"}',
-    ))
+    responses = iter(
+        (
+            '{"found":true,"booting":false,"terminal":true,"prompt":"R1#","output":"R1#"}',
+            '{"ok":true,"before":"R1#"}',
+            '{"found":true,"port_found":true,"configuration_channel":true,"output":"R1#show ip interface brief\\nInterface IP-Address OK? Method Status Protocol\\nGig0/0.10 198.18.150.1 YES manual up up\\nR1#"}',
+            '{"found":true,"port_found":true,"configuration_channel":true,"output":"R1#show ip interface brief\\nInterface IP-Address OK? Method Status Protocol\\nGig0/0.10 198.18.150.1 YES manual up up\\nR1#"}',
+        )
+    )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
@@ -260,9 +282,11 @@ def test_l3_verifier_uses_controlled_fresh_show_window():
 
 
 def test_l3_verifier_does_not_emit_unclaimed_down_link_fields_as_unknown():
+    """Verify l3 verifier does not emit unclaimed down link fields as unknown."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.required_query == "show_ip_interface_brief"
     )
     current = (
@@ -270,12 +294,14 @@ def test_l3_verifier_does_not_emit_unclaimed_down_link_fields_as_unknown():
         '"output":"R1#show ip interface brief\\nInterface IP-Address OK? Method Status Protocol\\n'
         'Gig0/0.10 198.18.150.1 YES manual down down\\nR1#"}'
     )
-    responses = iter((
-        '{"found":true,"booting":false,"terminal":true,"prompt":"R1#","output":"R1#"}',
-        '{"ok":true,"before":"R1#"}',
-        current,
-        current,
-    ))
+    responses = iter(
+        (
+            '{"found":true,"booting":false,"terminal":true,"prompt":"R1#","output":"R1#"}',
+            '{"ok":true,"before":"R1#"}',
+            current,
+            current,
+        )
+    )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
@@ -294,9 +320,11 @@ def test_l3_verifier_does_not_emit_unclaimed_down_link_fields_as_unknown():
 
 
 def test_l3_verifier_requires_administratively_down_state_when_requested():
+    """Verify l3 verifier requires administratively down state when requested."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.required_query == "show_ip_interface_brief"
     )
     expectation.expected["administrative_up"] = False
@@ -305,12 +333,14 @@ def test_l3_verifier_requires_administratively_down_state_when_requested():
         '"output":"R1#show ip interface brief\\nInterface IP-Address OK? Method Status Protocol\\n'
         'Gig0/0.10 198.18.150.1 YES manual up up\\nR1#"}'
     )
-    responses = iter((
-        '{"found":true,"booting":false,"terminal":true,"prompt":"R1#","output":"R1#"}',
-        '{"ok":true,"before":"R1#"}',
-        current,
-        current,
-    ))
+    responses = iter(
+        (
+            '{"found":true,"booting":false,"terminal":true,"prompt":"R1#","output":"R1#"}',
+            '{"ok":true,"before":"R1#"}',
+            current,
+            current,
+        )
+    )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
@@ -328,9 +358,11 @@ def test_l3_verifier_requires_administratively_down_state_when_requested():
 
 
 def test_l3_verifier_accepts_fresh_administratively_down_state_when_requested():
+    """Verify l3 verifier accepts fresh administratively down state when requested."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.required_query == "show_ip_interface_brief"
     )
     expectation.expected["administrative_up"] = False
@@ -339,12 +371,14 @@ def test_l3_verifier_accepts_fresh_administratively_down_state_when_requested():
         '"output":"R1#show ip interface brief\\nInterface IP-Address OK? Method Status Protocol\\n'
         'Gig0/0.10 198.18.150.1 YES manual administratively down down\\nR1#"}'
     )
-    responses = iter((
-        '{"found":true,"booting":false,"terminal":true,"prompt":"R1#","output":"R1#"}',
-        '{"ok":true,"before":"R1#"}',
-        current,
-        current,
-    ))
+    responses = iter(
+        (
+            '{"found":true,"booting":false,"terminal":true,"prompt":"R1#","output":"R1#"}',
+            '{"ok":true,"before":"R1#"}',
+            current,
+            current,
+        )
+    )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
@@ -361,12 +395,13 @@ def test_l3_verifier_accepts_fresh_administratively_down_state_when_requested():
 
 
 def test_trunk_verifier_uses_existing_typed_parser_and_current_query_only():
+    """Verify trunk verifier uses existing typed parser and current query only."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.required_query == "show_interfaces_trunk"
     )
-    interface = expectation.expected["interface"]
     output = """SW#show interfaces trunk
 Port Mode Encapsulation Status Native vlan
 Gig0/1 on 802.1q trunking 1
@@ -385,10 +420,14 @@ SW#"""
         send=lambda _payload: True,
         send_and_wait=lambda _payload, _timeout: None,
     )
-    runtime._ios = _SequenceIos([_authoritative_trunk_result(
-        expectation,
-        output,
-    )])
+    runtime._ios = _SequenceIos(
+        [
+            _authoritative_trunk_result(
+                expectation,
+                output,
+            )
+        ]
+    )
 
     result = runtime.verify([expectation])[0]
 
@@ -402,6 +441,7 @@ SW#"""
 
 
 def test_trunk_readback_exposes_exact_fresh_native_and_traversal_observations():
+    """Verify trunk readback exposes exact fresh native and traversal observations."""
     output = """SW#show interfaces trunk
 Port Mode Encapsulation Status Native vlan
 Gig0/1 on 802.1q trunking 1
@@ -415,17 +455,21 @@ Gig0/1 742
 Port Vlans in spanning tree forwarding state and not pruned
 Gig0/1 742
 SW#"""
-    current = json.dumps({
-        "found": True,
-        "configuration_channel": True,
-        "output": output,
-    })
-    responses = iter((
-        '{"found":true,"booting":false,"terminal":true,"prompt":"SW#","output":"SW#"}',
-        '{"ok":true,"before":"SW#"}',
-        current,
-        current,
-    ))
+    current = json.dumps(
+        {
+            "found": True,
+            "configuration_channel": True,
+            "output": output,
+        }
+    )
+    responses = iter(
+        (
+            '{"found":true,"booting":false,"terminal":true,"prompt":"SW#","output":"SW#"}',
+            '{"ok":true,"before":"SW#"}',
+            current,
+            current,
+        )
+    )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
@@ -445,9 +489,11 @@ SW#"""
 
 
 def test_trunk_verifier_fails_when_an_expected_vlan_is_not_forwarding():
+    """Verify trunk verifier fails when an expected vlan is not forwarding."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.required_query == "show_interfaces_trunk"
     )
     expectation.expected["allowed_vlans"] = [10, 20]
@@ -471,10 +517,14 @@ SW#"""
         trunk_timeout_seconds=0,
         convergence_interval_seconds=0,
     )
-    runtime._ios = _SequenceIos([_authoritative_trunk_result(
-        expectation,
-        output,
-    )])
+    runtime._ios = _SequenceIos(
+        [
+            _authoritative_trunk_result(
+                expectation,
+                output,
+            )
+        ]
+    )
 
     result = runtime.verify([expectation])[0]
 
@@ -489,13 +539,13 @@ SW#"""
 
 
 def test_trunk_verifier_polls_until_operational_state_converges():
+    """Verify trunk verifier polls until operational state converges."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.required_query == "show_interfaces_trunk"
     )
-    interface = expectation.expected["interface"]
-
     empty = "SW#show interfaces trunk\nPort Mode Encapsulation Status Native vlan\nSW#"
     ready = """SW#show interfaces trunk
 Port Mode Encapsulation Status Native vlan
@@ -516,10 +566,12 @@ SW#"""
         send_and_wait=lambda _payload, _timeout: None,
         convergence_interval_seconds=0,
     )
-    runtime._ios = _SequenceIos([
-        _authoritative_trunk_result(expectation, empty),
-        _authoritative_trunk_result(expectation, ready),
-    ])
+    runtime._ios = _SequenceIos(
+        [
+            _authoritative_trunk_result(expectation, empty),
+            _authoritative_trunk_result(expectation, ready),
+        ]
+    )
 
     result = runtime.verify([expectation])[0]
 
@@ -530,57 +582,63 @@ SW#"""
 
 
 def test_trunk_verifier_round_robins_devices_and_retains_each_transition():
+    """Verify trunk verifier round robins devices and retains each transition."""
     _, plan = _plan()
     template = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.required_query == "show_interfaces_trunk"
     )
     expectations = [
-        template.model_copy(update={
-            "id": f"{template.id}/{device}",
-            "action_id": f"{template.action_id}/{device}",
-            "device_id": device.casefold(),
-            "device_name": device,
-        })
+        template.model_copy(
+            update={
+                "id": f"{template.id}/{device}",
+                "action_id": f"{template.action_id}/{device}",
+                "device_id": device.casefold(),
+                "device_name": device,
+            }
+        )
         for device in ("SW-A", "SW-B")
     ]
     expected_vlans = expectations[0].expected["allowed_vlans"]
 
     def trunk_output(device: str, forwarding: list[int]) -> str:
         vlans = ",".join(str(item) for item in expected_vlans)
-        forwarding_text = (
-            ",".join(str(item) for item in forwarding) or "none"
+        forwarding_text = ",".join(str(item) for item in forwarding) or "none"
+        return "\n".join(
+            (
+                f"{device}#show interfaces trunk",
+                "Port Mode Encapsulation Status Native vlan",
+                "Gig0/1 on 802.1q trunking 1",
+                "",
+                "Port Vlans allowed on trunk",
+                f"Gig0/1 {vlans}",
+                "",
+                "Port Vlans allowed and active in management domain",
+                f"Gig0/1 {vlans}",
+                "",
+                "Port Vlans in spanning tree forwarding state and not pruned",
+                f"Gig0/1 {forwarding_text}",
+                f"{device}#",
+            )
         )
-        return "\n".join((
-            f"{device}#show interfaces trunk",
-            "Port Mode Encapsulation Status Native vlan",
-            "Gig0/1 on 802.1q trunking 1",
-            "",
-            "Port Vlans allowed on trunk",
-            f"Gig0/1 {vlans}",
-            "",
-            "Port Vlans allowed and active in management domain",
-            f"Gig0/1 {vlans}",
-            "",
-            "Port Vlans in spanning tree forwarding state and not pruned",
-            f"Gig0/1 {forwarding_text}",
-            f"{device}#",
-        ))
 
-    ios = _SequenceIos([
-        IosCommandResult(
-            device,
-            OperationalQueryId.SHOW_INTERFACES_TRUNK,
-            True,
-            output=trunk_output(device, forwarding),
-            fresh_output_observed=True,
-            output_complete=True,
-            observed_device_name=device,
-            device_identity_provenance="confirmed_unique",
-        )
-        for forwarding in ([], list(expected_vlans))
-        for device in ("SW-A", "SW-B")
-    ])
+    ios = _SequenceIos(
+        [
+            IosCommandResult(
+                device,
+                OperationalQueryId.SHOW_INTERFACES_TRUNK,
+                True,
+                output=trunk_output(device, forwarding),
+                fresh_output_observed=True,
+                output_complete=True,
+                observed_device_name=device,
+                device_identity_provenance="confirmed_unique",
+            )
+            for forwarding in ([], list(expected_vlans))
+            for device in ("SW-A", "SW-B")
+        ]
+    )
     correlated = []
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
@@ -589,8 +647,7 @@ def test_trunk_verifier_round_robins_devices_and_retains_each_transition():
         trunk_timeout_seconds=1.0,
         convergence_interval_seconds=0.0,
         trunk_transition_observer=lambda device: (
-            correlated.append(device)
-            or {"device_name": device, "authoritative": True}
+            correlated.append(device) or {"device_name": device, "authoritative": True}
         ),
     )
     runtime._ios = ios
@@ -598,7 +655,10 @@ def test_trunk_verifier_round_robins_devices_and_retains_each_transition():
     results = runtime.verify(expectations)
 
     assert [device for device, _, _ in ios.calls] == [
-        "SW-A", "SW-B", "SW-A", "SW-B",
+        "SW-A",
+        "SW-B",
+        "SW-A",
+        "SW-B",
     ]
     assert correlated == ["SW-A", "SW-B", "SW-A", "SW-B"]
     assert all(item.status is ActionExecutionStatus.VERIFIED for item in results)
@@ -608,8 +668,7 @@ def test_trunk_verifier_round_robins_devices_and_retains_each_transition():
         assert details["kind"] == "trunk_round_robin"
         assert details["sample_rounds"] == 2
         assert [
-            transition["forwarding_vlans"]
-            for transition in details["transitions"]
+            transition["forwarding_vlans"] for transition in details["transitions"]
         ] == [[], list(expected_vlans)]
         assert all(
             transition["correlated_stp"]["authoritative"]
@@ -618,27 +677,31 @@ def test_trunk_verifier_round_robins_devices_and_retains_each_transition():
 
 
 def test_trunk_learning_state_authorizes_one_forward_delay_window():
+    """Verify trunk learning state authorizes one forward delay window."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.required_query == "show_interfaces_trunk"
     )
     expected_vlans = expectation.expected["allowed_vlans"]
     vlans = ",".join(str(item) for item in expected_vlans)
 
     def trunk_output(forwarding: str) -> str:
-        return "\n".join((
-            "SW#show interfaces trunk",
-            "Port Mode Encapsulation Status Native vlan",
-            "Gig0/1 on 802.1q trunking 1",
-            "Port Vlans allowed on trunk",
-            f"Gig0/1 {vlans}",
-            "Port Vlans allowed and active in management domain",
-            f"Gig0/1 {vlans}",
-            "Port Vlans in spanning tree forwarding state and not pruned",
-            f"Gig0/1 {forwarding}",
-            "SW#",
-        ))
+        return "\n".join(
+            (
+                "SW#show interfaces trunk",
+                "Port Mode Encapsulation Status Native vlan",
+                "Gig0/1 on 802.1q trunking 1",
+                "Port Vlans allowed on trunk",
+                f"Gig0/1 {vlans}",
+                "Port Vlans allowed and active in management domain",
+                f"Gig0/1 {vlans}",
+                "Port Vlans in spanning tree forwarding state and not pruned",
+                f"Gig0/1 {forwarding}",
+                "SW#",
+            )
+        )
 
     stp_states = iter(("LIS", "LRN", "FWD"))
     observed_stp_states = []
@@ -656,12 +719,14 @@ def test_trunk_learning_state_authorizes_one_forward_delay_window():
                     "vlan_id": vlan,
                     "forward_delay_seconds": 15,
                     "root": {"address": "0011.2233.4455"},
-                    "ports": [{
-                        "interface": expectation.expected["interface"],
-                        "row_present": True,
-                        "role": "Root",
-                        "state": state,
-                    }],
+                    "ports": [
+                        {
+                            "interface": expectation.expected["interface"],
+                            "row_present": True,
+                            "role": "Root",
+                            "state": state,
+                        }
+                    ],
                 }
                 for vlan in expected_vlans
             ],
@@ -676,11 +741,13 @@ def test_trunk_learning_state_authorizes_one_forward_delay_window():
         trunk_transition_observer=learning_stp,
         simulation_time_observer=_simulation_clock(0, 20_000),
     )
-    runtime._ios = _SequenceIos([
-        _authoritative_trunk_result(expectation, trunk_output("none")),
-        _authoritative_trunk_result(expectation, trunk_output("none")),
-        _authoritative_trunk_result(expectation, trunk_output(vlans)),
-    ])
+    runtime._ios = _SequenceIos(
+        [
+            _authoritative_trunk_result(expectation, trunk_output("none")),
+            _authoritative_trunk_result(expectation, trunk_output("none")),
+            _authoritative_trunk_result(expectation, trunk_output(vlans)),
+        ]
+    )
 
     result = runtime.verify([expectation])[0]
 
@@ -690,31 +757,33 @@ def test_trunk_learning_state_authorizes_one_forward_delay_window():
     assert result.convergence.details["learning_extension_authorized"] is True
     assert result.convergence.details["learning_extension_seconds"] == 20.0
     assert observed_stp_states == ["LIS", "LRN", "FWD"]
-    assert result.convergence.details["learning_boundary_stp"][
-        "authoritative"
-    ] is True
+    assert result.convergence.details["learning_boundary_stp"]["authoritative"] is True
 
 
 def test_trunk_extension_stops_when_fresh_pvst_leaves_learning():
+    """Verify trunk extension stops when fresh pvst leaves learning."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.required_query == "show_interfaces_trunk"
     )
     expected_vlans = expectation.expected["allowed_vlans"]
     vlans = ",".join(str(item) for item in expected_vlans)
-    trunk_output = "\n".join((
-        "SW#show interfaces trunk",
-        "Port Mode Encapsulation Status Native vlan",
-        "Gig0/1 on 802.1q trunking 1",
-        "Port Vlans allowed on trunk",
-        f"Gig0/1 {vlans}",
-        "Port Vlans allowed and active in management domain",
-        f"Gig0/1 {vlans}",
-        "Port Vlans in spanning tree forwarding state and not pruned",
-        "Gig0/1 none",
-        "SW#",
-    ))
+    trunk_output = "\n".join(
+        (
+            "SW#show interfaces trunk",
+            "Port Mode Encapsulation Status Native vlan",
+            "Gig0/1 on 802.1q trunking 1",
+            "Port Vlans allowed on trunk",
+            f"Gig0/1 {vlans}",
+            "Port Vlans allowed and active in management domain",
+            f"Gig0/1 {vlans}",
+            "Port Vlans in spanning tree forwarding state and not pruned",
+            "Gig0/1 none",
+            "SW#",
+        )
+    )
     states = iter(("LIS", "LRN", "LIS"))
     observed_states = []
 
@@ -729,11 +798,13 @@ def test_trunk_extension_stops_when_fresh_pvst_leaves_learning():
                     "authoritative": True,
                     "vlan_id": vlan,
                     "forward_delay_seconds": 15,
-                    "ports": [{
-                        "interface": expectation.expected["interface"],
-                        "row_present": True,
-                        "state": state,
-                    }],
+                    "ports": [
+                        {
+                            "interface": expectation.expected["interface"],
+                            "row_present": True,
+                            "state": state,
+                        }
+                    ],
                 }
                 for vlan in expected_vlans
             ],
@@ -748,9 +819,11 @@ def test_trunk_extension_stops_when_fresh_pvst_leaves_learning():
         trunk_transition_observer=stp,
         simulation_time_observer=_simulation_clock(0, 0),
     )
-    runtime._ios = _SequenceIos([
-        _authoritative_trunk_result(expectation, trunk_output),
-    ])
+    runtime._ios = _SequenceIos(
+        [
+            _authoritative_trunk_result(expectation, trunk_output),
+        ]
+    )
 
     result = runtime.verify([expectation])[0]
 
@@ -767,23 +840,26 @@ def test_trunk_extension_is_refused_when_the_forward_delay_is_unqualified():
     """An LRN boundary is not enough: the protocol budget must be qualified."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.required_query == "show_interfaces_trunk"
     )
     expected_vlans = expectation.expected["allowed_vlans"]
     vlans = ",".join(str(item) for item in expected_vlans)
-    trunk_output = "\n".join((
-        "SW#show interfaces trunk",
-        "Port Mode Encapsulation Status Native vlan",
-        "Gig0/1 on 802.1q trunking 1",
-        "Port Vlans allowed on trunk",
-        f"Gig0/1 {vlans}",
-        "Port Vlans allowed and active in management domain",
-        f"Gig0/1 {vlans}",
-        "Port Vlans in spanning tree forwarding state and not pruned",
-        "Gig0/1 none",
-        "SW#",
-    ))
+    trunk_output = "\n".join(
+        (
+            "SW#show interfaces trunk",
+            "Port Mode Encapsulation Status Native vlan",
+            "Gig0/1 on 802.1q trunking 1",
+            "Port Vlans allowed on trunk",
+            f"Gig0/1 {vlans}",
+            "Port Vlans allowed and active in management domain",
+            f"Gig0/1 {vlans}",
+            "Port Vlans in spanning tree forwarding state and not pruned",
+            "Gig0/1 none",
+            "SW#",
+        )
+    )
     simulation_reads = []
 
     def stp(_device_name):
@@ -795,11 +871,13 @@ def test_trunk_extension_is_refused_when_the_forward_delay_is_unqualified():
                     "authoritative": True,
                     "vlan_id": vlan,
                     "forward_delay_seconds": 7,
-                    "ports": [{
-                        "interface": expectation.expected["interface"],
-                        "row_present": True,
-                        "state": "LRN",
-                    }],
+                    "ports": [
+                        {
+                            "interface": expectation.expected["interface"],
+                            "row_present": True,
+                            "state": "LRN",
+                        }
+                    ],
                 }
                 for vlan in expected_vlans
             ],
@@ -814,9 +892,11 @@ def test_trunk_extension_is_refused_when_the_forward_delay_is_unqualified():
         trunk_transition_observer=stp,
         simulation_time_observer=lambda: simulation_reads.append(True),
     )
-    runtime._ios = _SequenceIos([
-        _authoritative_trunk_result(expectation, trunk_output),
-    ])
+    runtime._ios = _SequenceIos(
+        [
+            _authoritative_trunk_result(expectation, trunk_output),
+        ]
+    )
 
     result = runtime.verify([expectation])[0]
 
@@ -831,27 +911,31 @@ def test_trunk_extension_is_refused_when_the_forward_delay_is_unqualified():
 
 
 def test_trunk_is_refreshed_after_boundary_pvst_reaches_forwarding():
+    """Verify trunk is refreshed after boundary pvst reaches forwarding."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.required_query == "show_interfaces_trunk"
     )
     expected_vlans = expectation.expected["allowed_vlans"]
     vlans = ",".join(str(item) for item in expected_vlans)
 
     def trunk_output(forwarding: str) -> str:
-        return "\n".join((
-            "SW#show interfaces trunk",
-            "Port Mode Encapsulation Status Native vlan",
-            "Gig0/1 on 802.1q trunking 1",
-            "Port Vlans allowed on trunk",
-            f"Gig0/1 {vlans}",
-            "Port Vlans allowed and active in management domain",
-            f"Gig0/1 {vlans}",
-            "Port Vlans in spanning tree forwarding state and not pruned",
-            f"Gig0/1 {forwarding}",
-            "SW#",
-        ))
+        return "\n".join(
+            (
+                "SW#show interfaces trunk",
+                "Port Mode Encapsulation Status Native vlan",
+                "Gig0/1 on 802.1q trunking 1",
+                "Port Vlans allowed on trunk",
+                f"Gig0/1 {vlans}",
+                "Port Vlans allowed and active in management domain",
+                f"Gig0/1 {vlans}",
+                "Port Vlans in spanning tree forwarding state and not pruned",
+                f"Gig0/1 {forwarding}",
+                "SW#",
+            )
+        )
 
     states = iter(("LIS", "FWD", "FWD"))
 
@@ -864,11 +948,13 @@ def test_trunk_is_refreshed_after_boundary_pvst_reaches_forwarding():
                 {
                     "authoritative": True,
                     "vlan_id": vlan,
-                    "ports": [{
-                        "interface": expectation.expected["interface"],
-                        "row_present": True,
-                        "state": state,
-                    }],
+                    "ports": [
+                        {
+                            "interface": expectation.expected["interface"],
+                            "row_present": True,
+                            "state": state,
+                        }
+                    ],
                 }
                 for vlan in expected_vlans
             ],
@@ -882,10 +968,12 @@ def test_trunk_is_refreshed_after_boundary_pvst_reaches_forwarding():
         convergence_interval_seconds=0.0,
         trunk_transition_observer=stp,
     )
-    ios = _SequenceIos([
-        _authoritative_trunk_result(expectation, trunk_output("none")),
-        _authoritative_trunk_result(expectation, trunk_output(vlans)),
-    ])
+    ios = _SequenceIos(
+        [
+            _authoritative_trunk_result(expectation, trunk_output("none")),
+            _authoritative_trunk_result(expectation, trunk_output(vlans)),
+        ]
+    )
     runtime._ios = ios
 
     result = runtime.verify([expectation])[0]
@@ -894,31 +982,38 @@ def test_trunk_is_refreshed_after_boundary_pvst_reaches_forwarding():
     assert len(ios.calls) == 2
     assert result.convergence is not None
     assert result.convergence.details["learning_extension_authorized"] is False
-    assert result.convergence.details["learning_boundary_stp"][
-        "instances"
-    ][0]["ports"][0]["state"] == "FWD"
+    assert (
+        result.convergence.details["learning_boundary_stp"]["instances"][0]["ports"][0][
+            "state"
+        ]
+        == "FWD"
+    )
 
 
 def test_trunk_boundary_refresh_error_fails_closed_with_evidence():
+    """Verify trunk boundary refresh error fails closed with evidence."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.required_query == "show_interfaces_trunk"
     )
     expected_vlans = expectation.expected["allowed_vlans"]
     vlans = ",".join(str(item) for item in expected_vlans)
-    output = "\n".join((
-        "SW#show interfaces trunk",
-        "Port Mode Encapsulation Status Native vlan",
-        "Gig0/1 on 802.1q trunking 1",
-        "Port Vlans allowed on trunk",
-        f"Gig0/1 {vlans}",
-        "Port Vlans allowed and active in management domain",
-        f"Gig0/1 {vlans}",
-        "Port Vlans in spanning tree forwarding state and not pruned",
-        "Gig0/1 none",
-        "SW#",
-    ))
+    output = "\n".join(
+        (
+            "SW#show interfaces trunk",
+            "Port Mode Encapsulation Status Native vlan",
+            "Gig0/1 on 802.1q trunking 1",
+            "Port Vlans allowed on trunk",
+            f"Gig0/1 {vlans}",
+            "Port Vlans allowed and active in management domain",
+            f"Gig0/1 {vlans}",
+            "Port Vlans in spanning tree forwarding state and not pruned",
+            "Gig0/1 none",
+            "SW#",
+        )
+    )
 
     class FailingRefreshIos:
         def __init__(self):
@@ -945,11 +1040,13 @@ def test_trunk_boundary_refresh_error_fails_closed_with_evidence():
                 {
                     "authoritative": True,
                     "vlan_id": vlan,
-                    "ports": [{
-                        "interface": expectation.expected["interface"],
-                        "row_present": True,
-                        "state": next_state,
-                    }],
+                    "ports": [
+                        {
+                            "interface": expectation.expected["interface"],
+                            "row_present": True,
+                            "state": next_state,
+                        }
+                    ],
                 }
                 for next_state in [next(states)]
                 for vlan in expected_vlans
@@ -971,36 +1068,42 @@ def test_trunk_boundary_refresh_error_fails_closed_with_evidence():
 
 
 def test_trunk_round_does_not_commit_partial_success_before_late_failure():
+    """Verify trunk round does not commit partial success before late failure."""
     _, plan = _plan()
     template = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.required_query == "show_interfaces_trunk"
     )
     expectations = [
-        template.model_copy(update={
-            "id": f"{template.id}/{device}",
-            "action_id": f"{template.action_id}/{device}",
-            "device_id": device.casefold(),
-            "device_name": device,
-        })
+        template.model_copy(
+            update={
+                "id": f"{template.id}/{device}",
+                "action_id": f"{template.action_id}/{device}",
+                "device_id": device.casefold(),
+                "device_name": device,
+            }
+        )
         for device in ("SW-A", "SW-B")
     ]
     expected_vlans = template.expected["allowed_vlans"]
     vlans = ",".join(str(item) for item in expected_vlans)
 
     def trunk_output(device: str, forwarding: str) -> str:
-        return "\n".join((
-            f"{device}#show interfaces trunk",
-            "Port Mode Encapsulation Status Native vlan",
-            "Gig0/1 on 802.1q trunking 1",
-            "Port Vlans allowed on trunk",
-            f"Gig0/1 {vlans}",
-            "Port Vlans allowed and active in management domain",
-            f"Gig0/1 {vlans}",
-            "Port Vlans in spanning tree forwarding state and not pruned",
-            f"Gig0/1 {forwarding}",
-            f"{device}#",
-        ))
+        return "\n".join(
+            (
+                f"{device}#show interfaces trunk",
+                "Port Mode Encapsulation Status Native vlan",
+                "Gig0/1 on 802.1q trunking 1",
+                "Port Vlans allowed on trunk",
+                f"Gig0/1 {vlans}",
+                "Port Vlans allowed and active in management domain",
+                f"Gig0/1 {vlans}",
+                "Port Vlans in spanning tree forwarding state and not pruned",
+                f"Gig0/1 {forwarding}",
+                f"{device}#",
+            )
+        )
 
     class LateFailureIos:
         def __init__(self):
@@ -1012,14 +1115,9 @@ def test_trunk_round_does_not_commit_partial_success_before_late_failure():
             if self.calls == 4:
                 raise RuntimeError("late device refresh failed")
             expectation = next(
-                item for item in expectations
-                if item.device_name == device_name
+                item for item in expectations if item.device_name == device_name
             )
-            forwarding = (
-                "none"
-                if self.calls <= 2
-                else vlans
-            )
+            forwarding = "none" if self.calls <= 2 else vlans
             return _authoritative_trunk_result(
                 expectation,
                 trunk_output(device_name, forwarding),
@@ -1041,11 +1139,13 @@ def test_trunk_round_does_not_commit_partial_success_before_late_failure():
                 {
                     "authoritative": True,
                     "vlan_id": vlan,
-                    "ports": [{
-                        "interface": template.expected["interface"],
-                        "row_present": True,
-                        "state": state,
-                    }],
+                    "ports": [
+                        {
+                            "interface": template.expected["interface"],
+                            "row_present": True,
+                            "state": state,
+                        }
+                    ],
                 }
                 for vlan in expected_vlans
             ],
@@ -1064,38 +1164,40 @@ def test_trunk_round_does_not_commit_partial_success_before_late_failure():
     results = runtime.verify(expectations)
 
     assert any(
-        result.status is not ActionExecutionStatus.VERIFIED
-        for result in results
+        result.status is not ActionExecutionStatus.VERIFIED for result in results
     )
     assert all(
         result.convergence is not None
-        and result.convergence.details[
-            "learning_boundary_refresh_error"
-        ] == "RuntimeError: late device refresh failed"
+        and result.convergence.details["learning_boundary_refresh_error"]
+        == "RuntimeError: late device refresh failed"
         for result in results
     )
 
 
 def test_trunk_listening_state_does_not_authorize_learning_extension():
+    """Verify trunk listening state does not authorize learning extension."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.required_query == "show_interfaces_trunk"
     )
     expected_vlans = expectation.expected["allowed_vlans"]
     vlans = ",".join(str(item) for item in expected_vlans)
-    output = "\n".join((
-        "SW#show interfaces trunk",
-        "Port Mode Encapsulation Status Native vlan",
-        "Gig0/1 on 802.1q trunking 1",
-        "Port Vlans allowed on trunk",
-        f"Gig0/1 {vlans}",
-        "Port Vlans allowed and active in management domain",
-        f"Gig0/1 {vlans}",
-        "Port Vlans in spanning tree forwarding state and not pruned",
-        "Gig0/1 none",
-        "SW#",
-    ))
+    output = "\n".join(
+        (
+            "SW#show interfaces trunk",
+            "Port Mode Encapsulation Status Native vlan",
+            "Gig0/1 on 802.1q trunking 1",
+            "Port Vlans allowed on trunk",
+            f"Gig0/1 {vlans}",
+            "Port Vlans allowed and active in management domain",
+            f"Gig0/1 {vlans}",
+            "Port Vlans in spanning tree forwarding state and not pruned",
+            "Gig0/1 none",
+            "SW#",
+        )
+    )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
@@ -1109,20 +1211,24 @@ def test_trunk_listening_state_does_not_authorize_learning_extension():
                 {
                     "authoritative": True,
                     "vlan_id": vlan,
-                    "ports": [{
-                        "interface": expectation.expected["interface"],
-                        "row_present": True,
-                        "state": "LIS",
-                    }],
+                    "ports": [
+                        {
+                            "interface": expectation.expected["interface"],
+                            "row_present": True,
+                            "state": "LIS",
+                        }
+                    ],
                 }
                 for vlan in expected_vlans
             ],
         },
     )
-    ios = _SequenceIos([
-        _authoritative_trunk_result(expectation, output),
-        _authoritative_trunk_result(expectation, output),
-    ])
+    ios = _SequenceIos(
+        [
+            _authoritative_trunk_result(expectation, output),
+            _authoritative_trunk_result(expectation, output),
+        ]
+    )
     runtime._ios = ios
 
     result = runtime.verify([expectation])[0]
@@ -1135,26 +1241,28 @@ def test_trunk_listening_state_does_not_authorize_learning_extension():
 
 
 def test_trunk_verifier_never_authorizes_an_ambiguous_device_source():
+    """Verify trunk verifier never authorizes an ambiguous device source."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.required_query == "show_interfaces_trunk"
     )
-    vlans = ",".join(
-        str(item) for item in expectation.expected["allowed_vlans"]
+    vlans = ",".join(str(item) for item in expectation.expected["allowed_vlans"])
+    output = "\n".join(
+        (
+            "SW#show interfaces trunk",
+            "Port Mode Encapsulation Status Native vlan",
+            "Gig0/1 on 802.1q trunking 1",
+            "Port Vlans allowed on trunk",
+            f"Gig0/1 {vlans}",
+            "Port Vlans allowed and active in management domain",
+            f"Gig0/1 {vlans}",
+            "Port Vlans in spanning tree forwarding state and not pruned",
+            f"Gig0/1 {vlans}",
+            "SW#",
+        )
     )
-    output = "\n".join((
-        "SW#show interfaces trunk",
-        "Port Mode Encapsulation Status Native vlan",
-        "Gig0/1 on 802.1q trunking 1",
-        "Port Vlans allowed on trunk",
-        f"Gig0/1 {vlans}",
-        "Port Vlans allowed and active in management domain",
-        f"Gig0/1 {vlans}",
-        "Port Vlans in spanning tree forwarding state and not pruned",
-        f"Gig0/1 {vlans}",
-        "SW#",
-    ))
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
@@ -1162,29 +1270,31 @@ def test_trunk_verifier_never_authorizes_an_ambiguous_device_source():
         trunk_timeout_seconds=0.0,
         convergence_interval_seconds=0.0,
     )
-    runtime._ios = _SequenceIos([IosCommandResult(
-        expectation.device_name,
-        OperationalQueryId.SHOW_INTERFACES_TRUNK,
-        True,
-        output=output,
-        fresh_output_observed=True,
-        output_complete=True,
-        observed_device_name="",
-        device_identity_provenance="ambiguous",
-    )])
+    runtime._ios = _SequenceIos(
+        [
+            IosCommandResult(
+                expectation.device_name,
+                OperationalQueryId.SHOW_INTERFACES_TRUNK,
+                True,
+                output=output,
+                fresh_output_observed=True,
+                output_complete=True,
+                observed_device_name="",
+                device_identity_provenance="ambiguous",
+            )
+        ]
+    )
 
     result = runtime.verify([expectation])[0]
 
     assert result.status is ActionExecutionStatus.UNOBSERVABLE
     assert not result.fresh_evidence
     assert result.convergence is not None
-    assert (
-        result.convergence.details["terminal_failure_dimension"]
-        == "IDENTITY"
-    )
+    assert result.convergence.details["terminal_failure_dimension"] == "IDENTITY"
 
 
 def test_trunk_transition_signature_distinguishes_unreadable_from_empty():
+    """Verify trunk transition signature distinguishes unreadable from empty."""
     unreadable = {
         "authoritative": True,
         "row_present": True,
@@ -1203,19 +1313,17 @@ def test_trunk_transition_signature_distinguishes_unreadable_from_empty():
         "forwarding_vlans": [],
     }
 
-    assert (
-        PacketTracerEnterpriseConfigurationRuntime
-        ._trunk_observation_signature(unreadable)
-        != PacketTracerEnterpriseConfigurationRuntime
-        ._trunk_observation_signature(empty)
-    )
+    assert PacketTracerEnterpriseConfigurationRuntime._trunk_observation_signature(
+        unreadable
+    ) != PacketTracerEnterpriseConfigurationRuntime._trunk_observation_signature(empty)
 
 
 def test_trunk_default_budget_covers_forwarding_state_convergence(monkeypatch):
     """A trunk read-back owns STP convergence, not only IOS command latency."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.required_query == "show_interfaces_trunk"
     )
     output = """SW#show interfaces trunk
@@ -1236,20 +1344,28 @@ SW#"""
 
     class CapturingWaiter:
         def __init__(
-            self, inspect, *, timeout_seconds: float, interval_seconds: float,
+            self,
+            inspect,
+            *,
+            timeout_seconds: float,
+            interval_seconds: float,
         ) -> None:
             observed_timeouts.append(timeout_seconds)
             # The first read is already ready in this regression; only the
             # configured production budget is under test, not wall-clock time.
             self._waiter = real_waiter(
-                inspect, timeout_seconds=0, interval_seconds=interval_seconds,
+                inspect,
+                timeout_seconds=0,
+                interval_seconds=interval_seconds,
             )
 
         def wait(self):
             return self._waiter.wait()
 
     monkeypatch.setattr(
-        configuration_runtime_module, "StateConvergenceWaiter", CapturingWaiter,
+        configuration_runtime_module,
+        "StateConvergenceWaiter",
+        CapturingWaiter,
     )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
@@ -1257,10 +1373,14 @@ SW#"""
         send_and_wait=lambda _payload, _timeout: None,
         convergence_interval_seconds=0,
     )
-    runtime._ios = _SequenceIos([_authoritative_trunk_result(
-        expectation,
-        output,
-    )])
+    runtime._ios = _SequenceIos(
+        [
+            _authoritative_trunk_result(
+                expectation,
+                output,
+            )
+        ]
+    )
 
     result = runtime.verify([expectation])[0]
 
@@ -1269,14 +1389,17 @@ SW#"""
 
 
 def test_endpoint_dhcp_verification_keeps_gateway_and_dns_unobservable():
+    """Verify endpoint dhcp verification keeps gateway and dns unobservable."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.expected.get("mode") == "dhcp"
     )
     observed = (
         '{"found":true,"port_found":true,"configuration_channel":true,'
-        '"address_channel":true,"ipv4":"198.18.150.54","netmask":"255.255.255.0",'
+        '"address_channel":true,'
+        '"ipv4":"198.18.150.54","netmask":"255.255.255.0",'
         '"gateway":null,"dns":null}'
     )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
@@ -1295,9 +1418,11 @@ def test_endpoint_dhcp_verification_keeps_gateway_and_dns_unobservable():
 
 
 def test_access_port_and_dhcp_pool_without_getters_are_unobservable_not_partial():
+    """Verify access port and dhcp pool without getters are unobservable not partial."""
     _, plan = _plan()
     expectations = [
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.kind.value in {"access_port", "dhcp_pool"}
     ]
     runtime = PacketTracerEnterpriseConfigurationRuntime(
@@ -1318,9 +1443,11 @@ def test_access_port_and_dhcp_pool_without_getters_are_unobservable_not_partial(
 
 
 def test_endpoint_timeout_cannot_be_promoted_by_a_late_matching_read():
+    """Verify endpoint timeout cannot be promoted by a late matching read."""
     _, plan = _plan()
     expectation = next(
-        item for item in plan.verification_expectations
+        item
+        for item in plan.verification_expectations
         if item.expected.get("mode") == "dhcp"
     )
     calls = 0
@@ -1360,6 +1487,7 @@ def test_endpoint_timeout_cannot_be_promoted_by_a_late_matching_read():
 
 
 def test_runtime_never_accepts_or_emits_a_raw_ios_action_type():
+    """Verify runtime never accepts or emits a raw ios action type."""
     _, plan = _plan()
 
     assert "raw_cli" not in {item.value for item in ConfigurationActionType}
@@ -1367,10 +1495,12 @@ def test_runtime_never_accepts_or_emits_a_raw_ios_action_type():
 
 
 def test_ios_boot_failure_stops_device_batch_before_configuration_mutation():
+    """Verify ios boot failure stops device batch before configuration mutation."""
     topology, plan = _plan()
     sent: list[str] = []
     vlan = next(
-        action for action in plan.actions
+        action
+        for action in plan.actions
         if action.action_type is ConfigurationActionType.CREATE_VLAN
     )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
@@ -1425,26 +1555,28 @@ def _configuration_runtime_with_ios(result: IosCommandResult):
 
 
 def _voice_stp_output(state: str) -> str:
-    return "\n".join((
-        "SW#show spanning-tree",
-        "VLAN0020",
-        "  Spanning tree enabled protocol ieee",
-        "  Root ID    Priority    32788",
-        "             Address     0001.4392.0108",
-        "             Cost        4",
-        "             Port        25(GigabitEthernet0/1)",
-        "             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec",
-        "",
-        "  Bridge ID  Priority    32788  (priority 32768 sys-id-ext 20)",
-        "             Address     0030.A3A1.89E8",
-        "             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec",
-        "             Aging Time  20",
-        "",
-        "Interface        Role Sts Cost      Prio.Nbr Type",
-        "---------------- ---- --- --------- -------- --------------------------------",
-        f"Fa0/1            Desg {state} 19        128.1    P2p",
-        "SW#",
-    ))
+    return "\n".join(
+        (
+            "SW#show spanning-tree",
+            "VLAN0020",
+            "  Spanning tree enabled protocol ieee",
+            "  Root ID    Priority    32788",
+            "             Address     0001.4392.0108",
+            "             Cost        4",
+            "             Port        25(GigabitEthernet0/1)",
+            "             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec",
+            "",
+            "  Bridge ID  Priority    32788  (priority 32768 sys-id-ext 20)",
+            "             Address     0030.A3A1.89E8",
+            "             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec",
+            "             Aging Time  20",
+            "",
+            "Interface        Role Sts Cost      Prio.Nbr Type",
+            "---------------- ---- --- --------- -------- --------------------------------",
+            f"Fa0/1            Desg {state} 19        128.1    P2p",
+            "SW#",
+        )
+    )
 
 
 def _voice_stp_group_output(states: dict[str, str]) -> str:
@@ -1452,26 +1584,28 @@ def _voice_stp_group_output(states: dict[str, str]) -> str:
         f"{interface:<16} Desg {state:<3} 19        128.1    P2p"
         for interface, state in states.items()
     ]
-    return "\n".join((
-        "SW#show spanning-tree",
-        "VLAN0020",
-        "  Spanning tree enabled protocol ieee",
-        "  Root ID    Priority    32788",
-        "             Address     0001.4392.0108",
-        "             Cost        4",
-        "             Port        25(GigabitEthernet0/1)",
-        "             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec",
-        "",
-        "  Bridge ID  Priority    32788  (priority 32768 sys-id-ext 20)",
-        "             Address     0030.A3A1.89E8",
-        "             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec",
-        "             Aging Time  20",
-        "",
-        "Interface        Role Sts Cost      Prio.Nbr Type",
-        "---------------- ---- --- --------- -------- --------------------------------",
-        *rows,
-        "SW#",
-    ))
+    return "\n".join(
+        (
+            "SW#show spanning-tree",
+            "VLAN0020",
+            "  Spanning tree enabled protocol ieee",
+            "  Root ID    Priority    32788",
+            "             Address     0001.4392.0108",
+            "             Cost        4",
+            "             Port        25(GigabitEthernet0/1)",
+            "             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec",
+            "",
+            "  Bridge ID  Priority    32788  (priority 32768 sys-id-ext 20)",
+            "             Address     0030.A3A1.89E8",
+            "             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec",
+            "             Aging Time  20",
+            "",
+            "Interface        Role Sts Cost      Prio.Nbr Type",
+            "---------------- ---- --- --------- -------- --------------------------------",
+            *rows,
+            "SW#",
+        )
+    )
 
 
 class _SequenceIos:
@@ -1514,6 +1648,7 @@ def _authoritative_trunk_result(expectation, output):
 
 
 def test_voice_access_forwarding_waits_on_one_registered_stp_query():
+    """Verify voice access forwarding waits on one registered stp query."""
     expectation = VerificationExpectation(
         id="verify/voice-access",
         action_id="access/voice",
@@ -1526,24 +1661,30 @@ def test_voice_access_forwarding_waits_on_one_registered_stp_query():
             "voice_vlan_id": 20,
         },
     )
-    ios = _SequenceIos([
-        IosCommandResult(
-            "SW", OperationalQueryId.SHOW_SPANNING_TREE, True,
-            output=_voice_stp_output("LIS"),
-            fresh_output_observed=True,
-            output_complete=True,
-            observed_device_name="SW",
-            device_identity_provenance="confirmed_unique",
-        ),
-        IosCommandResult(
-            "SW", OperationalQueryId.SHOW_SPANNING_TREE, True,
-            output=_voice_stp_output("FWD"),
-            fresh_output_observed=True,
-            output_complete=True,
-            observed_device_name="SW",
-            device_identity_provenance="confirmed_unique",
-        ),
-    ])
+    ios = _SequenceIos(
+        [
+            IosCommandResult(
+                "SW",
+                OperationalQueryId.SHOW_SPANNING_TREE,
+                True,
+                output=_voice_stp_output("LIS"),
+                fresh_output_observed=True,
+                output_complete=True,
+                observed_device_name="SW",
+                device_identity_provenance="confirmed_unique",
+            ),
+            IosCommandResult(
+                "SW",
+                OperationalQueryId.SHOW_SPANNING_TREE,
+                True,
+                output=_voice_stp_output("FWD"),
+                fresh_output_observed=True,
+                output_complete=True,
+                observed_device_name="SW",
+                device_identity_provenance="confirmed_unique",
+            ),
+        ]
+    )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
@@ -1556,13 +1697,11 @@ def test_voice_access_forwarding_waits_on_one_registered_stp_query():
     result = runtime.wait_for_voice_access_forwarding([expectation])[0]
 
     assert result.status is ActionExecutionStatus.VERIFIED
-    assert result.fields["voice_forwarding"] is (
-        FieldVerificationStatus.VERIFIED
-    )
+    assert result.fields["voice_forwarding"] is (FieldVerificationStatus.VERIFIED)
     assert len(ios.calls) == 2
-    assert {
-        query_id for _, query_id, _ in ios.calls
-    } == {OperationalQueryId.SHOW_SPANNING_TREE}
+    assert {query_id for _, query_id, _ in ios.calls} == {
+        OperationalQueryId.SHOW_SPANNING_TREE
+    }
 
 
 def _voice_expectation():
@@ -1582,7 +1721,9 @@ def _voice_expectation():
 
 def _voice_stp_result(state, *, observed_device_name="SW"):
     return IosCommandResult(
-        "SW", OperationalQueryId.SHOW_SPANNING_TREE, True,
+        "SW",
+        OperationalQueryId.SHOW_SPANNING_TREE,
+        True,
         output=_voice_stp_output(state),
         fresh_output_observed=True,
         output_complete=True,
@@ -1612,12 +1753,15 @@ def _voice_runtime(
 
 
 def test_voice_access_forwarding_extends_once_from_learning_to_forwarding():
-    ios = _SequenceIos([
-        _voice_stp_result("LRN"),
-        _voice_stp_result("LRN"),
-        _voice_stp_result("LRN"),
-        _voice_stp_result("FWD"),
-    ])
+    """Verify voice access forwarding extends once from learning to forwarding."""
+    ios = _SequenceIos(
+        [
+            _voice_stp_result("LRN"),
+            _voice_stp_result("LRN"),
+            _voice_stp_result("LRN"),
+            _voice_stp_result("FWD"),
+        ]
+    )
     runtime = _voice_runtime(
         ios,
         simulation_time_observer=_simulation_clock(0, 0, 10_000, 20_000),
@@ -1634,16 +1778,16 @@ def test_voice_access_forwarding_extends_once_from_learning_to_forwarding():
     assert result.convergence.details["learning_extension_clock"] == (
         "packet_tracer_simulation_time"
     )
-    assert result.convergence.details[
-        "learning_extension_simulation_progress_ms"
-    ] == 20_000
+    assert (
+        result.convergence.details["learning_extension_simulation_progress_ms"]
+        == 20_000
+    )
     assert result.convergence.details["learning_extension_sample_count"] == 3
     assert result.convergence.details["sample_count"] == 4
     assert result.convergence.details["terminal_failure_dimension"] == "NONE"
 
 
-def test_voice_access_forwarding_buys_exactly_one_protocol_sized_window(
-):
+def test_voice_access_forwarding_buys_exactly_one_protocol_sized_window():
     """LRN gets one 20 s PT-simulation budget, then fails closed."""
     observed_sim_times = iter((0, 0, 20_000))
     simulation_reads = []
@@ -1652,7 +1796,9 @@ def test_voice_access_forwarding_buys_exactly_one_protocol_sized_window(
         sim_time = next(observed_sim_times)
         simulation_reads.append(sim_time)
         return SimulationStateObservation(
-            observed=True, simulation_mode=False, sim_time=sim_time,
+            observed=True,
+            simulation_mode=False,
+            sim_time=sim_time,
         )
 
     ios = _SequenceIos([_voice_stp_result("LRN")])
@@ -1694,7 +1840,11 @@ def test_voice_access_forwarding_refuses_to_extend_a_failed_terminal_round(
 
     class TwoRoundWaiter:
         def __init__(
-            self, inspect, *, timeout_seconds: float, interval_seconds: float,
+            self,
+            inspect,
+            *,
+            timeout_seconds: float,
+            interval_seconds: float,
         ) -> None:
             self._waiter = real_waiter(
                 inspect,
@@ -1707,7 +1857,9 @@ def test_voice_access_forwarding_refuses_to_extend_a_failed_terminal_round(
             return self._waiter.wait()
 
     monkeypatch.setattr(
-        configuration_runtime_module, "StateConvergenceWaiter", TwoRoundWaiter,
+        configuration_runtime_module,
+        "StateConvergenceWaiter",
+        TwoRoundWaiter,
     )
     ios = _FirstThenFailingIos(_voice_stp_result("LRN"))
     runtime = _voice_runtime(ios)
@@ -1723,6 +1875,7 @@ def test_voice_access_forwarding_refuses_to_extend_a_failed_terminal_round(
 
 
 def test_voice_access_forwarding_refuses_to_extend_unattributed_evidence():
+    """Verify voice access forwarding refuses to extend unattributed evidence."""
     ios = _SequenceIos([_voice_stp_result("LRN", observed_device_name="")])
     runtime = _voice_runtime(ios)
 
@@ -1735,10 +1888,13 @@ def test_voice_access_forwarding_refuses_to_extend_unattributed_evidence():
 
 
 def test_voice_access_forwarding_rejects_wrong_device_terminal_fwd():
+    """Verify voice access forwarding rejects wrong device terminal fwd."""
     simulation_reads = []
-    ios = _SequenceIos([
-        _voice_stp_result("FWD", observed_device_name="OTHER"),
-    ])
+    ios = _SequenceIos(
+        [
+            _voice_stp_result("FWD", observed_device_name="OTHER"),
+        ]
+    )
     runtime = _voice_runtime(
         ios,
         simulation_time_observer=lambda: simulation_reads.append(True),
@@ -1759,25 +1915,31 @@ def test_voice_access_forwarding_refuses_an_unqualified_forward_delay():
     for label, output in (
         ("unqualified", qualified.replace("Delay 15 sec", "Delay 4 sec")),
         ("ambiguous", qualified.replace("Delay 15 sec", "Delay 4 sec", 1)),
-        ("absent", "\n".join(
-            line for line in qualified.splitlines()
-            if "Forward Delay" not in line
-        )),
+        (
+            "absent",
+            "\n".join(
+                line for line in qualified.splitlines() if "Forward Delay" not in line
+            ),
+        ),
     ):
         simulation_reads = []
-        ios = _SequenceIos([
-            IosCommandResult(
-                "SW", OperationalQueryId.SHOW_SPANNING_TREE, True,
-                output=output,
-                fresh_output_observed=True,
-                output_complete=True,
-                observed_device_name="SW",
-                device_identity_provenance="confirmed_unique",
-            ),
-        ])
+        ios = _SequenceIos(
+            [
+                IosCommandResult(
+                    "SW",
+                    OperationalQueryId.SHOW_SPANNING_TREE,
+                    True,
+                    output=output,
+                    fresh_output_observed=True,
+                    output_complete=True,
+                    observed_device_name="SW",
+                    device_identity_provenance="confirmed_unique",
+                ),
+            ]
+        )
         runtime = _voice_runtime(
             ios,
-            simulation_time_observer=lambda: simulation_reads.append(True),
+            simulation_time_observer=lambda reads=simulation_reads: reads.append(True),
         )
 
         result = runtime.wait_for_voice_access_forwarding(
@@ -1793,9 +1955,7 @@ def test_voice_access_forwarding_refuses_an_unqualified_forward_delay():
         assert details["learning_extension_candidate"] is True, label
         assert details["learning_extension_authorized"] is False, label
         assert details["learning_extension_seconds"] == 0.0, label
-        assert details["learning_extension_stop_reason"] == (
-            "not_authorized"
-        ), label
+        assert details["learning_extension_stop_reason"] == ("not_authorized"), label
         assert details["terminal_failure_dimension"] == "NON_FORWARDING", label
 
 
@@ -1821,6 +1981,7 @@ def _authorizes(observation, *, expected_count=1, device_name="SW"):
 
 
 def test_voice_learning_extension_authorizes_only_terminal_pending_lrn():
+    """Verify voice learning extension authorizes only terminal pending lrn."""
     assert _authorizes(_voice_learning_observation({"a": "LRN"}))
     assert _authorizes(
         _voice_learning_observation({"a": "LRN", "b": "FWD"}),
@@ -1829,49 +1990,56 @@ def test_voice_learning_extension_authorizes_only_terminal_pending_lrn():
 
 
 def test_voice_learning_extension_fails_closed_outside_that_evidence():
+    """Verify voice learning extension fails closed outside that evidence."""
     refused = {
         "listening": _voice_learning_observation({"a": "LIS"}),
         "blocking": _voice_learning_observation({"a": "BLK"}),
         "ambiguous_state": _voice_learning_observation({"a": ""}),
-        "mixed_non_learning": (
-            _voice_learning_observation({"a": "LRN", "b": "LIS"})
-        ),
+        "mixed_non_learning": (_voice_learning_observation({"a": "LRN", "b": "LIS"})),
         "stale_round": _voice_learning_observation(
-            {"a": "LRN"}, sample_round=6,
+            {"a": "LRN"},
+            sample_round=6,
         ),
         "unobservable": _voice_learning_observation(
-            {"a": "LRN"}, authoritative=False,
+            {"a": "LRN"},
+            authoritative=False,
         ),
         "vlan_instance_absent": _voice_learning_observation(
-            {"a": "LRN"}, vlan_present=False,
+            {"a": "LRN"},
+            vlan_present=False,
         ),
         "other_device": _voice_learning_observation(
-            {"a": "LRN"}, observed_device_name="OTHER",
+            {"a": "LRN"},
+            observed_device_name="OTHER",
         ),
         "unattributed": _voice_learning_observation(
-            {"a": "LRN"}, observed_device_name="",
+            {"a": "LRN"},
+            observed_device_name="",
         ),
         "untyped_states": _voice_learning_observation("LRN"),
         "nothing_pending": _voice_learning_observation({"a": "FWD"}),
     }
     assert {
-        name: _authorizes(observation)
-        for name, observation in refused.items()
+        name: _authorizes(observation) for name, observation in refused.items()
     } == {name: False for name in refused}
 
     # A missing row is never covered by a shorter observation.
     assert not _authorizes(
-        _voice_learning_observation({"a": "LRN"}), expected_count=2,
+        _voice_learning_observation({"a": "LRN"}),
+        expected_count=2,
     )
     assert not _authorizes(
-        _voice_learning_observation({"a": "LRN"}), expected_count=0,
+        _voice_learning_observation({"a": "LRN"}),
+        expected_count=0,
     )
     assert not _authorizes(
-        _voice_learning_observation({"a": "LRN"}), device_name="",
+        _voice_learning_observation({"a": "LRN"}),
+        device_name="",
     )
 
 
 def test_voice_access_forwarding_retains_one_structured_group_observation():
+    """Verify voice access forwarding retains one structured group observation."""
     expectations = [
         VerificationExpectation(
             id=f"verify/voice-access/{index}",
@@ -1887,24 +2055,30 @@ def test_voice_access_forwarding_retains_one_structured_group_observation():
         )
         for index in (1, 2)
     ]
-    ios = _SequenceIos([
-        IosCommandResult(
-            "SW", OperationalQueryId.SHOW_SPANNING_TREE, True,
-            output=_voice_stp_group_output({"Fa0/1": "LIS", "Fa0/2": "LRN"}),
-            fresh_output_observed=True,
-            output_complete=True,
-            observed_device_name="SW",
-            device_identity_provenance="confirmed_unique",
-        ),
-        IosCommandResult(
-            "SW", OperationalQueryId.SHOW_SPANNING_TREE, True,
-            output=_voice_stp_group_output({"Fa0/1": "FWD", "Fa0/2": "FWD"}),
-            fresh_output_observed=True,
-            output_complete=True,
-            observed_device_name="SW",
-            device_identity_provenance="confirmed_unique",
-        ),
-    ])
+    ios = _SequenceIos(
+        [
+            IosCommandResult(
+                "SW",
+                OperationalQueryId.SHOW_SPANNING_TREE,
+                True,
+                output=_voice_stp_group_output({"Fa0/1": "LIS", "Fa0/2": "LRN"}),
+                fresh_output_observed=True,
+                output_complete=True,
+                observed_device_name="SW",
+                device_identity_provenance="confirmed_unique",
+            ),
+            IosCommandResult(
+                "SW",
+                OperationalQueryId.SHOW_SPANNING_TREE,
+                True,
+                output=_voice_stp_group_output({"Fa0/1": "FWD", "Fa0/2": "FWD"}),
+                fresh_output_observed=True,
+                output_complete=True,
+                observed_device_name="SW",
+                device_identity_provenance="confirmed_unique",
+            ),
+        ]
+    )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
@@ -1952,6 +2126,7 @@ def test_voice_access_forwarding_retains_one_structured_group_observation():
 
 
 def test_voice_access_forwarding_names_incomplete_terminal_evidence():
+    """Verify voice access forwarding names incomplete terminal evidence."""
     expectation = VerificationExpectation(
         id="verify/voice-access/incomplete",
         action_id="access/voice/incomplete",
@@ -1964,14 +2139,20 @@ def test_voice_access_forwarding_names_incomplete_terminal_evidence():
             "voice_vlan_id": 20,
         },
     )
-    ios = _SequenceIos([IosCommandResult(
-        "SW", OperationalQueryId.SHOW_SPANNING_TREE, True,
-        output=_voice_stp_output("FWD") + "\n--More--",
-        fresh_output_observed=True,
-        output_complete=False,
-        truncated_by_pager=True,
-        device_identity_provenance="confirmed_unique",
-    )])
+    ios = _SequenceIos(
+        [
+            IosCommandResult(
+                "SW",
+                OperationalQueryId.SHOW_SPANNING_TREE,
+                True,
+                output=_voice_stp_output("FWD") + "\n--More--",
+                fresh_output_observed=True,
+                output_complete=False,
+                truncated_by_pager=True,
+                device_identity_provenance="confirmed_unique",
+            )
+        ]
+    )
     runtime = PacketTracerEnterpriseConfigurationRuntime(
         query_inventory=lambda: [],
         send=lambda _payload: True,
@@ -1993,61 +2174,77 @@ def test_voice_access_forwarding_names_incomplete_terminal_evidence():
 
 
 def test_serial_clock_verifier_requires_fresh_exact_controller_state():
+    """Verify serial clock verifier requires fresh exact controller state."""
     output = (
         "R-A#show controllers Serial0/0/0\n"
         "Interface Serial0/0/0\n"
         "DCE V.35, clock rate 128000\n"
         "R-A#"
     )
-    runtime, ios = _configuration_runtime_with_ios(IosCommandResult(
-        "R-A",
-        OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
-        True,
-        output=output,
-        fresh_output_observed=True,
-        output_complete=True,
-    ))
+    runtime, ios = _configuration_runtime_with_ios(
+        IosCommandResult(
+            "R-A",
+            OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
+            True,
+            output=output,
+            fresh_output_observed=True,
+            output_complete=True,
+        )
+    )
 
     result = runtime.verify([_serial_expectation()])[0]
 
     assert result.status is ActionExecutionStatus.VERIFIED
     assert result.fresh_evidence
     assert set(result.fields.values()) == {FieldVerificationStatus.VERIFIED}
-    assert ios.calls == [(
-        "R-A", OperationalQueryId.SHOW_CONTROLLERS_SERIAL, "Serial0/0/0",
-    )]
+    assert ios.calls == [
+        (
+            "R-A",
+            OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
+            "Serial0/0/0",
+        )
+    ]
 
 
 def test_serial_clock_verifier_never_promotes_incomplete_or_contradictory_state():
+    """Verify serial clock verifier never promotes incomplete or contradictory state."""
     cases = (
         IosCommandResult(
-            "R-A", OperationalQueryId.SHOW_CONTROLLERS_SERIAL, True,
-            output=(
-                "Interface Serial0/0/0\nDCE V.35, clock rate 128000\n--More--"
-            ),
+            "R-A",
+            OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
+            True,
+            output=("Interface Serial0/0/0\nDCE V.35, clock rate 128000\n--More--"),
             fresh_output_observed=True,
             truncated_by_pager=True,
         ),
         IosCommandResult(
-            "R-A", OperationalQueryId.SHOW_CONTROLLERS_SERIAL, True,
+            "R-A",
+            OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
+            True,
             output="Interface Serial0/0/0\nDTE V.35 TX and RX clocks detected\n",
             fresh_output_observed=True,
             output_complete=True,
         ),
         IosCommandResult(
-            "R-A", OperationalQueryId.SHOW_CONTROLLERS_SERIAL, True,
+            "R-A",
+            OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
+            True,
             output="Interface Serial0/0/0\nDCE V.35, clock rate 64000\n",
             fresh_output_observed=True,
             output_complete=True,
         ),
         IosCommandResult(
-            "R-A", OperationalQueryId.SHOW_CONTROLLERS_SERIAL, True,
+            "R-A",
+            OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
+            True,
             output="Interface Serial0/0/0\nDCE V.35, clock rate 128000\n",
             fresh_output_observed=False,
             output_complete=True,
         ),
         IosCommandResult(
-            "R-A", OperationalQueryId.SHOW_CONTROLLERS_SERIAL, True,
+            "R-A",
+            OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
+            True,
             output="% Invalid input detected",
             fresh_output_observed=True,
             output_complete=True,
