@@ -227,3 +227,38 @@ its existing behavior. Charge the grouped waiter for its own five-second window
 plus one possible four-query round, and charge E4 readbacks, IOS boot, VLAN
 polls, receiver checks and mutation calls conservatively. The independently
 enforced whole-phase 1,500-second clock still stops any unexpected local stall.
+
+## Operator recovery extension, version 8
+
+The first preliminary phase, attempt
+`979b4636d50290d199e8ea0f95eddab3`, stopped before a channel operation
+because MCP BUILDER was not running. Its immutable preliminary status has SHA-256
+`c623ec5dbc62e108568cff6a41ab858d451de2e86c1ab426690dfdecae2e2829`,
+reports zero operations, and has no raw answer journal or qualification result.
+The operator identified the missing receiver and explicitly authorized one new
+preliminary phase and a fresh campaign-launched instance. Its fixed replacement
+ID is `5b09a9c35fd572f00945bdb18040d2fb`. This is not a complete campus
+attempt. The earlier close request did not establish graceful exit;
+later absence of that primary does not rewrite its exit record. The operator
+separately authorized termination of only its orphan helper PID 52000, but that
+process had already exited before the command and no termination was performed.
+
+Risk remains L. Permit exactly one replacement preliminary reservation, and
+only when the indexed original status and digest match the no-operation record,
+the original phase was archived as stopped, no preliminary result or raw journal
+exists, no setup was reserved, and the new attempt ID and campaign-created PT
+process incarnation differ. Refuse a third preliminary phase, any altered first
+record, prior dispatch, stale receiver, foreign process cohort or mailbox
+entry. The fresh preliminary grant retains its own 250-call/300-second ceiling
+and cleanup reserve; setup and acceptance ceilings are unchanged. The
+replacement must still measure and restore both temporary targets before E4.
+
+Add a real-store regression for the authorized no-contact recovery and negative
+controls for prior contact, missing or altered evidence, reused identity, and
+another preliminary reservation. Validate focused and affected tests, full
+suite, namespace, docs, whitespace and delivery gate; publish the corrected
+SHA and wait for its exact green CI before the replacement LIVE phase.
+The read-only review found that the fixed replacement ID could otherwise enter
+as an ordinary first qualification when the original archive was absent. The
+CLI must check that ID unconditionally before source/receiver preflight; its
+missing-archive CLI regression is part of this recovery gate.

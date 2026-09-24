@@ -38,6 +38,7 @@ class ExactCiEvidenceLike(Protocol):
 
 CHARTER_SHA256 = "7dbc5bbcd575bb0e9bcdac49fa003be6597e5b89e0742790c54237222fe8a200"
 CAMPAIGN_ID = "SERVER-PT-C31-COMMISSION-01"
+RECOVERY_PREQUALIFICATION_ATTEMPT = "5b09a9c35fd572f00945bdb18040d2fb"
 _ATTEMPT = re.compile(r"[0-9a-f]{32}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -159,6 +160,15 @@ def derive_server_pt_phase_grant(
     grant = ServerPtPhaseGrant(
         phase=phase,
         authorization_id="",
+        operator_extensions=(
+            [
+                "server_pt_port_qualification",
+                "2950t_24_trunk_qualification",
+                "zero_contact_prequalification_recovery",
+            ]
+            if qualification_id == RECOVERY_PREQUALIFICATION_ATTEMPT
+            else ["server_pt_port_qualification", "2950t_24_trunk_qualification"]
+        ),
         attempt_id=attempt_id,
         marker=MARKER_PREFIX + attempt_id,
         deployment_id=f"server-pt-c31-{attempt_id}",

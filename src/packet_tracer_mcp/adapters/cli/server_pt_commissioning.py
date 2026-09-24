@@ -32,6 +32,7 @@ from ...application.use_cases.server_pt_phase_budget import (
 )
 from ...application.use_cases.server_pt_phase_grant import (
     CHARTER_SHA256,
+    RECOVERY_PREQUALIFICATION_ATTEMPT,
     derive_server_pt_phase_grant,
 )
 from ...application.use_cases.server_pt_process_evidence import (
@@ -82,6 +83,10 @@ from .server_pt_live_phase import bind_live_phase, phase_preflight
 from .service_qualification import repository_identity
 
 _ATTEMPT = re.compile(r"[0-9a-f]{32}\Z")
+_RECOVERY_FIRST_ATTEMPT = "979b4636d50290d199e8ea0f95eddab3"
+_RECOVERY_FIRST_STATUS_SHA256 = (
+    "c623ec5dbc62e108568cff6a41ab858d451de2e86c1ab426690dfdecae2e2829"
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -473,6 +478,50 @@ def _record_exit(
     return 0
 
 
+def _prequalification_recovery_findings(
+    store: ServerPtCommissioningStore,
+    attempt_id: str,
+    *,
+    first_attempt_id: str,
+    first_status_sha256: str,
+    new_process_incarnation: str | None = None,
+) -> tuple[str, ...]:
+    """Admit only the operator's indexed, zero-contact preliminary replacement."""
+    try:
+        if (
+            _ATTEMPT.fullmatch(attempt_id) is None
+            or attempt_id == first_attempt_id
+            or attempt_id != RECOVERY_PREQUALIFICATION_ATTEMPT
+            or store.prequalification_attempt_ids() != (first_attempt_id,)
+            or store.setup_attempt_ids()
+            or not store.index_exists()
+            or store.verify_index()
+        ):
+            return ("prequalification_recovery_inventory_invalid",)
+        status = store.require_immutable_phase(
+            first_attempt_id, "prequalification", "stopped"
+        )
+        status_path = store.record_path_for(first_attempt_id, "prequalification-status")
+        first_grant = store.load_phase_grant(first_attempt_id, "prequalification")
+        if (
+            hashlib.sha256(status_path.read_bytes()).hexdigest() != first_status_sha256
+            or status.get("operations_used") != 0
+            or status.get("reason") != "prequalification_boundary:ValueError"
+            or first_grant.attempt_id != first_attempt_id
+            or store.record_path_for(first_attempt_id, "prequalification").exists()
+            or store.journal_path_for(first_attempt_id, "prequalification").exists()
+        ):
+            return ("prequalification_recovery_first_result_invalid",)
+        if new_process_incarnation is not None and (
+            not new_process_incarnation
+            or new_process_incarnation == first_grant.process_incarnation
+        ):
+            return ("prequalification_recovery_process_not_fresh",)
+    except (OSError, ValueError):
+        return ("prequalification_recovery_evidence_unverified",)
+    return ()
+
+
 def _qualify(root: Path, attempt_id: str, ci_run_id: int) -> int:
     """Measure the two authorized prerequisites through one fixed file channel."""
     store = ServerPtCommissioningStore(root)
@@ -483,7 +532,23 @@ def _qualify(root: Path, attempt_id: str, ci_run_id: int) -> int:
             {"outcome": "refused", "reason": "prequalification_inventory_unreadable"}
         )
         return 2
-    if already:
+    if attempt_id == RECOVERY_PREQUALIFICATION_ATTEMPT:
+        recovery = _prequalification_recovery_findings(
+            store,
+            attempt_id,
+            first_attempt_id=_RECOVERY_FIRST_ATTEMPT,
+            first_status_sha256=_RECOVERY_FIRST_STATUS_SHA256,
+        )
+        if recovery:
+            _print(
+                {
+                    "outcome": "refused",
+                    "reason": "prequalification_recovery_unverified",
+                    "recovery_findings": list(recovery),
+                }
+            )
+            return 2
+    elif already:
         _print({"outcome": "refused", "reason": "prequalification_already_reserved"})
         return 2
     if store.index_exists() and store.verify_index():
@@ -496,6 +561,17 @@ def _qualify(root: Path, attempt_id: str, ci_run_id: int) -> int:
     assert preflight.source is not None
     assert preflight.process is not None
     assert preflight.ci is not None
+    if attempt_id == RECOVERY_PREQUALIFICATION_ATTEMPT:
+        recovery = _prequalification_recovery_findings(
+            store,
+            attempt_id,
+            first_attempt_id=_RECOVERY_FIRST_ATTEMPT,
+            first_status_sha256=_RECOVERY_FIRST_STATUS_SHA256,
+            new_process_incarnation=preflight.process.process_incarnation,
+        )
+        if recovery:
+            _print({"outcome": "refused", "recovery_findings": list(recovery)})
+            return 2
     try:
         launch = store.load_process_launch(attempt_id)
         if launch_evidence_findings(launch, preflight.process):
