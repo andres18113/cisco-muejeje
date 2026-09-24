@@ -12,6 +12,7 @@ refuses after touching the operator's devices has not refused.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -72,6 +73,9 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
 )
 from packet_tracer_mcp.domain.enterprise.models.service_run_record import (
     SourceTreeIdentity,
+)
+from packet_tracer_mcp.infrastructure.execution.endpoint_address_observer import (
+    PacketTracerEndpointAddressObserver,
 )
 from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
     ImportIsolationState,
@@ -321,6 +325,77 @@ def test_a_conflicting_endpoint_address_refuses_with_zero_effects(tmp_path: Path
 
     assert result.refusal_code is ServiceEntryRefusal.EXISTING_CONFIGURATION_CONFLICT
     assert "10.10.10.10" in result.blocked_reason
+    assert harness.mutating_calls == []
+
+
+def test_live_native_unassigned_readback_enters_static_configuration(tmp_path: Path):
+    """A10 accepts the first C31 attempt's fresh zero-address/zero-mask answer."""
+    # C31 attempt 5b09a9c3, raw-acceptance.jsonl answer sequence 3.
+    raw = (
+        '{"found":true,"port_found":true,"interface":"FastEthernet0",'
+        '"address_channel":true,"ipv4":"0.0.0.0","netmask":"0.0.0.0"}'
+    )
+    assert hashlib.sha256(raw.encode()).hexdigest() == (
+        "4b48bbba911730a056f395f9ad02e1477d16c113d09bfc9f49934eccd4529997"
+    )
+    harness = _harness(tmp_path)
+    harness.observer = PacketTracerEndpointAddressObserver(lambda *_: raw)
+
+    result = harness.run()
+    stored, _path, _digest = ServiceRunRecordStore(tmp_path).load_evidence(
+        DEPLOYMENT_ID, result.run_id
+    )
+
+    assert (
+        result.refusal_code is not ServiceEntryRefusal.EXISTING_CONFIGURATION_CONFLICT
+    )
+    assert stored.e5_effect_scope.conflicts == []
+    assert harness.configuration.applied
+
+
+def test_zero_address_with_nonzero_mask_remains_a_conflict(tmp_path: Path):
+    """Only the exact observed native pair can be considered unassigned."""
+    raw = (
+        '{"found":true,"port_found":true,"interface":"FastEthernet0",'
+        '"address_channel":true,"ipv4":"0.0.0.0",'
+        '"netmask":"255.255.255.0"}'
+    )
+    harness = _harness(tmp_path)
+    harness.observer = PacketTracerEndpointAddressObserver(lambda *_: raw)
+
+    result = harness.run()
+    stored = ServiceRunRecordStore(tmp_path).load(DEPLOYMENT_ID, result.run_id)
+
+    assert result.refusal_code is ServiceEntryRefusal.EXISTING_CONFIGURATION_CONFLICT
+    assert stored.e5_effect_scope.conflicts
+    assert harness.mutating_calls == []
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '{"found":true,"port_found":true,"address_channel":true,'
+        '"ipv4":"0.0.0.0","netmask":"0.0.0.0"}',
+        '{"found":true,"port_found":true,"interface":"FastEthernet1",'
+        '"address_channel":true,"ipv4":"0.0.0.0","netmask":"0.0.0.0"}',
+        '{"found":true,"port_found":true,"interface":"FastEthernet0",'
+        '"address_channel":true,"netmask":"0.0.0.0"}',
+        '{"found":true,"port_found":true,"interface":"FastEthernet0",'
+        '"address_channel":true,"ipv4":"0.0.0.0"}',
+        '{"found":true,"port_found":true,"interface":"FastEthernet0",'
+        '"address_channel":true,"ipv4":"","netmask":"255.255.255.0"}',
+    ],
+)
+def test_incomplete_native_address_answer_refuses_before_e5(tmp_path: Path, raw: str):
+    """Missing or incoherent getter fields cannot license a static setter."""
+    harness = _harness(tmp_path)
+    harness.observer = PacketTracerEndpointAddressObserver(lambda *_: raw)
+
+    result = harness.run()
+    stored = ServiceRunRecordStore(tmp_path).load(DEPLOYMENT_ID, result.run_id)
+
+    assert result.refusal_code is ServiceEntryRefusal.DRIFT_UNREADABLE
+    assert stored.refusal_code is ServiceEntryRefusal.DRIFT_UNREADABLE
     assert harness.mutating_calls == []
 
 

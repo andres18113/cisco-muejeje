@@ -10,22 +10,27 @@ from ...domain.enterprise.models.forwarding import ForwardingAddressObservation
 
 def endpoint_address_read_js(device_name: str, interface: str) -> str:
     """Build the exact named-interface getter used by E5 and forwarding."""
-
     name = json.dumps(device_name)
     wanted = json.dumps(interface)
-    return "".join((
-        "try{var d=ipc.network().getDevice(", name, ");",
-        "var want=", wanted, ";var p=null;",
-        "if(d){for(var i=0;i<d.getPortCount();i++){var c=d.getPortAt(i);",
-        "if(c&&typeof c.getName==='function'&&String(c.getName())===want){p=c;break;}}}",
-        "var able=!!p&&typeof p.getIpAddress==='function'",
-        "&&typeof p.getSubnetMask==='function';",
-        "var ip=able?String(p.getIpAddress()):'';",
-        "var mask=able?String(p.getSubnetMask()):'';",
-        "reportResult(JSON.stringify({found:!!d,port_found:!!p,interface:want,",
-        "address_channel:able,ipv4:ip,netmask:mask}));}",
-        "catch(e){reportResult('ERROR:'+e);}",
-    ))
+    return "".join(
+        (
+            "try{var d=ipc.network().getDevice(",
+            name,
+            ");",
+            "var want=",
+            wanted,
+            ";var p=null;",
+            "if(d){for(var i=0;i<d.getPortCount();i++){var c=d.getPortAt(i);",
+            "if(c&&typeof c.getName==='function'&&String(c.getName())===want){p=c;break;}}}",
+            "var able=!!p&&typeof p.getIpAddress==='function'",
+            "&&typeof p.getSubnetMask==='function';",
+            "var ip=able?String(p.getIpAddress()):'';",
+            "var mask=able?String(p.getSubnetMask()):'';",
+            "reportResult(JSON.stringify({found:!!d,port_found:!!p,interface:want,",
+            "address_channel:able,ipv4:ip,netmask:mask}));}",
+            "catch(e){reportResult('ERROR:'+e);}",
+        )
+    )
 
 
 class PacketTracerEndpointAddressObserver:
@@ -37,6 +42,7 @@ class PacketTracerEndpointAddressObserver:
         *,
         timeout_seconds: float = 3.0,
     ) -> None:
+        """Bind the fixed getter transport and per-request wait bound."""
         self._send_and_wait = send_and_wait
         self._timeout = timeout_seconds
 
@@ -45,6 +51,7 @@ class PacketTracerEndpointAddressObserver:
         runtime_device_name: str,
         interface: str,
     ) -> ForwardingAddressObservation:
+        """Read the named interface and reject incomplete answer fields."""
         try:
             raw = self._send_and_wait(
                 endpoint_address_read_js(runtime_device_name, interface),
@@ -78,14 +85,24 @@ class PacketTracerEndpointAddressObserver:
                 interface,
                 "non_object_json",
             )
+        if value.get("interface") != interface:
+            return self._unobservable(
+                runtime_device_name, interface, "interface_mismatch"
+            )
+        if not isinstance(value.get("ipv4"), str) or not isinstance(
+            value.get("netmask"), str
+        ):
+            return self._unobservable(
+                runtime_device_name, interface, "address_fields_missing"
+            )
         return ForwardingAddressObservation(
             runtime_device_name=runtime_device_name,
-            interface=str(value.get("interface") or interface),
+            interface=interface,
             device_found=value.get("found") is True,
             port_found=value.get("port_found") is True,
             address_channel=value.get("address_channel") is True,
-            ipv4=str(value.get("ipv4") or ""),
-            netmask=str(value.get("netmask") or ""),
+            ipv4=value["ipv4"],
+            netmask=value["netmask"],
             fresh_evidence=True,
         )
 

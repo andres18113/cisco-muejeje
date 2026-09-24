@@ -848,7 +848,7 @@ def _drift_conflicts(
 ) -> tuple[list[str], list[str], set[str]]:
     """Pre-read every in-scope endpoint and name conflicts and blind spots.
 
-    An endpoint that already carries a DIFFERENT non-empty address holds
+    An endpoint that already carries a DIFFERENT assigned address holds
     somebody else's configuration, and applying over it is the one thing this
     product must never do silently. An endpoint that could not be READ is a
     separate answer: it is unknown, not empty, and it refuses too. Treating an
@@ -880,11 +880,24 @@ def _drift_conflicts(
             )
             continue
         current = (observation.ipv4 or "").strip()
+        mask = (observation.netmask or "").strip()
+        if observation.interface != action.interface or bool(current) != bool(mask):
+            unreadable.append(f"{action.id}:incoherent_address_pair")
+            continue
+        native_unassigned = (
+            isinstance(action, SetEndpointStaticAddress)
+            and current == "0.0.0.0"
+            and mask == "0.0.0.0"
+        )
         if isinstance(action, SetEndpointDhcp) and current:
             conflicts.append(f"{action.id}:{current}:dhcp_mode_requested")
-        elif current and current != action.ipv4:
+        elif current and not native_unassigned and current != action.ipv4:
             conflicts.append(f"{action.id}:{current}!={action.ipv4}")
-        elif isinstance(action, SetEndpointStaticAddress) and current == action.ipv4:
+        elif (
+            isinstance(action, SetEndpointStaticAddress)
+            and not native_unassigned
+            and current == action.ipv4
+        ):
             confirmed.add(action.id)
     return conflicts, unreadable, confirmed
 

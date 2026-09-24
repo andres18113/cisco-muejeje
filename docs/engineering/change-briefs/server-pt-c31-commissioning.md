@@ -262,3 +262,55 @@ The read-only review found that the fixed replacement ID could otherwise enter
 as an ordinary first qualification when the original archive was absent. The
 CLI must check that ID unconditionally before source/receiver preflight; its
 missing-archive CLI regression is part of this recovery gate.
+
+## First complete attempt and causal correction, version 9
+
+The first complete campus attempt, `5b09a9c35fd572f00945bdb18040d2fb`,
+completed preliminary qualification (25 calls), VERIFIED E4 and structurally
+ready L2 setup (260 calls). The unchanged product acceptance stopped at A10
+after 33 calls with `existing_configuration_conflict` and no client request.
+Its original answer journal contains 31 fresh, attributable endpoint getter
+answers (Server-PT and 30 PC-PT interfaces) with IPv4 `0.0.0.0` and mask
+`0.0.0.0`. The product record classified all 30 static PC actions as conflicts
+with their planned addresses even though E5 endpoint configuration had not
+begun. `configuration_result` and `service_result` are absent and
+`e5_effect_uncertain` is false. The failed envelope, raw answers, service
+record and publication fact remain immutable. Owned cleanup removed 35 devices
+in 73 calls; two fresh observations match the saved empty baseline. The
+campaign process's graceful close request and later observed exit are retained
+separately, with the retirement record classified `exited`.
+
+This is an implementation defect in A10 endpoint drift classification, not a
+network HTTP result. Change only the `SetEndpointStaticAddress` branch: a fresh,
+attributable readback of the exact `0.0.0.0` address together with the exact
+`0.0.0.0` mask means unassigned and may enter the already authorized E5 setter.
+Keep the original answer unchanged. An unreadable or incomplete getter remains
+unknown; a nonzero mask with zero address and any different assigned address
+remain conflicts. Do not alter DHCP, the accepted product evaluator, readiness
+gates, budgets or the one-effect rule. A regression must reproduce the first
+attempt's original answer through the real service entry and store/result
+reader, plus changed-address and malformed/unknown controls. The corrected
+source requires focused, affected and full verification, a clean exact-SHA
+delivery gate and exact-SHA CI before a second fresh disposable attempt. The
+second attempt remains the last one authorized by the charter.
+
+The read-only review found a blocking admission gap adjacent to this fix:
+`PacketTracerEndpointAddressObserver` treated JSON with missing interface or
+address fields as a fresh answer, and A10 could treat missing IPv4 as empty.
+Before the second contact, require the explicitly requested interface and
+explicit string IPv4/mask fields at the parser, then require a coherent
+IP/mask pair at A10. An incomplete pair is unreadable, never an unassigned
+native default. Real-observer product-path negative tests must prove zero
+mutation for missing fields, wrong interface and empty-IP/nonempty-mask,
+while the exact original 0/0 answer still admits the static setter.
+The existing E5 test double omitted the interface that the production getter
+always emits. Three fixture responses now include it without changing their
+IP/mask or gateway/DNS expectations. Touching that legacy test file exposed
+42 pre-existing Ruff findings and formatting debt; the behavior-preserving
+cleanup is isolated in commit `dbcbe00` before the three fixture edits.
+The repository's legacy-test growth ratchet then failed because that formatter
+raised `test_configuration_runtime.py` to 2266 lines, above its 2069-line
+ceiling. Extract the contiguous Voice STP test group to a focal test module,
+reusing its existing helpers and preserving assertions and runtime fixtures.
+Keep the ratchet unchanged and run both files plus the full suite after the
+move. This is test organization only; it does not authorize Voice LIVE work.
