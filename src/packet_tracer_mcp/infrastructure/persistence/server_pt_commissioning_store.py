@@ -65,6 +65,16 @@ def _write_once(path: Path, payload: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _write_once_or_same(path: Path, payload: bytes) -> None:
+    """Publish bytes once; an existing file must already hold exactly them."""
+    try:
+        _write_once(path, payload)
+    except ValueError:
+        if path.read_bytes() != payload:
+            raise
+        # A retried import finds its own identical bytes: nothing to do.
+
+
 class ServerPtCommissioningStore:
     """Persist one full exported bundle under one explicitly governed root."""
 
@@ -500,7 +510,7 @@ class ServerPtCommissioningStore:
         ):
             raise ValueError("authority document name or bytes are invalid")
         path = resolve_within(self._campaign_dir(), "authority", name)
-        _write_once(path, raw)
+        _write_once_or_same(path, raw)
         return path
 
     def save_exit_import_artifact(
@@ -517,7 +527,7 @@ class ServerPtCommissioningStore:
         path = resolve_within(
             self._attempt_dir(attempt_id), "exit-import-" + role + suffix
         )
-        _write_once(path, raw)
+        _write_once_or_same(path, raw)
         return path
 
     def save_exit_import(self, attempt_id: str, document: Mapping[str, object]) -> Path:
@@ -527,6 +537,45 @@ class ServerPtCommissioningStore:
     def load_exit_import(self, attempt_id: str) -> dict[str, object]:
         """Reload the byte-bound historical exit import."""
         return self._load_mapping(attempt_id, "exit-import")
+
+    def seal_exit_import(self, attempt_id: str) -> Path:
+        """Write the digest of an import record whose writer stopped before it.
+
+        The digest is derived from the record's own bytes; it adds no claim.
+        An existing digest must already be that one.
+        """
+        directory = self._attempt_dir(attempt_id)
+        record = resolve_within(directory, "exit-import.json")
+        digest = resolve_within(directory, "exit-import.sha256")
+        payload = (hashlib.sha256(record.read_bytes()).hexdigest() + "\n").encode()
+        _write_once_or_same(digest, payload)
+        return digest
+
+    def archive_residue(self) -> tuple[str, ...] | None:
+        """Name files the index does not list, if everything it lists is intact.
+
+        `None` means the index is unreadable or an indexed file is missing or
+        changed: no residue can then be told apart from damage.
+        """
+        try:
+            entries = self._indexed_entries()
+            indexed = {item["path"]: item for item in entries}
+            actual = self._archive_paths()
+            if len(indexed) != len(entries) or set(indexed) - set(actual):
+                return None
+            for name, item in indexed.items():
+                data = actual[name].read_bytes()
+                if item["sha256"] != hashlib.sha256(data).hexdigest() or item[
+                    "bytes"
+                ] != len(data):
+                    return None
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        return tuple(sorted(set(actual) - set(indexed)))
+
+    def relative_path(self, path: Path) -> str:
+        """Return a contained archive path as the index names it."""
+        return Path(path).resolve().relative_to(self.root).as_posix()
 
     def index_bytes(self) -> bytes:
         """Return the current campaign index exactly as stored."""
@@ -629,10 +678,19 @@ class ServerPtCommissioningStore:
         )
 
     def require_immutable_phase(
-        self, attempt_id: str, phase: str, expected_outcome: str
+        self,
+        attempt_id: str,
+        phase: str,
+        expected_outcome: str,
+        *,
+        tolerate: frozenset[str] = frozenset(),
     ) -> dict[str, object]:
-        """Require historical phase evidence even after current status advanced."""
-        if self.verify_index():
+        """Require historical phase evidence even after current status advanced.
+
+        `tolerate` names unindexed files a caller has already identified as
+        its own residue; everything indexed must still verify.
+        """
+        if self.verify_index(tolerate=tolerate):
             raise ValueError("archived phase is not ready: index invalid")
         status = (
             self.load_acceptance_status(attempt_id)
@@ -835,12 +893,22 @@ class ServerPtCommissioningStore:
         self.refresh_index()
         return self.verify_index()
 
-    def verify_index(self) -> tuple[str, ...]:
-        """Rehash source bytes and refuse omissions, additions or changes."""
+    def verify_index(
+        self, *, tolerate: frozenset[str] = frozenset()
+    ) -> tuple[str, ...]:
+        """Rehash source bytes and refuse omissions, additions or changes.
+
+        Unindexed paths named in `tolerate` are left out of the comparison;
+        by default nothing is tolerated.
+        """
         try:
             entries = self._indexed_entries()
             indexed = {item["path"]: item for item in entries}
-            actual = self._archive_paths()
+            actual = {
+                name: path
+                for name, path in self._archive_paths().items()
+                if name in indexed or name not in tolerate
+            }
             if len(indexed) != len(entries) or set(indexed) != set(actual):
                 return ("archive_inventory_changed",)
             for name, path in actual.items():

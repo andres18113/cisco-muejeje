@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
+from datetime import UTC, datetime, timedelta, timezone
 
 from ...domain.enterprise.models.service_qualification import (
     DiagnosticLifecycleObservation,
@@ -108,13 +110,50 @@ def observed_process_findings(
 EXTENSION_LOG_WINDOW_TITLE = "Logs - MCP BUILDER"
 
 
+_INCARNATION = re.compile(
+    r"(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,7}))?"
+    r"(Z|[+-]\d{2}:\d{2})\Z"
+)
+_TICKS_EPOCH = datetime(1, 1, 1, tzinfo=UTC)
+
+
+def incarnation_ticks(value: object) -> int | None:
+    """Convert an ISO creation time to UTC .NET ticks, exactly, or `None`.
+
+    Windows reports creation time in 100 ns units and the launch record keeps
+    all seven fractional digits, which `datetime` would truncate; the
+    fraction is therefore carried as an integer.
+    """
+    if not isinstance(value, str):
+        return None
+    match = _INCARNATION.fullmatch(value)
+    if match is None:
+        return None
+    year, month, day, hour, minute, second = (int(item) for item in match.groups()[:6])
+    fraction = int((match.group(7) or "").ljust(7, "0"))
+    offset = match.group(8)
+    if offset == "Z":
+        zone = UTC
+    else:
+        sign = -1 if offset[0] == "-" else 1
+        zone = timezone(
+            sign * timedelta(hours=int(offset[1:3]), minutes=int(offset[4:]))
+        )
+    try:
+        instant = datetime(year, month, day, hour, minute, second, tzinfo=zone)
+    except ValueError:
+        return None
+    elapsed = instant - _TICKS_EPOCH
+    return (elapsed.days * 86400 + elapsed.seconds) * 10_000_000 + fraction
+
+
 def title_names_file(title: str) -> bool:
     """Whether a window title names a Packet Tracer document or a path."""
     return any(marker in title.casefold() for marker in _DOCUMENT_MARKERS)
 
 
 def select_document_window(
-    pid: int, census: object
+    pid: int, census: object, *, start_ticks: int | None = None
 ) -> tuple[object | None, tuple[str, ...]]:
     """Select the one window a normal close may target, or name the doubt.
 
@@ -125,10 +164,15 @@ def select_document_window(
     other visible, unowned, enabled window whose title names no file may be
     selected. A visible owned window may be a modal prompt: it is reported,
     never filtered out, and withholds any close. The selection is auxiliary:
-    it never proves that no user document exists.
+    it never proves that no user document exists. With `start_ticks`, the
+    census must also have been taken of the process created at that instant.
     """
     if getattr(census, "error", ""):
         return None, ("window_census_unobservable",)
+    if start_ticks is not None and getattr(census, "process_start_ticks", None) != (
+        start_ticks
+    ):
+        return None, ("window_census_process_changed",)
     windows = tuple(getattr(census, "windows", ()) or ())
     if getattr(census, "process_id", None) != pid or any(
         getattr(window, "owner_pid", None) != pid for window in windows
@@ -161,14 +205,16 @@ def select_document_window(
     return candidates[0], ()
 
 
-def force_window_findings(pid: int, target: object, census: object) -> tuple[str, ...]:
+def force_window_findings(
+    pid: int, target: object, census: object, *, start_ticks: int | None = None
+) -> tuple[str, ...]:
     """Name what, in the census after a failed close, withholds a force.
 
     The force needs the same document window the close targeted, with the
     same identity digest, and nothing modal or ambiguous beside it. A document
     window that closed while the process stays alive is recorded, not forced.
     """
-    selected, found = select_document_window(pid, census)
+    selected, found = select_document_window(pid, census, start_ticks=start_ticks)
     if found:
         return tuple(
             "document_window_closed_process_alive"
@@ -225,9 +271,15 @@ def _document_target_proven(launch: Mapping[str, object], target: object) -> boo
 def _same_document_window(
     close: Mapping[str, object], forced: Mapping[str, object]
 ) -> bool:
-    """Whether the force rechecked the very window the close targeted."""
+    """Whether the force rechecked the very window the close targeted.
+
+    The termination must also have been bound, in the helper call that
+    issued it, to the census's process creation time and visible window set.
+    """
     target = close.get("close_target")
     again = forced.get("rechecked_document_window")
+    ticks = forced.get("bound_process_start_ticks")
+    window_set = forced.get("bound_window_set_digest")
     return (
         close.get("method") == "WM_CLOSE"
         and isinstance(target, Mapping)
@@ -236,6 +288,12 @@ def _same_document_window(
         and again.get("identity_digest") == target.get("identity_digest")
         and forced.get("window_census_complete") is True
         and forced.get("modal_windows_visible") is False
+        and not isinstance(ticks, bool)
+        and isinstance(ticks, int)
+        and ticks > 0
+        and ticks == incarnation_ticks(forced.get("rechecked_process_incarnation"))
+        and isinstance(window_set, str)
+        and len(window_set) == _WINDOW_DIGEST_LENGTH
     )
 
 
@@ -272,7 +330,7 @@ def exit_evidence_findings(
             found.append("forced_termination_not_permitted")
         elif (
             not isinstance(forced, Mapping)
-            or forced.get("method") != "Stop-Process"
+            or forced.get("method") != "Process.Kill"
             or forced.get("pid") != launch.get("pid")
             or forced.get("rechecked_process_path") != launch.get("process_path")
             or forced.get("rechecked_process_incarnation")

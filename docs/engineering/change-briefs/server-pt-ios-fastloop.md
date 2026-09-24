@@ -430,3 +430,45 @@ acceptance: the import runs once on the real archive; no LIVE retirement is
 repeated and no smoke is run. Final stabilization runs the full suite, the
 delivery gate, MkDocs, the namespace inventory and whitespace checks once on
 frozen code.
+
+## Review delta, version 7
+
+One focused read-only adversarial review (Codex) of `4ec5d33` against
+`5be8920` returned needs-attention with four findings. Each was confirmed
+against the code and first reproduced as a failing regression (13 tests
+RED at `4ec5d33`), then fixed inside the approved contract.
+
+1. **Stale census at the effect (high).** The close helper rechecked only
+   its target window, so a second window or a modal that appeared after the
+   census did not stop the close, and the force was a PID-only
+   `Stop-Process`. The census now also returns the process's creation time
+   in UTC ticks and a digest of its visible window set (handle, owner
+   window, enablement and identity digest, sorted, so focus and order do not
+   change it). The close and a new bound termination recheck both in the
+   same helper call; the termination kills through the very process object
+   whose creation time it checked. `--retire` also requires the census's
+   ticks to equal the launch's creation time, parsed exactly to seven
+   fractional digits. The PID-only termination and `CloseMainWindow`
+   helpers are removed. A force record names its bound ticks and window set,
+   and one whose kill was not confirmed is recorded as an attempt.
+2. **Request not bound to the process (high).** `close-request.txt` names
+   neither PID nor method; the capture supplied them. The import now requires
+   the retained request command to name the owned PID, its creation time,
+   its image and `CloseMainWindow`, and its answer to report `requested=True`
+   at the capture's request time. A repeated or contradicting field in the
+   request output is refused.
+3. **Interrupted import (high).** A stop between writes left unindexed files
+   that blocked every later phase and could not be retried. Every import
+   write now accepts its own identical bytes, and only this import's own
+   files (with the snapshot of exactly the current index) are tolerated as
+   residue. A retry finishes the writes; a record written before the stop is
+   indexed exactly as written, after its artifacts, addendum and preserved
+   index are shown unchanged, with only its derived digest restored if
+   missing. Any other unindexed file still refuses.
+4. **Unsupported transcript bounds (medium).** A bound only had to cite a
+   line. Each transcript bound must now equal its cited answer's own
+   timestamp; presence is the request command's answer reporting
+   `exited=False`, and absence is the answer of a command that checked the
+   owned PID and reported `process <pid> exited`.
+
+The real originals of episode 1 pass the stricter rules unchanged.

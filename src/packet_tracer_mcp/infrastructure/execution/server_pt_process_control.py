@@ -67,12 +67,17 @@ class OwnedWindowCensus:
 
     `complete` is true only when the enumeration finished below the limit and
     every row was attributed to the PID. An `error` means nothing was read.
+    `process_start_ticks` is the process's creation time in UTC .NET ticks,
+    and `visible_set_digest` names its visible windows; a later close or
+    termination is sent only while both are still what this census saw.
     """
 
     process_id: int
     windows: tuple[OwnedWindow, ...] = ()
     complete: bool = False
     error: str = ""
+    process_start_ticks: int = 0
+    visible_set_digest: str = ""
 
 
 @dataclass(frozen=True)
@@ -81,6 +86,19 @@ class WindowCloseResult:
 
     process_id: int
     handle: int
+    sent: bool = False
+    refusal: str = ""
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class TerminationResult:
+    """Whether one revalidated termination was issued, and why not otherwise.
+
+    An `error` leaves the outcome unknown: the helper may have acted.
+    """
+
+    process_id: int
     sent: bool = False
     refusal: str = ""
     error: str = ""
@@ -101,6 +119,35 @@ def _handle(value: object) -> int:
 def window_identity_digest(class_name: str, title: str) -> str:
     """Return the digest the helper computes for one window's class and title."""
     return hashlib.sha256(f"{class_name}\n{title}".encode()).hexdigest()
+
+
+def visible_set_digest(windows: tuple[OwnedWindow, ...]) -> str:
+    """Return the digest the helper computes over the visible windows.
+
+    Each visible window contributes handle, owner window, enablement and
+    identity digest; the rows are sorted, so focus and enumeration order do
+    not change it, while any window appearing, closing, gaining an owner,
+    being disabled or retitled does.
+    """
+    rows = sorted(
+        f"{window.handle}|{window.owner_handle}|{int(window.enabled)}|"
+        f"{window.identity_digest}"
+        for window in windows
+        if window.visible
+    )
+    return hashlib.sha256("\n".join(rows).encode()).hexdigest()
+
+
+def _ticks(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError("process start ticks must be a positive int")
+    return value
+
+
+def _hex_digest(value: object) -> str:
+    if not isinstance(value, str) or _DIGEST.fullmatch(value) is None:
+        raise ValueError("digest must be lowercase SHA-256 hex")
+    return value
 
 
 #: One user32 helper, compiled per call. Its source is constant: the only
@@ -146,9 +193,49 @@ public static class PtMcpOwnedWindows {
     }
     static string ClassOf(IntPtr h) { var s = new StringBuilder(256); GetClassName(h, s, 256); return s.ToString(); }
     static string TitleOf(IntPtr h) { var s = new StringBuilder(512); GetWindowText(h, s, 512); return s.ToString(); }
+    static string Hex(string text) {
+        using (var sha = SHA256.Create()) {
+            var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(text));
+            var b = new StringBuilder();
+            foreach (var x in bytes) { b.Append(x.ToString("x2")); }
+            return b.ToString();
+        }
+    }
+    static long StartTicks(uint target) {
+        try {
+            using (var p = System.Diagnostics.Process.GetProcessById((int)target)) {
+                return p.StartTime.ToUniversalTime().Ticks;
+            }
+        } catch (Exception) { return -1; }
+    }
+    // Visible windows of the PID as sorted rows; null if not enumerable.
+    static List<string> VisibleRows(uint target, int limit) {
+        var rows = new List<string>();
+        int seen = 0;
+        bool over = false;
+        bool finished = EnumWindows(delegate (IntPtr h, IntPtr l) {
+            uint owner;
+            GetWindowThreadProcessId(h, out owner);
+            if (owner != target) { return true; }
+            if (++seen > limit) { over = true; return false; }
+            if (IsWindowVisible(h)) {
+                rows.Add(h.ToInt64() + "|" + GetWindow(h, GW_OWNER).ToInt64() + "|"
+                    + (IsWindowEnabled(h) ? "1" : "0") + "|" + Digest(ClassOf(h), TitleOf(h)));
+            }
+            return true;
+        }, IntPtr.Zero);
+        if (!finished || over) { return null; }
+        rows.Sort(StringComparer.Ordinal);
+        return rows;
+    }
+    static string SetDigest(uint target, int limit) {
+        var rows = VisibleRows(target, limit);
+        return rows == null ? "" : Hex(string.Join("\n", rows));
+    }
     public static string Census(uint target, int limit) {
         var rows = new List<string>();
         bool over = false;
+        long ticks = StartTicks(target);
         bool finished = EnumWindows(delegate (IntPtr h, IntPtr l) {
             uint owner;
             GetWindowThreadProcessId(h, out owner);
@@ -165,10 +252,14 @@ public static class PtMcpOwnedWindows {
             return true;
         }, IntPtr.Zero);
         return "{\"complete\":" + (finished && !over ? "true" : "false")
+            + ",\"process_start_ticks\":" + ticks
+            + ",\"visible_set_digest\":\"" + SetDigest(target, limit) + "\""
             + ",\"windows\":[" + string.Join(",", rows) + "]}";
     }
     static string Refused(string reason) { return "{\"sent\":false,\"refusal\":\"" + reason + "\"}"; }
-    public static string Close(uint target, long handle, string expected) {
+    public static string Close(uint target, long handle, string expected, string set, long ticks, int limit) {
+        if (StartTicks(target) != ticks) { return Refused("process_changed"); }
+        if (SetDigest(target, limit) != set) { return Refused("window_set_changed"); }
         var h = new IntPtr(handle);
         if (!IsWindow(h)) { return Refused("window_absent"); }
         uint owner;
@@ -180,6 +271,21 @@ public static class PtMcpOwnedWindows {
         if (Digest(ClassOf(h), TitleOf(h)) != expected) { return Refused("window_identity_changed"); }
         if (!PostMessage(h, WM_CLOSE, IntPtr.Zero, IntPtr.Zero)) { return Refused("close_not_posted"); }
         return "{\"sent\":true,\"refusal\":\"\"}";
+    }
+    // Kill through the very process object whose creation time was checked.
+    public static string Terminate(uint target, string set, long ticks, int limit) {
+        System.Diagnostics.Process p;
+        try { p = System.Diagnostics.Process.GetProcessById((int)target); }
+        catch (Exception) { return Refused("process_absent"); }
+        using (p) {
+            long started;
+            try { started = p.StartTime.ToUniversalTime().Ticks; }
+            catch (Exception) { return Refused("process_unreadable"); }
+            if (started != ticks) { return Refused("process_changed"); }
+            if (SetDigest(target, limit) != set) { return Refused("window_set_changed"); }
+            try { p.Kill(); } catch (Exception) { return Refused("kill_failed"); }
+            return "{\"sent\":true,\"refusal\":\"\"}";
+        }
     }
 }
 '@
@@ -230,6 +336,9 @@ def parse_window_census(pid: int, raw: str) -> OwnedWindowCensus:
             not isinstance(value, dict)
             or not isinstance(value.get("complete"), bool)
             or not isinstance(value.get("windows"), list)
+            or isinstance(value.get("process_start_ticks"), bool)
+            or not isinstance(value.get("process_start_ticks"), int)
+            or not isinstance(value.get("visible_set_digest"), str)
         ):
             raise ValueError("window census is malformed")
         windows = tuple(_window_row(pid, item) for item in value["windows"])
@@ -241,23 +350,51 @@ def parse_window_census(pid: int, raw: str) -> OwnedWindowCensus:
         {item.handle for item in windows}
     ) != len(windows):
         return OwnedWindowCensus(pid, error="window_census_malformed")
-    return OwnedWindowCensus(pid, windows=windows, complete=value["complete"])
+    if value["process_start_ticks"] <= 0:
+        return OwnedWindowCensus(pid, error="window_census_process_unreadable")
+    complete = value["complete"]
+    if complete and value["visible_set_digest"] != visible_set_digest(windows):
+        # The set the helper saw is not the set these rows describe.
+        return OwnedWindowCensus(pid, error="window_census_malformed")
+    return OwnedWindowCensus(
+        pid,
+        windows=windows,
+        complete=complete,
+        process_start_ticks=value["process_start_ticks"],
+        visible_set_digest=value["visible_set_digest"] if complete else "",
+    )
 
 
-def parse_window_close(pid: int, handle: int, raw: str) -> WindowCloseResult:
-    """Turn the close helper's output into a result; doubt means not sent."""
+def _effect_answer(raw: str) -> tuple[bool, str] | None:
+    """Return (sent, refusal) from an effect helper, or `None` if doubtful."""
     try:
         value = json.loads(raw)
     except ValueError:
-        return WindowCloseResult(pid, handle, error="window_close_malformed")
+        return None
     if (
         not isinstance(value, dict)
         or not isinstance(value.get("sent"), bool)
         or not isinstance(value.get("refusal"), str)
         or value["sent"] == bool(value["refusal"])
     ):
+        return None
+    return value["sent"], value["refusal"]
+
+
+def parse_window_close(pid: int, handle: int, raw: str) -> WindowCloseResult:
+    """Turn the close helper's output into a result; doubt is an error."""
+    answer = _effect_answer(raw)
+    if answer is None:
         return WindowCloseResult(pid, handle, error="window_close_malformed")
-    return WindowCloseResult(pid, handle, sent=value["sent"], refusal=value["refusal"])
+    return WindowCloseResult(pid, handle, sent=answer[0], refusal=answer[1])
+
+
+def parse_termination(pid: int, raw: str) -> TerminationResult:
+    """Turn the termination helper's output into a result; doubt is an error."""
+    answer = _effect_answer(raw)
+    if answer is None:
+        return TerminationResult(pid, error="termination_malformed")
+    return TerminationResult(pid, sent=answer[0], refusal=answer[1])
 
 
 class PowerShellOwnedProcessControl:
@@ -316,26 +453,61 @@ class PowerShellOwnedProcessControl:
             )
         return parse_window_census(pid, raw)
 
-    def close_window(self, pid: int, handle: int, digest: str) -> WindowCloseResult:
-        """Post `WM_CLOSE` to one handle only if it is still that window.
+    def close_window(
+        self,
+        pid: int,
+        handle: int,
+        digest: str,
+        *,
+        set_digest: str,
+        start_ticks: int,
+    ) -> WindowCloseResult:
+        """Post `WM_CLOSE` to one handle only if nothing changed since the census.
 
-        In the same helper call the handle must still exist, belong to the
-        PID, be a visible, enabled, unowned top-level window, and carry the
-        identity digest selected before. Nothing else is ever closed.
+        In the same helper call the process must still have the census's
+        creation time, its visible windows must still be the census's set,
+        and the handle must still exist, belong to the PID, be a visible,
+        enabled, unowned top-level window and carry the selected identity
+        digest. Nothing else is ever closed.
         """
         pid = _pid(pid)
         handle = _handle(handle)
-        if not isinstance(digest, str) or _DIGEST.fullmatch(digest) is None:
-            raise ValueError("window identity digest must be lowercase SHA-256 hex")
+        digest = _hex_digest(digest)
+        set_digest = _hex_digest(set_digest)
+        start_ticks = _ticks(start_ticks)
         try:
             raw = self._run_window_helper(
-                f"[PtMcpOwnedWindows]::Close({pid}, {handle}, '{digest}')"
+                f"[PtMcpOwnedWindows]::Close({pid}, {handle}, '{digest}', "
+                f"'{set_digest}', {start_ticks}, {WINDOW_CENSUS_LIMIT})"
             )
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
             return WindowCloseResult(
                 pid, handle, error=f"window_close_unobservable:{type(exc).__name__}"
             )
         return parse_window_close(pid, handle, raw)
+
+    def terminate(
+        self, pid: int, *, set_digest: str, start_ticks: int
+    ) -> TerminationResult:
+        """Kill this PID only if it is still the census's process and window set.
+
+        The helper opens the process, checks its creation time and the
+        visible window set, and kills through that same process object, so
+        a reused PID or a window that appeared since the census stops it.
+        """
+        pid = _pid(pid)
+        set_digest = _hex_digest(set_digest)
+        start_ticks = _ticks(start_ticks)
+        try:
+            raw = self._run_window_helper(
+                f"[PtMcpOwnedWindows]::Terminate({pid}, '{set_digest}', "
+                f"{start_ticks}, {WINDOW_CENSUS_LIMIT})"
+            )
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            return TerminationResult(
+                pid, error=f"termination_unobservable:{type(exc).__name__}"
+            )
+        return parse_termination(pid, raw)
 
     def observe(self, pid: int) -> OwnedProcessObservation:
         """Read image, creation time, command line and title of one PID."""
@@ -370,15 +542,6 @@ class PowerShellOwnedProcessControl:
             command_line=value["command_line"],
             main_window_title=value["title"],
         )
-
-    def terminate(self, pid: int) -> bool:
-        """Terminate exactly this PID; the caller has rechecked its identity."""
-        pid = _pid(pid)
-        try:
-            self._run(f"Stop-Process -Id {pid} -Force -ErrorAction Stop; 'ok'")
-        except (OSError, subprocess.SubprocessError):
-            return False
-        return True
 
     def census(self) -> int | None:
         """Count every PacketTracer* process; `None` when unreadable."""

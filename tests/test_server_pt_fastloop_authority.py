@@ -46,6 +46,7 @@ from packet_tracer_mcp.application.use_cases.server_pt_phase_grant import (
 from packet_tracer_mcp.application.use_cases.server_pt_process_evidence import (
     exit_evidence_findings,
     exit_was_forced,
+    incarnation_ticks,
 )
 from packet_tracer_mcp.domain.enterprise.models.scalable_http_acceptance import (
     EXPERIMENTAL_ENVELOPE_LIMITATION,
@@ -588,7 +589,7 @@ def _targeted(**overrides) -> dict[str, object]:
 def _forced(**overrides) -> dict[str, object]:
     launch = _launch()
     value: dict[str, object] = {
-        "method": "Stop-Process",
+        "method": "Process.Kill",
         "pid": launch["pid"],
         "rechecked_process_path": launch["process_path"],
         "rechecked_process_incarnation": launch["process_incarnation"],
@@ -596,6 +597,8 @@ def _forced(**overrides) -> dict[str, object]:
         "rechecked_document_window": _document_window(),
         "window_census_complete": True,
         "modal_windows_visible": False,
+        "bound_process_start_ticks": incarnation_ticks(launch["process_incarnation"]),
+        "bound_window_set_digest": "e" * 64,
         "disposable_workspace_rechecked": True,
         "ownership_basis": "owned_cleanup_restored",
         "requested_at_utc": OPENED.isoformat(),
@@ -628,6 +631,11 @@ def test_graceful_exit_is_unchanged_and_forced_exit_is_its_own_record():
         {"forced_termination": _forced(pid=999)},
         {"forced_termination": _forced(disposable_workspace_rechecked=False)},
         {"forced_termination": _forced(method="taskkill /IM")},
+        {"forced_termination": _forced(method="Stop-Process")},
+        # The kill was not bound to the rechecked process and window set.
+        {"forced_termination": _forced(bound_process_start_ticks=None)},
+        {"forced_termination": _forced(bound_process_start_ticks=1)},
+        {"forced_termination": _forced(bound_window_set_digest="")},
         # The rechecked document window is absent, another window, or changed.
         {"forced_termination": _forced(rechecked_document_window=None)},
         {

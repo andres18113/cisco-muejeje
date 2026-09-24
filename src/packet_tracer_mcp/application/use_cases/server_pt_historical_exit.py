@@ -86,13 +86,25 @@ class _Excerpt:
     numbers: tuple[int, ...] = ()
     decoded: tuple[object, ...] = ()
 
-    def strings(self, line: object) -> list[str] | None:
-        """Every string in the cited line, or `None` if it is not included."""
+    def record(self, line: object) -> object | None:
+        """Return the decoded cited line, or `None` if it is not included."""
         if isinstance(line, bool) or not isinstance(line, int):
             return None
         if line not in self.numbers:
             return None
-        return _strings(self.decoded[self.numbers.index(line)])
+        return self.decoded[self.numbers.index(line)]
+
+    def strings(self, line: object) -> list[str] | None:
+        """Every string in the cited line, or `None` if it is not included."""
+        record = self.record(line)
+        return None if record is None else _strings(record)
+
+    def contains(self, line: object, *needles: str) -> bool:
+        """Whether the cited line exists and every needle occurs in one string."""
+        texts = self.strings(line)
+        return texts is not None and all(
+            any(needle in text for text in texts) for needle in needles
+        )
 
 
 def _instant(value: object) -> datetime | None:
@@ -161,6 +173,66 @@ def _capture_findings(
     return found
 
 
+def _request_output_findings(request: str, capture: Mapping[str, object]) -> list[str]:
+    """Require the request's own output to agree with the capture, once."""
+    pairs = _REQUEST_FIELD.findall(request)
+    keys = [key for key, _value in pairs]
+    fields = dict(pairs)
+
+    def rendered(value: object) -> str:
+        return str(value) if not isinstance(value, str) else value
+
+    if (
+        len(keys) != len(set(keys))
+        or fields.get("requested") != "True"
+        or fields.get("requested_at_utc") != capture.get("requested_at_utc")
+        or any(
+            key in capture and value != rendered(capture[key])
+            for key, value in fields.items()
+        )
+    ):
+        return ["close_request_output_disagrees"]
+    return []
+
+
+def _request_command_findings(
+    retained: object,
+    excerpt: _Excerpt,
+    launch: Mapping[str, object],
+    capture: Mapping[str, object],
+) -> list[str]:
+    """Require the retained request command and answer to bind the process.
+
+    The command must name the owned PID, its creation time and image, and
+    `CloseMainWindow`; its answer must report `requested=True` at the
+    capture's request time. The capture's transcribed identity rests on them.
+    """
+    line = retained.get("line") if isinstance(retained, Mapping) else None
+    answer = retained.get("answer_line") if isinstance(retained, Mapping) else None
+    pid = launch.get("pid")
+    command = excerpt.strings(line) or []
+    if (
+        isinstance(pid, bool)
+        or not isinstance(pid, int)
+        or isinstance(answer, bool)
+        or not isinstance(answer, int)
+        or not isinstance(line, int)
+        or not line < answer
+        or not any(re.search(rf"(?<!\d){pid}(?!\d)", text) for text in command)
+        or not excerpt.contains(
+            line,
+            "CloseMainWindow",
+            str(launch.get("process_incarnation")),
+            str(launch.get("process_path")),
+        )
+        or not excerpt.contains(
+            answer, "requested=True", str(capture.get("requested_at_utc"))
+        )
+    ):
+        return ["close_request_not_bound_to_the_owned_process"]
+    return []
+
+
 def _prelaunch_findings(
     authority: HistoricalExitImportAuthority,
     launch: Mapping[str, object],
@@ -196,6 +268,44 @@ def _provenance_findings(origins: object, capture: Mapping[str, object]) -> list
     return []
 
 
+def _transcript_bound_findings(
+    bounds: Mapping[str, object],
+    manifest: Mapping[str, object],
+    excerpt: _Excerpt,
+    pid: object,
+) -> list[str]:
+    """Require each transcript bound to be its cited answer's time and state.
+
+    Presence is the request command's answer reporting `exited=False`;
+    absence is the answer of a command that checked the owned PID and
+    reported `process <pid> exited`.
+    """
+    request = manifest.get("close_request_command")
+    absence = manifest.get("absence_command")
+    presence_bound = bounds["presence_last_reported_by_utc"]
+    absence_bound = bounds["absence_first_reported_by_utc"]
+    gone = f"process {pid} exited"
+    for bound in (presence_bound, absence_bound):
+        record = excerpt.record(bound.get("line"))
+        if not isinstance(record, Mapping) or record.get("timestamp") != bound.get(
+            "value"
+        ):
+            return ["time_bound_not_supported_by_its_line"]
+    if (
+        not isinstance(request, Mapping)
+        or presence_bound.get("line") != request.get("answer_line")
+        or not excerpt.contains(presence_bound.get("line"), "exited=False")
+        or not isinstance(absence, Mapping)
+        or absence_bound.get("line") != absence.get("answer_line")
+        or not isinstance(absence.get("line"), int)
+        or not absence["line"] < absence_bound["line"]
+        or not excerpt.contains(absence.get("line"), f"Get-Process -Id {pid}", gone)
+        or not excerpt.contains(absence_bound.get("line"), gone)
+    ):
+        return ["time_bound_not_supported_by_its_line"]
+    return []
+
+
 def _bound_findings(
     bounds: object,
     capture: Mapping[str, object],
@@ -203,8 +313,10 @@ def _bound_findings(
     artifacts: Mapping[str, bytes],
     first: Sequence[datetime | None],
     archive_at: datetime | None,
+    manifest: Mapping[str, object],
+    pid: object,
 ) -> list[str]:
-    """Check citations and the one strict order launch .. archive."""
+    """Check citations, what each cites, and one strict order to the archive."""
     names = [name for name, _clock in TIME_BOUNDS]
     if not isinstance(bounds, Mapping) or set(bounds) != set(names):
         return ["time_bounds_incomplete"]
@@ -227,6 +339,7 @@ def _bound_findings(
         instants.append(_instant(bound.get("value")))
     if found:
         return found
+    found += _transcript_bound_findings(bounds, manifest, excerpt, pid)
     if bounds["close_requested_at_utc"].get("value") != capture.get(
         "requested_at_utc"
     ) or bounds["zero_census_observed_at_utc"].get("value") != capture.get(
@@ -307,8 +420,11 @@ def historical_exit_import_findings(
     pass the existing exit rules against the launch; the request's own
     answer, the prelaunch census and the time bounds must agree with it and
     with the launch; the declared field origins must be complete and must not
-    rest the exit on an assertion; every citation must name an excerpt line;
-    and the retained command range must be whole and name no termination.
+    rest the exit on an assertion; the retained request command and its
+    answer must name the owned process, its identity and the method; every
+    transcript bound must be its cited answer's own time and show the state
+    it claims; and the retained command range must be whole and name no
+    termination.
     """
     found: list[str] = []
     if (
@@ -347,11 +463,7 @@ def historical_exit_import_findings(
         return (*found, "import_artifact_unreadable")
 
     found += _capture_findings(launch, capture)
-    fields = dict(_REQUEST_FIELD.findall(request))
-    if fields.get("requested") != "True" or fields.get(
-        "requested_at_utc"
-    ) != capture.get("requested_at_utc"):
-        found.append("close_request_output_disagrees")
+    found += _request_output_findings(request, capture)
     found += _prelaunch_findings(
         authority, launch, census, offered["prelaunch_census"]["path"]
     )
@@ -360,6 +472,9 @@ def historical_exit_import_findings(
         offered["transcript_excerpt"], artifacts["transcript_excerpt"]
     )
     found += excerpt_found
+    found += _request_command_findings(
+        manifest.get("close_request_command"), excerpt, launch, capture
+    )
     found += _bound_findings(
         manifest.get("time_bounds"),
         capture,
@@ -367,6 +482,8 @@ def historical_exit_import_findings(
         artifacts,
         (_instant(launch.get("launched_at_utc")), _instant(cleanup_recorded_at_utc)),
         _instant(archive_at_utc),
+        manifest,
+        launch.get("pid"),
     )
     found += _refusal_findings(authority, manifest.get("retire_refusal"), excerpt)
     found += _range_findings(manifest.get("retained_command_range"), excerpt)

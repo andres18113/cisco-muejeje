@@ -77,6 +77,7 @@ from ...application.use_cases.server_pt_process_evidence import (
     exit_evidence_findings,
     exit_was_forced,
     force_window_findings,
+    incarnation_ticks,
     launch_evidence_findings,
     launched_blank,
     observed_process_findings,
@@ -1098,6 +1099,10 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
         pid = launch["pid"]
         if isinstance(pid, bool) or not isinstance(pid, int):
             raise ValueError("launch PID is malformed")
+        # Every census, close and termination is bound to this creation time.
+        start_ticks = incarnation_ticks(launch.get("process_incarnation"))
+        if start_ticks is None:
+            raise ValueError("launch creation time is unreadable")
     except (OSError, ValueError, KeyError) as exc:
         _print(
             {
@@ -1129,7 +1134,7 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
             },
         )
     before = control.windows(pid)
-    target, refusal = select_document_window(pid, before)
+    target, refusal = select_document_window(pid, before, start_ticks=start_ticks)
     if not refusal:
         refusal = observed_process_findings(launch, control.observe(pid))
     if refusal or target is None:
@@ -1146,7 +1151,15 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
             },
         )
     requested_at = datetime.now(UTC).isoformat()
-    sent = control.close_window(pid, target.handle, target.identity_digest)
+    # The helper posts only while the process and its visible windows are
+    # still exactly what this census saw.
+    sent = control.close_window(
+        pid,
+        target.handle,
+        target.identity_digest,
+        set_digest=before.visible_set_digest,
+        start_ticks=before.process_start_ticks,
+    )
     close: dict[str, object] = {
         **identity,
         "method": "WM_CLOSE",
@@ -1184,10 +1197,12 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
             after = control.windows(pid) if not refusal else None
             if after is not None:
                 close["window_census_after"] = _census_record(after)
-                refusal = force_window_findings(pid, target, after)
+                refusal = force_window_findings(
+                    pid, target, after, start_ticks=start_ticks
+                )
             if not refusal:
                 forced = {
-                    "method": "Stop-Process",
+                    "method": "Process.Kill",
                     "pid": pid,
                     "rechecked_process_path": again.process_path,
                     "rechecked_process_incarnation": again.process_incarnation,
@@ -1204,12 +1219,29 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
                         window.visible and window.owner_handle
                         for window in after.windows
                     ),
+                    "bound_process_start_ticks": after.process_start_ticks,
+                    "bound_window_set_digest": after.visible_set_digest,
                     "disposable_workspace_rechecked": True,
                     "ownership_basis": basis,
                     "requested_at_utc": datetime.now(UTC).isoformat(),
                 }
-                forced["terminate_requested"] = control.terminate(pid)
-                exited = _await_absence(control, pid, RETIREMENT_EXIT_WAIT_SECONDS)
+                # The helper kills only the census's process, and only while
+                # its visible windows are still the census's set.
+                killed = control.terminate(
+                    pid,
+                    set_digest=after.visible_set_digest,
+                    start_ticks=after.process_start_ticks,
+                )
+                forced["termination"] = {
+                    "sent": killed.sent,
+                    "refusal": killed.refusal,
+                    "error": killed.error,
+                }
+                if killed.sent or killed.error:
+                    # An unanswered helper may have acted: observe, never retry.
+                    exited = _await_absence(control, pid, RETIREMENT_EXIT_WAIT_SECONDS)
+                else:
+                    refusal = (f"termination_not_sent:{killed.refusal}",)
     count = control.census()
     close.update(
         {
@@ -1220,6 +1252,9 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
     )
     if forced is not None:
         close["forced_termination"] = forced
+        if not forced["termination"]["sent"]:
+            # No confirmed kill: an observed exit is not a forced exit.
+            refusal = (*refusal, "termination_unconfirmed")
     findings = exit_evidence_findings(
         launch, close, process_count=count, allow_forced=True
     )
@@ -1331,6 +1366,111 @@ def _fresh_state(pid: int) -> dict[str, object]:
     }
 
 
+def _import_residue(
+    store: ServerPtCommissioningStore, attempt_id: str
+) -> frozenset[str]:
+    """Name this import's own unindexed files; anything else is refused.
+
+    An import stopped between its writes leaves files the index does not
+    list. Only the files this import writes, with the snapshot of exactly the
+    current index, may be tolerated; everything indexed must still verify.
+    """
+    residue = store.archive_residue()
+    if residue is None:
+        raise ValueError("campaign archive is unverified")
+    base = f"data/commissioning/{store.campaign_id}"
+    digest = hashlib.sha256(store.index_bytes()).hexdigest()
+    own = {
+        f"{base}/authority/addendum-02.md",
+        f"{base}/index-history/index-{digest}.json",
+        f"{base}/{attempt_id}/exit-import.json",
+        f"{base}/{attempt_id}/exit-import.sha256",
+        *(
+            f"{base}/{attempt_id}/exit-import-{role.replace('_', '-')}{suffix}"
+            for role, suffix in _IMPORT_SUFFIXES.items()
+        ),
+    }
+    if not set(residue) <= own:
+        raise ValueError("archive residue is not this import's")
+    return frozenset(residue)
+
+
+def _complete_import(
+    store: ServerPtCommissioningStore,
+    attempt_id: str,
+    addendum: bytes,
+    tolerate: frozenset[str],
+) -> int:
+    """Index an import record whose writer stopped before the index, as written.
+
+    The record is never rebuilt: its bytes, its artifacts, the addendum and
+    the preserved index it names must all still be what it states, and it
+    must name every tolerated file. Only its derived digest may be missing.
+    """
+    authority = _EXIT_IMPORT_AUTHORITY
+    record_path = store.record_path_for(attempt_id, "exit-import")
+    sidecar = record_path.with_name("exit-import.sha256")
+    try:
+        raw = record_path.read_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+        if sidecar.exists() and sidecar.read_text(encoding="ascii").strip() != digest:
+            raise ValueError("import record digest differs")
+        record = json.loads(raw)
+        prior = store.index_bytes()
+        predecessor = record.get("index_predecessor")
+        if (
+            record.get("kind") != "historical_exit_import"
+            or record.get("attempt_id") != attempt_id
+            or record.get("authority", {}).get("addendum_sha256")
+            != authority.addendum_sha256
+            or hashlib.sha256(addendum).hexdigest() != authority.addendum_sha256
+            or not isinstance(predecessor, dict)
+            or predecessor.get("sha256") != hashlib.sha256(prior).hexdigest()
+        ):
+            raise ValueError("unindexed import record does not extend this index")
+        named = {
+            store.relative_path(record_path),
+            store.relative_path(sidecar),
+            predecessor["path"],
+            record["authority"]["addendum_path"],
+        }
+        if (store.root / predecessor["path"]).read_bytes() != prior or (
+            store.root / record["authority"]["addendum_path"]
+        ).read_bytes() != addendum:
+            raise ValueError("import record names changed bytes")
+        for item in record["artifacts"]:
+            data = (store.root / item["file"]).read_bytes()
+            if (
+                hashlib.sha256(data).hexdigest() != item["sha256"]
+                or len(data) != item["bytes"]
+            ):
+                raise ValueError("import artifact bytes changed")
+            named.add(item["file"])
+        if not tolerate <= named:
+            raise ValueError("residue the import record does not name")
+        store.seal_exit_import(attempt_id)
+        store.refresh_index(predecessor=predecessor)
+        if store.verify_index():
+            raise ValueError("completed import archive is unverified")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        _print(
+            {"outcome": "refused", "reason": f"import_completion:{type(exc).__name__}"}
+        )
+        return 2
+    _print(
+        {
+            "phase": "exit-import",
+            "outcome": record.get("disposition"),
+            "attempt_id": attempt_id,
+            "completed_interrupted_import": True,
+            "retire_credited": False,
+            "index_predecessor_sha256": predecessor["sha256"],
+            "exit_import_sha256": digest,
+        }
+    )
+    return 0
+
+
 def _import_exit(
     root: Path,
     attempt_id: str,
@@ -1346,6 +1486,9 @@ def _import_exit(
     Every original is validated and the current state observed before the
     first write; the prior index is preserved and named by the new one. No
     `process-exit` record is written, and nothing is credited to `--retire`.
+    Every write accepts its own identical bytes, so a run stopped between
+    writes is finished by its retry; a record written before the stop is
+    indexed as written (`_complete_import`), never rebuilt.
     """
     authority = _EXIT_IMPORT_AUTHORITY
     store = ServerPtCommissioningStore(root, campaign.campaign_id)
@@ -1368,18 +1511,23 @@ def _import_exit(
             or ancestry.ancestor_tree != authority.episode_source_tree
         ):
             raise ValueError("recorder does not descend from the episode source")
-        if store.verify_index():
-            raise ValueError("campaign archive is unverified")
+        tolerate = _import_residue(store, attempt_id)
         launch = store.load_process_launch(attempt_id)
         if (
             launch.get("campaign_id") != campaign.campaign_id
             or launch.get("execution_purpose") != campaign.purpose.value
         ):
             raise ValueError("launch was not recorded by this campaign")
-        cleanup = store.require_immutable_phase(attempt_id, "cleanup", "restored")
-        for name in ("process-exit", "exit-import"):
-            if store.record_path_for(attempt_id, name).exists():
-                raise ValueError(f"{name} already exists")
+        cleanup = store.require_immutable_phase(
+            attempt_id, "cleanup", "restored", tolerate=tolerate
+        )
+        if store.record_path_for(attempt_id, "process-exit").exists():
+            raise ValueError("process-exit already exists")
+        record_path = store.record_path_for(attempt_id, "exit-import")
+        if record_path.exists():
+            if store.relative_path(record_path) not in tolerate:
+                raise ValueError("exit-import already exists")
+            return _complete_import(store, attempt_id, addendum, tolerate)
         result_name = f"episode-{authority.episode:04d}-{attempt_id}-cleanup-result"
         cleanup_result = store.ledger_records().get(result_name) or {}
         manifest = json.loads(_read_bounded(manifest_file, _IMPORT_MANIFEST_LIMIT))
@@ -1504,6 +1652,7 @@ def _import_exit(
             "attempt_id": attempt_id,
             "process_id": launch.get("pid"),
             "exit_method": claim["exit_method"],
+            "completed_interrupted_import": False,
             "retire_credited": False,
             "recorder_source_sha": source.head,
             "episode_source_sha": authority.episode_source_sha,
