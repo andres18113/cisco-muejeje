@@ -58,6 +58,12 @@ from ...application.use_cases.server_pt_campaign_ledger import (
     phase_record_name,
     unsettled_phases,
 )
+from ...application.use_cases.server_pt_historical_exit import (
+    FASTLOOP_EPISODE_1_EXIT_IMPORT,
+    excerpt_lines,
+    historical_exit_claim,
+    historical_exit_import_findings,
+)
 from ...application.use_cases.server_pt_phase_budget import (
     E5_IOS_QUERY_MAX_CALLS,
     E5_IOS_QUERY_MAX_SECONDS,
@@ -70,9 +76,11 @@ from ...application.use_cases.server_pt_phase_grant import (
 from ...application.use_cases.server_pt_process_evidence import (
     exit_evidence_findings,
     exit_was_forced,
+    force_window_findings,
     launch_evidence_findings,
     launched_blank,
     observed_process_findings,
+    select_document_window,
 )
 from ...application.use_cases.server_pt_second_attempt import second_attempt_findings
 from ...application.use_cases.setup_server_pt_commissioning import (
@@ -97,6 +105,7 @@ from ...infrastructure.execution.cp_scale_live_preflight import (
 from ...infrastructure.execution.enterprise_configuration_runtime import (
     PacketTracerEnterpriseConfigurationRuntime,
 )
+from ...infrastructure.execution.file_bridge import bridge_dir
 from ...infrastructure.execution.import_isolation_preflight import (
     governed_root_from_env,
 )
@@ -105,7 +114,10 @@ from ...infrastructure.execution.packet_tracer_physical_runtime import (
 )
 from ...infrastructure.execution.probe_runtime import PacketTracerBridgeProbeRuntime
 from ...infrastructure.execution.product_channel import FixedChannelProductTransport
-from ...infrastructure.execution.server_pt_campaign_authority import read_exact_ci
+from ...infrastructure.execution.server_pt_campaign_authority import (
+    read_exact_ci,
+    read_source_ancestry,
+)
 from ...infrastructure.execution.server_pt_phase_channel import GovernedPhaseChannel
 from ...infrastructure.execution.server_pt_process_control import (
     PowerShellOwnedProcessControl,
@@ -144,6 +156,35 @@ RETIREMENT_GRACE_SECONDS = 60.0
 RETIREMENT_EXIT_WAIT_SECONDS = 30.0
 _RETIREMENT_POLL_SECONDS = 1.0
 _retirement_sleep = time.sleep
+#: The one historical exit an operator addendum authorizes importing, and
+#: the read-only Git question that binds its episode to the recorder.
+_EXIT_IMPORT_AUTHORITY = FASTLOOP_EPISODE_1_EXIT_IMPORT
+_SOURCE_ANCESTRY = read_source_ancestry
+_MAILBOX_DIR = bridge_dir
+#: Byte budgets of the operator-written manifest, of one original artifact
+#: and of the transcript whose lines an excerpt must reproduce.
+_IMPORT_MANIFEST_LIMIT = 16 * 1024
+_IMPORT_ARTIFACT_LIMIT = 1024 * 1024
+_IMPORT_TRANSCRIPT_LIMIT = 64 * 1024 * 1024
+_IMPORT_SUFFIXES = {
+    "close_capture": ".json",
+    "close_request_output": ".txt",
+    "prelaunch_census": ".json",
+    "transcript_excerpt": ".jsonl",
+    "event_log_query": ".txt",
+}
+_IMPORT_LIMITATIONS = (
+    "The exit instant and cause were not observed; the owned PID's absence was.",
+    "A successful close request is not proof of exit; only the later "
+    "absence readings and the zero census are.",
+    "Transcript times are the lead session's clock, not the operating "
+    "system's, and bound when an answer arrived, not when it was read.",
+    "The retained command range shows what the lead ran; it cannot show "
+    "what any other actor did to the process.",
+    "The fresh census and mailbox inspection establish the state at archive time only.",
+    "Only the index that preceded this import is preserved; earlier indexes "
+    "of the episode were replaced in place and are not recoverable.",
+)
 
 
 def _charter_digest(campaign: ServerPtCampaign) -> str:
@@ -164,6 +205,7 @@ def _parser() -> argparse.ArgumentParser:
     phase.add_argument("--record-launch", action="store_true")
     phase.add_argument("--record-exit", action="store_true")
     phase.add_argument("--retire", action="store_true")
+    phase.add_argument("--import-exit", action="store_true")
     phase.add_argument("--open-episode", action="store_true")
     phase.add_argument("--close-episode", action="store_true")
     phase.add_argument("--ledger-status", action="store_true")
@@ -179,6 +221,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--close-evidence", default="")
     parser.add_argument("--episode-plan", default="")
     parser.add_argument("--episode-closing", default="")
+    parser.add_argument("--addendum", default="")
+    parser.add_argument("--import-manifest", default="")
     return parser
 
 
@@ -251,6 +295,23 @@ def main(
             return 2
         return _record_correction(
             root, args.attempt, args.first_attempt, args.correction_file
+        )
+    if args.import_exit:
+        if not campaign.experimental:
+            _print({"outcome": "refused", "reason": "import_exit_is_experimental_only"})
+            return 2
+        if args.ci_run:
+            _print({"outcome": "refused", "reason": "experimental_ci_claim_refused"})
+            return 2
+        if not (args.charter and args.addendum and args.import_manifest):
+            _print({"outcome": "refused", "reason": "import_exit_inputs_required"})
+            return 2
+        refusal = _charter_refusal(campaign, args.charter)
+        if refusal:
+            _print({"outcome": "refused", "reason": refusal})
+            return 2
+        return _import_exit(
+            root, args.attempt, campaign, args.addendum, args.import_manifest
         )
     if (
         args.qualify
@@ -749,7 +810,8 @@ def _record_launch(
             # The command line and title that later bound a retirement are
             # read from the operating system here, never taken from the
             # capture; a capture that disagrees with them is refused.
-            reading = _PROCESS_CONTROL().observe(preflight.process.process_id)
+            control = _PROCESS_CONTROL()
+            reading = control.observe(preflight.process.process_id)
             if (
                 reading.error
                 or not reading.present
@@ -762,6 +824,11 @@ def _record_launch(
             observed = {
                 "observed_command_line": reading.command_line,
                 "observed_main_window_title": reading.main_window_title,
+                # Auxiliary: the windows the process showed at launch. It
+                # authorizes nothing; retirement takes its own census.
+                "observed_window_census": _census_record(
+                    control.windows(preflight.process.process_id)
+                ),
             }
         document = {
             **launch,
@@ -953,15 +1020,65 @@ def _await_absence(control, pid: int, seconds: float) -> bool:
         _retirement_sleep(_RETIREMENT_POLL_SECONDS)
 
 
+def _window_record(window: object) -> dict[str, object]:
+    """One observed window as evidence; auxiliary, never an identity."""
+    return {
+        "handle": window.handle,
+        "owner_pid": window.owner_pid,
+        "class_name": window.class_name,
+        "title": window.title,
+        "visible": window.visible,
+        "enabled": window.enabled,
+        "owner_handle": window.owner_handle,
+        "identity_digest": window.identity_digest,
+    }
+
+
+def _census_record(census: object) -> dict[str, object]:
+    """One window census as evidence, including its completeness or error."""
+    return {
+        "process_id": census.process_id,
+        "complete": census.complete,
+        "error": census.error,
+        "windows": [_window_record(window) for window in census.windows],
+    }
+
+
+def _record_retirement_attempt(
+    store: ServerPtCommissioningStore,
+    attempt_id: str,
+    campaign: ServerPtCampaign,
+    attempt: dict[str, object],
+) -> int:
+    """Keep one retirement that ended without an admitted exit, and refuse."""
+    attempt = {
+        **attempt,
+        "campaign_id": campaign.campaign_id,
+        "execution_purpose": campaign.purpose.value,
+    }
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    try:
+        store.save_retirement_attempt(attempt_id, stamp, attempt)
+        store.refresh_index()
+    except (OSError, ValueError) as exc:
+        attempt["attempt_unrecorded"] = type(exc).__name__
+    _print({"outcome": "refused", **attempt})
+    return 2
+
+
 def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
     """Retire the campaign-launched disposable Packet Tracer of one attempt.
 
-    A bounded CloseMainWindow comes first. Only if the process is still
-    present afterwards, and a fresh OS reading still matches the launch's
-    observed PID, image, creation time, command line and title, and the
-    workspace-ownership basis is established from indexed records, is that
-    exact PID terminated. The exit is then observed and recorded with its
-    basis; a refused or unobserved retirement is recorded as an attempt.
+    The owned PID's identity (image, creation time, command line) is read
+    fresh, its top-level windows are enumerated, and exactly one document
+    window is selected (`select_document_window`); any doubt sends nothing.
+    After the identity is read again, one revalidated `WM_CLOSE` goes to that
+    handle, never to the extension log window and never broadcast. Only if
+    the process is still present after the bounded wait, the identity still
+    matches, a second complete census shows the same document window and
+    nothing modal, and the workspace-ownership basis is established from
+    indexed records, is that exact PID terminated. An already absent process
+    is neither closed nor killed. Every refusal is recorded as an attempt.
     """
     store = ServerPtCommissioningStore(root, campaign.campaign_id)
     if _adopt_ledger_residue(store, campaign):
@@ -990,67 +1107,129 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
         )
         return 2
     control = _PROCESS_CONTROL()
-    first = observed_process_findings(launch, control.observe(pid))
-    if first:
-        _print({"outcome": "refused", "reasons": list(first)})
-        return 2
-    requested_at = datetime.now(UTC).isoformat()
-    requested = control.request_close(pid)
-    exited = _await_absence(control, pid, RETIREMENT_GRACE_SECONDS)
-    forced: dict[str, object] | None = None
-    refusal: tuple[str, ...] = ()
-    if not exited:
-        again = control.observe(pid)
-        refusal = observed_process_findings(launch, again)
-        if not refusal:
-            forced = {
-                "method": "Stop-Process",
-                "pid": pid,
-                "rechecked_process_path": again.process_path,
-                "rechecked_process_incarnation": again.process_incarnation,
-                "rechecked_command_line": again.command_line,
-                "rechecked_window_title": again.main_window_title,
-                "disposable_workspace_rechecked": True,
-                "ownership_basis": basis,
-                "requested_at_utc": datetime.now(UTC).isoformat(),
-            }
-            forced["terminate_requested"] = control.terminate(pid)
-            exited = _await_absence(control, pid, RETIREMENT_EXIT_WAIT_SECONDS)
-    count = control.census()
-    close: dict[str, object] = {
+    identity = {
         "pid": pid,
         "process_path": launch.get("process_path"),
         "process_incarnation": launch.get("process_incarnation"),
-        "method": "CloseMainWindow",
-        "requested": requested,
-        "requested_at_utc": requested_at,
-        "graceful_wait_seconds": RETIREMENT_GRACE_SECONDS,
-        "actual_exit_observed": exited,
-        "process_count": count,
-        "observed_at_utc": datetime.now(UTC).isoformat(),
         "ownership_basis": basis,
     }
+    reading = control.observe(pid)
+    refusal = observed_process_findings(launch, reading)
+    if refusal:
+        # Already absent, unreadable or another process: nothing is sent.
+        return _record_retirement_attempt(
+            store,
+            attempt_id,
+            campaign,
+            {
+                **identity,
+                "requested": False,
+                "refusal": list(refusal),
+                "observed_at_utc": datetime.now(UTC).isoformat(),
+            },
+        )
+    before = control.windows(pid)
+    target, refusal = select_document_window(pid, before)
+    if not refusal:
+        refusal = observed_process_findings(launch, control.observe(pid))
+    if refusal or target is None:
+        return _record_retirement_attempt(
+            store,
+            attempt_id,
+            campaign,
+            {
+                **identity,
+                "requested": False,
+                "refusal": list(refusal),
+                "window_census_before": _census_record(before),
+                "observed_at_utc": datetime.now(UTC).isoformat(),
+            },
+        )
+    requested_at = datetime.now(UTC).isoformat()
+    sent = control.close_window(pid, target.handle, target.identity_digest)
+    close: dict[str, object] = {
+        **identity,
+        "method": "WM_CLOSE",
+        "close_target": _window_record(target),
+        "requested": sent.sent,
+        "requested_at_utc": requested_at,
+        "close_refusal": sent.refusal,
+        "close_error": sent.error,
+        "window_census_before": _census_record(before),
+        "graceful_wait_seconds": RETIREMENT_GRACE_SECONDS,
+    }
+    if not sent.sent and not sent.error:
+        # The helper refused before posting: nothing was sent, nothing forced.
+        return _record_retirement_attempt(
+            store,
+            attempt_id,
+            campaign,
+            {
+                **close,
+                "refusal": [f"close_not_sent:{sent.refusal}"],
+                "observed_at_utc": datetime.now(UTC).isoformat(),
+            },
+        )
+    # A helper error leaves the close's outcome unknown: absence is still
+    # observed, but an unknown request never authorizes a force.
+    exited = _await_absence(control, pid, RETIREMENT_GRACE_SECONDS)
+    forced: dict[str, object] | None = None
+    refusal = () if sent.sent else ("close_outcome_unknown",)
+    if not exited and not refusal:
+        again = control.observe(pid)
+        if not again.error and not again.present:
+            exited = True
+        else:
+            refusal = observed_process_findings(launch, again)
+            after = control.windows(pid) if not refusal else None
+            if after is not None:
+                close["window_census_after"] = _census_record(after)
+                refusal = force_window_findings(pid, target, after)
+            if not refusal:
+                forced = {
+                    "method": "Stop-Process",
+                    "pid": pid,
+                    "rechecked_process_path": again.process_path,
+                    "rechecked_process_incarnation": again.process_incarnation,
+                    "rechecked_command_line": again.command_line,
+                    "rechecked_document_window": _window_record(
+                        next(
+                            window
+                            for window in after.windows
+                            if window.handle == target.handle
+                        )
+                    ),
+                    "window_census_complete": after.complete,
+                    "modal_windows_visible": any(
+                        window.visible and window.owner_handle
+                        for window in after.windows
+                    ),
+                    "disposable_workspace_rechecked": True,
+                    "ownership_basis": basis,
+                    "requested_at_utc": datetime.now(UTC).isoformat(),
+                }
+                forced["terminate_requested"] = control.terminate(pid)
+                exited = _await_absence(control, pid, RETIREMENT_EXIT_WAIT_SECONDS)
+    count = control.census()
+    close.update(
+        {
+            "actual_exit_observed": exited,
+            "process_count": count,
+            "observed_at_utc": datetime.now(UTC).isoformat(),
+        }
+    )
     if forced is not None:
         close["forced_termination"] = forced
     findings = exit_evidence_findings(
         launch, close, process_count=count, allow_forced=True
     )
     if refusal or findings:
-        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        attempt = {
-            **close,
-            "refusal": list(refusal),
-            "findings": list(findings),
-            "campaign_id": campaign.campaign_id,
-            "execution_purpose": campaign.purpose.value,
-        }
-        try:
-            store.save_retirement_attempt(attempt_id, stamp, attempt)
-            store.refresh_index()
-        except (OSError, ValueError) as exc:
-            attempt["attempt_unrecorded"] = type(exc).__name__
-        _print({"outcome": "refused", **attempt})
-        return 2
+        return _record_retirement_attempt(
+            store,
+            attempt_id,
+            campaign,
+            {**close, "refusal": list(refusal), "findings": list(findings)},
+        )
     if forced is not None:
         disposition += "_forced"
     document = {
@@ -1079,6 +1258,259 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
         _print({"outcome": "refused", "reason": f"process_exit:{type(exc).__name__}"})
         return 2
     _print(status)
+    return 0
+
+
+def _read_bounded(path: object, limit: int) -> bytes:
+    """Read one named local file whole, refusing anything over its budget."""
+    if not isinstance(path, str) or not path:
+        raise ValueError("input path is missing")
+    raw = Path(path).read_bytes()
+    if len(raw) > limit:
+        raise ValueError("input exceeds its byte budget")
+    return raw
+
+
+def _transcript_source(meta: Mapping[str, object], excerpt: bytes) -> dict[str, object]:
+    """Prove each excerpt line equals the named line of its source file."""
+    numbers = meta.get("source_lines")
+    raw = _read_bounded(meta.get("source_path"), _IMPORT_TRANSCRIPT_LIMIT)
+    source = raw.split(b"\n")
+    lines = excerpt_lines(excerpt)
+    if (
+        not isinstance(numbers, list)
+        or len(numbers) != len(lines)
+        or any(
+            isinstance(number, bool)
+            or not isinstance(number, int)
+            or not 1 <= number <= len(source)
+            or source[number - 1] != line
+            for number, line in zip(numbers, lines, strict=False)
+        )
+    ):
+        raise ValueError("transcript excerpt differs from its source lines")
+    return {
+        "path": meta.get("source_path"),
+        "bytes": len(raw),
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "lines_verified": list(numbers),
+    }
+
+
+def _fresh_state(pid: int) -> dict[str, object]:
+    """Census and mailbox now, without contacting Packet Tracer.
+
+    Only the count of primary Packet Tracer processes (the reader validates
+    and collapses each progress helper into its primary) and whether the
+    owned PID is among them are kept; another process's path or command line
+    is not.
+    """
+    observed = PowerShellPacketTracerProcessReader(timeout_seconds=10).read()
+    if observed.error:
+        raise ValueError("fresh process census is unreadable")
+    mailbox_error = ""
+    pending = 0
+    try:
+        directory = Path(_MAILBOX_DIR())
+        if directory.exists():
+            pending = sum(
+                1
+                for pattern in ("req_*", "res_*")
+                for path in directory.glob(pattern)
+                if path.is_file()
+            )
+    except OSError as exc:
+        mailbox_error = f"mailbox_unreadable:{type(exc).__name__}"
+    return {
+        "observed_at_utc": datetime.now(UTC).isoformat(),
+        "packet_tracer_primary_process_count": len(observed.processes),
+        "owned_pid_present": any(item.pid == pid for item in observed.processes),
+        "mailbox_pending_count": pending,
+        "mailbox_error": mailbox_error,
+        "packet_tracer_contacted": False,
+    }
+
+
+def _import_exit(
+    root: Path,
+    attempt_id: str,
+    campaign: ServerPtCampaign,
+    addendum_file: str,
+    manifest_file: str,
+) -> int:
+    """Import one historical exit under its operator addendum, append-only.
+
+    Nothing is closed, terminated or configured, so the recorder may run at
+    a clean committed descendant of the episode's source: it proves the
+    ancestry and the episode's tree, and records its own source separately.
+    Every original is validated and the current state observed before the
+    first write; the prior index is preserved and named by the new one. No
+    `process-exit` record is written, and nothing is credited to `--retire`.
+    """
+    authority = _EXIT_IMPORT_AUTHORITY
+    store = ServerPtCommissioningStore(root, campaign.campaign_id)
+    try:
+        if (campaign.campaign_id, attempt_id) != (
+            authority.campaign_id,
+            authority.attempt_id,
+        ):
+            raise PermissionError("import is not authorized for this attempt")
+        addendum = _read_bounded(addendum_file, _IMPORT_ARTIFACT_LIMIT)
+        if hashlib.sha256(addendum).hexdigest() != authority.addendum_sha256:
+            raise PermissionError("addendum digest differs from the authority")
+        source = repository_identity(root)
+        if source_authority_findings(campaign, source, None):
+            raise ValueError("recorder checkout is not a clean commit")
+        ancestry = _SOURCE_ANCESTRY(root, authority.episode_source_sha, source.head)
+        if (
+            ancestry.error
+            or not ancestry.is_ancestor
+            or ancestry.ancestor_tree != authority.episode_source_tree
+        ):
+            raise ValueError("recorder does not descend from the episode source")
+        if store.verify_index():
+            raise ValueError("campaign archive is unverified")
+        launch = store.load_process_launch(attempt_id)
+        if (
+            launch.get("campaign_id") != campaign.campaign_id
+            or launch.get("execution_purpose") != campaign.purpose.value
+        ):
+            raise ValueError("launch was not recorded by this campaign")
+        cleanup = store.require_immutable_phase(attempt_id, "cleanup", "restored")
+        for name in ("process-exit", "exit-import"):
+            if store.record_path_for(attempt_id, name).exists():
+                raise ValueError(f"{name} already exists")
+        result_name = f"episode-{authority.episode:04d}-{attempt_id}-cleanup-result"
+        cleanup_result = store.ledger_records().get(result_name) or {}
+        manifest = json.loads(_read_bounded(manifest_file, _IMPORT_MANIFEST_LIMIT))
+        if not isinstance(manifest, dict) or not isinstance(
+            manifest.get("artifacts"), dict
+        ):
+            raise ValueError("import manifest is not an object")
+        artifacts = {
+            role: _read_bounded(
+                meta.get("path") if isinstance(meta, dict) else None,
+                _IMPORT_ARTIFACT_LIMIT,
+            )
+            for role, meta in manifest["artifacts"].items()
+        }
+        archive_at = datetime.now(UTC).isoformat()
+        findings = historical_exit_import_findings(
+            authority=authority,
+            manifest=manifest,
+            launch=launch,
+            cleanup_recorded_at_utc=str(cleanup_result.get("recorded_at_utc") or ""),
+            artifacts=artifacts,
+            archive_at_utc=archive_at,
+        )
+        if findings:
+            _print({"outcome": "refused", "reasons": list(findings)})
+            return 2
+        transcript = _transcript_source(
+            manifest["artifacts"]["transcript_excerpt"], artifacts["transcript_excerpt"]
+        )
+        fresh = _fresh_state(launch["pid"])
+        if fresh["owned_pid_present"]:
+            raise ValueError("a process with the owned PID is present now")
+    except PermissionError as exc:
+        _print({"outcome": "refused", "reason": f"import_not_authorized:{exc}"})
+        return 2
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        _print({"outcome": "refused", "reason": f"import_exit:{type(exc).__name__}"})
+        return 2
+    claim = historical_exit_claim(manifest)
+    try:
+        predecessor = store.preserve_index()
+        addendum_path = store.save_authority_document("addendum-02.md", addendum)
+        stored = []
+        for role in sorted(artifacts):
+            path = store.save_exit_import_artifact(
+                attempt_id,
+                role.replace("_", "-"),
+                _IMPORT_SUFFIXES[role],
+                artifacts[role],
+            )
+            stored.append(
+                {
+                    "role": role,
+                    "file": path.relative_to(root.resolve()).as_posix(),
+                    "sha256": hashlib.sha256(artifacts[role]).hexdigest(),
+                    "bytes": len(artifacts[role]),
+                    "original_path": manifest["artifacts"][role]["path"],
+                    "origin": manifest["artifacts"][role].get("origin", ""),
+                }
+            )
+        document = {
+            "kind": "historical_exit_import",
+            "campaign_id": campaign.campaign_id,
+            "charter_sha256": _charter_digest(campaign),
+            "execution_purpose": campaign.purpose.value,
+            "attempt_id": attempt_id,
+            "episode": authority.episode,
+            "authority": {
+                "addendum_sha256": authority.addendum_sha256,
+                "addendum_path": addendum_path.relative_to(root.resolve()).as_posix(),
+            },
+            "episode_source": {
+                "sha": authority.episode_source_sha,
+                "tree": ancestry.ancestor_tree,
+                "ancestor_of_recorder": ancestry.is_ancestor,
+            },
+            "recorder_source": {
+                "sha": source.head,
+                "tree": source.tree,
+                "branch": source.branch,
+                "upstream": source.upstream,
+                "upstream_head": source.upstream_head,
+                "clean": source.clean,
+            },
+            "launch_sha256": hashlib.sha256(
+                store.record_path_for(attempt_id, "process-launch").read_bytes()
+            ).hexdigest(),
+            "cleanup_status_sha256": hashlib.sha256(
+                store.record_path_for(attempt_id, "cleanup-status").read_bytes()
+            ).hexdigest(),
+            "cleanup_outcome": cleanup.get("outcome"),
+            "cleanup_recorded_at_utc": cleanup_result.get("recorded_at_utc"),
+            "process": {
+                "pid": launch.get("pid"),
+                "process_path": launch.get("process_path"),
+                "process_incarnation": launch.get("process_incarnation"),
+            },
+            "artifacts": stored,
+            "transcript_source": transcript,
+            "capture_field_provenance": manifest.get("capture_field_provenance"),
+            "time_bounds": manifest.get("time_bounds"),
+            "retire_refusal": manifest.get("retire_refusal"),
+            "retained_command_range": manifest.get("retained_command_range"),
+            "lead_report": manifest.get("lead_report", ""),
+            "fresh_state": fresh,
+            **claim,
+            "index_predecessor": predecessor,
+            "archived_at_utc": archive_at,
+            "limitations": list(_IMPORT_LIMITATIONS),
+        }
+        path = store.save_exit_import(attempt_id, document)
+        store.refresh_index(predecessor=predecessor)
+        if store.verify_index():
+            raise ValueError("exit import archive is unverified")
+    except (OSError, ValueError, KeyError) as exc:
+        _print({"outcome": "refused", "reason": f"import_write:{type(exc).__name__}"})
+        return 2
+    _print(
+        {
+            "phase": "exit-import",
+            "outcome": claim["disposition"],
+            "attempt_id": attempt_id,
+            "process_id": launch.get("pid"),
+            "exit_method": claim["exit_method"],
+            "retire_credited": False,
+            "recorder_source_sha": source.head,
+            "episode_source_sha": authority.episode_source_sha,
+            "index_predecessor_sha256": predecessor["sha256"],
+            "exit_import_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+    )
     return 0
 
 

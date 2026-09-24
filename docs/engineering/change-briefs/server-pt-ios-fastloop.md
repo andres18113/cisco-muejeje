@@ -308,3 +308,125 @@ guard with a visible-window-set rule for later episodes, were both denied by
 the platform permission policy; they await the operator. Until then the
 exit of PID 3248 is observed but not archived, and `--retire` as delivered
 cannot be relied on for this build.
+
+## Addendum 02: retirement and evidence closeout, version 6
+
+The operator's `SERVER-PT-IOS-FASTLOOP-01 — Addendum 02: retirement and
+evidence closeout` (SHA-256
+`684636f6436934029709d83e7bd651194aa6d3a7cd9e56da55d592b8660ea288`) approves
+both decisions left open above: ingest the lead's retained graceful close of
+PID 3248 with honest provenance, and replace the main-window-title guard with
+bounded, process-bound window observation. Risk stays **L** (retirement,
+evidence and process termination). The measured source stays `1d086aa` with
+its tree, identities, timestamps and experimental purpose; the work starts at
+`5be8920`, which changed only this brief. The lead's session narrows the
+addendum further: no Packet Tracer launch (so no lifecycle smoke) and no push
+(so the exact-SHA CI of the new commits stays pending).
+
+**What the retained originals show.** The lead's session transcript keeps
+every command and raw answer of the exit, byte for byte:
+
+| UTC (clock) | Command | Raw answer |
+| --- | --- | --- |
+| 03:48:49 (transcript) | `--retire` at `1d086aa` | `{"outcome": "refused", "reasons": ["process_document_title_changed"]}`, then census `2` |
+| 03:49:03 (transcript) | Windows of PID 3248 | main title `Cisco Packet Tracer`; visible `Cisco Packet Tracer`, `Logs - MCP BUILDER` |
+| 03:49:53.0758 (OS) | Identity check, `CloseMainWindow` | `requested=True`, main title at request `Cisco Packet Tracer`; `exited=False` after 40 polls of 0.5 s |
+| 03:50:21 to 03:50:25 (transcript) | `Get-Process -Id 3248` | `process 3248 exited` |
+| 03:50:40.2114 (OS) | Census and mailbox, writes `close-capture.json` | `packet_tracer_processes=0`, `mailbox_pending=0` |
+
+No termination command appears between the request and the census. In
+`close-capture.json`, `observed_at_utc`, `process_count` and
+`actual_exit_observed` are that command's own observations; `pid`,
+`process_path`, `process_incarnation`, `method`, `requested` and
+`requested_at_utc` are literals transcribed from the request's answer; and
+`completion_method` and `note` are the lead's assertions. The prepared
+`close_pt.ps1` was not used. A read-only query of the Application log made
+for this import finds no Packet Tracer event between 03:40 and 04:00 UTC. The
+ledger closing's phrase "exited after a graceful CloseMainWindow request
+only" states a sequence, not a proved cause; the ledger is immutable and is
+not edited.
+
+### Requirements and acceptance criteria
+
+| ID | Requirement | Acceptance criterion |
+| --- | --- | --- |
+| G1 | The historical exit is imported only under this addendum | `--import-exit` refuses another campaign, attempt, episode source or addendum digest, a delivery campaign and any CI claim, before it reads the process table |
+| G2 | The recorder names its own source | The import runs from a clean committed descendant, verifies that the episode commit is its ancestor and has the launch's tree, and records both sources separately; configuration, cleanup and `--retire` still require the launch's exact source |
+| G3 | Originals keep their bytes and meaning | Every artifact is stored write-once with its original bytes, hash, size and path; the capture passes the existing exit rules against the launch; request time, census time and prelaunch census bind to the launch; each transcript line equals the named line of its source file; time bounds are strictly ordered, and the archive time is later and separate |
+| G4 | The claim is no larger than the evidence | The record says absence observed after a graceful request, exit method unproven, no lead termination in the retained commands, and `--retire` refused with no effect; a field the lead asserted never supports the exit; no `process-exit` record is written and nothing is credited to `--retire` |
+| G5 | The import is additive | A fresh census and mailbox inspection run without contacting Packet Tracer; the owned PID present or an unreadable census refuses before any write; the prior index is kept byte for byte and the new index names its digest; prior records, current status and the ledger are unchanged |
+| G6 | Windows are observed, bounded and attributed | One census enumerates top-level windows with a finite deadline and returns, for the exact PID only, handle, owner PID, class, title, visibility, enablement, owner window and an identity digest, with completeness or error; other applications' titles are never read |
+| G7 | Selection does not depend on focus or order | Two owned windows in either order, with or without the extension log window, select the same document window; a foreign process with identical titles is never selected |
+| G8 | Doubt withholds effects | An incomplete or unattributed census, several or no document windows, a disabled document, a visible owned (modal) window, or a document title naming a file sends neither close nor kill |
+| G9 | One revalidated normal close | The close names one PID and one handle; the helper rechecks owner, top-level visibility and identity digest in the same call before it posts `WM_CLOSE`; the log window is never targeted and nothing is broadcast |
+| G10 | Force keeps its charter | A force needs the bounded failed close, the exact identity rechecked, the same document window unchanged, a complete census without modal windows and the durable ownership basis; a prompt is never answered, and a vanished document window with a live process is recorded, not forced |
+| G11 | Already absent is not retired | An absent process gets neither close nor kill and is recorded as a retirement attempt |
+
+### Design
+
+**Historical import.** A new CLI mode, `--import-exit`, takes the charter, the
+addendum and a lead-written manifest of at most 16 KiB. A pinned
+`HistoricalExitImportAuthority` names the addendum digest, campaign, attempt,
+episode and the episode's source SHA and tree; nothing else is importable.
+After the charter, addendum, source and ancestry checks, the store loads the
+launch, the restored cleanup and the verified index, and refuses if a
+`process-exit` or an earlier import exists. The pure rule
+`historical_exit_import_findings` validates the capture (through
+`exit_evidence_findings` with `allow_forced=False`), the close-request output,
+the prelaunch census, the field provenance, the transcript citations and the
+time bounds. The CLI then takes one bounded census and mailbox inspection.
+Only then does it write, in order: `authority/addendum-02.md`, each artifact
+as `exit-import-<role>.<ext>`, the `exit-import` record, and a new index whose
+`predecessor` names a write-once copy of the previous index under
+`index-history/`. The disposition is `absence_observed_after_graceful_request`
+with `exit_method: unproven`.
+
+**Window census and retirement.** `PowerShellOwnedProcessControl.windows(pid)`
+compiles one small user32 helper and enumerates top-level windows under the
+existing finite helper timeout. Title and class are read only for windows the
+exact PID owns, and each window's identity digest is SHA-256 of
+`class + "\n" + title`, computed by the helper itself. More than 256 owned
+windows, a failed enumeration or malformed output make the census incomplete.
+`close_window(pid, handle, digest)` passes two validated integers and a hex
+digest, rechecks in the same call and posts `WM_CLOSE` only if everything
+still matches. `select_document_window` accepts exactly one visible, enabled,
+unowned window that is not the extension log window (`Logs - MCP BUILDER`,
+observed on 9.0.1.0858) and names no file; a visible owned window is a modal
+or ambiguous finding. `--retire` observes the identity (PID, image, creation
+time and command line; no longer the main title), takes a census, selects,
+re-observes the identity and closes that one window. After the bounded wait
+it takes a second census; a force needs the same window with the same digest
+and no modal. `--record-launch` also stores the launch census as auxiliary
+evidence. The graceful method becomes `WM_CLOSE` to the selected handle,
+recorded with its target; `exit_evidence_findings` still accepts historical
+`CloseMainWindow` records.
+
+### Invariants
+
+The ownership basis (launch, baseline, operations, restored cleanup,
+exclusive lab) is the only destructive authority; handles and titles are
+auxiliary. No window, title or name set proves that a user document is
+absent. Ordinary source binding for C31 and for every effecting FASTLOOP mode
+is unchanged. No counter resets. Historical records, including the refusal
+and the HTTP, cleanup and publication records, are never rewritten.
+
+### Test design
+
+Unit: selection and force rules for two windows in either order, the log
+window present or absent, a foreign PID with identical titles, a modal
+window, a disabled or file-naming document, ambiguity and an incomplete
+census; the helper's commands contain only validated integers and a digest,
+and its output parser fails closed; import findings for each tampered field,
+ordering and provenance. Integration through the CLI and store: `--retire`
+with a fake process control for focus flips, PID reuse, handle reuse at close
+time, an incomplete census, a changed or ambiguous document, a modal prompt,
+a close that does not exit, a document that vanishes while the process
+stays, and an already-absent process, each asserting which effects were
+sent; and `--import-exit` on a temporary archive, asserting byte-exact
+artifacts, the predecessor index, unchanged prior files, no `process-exit`,
+and that every refusal writes nothing. The real helper runs against an
+off-screen window the test creates, opt-in and Windows-only. System and
+acceptance: the import runs once on the real archive; no LIVE retirement is
+repeated and no smoke is run. Final stabilization runs the full suite, the
+delivery gate, MkDocs, the namespace inventory and whitespace checks once on
+frozen code.

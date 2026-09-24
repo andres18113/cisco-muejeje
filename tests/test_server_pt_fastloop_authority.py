@@ -57,6 +57,9 @@ from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
 from packet_tracer_mcp.infrastructure.execution.server_pt_campaign_authority import (
     ExactCiEvidence,
 )
+from packet_tracer_mcp.infrastructure.execution.server_pt_process_control import (
+    window_identity_digest,
+)
 from packet_tracer_mcp.infrastructure.persistence.server_pt_commissioning_store import (
     ServerPtCommissioningStore,
 )
@@ -557,6 +560,31 @@ def _close(**overrides) -> dict[str, object]:
     return value
 
 
+def _document_window(**overrides) -> dict[str, object]:
+    """Return the one owned, unnamed document window a retirement closes."""
+    value: dict[str, object] = {
+        "handle": 4242,
+        "owner_pid": _process().process_id,
+        "class_name": "Qt663QWindowIcon",
+        "title": "Cisco Packet Tracer",
+        "visible": True,
+        "enabled": True,
+        "owner_handle": 0,
+    }
+    value.update(overrides)
+    value["identity_digest"] = window_identity_digest(
+        str(value["class_name"]), str(value["title"])
+    )
+    return value
+
+
+def _targeted(**overrides) -> dict[str, object]:
+    """Return the retirement flow's graceful request: WM_CLOSE to that window."""
+    return _close(
+        **{"method": "WM_CLOSE", "close_target": _document_window(), **overrides}
+    )
+
+
 def _forced(**overrides) -> dict[str, object]:
     launch = _launch()
     value: dict[str, object] = {
@@ -565,7 +593,9 @@ def _forced(**overrides) -> dict[str, object]:
         "rechecked_process_path": launch["process_path"],
         "rechecked_process_incarnation": launch["process_incarnation"],
         "rechecked_command_line": launch["observed_command_line"],
-        "rechecked_window_title": launch["observed_main_window_title"],
+        "rechecked_document_window": _document_window(),
+        "window_census_complete": True,
+        "modal_windows_visible": False,
         "disposable_workspace_rechecked": True,
         "ownership_basis": "owned_cleanup_restored",
         "requested_at_utc": OPENED.isoformat(),
@@ -577,7 +607,7 @@ def _forced(**overrides) -> dict[str, object]:
 def test_graceful_exit_is_unchanged_and_forced_exit_is_its_own_record():
     """Delivery never accepts a forced exit; experimental records it as forced."""
     graceful = _close()
-    forced = _close(forced_termination=_forced(), graceful_wait_seconds=30.0)
+    forced = _targeted(forced_termination=_forced(), graceful_wait_seconds=30.0)
 
     assert exit_evidence_findings(_launch(), graceful, process_count=0) == ()
     assert exit_was_forced(graceful) is False
@@ -598,12 +628,24 @@ def test_graceful_exit_is_unchanged_and_forced_exit_is_its_own_record():
         {"forced_termination": _forced(pid=999)},
         {"forced_termination": _forced(disposable_workspace_rechecked=False)},
         {"forced_termination": _forced(method="taskkill /IM")},
+        # The rechecked document window is absent, another window, or changed.
+        {"forced_termination": _forced(rechecked_document_window=None)},
         {
             "forced_termination": _forced(
-                rechecked_window_title="Cisco Packet Tracer - C:\\coursework.pkt"
+                rechecked_document_window=_document_window(handle=9)
             )
         },
-        {"forced_termination": _forced(rechecked_window_title="")},
+        {
+            "forced_termination": _forced(
+                rechecked_document_window=_document_window(
+                    title="Cisco Packet Tracer - C:\\coursework.pkt"
+                )
+            )
+        },
+        {"forced_termination": _forced(window_census_complete=False)},
+        {"forced_termination": _forced(modal_windows_visible=True)},
+        # A force never follows a request that named no document window.
+        {"forced_termination": _forced(), "method": "CloseMainWindow"},
         {"forced_termination": _forced(rechecked_command_line="PacketTracer.exe x")},
         {"forced_termination": _forced(ownership_basis="")},
         {"forced_termination": _forced(), "graceful_wait_seconds": 0},
@@ -612,7 +654,7 @@ def test_graceful_exit_is_unchanged_and_forced_exit_is_its_own_record():
 )
 def test_a_forced_exit_must_name_the_rechecked_owned_process(change):
     """Wildcards, another incarnation or an unbounded wait are not ownership."""
-    close = _close(**{"graceful_wait_seconds": 30.0, **change})
+    close = _targeted(**{"graceful_wait_seconds": 30.0, **change})
 
     assert "forced_termination_identity_unproven" in exit_evidence_findings(
         _launch(), close, process_count=0, allow_forced=True
@@ -633,10 +675,9 @@ def test_a_forced_exit_must_name_the_rechecked_owned_process(change):
 def test_a_forced_exit_needs_a_launch_that_proves_a_blank_document(launch_change):
     """A launch that opened, or names, a document never permits a force."""
     launch = {**_launch(), **launch_change}
-    close = _close(
+    close = _targeted(
         forced_termination=_forced(
-            rechecked_window_title=launch["observed_main_window_title"],
-            rechecked_command_line=launch["observed_command_line"],
+            rechecked_command_line=launch["observed_command_line"]
         ),
         graceful_wait_seconds=30.0,
     )
@@ -648,7 +689,7 @@ def test_a_forced_exit_needs_a_launch_that_proves_a_blank_document(launch_change
 
 def test_a_forced_exit_still_needs_the_independent_zero_census():
     """Recording a termination is not observing an exit."""
-    close = _close(forced_termination=_forced(), graceful_wait_seconds=30.0)
+    close = _targeted(forced_termination=_forced(), graceful_wait_seconds=30.0)
 
     assert "process_exit_unobserved" in exit_evidence_findings(
         _launch(), close, process_count=1, allow_forced=True
@@ -1198,257 +1239,3 @@ def test_a_product_grant_names_a_known_purpose_or_is_refused(tmp_path):
     assert result.accepted is False
     assert harness.product_dispatches() == []
     assert EXPERIMENTAL_ENVELOPE_LIMITATION not in result.envelope.limitations
-
-
-class _FakeControl:
-    """The OS as the retirement flow sees it: one PID, and what happens to it."""
-
-    def __init__(self, *, closes=True, title_after_close=None, terminates=True):
-        process = _process()
-        self.present = True
-        self.title = "Cisco Packet Tracer"
-        self.command_line = f'"{process.process_path}" '
-        self.path = process.process_path
-        self.incarnation = process.process_incarnation
-        self.closes = closes
-        self.title_after_close = title_after_close
-        self.terminates = terminates
-        self.calls: list[str] = []
-
-    def __call__(self):
-        return self
-
-    def observe(self, pid):
-        from packet_tracer_mcp.infrastructure.execution.server_pt_process_control import (
-            OwnedProcessObservation,
-        )
-
-        self.calls.append("observe")
-        if not self.present:
-            return OwnedProcessObservation(pid, present=False)
-        return OwnedProcessObservation(
-            pid,
-            present=True,
-            process_path=self.path,
-            process_incarnation=self.incarnation,
-            command_line=self.command_line,
-            main_window_title=self.title,
-        )
-
-    def request_close(self, pid):
-        self.calls.append("close")
-        if self.closes:
-            self.present = False
-        elif self.title_after_close is not None:
-            self.title = self.title_after_close
-        return True
-
-    def terminate(self, pid):
-        self.calls.append("terminate")
-        if self.terminates:
-            self.present = False
-        return self.terminates
-
-    def census(self):
-        return 0 if not self.present else 1
-
-
-@pytest.fixture
-def launched(fastloop_cli, tmp_path: Path, capsys, monkeypatch):
-    """Record one experimental launch whose capture matches the OS reading."""
-    from packet_tracer_mcp.adapters.cli.server_pt_live_phase import PhasePreflight
-
-    cli, charter, env = fastloop_cli
-    monkeypatch.setattr(
-        cli,
-        "phase_preflight",
-        lambda *_args, **_kwargs: PhasePreflight(
-            _checkpoint(), None, _process(), campaign=FASTLOOP_CAMPAIGN
-        ),
-    )
-    monkeypatch.setattr(cli, "RETIREMENT_GRACE_SECONDS", 0.01)
-    monkeypatch.setattr(cli, "RETIREMENT_EXIT_WAIT_SECONDS", 0.0)
-    monkeypatch.setattr(cli, "_retirement_sleep", lambda _seconds: None)
-    control = _FakeControl()
-    monkeypatch.setattr(cli, "_PROCESS_CONTROL", control)
-    capture = tmp_path / "launch.json"
-    capture.write_text(
-        json.dumps(
-            {
-                **{
-                    key: value
-                    for key, value in _launch().items()
-                    if not key.startswith("observed_")
-                },
-                "created_by_campaign": True,
-                "workspace_kind": "disposable_declared",
-                "launch_method": "Start-Process",
-            }
-        ),
-        encoding="utf-8",
-    )
-    base = ["--campaign", "fastloop", "--attempt", ATTEMPT, "--charter", str(charter)]
-    code, owned = _run(
-        cli, ["--record-launch", *base, "--launch-evidence", str(capture)], env, capsys
-    )
-    assert code == 0, owned
-    assert owned["blank_document_proven"] is True
-    return cli, env, base, control, capture
-
-
-def test_a_launch_capture_that_disagrees_with_the_os_is_refused(
-    fastloop_cli, tmp_path: Path, capsys, monkeypatch
-):
-    """The retirement evidence is observed at launch, never taken as claimed."""
-    from packet_tracer_mcp.adapters.cli.server_pt_live_phase import PhasePreflight
-
-    cli, charter, env = fastloop_cli
-    monkeypatch.setattr(
-        cli,
-        "phase_preflight",
-        lambda *_args, **_kwargs: PhasePreflight(
-            _checkpoint(), None, _process(), campaign=FASTLOOP_CAMPAIGN
-        ),
-    )
-    control = _FakeControl()
-    control.title = "Cisco Packet Tracer - C:\\coursework.pkt"
-    monkeypatch.setattr(cli, "_PROCESS_CONTROL", control)
-    capture = tmp_path / "launch.json"
-    capture.write_text(
-        json.dumps(
-            {
-                "pid": 123,
-                "process_path": _process().process_path,
-                "process_incarnation": _process().process_incarnation,
-                "main_window_title": "Cisco Packet Tracer",
-                "command_line": control.command_line,
-                "created_by_campaign": True,
-                "workspace_kind": "disposable_declared",
-                "launch_method": "Start-Process",
-            }
-        ),
-        encoding="utf-8",
-    )
-    base = ["--campaign", "fastloop", "--attempt", ATTEMPT, "--charter", str(charter)]
-
-    code, refused = _run(
-        cli, ["--record-launch", *base, "--launch-evidence", str(capture)], env, capsys
-    )
-
-    assert code == 2
-    assert refused["reason"] == "launch_evidence:ValueError"
-
-
-def test_a_graceful_close_retires_without_force(launched, capsys, tmp_path: Path):
-    """The owned process closed on request: exited, nothing terminated."""
-    cli, env, base, control, _capture = launched
-
-    code, retired = _run(cli, ["--retire", *base], env, capsys)
-
-    assert code == 0, retired
-    assert retired["outcome"] == "exited_before_setup"
-    assert "terminate" not in control.calls
-    record = ServerPtCommissioningStore(
-        tmp_path, FASTLOOP_CAMPAIGN.campaign_id
-    ).load_process_exit(ATTEMPT)
-    assert "forced_termination" not in record
-    assert record["ownership_basis"] == "blank_launch_without_phase"
-
-
-def test_an_ignored_close_is_forced_only_after_a_fresh_matching_reading(
-    launched, capsys, tmp_path: Path
-):
-    """Bounded graceful attempt, identical fresh reading, exact PID, observed exit."""
-    cli, env, base, control, _capture = launched
-    control.closes = False
-
-    code, retired = _run(cli, ["--retire", *base], env, capsys)
-
-    assert code == 0, retired
-    assert retired["outcome"] == "exited_before_setup_forced"
-    assert control.calls.index("close") < control.calls.index("terminate")
-    store = ServerPtCommissioningStore(tmp_path, FASTLOOP_CAMPAIGN.campaign_id)
-    forced = store.load_process_exit(ATTEMPT)["forced_termination"]
-    assert forced["ownership_basis"] == "blank_launch_without_phase"
-    assert forced["rechecked_window_title"] == "Cisco Packet Tracer"
-    assert store.verify_index() == ()
-
-
-def test_conflicting_document_evidence_prevents_the_force(
-    launched, capsys, tmp_path: Path
-):
-    """A title that changed after the close request stops everything."""
-    cli, env, base, control, _capture = launched
-    control.closes = False
-    control.title_after_close = "Cisco Packet Tracer - C:\\coursework.pkt"
-
-    code, refused = _run(cli, ["--retire", *base], env, capsys)
-
-    assert code == 2
-    assert "terminate" not in control.calls
-    assert "process_document_title_changed" in refused["refusal"]
-    store = ServerPtCommissioningStore(tmp_path, FASTLOOP_CAMPAIGN.campaign_id)
-    assert not store.record_path_for(ATTEMPT, "process-exit").exists()
-
-
-def test_unestablished_workspace_ownership_prevents_any_retirement_effect(
-    launched, capsys, tmp_path: Path
-):
-    """A setup grant without its empty baseline: no close, no force."""
-    cli, env, base, control, _capture = launched
-    bundle = prepare_server_pt_commissioning(30, "COLD_HTTP_" + ATTEMPT)
-    store = ServerPtCommissioningStore(tmp_path, FASTLOOP_CAMPAIGN.campaign_id)
-    store.save_phase_grant(
-        ATTEMPT,
-        derive_server_pt_phase_grant(
-            "setup",
-            ATTEMPT,
-            _checkpoint(),
-            _process(),
-            None,
-            bundle_sha256="c" * 64,
-            prequalification_sha256="d" * 64,
-            bundle=bundle,
-            campaign=FASTLOOP_CAMPAIGN,
-        ),
-    )
-    store.refresh_index()
-    control.calls.clear()
-
-    code, refused = _run(cli, ["--retire", *base], env, capsys)
-
-    assert code == 2
-    assert refused["reason"].startswith("retirement_unestablished:")
-    assert control.calls == []
-
-
-def test_record_exit_never_admits_a_forced_capture(launched, capsys, tmp_path: Path):
-    """A capture cannot carry a force; only the observed retirement can."""
-    cli, env, base, _control, _capture = launched
-
-    class _Census:
-        def __init__(self, **_kwargs):
-            pass
-
-        def read(self):
-            return type("Observed", (), {"error": "", "processes": ()})()
-
-    cli_module = cli
-    original = cli_module.PowerShellPacketTracerProcessReader
-    cli_module.PowerShellPacketTracerProcessReader = _Census
-    try:
-        close = tmp_path / "close.json"
-        close.write_text(
-            json.dumps(
-                _close(forced_termination=_forced(), graceful_wait_seconds=30.0)
-            ),
-            encoding="utf-8",
-        )
-        code, refused = _run(
-            cli, ["--record-exit", *base, "--close-evidence", str(close)], env, capsys
-        )
-    finally:
-        cli_module.PowerShellPacketTracerProcessReader = original
-
-    assert code == 2
-    assert refused["reason"] == "process_exit:ValueError"

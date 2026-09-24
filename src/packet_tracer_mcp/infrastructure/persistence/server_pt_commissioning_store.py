@@ -37,6 +37,7 @@ from ...shared.utils import resolve_within, safe_name_component
 
 CAMPAIGN_ID = "SERVER-PT-C31-COMMISSION-01"
 _ATTEMPT = re.compile(r"[0-9a-f]{32}\Z")
+_EXIT_IMPORT_SUFFIXES = frozenset({".json", ".jsonl", ".txt"})
 
 
 def _safe_id(value: str) -> str:
@@ -195,6 +196,7 @@ class ServerPtCommissioningStore:
             "acceptance-raw-index",
             "process-launch",
             "process-exit",
+            "exit-import",
             "causal-correction",
             "setup-status",
             "prequalification-status",
@@ -489,6 +491,47 @@ class ServerPtCommissioningStore:
         """Reload the indexed observed exit of the campaign-owned process."""
         return self._load_mapping(attempt_id, "process-exit")
 
+    def save_authority_document(self, name: str, raw: bytes) -> Path:
+        """Keep one operator authority document's exact bytes, once."""
+        if (
+            not name.endswith(".md")
+            or safe_name_component(name, "") != name
+            or not isinstance(raw, bytes)
+        ):
+            raise ValueError("authority document name or bytes are invalid")
+        path = resolve_within(self._campaign_dir(), "authority", name)
+        _write_once(path, raw)
+        return path
+
+    def save_exit_import_artifact(
+        self, attempt_id: str, role: str, suffix: str, raw: bytes
+    ) -> Path:
+        """Keep one original artifact of a historical exit import, byte-exact."""
+        if (
+            not role
+            or safe_name_component(role, "") != role
+            or suffix not in _EXIT_IMPORT_SUFFIXES
+            or not isinstance(raw, bytes)
+        ):
+            raise ValueError("exit import artifact role or bytes are invalid")
+        path = resolve_within(
+            self._attempt_dir(attempt_id), "exit-import-" + role + suffix
+        )
+        _write_once(path, raw)
+        return path
+
+    def save_exit_import(self, attempt_id: str, document: Mapping[str, object]) -> Path:
+        """Retain the validated historical exit import, never a `process-exit`."""
+        return self._save_mapping(attempt_id, "exit-import", document)
+
+    def load_exit_import(self, attempt_id: str) -> dict[str, object]:
+        """Reload the byte-bound historical exit import."""
+        return self._load_mapping(attempt_id, "exit-import")
+
+    def index_bytes(self) -> bytes:
+        """Return the current campaign index exactly as stored."""
+        return resolve_within(self._campaign_dir(), "index.json").read_bytes()
+
     def register_external_source(
         self, attempt_id: str, label: str, source_path: Path
     ) -> Path:
@@ -685,8 +728,35 @@ class ServerPtCommissioningStore:
             paths[relative] = source
         return paths
 
-    def refresh_index(self) -> Path:
-        """Add new files only after all prior indexed source bytes still match."""
+    def preserve_index(self) -> dict[str, object]:
+        """Keep the current index's exact bytes, once, and name them.
+
+        The copy lives at `index-history/index-<sha256>.json`, so its name is
+        its digest; an existing copy must hold the same bytes. Every later
+        index then lists the copy as an immutable source.
+        """
+        raw = self.index_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+        path = resolve_within(
+            self._campaign_dir(), "index-history", f"index-{digest}.json"
+        )
+        if path.exists():
+            if path.read_bytes() != raw:
+                raise ValueError("preserved index bytes changed")
+        else:
+            _write_once(path, raw)
+        return {
+            "path": path.relative_to(self.root).as_posix(),
+            "sha256": digest,
+            "bytes": len(raw),
+        }
+
+    def refresh_index(self, *, predecessor: Mapping[str, object] | None = None) -> Path:
+        """Add new files only after all prior indexed source bytes still match.
+
+        `predecessor`, from `preserve_index`, is recorded in the new index so
+        an append-only closure names the exact index it extended.
+        """
         root = self._campaign_dir()
         root.mkdir(parents=True, exist_ok=True)
         self._prior_bytes_unchanged()
@@ -700,11 +770,19 @@ class ServerPtCommissioningStore:
                     "bytes": len(raw),
                 }
             )
-        document = {
+        document: dict[str, object] = {
             "schema_version": 2,
             "campaign_id": self.campaign_id,
             "files": files,
         }
+        if predecessor is not None:
+            snapshot = next(
+                (item for item in files if item["path"] == predecessor.get("path")),
+                None,
+            )
+            if snapshot is None or snapshot["sha256"] != predecessor.get("sha256"):
+                raise ValueError("index predecessor is not a preserved index")
+            document["predecessor"] = dict(predecessor)
         target = resolve_within(root, "index.json")
         temporary = resolve_within(root, f".index.{uuid4().hex}.tmp")
         try:

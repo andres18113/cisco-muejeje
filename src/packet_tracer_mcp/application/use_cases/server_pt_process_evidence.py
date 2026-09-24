@@ -71,9 +71,14 @@ def observed_process_findings(
     """Compare one fresh OS observation of the owned PID with its launch.
 
     `observed` carries `process_id`, `present`, `process_path`,
-    `process_incarnation`, `command_line`, `main_window_title` and `error`.
-    Any difference, and any unreadable or absent process, is a finding: the
-    caller then performs no close or termination on that reading.
+    `process_incarnation`, `command_line` and `error`. Any difference, and
+    any unreadable or absent process, is a finding: the caller then performs
+    no close or termination on that reading.
+
+    The main window title is deliberately not compared. Packet Tracer with
+    the extension shows two unowned top-level windows, and which one .NET
+    calls "main" follows focus and enumeration order; document evidence comes
+    from the window census (`select_document_window`) instead.
     """
     if getattr(observed, "error", ""):
         return ("process_unobservable",)
@@ -92,15 +97,91 @@ def observed_process_findings(
         found.append("process_identity_changed")
     if getattr(observed, "command_line", None) != launch.get("observed_command_line"):
         found.append("process_command_line_changed")
-    if getattr(observed, "main_window_title", None) != launch.get(
-        "observed_main_window_title"
-    ):
-        # Auxiliary: an unchanged title proves nothing alone, but a changed
-        # one is conflicting document evidence and stops any force.
-        found.append("process_document_title_changed")
     if not launched_blank(launch):
         found.append("launch_does_not_prove_blank_document")
     return tuple(found)
+
+
+#: The Script Engine extension's own window. On 9.0.1.0858 it is a second
+#: visible, unowned top-level window of the Packet Tracer process (FASTLOOP
+#: episode 1). It is never a close target and never evidence about a document.
+EXTENSION_LOG_WINDOW_TITLE = "Logs - MCP BUILDER"
+
+
+def title_names_file(title: str) -> bool:
+    """Whether a window title names a Packet Tracer document or a path."""
+    return any(marker in title.casefold() for marker in _DOCUMENT_MARKERS)
+
+
+def select_document_window(
+    pid: int, census: object
+) -> tuple[object | None, tuple[str, ...]]:
+    """Select the one window a normal close may target, or name the doubt.
+
+    `census` carries `process_id`, `windows`, `complete` and `error`; each
+    window carries `handle`, `owner_pid`, `title`, `visible`, `enabled` and
+    `owner_handle`. Only visible windows matter, whatever their order. The
+    extension log window is set aside by its observed title. Exactly one
+    other visible, unowned, enabled window whose title names no file may be
+    selected. A visible owned window may be a modal prompt: it is reported,
+    never filtered out, and withholds any close. The selection is auxiliary:
+    it never proves that no user document exists.
+    """
+    if getattr(census, "error", ""):
+        return None, ("window_census_unobservable",)
+    windows = tuple(getattr(census, "windows", ()) or ())
+    if getattr(census, "process_id", None) != pid or any(
+        getattr(window, "owner_pid", None) != pid for window in windows
+    ):
+        return None, ("window_attribution_mismatch",)
+    if getattr(census, "complete", False) is not True:
+        return None, ("window_census_incomplete",)
+    visible = [window for window in windows if window.visible is True]
+    found: list[str] = []
+    if any(window.owner_handle for window in visible):
+        found.append("modal_or_owned_window_visible")
+    unowned = [window for window in visible if not window.owner_handle]
+    if sum(window.title == EXTENSION_LOG_WINDOW_TITLE for window in unowned) > 1:
+        found.append("extension_window_ambiguous")
+    candidates = [
+        window for window in unowned if window.title != EXTENSION_LOG_WINDOW_TITLE
+    ]
+    if not candidates:
+        found.append("document_window_absent")
+    elif len(candidates) > 1:
+        found.append("document_window_ambiguous")
+    else:
+        document = candidates[0]
+        if document.enabled is not True:
+            found.append("document_window_disabled")
+        if not document.title or title_names_file(document.title):
+            found.append("document_window_names_file_or_nothing")
+    if found:
+        return None, tuple(found)
+    return candidates[0], ()
+
+
+def force_window_findings(pid: int, target: object, census: object) -> tuple[str, ...]:
+    """Name what, in the census after a failed close, withholds a force.
+
+    The force needs the same document window the close targeted, with the
+    same identity digest, and nothing modal or ambiguous beside it. A document
+    window that closed while the process stays alive is recorded, not forced.
+    """
+    selected, found = select_document_window(pid, census)
+    if found:
+        return tuple(
+            "document_window_closed_process_alive"
+            if item == "document_window_absent"
+            else item
+            for item in found
+        )
+    if (
+        getattr(selected, "handle", None),
+        getattr(selected, "identity_digest", None),
+    ) != (getattr(target, "handle", None), getattr(target, "identity_digest", None)):
+        return ("document_window_changed",)
+    return ()
 
 
 #: The longest graceful wait a forced termination may follow. A capture that
@@ -111,6 +192,51 @@ FORCED_TERMINATION_MAX_GRACEFUL_WAIT_SECONDS = 120.0
 def exit_was_forced(close: Mapping[str, object]) -> bool:
     """Whether a close capture records an exact-process termination."""
     return close.get("forced_termination") is not None
+
+
+#: The graceful requests an exit record may name: the historical
+#: `Process.CloseMainWindow` of a capture, and the retirement flow's
+#: `WM_CLOSE` posted to one revalidated document window.
+GRACEFUL_CLOSE_METHODS = ("CloseMainWindow", "WM_CLOSE")
+_WINDOW_DIGEST_LENGTH = 64
+
+
+def _document_target_proven(launch: Mapping[str, object], target: object) -> bool:
+    """Whether a recorded close target is one owned, unnamed document window."""
+    if not isinstance(target, Mapping):
+        return False
+    handle = target.get("handle")
+    digest = target.get("identity_digest")
+    title = target.get("title")
+    return (
+        not isinstance(handle, bool)
+        and isinstance(handle, int)
+        and handle > 0
+        and target.get("owner_pid") == launch.get("pid")
+        and isinstance(digest, str)
+        and len(digest) == _WINDOW_DIGEST_LENGTH
+        and isinstance(title, str)
+        and bool(title)
+        and title != EXTENSION_LOG_WINDOW_TITLE
+        and not title_names_file(title)
+    )
+
+
+def _same_document_window(
+    close: Mapping[str, object], forced: Mapping[str, object]
+) -> bool:
+    """Whether the force rechecked the very window the close targeted."""
+    target = close.get("close_target")
+    again = forced.get("rechecked_document_window")
+    return (
+        close.get("method") == "WM_CLOSE"
+        and isinstance(target, Mapping)
+        and isinstance(again, Mapping)
+        and again.get("handle") == target.get("handle")
+        and again.get("identity_digest") == target.get("identity_digest")
+        and forced.get("window_census_complete") is True
+        and forced.get("modal_windows_visible") is False
+    )
 
 
 def exit_evidence_findings(
@@ -129,11 +255,14 @@ def exit_evidence_findings(
     exit is still observed independently. It is never read as graceful.
 
     A force is admissible only as the retirement flow records it: the fresh
-    OS reading taken just before it matched the launch's observed identity,
-    command line and title (`observed_process_findings`), the launch proved a
-    new unnamed document (`launched_blank`), and a durable ownership basis for
-    the workspace was established from the campaign's own records. The title
-    is auxiliary evidence; it never authorizes a force by itself.
+    OS reading taken just before it matched the launch's observed identity
+    and command line (`observed_process_findings`), the launch proved a new
+    unnamed document (`launched_blank`), the window census after the failed
+    close was complete, showed no modal window and still held the same
+    document window it targeted (`force_window_findings`), and a durable
+    ownership basis for the workspace was established from the campaign's
+    own records. Windows and titles are auxiliary evidence; they never
+    authorize a force by themselves.
     """
     found: list[str] = []
     forced = close.get("forced_termination")
@@ -154,19 +283,23 @@ def exit_evidence_findings(
             or not launched_blank(launch)
             or forced.get("rechecked_command_line")
             != launch.get("observed_command_line")
-            or forced.get("rechecked_window_title")
-            != launch.get("observed_main_window_title")
+            or not _same_document_window(close, forced)
             or not isinstance(forced.get("requested_at_utc"), str)
             or isinstance(wait, bool)
             or not isinstance(wait, (int, float))
             or not 0 < wait <= FORCED_TERMINATION_MAX_GRACEFUL_WAIT_SECONDS
         ):
             found.append("forced_termination_identity_unproven")
+    method = close.get("method")
     if (
         close.get("pid") != launch.get("pid")
         or close.get("process_path") != launch.get("process_path")
         or close.get("process_incarnation") != launch.get("process_incarnation")
-        or close.get("method") != "CloseMainWindow"
+        or method not in GRACEFUL_CLOSE_METHODS
+        or (
+            method == "WM_CLOSE"
+            and not _document_target_proven(launch, close.get("close_target"))
+        )
         or close.get("requested") is not True
     ):
         found.append("graceful_close_identity_unproven")
