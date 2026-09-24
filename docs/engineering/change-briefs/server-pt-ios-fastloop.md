@@ -886,3 +886,33 @@ contract.
 This changes the retirement path that attempt 2 exercised, so the delivered
 code is exercised again by lifecycle attempt 3, the last one Addendum 03
 allows.
+
+## LIVE lifecycle attempt 3 and final closeout, version 16
+
+Episode 4 (zero operations, 300 s) ran the delivered retirement code at
+`1281c92` (tree `09077400`), attempt `8782534d8d49c299db2887fcb298f614`. It
+used one fresh, unnamed Packet Tracer 9.0.1.0858 (PID 48180) and its helper,
+PID 38500. The census again showed only `Cisco Packet Tracer` (handle
+6163786, `Qt687QWindowIcon`, UIA `PtApp.CAppWindowBase`) and the log.
+`--retire` posted one `WM_CLOSE` to handle 6163786 at 19:13:36.726Z. No
+prompt appeared and nothing was forced. Nineteen readings found the process
+present and the next found it absent, so the exit is bounded between
+19:14:02.020Z and 19:14:03.595Z. The identity census then named the one
+remaining process `owned_helper` five times and read zero at 19:14:10.810Z.
+The mailbox had no pending entry before the close or after the exit. The
+record is `exited_before_setup` with SHA-256 `725978ad…`. It was reloaded
+from the verified index, and all 19 checks passed, including that every
+census row was the owned process or its helper. Episode 4 closed 85.2 s after
+it opened.
+
+**Totals.** Three of the three allowed attempts were used, with 293.1 s
+elapsed. The ledger charged each attempt its full 300 s, 900 s in all, which
+is the combined ceiling. There were zero bridge operations, and the campaign
+ledger stands at 622 operations and 1,449.5 s. Attempt 1 (`c2c963f`) was
+refused after a graceful exit and is kept as such. Attempt 2 (`393c500`)
+retired gracefully with the count-only helper wait, which the re-check then
+replaced. Attempt 3 exercised the delivered retirement code. Version 14's
+claims about the native result hold for `1281c92`, with this attempt as their
+evidence. Its limitations also stand: the unobserved `Qt687QWindowOwnDCIcon`
+in the class set, the unexercised force contingency, the one build, and the
+UIA reading being a lead observation.
