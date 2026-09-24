@@ -1626,6 +1626,84 @@ def test_the_identity_must_guard_the_process_that_receives_the_close(
     assert "close_request_not_bound_to_the_owned_process" in _findings(lab)
 
 
+def _tool_line(command: str, wire: str | None = None) -> bytes:
+    """Return one transcript tool call, with its recorded copy of the input."""
+    return json.dumps(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "tool_use", "input": {"command": command}}]
+            },
+            "wireToolInputs": {"command": command if wire is None else wire},
+        },
+        separators=(",", ":"),
+    ).encode()
+
+
+def test_an_unrelated_else_cannot_report_the_owned_process_absent(tmp_path: Path):
+    """The absence answer must be the else branch of the owned-PID check."""
+    lab = _ImportLab(tmp_path)
+    lines = _transcript_lines()
+    lines[6] = _tool_line(
+        f"if (Get-Process -Id {PID} -ErrorAction SilentlyContinue) "
+        '{ "still running" }; if ($false) { "present" } '
+        f'else {{ "process {PID} exited" }}'
+    )
+    lab.transcript.write_bytes(b"\n".join(lines) + b"\n")
+    lab.write_excerpt()
+
+    assert "time_bound_not_supported_by_its_line" in _findings(lab)
+
+
+@pytest.mark.parametrize("guarded_in", ["wire", "sent"])
+def test_a_line_whose_copies_of_the_command_differ_binds_nothing(
+    tmp_path: Path, guarded_in
+):
+    """Every copy of the input must be the one guarded command that ran."""
+    lab = _ImportLab(tmp_path)
+    lines = _transcript_lines()
+    unguarded = "$p = Get-Process -Id 999; $requested = $p.CloseMainWindow()"
+    if guarded_in == "wire":
+        lines[4] = _tool_line(unguarded, wire=_request_command())
+    else:
+        lines[4] = _tool_line(_request_command(), wire=unguarded)
+    lab.transcript.write_bytes(b"\n".join(lines) + b"\n")
+    lab.write_excerpt()
+
+    assert "close_request_not_bound_to_the_owned_process" in _findings(lab)
+
+
+def test_an_expanding_here_string_cannot_report_absence(tmp_path: Path):
+    """A `$(...)` in the listing's here-string runs; it must not exist."""
+    lab = _ImportLab(tmp_path)
+    lines = _transcript_lines()
+    lines[6] = _tool_line(
+        _absence_command().replace(
+            "public static class W2 { }",
+            f'public static class W2 {{ }} $(Write-Host "process {PID} exited")',
+        )
+    )
+    lab.transcript.write_bytes(b"\n".join(lines) + b"\n")
+    lab.write_excerpt()
+
+    assert "time_bound_not_supported_by_its_line" in _findings(lab)
+
+
+def test_a_request_answer_that_began_with_an_error_binds_nothing(tmp_path: Path):
+    """An error before the request may have skipped the identity guard."""
+    lab = _ImportLab(tmp_path)
+    lines = _transcript_lines()
+    lines[5] = lines[5].replace(
+        b"requested=True at=",
+        b"InvalidOperation: You cannot call a method on a null-valued "
+        b"expression.\\nrequested=True at=",
+    )
+    lab.transcript.write_bytes(b"\n".join(lines) + b"\n")
+    lab.write_excerpt()
+
+    assert "close_request_not_bound_to_the_owned_process" in _findings(lab)
+
+
 def test_a_retained_range_that_names_a_termination_is_refused(tmp_path: Path):
     """The claim that the lead issued no termination must hold in the record."""
     lab = _ImportLab(tmp_path)
@@ -1929,6 +2007,80 @@ def test_an_altered_or_planted_record_is_never_completed(
 
     assert refused["reason"].startswith(("import_completion:", "import_exit:"))
     assert store.verify_index() == ("archive_inventory_changed",)
+
+
+@pytest.mark.parametrize(
+    "fresh",
+    [
+        {"packet_tracer_primary_process_count": -1},
+        {"mailbox_pending_count": "0"},
+        {"observed_at_utc": "yesterday"},
+        {"observed_at_utc": "2026-09-24T03:50:00+00:00"},
+        {"owned_pid_present": None},
+    ],
+    ids=["negative-count", "text-count", "bad-time", "before-archive", "unknown"],
+)
+def test_an_interrupted_record_with_an_impossible_census_is_not_completed(
+    import_lab, capsys, tmp_path: Path, monkeypatch, fresh
+):
+    """The earlier census must be well formed and ordered, or nothing is sealed."""
+    cli, env, argv = _stop_before_the_index(import_lab, capsys, monkeypatch)
+    record = _store(tmp_path).record_path_for(ATTEMPT, "exit-import")
+    value = json.loads(record.read_bytes())
+    value["fresh_state"] = {**value["fresh_state"], **fresh}
+    forged = (json.dumps(value, sort_keys=True, ensure_ascii=False) + "\n").encode()
+    record.write_bytes(forged)
+    record.with_name("exit-import.sha256").write_bytes(
+        (hashlib.sha256(forged).hexdigest() + "\n").encode()
+    )
+
+    refused = _refuses_and_writes_nothing(cli, env, argv, capsys, tmp_path)
+
+    assert refused["reason"].startswith("import_exit:")
+
+
+def test_completion_observes_again_and_marks_the_earlier_census_unverified(
+    import_lab, capsys, tmp_path: Path, monkeypatch
+):
+    """The retry's own census is recorded; the interrupted run's is only reported."""
+    cli, env, argv = _stop_before_the_index(import_lab, capsys, monkeypatch)
+
+    code, sealed = _run(cli, argv, env, capsys)
+
+    assert code == 0, sealed
+    store = _store(tmp_path)
+    completion = store.load_exit_import_completion(ATTEMPT)
+    record = store.record_path_for(ATTEMPT, "exit-import").read_bytes()
+    assert completion["record_sha256"] == hashlib.sha256(record).hexdigest()
+    assert completion["fresh_state"]["owned_pid_present"] is False
+    assert completion["fresh_state"]["packet_tracer_contacted"] is False
+    assert completion["earlier_fresh_state"] == (
+        "reported_by_the_interrupted_run_not_reobserved"
+    )
+    assert store.verify_index() == ()
+
+
+def test_an_interrupted_completion_is_left_for_the_operator(
+    import_lab, capsys, tmp_path: Path, monkeypatch
+):
+    """A completion stopped before its index is not completed by itself."""
+    cli, env, argv = _stop_before_the_index(import_lab, capsys, monkeypatch)
+    original = ServerPtCommissioningStore.refresh_index
+
+    def refused(self, *args, **kwargs):
+        if kwargs.get("predecessor") is not None:
+            raise OSError("stopped again before the index")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(ServerPtCommissioningStore, "refresh_index", refused)
+    code, _stopped = _run(cli, argv, env, capsys)
+    assert code == 2
+    monkeypatch.setattr(ServerPtCommissioningStore, "refresh_index", original)
+
+    refused_again = _refuses_and_writes_nothing(cli, env, argv, capsys, tmp_path)
+
+    assert refused_again["reason"] == "import_completion:ValueError"
+    assert _store(tmp_path).verify_index() == ("archive_inventory_changed",)
 
 
 def test_residue_the_import_did_not_write_blocks_it(import_lab, capsys, tmp_path: Path):

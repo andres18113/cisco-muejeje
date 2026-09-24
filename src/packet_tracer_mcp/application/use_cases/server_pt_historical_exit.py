@@ -92,6 +92,16 @@ _REQUEST_FORM = re.compile(
     r"\$requestedAt = \(Get-Date\)\.ToUniversalTime\(\)\.ToString\('o'\); "
     r"\$requested = \$p\.CloseMainWindow\(\); "
 )
+#: The lead's later window listing, in the one form this import supports: a
+#: compile-only `Add-Type`, then one owned-PID check whose else branch is the
+#: only place the absence answer can come from.
+_ABSENCE_FORM = re.compile(
+    r'Add-Type @"\n(?P<source>.*)\n"@; '
+    r"if \(Get-Process -Id (?P<pid>\d+) -ErrorAction SilentlyContinue\) "
+    r'\{ \[W2\]::Titles\((?P<listed>\d+)\) \| ForEach-Object \{ "window: \$_" \} \} '
+    r'else \{ "process (?P<gone>\d+) exited" \}',
+    re.DOTALL,
+)
 #: After the request, nothing may rebind the receiver or send another close.
 _REBINDING = re.compile(r"\$(?:p|pidOwned)\s*=|CloseMainWindow", re.IGNORECASE)
 
@@ -116,6 +126,10 @@ class _Excerpt:
         record = self.record(line)
         return None if record is None else _strings(record)
 
+    def begins(self, line: object, prefix: str) -> bool:
+        """Whether the cited line has a string that begins with `prefix`."""
+        return any(text.startswith(prefix) for text in self.strings(line) or ())
+
     def contains(self, line: object, *needles: str) -> bool:
         """Whether the cited line exists and every needle occurs in one string."""
         texts = self.strings(line)
@@ -133,6 +147,38 @@ def _instant(value: object) -> datetime | None:
     except ValueError:
         return None
     return parsed if parsed.tzinfo is not None else None
+
+
+def _commands(value: object) -> list[str]:
+    """Every string stored under a key named `command`, anywhere."""
+    if isinstance(value, Mapping):
+        found = [item for item in value.values() for item in _commands(item)]
+        command = value.get("command")
+        return [command, *found] if isinstance(command, str) else found
+    if isinstance(value, list):
+        return [item for child in value for item in _commands(child)]
+    return []
+
+
+def tool_command(record: object) -> str | None:
+    """Return the one command a transcript line's tool call ran, or `None`.
+
+    The line must carry exactly one tool call whose input has a `command`,
+    and every other copy of a command on the line (a transcript may also
+    keep the input as sent) must be byte-identical to it.
+    """
+    message = record.get("message") if isinstance(record, Mapping) else None
+    content = message.get("content") if isinstance(message, Mapping) else None
+    calls = [
+        item["input"].get("command")
+        for item in (content if isinstance(content, list) else ())
+        if isinstance(item, Mapping)
+        and item.get("type") == "tool_use"
+        and isinstance(item.get("input"), Mapping)
+    ]
+    if len(calls) != 1 or not isinstance(calls[0], str):
+        return None
+    return calls[0] if set(_commands(record)) == {calls[0]} else None
 
 
 def _strings(value: object) -> list[str]:
@@ -220,30 +266,29 @@ def _request_command_findings(
 ) -> list[str]:
     """Require the retained request command and answer to bind the process.
 
-    Exactly one distinct string of the cited line (a transcript may keep
-    the same input twice) must be the supported request form, whose
+    The cited line's one tool command (`tool_command`, every copy agreeing)
+    must be the supported request form, whose
     receiver is the owned PID and whose guard names the launch's
     creation time, image and command line; nothing after the request may
-    rebind the receiver, close again or terminate. The answer must report
-    `requested=True` at the capture's request time. The capture's
-    transcribed identity rests on this command, not on the capture.
+    rebind the receiver, close again or terminate. The answer's first
+    output must be `requested=True` at the capture's request time: the form
+    does not stop on errors, so an error before the request could have
+    skipped the guard. The capture's transcribed identity rests on this
+    command, not on the capture.
     """
     line = retained.get("line") if isinstance(retained, Mapping) else None
     answer = retained.get("answer_line") if isinstance(retained, Mapping) else None
-    matches = [
-        (match, text[match.end() :])
-        for text in sorted(set(excerpt.strings(line) or []))
-        if (match := _REQUEST_FORM.match(text)) is not None
-    ]
+    command = tool_command(excerpt.record(line))
+    match = _REQUEST_FORM.match(command) if command is not None else None
     if (
         isinstance(answer, bool)
         or not isinstance(answer, int)
         or not isinstance(line, int)
         or not line < answer
-        or len(matches) != 1
+        or match is None
     ):
         return ["close_request_not_bound_to_the_owned_process"]
-    match, rest = matches[0]
+    rest = command[match.end() :]
     command_line = launch.get("observed_command_line")
     if (
         match["pid"] != str(launch.get("pid"))
@@ -254,32 +299,32 @@ def _request_command_findings(
         or _REBINDING.search(rest)
         or _TERMINATION.search(rest)
         or '"requested=$requested at=$requestedAt' not in rest
-        or not excerpt.contains(
-            answer, f"requested=True at={capture.get('requested_at_utc')}"
+        or not excerpt.begins(
+            answer, f"requested=True at={capture.get('requested_at_utc')} "
         )
     ):
         return ["close_request_not_bound_to_the_owned_process"]
     return []
 
 
-def _absence_command_supported(texts: Sequence[str], pid: object) -> bool:
-    """Whether one cited command reports absence only from the owned PID check.
+def _absence_command_supported(record: object, pid: object) -> bool:
+    """Whether the cited command reports absence only from the owned PID check.
 
-    Its last statement must be `if (Get-Process -Id <pid> ...) { ... } else
-    { "process <pid> exited" }`, and that answer text must occur nowhere else.
+    The line's one tool command must be exactly the supported form: a
+    compile-only `Add-Type` here-string, then `if (Get-Process -Id <pid> ...)
+    { [W2]::Titles(<pid>) ... } else { "process <pid> exited" }`, so the
+    absence answer can only be the else branch of the owned-PID check. The
+    here-string is double-quoted, so it must hold no `$`: nothing in it may
+    expand and run.
     """
-    check = f"if (Get-Process -Id {pid} -ErrorAction SilentlyContinue) "
-    gone = f'else {{ "process {pid} exited" }}'
-    found = [
-        text
-        for text in set(texts)
-        if text.endswith(gone)
-        and text.count(f"process {pid} exited") == 1
-        and check in text
-        and not _TERMINATION.search(text)
-        and "CloseMainWindow" not in text
-    ]
-    return len(found) == 1
+    command = tool_command(record)
+    match = _ABSENCE_FORM.fullmatch(command) if command is not None else None
+    return (
+        match is not None
+        and '\n"@' not in match["source"]
+        and "$" not in match["source"]
+        and match["pid"] == match["listed"] == match["gone"] == str(pid)
+    )
 
 
 def _prelaunch_findings(
@@ -348,7 +393,7 @@ def _transcript_bound_findings(
         or absence_bound.get("line") != absence.get("answer_line")
         or not isinstance(absence.get("line"), int)
         or not absence["line"] < absence_bound["line"]
-        or not _absence_command_supported(excerpt.strings(absence["line"]) or [], pid)
+        or not _absence_command_supported(excerpt.record(absence["line"]), pid)
         or not excerpt.contains(absence_bound.get("line"), gone)
     ):
         return ["time_bound_not_supported_by_its_line"]

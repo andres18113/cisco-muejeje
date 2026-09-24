@@ -510,3 +510,34 @@ test.
    recorded) is one distinct command.
 
 The real originals of episode 1 still pass every rule unchanged.
+
+## Final review delta, version 9
+
+A third focused review (of `792a233`) found three more high-severity gaps,
+all reproduced first as failing regressions. The lead's own review of the
+fix then found two more of the same kind, also reproduced first. This is
+the last Codex review the addendum's limit of three offline subagents
+allows, so this delta has self-review only.
+
+1. **An unrelated `else` could report absence.** The absence command must
+   now be exactly the retained form: a compile-only `Add-Type` here-string,
+   then one `if (Get-Process -Id <pid> ...) { [W2]::Titles(<pid>) ... } else
+   { "process <pid> exited" }`. The here-string is double-quoted, so it must
+   contain no `$` (self-review: a `$(...)` in it would run).
+2. **Conflicting copies of a command.** A transcript line keeps a tool input
+   twice. The command is now the line's one `tool_use` input, and every
+   `command` field on the line must be byte-identical to it.
+3. **A completion trusted the interrupted run's census.** A retry now always
+   takes its own census, which must find the owned PID absent. A completion
+   also writes an `exit-import-completion` record: the completed record's
+   digest, the new census, its own recorder source, and the statement that
+   the earlier census was reported by the interrupted run and not observed
+   again. The earlier census must be well formed and taken between its
+   archive time and now. A completion that was itself interrupted is refused
+   for an operator decision.
+4. **An error could skip the request guard (self-review).** The request form
+   does not stop on errors, so a guard expression that errors skips the
+   `throw`. The answer's first output must now be `requested=True at=<time>`,
+   with nothing before it.
+
+The real originals of episode 1 pass every rule unchanged.

@@ -1394,6 +1394,8 @@ def _import_residue(
         store.index_predecessor()["path"],
         f"{base}/{attempt_id}/exit-import.json",
         f"{base}/{attempt_id}/exit-import.sha256",
+        f"{base}/{attempt_id}/exit-import-completion.json",
+        f"{base}/{attempt_id}/exit-import-completion.sha256",
         *artifacts.values(),
     }
     if not set(residue) <= own:
@@ -1495,17 +1497,24 @@ _FRESH_STATE_KEYS = frozenset(
 def _earlier_observations(
     root: Path, record: Mapping[str, object]
 ) -> tuple[dict[str, object], dict[str, object], str]:
-    """Return what an interrupted run observed and cannot be observed again.
+    """Return what an interrupted run stated and cannot be derived again.
 
     Its recorder must have been a clean descendant of the episode source,
-    its census must have found the owned PID absent without contacting
-    Packet Tracer, and its archive time must not lie in the future.
-    Everything else in the record is rebuilt and compared.
+    and its archive time must not lie in the future. Its census must be
+    well formed and taken between its archive time and now; it is carried
+    as that run reported it, never as this run's observation, and the
+    completion takes and records its own census. Everything else in the
+    record is rebuilt and compared.
     """
     authority = _EXIT_IMPORT_AUTHORITY
     recorder = record.get("recorder_source")
     fresh = record.get("fresh_state")
     archive_at = record.get("archived_at_utc")
+    now = datetime.now(UTC)
+
+    def count(value: object) -> bool:
+        return not isinstance(value, bool) and isinstance(value, int) and value >= 0
+
     if (
         not isinstance(recorder, dict)
         or recorder.get("clean") is not True
@@ -1513,8 +1522,16 @@ def _earlier_observations(
         or set(fresh) != _FRESH_STATE_KEYS
         or fresh.get("owned_pid_present") is not False
         or fresh.get("packet_tracer_contacted") is not False
+        or not count(fresh.get("packet_tracer_primary_process_count"))
+        or not count(fresh.get("mailbox_pending_count"))
+        or not isinstance(fresh.get("mailbox_error"), str)
         or not isinstance(archive_at, str)
-        or datetime.fromisoformat(archive_at) > datetime.now(UTC)
+        or not isinstance(fresh.get("observed_at_utc"), str)
+        or not (
+            datetime.fromisoformat(archive_at)
+            <= datetime.fromisoformat(fresh["observed_at_utc"])
+            <= now
+        )
     ):
         raise ValueError("interrupted import observations are unusable")
     ancestry = _SOURCE_ANCESTRY(
@@ -1537,19 +1554,28 @@ def _complete_import(
     addendum: bytes,
     artifacts: Mapping[str, bytes],
     tolerate: frozenset[str],
+    census: Mapping[str, object],
+    recorder: Mapping[str, object],
 ) -> int:
     """Index an interrupted import's record only if it is its validated rebuild.
 
     The caller revalidated every original, the manifest and the launch, and
-    rebuilt the record from them with only the earlier run's observations;
+    rebuilt the record from them with only the earlier run's stated values;
     the stored bytes must equal that rebuild, and every file it names must
     hold exactly the bytes it states. Only its derived digest may be missing.
+    The earlier run's census cannot be observed again, so this completion
+    records its own `census` beside it and marks the earlier one as only
+    reported. A completion that was itself interrupted is refused for an
+    operator decision rather than completed again.
     """
     record_path = store.record_path_for(attempt_id, "exit-import")
     sidecar = record_path.with_name("exit-import.sha256")
+    completion = store.record_path_for(attempt_id, "exit-import-completion")
     addendum_path, artifact_paths = _import_paths(store.campaign_id, attempt_id)
     predecessor = document["index_predecessor"]
     try:
+        if completion.exists():
+            raise ValueError("an interrupted completion needs an operator decision")
         if store.mapping_bytes(document) != written:
             raise ValueError("import record differs from its validated rebuild")
         if (store.root / predecessor["path"]).read_bytes() != store.index_bytes():
@@ -1568,6 +1594,21 @@ def _complete_import(
         }
         if not tolerate <= named:
             raise ValueError("residue the import record does not name")
+        store.save_exit_import_completion(
+            attempt_id,
+            {
+                "kind": "historical_exit_import_completion",
+                "campaign_id": store.campaign_id,
+                "attempt_id": attempt_id,
+                "record_sha256": hashlib.sha256(written).hexdigest(),
+                "earlier_fresh_state": (
+                    "reported_by_the_interrupted_run_not_reobserved"
+                ),
+                "fresh_state": dict(census),
+                "recorder_source": dict(recorder),
+                "completed_at_utc": datetime.now(UTC).isoformat(),
+            },
+        )
         store.seal_exit_import(attempt_id)
         store.refresh_index(predecessor=predecessor)
         if store.verify_index():
@@ -1692,10 +1733,13 @@ def _import_exit(
         transcript = _transcript_source(
             manifest["artifacts"]["transcript_excerpt"], artifacts["transcript_excerpt"]
         )
+        # Every run observes the current state itself; a completion keeps
+        # the interrupted run's census only as that run reported it.
+        census = _fresh_state(launch["pid"])
+        if census["owned_pid_present"]:
+            raise ValueError("a process with the owned PID is present now")
         if written is None:
-            fresh = _fresh_state(launch["pid"])
-            if fresh["owned_pid_present"]:
-                raise ValueError("a process with the owned PID is present now")
+            fresh = census
         document = _import_document(
             campaign=campaign,
             attempt_id=attempt_id,
@@ -1724,7 +1768,22 @@ def _import_exit(
         return 2
     if written is not None:
         return _complete_import(
-            store, attempt_id, document, written, addendum, artifacts, tolerate
+            store,
+            attempt_id,
+            document,
+            written,
+            addendum,
+            artifacts,
+            tolerate,
+            census,
+            {
+                "sha": source.head,
+                "tree": source.tree,
+                "branch": source.branch,
+                "upstream": source.upstream,
+                "upstream_head": source.upstream_head,
+                "clean": source.clean,
+            },
         )
     try:
         if store.preserve_index() != document["index_predecessor"]:

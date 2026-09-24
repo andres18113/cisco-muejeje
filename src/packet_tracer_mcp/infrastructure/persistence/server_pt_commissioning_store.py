@@ -207,6 +207,7 @@ class ServerPtCommissioningStore:
             "process-launch",
             "process-exit",
             "exit-import",
+            "exit-import-completion",
             "causal-correction",
             "setup-status",
             "prequalification-status",
@@ -542,6 +543,16 @@ class ServerPtCommissioningStore:
     def load_exit_import(self, attempt_id: str) -> dict[str, object]:
         """Reload the byte-bound historical exit import."""
         return self._load_mapping(attempt_id, "exit-import")
+
+    def save_exit_import_completion(
+        self, attempt_id: str, document: Mapping[str, object]
+    ) -> Path:
+        """Retain what completing an interrupted import observed itself."""
+        return self._save_mapping(attempt_id, "exit-import-completion", document)
+
+    def load_exit_import_completion(self, attempt_id: str) -> dict[str, object]:
+        """Reload the byte-bound completion of an interrupted import."""
+        return self._load_mapping(attempt_id, "exit-import-completion")
 
     def seal_exit_import(self, attempt_id: str) -> Path:
         """Write the digest of an import record whose writer stopped before it.
