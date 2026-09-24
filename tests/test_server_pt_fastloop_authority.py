@@ -396,7 +396,7 @@ def test_an_opening_must_fit_the_ordinary_allowance_and_protect_the_tail():
         {}, _opening(question=""), FASTLOOP_ALLOWANCE, now
     )
     assert "episode_allocation_not_finite_positive" in opening_findings(
-        {}, _opening(allocated_operations=0), FASTLOOP_ALLOWANCE, now
+        {}, _opening(allocated_seconds=0), FASTLOOP_ALLOWANCE, now
     )
     assert "episode_not_next_in_sequence" in opening_findings(
         {}, _opening(episode=2), FASTLOOP_ALLOWANCE, now
@@ -547,6 +547,7 @@ def _launch() -> dict[str, object]:
         "command_line": f'"{process.process_path}" ',
         "observed_main_window_title": "Cisco Packet Tracer",
         "observed_command_line": f'"{process.process_path}" ',
+        "observed_product_version": "9.0.1.0858",
     }
 
 
@@ -566,7 +567,7 @@ def _document_window(**overrides) -> dict[str, object]:
     value: dict[str, object] = {
         "handle": 4242,
         "owner_pid": _process().process_id,
-        "class_name": "Qt663QWindowIcon",
+        "class_name": "Qt687QWindowIcon",
         "title": "Cisco Packet Tracer",
         "visible": True,
         "enabled": True,

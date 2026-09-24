@@ -38,6 +38,9 @@ from packet_tracer_mcp.application.use_cases.server_pt_phase_grant import (
 )
 from packet_tracer_mcp.application.use_cases.server_pt_process_evidence import (
     EXTENSION_LOG_WINDOW_TITLE,
+    PT_WINDOW_SIGNATURES,
+    BuildWindowSignature,
+    WindowRole,
     exit_evidence_findings,
     force_window_findings,
     incarnation_ticks,
@@ -46,6 +49,10 @@ from packet_tracer_mcp.application.use_cases.server_pt_process_evidence import (
 from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     DiagnosticLifecycleObservation,
     RepositoryIdentity,
+)
+from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
+    ImportIsolationResult,
+    ImportIsolationState,
 )
 from packet_tracer_mcp.infrastructure.execution.server_pt_campaign_authority import (
     SourceAncestry,
@@ -75,7 +82,8 @@ PATH = "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe"
 INCARNATION = "2026-09-24T07:00:00-05:00"
 COMMAND_LINE = f'"{PATH}" '
 START_TICKS = incarnation_ticks(INCARNATION)
-QT_CLASS = "Qt663QWindowIcon"
+QT_CLASS = "Qt687QWindowIcon"
+SIGNATURE = PT_WINDOW_SIGNATURES["9.0.1.0858"]
 
 
 def _window(
@@ -135,7 +143,9 @@ def _census(
 )
 def test_order_focus_and_the_log_window_select_the_same_document(windows):
     """Enumeration order and the log window's presence change nothing."""
-    selected, found = select_document_window(PID, _census(*windows))
+    selected, found = select_document_window(
+        PID, _census(*windows), signature=SIGNATURE
+    )
 
     assert found == ()
     assert selected == DOCUMENT
@@ -181,7 +191,7 @@ def test_order_focus_and_the_log_window_select_the_same_document(windows):
 )
 def test_any_doubt_about_the_windows_selects_nothing(census, finding):
     """Incomplete, foreign, modal, changed or ambiguous: no close target."""
-    selected, found = select_document_window(PID, census)
+    selected, found = select_document_window(PID, census, signature=SIGNATURE)
 
     assert selected is None
     assert finding in found
@@ -191,13 +201,15 @@ def test_a_census_of_another_incarnation_selects_nothing():
     """The same PID created at another instant is another process."""
     census = _census(DOCUMENT, LOG, ticks=START_TICKS + 1)
 
-    assert select_document_window(PID, census, start_ticks=START_TICKS) == (
+    assert select_document_window(
+        PID, census, signature=SIGNATURE, start_ticks=START_TICKS
+    ) == (
         None,
         ("window_census_process_changed",),
     )
-    assert select_document_window(PID, _census(DOCUMENT, LOG), start_ticks=START_TICKS)[
-        0
-    ] == (DOCUMENT)
+    assert select_document_window(
+        PID, _census(DOCUMENT, LOG), signature=SIGNATURE, start_ticks=START_TICKS
+    )[0] == (DOCUMENT)
 
 
 def test_the_creation_time_converts_exactly_to_windows_ticks():
@@ -218,11 +230,13 @@ def test_a_foreign_process_with_identical_titles_is_never_selected():
         pid=FOREIGN_PID,
     )
 
-    assert select_document_window(PID, foreign) == (
+    assert select_document_window(PID, foreign, signature=SIGNATURE) == (
         None,
         ("window_attribution_mismatch",),
     )
-    assert select_document_window(PID, _census(LOG))[1] == ("document_window_absent",)
+    assert select_document_window(PID, _census(LOG), signature=SIGNATURE)[1] == (
+        "document_window_absent",
+    )
 
 
 @pytest.mark.parametrize(
@@ -246,7 +260,7 @@ def test_a_foreign_process_with_identical_titles_is_never_selected():
 )
 def test_a_force_needs_the_same_document_window_and_nothing_modal(after, finding):
     """After a failed close only the unchanged target may be forced."""
-    found = force_window_findings(PID, DOCUMENT, after)
+    found = force_window_findings(PID, DOCUMENT, after, signature=SIGNATURE)
 
     assert (found == ()) if finding is None else (finding in found)
 
@@ -258,6 +272,7 @@ def _launch() -> dict[str, object]:
         "process_incarnation": INCARNATION,
         "observed_command_line": COMMAND_LINE,
         "observed_main_window_title": "Cisco Packet Tracer",
+        "observed_product_version": "9.0.1.0858",
     }
 
 
@@ -652,6 +667,16 @@ def _run(cli, argv, env, capsys):
     return code, json.loads(capsys.readouterr().out)
 
 
+class _Isolated:
+    """An import-isolation preflight that finds the process isolated."""
+
+    def __init__(self, _root):
+        pass
+
+    def ensure_isolated(self) -> ImportIsolationResult:
+        return ImportIsolationResult(ImportIsolationState.ISOLATED)
+
+
 @pytest.fixture
 def fastloop_cli(tmp_path: Path, monkeypatch):
     """Bind a test charter to the experimental campaign; forbid other reads."""
@@ -669,6 +694,8 @@ def fastloop_cli(tmp_path: Path, monkeypatch):
         raise AssertionError("no process may be read by this refusal")
 
     monkeypatch.setattr(cli, "phase_preflight", forbidden)
+    # This pytest process stands in for the isolated production process.
+    monkeypatch.setattr(cli, "_RETIREMENT_ISOLATION", _Isolated)
     return cli, charter, {"PT_MCP_GOVERNED_ROOT": str(tmp_path)}
 
 
@@ -2296,7 +2323,17 @@ def test_the_native_helper_enumerates_selects_and_closes_one_window():
             observed.process_incarnation
         )
         assert all(window.owner_pid == probe.pid for window in census.windows)
-        target, found = select_document_window(probe.pid, census)
+        # The probe's forms are not Packet Tracer windows: they get their
+        # own signature, from the one class Windows Forms gave both of them.
+        classes = frozenset(window.class_name for window in visible)
+        assert len(classes) == 1
+        forms = BuildWindowSignature(
+            "native-probe",
+            WindowRole(classes, "fastloop window probe"),
+            WindowRole(classes, EXTENSION_LOG_WINDOW_TITLE),
+            "the probe's own Windows Forms windows",
+        )
+        target, found = select_document_window(probe.pid, census, signature=forms)
         assert found == ()
         assert target.title == "fastloop window probe"
         bound = {

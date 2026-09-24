@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
 
 from ...domain.enterprise.models.service_qualification import (
@@ -108,6 +109,98 @@ def observed_process_findings(
 #: visible, unowned top-level window of the Packet Tracer process (FASTLOOP
 #: episode 1). It is never a close target and never evidence about a document.
 EXTENSION_LOG_WINDOW_TITLE = "Logs - MCP BUILDER"
+#: The title Packet Tracer 9.0.1.0858 gives its unnamed document window.
+BLANK_DOCUMENT_TITLE = "Cisco Packet Tracer"
+
+
+@dataclass(frozen=True)
+class WindowRole:
+    """One top-level window role: the classes it may have and its exact title."""
+
+    class_names: frozenset[str]
+    title: str
+
+    def matches(self, window: object) -> bool:
+        """Whether one observed window has this role's class and title."""
+        return (
+            getattr(window, "class_name", None) in self.class_names
+            and getattr(window, "title", None) == self.title
+        )
+
+
+@dataclass(frozen=True)
+class BuildWindowSignature:
+    """The windows one Packet Tracer build is known to show, and why.
+
+    A window is the document only when it matches `document`; a window that
+    matches neither role is unclassified, and withholds every effect. The
+    title is one conjunct among class, owner, visibility, enablement and the
+    process, never a selection by itself.
+    """
+
+    build: str
+    document: WindowRole
+    extension_log: WindowRole
+    basis: str
+
+
+#: Win32's own dialog class. Such a window is never a document.
+DIALOG_WINDOW_CLASSES = frozenset({"#32770"})
+
+#: Qt 6.8.7, as installed with 9.0.1.0858, registers one of these two classes
+#: for an ordinary top-level window with a system menu: `QWindowIcon`
+#: (raster or Direct3D surface) or `QWindowOwnDCIcon` (OpenGL surface).
+_QT_687_TOP_LEVEL_CLASSES = frozenset({"Qt687QWindowIcon", "Qt687QWindowOwnDCIcon"})
+
+#: Only builds whose windows are known are listed. Another build selects
+#: nothing until its own signature is established.
+PT_WINDOW_SIGNATURES: Mapping[str, BuildWindowSignature] = {
+    SERVER_PT_BUILD: BuildWindowSignature(
+        build=SERVER_PT_BUILD,
+        document=WindowRole(_QT_687_TOP_LEVEL_CLASSES, BLANK_DOCUMENT_TITLE),
+        extension_log=WindowRole(_QT_687_TOP_LEVEL_CLASSES, EXTENSION_LOG_WINDOW_TITLE),
+        basis=(
+            "titles observed on 9.0.1.0858 (FASTLOOP episode 1 window listing; "
+            "UIA inventory 2026-09-15: PtApp.CAppWindowBase, Qt class CAppWindow, "
+            "named Cisco Packet Tracer); classes are the Qt 6.8.7 top-level "
+            "window classes of the installed build's Qt, confirmed only by a "
+            "laboratory census"
+        ),
+    ),
+}
+
+
+def window_signature_for_launch(
+    launch: Mapping[str, object],
+) -> BuildWindowSignature | None:
+    """Return the signature of the build the launch record observed, or `None`.
+
+    The build is what the operating system reported for the launched image
+    (`observed_product_version`, `observed_file_version`). A launch without
+    it, or with two readings naming different known builds, has none.
+    """
+    found = {
+        PT_WINDOW_SIGNATURES[value]
+        for value in (
+            launch.get("observed_product_version"),
+            launch.get("observed_file_version"),
+        )
+        if isinstance(value, str) and value in PT_WINDOW_SIGNATURES
+    }
+    return found.pop() if len(found) == 1 else None
+
+
+def window_signature_record(signature: BuildWindowSignature) -> dict[str, object]:
+    """One signature as evidence: how the document role was identified."""
+    return {
+        "build": signature.build,
+        "document_classes": sorted(signature.document.class_names),
+        "document_title": signature.document.title,
+        "extension_log_classes": sorted(signature.extension_log.class_names),
+        "extension_log_title": signature.extension_log.title,
+        "dialog_classes": sorted(DIALOG_WINDOW_CLASSES),
+        "basis": signature.basis,
+    }
 
 
 _INCARNATION = re.compile(
@@ -152,20 +245,39 @@ def title_names_file(title: str) -> bool:
     return any(marker in title.casefold() for marker in _DOCUMENT_MARKERS)
 
 
+def _window_role(window: object, signature: BuildWindowSignature) -> str:
+    """Classify one visible window; anything not positively known is doubt."""
+    if getattr(window, "owner_handle", 0):
+        return "owned"
+    if getattr(window, "class_name", None) in DIALOG_WINDOW_CLASSES:
+        return "dialog"
+    if signature.document.matches(window):
+        return "document"
+    if signature.extension_log.matches(window):
+        return "extension_log"
+    return "unclassified"
+
+
 def select_document_window(
-    pid: int, census: object, *, start_ticks: int | None = None
+    pid: int,
+    census: object,
+    *,
+    signature: BuildWindowSignature | None,
+    start_ticks: int | None = None,
 ) -> tuple[object | None, tuple[str, ...]]:
     """Select the one window a normal close may target, or name the doubt.
 
     `census` carries `process_id`, `windows`, `complete` and `error`; each
-    window carries `handle`, `owner_pid`, `title`, `visible`, `enabled` and
-    `owner_handle`. Only visible windows matter, whatever their order. The
-    extension log window is set aside by its observed title. Exactly one
-    other visible, unowned, enabled window whose title names no file may be
-    selected. A visible owned window may be a modal prompt: it is reported,
-    never filtered out, and withholds any close. The selection is auxiliary:
-    it never proves that no user document exists. With `start_ticks`, the
-    census must also have been taken of the process created at that instant.
+    window carries `handle`, `owner_pid`, `class_name`, `title`, `visible`,
+    `enabled` and `owner_handle`. Only visible windows matter, whatever their
+    order. Each one must be positively classified by the build's
+    `signature`: exactly one enabled document window, at most one extension
+    log window, and nothing else. A native dialog, an unclassified window or
+    a visible owned window (possibly a modal prompt) is reported, never
+    filtered out, and withholds any close. Without a signature nothing is
+    selected. The selection is auxiliary: it never proves that no user
+    document exists. With `start_ticks`, the census must also have been taken
+    of the process created at that instant.
     """
     if getattr(census, "error", ""):
         return None, ("window_census_unobservable",)
@@ -180,41 +292,56 @@ def select_document_window(
         return None, ("window_attribution_mismatch",)
     if getattr(census, "complete", False) is not True:
         return None, ("window_census_incomplete",)
+    if signature is None:
+        return None, ("document_signature_unestablished",)
     visible = [window for window in windows if window.visible is True]
+    roles = [(window, _window_role(window, signature)) for window in visible]
     found: list[str] = []
-    if any(window.owner_handle for window in visible):
+    if any(role == "owned" for _, role in roles):
         found.append("modal_or_owned_window_visible")
-    unowned = [window for window in visible if not window.owner_handle]
-    if sum(window.title == EXTENSION_LOG_WINDOW_TITLE for window in unowned) > 1:
+    if any(role == "dialog" for _, role in roles):
+        found.append("dialog_window_visible")
+    unclassified = [window for window, role in roles if role == "unclassified"]
+    if unclassified:
+        found.append("unclassified_window_visible")
+    if any(
+        window.class_name in signature.document.class_names
+        and (not window.title or title_names_file(window.title))
+        for window in unclassified
+    ):
+        found.append("document_window_names_file_or_nothing")
+    if sum(role == "extension_log" for _, role in roles) > 1:
         found.append("extension_window_ambiguous")
-    candidates = [
-        window for window in unowned if window.title != EXTENSION_LOG_WINDOW_TITLE
-    ]
-    if not candidates:
+    documents = [window for window, role in roles if role == "document"]
+    if not documents:
         found.append("document_window_absent")
-    elif len(candidates) > 1:
+    elif len(documents) > 1:
         found.append("document_window_ambiguous")
-    else:
-        document = candidates[0]
-        if document.enabled is not True:
-            found.append("document_window_disabled")
-        if not document.title or title_names_file(document.title):
-            found.append("document_window_names_file_or_nothing")
+    elif documents[0].enabled is not True:
+        found.append("document_window_disabled")
     if found:
         return None, tuple(found)
-    return candidates[0], ()
+    return documents[0], ()
 
 
 def force_window_findings(
-    pid: int, target: object, census: object, *, start_ticks: int | None = None
+    pid: int,
+    target: object,
+    census: object,
+    *,
+    signature: BuildWindowSignature | None,
+    start_ticks: int | None = None,
 ) -> tuple[str, ...]:
     """Name what, in the census after a failed close, withholds a force.
 
     The force needs the same document window the close targeted, with the
-    same identity digest, and nothing modal or ambiguous beside it. A document
-    window that closed while the process stays alive is recorded, not forced.
+    same identity digest, and nothing modal, unclassified or ambiguous beside
+    it. A document window that closed while the process stays alive is
+    recorded, not forced.
     """
-    selected, found = select_document_window(pid, census, start_ticks=start_ticks)
+    selected, found = select_document_window(
+        pid, census, signature=signature, start_ticks=start_ticks
+    )
     if found:
         return tuple(
             "document_window_closed_process_alive"
@@ -248,12 +375,17 @@ _WINDOW_DIGEST_LENGTH = 64
 
 
 def _document_target_proven(launch: Mapping[str, object], target: object) -> bool:
-    """Whether a recorded close target is one owned, unnamed document window."""
+    """Whether a recorded close target is one owned, unnamed document window.
+
+    Its class and title must be the document role of the build the launch
+    observed; a native dialog, the log or an unknown window is not a target.
+    """
     if not isinstance(target, Mapping):
         return False
     handle = target.get("handle")
     digest = target.get("identity_digest")
     title = target.get("title")
+    signature = window_signature_for_launch(launch)
     return (
         not isinstance(handle, bool)
         and isinstance(handle, int)
@@ -265,6 +397,10 @@ def _document_target_proven(launch: Mapping[str, object], target: object) -> boo
         and bool(title)
         and title != EXTENSION_LOG_WINDOW_TITLE
         and not title_names_file(title)
+        and signature is not None
+        and target.get("class_name") not in DIALOG_WINDOW_CLASSES
+        and target.get("class_name") in signature.document.class_names
+        and title == signature.document.title
     )
 
 

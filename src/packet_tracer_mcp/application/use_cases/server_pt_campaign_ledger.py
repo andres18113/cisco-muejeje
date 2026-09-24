@@ -8,7 +8,8 @@ of write-once records from which every total is recomputed:
 
 - an episode OPENING declares, before any contact, its question, the frozen
   source, the tests actually run, its attempts, targets, permitted effects, a
-  finite operation and time allocation and its stop rule;
+  finite operation and time allocation and its stop rule (zero operations
+  declares a lifecycle-only episode, which admits no bridge phase);
 - a phase ADMISSION records a phase grant against that allocation, before
   the phase binds a mailbox;
 - a phase RESULT records the operations and seconds the phase really used;
@@ -273,7 +274,9 @@ def opening_findings(
         value = opening.get(field)
         if not isinstance(value, list) or not value:
             found.append(f"episode_{field}_missing")
-    if operations < 1 or seconds <= 0:
+    # Zero operations is a lifecycle-only episode: it admits no bridge phase
+    # (`phase_admission_findings`), but its time is charged like any other.
+    if seconds <= 0:
         found.append("episode_allocation_not_finite_positive")
     totals = ledger_totals(records, allowance, now)
     if totals.open_episode is not None:
@@ -322,6 +325,9 @@ def phase_admission_findings(
         return ("episode_already_closed",), False
     if attempt_id not in (opening.get("attempt_ids") or []):
         return ("attempt_not_declared_by_episode",), False
+    if _count(opening.get("allocated_operations")) == 0:
+        # A lifecycle-only episode: not even cleanup draws the reserve.
+        return ("episode_allocates_no_bridge_operation",), False
     if (
         not source_sha
         or not source_tree

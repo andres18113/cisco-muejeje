@@ -82,6 +82,8 @@ from ...application.use_cases.server_pt_process_evidence import (
     launched_blank,
     observed_process_findings,
     select_document_window,
+    window_signature_for_launch,
+    window_signature_record,
 )
 from ...application.use_cases.server_pt_second_attempt import second_attempt_findings
 from ...application.use_cases.setup_server_pt_commissioning import (
@@ -108,6 +110,7 @@ from ...infrastructure.execution.enterprise_configuration_runtime import (
 )
 from ...infrastructure.execution.file_bridge import bridge_dir
 from ...infrastructure.execution.import_isolation_preflight import (
+    ImportIsolationPreflight,
     governed_root_from_env,
 )
 from ...infrastructure.execution.packet_tracer_physical_runtime import (
@@ -157,6 +160,9 @@ RETIREMENT_GRACE_SECONDS = 60.0
 RETIREMENT_EXIT_WAIT_SECONDS = 30.0
 _RETIREMENT_POLL_SECONDS = 1.0
 _retirement_sleep = time.sleep
+#: The retiring process must itself be the isolated production process:
+#: checkout interpreter and package, one namespace, no test runner.
+_RETIREMENT_ISOLATION = ImportIsolationPreflight
 #: The one historical exit an operator addendum authorizes importing, and
 #: the read-only Git question that binds its episode to the recorder.
 _EXIT_IMPORT_AUTHORITY = FASTLOOP_EPISODE_1_EXIT_IMPORT
@@ -825,6 +831,10 @@ def _record_launch(
             observed = {
                 "observed_command_line": reading.command_line,
                 "observed_main_window_title": reading.main_window_title,
+                # The build the OS reported for this image; retirement
+                # identifies the document window by this build's signature.
+                "observed_product_version": preflight.process.product_version,
+                "observed_file_version": preflight.process.file_version,
                 # Auxiliary: the windows the process showed at launch. It
                 # authorizes nothing; retirement takes its own census.
                 "observed_window_census": _census_record(
@@ -1009,16 +1019,75 @@ def _retirement_basis(
     return "exited_dirty", "empty_baseline_then_campaign_effects"
 
 
-def _await_absence(control, pid: int, seconds: float) -> bool:
-    """Poll one PID until the OS reports it absent, within a bounded wait."""
+def _timed_reading(control, pid: int, readings: list[dict[str, object]]):
+    """Observe one PID and keep the reading with its request and answer times."""
+    started = datetime.now(UTC).isoformat()
+    reading = control.observe(pid)
+    readings.append(
+        {
+            "started_at_utc": started,
+            "answered_at_utc": datetime.now(UTC).isoformat(),
+            "present": None if reading.error else reading.present,
+            "error": reading.error,
+        }
+    )
+    return reading
+
+
+def _await_absence(
+    control, pid: int, seconds: float, readings: list[dict[str, object]]
+) -> bool:
+    """Poll one PID until the OS reports it absent, within a bounded wait.
+
+    Every reading is appended to `readings`, so an exit is bounded by what
+    was observed rather than by the limits of the wait.
+    """
     deadline = time.monotonic() + seconds
     while True:
-        reading = control.observe(pid)
+        reading = _timed_reading(control, pid, readings)
         if not reading.error and not reading.present:
             return True
         if time.monotonic() >= deadline:
             return False
         _retirement_sleep(_RETIREMENT_POLL_SECONDS)
+
+
+def _exit_bounds(alive_at: str, readings: list[dict[str, object]]) -> dict[str, str]:
+    """Bound an exit by raw readings, or return nothing if none saw it.
+
+    The exit came after the start of the last reading that found the process
+    present (or `alive_at`, when an effect's own recheck found it alive) and
+    before the answer of the first reading that found it absent.
+    """
+    after = alive_at
+    for reading in readings:
+        if reading["present"] is True:
+            after = str(reading["started_at_utc"])
+        elif reading["present"] is False:
+            return {"after_utc": after, "before_utc": str(reading["answered_at_utc"])}
+    return {}
+
+
+def _mailbox_state() -> dict[str, object]:
+    """Count pending mailbox requests and responses without contacting PT."""
+    try:
+        directory = Path(_MAILBOX_DIR())
+        pending = (
+            sum(
+                1
+                for pattern in ("req_*", "res_*")
+                for path in directory.glob(pattern)
+                if path.is_file()
+            )
+            if directory.exists()
+            else 0
+        )
+    except OSError as exc:
+        return {
+            "pending_count": None,
+            "error": f"mailbox_unreadable:{type(exc).__name__}",
+        }
+    return {"pending_count": pending, "error": ""}
 
 
 def _window_record(window: object) -> dict[str, object]:
@@ -1072,14 +1141,17 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
 
     The owned PID's identity (image, creation time, command line) is read
     fresh, its top-level windows are enumerated, and exactly one document
-    window is selected (`select_document_window`); any doubt sends nothing.
-    After the identity is read again, one revalidated `WM_CLOSE` goes to that
-    handle, never to the extension log window and never broadcast. Only if
+    window is selected by the signature of the build the launch observed
+    (`select_document_window`); a dialog, an unclassified window or any other
+    doubt sends nothing. After the identity is read again, one revalidated
+    `WM_CLOSE` goes to that handle, never to the extension log window and
+    never broadcast. Every absence reading is kept with its times. Only if
     the process is still present after the bounded wait, the identity still
     matches, a second complete census shows the same document window and
-    nothing modal, and the workspace-ownership basis is established from
-    indexed records, is that exact PID terminated. An already absent process
-    is neither closed nor killed. Every refusal is recorded as an attempt.
+    nothing modal or unclassified, and the workspace-ownership basis is
+    established from indexed records, is that exact PID terminated. An
+    already absent process is neither closed nor killed. Every refusal is
+    recorded as an attempt, with the signature and mailbox state it saw.
     """
     store = ServerPtCommissioningStore(root, campaign.campaign_id)
     if _adopt_ledger_residue(store, campaign):
@@ -1111,12 +1183,28 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
             }
         )
         return 2
+    isolation = _RETIREMENT_ISOLATION(root).ensure_isolated()
+    if not isolation.isolated:
+        # Nothing is observed or sent from a process that is not isolated.
+        _print(
+            {
+                "outcome": "refused",
+                "reason": "import_isolation_unverified:" + isolation.state.value,
+            }
+        )
+        return 2
+    # The document is identified by the launched build's signature. Without
+    # one the census is still taken and kept, and nothing is selected.
+    signature = window_signature_for_launch(launch)
     control = _PROCESS_CONTROL()
     identity = {
         "pid": pid,
         "process_path": launch.get("process_path"),
         "process_incarnation": launch.get("process_incarnation"),
         "ownership_basis": basis,
+        "window_signature": (
+            window_signature_record(signature) if signature is not None else None
+        ),
     }
     reading = control.observe(pid)
     refusal = observed_process_findings(launch, reading)
@@ -1134,9 +1222,12 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
             },
         )
     before = control.windows(pid)
-    target, refusal = select_document_window(pid, before, start_ticks=start_ticks)
+    target, refusal = select_document_window(
+        pid, before, signature=signature, start_ticks=start_ticks
+    )
     if not refusal:
         refusal = observed_process_findings(launch, control.observe(pid))
+    mailbox_before = _mailbox_state()
     if refusal or target is None:
         return _record_retirement_attempt(
             store,
@@ -1147,9 +1238,11 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
                 "requested": False,
                 "refusal": list(refusal),
                 "window_census_before": _census_record(before),
+                "mailbox_before_close": mailbox_before,
                 "observed_at_utc": datetime.now(UTC).isoformat(),
             },
         )
+    readings: list[dict[str, object]] = []
     requested_at = datetime.now(UTC).isoformat()
     # The helper posts only while the process and its visible windows are
     # still exactly what this census saw.
@@ -1169,7 +1262,9 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
         "close_refusal": sent.refusal,
         "close_error": sent.error,
         "window_census_before": _census_record(before),
+        "mailbox_before_close": mailbox_before,
         "graceful_wait_seconds": RETIREMENT_GRACE_SECONDS,
+        "absence_observations": readings,
     }
     if not sent.sent and not sent.error:
         # The helper refused before posting: nothing was sent, nothing forced.
@@ -1185,11 +1280,12 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
         )
     # A helper error leaves the close's outcome unknown: absence is still
     # observed, but an unknown request never authorizes a force.
-    exited = _await_absence(control, pid, RETIREMENT_GRACE_SECONDS)
+    exited = _await_absence(control, pid, RETIREMENT_GRACE_SECONDS, readings)
     forced: dict[str, object] | None = None
+    kill_readings: list[dict[str, object]] = []
     refusal = () if sent.sent else ("close_outcome_unknown",)
     if not exited and not refusal:
-        again = control.observe(pid)
+        again = _timed_reading(control, pid, readings)
         if not again.error and not again.present:
             exited = True
         else:
@@ -1198,7 +1294,7 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
             if after is not None:
                 close["window_census_after"] = _census_record(after)
                 refusal = force_window_findings(
-                    pid, target, after, start_ticks=start_ticks
+                    pid, target, after, signature=signature, start_ticks=start_ticks
                 )
             if not refusal:
                 forced = {
@@ -1237,9 +1333,12 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
                     "refusal": killed.refusal,
                     "error": killed.error,
                 }
+                forced["absence_observations"] = kill_readings
                 if killed.sent or killed.error:
                     # An unanswered helper may have acted: observe, never retry.
-                    exited = _await_absence(control, pid, RETIREMENT_EXIT_WAIT_SECONDS)
+                    exited = _await_absence(
+                        control, pid, RETIREMENT_EXIT_WAIT_SECONDS, kill_readings
+                    )
                 else:
                     refusal = (f"termination_not_sent:{killed.refusal}",)
     count = control.census()
@@ -1247,9 +1346,17 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
         {
             "actual_exit_observed": exited,
             "process_count": count,
+            "mailbox_after_exit": _mailbox_state(),
             "observed_at_utc": datetime.now(UTC).isoformat(),
         }
     )
+    # Each effect's own recheck found the process alive when it was issued.
+    if forced is not None and forced["termination"]["sent"]:
+        close["exit_bounds"] = _exit_bounds(
+            str(forced["requested_at_utc"]), kill_readings
+        )
+    elif sent.sent:
+        close["exit_bounds"] = _exit_bounds(requested_at, readings)
     if forced is not None:
         close["forced_termination"] = forced
         if not forced["termination"]["sent"]:
@@ -1343,25 +1450,13 @@ def _fresh_state(pid: int) -> dict[str, object]:
     observed = PowerShellPacketTracerProcessReader(timeout_seconds=10).read()
     if observed.error:
         raise ValueError("fresh process census is unreadable")
-    mailbox_error = ""
-    pending = 0
-    try:
-        directory = Path(_MAILBOX_DIR())
-        if directory.exists():
-            pending = sum(
-                1
-                for pattern in ("req_*", "res_*")
-                for path in directory.glob(pattern)
-                if path.is_file()
-            )
-    except OSError as exc:
-        mailbox_error = f"mailbox_unreadable:{type(exc).__name__}"
+    mailbox = _mailbox_state()
     return {
         "observed_at_utc": datetime.now(UTC).isoformat(),
         "packet_tracer_primary_process_count": len(observed.processes),
         "owned_pid_present": any(item.pid == pid for item in observed.processes),
-        "mailbox_pending_count": pending,
-        "mailbox_error": mailbox_error,
+        "mailbox_pending_count": mailbox["pending_count"] or 0,
+        "mailbox_error": mailbox["error"],
         "packet_tracer_contacted": False,
     }
 

@@ -629,3 +629,122 @@ campaign archive with the closure, the product-store sources it pins, the C31
 originals behind the pagination diagnosis with their index identities, the
 lead's lab files, the import inputs, source identities and a Git bundle,
 verification outputs, and `FINAL-MANIFEST.sha256`.
+
+## Addendum 03: mandatory native retirement, version 11
+
+The operator's `SERVER-PT-IOS-FASTLOOP-01 — Addendum 03: Mandatory native
+retirement qualification, in the same FASTLOOP` (SHA-256
+`8bb289c581829ca6ad2aa98b8e9859e657301ccb33150eb146db51a1515f3e84`) requires
+LIVE verification of the window-census retirement. It authorizes up to three
+lifecycle attempts of at most 300 s each and 900 s combined, with zero bridge
+operations, in a campaign-launched disposable Packet Tracer. Offline tests
+alone do not complete it. The work starts at the published reference
+`fcf406afee7a6dd3de67928433afea3cfc32f6bc` (tree `d472078d`), with exact-SHA
+CI run 36034321658 green in all six jobs. Risk stays **L**: retirement
+selection, process effects, ledger authority and evidence.
+
+**Defect.** `select_document_window` selects the only visible, enabled,
+unowned window whose title is not the log title and names no file. It never
+reads `class_name`. If the document window is gone and only an unowned
+`#32770` dialog titled `Save changes`, or an unknown window titled `Startup
+notice`, remains beside the log, that window is selected and receives
+`WM_CLOSE`. A complete census and a matching digest do not make it a
+document. The defect is in design: the rule treats "not the log" as "the
+document".
+
+**What is known before the laboratory.** The document title `Cisco Packet
+Tracer` and the log title `Logs - MCP BUILDER` were observed on 9.0.1.0858 in
+episode 1's listing of PID 3248. The 2026-09-15 read-only UIA inventory of
+this build also names the application window (`PtApp.CAppWindowBase`, Qt class
+`CAppWindow`) `Cisco Packet Tracer`. The log window was unowned in episode 1,
+because .NET reported it as the main window, and .NET considers only unowned
+visible windows for that. The installed build ships Qt 6.8.7
+(`Qt6Core.dll`/`Qt6Gui.dll` file version `6.8.7.0`). No retained record holds
+the Win32 class of either window: the only class-bearing listing in episode 1
+ran after the process had exited, and `Qt663QWindowIcon` in the tests is an
+invented fixture value.
+
+**Checkpoint freeze.** The source that records a laboratory's launch must
+also retire it (`--retire` requires the launch's exact source), and no source
+may change while that laboratory lives. The build's signature must therefore
+be in the checkpoint before launch, and the laboratory's census tests it
+before any effect. The expected classes are the two that Qt 6.8.7 registers
+for an ordinary top-level window with a system menu: `Qt687QWindowIcon` for a
+raster or Direct3D surface and `Qt687QWindowOwnDCIcon` for an OpenGL surface.
+They are derived from the installed Qt version, not measured. Qt's other
+window classes are not accepted in either role: tool, popup and tooltip
+windows, and a dialog without a system menu (`Qt687QWindow`). If the census
+contradicts the expectation, `--retire` refuses and sends nothing, the
+refusal is kept, and the laboratory stays open with its ownership recorded
+as unresolved. Correcting the signature then needs a new checkpoint and a new
+attempt.
+
+### Requirements and acceptance criteria
+
+| ID | Requirement | Acceptance criterion |
+| --- | --- | --- |
+| H1 | A document is identified positively and per build | A window is the document only if its build has a pinned signature, its class is one of that build's document classes, and its title is the build's document title. No build signature, or a launch that does not name its observed build, selects nothing (`document_signature_unestablished`) |
+| H2 | Known dialogs and unknown windows withhold every effect | A visible `#32770` (`dialog_window_visible`) or any visible unowned window matching neither role (`unclassified_window_visible`) sends no close, force, click or dismissal, whether the document is present or absent. This includes a `#32770` titled `Cisco Packet Tracer` and a Qt tool window with the document title |
+| H3 | Titles stay auxiliary | A matching title never selects a window whose class, owner, visibility, enablement or process does not match. A title never shows that no valuable work exists |
+| H4 | Legitimate order and focus changes are preserved | Document and log in either order, with the log absent or with hidden windows, select the same document. Process creation, image, command line, attribution, completeness and ownership checks are unchanged |
+| H5 | The record states how the document was identified | The retirement record and every retirement attempt carry the signature used (build, classes, titles, basis) and the census it was applied to |
+| H6 | The retirement record agrees with its raw observations | The exit record keeps each absence reading's start and answer times. It bounds the exit after the last reading that found the process present and before the answer of the first reading that found it absent. It also keeps the mailbox's pending count before the close and after the exit, and the final Packet Tracer process count |
+| H7 | A lifecycle episode admits no bridge operation | An episode may allocate zero operations. Such an episode refuses every phase admission, including cleanup's protected draw. Its time is charged from opening to closing like any other episode |
+| H8 | The native sequence runs on the maintained route | The lab is one fresh, unnamed 9.0.1.0858 instance launched by the lead, `--record-launch`, a read-only census through the product's reader, `--retire`, and a reload of the persisted record, all in an episode opened at a clean local checkpoint before launch |
+
+### Design
+
+`server_pt_process_evidence` gains a `BuildWindowSignature` per Packet Tracer
+build, with a `WindowRole` for the document and for the extension log (class
+set and exact title) and a `basis` sentence. `PT_WINDOW_SIGNATURES` pins only
+9.0.1.0858, and `DIALOG_WINDOW_CLASSES` names the native dialog class
+`#32770`. `window_signature_for_launch` returns the signature of the build
+recorded on the launch (`observed_product_version` or
+`observed_file_version`), or `None`. `select_document_window` and
+`force_window_findings` require the signature as a keyword. They keep their
+census checks in the same order: error, incarnation, attribution,
+completeness. Each visible window is then classified as owned, dialog,
+document, log or unclassified, and exactly one enabled document is required.
+`exit_evidence_findings` requires a `WM_CLOSE` target to classify as that
+build's document. `--record-launch` also stores the build versions the OS
+reported (experimental campaign). `--retire` looks up the signature before
+its census, records the signature on every attempt and on the exit, keeps
+the timed absence readings and the mailbox state, and changes nothing about
+the force contingency. Before it observes anything, `--retire` now also
+requires its own process to pass the existing import-isolation preflight
+(checkout interpreter and package, one namespace, no test runner). This is
+the AGENTS.md LIVE gate, which `--record-launch` already applied through
+`phase_preflight` but the retirement effect did not. The ledger drops the
+one-operation minimum for an opening and refuses phase admission in a
+zero-operation episode.
+
+No second process manager, reader or allow-unknown switch is added. The
+helper, the store, the ledger and the CLI modes are the existing ones.
+
+### Invariants
+
+The ownership basis remains the only destructive authority; signatures,
+handles and titles are auxiliary evidence that can only withhold an effect.
+The historical records, the episode 1 import and its erratum are never
+rewritten. No counter resets. A live laboratory's checkpoint is not changed
+until that laboratory is retired or recorded as unresolved.
+
+### Test design
+
+Unit: each role and dialog class in both orders, with and without the log,
+the document absent beside a dialog or an unknown window, a dialog titled
+like the document, a Qt tool window with the document title, a file-named
+document, an unknown build, and the existing incarnation, attribution,
+completeness, modal and ambiguity controls. Integration through the CLI:
+`--retire` with the fake process control for a dialog or unknown window
+beside the log, an unestablished build signature, and a graceful exit whose
+record carries the signature, the timed absence readings and the mailbox
+state. It also covers the primary cause kept first when later findings add
+to it, and the real isolation preflight refusing the test process before any
+observation. Ledger: a zero-operation opening is admitted and refuses every phase,
+cleanup included. The first run of the RED cases at `fcf406a` must show the
+dialog and unknown window selected and closed. System and acceptance: the
+native sequence on the real build; its record, reload and hashes are the
+acceptance evidence. After stabilization the full suite, the delivery gate,
+MkDocs, the namespace inventory and whitespace checks run once on frozen
+code.
