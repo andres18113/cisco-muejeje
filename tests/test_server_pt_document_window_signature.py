@@ -40,6 +40,7 @@ from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight impor
 )
 from packet_tracer_mcp.infrastructure.execution.server_pt_process_control import (
     OwnedWindowCensus,
+    PacketTracerProcessCensus,
     PowerShellOwnedProcessControl,
     parse_packet_tracer_processes,
 )
@@ -814,3 +815,72 @@ def test_the_identity_census_names_no_external_text_and_fails_closed():
         .packet_tracer_processes()
         .error.startswith("process_census_unobservable")
     )
+
+
+# -- final review: a failed enumeration is unknown, never empty -------------------------
+
+
+class _AnsweringRunner:
+    """Answer the census command with fixed stdout, stderr and exit code."""
+
+    def __init__(self, stdout: str, stderr: str = "", code: int = 0):
+        self.stdout, self.stderr, self.code = stdout, stderr, code
+        self.calls: list[list[str]] = []
+
+    def __call__(self, argv, **kwargs):
+        self.calls.append(list(argv))
+        if kwargs.get("check") and self.code:
+            raise subprocess.CalledProcessError(
+                self.code, argv, self.stdout, self.stderr
+            )
+        return subprocess.CompletedProcess(argv, self.code, self.stdout, self.stderr)
+
+
+def test_a_census_that_reports_an_error_is_not_an_empty_census():
+    """Access denied on stderr with `[]` and exit 0 is unknown, not 'none'."""
+    denied = _AnsweringRunner("[]", "Get-CimInstance : Access denied")
+    census = PowerShellOwnedProcessControl(run_command=denied).packet_tracer_processes()
+
+    assert census.processes == ()
+    assert census.error.startswith("process_census_unobservable")
+    command = denied.calls[-1][3]
+    assert command.startswith("$ErrorActionPreference = 'Stop'; ")
+    assert "Get-CimInstance Win32_Process -ErrorAction Stop" in command
+    failed = _AnsweringRunner("[]", "terminating error", code=1)
+    assert (
+        PowerShellOwnedProcessControl(run_command=failed)
+        .packet_tracer_processes()
+        .error.startswith("process_census_unobservable")
+    )
+    clean = _AnsweringRunner("[]")
+    assert (
+        PowerShellOwnedProcessControl(run_command=clean).packet_tracer_processes()
+        == PacketTracerProcessCensus()
+    )
+
+
+def test_an_unknown_census_after_the_exit_never_archives_it(
+    launched, capsys, tmp_path: Path
+):
+    """The owned process is gone, but no census can say that nothing remains."""
+    cli, env, base, system = launched
+
+    def unknown():
+        if system.present:
+            return retirement.SimpleNamespace(
+                processes=(retirement.OWNED_ROW,), error=""
+            )
+        return retirement.SimpleNamespace(
+            processes=(), error="process_census_unobservable:ValueError"
+        )
+
+    system.packet_tracer_processes = unknown
+
+    code, refused = _run(cli, ["--retire", *base], env, capsys)
+
+    assert code == 2, refused
+    assert refused["process_count"] is None
+    assert "process_exit_unobserved" in refused["findings"]
+    assert all(item["count"] is None for item in refused["process_census_readings"])
+    assert "terminate_helper" not in system.calls
+    assert not _store(tmp_path).record_path_for(ATTEMPT, "process-exit").exists()

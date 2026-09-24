@@ -488,7 +488,12 @@ class PowerShellOwnedProcessControl:
         self._run_command = run_command
         self._timeout_seconds = float(timeout_seconds)
 
-    def _run(self, command: str) -> str:
+    def _run(self, command: str, *, strict: bool = False) -> str:
+        """Run one command; with `strict`, any error output makes it fail.
+
+        PowerShell reports a non-terminating error on stderr and still exits
+        0, so a strict reading refuses whenever stderr is not empty.
+        """
         completed = self._run_command(
             ["powershell.exe", "-NoProfile", "-Command", command],
             check=True,
@@ -496,6 +501,8 @@ class PowerShellOwnedProcessControl:
             text=True,
             timeout=self._timeout_seconds,
         )
+        if strict and str(getattr(completed, "stderr", "") or "").strip():
+            raise ValueError("command reported an error")
         return str(getattr(completed, "stdout", "") or "").strip()
 
     def _run_window_helper(self, call: str) -> str:
@@ -626,9 +633,12 @@ class PowerShellOwnedProcessControl:
 
         A process without a readable creation time is reported as 0 ticks,
         which the parser refuses, so a half-exited process is never guessed.
+        Every enumeration error is terminating and any error output fails
+        the census: a failed listing is unknown, never an empty one.
         """
         command = (
-            "$rows = @(Get-CimInstance Win32_Process | "
+            "$ErrorActionPreference = 'Stop'; "
+            "$rows = @(Get-CimInstance Win32_Process -ErrorAction Stop | "
             "Where-Object { $_.Name -like 'PacketTracer*' } | ForEach-Object { "
             "[PSCustomObject]@{ pid=[int64]$_.ProcessId; "
             "parent=[int64]$_.ParentProcessId; "
@@ -639,7 +649,7 @@ class PowerShellOwnedProcessControl:
             "ConvertTo-Json -InputObject $rows -Compress"
         )
         try:
-            lines = self._run(command).splitlines()
+            lines = self._run(command, strict=True).splitlines()
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
             return PacketTracerProcessCensus(
                 error=f"process_census_unobservable:{type(exc).__name__}"

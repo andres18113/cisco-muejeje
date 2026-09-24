@@ -916,3 +916,29 @@ claims about the native result hold for `1281c92`, with this attempt as their
 evidence. Its limitations also stand: the unobserved `Qt687QWindowOwnDCIcon`
 in the class set, the unexercised force contingency, the one build, and the
 UIA reading being a lead observation.
+
+## Final review delta, version 17
+
+A last focused Codex check of `1281c92` returned one finding, reproduced first
+at `99ae845`.
+
+**A failed enumeration could read as an empty census (high).** In PowerShell
+a `Get-CimInstance` error does not terminate the command, and the helper did
+not read stderr. An access-denied enumeration could therefore print `[]` and
+exit 0. The census would then report no Packet Tracer process, and `--retire`
+could archive an exit while a foreign one remained. The census command now
+starts with `$ErrorActionPreference = 'Stop'` and passes `-ErrorAction Stop`
+to the enumeration, and any stderr output makes the census unknown
+(`process_census_unobservable`). An unknown census still keeps the exit
+unarchived. The regression was RED against the `99ae845` process control,
+where stderr with `[]` and exit 0 parsed as an empty census. It passes now,
+and a CLI control confirms that an unknown census after the exit refuses. The
+real command was run read-only on this host. It returned the same empty,
+one-row and several-row answers as before, and a real CIM failure (an
+unknown class) now returns an error instead of an empty list.
+
+**LIVE coverage of the delivery.** Addendum 03's three lifecycle attempts are
+spent, so this error-path change was not run against Packet Tracer. The
+delivered retirement code differs from the code LIVE-exercised at `1281c92`
+only in this census error boundary. The command's output on success is
+unchanged, and that was verified natively on this host.
