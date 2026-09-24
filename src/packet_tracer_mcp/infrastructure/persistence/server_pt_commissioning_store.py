@@ -711,6 +711,37 @@ class ServerPtCommissioningStore:
             temporary.unlink(missing_ok=True)
         return target
 
+    def adopt_ledger_residue(self) -> tuple[str, ...]:
+        """Index ledger records written after the last index, and only those.
+
+        A ledger record is written before the index is refreshed; a hard stop
+        between the two leaves a valid write-once record the index does not
+        name, and every later phase, cleanup included, would then refuse the
+        archive. Adoption happens only when nothing indexed is missing or
+        changed and every unindexed file is a ledger record; `refresh_index`
+        proves the prior bytes again first. Any other drift is returned as is.
+        """
+        findings = self.verify_index()
+        if findings != ("archive_inventory_changed",):
+            return findings
+        indexed = {str(item["path"]) for item in self._indexed_entries()}
+        actual = set(self._archive_paths())
+        ledger = (
+            resolve_within(self._campaign_dir(), "ledger")
+            .relative_to(self.root)
+            .as_posix()
+            + "/"
+        )
+        extra = actual - indexed
+        if (
+            indexed - actual
+            or not extra
+            or any(not name.startswith(ledger) for name in extra)
+        ):
+            return findings
+        self.refresh_index()
+        return self.verify_index()
+
     def verify_index(self) -> tuple[str, ...]:
         """Rehash source bytes and refuse omissions, additions or changes."""
         try:

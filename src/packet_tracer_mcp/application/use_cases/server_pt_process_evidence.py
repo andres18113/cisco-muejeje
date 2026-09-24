@@ -60,6 +60,11 @@ def exit_evidence_findings(
     request still had to be made and bounded, the termination names the same
     PID, path and creation time as the launch after rechecking them, and the
     exit is still observed independently. It is never read as graceful.
+
+    "No valuable user state" is rechecked, not assumed: the main window
+    title at termination must equal the non-empty title the launch captured
+    for its declared new blank document. Opening or saving any file changes
+    that title, so a user document in the owned process refuses the force.
     """
     found: list[str] = []
     forced = close.get("forced_termination")
@@ -75,6 +80,9 @@ def exit_evidence_findings(
             or forced.get("rechecked_process_incarnation")
             != launch.get("process_incarnation")
             or forced.get("disposable_workspace_rechecked") is not True
+            or not isinstance(launch.get("main_window_title"), str)
+            or not launch.get("main_window_title")
+            or forced.get("rechecked_window_title") != launch.get("main_window_title")
             or not isinstance(forced.get("requested_at_utc"), str)
             or isinstance(wait, bool)
             or not isinstance(wait, (int, float))

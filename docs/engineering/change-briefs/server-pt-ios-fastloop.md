@@ -171,3 +171,43 @@ Ruff/format/whitespace; identity, claim, admission and cleanup changes also
 get one focused peer review before LIVE. At final stabilization the broad
 suite, delivery gate, MkDocs, namespace inventory and exact-SHA CI run once on
 frozen code.
+
+## Review delta, version 2
+
+One focused adversarial review of checkpoint `d13a4ff` reported five
+high-severity findings. Each was verified against the code before acting.
+
+1. **Purpose at the product boundary.** The product acceptance coordinator
+   applies its own repository rule, which requires the executed HEAD to be
+   published, so an unpublished experimental checkpoint is refused there
+   before contact; and an experimental run on a published HEAD produced an
+   envelope indistinguishable from a delivery. The scalable grant now carries
+   an optional `execution_purpose` (absent means delivery; any other value is
+   malformed). Only the experimental seal writes it, the envelope then
+   carries `experimental_measurement_is_not_a_delivery`, and the campaign CLI
+   refuses an envelope whose purpose differs from its campaign. The product's
+   publication rule is unchanged for every grant. Relaxing it for
+   experimental grants was refused by the local permission policy as
+   security-weakening; that is an operator decision, and until it is made an
+   experimental acceptance needs a published checkpoint.
+2. **Ledger write before index refresh.** A hard stop between them left a
+   valid record the index did not name, and every later phase, cleanup
+   included, refused the archive. `adopt_ledger_residue` indexes such records
+   only when every indexed byte is unchanged and every unindexed file is a
+   ledger record; any other drift stays a refusal. Every experimental phase
+   and ledger mode adopts before it verifies.
+3. **Admission not bound to the checkpoint.** A phase from another clean
+   commit could be admitted under an episode opened for a different one.
+   Admission now requires the phase's fresh HEAD and tree to equal the
+   opening's and records them.
+4. **Forced exit and user state.** The disposable-workspace recheck was only
+   attested by the capture. A forced exit now also requires the main window
+   title at termination to equal the non-empty title captured at launch;
+   opening or saving any document changes it. A dirty workspace may still be
+   retired this way because it is campaign-owned and disposable, and its
+   disposition stays `_dirty_forced`, never clean.
+5. **Hard stop during E4.** As in C31, owned cleanup needs the durable E4
+   result; a stop between a device creation and that result leaves effects no
+   governed cleanup can prove. This is kept as a limitation with the stop
+   rule: stop, name the obstruction, preserve the journal, and retire the
+   disposable process only under (4).

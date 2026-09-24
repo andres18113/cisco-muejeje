@@ -190,6 +190,9 @@ def seal_server_pt_acceptance(
         "exclusive_disposable_lab": True,
         "local_fence_limitation_accepted": True,
     }
+    if campaign.experimental:
+        # A delivery grant keeps its exact earlier bytes; absence is delivery.
+        grant["execution_purpose"] = campaign.purpose.value
     parsed, findings = parse_scalable_grant(grant)
     if parsed is None or findings:
         raise ValueError("derived acceptance grant is malformed")

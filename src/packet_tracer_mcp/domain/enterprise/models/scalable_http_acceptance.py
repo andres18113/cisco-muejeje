@@ -43,6 +43,13 @@ from .service_qualification import (
 SCALABLE_GRANT_SCHEMA_VERSION = 2
 SCALABLE_PROFILE = "http_by_ip_scalable_v1"
 MAX_SELECTED_CLIENTS = 1000
+#: Why a grant's attempt runs. Absent means `delivery`, as every earlier grant.
+#: `experimental` is sealed only by an experimental campaign. It changes no
+#: admission rule; it marks the envelope so that an experimental measurement
+#: can never be read as a delivery acceptance.
+DELIVERY_PURPOSE = "delivery"
+EXPERIMENTAL_PURPOSE = "experimental"
+EXPERIMENTAL_ENVELOPE_LIMITATION = "experimental_measurement_is_not_a_delivery"
 _HEX_TOKEN = re.compile(r"[0-9a-f]{32}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -104,6 +111,7 @@ class ScalableHttpGrant:
     local_fence_limitation_accepted: bool
     profile: str = SCALABLE_PROFILE
     schema_version: int = SCALABLE_GRANT_SCHEMA_VERSION
+    execution_purpose: str = DELIVERY_PURPOSE
 
     @property
     def run_label(self) -> str:
@@ -252,6 +260,15 @@ def parse_scalable_grant(
     incarnation = text("process_incarnation", subject.PROCESS)
     lab = flag("exclusive_disposable_lab")
     fence = flag("local_fence_limitation_accepted")
+    purpose = raw.get("execution_purpose", DELIVERY_PURPOSE)
+    if purpose not in (DELIVERY_PURPOSE, EXPERIMENTAL_PURPOSE):
+        found.append(
+            acceptance_refusal(
+                RefusalKind.MALFORMED,
+                subject.GRANT,
+                "execution_purpose is neither delivery nor experimental",
+            )
+        )
 
     malformed = RefusalKind.MALFORMED
     if authorization_id and len(authorization_id) > 128:
@@ -359,6 +376,7 @@ def parse_scalable_grant(
             process_incarnation=incarnation,
             exclusive_disposable_lab=lab,
             local_fence_limitation_accepted=fence,
+            execution_purpose=str(purpose),
         ),
         (),
     )

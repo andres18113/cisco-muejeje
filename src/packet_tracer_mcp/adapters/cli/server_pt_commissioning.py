@@ -69,7 +69,11 @@ from ...application.use_cases.setup_server_pt_commissioning import (
 )
 from ...domain.enterprise.models.cold_http_acceptance import publication_claim
 from ...domain.enterprise.models.deployment import EnvironmentFingerprint
+from ...domain.enterprise.models.scalable_http_acceptance import (
+    EXPERIMENTAL_ENVELOPE_LIMITATION,
+)
 from ...domain.enterprise.models.service_qualification import (
+    RepositoryIdentity,
     diagnostic_lifecycle_continuity,
 )
 from ...domain.models.plans import TopologyPlan
@@ -354,7 +358,7 @@ def _ledger_mode(root: Path, campaign: ServerPtCampaign, args) -> int:
         return 2
     store = ServerPtCommissioningStore(root, campaign.campaign_id)
     try:
-        if store.index_exists() and store.verify_index():
+        if _adopt_ledger_residue(store, campaign):
             raise ValueError("campaign archive is unverified")
         records = store.ledger_records()
         now = datetime.now(UTC)
@@ -427,6 +431,18 @@ def _ledger_mode(root: Path, campaign: ServerPtCampaign, args) -> int:
     return 0
 
 
+def _adopt_ledger_residue(
+    store: ServerPtCommissioningStore, campaign: ServerPtCampaign
+) -> tuple[str, ...]:
+    """Index ledger records a hard stop left unindexed; nothing else."""
+    if not campaign.experimental or not store.index_exists():
+        return ()
+    try:
+        return store.adopt_ledger_residue()
+    except (OSError, ValueError) as exc:
+        return (f"ledger_residue_unverified:{type(exc).__name__}",)
+
+
 def _ledger_admit(
     store: ServerPtCommissioningStore,
     campaign: ServerPtCampaign,
@@ -435,8 +451,14 @@ def _ledger_admit(
     phase: str,
     operations: int,
     seconds: float,
+    *,
+    source: RepositoryIdentity,
 ) -> tuple[str, ...]:
-    """Write one phase admission before contact, or name why there is none."""
+    """Write one phase admission before contact, or name why there is none.
+
+    `source` is the checkout this phase will execute, observed by its own
+    preflight; it must be the checkpoint the episode declared when it opened.
+    """
     if not campaign.experimental:
         return ()
     try:
@@ -450,6 +472,8 @@ def _ledger_admit(
             granted_seconds=float(seconds),
             allowance=FASTLOOP_ALLOWANCE,
             now=now,
+            source_sha=source.head,
+            source_tree=source.tree,
         )
         if findings:
             return findings
@@ -463,6 +487,8 @@ def _ledger_admit(
                 "granted_operations": int(operations),
                 "granted_seconds": float(seconds),
                 "draws_protected": protected,
+                "source_sha": source.head,
+                "source_tree": source.tree,
                 "admitted_at_utc": now.isoformat(),
             },
         )
@@ -534,6 +560,7 @@ def _admit_phase(
         phase,
         planned.max_operations,
         planned.max_seconds,
+        source=preflight.source,
     )
 
 
@@ -890,6 +917,9 @@ def _qualify(
 ) -> int:
     """Measure the two authorized prerequisites through one fixed file channel."""
     store = ServerPtCommissioningStore(root, campaign.campaign_id)
+    if _adopt_ledger_residue(store, campaign):
+        _print({"outcome": "refused", "reason": "prior_archive_unverified"})
+        return 2
     try:
         already = store.prequalification_attempt_ids()
     except OSError:
@@ -1056,6 +1086,9 @@ def _setup(
 ) -> int:
     """Deploy exact E4 and L2 E5 after preliminary evidence was pinned."""
     store = ServerPtCommissioningStore(root, campaign.campaign_id)
+    if _adopt_ledger_residue(store, campaign):
+        _print({"outcome": "refused", "reason": "prior_archive_unverified"})
+        return 2
     used_attempts = store.setup_attempt_ids()
     if attempt_id in used_attempts:
         _print({"outcome": "refused", "reason": "setup_attempt_already_reserved"})
@@ -1183,6 +1216,7 @@ def _setup(
         "setup",
         grant.max_operations,
         grant.max_seconds,
+        source=preflight.source,
     )
     if refusal:
         _print({"outcome": "refused", "reasons": list(refusal)})
@@ -1302,6 +1336,9 @@ def _cleanup(
 ) -> int:
     """Remove only E4-owned objects with the original receiver still bound."""
     store = ServerPtCommissioningStore(root, campaign.campaign_id)
+    if _adopt_ledger_residue(store, campaign):
+        _print({"outcome": "refused", "reason": "prior_archive_unverified"})
+        return 2
     try:
         bundle = store.load_bundle(attempt_id)
         store.load_baseline(attempt_id)
@@ -1360,6 +1397,7 @@ def _cleanup(
         "cleanup",
         grant.max_operations,
         grant.max_seconds,
+        source=preflight.source,
     )
     if refusal:
         _print({"outcome": "refused", "reasons": list(refusal)})
@@ -1472,6 +1510,9 @@ def _accept(
     delivery belongs to an independent review.
     """
     store = ServerPtCommissioningStore(root, campaign.campaign_id)
+    if _adopt_ledger_residue(store, campaign):
+        _print({"outcome": "refused", "reason": "prior_archive_unverified"})
+        return 2
     try:
         store.load_bundle(attempt_id)
         store.load_phase_status(attempt_id, "setup")
@@ -1524,6 +1565,7 @@ def _accept(
         "acceptance",
         int(sealed.grant["max_operations"]),
         float(sealed.grant["max_seconds"]),
+        source=preflight.source,
     )
     if refusal:
         _print({"outcome": "refused", "reasons": list(refusal)})
@@ -1586,6 +1628,12 @@ def _accept(
             publication = envelopes.load_publication(attempt_id)
             if publication_claim(envelope, publication) != (True, ""):
                 reason = "publication_claim_not_established"
+            elif (
+                EXPERIMENTAL_ENVELOPE_LIMITATION in envelope.limitations
+            ) is not campaign.experimental:
+                # An experimental envelope never completes a delivery phase,
+                # and a delivery envelope never stands in for a measurement.
+                reason = "envelope_purpose_differs_from_campaign"
             elif len(envelope.clients) != 30 or any(
                 not item.accepted or item.release_outcome != "released"
                 for item in envelope.clients

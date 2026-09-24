@@ -227,11 +227,15 @@ def phase_admission_findings(
     granted_seconds: float,
     allowance: CampaignAllowance,
     now: datetime,
+    source_sha: str,
+    source_tree: str,
 ) -> tuple[tuple[str, ...], bool]:
     """Decide whether one phase grant fits its open episode, and how.
 
     Returns the findings and whether the phase draws the protected reserve.
-    An ordinary phase must fit what its episode has left. Only cleanup may
+    The phase must execute the exact checkpoint its episode declared: an
+    episode opened for one commit never admits effects from another. An
+    ordinary phase must fit what its episode has left. Only cleanup may
     exceed that, and only by as much as the whole campaign has left.
     """
     if phase not in LEDGER_PHASES:
@@ -250,6 +254,13 @@ def phase_admission_findings(
         return ("episode_already_closed",), False
     if attempt_id not in (opening.get("attempt_ids") or []):
         return ("attempt_not_declared_by_episode",), False
+    if (
+        not source_sha
+        or not source_tree
+        or (source_sha, source_tree)
+        != (opening.get("source_sha"), opening.get("source_tree"))
+    ):
+        return ("phase_source_differs_from_episode",), False
     charge, phases = _episode_phases(records, episode)
     if any(item[:2] == (attempt_id, phase) for item in phases):
         return ("phase_already_admitted",), False

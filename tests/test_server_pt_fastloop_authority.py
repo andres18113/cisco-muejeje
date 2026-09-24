@@ -43,6 +43,9 @@ from packet_tracer_mcp.application.use_cases.server_pt_process_evidence import (
     exit_evidence_findings,
     exit_was_forced,
 )
+from packet_tracer_mcp.domain.enterprise.models.scalable_http_acceptance import (
+    EXPERIMENTAL_ENVELOPE_LIMITATION,
+)
 from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     DiagnosticLifecycleObservation,
     RepositoryIdentity,
@@ -448,6 +451,8 @@ def test_only_cleanup_may_draw_the_protected_reserve():
         granted_seconds=300.0,
         allowance=FASTLOOP_ALLOWANCE,
         now=now,
+        source_sha=HEAD,
+        source_tree=TREE,
     )
 
     assert admit("acceptance", 101) == (("phase_exceeds_episode_allocation",), False)
@@ -470,6 +475,8 @@ def test_a_phase_is_admitted_once_for_its_declared_attempt_of_an_open_episode():
             "granted_seconds": 10.0,
             "allowance": FASTLOOP_ALLOWANCE,
             "now": now,
+            "source_sha": HEAD,
+            "source_tree": TREE,
         }
         values.update(kwargs)
         return phase_admission_findings(records, **values)[0]
@@ -478,6 +485,13 @@ def test_a_phase_is_admitted_once_for_its_declared_attempt_of_an_open_episode():
     assert admit(attempt_id=OTHER) == ("attempt_not_declared_by_episode",)
     assert admit(episode=2) == ("episode_not_opened",)
     assert admit(phase="launch") == ("ledger_phase_unknown",)
+    # Another commit is not the checkpoint this episode declared.
+    assert admit(phase="acceptance", source_sha="d" * 40) == (
+        "phase_source_differs_from_episode",
+    )
+    assert admit(phase="acceptance", source_tree="e" * 40) == (
+        "phase_source_differs_from_episode",
+    )
     records["z"] = {
         "kind": "episode_closing",
         "episode": 1,
@@ -521,6 +535,7 @@ def _launch() -> dict[str, object]:
         "pid": process.process_id,
         "process_path": process.process_path,
         "process_incarnation": process.process_incarnation,
+        "main_window_title": "Cisco Packet Tracer",
     }
 
 
@@ -542,6 +557,7 @@ def _forced(**overrides) -> dict[str, object]:
         "pid": launch["pid"],
         "rechecked_process_path": launch["process_path"],
         "rechecked_process_incarnation": launch["process_incarnation"],
+        "rechecked_window_title": launch["main_window_title"],
         "disposable_workspace_rechecked": True,
         "requested_at_utc": OPENED.isoformat(),
     }
@@ -573,6 +589,12 @@ def test_graceful_exit_is_unchanged_and_forced_exit_is_its_own_record():
         {"forced_termination": _forced(pid=999)},
         {"forced_termination": _forced(disposable_workspace_rechecked=False)},
         {"forced_termination": _forced(method="taskkill /IM")},
+        {
+            "forced_termination": _forced(
+                rechecked_window_title="Cisco Packet Tracer - C:\\coursework.pkt"
+            )
+        },
+        {"forced_termination": _forced(rechecked_window_title="")},
         {"forced_termination": _forced(), "graceful_wait_seconds": 0},
         {"forced_termination": _forced(), "graceful_wait_seconds": 600},
     ],
@@ -735,10 +757,50 @@ def test_a_phase_is_refused_by_the_ledger_before_its_mailbox_exists(tmp_path):
     store = ServerPtCommissioningStore(tmp_path, FASTLOOP_CAMPAIGN.campaign_id)
 
     assert _ledger_admit(
-        store, FASTLOOP_CAMPAIGN, 1, ATTEMPT, "setup", 4750, 1500.0
+        store,
+        FASTLOOP_CAMPAIGN,
+        1,
+        ATTEMPT,
+        "setup",
+        4750,
+        1500.0,
+        source=_checkpoint(),
     ) == ("episode_not_opened",)
-    assert _ledger_admit(store, C31_CAMPAIGN, 0, ATTEMPT, "setup", 4750, 1500.0) == ()
+    assert (
+        _ledger_admit(
+            store, C31_CAMPAIGN, 0, ATTEMPT, "setup", 4750, 1500.0, source=_published()
+        )
+        == ()
+    )
     assert store.ledger_records() == {}
+
+
+def test_a_ledger_record_stranded_before_indexing_is_adopted_alone(tmp_path):
+    """A hard stop between a ledger write and its index must not block cleanup.
+
+    Only ledger records are adopted, and only when every indexed byte is
+    unchanged; any other drift stays a refusal.
+    """
+    store = ServerPtCommissioningStore(tmp_path, FASTLOOP_CAMPAIGN.campaign_id)
+    store.save_ledger_record("episode-0001-opening", _opening())
+    store.refresh_index()
+    store.save_ledger_record(
+        f"episode-0001-{ATTEMPT}-setup-admission", _admission("setup", 4750)
+    )
+
+    assert store.verify_index() == ("archive_inventory_changed",)
+    assert store.adopt_ledger_residue() == ()
+    assert store.verify_index() == ()
+
+    stray = (
+        tmp_path / "data" / "commissioning" / FASTLOOP_CAMPAIGN.campaign_id / "x.json"
+    )
+    stray.write_text("{}", encoding="utf-8")
+    assert store.adopt_ledger_residue() == ("archive_inventory_changed",)
+    stray.unlink()
+    opening = store.ledger_path_for("episode-0001-opening")
+    opening.write_bytes(opening.read_bytes() + b" ")
+    assert store.adopt_ledger_residue() == ("archive_bytes_changed",)
 
 
 # -- system level: the experimental route through the real product ---------------
@@ -907,11 +969,47 @@ def test_an_experimental_setup_seals_and_measures_through_the_same_product(
         tmp_path, 30, plans=plans, foundation_action_ids=applied
     )
 
+    assert sealed.grant["execution_purpose"] == "experimental"
+
     result = harness.run(grant=sealed.grant)
 
     assert result.accepted is True
     assert len(result.envelope.clients) == 30
     assert all(client.accepted for client in result.envelope.clients)
+    # The measurement is real product behaviour, and says it is no delivery.
+    assert EXPERIMENTAL_ENVELOPE_LIMITATION in result.envelope.limitations
+    assert result.envelope.grant["execution_purpose"] == "experimental"
+
+
+def test_an_experimental_product_grant_still_needs_a_published_head(tmp_path):
+    """The purpose marks records; it does not relax the product's source rule."""
+    from cold_http_acceptance_harness import published_checkout
+    from scalable_http_acceptance_harness import build_scalable_harness
+
+    harness = build_scalable_harness(tmp_path, 2)
+    harness.boundaries = replace(
+        harness.boundaries,
+        repository=lambda: replace(published_checkout(), upstream_head="c" * 40),
+    )
+
+    result = harness.run(grant=harness.grant(execution_purpose="experimental"))
+
+    assert result.accepted is False
+    assert "http_start" not in harness.product_dispatches()
+    assert any(item.subject.value == "repository" for item in result.envelope.admission)
+
+
+def test_a_product_grant_names_a_known_purpose_or_is_refused(tmp_path):
+    """Absent is delivery; any other word is a malformed grant, before contact."""
+    from scalable_http_acceptance_harness import build_scalable_harness
+
+    harness = build_scalable_harness(tmp_path, 2)
+
+    result = harness.run(grant=harness.grant(execution_purpose="release"))
+
+    assert result.accepted is False
+    assert harness.product_dispatches() == []
+    assert EXPERIMENTAL_ENVELOPE_LIMITATION not in result.envelope.limitations
 
 
 def test_an_experimental_attempt_retires_as_forced_before_setup(

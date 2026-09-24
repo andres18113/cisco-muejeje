@@ -73,6 +73,8 @@ from ...domain.enterprise.models.cold_http_acceptance import (
 )
 from ...domain.enterprise.models.deployment import DeploymentManifest
 from ...domain.enterprise.models.scalable_http_acceptance import (
+    EXPERIMENTAL_ENVELOPE_LIMITATION,
+    EXPERIMENTAL_PURPOSE,
     SCALABLE_ENVELOPE_LIMITATIONS,
     SCALABLE_GRANT_SCHEMA_VERSION,
     AcceptanceScope,
@@ -722,6 +724,8 @@ def accept_cold_http(
         return _refused(envelope, list(refusals))
     if isinstance(grant, ScalableHttpGrant):
         envelope.limitations = list(SCALABLE_ENVELOPE_LIMITATIONS)
+        if grant.execution_purpose == EXPERIMENTAL_PURPOSE:
+            envelope.limitations.append(EXPERIMENTAL_ENVELOPE_LIMITATION)
     envelope.attempt_id = grant.attempt_id
     envelope.authorization_id = grant.authorization_id
     envelope.product_input = {
