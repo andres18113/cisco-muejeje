@@ -16,8 +16,9 @@ of write-once records from which every total is recomputed:
 - a CLOSING records when the episode ended and in what lab state.
 
 Charging is conservative and never subtracts. A closed episode charges what
-its phases used and its active seconds. An open one charges at least its whole
-allocation, and time keeps running while it is open. An admitted phase
+its phases used and its active seconds; a lifecycle-only episode, which has no
+phase to charge, at least its whole time allocation. An open one charges at
+least its whole allocation, and time keeps running while it is open. An admitted phase
 without a result charges its grant maximum. Nothing here resets on restart.
 """
 
@@ -213,9 +214,14 @@ def ledger_totals(
         closing = closings.get(episode)
         if closing is not None:
             operations += charge
-            seconds += max(
+            elapsed = max(
                 0.0, (_time(closing.get("closed_at_utc")) - opened).total_seconds()
             )
+            if _count(opening.get("allocated_operations")) == 0:
+                # No phase records its time, so a wall-clock step during the
+                # episode must not shrink the charge below what it was given.
+                elapsed = max(elapsed, _seconds(opening.get("allocated_seconds")))
+            seconds += elapsed
             continue
         open_episode = episode
         operations += max(charge, _count(opening.get("allocated_operations")))
@@ -383,11 +389,16 @@ def episode_allowance_left(
 
 
 def closing_findings(
-    records: Mapping[str, Mapping[str, object]], episode: int
+    records: Mapping[str, Mapping[str, object]], episode: int, now: datetime
 ) -> tuple[str, ...]:
-    """Require an episode that is open now; closing never forgives a charge."""
+    """Require an episode that is open now; closing never forgives a charge.
+
+    A closing earlier than its own opening is refused rather than charged as
+    zero seconds.
+    """
     openings = {
-        value.get("episode") for value in _by_kind(records, "episode_opening").values()
+        value.get("episode"): value
+        for value in _by_kind(records, "episode_opening").values()
     }
     if episode not in openings:
         return ("episode_not_opened",)
@@ -396,6 +407,8 @@ def closing_findings(
         for value in _by_kind(records, "episode_closing").values()
     ):
         return ("episode_already_closed",)
+    if now < _time(openings[episode].get("opened_at_utc")):
+        return ("episode_closing_precedes_opening",)
     return ()
 
 

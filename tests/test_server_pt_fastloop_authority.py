@@ -506,7 +506,7 @@ def test_a_phase_is_admitted_once_for_its_declared_attempt_of_an_open_episode():
         "closed_at_utc": now.isoformat(),
     }
     assert admit(phase="cleanup") == ("episode_already_closed",)
-    assert closing_findings(records, 1) == ("episode_already_closed",)
+    assert closing_findings(records, 1, now) == ("episode_already_closed",)
 
 
 def test_ledger_records_are_write_once_and_totals_survive_a_new_process(tmp_path):

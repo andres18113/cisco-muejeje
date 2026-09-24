@@ -282,6 +282,9 @@ def _target(window: OwnedWindow = DOCUMENT) -> dict[str, object]:
         "owner_pid": window.owner_pid,
         "class_name": window.class_name,
         "title": window.title,
+        "visible": window.visible,
+        "enabled": window.enabled,
+        "owner_handle": window.owner_handle,
         "identity_digest": window.identity_digest,
     }
 

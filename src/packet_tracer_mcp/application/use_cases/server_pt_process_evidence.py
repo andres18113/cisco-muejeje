@@ -377,19 +377,26 @@ _WINDOW_DIGEST_LENGTH = 64
 def _document_target_proven(launch: Mapping[str, object], target: object) -> bool:
     """Whether a recorded close target is one owned, unnamed document window.
 
-    Its class and title must be the document role of the build the launch
-    observed; a native dialog, the log or an unknown window is not a target.
+    It must have been a visible, enabled top-level window with no owner, and
+    its class and title must be the document role of the build the launch
+    observed; a modal, a native dialog, the log or an unknown window is not
+    a target.
     """
     if not isinstance(target, Mapping):
         return False
     handle = target.get("handle")
     digest = target.get("identity_digest")
     title = target.get("title")
+    owner = target.get("owner_handle")
     signature = window_signature_for_launch(launch)
     return (
         not isinstance(handle, bool)
         and isinstance(handle, int)
         and handle > 0
+        and not isinstance(owner, bool)
+        and owner == 0
+        and target.get("visible") is True
+        and target.get("enabled") is True
         and target.get("owner_pid") == launch.get("pid")
         and isinstance(digest, str)
         and len(digest) == _WINDOW_DIGEST_LENGTH

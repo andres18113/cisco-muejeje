@@ -688,8 +688,8 @@ attempt.
 | H3 | Titles stay auxiliary | A matching title never selects a window whose class, owner, visibility, enablement or process does not match. A title never shows that no valuable work exists |
 | H4 | Legitimate order and focus changes are preserved | Document and log in either order, with the log absent or with hidden windows, select the same document. Process creation, image, command line, attribution, completeness and ownership checks are unchanged |
 | H5 | The record states how the document was identified | The retirement record and every retirement attempt carry the signature used (build, classes, titles, basis) and the census it was applied to |
-| H6 | The retirement record agrees with its raw observations | The exit record keeps each absence reading's start and answer times. It bounds the exit after the last reading that found the process present and before the answer of the first reading that found it absent. It also keeps the mailbox's pending count before the close and after the exit, and the final Packet Tracer process count |
-| H7 | A lifecycle episode admits no bridge operation | An episode may allocate zero operations. Such an episode refuses every phase admission, including cleanup's protected draw. Its time is charged from opening to closing like any other episode |
+| H6 | The retirement record agrees with its raw observations | The exit record keeps each absence reading's start and answer times. It bounds the exit after the last reading that found the process present and before the answer of the first reading that found it absent, unless wall and monotonic time disagree between those readings. It also keeps the mailbox's pending count before the close and after the exit, and the final Packet Tracer process count |
+| H7 | A lifecycle episode admits no bridge operation | An episode may allocate zero operations. Such an episode refuses every phase admission, including cleanup's protected draw. Its time is charged from opening to closing, and at least its whole allocation; a closing earlier than its opening is refused |
 | H8 | The native sequence runs on the maintained route | The lab is one fresh, unnamed 9.0.1.0858 instance launched by the lead, `--record-launch`, a read-only census through the product's reader, `--retire`, and a reload of the persisted record, all in an episode opened at a clean local checkpoint before launch |
 
 ### Design
@@ -748,3 +748,27 @@ native sequence on the real build; its record, reload and hashes are the
 acceptance evidence. After stabilization the full suite, the delivery gate,
 MkDocs, the namespace inventory and whitespace checks run once on frozen
 code.
+
+## Review delta, version 12
+
+One focused Codex adversarial review of `a235b76` against `fcf406a` returned
+needs-attention with three findings. Each was first reproduced as a failing
+regression at `a235b76` (seven tests RED), then fixed inside the approved
+contract.
+
+1. **A capture could claim an ineligible close target (high).**
+   `_document_target_proven` checked the target's class, title and PID but not
+   its owner, visibility or enablement. A lead-written `WM_CLOSE` capture sent
+   through `--record-exit` could therefore name an owned modal or hidden window.
+   The rule now also requires an unowned, visible, enabled target, and
+   `--record-exit` refuses every `WM_CLOSE` capture: only `--retire` posts one,
+   and it records its own observed exit. The `--retire` path already selected
+   only unowned, visible, enabled windows.
+2. **A wall-clock step could persist impossible exit bounds (medium).** Each
+   reading also keeps monotonic time. If wall time and monotonic time disagree
+   by more than one second between any two instants a bound uses, no bound is
+   claimed (`{"unavailable": "wall_clock_discontinuous"}`). The observed exit
+   itself is still recorded.
+3. **A zero-operation episode could lose its time charge (medium).** A closed
+   lifecycle-only episode is charged at least its whole time allocation, and a
+   closing earlier than its opening is refused.

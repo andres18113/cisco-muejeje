@@ -9,6 +9,7 @@ asserts that no close was posted and no process terminated.
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -20,6 +21,8 @@ from packet_tracer_mcp.application.use_cases import (
 )
 from packet_tracer_mcp.application.use_cases.server_pt_campaign_ledger import (
     FASTLOOP_ALLOWANCE,
+    closing_findings,
+    ledger_totals,
     opening_findings,
     phase_admission_findings,
 )
@@ -372,6 +375,9 @@ def test_a_targeted_close_record_must_name_the_signed_document(window):
                 "owner_pid": target.owner_pid,
                 "class_name": target.class_name,
                 "title": target.title,
+                "visible": target.visible,
+                "enabled": target.enabled,
+                "owner_handle": target.owner_handle,
                 "identity_digest": target.identity_digest,
             },
             "requested": True,
@@ -467,3 +473,160 @@ def test_a_lifecycle_episode_admits_no_bridge_phase(phase):
 
     assert findings == ("episode_allocates_no_bridge_operation",)
     assert protected is False
+
+
+# -- review delta: evidence the record may not overstate -------------------------------
+
+
+@pytest.mark.parametrize(
+    "change",
+    [{"owner_handle": 4242}, {"visible": False}, {"enabled": False}],
+    ids=["owned", "hidden", "disabled"],
+)
+def test_a_targeted_close_needs_a_visible_enabled_unowned_target(change):
+    """A modal, hidden or disabled window is not a document close target."""
+    launch = {
+        "pid": PID,
+        "process_path": "C:\\PacketTracer.exe",
+        "process_incarnation": "2026-09-24T07:00:00-05:00",
+        "observed_command_line": '"C:\\PacketTracer.exe" ',
+        "observed_main_window_title": "Cisco Packet Tracer",
+        "observed_product_version": "9.0.1.0858",
+    }
+    target = {
+        "handle": DOCUMENT.handle,
+        "owner_pid": PID,
+        "class_name": DOCUMENT.class_name,
+        "title": DOCUMENT.title,
+        "visible": True,
+        "enabled": True,
+        "owner_handle": 0,
+        "identity_digest": DOCUMENT.identity_digest,
+    }
+    close = {
+        **launch,
+        "method": "WM_CLOSE",
+        "requested": True,
+        "actual_exit_observed": True,
+    }
+
+    assert (
+        exit_evidence_findings(
+            launch, {**close, "close_target": target}, process_count=0
+        )
+        == ()
+    )
+    assert "graceful_close_identity_unproven" in exit_evidence_findings(
+        launch, {**close, "close_target": {**target, **change}}, process_count=0
+    )
+
+
+def test_record_exit_never_admits_a_targeted_close_capture(
+    launched, capsys, tmp_path: Path, monkeypatch
+):
+    """Only --retire posts WM_CLOSE, so only --retire may record one."""
+    cli, env, base, _system = launched
+
+    class _NoProcess:
+        def __init__(self, **_kwargs):
+            pass
+
+        def read(self):
+            return type("Observed", (), {"error": "", "processes": ()})()
+
+    monkeypatch.setattr(cli, "PowerShellPacketTracerProcessReader", _NoProcess)
+    launch = _store(tmp_path).load_process_launch(ATTEMPT)
+    capture = tmp_path / "close.json"
+    capture.write_text(
+        json.dumps(
+            {
+                "pid": PID,
+                "process_path": launch["process_path"],
+                "process_incarnation": launch["process_incarnation"],
+                "method": "WM_CLOSE",
+                "close_target": {
+                    "handle": DOCUMENT.handle,
+                    "owner_pid": PID,
+                    "class_name": DOCUMENT.class_name,
+                    "title": DOCUMENT.title,
+                    "visible": True,
+                    "enabled": True,
+                    "owner_handle": 0,
+                    "identity_digest": DOCUMENT.identity_digest,
+                },
+                "requested": True,
+                "actual_exit_observed": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    code, refused = _run(
+        cli, ["--record-exit", *base, "--close-evidence", str(capture)], env, capsys
+    )
+
+    assert code == 2, refused
+    assert not _store(tmp_path).record_path_for(ATTEMPT, "process-exit").exists()
+
+
+class _SteppedClock(datetime):
+    """Wall time that steps back 100 s once `stepped` is set."""
+
+    stepped = False
+
+    @classmethod
+    def now(cls, tz=None):
+        value = datetime.now(tz)
+        return value - timedelta(seconds=100) if cls.stepped else value
+
+
+def test_a_wall_clock_step_withholds_the_exit_bounds(
+    launched, capsys, tmp_path: Path, monkeypatch
+):
+    """The exit is still observed; its bounds are not claimed across a step."""
+    cli, env, base, system = launched
+    _SteppedClock.stepped = False
+    monkeypatch.setattr(cli, "datetime", _SteppedClock)
+    close = system.close_window
+
+    def close_then_step(pid, handle, digest, **bound):
+        result = close(pid, handle, digest, **bound)
+        _SteppedClock.stepped = True
+        return result
+
+    system.close_window = close_then_step
+
+    code, retired = _run(cli, ["--retire", *base], env, capsys)
+
+    assert code == 0, retired
+    record = _store(tmp_path).load_process_exit(ATTEMPT)
+    assert record["actual_exit_observed"] is True
+    assert record["exit_bounds"] == {"unavailable": "wall_clock_discontinuous"}
+
+
+def test_a_closed_lifecycle_episode_is_charged_at_least_its_allocation():
+    """With no phase to charge, a clock step cannot shrink its time."""
+    records = {
+        **_closed_first_episode(),
+        "episode-0002-opening": _lifecycle_opening(),
+        "episode-0002-closing": {
+            "kind": "episode_closing",
+            "episode": 2,
+            "closed_at_utc": (OPENED + timedelta(seconds=50)).isoformat(),
+        },
+    }
+
+    totals = ledger_totals(records, FASTLOOP_ALLOWANCE, OPENED + timedelta(hours=1))
+
+    assert totals.committed_seconds >= 1800 + 300
+    assert totals.open_episode is None
+
+
+def test_an_episode_cannot_close_before_it_opened():
+    """A closing earlier than its opening is refused, not charged as zero."""
+    records = {**_closed_first_episode(), "episode-0002-opening": _lifecycle_opening()}
+
+    assert closing_findings(records, 2, OPENED - timedelta(seconds=1)) == (
+        "episode_closing_precedes_opening",
+    )
+    assert closing_findings(records, 2, OPENED + timedelta(seconds=1)) == ()

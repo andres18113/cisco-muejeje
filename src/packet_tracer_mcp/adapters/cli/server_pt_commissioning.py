@@ -20,6 +20,7 @@ from contextlib import redirect_stdout
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from io import StringIO
+from itertools import pairwise
 from pathlib import Path
 
 from ...application.ports.service_qualification import OpenedTransport
@@ -159,6 +160,9 @@ _PROCESS_CONTROL = PowerShellOwnedProcessControl
 RETIREMENT_GRACE_SECONDS = 60.0
 RETIREMENT_EXIT_WAIT_SECONDS = 30.0
 _RETIREMENT_POLL_SECONDS = 1.0
+#: How far wall and monotonic time may disagree between two readings before
+#: the wall clock is taken to have stepped and no exit bound is claimed.
+_CLOCK_TOLERANCE_SECONDS = 1.0
 _retirement_sleep = time.sleep
 #: The retiring process must itself be the isolated production process:
 #: checkout interpreter and package, one namespace, no test runner.
@@ -498,7 +502,7 @@ def _ledger_mode(root: Path, campaign: ServerPtCampaign, args) -> int:
             path = store.save_ledger_record(name, opening)
         else:
             closing_input = _read_ledger_input(args.episode_closing)
-            findings = closing_findings(records, args.episode)
+            findings = closing_findings(records, args.episode, now)
             if findings:
                 _print({"outcome": "refused", "reasons": list(findings)})
                 return 2
@@ -935,6 +939,10 @@ def _record_exit(
         close = json.loads(raw)
         if not isinstance(close, dict):
             raise ValueError("graceful close capture is not an object")
+        if close.get("method") == "WM_CLOSE":
+            # Only `--retire` posts a targeted close, and it records its own
+            # observed exit; a capture cannot claim one.
+            raise ValueError("a targeted close is recorded only by --retire")
         observed = PowerShellPacketTracerProcessReader(timeout_seconds=10).read()
         if observed.error:
             raise ValueError("process exit census is unreadable")
@@ -1019,14 +1027,22 @@ def _retirement_basis(
     return "exited_dirty", "empty_baseline_then_campaign_effects"
 
 
+def _instant() -> tuple[str, float]:
+    """One UTC wall-clock instant and the monotonic reading taken with it."""
+    return datetime.now(UTC).isoformat(), round(time.monotonic(), 6)
+
+
 def _timed_reading(control, pid: int, readings: list[dict[str, object]]):
     """Observe one PID and keep the reading with its request and answer times."""
-    started = datetime.now(UTC).isoformat()
+    started, started_monotonic = _instant()
     reading = control.observe(pid)
+    answered, answered_monotonic = _instant()
     readings.append(
         {
             "started_at_utc": started,
-            "answered_at_utc": datetime.now(UTC).isoformat(),
+            "answered_at_utc": answered,
+            "started_monotonic_s": started_monotonic,
+            "answered_monotonic_s": answered_monotonic,
             "present": None if reading.error else reading.present,
             "error": reading.error,
         }
@@ -1052,18 +1068,39 @@ def _await_absence(
         _retirement_sleep(_RETIREMENT_POLL_SECONDS)
 
 
-def _exit_bounds(alive_at: str, readings: list[dict[str, object]]) -> dict[str, str]:
+def _wall_clock_continuous(instants: list[tuple[str, float]]) -> bool:
+    """Whether wall time advanced like monotonic time between each instant."""
+    for (wall_a, mono_a), (wall_b, mono_b) in pairwise(instants):
+        wall = (
+            datetime.fromisoformat(wall_b) - datetime.fromisoformat(wall_a)
+        ).total_seconds()
+        if abs(wall - (mono_b - mono_a)) > _CLOCK_TOLERANCE_SECONDS:
+            return False
+    return True
+
+
+def _exit_bounds(
+    alive: tuple[str, float], readings: list[dict[str, object]]
+) -> dict[str, str]:
     """Bound an exit by raw readings, or return nothing if none saw it.
 
     The exit came after the start of the last reading that found the process
-    present (or `alive_at`, when an effect's own recheck found it alive) and
-    before the answer of the first reading that found it absent.
+    present (or `alive`, when an effect's own recheck found it alive) and
+    before the answer of the first reading that found it absent. If the wall
+    clock stepped between those instants, no bound is claimed.
     """
-    after = alive_at
+    after = alive[0]
+    instants = [alive]
     for reading in readings:
+        instants += [
+            (str(reading["started_at_utc"]), float(reading["started_monotonic_s"])),
+            (str(reading["answered_at_utc"]), float(reading["answered_monotonic_s"])),
+        ]
         if reading["present"] is True:
             after = str(reading["started_at_utc"])
         elif reading["present"] is False:
+            if not _wall_clock_continuous(instants):
+                return {"unavailable": "wall_clock_discontinuous"}
             return {"after_utc": after, "before_utc": str(reading["answered_at_utc"])}
     return {}
 
@@ -1243,7 +1280,8 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
             },
         )
     readings: list[dict[str, object]] = []
-    requested_at = datetime.now(UTC).isoformat()
+    requested = _instant()
+    requested_at = requested[0]
     # The helper posts only while the process and its visible windows are
     # still exactly what this census saw.
     sent = control.close_window(
@@ -1319,8 +1357,9 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
                     "bound_window_set_digest": after.visible_set_digest,
                     "disposable_workspace_rechecked": True,
                     "ownership_basis": basis,
-                    "requested_at_utc": datetime.now(UTC).isoformat(),
                 }
+                kill_requested = _instant()
+                forced["requested_at_utc"] = kill_requested[0]
                 # The helper kills only the census's process, and only while
                 # its visible windows are still the census's set.
                 killed = control.terminate(
@@ -1352,11 +1391,9 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
     )
     # Each effect's own recheck found the process alive when it was issued.
     if forced is not None and forced["termination"]["sent"]:
-        close["exit_bounds"] = _exit_bounds(
-            str(forced["requested_at_utc"]), kill_readings
-        )
+        close["exit_bounds"] = _exit_bounds(kill_requested, kill_readings)
     elif sent.sent:
-        close["exit_bounds"] = _exit_bounds(requested_at, readings)
+        close["exit_bounds"] = _exit_bounds(requested, readings)
     if forced is not None:
         close["forced_termination"] = forced
         if not forced["termination"]["sent"]:
