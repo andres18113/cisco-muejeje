@@ -541,3 +541,91 @@ allows, so this delta has self-review only.
    with nothing before it.
 
 The real originals of episode 1 pass every rule unchanged.
+
+## Closeout, version 10
+
+**Import executed.** `--import-exit` ran once, at the clean committed
+recorder `6b2ee840897f52818a2e72459554f5c499eff23c` (tree `6a1255fa`), a
+descendant of the episode source `1d086aa` (tree `1e709da5`, ancestry
+verified). It exited 0 with `absence_observed_after_graceful_request`,
+`exit_method: unproven` and `retire_credited: false`. Its archive time is
+2026-09-24T13:04:00.609Z. The record `exit-import.json` has SHA-256
+`2181fd9c…d783f6`. The new index (`826bbe66…`) names its predecessor
+`e131c1bd…`, which is the pre-import index kept byte for byte under
+`index-history/`. Of the 148 archive files present before the import, only
+`index.json` changed. Nine files were added: the addendum, five artifacts,
+the record and its digest, and the preserved index. The current status and
+the ledger are unchanged, and no `process-exit` record exists. The fresh
+census found no Packet Tracer process and no pending mailbox entry, without
+contacting Packet Tracer.
+
+**Erratum in the immutable record.** Its `exit_instant` sentence says the
+exit came "after presence_last_reported_by_utc". That time is when the
+request's last presence poll *answered*; the poll itself came earlier, so the
+exit may precede that time. The correct bound is after the last presence
+poll, whose own time was not recorded, and before the absence reading,
+whose answer arrived by `absence_first_reported_by_utc`. The record is not
+rewritten. Its `time_bounds` name both values as report times, and one of
+its limitations says transcript times bound when an answer arrived. The
+claim text in `historical_exit_claim` is corrected, with a regression, for
+any later rebuild.
+
+**Claim boundaries.**
+
+- *Measured HTTP behavior.* 30 selected, 30 with admissible readiness before
+  their request and a fresh marker fetched by IP, 30 released. The link
+  returned at 78.375 s of 2,792 s. The product summary and status classify
+  this as `measured` (exit 3, `http_accepted: false`). The envelope and
+  publication receipt keep the profile's own `http_accepted: true` beside the
+  limitation `experimental_measurement_is_not_a_delivery`. No delivery
+  acceptance is claimed.
+- *Cause.* The six-call readiness sample could not complete the observed
+  paginated `show spanning-tree` read, which prevented readiness admission.
+  After the correction the maintained product path measured fresh HTTP
+  content for all 30 selected clients. The network was not always converged:
+  this episode reports `LRN` before `FWD` on SW-02. Seven calls is what these
+  page layouts needed, not a universal cost, and sixteen is not proven for
+  arbitrary topology sizes.
+- *Observed semantic restoration.* Cleanup was archived `restored`: 35
+  devices removed and two observations equal to the empty baseline. Client
+  release and process retirement do not prove restoration.
+- *Process retirement.* PID 3248's absence is observed and archived with its
+  originals. The method is unproven, the instant is bounded as above, and
+  `--retire` refused and is not credited. The new window-census retirement
+  is verified offline and against a synthetic off-screen window only; no
+  lifecycle smoke ran, because this session was not authorized to launch
+  Packet Tracer.
+- *CI.* Exact-SHA CI exists only for `5be8920` (run 35954462368, six jobs
+  green). The new commits were not pushed in this session, so their CI is
+  pending.
+- *Independent acceptance.* None. The three Codex reviews are peer reviews.
+
+**Shared consumers that keep the old sampling contract.** Only the D-WEB
+diagnostic does: `_d_web_forwarding` and `_d_web_after`
+(`qualify_server_services.py`) call `observe_access_forwarding` with the
+runtime default of six calls per sample and no episode allowance, mirrored
+by `D_WEB_FORWARDING_SAMPLE_CALLS = 6`. Any other caller that left
+`sample_calls` at its default would get the same. The readiness gate, used by
+the MCP tool and both acceptance profiles, uses sixteen with the episode
+allowance; trunk continuity has no default and its caller passes sixteen.
+Voice's access-forwarding wait never used the forwarding sample: it reads
+through the general IOS executor with `show spanning-tree` continuation
+qualified, so version 1's statement that Voice kept a six-call sample was
+wrong. Its multi-page behavior was not re-measured. Nothing here changes
+D-WEB or Voice or replays their campaigns, and these limits do not affect
+the recorded HTTP sample.
+
+**Historical gaps, not repaired by rerunning.** The exit's instant and cause
+were not observed. Earlier indexes from the episode were replaced in place;
+only the index before the closure survives. The `--retire` refusal was only
+printed at `1d086aa`, and its archived copy is the transcript excerpt. No
+window census exists between the request and the exit, because the
+request's listing failed and the next one found the PID gone. The ledger
+closing's wording states a sequence as if it were a cause; it is immutable.
+
+**Package.** One portable, hash-verified package on the operator's Desktop,
+named `SERVER-PT-IOS-FASTLOOP-01-FINAL-<delivery SHA>`. It holds the full
+campaign archive with the closure, the product-store sources it pins, the C31
+originals behind the pagination diagnosis with their index identities, the
+lead's lab files, the import inputs, source identities and a Git bundle,
+verification outputs, and `FINAL-MANIFEST.sha256`.

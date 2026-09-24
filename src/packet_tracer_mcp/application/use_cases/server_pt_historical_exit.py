@@ -598,8 +598,10 @@ def historical_exit_claim(manifest: Mapping[str, object]) -> dict[str, object]:
         "graceful_request_returned_true": True,
         "exit_method": "unproven",
         "exit_instant": (
-            "after presence_last_reported_by_utc and no later than "
-            "absence_first_reported_by_utc; not observed exactly"
+            "after the request's last presence poll, whose answer arrived by "
+            "presence_last_reported_by_utc, and before the absence reading, whose "
+            "answer arrived by absence_first_reported_by_utc; the poll and "
+            "reading times themselves, and the exit, were not observed"
         ),
         "termination_named_in_retained_command_range": False,
         "retire_refused_before_any_effect": True,

@@ -2222,6 +2222,22 @@ def test_a_new_index_names_only_a_preserved_predecessor(tmp_path: Path):
     assert store.verify_index() == ("archive_bytes_changed",)
 
 
+def test_the_claimed_exit_instant_is_bounded_by_polls_not_report_times(
+    tmp_path: Path,
+):
+    """A report time is when an answer arrived; the poll it reports came first."""
+    from packet_tracer_mcp.application.use_cases.server_pt_historical_exit import (
+        historical_exit_claim,
+    )
+
+    instant = historical_exit_claim(_ImportLab(tmp_path).manifest)["exit_instant"]
+
+    assert "after presence_last_reported_by_utc" not in instant
+    assert "last presence poll" in instant
+    assert "absence_first_reported_by_utc" in instant
+    assert "not observed" in instant
+
+
 def test_the_pinned_authority_is_the_operator_addendum():
     """The one importable exit is episode 1's PID 3248 under Addendum 02."""
     assert FASTLOOP_EPISODE_1_EXIT_IMPORT == HistoricalExitImportAuthority(
