@@ -472,3 +472,41 @@ RED at `4ec5d33`), then fixed inside the approved contract.
    owned PID and reported `process <pid> exited`.
 
 The real originals of episode 1 pass the stricter rules unchanged.
+
+## Re-review delta, version 8
+
+A focused re-review of `59c69d5` confirmed that the four fixes close their
+scenarios and found three further high-severity gaps. B and C were first
+reproduced as failing regressions. A was a race inside the native call that
+no offline double can interleave, so its regression is the opt-in native
+test.
+
+1. **Termination handle.** In Windows PowerShell's .NET Framework,
+   `Process.StartTime` and `Process.Kill()` each open their own handle by
+   PID, so a PID reused between them could be killed. The helper now opens
+   one native handle (`OpenProcess`), reads the creation time through it
+   (`GetProcessTimes`), checks the window set while it is held, and
+   terminates that same handle (`TerminateProcess`). The close holds a
+   handle too: while one is open, the PID cannot name another process.
+   The census reads creation time the same way.
+2. **Completion of an unvalidated record.** A retry used to index an
+   unindexed record after checking only its self-consistency, so a planted
+   or altered record could become immutable. A retry now reads the manifest
+   and originals again, reruns every import rule and the transcript check,
+   and rebuilds the record. Only three values are taken from the earlier
+   run, each checked: its recorder (a clean descendant of the episode
+   source), its census (owned PID absent, Packet Tracer not contacted) and
+   its archive time (not in the future). The stored bytes must equal the
+   rebuild exactly, and every file it names must hold the stated bytes.
+3. **Identity not guarding the receiver.** Finding the identity strings
+   anywhere in the command did not prove they guarded the object that
+   received `CloseMainWindow`. Only the exact retained request form is now
+   supported: `$p` is `Get-Process -Id $pidOwned`, the guard compares its
+   creation time, image and command line with the launch's and throws before
+   any request, the close goes to that `$p`, and nothing after it rebinds
+   `$p` or `$pidOwned`, closes again or terminates. The absence command must
+   end in the owned-PID check whose only `process <pid> exited` answer is
+   its else branch. A transcript that keeps an input twice (as sent and as
+   recorded) is one distinct command.
+
+The real originals of episode 1 still pass every rule unchanged.

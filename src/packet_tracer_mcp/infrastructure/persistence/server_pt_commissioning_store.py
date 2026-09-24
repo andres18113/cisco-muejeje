@@ -396,15 +396,20 @@ class ServerPtCommissioningStore:
             raise ValueError("unknown commissioning phase")
         return self._load_mapping(attempt_id, phase + "-status")
 
+    @staticmethod
+    def mapping_bytes(document: Mapping[str, object]) -> bytes:
+        """Return the exact bytes a mapping record of this store is written as."""
+        return (
+            json.dumps(dict(document), sort_keys=True, ensure_ascii=False) + "\n"
+        ).encode("utf-8")
+
     def _save_mapping(
         self, attempt_id: str, name: str, document: Mapping[str, object]
     ) -> Path:
         directory = self._attempt_dir(attempt_id)
         path = resolve_within(directory, name + ".json")
         digest_path = resolve_within(directory, name + ".sha256")
-        payload = (
-            json.dumps(dict(document), sort_keys=True, ensure_ascii=False) + "\n"
-        ).encode("utf-8")
+        payload = self.mapping_bytes(document)
         _write_once(path, payload)
         _write_once(digest_path, (hashlib.sha256(payload).hexdigest() + "\n").encode())
         return path
@@ -786,6 +791,19 @@ class ServerPtCommissioningStore:
             paths[relative] = source
         return paths
 
+    def index_predecessor(self) -> dict[str, object]:
+        """Name where the current index would be preserved, writing nothing."""
+        raw = self.index_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+        path = resolve_within(
+            self._campaign_dir(), "index-history", f"index-{digest}.json"
+        )
+        return {
+            "path": path.relative_to(self.root).as_posix(),
+            "sha256": digest,
+            "bytes": len(raw),
+        }
+
     def preserve_index(self) -> dict[str, object]:
         """Keep the current index's exact bytes, once, and name them.
 
@@ -794,20 +812,10 @@ class ServerPtCommissioningStore:
         index then lists the copy as an immutable source.
         """
         raw = self.index_bytes()
-        digest = hashlib.sha256(raw).hexdigest()
-        path = resolve_within(
-            self._campaign_dir(), "index-history", f"index-{digest}.json"
-        )
-        if path.exists():
-            if path.read_bytes() != raw:
-                raise ValueError("preserved index bytes changed")
-        else:
-            _write_once(path, raw)
-        return {
-            "path": path.relative_to(self.root).as_posix(),
-            "sha256": digest,
-            "bytes": len(raw),
-        }
+        predecessor = self.index_predecessor()
+        path = resolve_within(self.root, *PurePosixPath(predecessor["path"]).parts)
+        _write_once_or_same(path, raw)
+        return predecessor
 
     def refresh_index(self, *, predecessor: Mapping[str, object] | None = None) -> Path:
         """Add new files only after all prior indexed source bytes still match.

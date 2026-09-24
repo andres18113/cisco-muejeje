@@ -172,8 +172,14 @@ public static class PtMcpOwnedWindows {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
     [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+    [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+    [DllImport("kernel32.dll")] static extern bool GetProcessTimes(IntPtr h, out long created, out long exited, out long kernel, out long user);
+    [DllImport("kernel32.dll")] static extern bool TerminateProcess(IntPtr h, uint code);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
     const uint GW_OWNER = 4;
     const uint WM_CLOSE = 0x0010;
+    const uint PROCESS_TERMINATE = 0x0001;
+    const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
     static string Esc(string s) {
         var b = new StringBuilder("\"");
         foreach (char c in s) {
@@ -201,12 +207,16 @@ public static class PtMcpOwnedWindows {
             return b.ToString();
         }
     }
+    // Creation time, in UTC ticks, of the process this handle holds.
+    static long HandleTicks(IntPtr p) {
+        long created, exited, kernel, user;
+        if (!GetProcessTimes(p, out created, out exited, out kernel, out user)) { return -1; }
+        return DateTime.FromFileTimeUtc(created).Ticks;
+    }
     static long StartTicks(uint target) {
-        try {
-            using (var p = System.Diagnostics.Process.GetProcessById((int)target)) {
-                return p.StartTime.ToUniversalTime().Ticks;
-            }
-        } catch (Exception) { return -1; }
+        IntPtr p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, target);
+        if (p == IntPtr.Zero) { return -1; }
+        try { return HandleTicks(p); } finally { CloseHandle(p); }
     }
     // Visible windows of the PID as sorted rows; null if not enumerable.
     static List<string> VisibleRows(uint target, int limit) {
@@ -257,8 +267,16 @@ public static class PtMcpOwnedWindows {
             + ",\"windows\":[" + string.Join(",", rows) + "]}";
     }
     static string Refused(string reason) { return "{\"sent\":false,\"refusal\":\"" + reason + "\"}"; }
+    // While a handle to the process is open, its PID cannot name another
+    // process, so every check below and the effect concern the same one.
     public static string Close(uint target, long handle, string expected, string set, long ticks, int limit) {
-        if (StartTicks(target) != ticks) { return Refused("process_changed"); }
+        IntPtr p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, target);
+        if (p == IntPtr.Zero) { return Refused("process_changed"); }
+        try { return CloseHeld(p, target, handle, expected, set, ticks, limit); }
+        finally { CloseHandle(p); }
+    }
+    static string CloseHeld(IntPtr p, uint target, long handle, string expected, string set, long ticks, int limit) {
+        if (HandleTicks(p) != ticks) { return Refused("process_changed"); }
         if (SetDigest(target, limit) != set) { return Refused("window_set_changed"); }
         var h = new IntPtr(handle);
         if (!IsWindow(h)) { return Refused("window_absent"); }
@@ -272,20 +290,17 @@ public static class PtMcpOwnedWindows {
         if (!PostMessage(h, WM_CLOSE, IntPtr.Zero, IntPtr.Zero)) { return Refused("close_not_posted"); }
         return "{\"sent\":true,\"refusal\":\"\"}";
     }
-    // Kill through the very process object whose creation time was checked.
+    // One handle, opened once: its creation time is checked and the very
+    // same handle is terminated, so a reused PID can never be reached.
     public static string Terminate(uint target, string set, long ticks, int limit) {
-        System.Diagnostics.Process p;
-        try { p = System.Diagnostics.Process.GetProcessById((int)target); }
-        catch (Exception) { return Refused("process_absent"); }
-        using (p) {
-            long started;
-            try { started = p.StartTime.ToUniversalTime().Ticks; }
-            catch (Exception) { return Refused("process_unreadable"); }
-            if (started != ticks) { return Refused("process_changed"); }
+        IntPtr p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE, false, target);
+        if (p == IntPtr.Zero) { return Refused("process_unopenable"); }
+        try {
+            if (HandleTicks(p) != ticks) { return Refused("process_changed"); }
             if (SetDigest(target, limit) != set) { return Refused("window_set_changed"); }
-            try { p.Kill(); } catch (Exception) { return Refused("kill_failed"); }
+            if (!TerminateProcess(p, 1)) { return Refused("terminate_failed"); }
             return "{\"sent\":true,\"refusal\":\"\"}";
-        }
+        } finally { CloseHandle(p); }
     }
 }
 '@
@@ -491,9 +506,9 @@ class PowerShellOwnedProcessControl:
     ) -> TerminationResult:
         """Kill this PID only if it is still the census's process and window set.
 
-        The helper opens the process, checks its creation time and the
-        visible window set, and kills through that same process object, so
-        a reused PID or a window that appeared since the census stops it.
+        The helper opens one native handle, checks the creation time through
+        it and the visible window set while it is held, and terminates that
+        same handle; while it is open the PID cannot name another process.
         """
         pid = _pid(pid)
         set_digest = _hex_digest(set_digest)

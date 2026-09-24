@@ -1366,6 +1366,15 @@ def _fresh_state(pid: int) -> dict[str, object]:
     }
 
 
+def _import_paths(campaign_id: str, attempt_id: str) -> tuple[str, dict[str, str]]:
+    """Return the canonical archive paths of the addendum and each artifact."""
+    base = f"data/commissioning/{campaign_id}"
+    return f"{base}/authority/addendum-02.md", {
+        role: f"{base}/{attempt_id}/exit-import-{role.replace('_', '-')}{suffix}"
+        for role, suffix in _IMPORT_SUFFIXES.items()
+    }
+
+
 def _import_residue(
     store: ServerPtCommissioningStore, attempt_id: str
 ) -> frozenset[str]:
@@ -1379,80 +1388,191 @@ def _import_residue(
     if residue is None:
         raise ValueError("campaign archive is unverified")
     base = f"data/commissioning/{store.campaign_id}"
-    digest = hashlib.sha256(store.index_bytes()).hexdigest()
+    addendum, artifacts = _import_paths(store.campaign_id, attempt_id)
     own = {
-        f"{base}/authority/addendum-02.md",
-        f"{base}/index-history/index-{digest}.json",
+        addendum,
+        store.index_predecessor()["path"],
         f"{base}/{attempt_id}/exit-import.json",
         f"{base}/{attempt_id}/exit-import.sha256",
-        *(
-            f"{base}/{attempt_id}/exit-import-{role.replace('_', '-')}{suffix}"
-            for role, suffix in _IMPORT_SUFFIXES.items()
-        ),
+        *artifacts.values(),
     }
     if not set(residue) <= own:
         raise ValueError("archive residue is not this import's")
     return frozenset(residue)
 
 
+def _import_document(
+    *,
+    campaign: ServerPtCampaign,
+    attempt_id: str,
+    manifest: Mapping[str, object],
+    artifacts: Mapping[str, bytes],
+    launch: Mapping[str, object],
+    launch_sha256: str,
+    cleanup_status_sha256: str,
+    cleanup_result: Mapping[str, object],
+    episode_tree: str,
+    recorder: Mapping[str, object],
+    transcript: Mapping[str, object],
+    fresh: Mapping[str, object],
+    predecessor: Mapping[str, object],
+    archive_at: str,
+) -> dict[str, object]:
+    """Assemble the one record an admitted import writes, from its inputs.
+
+    Both a first run and the completion of an interrupted one build the
+    record here, so a stored record can be compared with its rebuild byte for
+    byte.
+    """
+    authority = _EXIT_IMPORT_AUTHORITY
+    addendum_path, artifact_paths = _import_paths(campaign.campaign_id, attempt_id)
+    offered = manifest["artifacts"]
+    return {
+        "kind": "historical_exit_import",
+        "campaign_id": campaign.campaign_id,
+        "charter_sha256": _charter_digest(campaign),
+        "execution_purpose": campaign.purpose.value,
+        "attempt_id": attempt_id,
+        "episode": authority.episode,
+        "authority": {
+            "addendum_sha256": authority.addendum_sha256,
+            "addendum_path": addendum_path,
+        },
+        "episode_source": {
+            "sha": authority.episode_source_sha,
+            "tree": episode_tree,
+            "ancestor_of_recorder": True,
+        },
+        "recorder_source": dict(recorder),
+        "launch_sha256": launch_sha256,
+        "cleanup_status_sha256": cleanup_status_sha256,
+        "cleanup_outcome": "restored",
+        "cleanup_recorded_at_utc": cleanup_result.get("recorded_at_utc"),
+        "process": {
+            "pid": launch.get("pid"),
+            "process_path": launch.get("process_path"),
+            "process_incarnation": launch.get("process_incarnation"),
+        },
+        "artifacts": [
+            {
+                "role": role,
+                "file": artifact_paths[role],
+                "sha256": hashlib.sha256(artifacts[role]).hexdigest(),
+                "bytes": len(artifacts[role]),
+                "original_path": offered[role]["path"],
+                "origin": offered[role].get("origin", ""),
+            }
+            for role in sorted(artifacts)
+        ],
+        "transcript_source": dict(transcript),
+        "capture_field_provenance": manifest.get("capture_field_provenance"),
+        "time_bounds": manifest.get("time_bounds"),
+        "retire_refusal": manifest.get("retire_refusal"),
+        "close_request_command": manifest.get("close_request_command"),
+        "absence_command": manifest.get("absence_command"),
+        "retained_command_range": manifest.get("retained_command_range"),
+        "lead_report": manifest.get("lead_report", ""),
+        "fresh_state": dict(fresh),
+        **historical_exit_claim(manifest),
+        "index_predecessor": dict(predecessor),
+        "archived_at_utc": archive_at,
+        "limitations": list(_IMPORT_LIMITATIONS),
+    }
+
+
+_FRESH_STATE_KEYS = frozenset(
+    {
+        "observed_at_utc",
+        "packet_tracer_primary_process_count",
+        "owned_pid_present",
+        "mailbox_pending_count",
+        "mailbox_error",
+        "packet_tracer_contacted",
+    }
+)
+
+
+def _earlier_observations(
+    root: Path, record: Mapping[str, object]
+) -> tuple[dict[str, object], dict[str, object], str]:
+    """Return what an interrupted run observed and cannot be observed again.
+
+    Its recorder must have been a clean descendant of the episode source,
+    its census must have found the owned PID absent without contacting
+    Packet Tracer, and its archive time must not lie in the future.
+    Everything else in the record is rebuilt and compared.
+    """
+    authority = _EXIT_IMPORT_AUTHORITY
+    recorder = record.get("recorder_source")
+    fresh = record.get("fresh_state")
+    archive_at = record.get("archived_at_utc")
+    if (
+        not isinstance(recorder, dict)
+        or recorder.get("clean") is not True
+        or not isinstance(fresh, dict)
+        or set(fresh) != _FRESH_STATE_KEYS
+        or fresh.get("owned_pid_present") is not False
+        or fresh.get("packet_tracer_contacted") is not False
+        or not isinstance(archive_at, str)
+        or datetime.fromisoformat(archive_at) > datetime.now(UTC)
+    ):
+        raise ValueError("interrupted import observations are unusable")
+    ancestry = _SOURCE_ANCESTRY(
+        root, authority.episode_source_sha, str(recorder.get("sha") or "")
+    )
+    if (
+        ancestry.error
+        or not ancestry.is_ancestor
+        or ancestry.ancestor_tree != authority.episode_source_tree
+    ):
+        raise ValueError("interrupted import recorder did not descend")
+    return recorder, fresh, archive_at
+
+
 def _complete_import(
     store: ServerPtCommissioningStore,
     attempt_id: str,
+    document: Mapping[str, object],
+    written: bytes,
     addendum: bytes,
+    artifacts: Mapping[str, bytes],
     tolerate: frozenset[str],
 ) -> int:
-    """Index an import record whose writer stopped before the index, as written.
+    """Index an interrupted import's record only if it is its validated rebuild.
 
-    The record is never rebuilt: its bytes, its artifacts, the addendum and
-    the preserved index it names must all still be what it states, and it
-    must name every tolerated file. Only its derived digest may be missing.
+    The caller revalidated every original, the manifest and the launch, and
+    rebuilt the record from them with only the earlier run's observations;
+    the stored bytes must equal that rebuild, and every file it names must
+    hold exactly the bytes it states. Only its derived digest may be missing.
     """
-    authority = _EXIT_IMPORT_AUTHORITY
     record_path = store.record_path_for(attempt_id, "exit-import")
     sidecar = record_path.with_name("exit-import.sha256")
+    addendum_path, artifact_paths = _import_paths(store.campaign_id, attempt_id)
+    predecessor = document["index_predecessor"]
     try:
-        raw = record_path.read_bytes()
-        digest = hashlib.sha256(raw).hexdigest()
-        if sidecar.exists() and sidecar.read_text(encoding="ascii").strip() != digest:
-            raise ValueError("import record digest differs")
-        record = json.loads(raw)
-        prior = store.index_bytes()
-        predecessor = record.get("index_predecessor")
-        if (
-            record.get("kind") != "historical_exit_import"
-            or record.get("attempt_id") != attempt_id
-            or record.get("authority", {}).get("addendum_sha256")
-            != authority.addendum_sha256
-            or hashlib.sha256(addendum).hexdigest() != authority.addendum_sha256
-            or not isinstance(predecessor, dict)
-            or predecessor.get("sha256") != hashlib.sha256(prior).hexdigest()
-        ):
-            raise ValueError("unindexed import record does not extend this index")
+        if store.mapping_bytes(document) != written:
+            raise ValueError("import record differs from its validated rebuild")
+        if (store.root / predecessor["path"]).read_bytes() != store.index_bytes():
+            raise ValueError("preserved index differs from the current index")
+        if (store.root / addendum_path).read_bytes() != addendum:
+            raise ValueError("archived addendum differs")
+        for role, raw in artifacts.items():
+            if (store.root / artifact_paths[role]).read_bytes() != raw:
+                raise ValueError("archived artifact differs from its original")
         named = {
             store.relative_path(record_path),
             store.relative_path(sidecar),
             predecessor["path"],
-            record["authority"]["addendum_path"],
+            addendum_path,
+            *(artifact_paths[role] for role in artifacts),
         }
-        if (store.root / predecessor["path"]).read_bytes() != prior or (
-            store.root / record["authority"]["addendum_path"]
-        ).read_bytes() != addendum:
-            raise ValueError("import record names changed bytes")
-        for item in record["artifacts"]:
-            data = (store.root / item["file"]).read_bytes()
-            if (
-                hashlib.sha256(data).hexdigest() != item["sha256"]
-                or len(data) != item["bytes"]
-            ):
-                raise ValueError("import artifact bytes changed")
-            named.add(item["file"])
         if not tolerate <= named:
             raise ValueError("residue the import record does not name")
         store.seal_exit_import(attempt_id)
         store.refresh_index(predecessor=predecessor)
         if store.verify_index():
             raise ValueError("completed import archive is unverified")
-    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+    except (OSError, ValueError, KeyError, TypeError) as exc:
         _print(
             {"outcome": "refused", "reason": f"import_completion:{type(exc).__name__}"}
         )
@@ -1460,12 +1580,12 @@ def _complete_import(
     _print(
         {
             "phase": "exit-import",
-            "outcome": record.get("disposition"),
+            "outcome": document["disposition"],
             "attempt_id": attempt_id,
             "completed_interrupted_import": True,
             "retire_credited": False,
             "index_predecessor_sha256": predecessor["sha256"],
-            "exit_import_sha256": digest,
+            "exit_import_sha256": hashlib.sha256(written).hexdigest(),
         }
     )
     return 0
@@ -1487,11 +1607,13 @@ def _import_exit(
     first write; the prior index is preserved and named by the new one. No
     `process-exit` record is written, and nothing is credited to `--retire`.
     Every write accepts its own identical bytes, so a run stopped between
-    writes is finished by its retry; a record written before the stop is
-    indexed as written (`_complete_import`), never rebuilt.
+    writes is finished by its retry. A record written before the stop is
+    indexed only if it equals the record rebuilt from revalidated originals
+    (`_complete_import`); it is never rewritten.
     """
     authority = _EXIT_IMPORT_AUTHORITY
     store = ServerPtCommissioningStore(root, campaign.campaign_id)
+    written: bytes | None = None
     try:
         if (campaign.campaign_id, attempt_id) != (
             authority.campaign_id,
@@ -1518,7 +1640,7 @@ def _import_exit(
             or launch.get("execution_purpose") != campaign.purpose.value
         ):
             raise ValueError("launch was not recorded by this campaign")
-        cleanup = store.require_immutable_phase(
+        store.require_immutable_phase(
             attempt_id, "cleanup", "restored", tolerate=tolerate
         )
         if store.record_path_for(attempt_id, "process-exit").exists():
@@ -1527,7 +1649,21 @@ def _import_exit(
         if record_path.exists():
             if store.relative_path(record_path) not in tolerate:
                 raise ValueError("exit-import already exists")
-            return _complete_import(store, attempt_id, addendum, tolerate)
+            written = record_path.read_bytes()
+            earlier = json.loads(written)
+            if not isinstance(earlier, dict):
+                raise ValueError("interrupted import record is not an object")
+            recorder, fresh, archive_at = _earlier_observations(root, earlier)
+        else:
+            recorder = {
+                "sha": source.head,
+                "tree": source.tree,
+                "branch": source.branch,
+                "upstream": source.upstream,
+                "upstream_head": source.upstream_head,
+                "clean": source.clean,
+            }
+            archive_at = datetime.now(UTC).isoformat()
         result_name = f"episode-{authority.episode:04d}-{attempt_id}-cleanup-result"
         cleanup_result = store.ledger_records().get(result_name) or {}
         manifest = json.loads(_read_bounded(manifest_file, _IMPORT_MANIFEST_LIMIT))
@@ -1542,7 +1678,6 @@ def _import_exit(
             )
             for role, meta in manifest["artifacts"].items()
         }
-        archive_at = datetime.now(UTC).isoformat()
         findings = historical_exit_import_findings(
             authority=authority,
             manifest=manifest,
@@ -1557,89 +1692,53 @@ def _import_exit(
         transcript = _transcript_source(
             manifest["artifacts"]["transcript_excerpt"], artifacts["transcript_excerpt"]
         )
-        fresh = _fresh_state(launch["pid"])
-        if fresh["owned_pid_present"]:
-            raise ValueError("a process with the owned PID is present now")
+        if written is None:
+            fresh = _fresh_state(launch["pid"])
+            if fresh["owned_pid_present"]:
+                raise ValueError("a process with the owned PID is present now")
+        document = _import_document(
+            campaign=campaign,
+            attempt_id=attempt_id,
+            manifest=manifest,
+            artifacts=artifacts,
+            launch=launch,
+            launch_sha256=hashlib.sha256(
+                store.record_path_for(attempt_id, "process-launch").read_bytes()
+            ).hexdigest(),
+            cleanup_status_sha256=hashlib.sha256(
+                store.record_path_for(attempt_id, "cleanup-status").read_bytes()
+            ).hexdigest(),
+            cleanup_result=cleanup_result,
+            episode_tree=authority.episode_source_tree,
+            recorder=recorder,
+            transcript=transcript,
+            fresh=fresh,
+            predecessor=store.index_predecessor(),
+            archive_at=archive_at,
+        )
     except PermissionError as exc:
         _print({"outcome": "refused", "reason": f"import_not_authorized:{exc}"})
         return 2
     except (OSError, ValueError, KeyError, TypeError) as exc:
         _print({"outcome": "refused", "reason": f"import_exit:{type(exc).__name__}"})
         return 2
-    claim = historical_exit_claim(manifest)
+    if written is not None:
+        return _complete_import(
+            store, attempt_id, document, written, addendum, artifacts, tolerate
+        )
     try:
-        predecessor = store.preserve_index()
-        addendum_path = store.save_authority_document("addendum-02.md", addendum)
-        stored = []
+        if store.preserve_index() != document["index_predecessor"]:
+            raise ValueError("preserved index differs from the validated one")
+        store.save_authority_document("addendum-02.md", addendum)
         for role in sorted(artifacts):
-            path = store.save_exit_import_artifact(
+            store.save_exit_import_artifact(
                 attempt_id,
                 role.replace("_", "-"),
                 _IMPORT_SUFFIXES[role],
                 artifacts[role],
             )
-            stored.append(
-                {
-                    "role": role,
-                    "file": path.relative_to(root.resolve()).as_posix(),
-                    "sha256": hashlib.sha256(artifacts[role]).hexdigest(),
-                    "bytes": len(artifacts[role]),
-                    "original_path": manifest["artifacts"][role]["path"],
-                    "origin": manifest["artifacts"][role].get("origin", ""),
-                }
-            )
-        document = {
-            "kind": "historical_exit_import",
-            "campaign_id": campaign.campaign_id,
-            "charter_sha256": _charter_digest(campaign),
-            "execution_purpose": campaign.purpose.value,
-            "attempt_id": attempt_id,
-            "episode": authority.episode,
-            "authority": {
-                "addendum_sha256": authority.addendum_sha256,
-                "addendum_path": addendum_path.relative_to(root.resolve()).as_posix(),
-            },
-            "episode_source": {
-                "sha": authority.episode_source_sha,
-                "tree": ancestry.ancestor_tree,
-                "ancestor_of_recorder": ancestry.is_ancestor,
-            },
-            "recorder_source": {
-                "sha": source.head,
-                "tree": source.tree,
-                "branch": source.branch,
-                "upstream": source.upstream,
-                "upstream_head": source.upstream_head,
-                "clean": source.clean,
-            },
-            "launch_sha256": hashlib.sha256(
-                store.record_path_for(attempt_id, "process-launch").read_bytes()
-            ).hexdigest(),
-            "cleanup_status_sha256": hashlib.sha256(
-                store.record_path_for(attempt_id, "cleanup-status").read_bytes()
-            ).hexdigest(),
-            "cleanup_outcome": cleanup.get("outcome"),
-            "cleanup_recorded_at_utc": cleanup_result.get("recorded_at_utc"),
-            "process": {
-                "pid": launch.get("pid"),
-                "process_path": launch.get("process_path"),
-                "process_incarnation": launch.get("process_incarnation"),
-            },
-            "artifacts": stored,
-            "transcript_source": transcript,
-            "capture_field_provenance": manifest.get("capture_field_provenance"),
-            "time_bounds": manifest.get("time_bounds"),
-            "retire_refusal": manifest.get("retire_refusal"),
-            "retained_command_range": manifest.get("retained_command_range"),
-            "lead_report": manifest.get("lead_report", ""),
-            "fresh_state": fresh,
-            **claim,
-            "index_predecessor": predecessor,
-            "archived_at_utc": archive_at,
-            "limitations": list(_IMPORT_LIMITATIONS),
-        }
         path = store.save_exit_import(attempt_id, document)
-        store.refresh_index(predecessor=predecessor)
+        store.refresh_index(predecessor=document["index_predecessor"])
         if store.verify_index():
             raise ValueError("exit import archive is unverified")
     except (OSError, ValueError, KeyError) as exc:
@@ -1648,15 +1747,15 @@ def _import_exit(
     _print(
         {
             "phase": "exit-import",
-            "outcome": claim["disposition"],
+            "outcome": document["disposition"],
             "attempt_id": attempt_id,
             "process_id": launch.get("pid"),
-            "exit_method": claim["exit_method"],
+            "exit_method": document["exit_method"],
             "completed_interrupted_import": False,
             "retire_credited": False,
             "recorder_source_sha": source.head,
             "episode_source_sha": authority.episode_source_sha,
-            "index_predecessor_sha256": predecessor["sha256"],
+            "index_predecessor_sha256": document["index_predecessor"]["sha256"],
             "exit_import_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         }
     )

@@ -77,6 +77,23 @@ _TERMINATION = re.compile(
     r"stop-process|taskkill|terminateprocess|\.kill\(|kill\s+-", re.IGNORECASE
 )
 _REQUEST_FIELD = re.compile(r"([a-z_0-9]+)=(\S+)")
+#: The lead's graceful request, in the one form this import supports: the
+#: receiver `$p` is the process of `$pidOwned`, an identity guard throws before
+#: any request, and the request is sent to that same `$p`.
+_REQUEST_FORM = re.compile(
+    r"\$pidOwned = (?P<pid>\d+); "
+    r"\$p = Get-Process -Id \$pidOwned; "
+    r'\$cmd = \(Get-CimInstance Win32_Process -Filter "ProcessId=\$pidOwned"\)'
+    r"\.CommandLine; "
+    r"if \(\$p\.StartTime\.ToString\('o'\) -ne '(?P<incarnation>[^']+)' -or "
+    r"\$p\.MainModule\.FileName -ne '(?P<path>[^']+)' -or "
+    r"\$cmd\.Trim\(\) -ne '(?P<command>[^']+)'\) "
+    r"\{ throw '[^']*' \}; "
+    r"\$requestedAt = \(Get-Date\)\.ToUniversalTime\(\)\.ToString\('o'\); "
+    r"\$requested = \$p\.CloseMainWindow\(\); "
+)
+#: After the request, nothing may rebind the receiver or send another close.
+_REBINDING = re.compile(r"\$(?:p|pidOwned)\s*=|CloseMainWindow", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -203,34 +220,66 @@ def _request_command_findings(
 ) -> list[str]:
     """Require the retained request command and answer to bind the process.
 
-    The command must name the owned PID, its creation time and image, and
-    `CloseMainWindow`; its answer must report `requested=True` at the
-    capture's request time. The capture's transcribed identity rests on them.
+    Exactly one distinct string of the cited line (a transcript may keep
+    the same input twice) must be the supported request form, whose
+    receiver is the owned PID and whose guard names the launch's
+    creation time, image and command line; nothing after the request may
+    rebind the receiver, close again or terminate. The answer must report
+    `requested=True` at the capture's request time. The capture's
+    transcribed identity rests on this command, not on the capture.
     """
     line = retained.get("line") if isinstance(retained, Mapping) else None
     answer = retained.get("answer_line") if isinstance(retained, Mapping) else None
-    pid = launch.get("pid")
-    command = excerpt.strings(line) or []
+    matches = [
+        (match, text[match.end() :])
+        for text in sorted(set(excerpt.strings(line) or []))
+        if (match := _REQUEST_FORM.match(text)) is not None
+    ]
     if (
-        isinstance(pid, bool)
-        or not isinstance(pid, int)
-        or isinstance(answer, bool)
+        isinstance(answer, bool)
         or not isinstance(answer, int)
         or not isinstance(line, int)
         or not line < answer
-        or not any(re.search(rf"(?<!\d){pid}(?!\d)", text) for text in command)
+        or len(matches) != 1
+    ):
+        return ["close_request_not_bound_to_the_owned_process"]
+    match, rest = matches[0]
+    command_line = launch.get("observed_command_line")
+    if (
+        match["pid"] != str(launch.get("pid"))
+        or match["incarnation"] != launch.get("process_incarnation")
+        or match["path"] != launch.get("process_path")
+        or not isinstance(command_line, str)
+        or match["command"] != command_line.strip()
+        or _REBINDING.search(rest)
+        or _TERMINATION.search(rest)
+        or '"requested=$requested at=$requestedAt' not in rest
         or not excerpt.contains(
-            line,
-            "CloseMainWindow",
-            str(launch.get("process_incarnation")),
-            str(launch.get("process_path")),
-        )
-        or not excerpt.contains(
-            answer, "requested=True", str(capture.get("requested_at_utc"))
+            answer, f"requested=True at={capture.get('requested_at_utc')}"
         )
     ):
         return ["close_request_not_bound_to_the_owned_process"]
     return []
+
+
+def _absence_command_supported(texts: Sequence[str], pid: object) -> bool:
+    """Whether one cited command reports absence only from the owned PID check.
+
+    Its last statement must be `if (Get-Process -Id <pid> ...) { ... } else
+    { "process <pid> exited" }`, and that answer text must occur nowhere else.
+    """
+    check = f"if (Get-Process -Id {pid} -ErrorAction SilentlyContinue) "
+    gone = f'else {{ "process {pid} exited" }}'
+    found = [
+        text
+        for text in set(texts)
+        if text.endswith(gone)
+        and text.count(f"process {pid} exited") == 1
+        and check in text
+        and not _TERMINATION.search(text)
+        and "CloseMainWindow" not in text
+    ]
+    return len(found) == 1
 
 
 def _prelaunch_findings(
@@ -299,7 +348,7 @@ def _transcript_bound_findings(
         or absence_bound.get("line") != absence.get("answer_line")
         or not isinstance(absence.get("line"), int)
         or not absence["line"] < absence_bound["line"]
-        or not excerpt.contains(absence.get("line"), f"Get-Process -Id {pid}", gone)
+        or not _absence_command_supported(excerpt.strings(absence["line"]) or [], pid)
         or not excerpt.contains(absence_bound.get("line"), gone)
     ):
         return ["time_bound_not_supported_by_its_line"]

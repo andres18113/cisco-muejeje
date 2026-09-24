@@ -1178,6 +1178,35 @@ CENSUS_AT = "2026-09-24T03:50:40.2114457Z"
 REFUSAL = '{"outcome": "refused", "reasons": ["process_document_title_changed"]}'
 
 
+def _request_command(guard: str = "", receiver: int | str = "$pidOwned") -> str:
+    """Return the lead's request command form, with the lab's identity."""
+    return (
+        f"$pidOwned = {PID}; $p = Get-Process -Id {receiver}; "
+        '$cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$pidOwned")'
+        ".CommandLine; "
+        f"if ($p.StartTime.ToString('o') -ne '{INCARNATION}' -or "
+        f"$p.MainModule.FileName -ne '{PATH}' -or "
+        f"$cmd.Trim() -ne '{COMMAND_LINE.strip()}') "
+        "{ throw 'identity differs; nothing requested' }; "
+        "$requestedAt = (Get-Date).ToUniversalTime().ToString('o'); "
+        f"{guard}$requested = $p.CloseMainWindow(); "
+        '"requested=$requested at=$requestedAt main_title_at_request=[x]"; '
+        "$exited = $false; for ($i = 0; $i -lt 40; $i++) { Start-Sleep -Milliseconds "
+        "500; if (-not (Get-Process -Id $pidOwned -ErrorAction SilentlyContinue)) "
+        '{ $exited = $true; break } }; "exited=$exited"'
+    )
+
+
+def _absence_command() -> str:
+    """Return the lead's later window listing, which reports absence."""
+    return (
+        'Add-Type @"\npublic static class W2 { }\n"@; '
+        f"if (Get-Process -Id {PID} -ErrorAction SilentlyContinue) "
+        f'{{ [W2]::Titles({PID}) | ForEach-Object {{ "window: $_" }} }} '
+        f'else {{ "process {PID} exited" }}'
+    )
+
+
 def _transcript_lines() -> list[bytes]:
     """Return a small session transcript; 1-based lines 3-10 hold the exit."""
 
@@ -1185,12 +1214,14 @@ def _transcript_lines() -> list[bytes]:
         return json.dumps(value, separators=(",", ":")).encode("utf-8")
 
     def use(command: str) -> bytes:
+        # A real transcript keeps the input twice: as sent and as recorded.
         return line(
             {
                 "type": "assistant",
                 "message": {
                     "content": [{"type": "tool_use", "input": {"command": command}}]
                 },
+                "wireToolInputs": {"command": command},
             }
         )
 
@@ -1208,17 +1239,12 @@ def _transcript_lines() -> list[bytes]:
         line({"type": "note", "text": "setup"}),
         use("python -m server_pt_commissioning --retire ..."),
         answer(f"Exit code 2\n{REFUSAL}\n2", "2026-09-24T03:48:55.333Z"),
-        use(
-            f"$pidOwned = {PID}; $p = Get-Process -Id $pidOwned; "
-            f"if ($p.StartTime.ToString('o') -ne '{INCARNATION}' -or "
-            f"$p.MainModule.FileName -ne '{PATH}') {{ throw 'identity differs' }}; "
-            "$requested = $p.CloseMainWindow(); poll 40 x 0.5 s"
-        ),
+        use(_request_command()),
         answer(
             f"requested=True at={REQUESTED_AT} main_title_at_request=[x]\nexited=False",
             PRESENCE_AT,
         ),
-        use("if (Get-Process -Id 123) { windows } else { 'process 123 exited' }"),
+        use(_absence_command()),
         answer("process 123 exited", ABSENCE_AT),
         use("census; mailbox; write close-capture.json"),
         answer(
@@ -1566,11 +1592,45 @@ def test_a_transcript_bound_must_be_what_its_line_reports(tmp_path: Path, path, 
     )
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        # The identity appears, but only in a comment; $p is another process.
+        f"$pidOwned = {PID}; $p = Get-Process -Id 999; # {INCARNATION} {PATH} "
+        "$requested = $p.CloseMainWindow()",
+        # The exact form, but $p is replaced after the guard.
+        _request_command(guard="$p = Get-Process -Id 999; "),
+        # The exact form, but the receiver is another PID from the start.
+        _request_command(receiver=999),
+    ],
+    ids=["comment-only", "reassigned-after-guard", "other-receiver"],
+)
+def test_the_identity_must_guard_the_process_that_receives_the_close(
+    tmp_path: Path, command
+):
+    """Only the exact supported command form binds the close to the owned PID."""
+    lab = _ImportLab(tmp_path)
+    lines = _transcript_lines()
+    lines[4] = json.dumps(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "tool_use", "input": {"command": command}}]
+            },
+        },
+        separators=(",", ":"),
+    ).encode()
+    lab.transcript.write_bytes(b"\n".join(lines) + b"\n")
+    lab.write_excerpt()
+
+    assert "close_request_not_bound_to_the_owned_process" in _findings(lab)
+
+
 def test_a_retained_range_that_names_a_termination_is_refused(tmp_path: Path):
     """The claim that the lead issued no termination must hold in the record."""
     lab = _ImportLab(tmp_path)
     lines = _transcript_lines()
-    lines[6] = lines[6].replace(b"windows", b"Stop-Process -Id 123 -Force")
+    lines[6] = lines[6].replace(b"ForEach-Object", b"Stop-Process -Id 123 -Force;")
     lab.transcript.write_bytes(b"\n".join(lines) + b"\n")
     lab.write_excerpt()
 
@@ -1844,6 +1904,33 @@ def test_a_record_stopped_before_its_digest_is_completed_with_it(
     assert again["reason"] == "import_exit:ValueError"
 
 
+@pytest.mark.parametrize("change", ["claim", "no-artifacts"])
+def test_an_altered_or_planted_record_is_never_completed(
+    import_lab, capsys, tmp_path: Path, monkeypatch, change
+):
+    """Completion revalidates everything; a self-consistent forgery refuses."""
+    cli, env, argv = _stop_before_the_index(import_lab, capsys, monkeypatch)
+    store = _store(tmp_path)
+    record = store.record_path_for(ATTEMPT, "exit-import")
+    value = json.loads(record.read_bytes())
+    if change == "claim":
+        value["exit_method"] = "graceful_close"
+    else:
+        for item in value["artifacts"]:
+            (tmp_path / item["file"]).unlink()
+        value["artifacts"] = []
+    forged = (json.dumps(value, sort_keys=True, ensure_ascii=False) + "\n").encode()
+    record.write_bytes(forged)
+    record.with_name("exit-import.sha256").write_bytes(
+        (hashlib.sha256(forged).hexdigest() + "\n").encode()
+    )
+
+    refused = _refuses_and_writes_nothing(cli, env, argv, capsys, tmp_path)
+
+    assert refused["reason"].startswith(("import_completion:", "import_exit:"))
+    assert store.verify_index() == ("archive_inventory_changed",)
+
+
 def test_residue_the_import_did_not_write_blocks_it(import_lab, capsys, tmp_path: Path):
     """Only this import's own files may be completed; anything else refuses."""
     cli, env, base, lab, _addendum = import_lab
@@ -2074,6 +2161,45 @@ def test_the_native_helper_enumerates_selects_and_closes_one_window():
         )
         assert sent.sent is True
         assert probe.wait(timeout=30) == 0
+    finally:
+        if probe.poll() is None:
+            probe.kill()
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32" or not _NATIVE,
+    reason="opt-in: set PT_MCP_NATIVE_WINDOW_TESTS=1 on Windows",
+)
+def test_the_native_helper_terminates_only_the_bound_process():
+    """Real handle: a stale binding refuses; the exact one terminates it."""
+    encoded = base64.b64encode(_FORMS.encode("utf-16-le")).decode("ascii")
+    probe = subprocess.Popen(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]
+    )
+    try:
+        control = PowerShellOwnedProcessControl()
+        deadline = time.monotonic() + 30
+        while True:
+            census = control.windows(probe.pid)
+            visible = [window for window in census.windows if window.visible]
+            if len(visible) >= 2 or time.monotonic() > deadline:
+                break
+            time.sleep(0.5)
+        assert census.complete is True and census.process_start_ticks > 0
+        other = control.terminate(
+            probe.pid,
+            set_digest=census.visible_set_digest,
+            start_ticks=census.process_start_ticks + 1,
+        )
+        assert other.refusal == "process_changed"
+        assert probe.poll() is None
+        killed = control.terminate(
+            probe.pid,
+            set_digest=census.visible_set_digest,
+            start_ticks=census.process_start_ticks,
+        )
+        assert killed.sent is True
+        assert probe.wait(timeout=30) == 1
     finally:
         if probe.poll() is None:
             probe.kill()
