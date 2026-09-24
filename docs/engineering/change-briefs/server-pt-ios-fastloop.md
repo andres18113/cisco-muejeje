@@ -772,3 +772,46 @@ contract.
 3. **A zero-operation episode could lose its time charge (medium).** A closed
    lifecycle-only episode is charged at least its whole time allocation, and a
    closing earlier than its opening is refused.
+
+## LIVE lifecycle attempt 1, version 13
+
+Episode 2 (ledger opening `000fdce9…`, zero operations, 300 s) ran checkpoint
+`c2c963f` (tree `175c4e06`), attempt `584b1b80879750dac7b51534ebb8b114`. The
+lead launched one Packet Tracer 9.0.1.0858 with no argument (PID 32920,
+created 18:48:11.588Z). Its `--progress-bar-server` helper (PID 52648) started
+five seconds later. `--record-launch` accepted the first capture
+(`blank_document_proven: true`).
+
+**The signature held.** The product's census showed two visible, enabled,
+unowned windows, both of class `Qt687QWindowIcon`: `Cisco Packet Tracer`
+(handle 1838316) and `Logs - MCP BUILDER` (handle 3477076). Every other
+window was hidden: a QtWebEngine `Chrome_WidgetWin_0`, a power, a
+screen-change and two IME windows. A read-only UIA reading confirmed the
+roles independently of titles and classes. Handle 1838316 is
+`PtApp.CAppWindowBase` (Qt class `CAppWindow`), and handle 3477076 is the
+extension's `PtApp.CWebView`. The OpenGL class `Qt687QWindowOwnDCIcon` was
+not observed.
+
+**The close worked; the record was refused.** `--retire` selected handle
+1838316, not the log, and posted one revalidated `WM_CLOSE` at
+18:48:36.531Z. No prompt appeared. Nineteen readings found the process
+present, one answered `process_reading_malformed` while it was exiting, and
+the reading answered at 18:49:04.472Z found it absent. The recorded bounds
+are 18:49:00.726Z to 18:49:04.472Z. The census taken 0.4 s later still
+counted one Packet Tracer process: the owned helper, which was still present
+at 18:49:05.184Z and gone by 18:49:21.510Z. `exit_evidence_findings`
+therefore refused (`process_exit_unobserved`). The attempt was kept as
+`retirement-attempt-20260924T184904Z` and no `process-exit` was written.
+Episode 2 closed at 18:50:12.872Z, 122.1 s after it opened, and the ledger
+charges its full 300 s.
+
+**Cause and correction.** This is an implementation defect: `--retire` took
+its census the moment the owned PID was gone, while that process's own
+helper was still exiting. After the owned process has exited, `--retire` now
+polls the Packet Tracer census for up to 30 s (`RETIREMENT_HELPER_WAIT_SECONDS`)
+until it reads zero. It keeps each census with its times
+(`process_census_readings`). Zero is still required, so a helper or any
+other Packet Tracer process that remains keeps the exit unarchived, and
+nothing is forced. Two regressions reproduce the attempt: first RED at
+`c2c963f`, then green. Attempt 1's exit stays as observed only and is never
+counted as graceful retirement evidence.

@@ -717,6 +717,7 @@ def launched(fastloop_cli, tmp_path: Path, capsys, monkeypatch):
     )
     monkeypatch.setattr(cli, "RETIREMENT_GRACE_SECONDS", 0.01)
     monkeypatch.setattr(cli, "RETIREMENT_EXIT_WAIT_SECONDS", 0.01)
+    monkeypatch.setattr(cli, "RETIREMENT_HELPER_WAIT_SECONDS", 0.05)
     monkeypatch.setattr(cli, "_retirement_sleep", lambda _seconds: time.sleep(0.002))
     system = _FakeOS()
     # At launch the extension log window was the one .NET called "main".

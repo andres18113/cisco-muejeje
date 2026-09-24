@@ -159,6 +159,9 @@ _PROCESS_CONTROL = PowerShellOwnedProcessControl
 #: and how long the exit after a termination is awaited. Bounded both ways.
 RETIREMENT_GRACE_SECONDS = 60.0
 RETIREMENT_EXIT_WAIT_SECONDS = 30.0
+#: After the owned process is gone, how long its helper processes (such as
+#: `--progress-bar-server`) are given to exit before the census is judged.
+RETIREMENT_HELPER_WAIT_SECONDS = 30.0
 _RETIREMENT_POLL_SECONDS = 1.0
 #: How far wall and monotonic time may disagree between two readings before
 #: the wall clock is taken to have stepped and no exit bound is claimed.
@@ -1079,6 +1082,33 @@ def _wall_clock_continuous(instants: list[tuple[str, float]]) -> bool:
     return True
 
 
+def _await_no_packet_tracer(
+    control, seconds: float, readings: list[dict[str, object]]
+) -> int | None:
+    """Count Packet Tracer processes until none remains, within a bounded wait.
+
+    Every census is appended to `readings` with its times. The last count is
+    returned; an unreadable census (`None`) is kept and polled again.
+    """
+    deadline = time.monotonic() + seconds
+    while True:
+        started, started_monotonic = _instant()
+        count = control.census()
+        answered, answered_monotonic = _instant()
+        readings.append(
+            {
+                "started_at_utc": started,
+                "answered_at_utc": answered,
+                "started_monotonic_s": started_monotonic,
+                "answered_monotonic_s": answered_monotonic,
+                "count": count,
+            }
+        )
+        if count == 0 or time.monotonic() >= deadline:
+            return count
+        _retirement_sleep(_RETIREMENT_POLL_SECONDS)
+
+
 def _exit_bounds(
     alive: tuple[str, float], readings: list[dict[str, object]]
 ) -> dict[str, str]:
@@ -1380,11 +1410,17 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
                     )
                 else:
                     refusal = (f"termination_not_sent:{killed.refusal}",)
-    count = control.census()
+    # The owned process's helpers may outlive it by seconds; they are given a
+    # bounded wait, and only an exit of the owned process earns one.
+    census_readings: list[dict[str, object]] = []
+    count = _await_no_packet_tracer(
+        control, RETIREMENT_HELPER_WAIT_SECONDS if exited else 0.0, census_readings
+    )
     close.update(
         {
             "actual_exit_observed": exited,
             "process_count": count,
+            "process_census_readings": census_readings,
             "mailbox_after_exit": _mailbox_state(),
             "observed_at_utc": datetime.now(UTC).isoformat(),
         }

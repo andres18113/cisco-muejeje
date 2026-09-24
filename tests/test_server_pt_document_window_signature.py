@@ -630,3 +630,62 @@ def test_an_episode_cannot_close_before_it_opened():
         "episode_closing_precedes_opening",
     )
     assert closing_findings(records, 2, OPENED + timedelta(seconds=1)) == ()
+
+
+# -- lifecycle attempt 1: the owned helper outlives the owned process ------------------
+
+
+def _helper_lingers(system, censuses: int) -> None:
+    """Keep the owned helper counted for `censuses` calls after the exit."""
+    remaining = {"left": censuses}
+
+    def census():
+        if system.present:
+            return 1
+        if remaining["left"] > 0:
+            remaining["left"] -= 1
+            return 1
+        return 0
+
+    system.census = census
+
+
+def test_the_exit_waits_for_the_owned_helper_before_its_census(
+    launched, capsys, tmp_path: Path
+):
+    """Episode 2 counted the exiting --progress-bar-server helper and refused."""
+    cli, env, base, system = launched
+    _helper_lingers(system, censuses=3)
+
+    code, retired = _run(cli, ["--retire", *base], env, capsys)
+
+    assert code == 0, retired
+    record = _store(tmp_path).load_process_exit(ATTEMPT)
+    assert record["process_count"] == 0
+    counts = [item["count"] for item in record["process_census_readings"]]
+    assert counts == [1, 1, 1, 0]
+    assert all(
+        item["started_at_utc"] <= item["answered_at_utc"]
+        for item in record["process_census_readings"]
+    )
+    assert (
+        record["process_census_readings"][0]["started_at_utc"]
+        >= (record["exit_bounds"]["before_utc"])
+    )
+
+
+def test_a_helper_that_never_exits_leaves_the_exit_unarchived(
+    launched, capsys, tmp_path: Path
+):
+    """The bounded wait ends; the refusal keeps every census, and nothing is forced."""
+    cli, env, base, system = launched
+    _helper_lingers(system, censuses=10_000)
+
+    code, refused = _run(cli, ["--retire", *base], env, capsys)
+
+    assert code == 2, refused
+    assert "process_exit_unobserved" in refused["findings"]
+    assert "terminate_helper" not in system.calls
+    assert refused["process_census_readings"]
+    assert all(item["count"] == 1 for item in refused["process_census_readings"])
+    assert not _store(tmp_path).record_path_for(ATTEMPT, "process-exit").exists()
