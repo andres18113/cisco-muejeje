@@ -815,3 +815,44 @@ other Packet Tracer process that remains keeps the exit unarchived, and
 nothing is forced. Two regressions reproduce the attempt: first RED at
 `c2c963f`, then green. Attempt 1's exit stays as observed only and is never
 counted as graceful retirement evidence.
+
+## LIVE lifecycle attempt 2 and closeout, version 14
+
+Episode 3 (zero operations, 300 s) ran checkpoint `393c500` (tree
+`4fce4b17`), attempt `97493abdbba4d4e74546a11f088325f8`, on one fresh,
+unnamed Packet Tracer 9.0.1.0858 (PID 52988, created 18:54:34.951Z, with
+helper PID 17304). The launch was recorded on its first capture, and the OS
+reported product and file version `9.0.1.0858`. The census again showed only
+two visible windows, both `Qt687QWindowIcon`: `Cisco Packet Tracer` (handle
+656702, UIA `PtApp.CAppWindowBase`) and `Logs - MCP BUILDER` (handle
+5704128). `--retire` selected handle 656702 and posted one `WM_CLOSE` at
+18:54:53.960Z. No prompt appeared and nothing was forced. Eighteen readings
+found the process present and the nineteenth found it absent, so the exit is
+bounded between 18:55:18.631Z and 18:55:20.190Z. The helper was counted six
+more times and was gone at 18:55:28.643Z. The mailbox had no pending entry
+before the close or after the exit. The record is `exited_before_setup` with
+basis `blank_launch_without_phase` and SHA-256 `de8ac486…`. It was reloaded
+from the verified index, and all 18 checks passed: signature, target, log
+exclusion, readings, bounds, census, mailbox, status and source. Episode 3
+closed 85.8 s after it opened. Totals: two of three attempts used, 207.9 s
+elapsed against 600 s charged, zero bridge operations, and the campaign
+ledger at 622 operations and 1,149.5 s.
+
+**Claims, kept separate.**
+
+- *Experimental HTTP evidence* (episode 1, `1d086aa`): unchanged. The 30/30
+  fresh-marker measurement is still a measurement of that sample, not a
+  delivery.
+- *Historical absence evidence* (episode 1's exit): unchanged. The import and
+  its erratum are not rewritten, and nothing here shows the method or the
+  instant of that exit.
+- *New native retirement*: graceful and observed, on the maintained
+  `--retire` route at `393c500`, for the lifecycle-only attempt of a new blank
+  laboratory. It demonstrates the process exit, not topology restoration, and
+  it does not cover a laboratory that had campaign effects or a save prompt.
+  Attempt 1's exit (`c2c963f`) is kept only as a refused retirement attempt.
+- *Limitations*: the pinned class set still admits `Qt687QWindowOwnDCIcon`,
+  which neither laboratory showed; narrowing it would change code after its
+  LIVE exercise and is left to review. The force contingency was not
+  exercised. The signature covers only 9.0.1.0858. UIA corroboration was a
+  lead observation, not a product check.
