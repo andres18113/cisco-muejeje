@@ -711,34 +711,36 @@ class ServerPtCommissioningStore:
             temporary.unlink(missing_ok=True)
         return target
 
-    def adopt_ledger_residue(self) -> tuple[str, ...]:
-        """Index ledger records written after the last index, and only those.
+    def adopt_ledger_residue(self, record_findings) -> tuple[str, ...]:
+        """Index complete ledger records written after the last index, only.
 
         A ledger record is written before the index is refreshed; a hard stop
         between the two leaves a valid write-once record the index does not
         name, and every later phase, cleanup included, would then refuse the
         archive. Adoption happens only when nothing indexed is missing or
-        changed and every unindexed file is a ledger record; `refresh_index`
-        proves the prior bytes again first. Any other drift is returned as is.
+        changed, and every unindexed file is a `.json` directly under the
+        ledger whose content `record_findings(name, record, records)` accepts
+        as the complete record its name implies. A temporary or unknown file
+        is refused as it is; `refresh_index` proves the prior bytes again.
         """
         findings = self.verify_index()
         if findings != ("archive_inventory_changed",):
             return findings
         indexed = {str(item["path"]) for item in self._indexed_entries()}
-        actual = set(self._archive_paths())
-        ledger = (
-            resolve_within(self._campaign_dir(), "ledger")
-            .relative_to(self.root)
-            .as_posix()
-            + "/"
-        )
-        extra = actual - indexed
-        if (
-            indexed - actual
-            or not extra
-            or any(not name.startswith(ledger) for name in extra)
-        ):
+        actual = self._archive_paths()
+        extra = set(actual) - indexed
+        if indexed - set(actual) or not extra:
             return findings
+        ledger = resolve_within(self._campaign_dir(), "ledger")
+        records = self.ledger_records()
+        for name in extra:
+            path = actual[name]
+            if (
+                path.parent != ledger
+                or path.suffix != ".json"
+                or record_findings(path.stem, records.get(path.stem, {}), records)
+            ):
+                return findings
         self.refresh_index()
         return self.verify_index()
 

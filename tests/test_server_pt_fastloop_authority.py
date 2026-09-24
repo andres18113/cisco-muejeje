@@ -17,6 +17,9 @@ from pathlib import Path
 
 import pytest
 
+from packet_tracer_mcp.application.use_cases.accept_cold_http import (
+    MEASURED_EXIT_CODE,
+)
 from packet_tracer_mcp.application.use_cases.prepare_server_pt_commissioning import (
     prepare_server_pt_commissioning,
 )
@@ -30,6 +33,7 @@ from packet_tracer_mcp.application.use_cases.server_pt_campaign import (
 from packet_tracer_mcp.application.use_cases.server_pt_campaign_ledger import (
     FASTLOOP_ALLOWANCE,
     closing_findings,
+    ledger_record_findings,
     ledger_totals,
     opening_findings,
     phase_admission_findings,
@@ -536,6 +540,7 @@ def _launch() -> dict[str, object]:
         "process_path": process.process_path,
         "process_incarnation": process.process_incarnation,
         "main_window_title": "Cisco Packet Tracer",
+        "command_line": f'"{process.process_path}" ',
     }
 
 
@@ -605,6 +610,28 @@ def test_a_forced_exit_must_name_the_rechecked_owned_process(change):
 
     assert "forced_termination_identity_unproven" in exit_evidence_findings(
         _launch(), close, process_count=0, allow_forced=True
+    )
+
+
+@pytest.mark.parametrize(
+    "launch_change",
+    [
+        {"main_window_title": "Cisco Packet Tracer - C:\\coursework.pkt"},
+        {"main_window_title": ""},
+        {"command_line": '"C:\\PacketTracer.exe" C:\\coursework.pkt'},
+        {"command_line": None},
+    ],
+)
+def test_a_forced_exit_needs_a_launch_that_proves_a_blank_document(launch_change):
+    """A launch that opened or names a document never permits a force."""
+    launch = {**_launch(), **launch_change}
+    close = _close(
+        forced_termination=_forced(rechecked_window_title=launch["main_window_title"]),
+        graceful_wait_seconds=30.0,
+    )
+
+    assert "forced_termination_identity_unproven" in exit_evidence_findings(
+        launch, close, process_count=0, allow_forced=True
     )
 
 
@@ -789,18 +816,40 @@ def test_a_ledger_record_stranded_before_indexing_is_adopted_alone(tmp_path):
     )
 
     assert store.verify_index() == ("archive_inventory_changed",)
-    assert store.adopt_ledger_residue() == ()
+    assert store.adopt_ledger_residue(ledger_record_findings) == ()
     assert store.verify_index() == ()
+
+    # A temporary file of an interrupted write is not a record.
+    ledger_dir = store.ledger_path_for("episode-0001-opening").parent
+    stray_tmp = ledger_dir / ".episode-0001-closing.json.0f.tmp"
+    stray_tmp.write_text("{", encoding="utf-8")
+    assert store.adopt_ledger_residue(ledger_record_findings) == (
+        "archive_inventory_changed",
+    )
+    stray_tmp.unlink()
+    # A result whose admission is absent does not hang from this ledger.
+    store.save_ledger_record(
+        f"episode-0001-{OTHER}-cleanup-result",
+        {**_result("cleanup", 1), "attempt_id": OTHER},
+    )
+    assert store.adopt_ledger_residue(ledger_record_findings) == (
+        "archive_inventory_changed",
+    )
+    store.ledger_path_for(f"episode-0001-{OTHER}-cleanup-result").unlink()
 
     stray = (
         tmp_path / "data" / "commissioning" / FASTLOOP_CAMPAIGN.campaign_id / "x.json"
     )
     stray.write_text("{}", encoding="utf-8")
-    assert store.adopt_ledger_residue() == ("archive_inventory_changed",)
+    assert store.adopt_ledger_residue(ledger_record_findings) == (
+        "archive_inventory_changed",
+    )
     stray.unlink()
     opening = store.ledger_path_for("episode-0001-opening")
     opening.write_bytes(opening.read_bytes() + b" ")
-    assert store.adopt_ledger_residue() == ("archive_bytes_changed",)
+    assert store.adopt_ledger_residue(ledger_record_findings) == (
+        "archive_bytes_changed",
+    )
 
 
 # -- system level: the experimental route through the real product ---------------
@@ -973,12 +1022,23 @@ def test_an_experimental_setup_seals_and_measures_through_the_same_product(
 
     result = harness.run(grant=sealed.grant)
 
-    assert result.accepted is True
+    # Real product behaviour, published in time, and never a delivery.
+    assert result.measured is True
+    assert result.accepted is False
+    assert result.exit_code == MEASURED_EXIT_CODE
     assert len(result.envelope.clients) == 30
     assert all(client.accepted for client in result.envelope.clients)
-    # The measurement is real product behaviour, and says it is no delivery.
     assert EXPERIMENTAL_ENVELOPE_LIMITATION in result.envelope.limitations
     assert result.envelope.grant["execution_purpose"] == "experimental"
+    summary = result.compact_summary()
+    assert (summary["http_accepted"], summary["experimental_measured"]) == (
+        False,
+        True,
+    )
+    assert (summary["execution_purpose"], summary["publication"]) == (
+        "experimental",
+        "measured",
+    )
 
 
 def test_an_experimental_product_grant_still_needs_a_published_head(tmp_path):

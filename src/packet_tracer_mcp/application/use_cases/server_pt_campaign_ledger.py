@@ -28,6 +28,16 @@ from dataclasses import dataclass
 from datetime import datetime
 
 _SHA40 = re.compile(r"[0-9a-f]{40}\Z")
+_RECORD_NAME = re.compile(
+    r"episode-(\d{4})-(?:(opening|closing)|([0-9a-f]{32})-"
+    r"(prequalification|setup|acceptance|cleanup)-(admission|result))\Z"
+)
+_RECORD_KINDS = {
+    "opening": "episode_opening",
+    "closing": "episode_closing",
+    "admission": "phase_admission",
+    "result": "phase_result",
+}
 _ATTEMPT = re.compile(r"[0-9a-f]{32}\Z")
 #: Phases that may draw the protected reserve. Retirement costs no bridge
 #: operation; its time is charged to the open episode like any other.
@@ -88,6 +98,64 @@ def _seconds(value: object) -> float:
 def episode_name(episode: int) -> str:
     """Return the zero-padded stem shared by one episode's records."""
     return f"episode-{episode:04d}"
+
+
+def phase_record_name(episode: int, attempt_id: str, phase: str, kind: str) -> str:
+    """Return the record name of one phase admission or result."""
+    return f"{episode_name(episode)}-{attempt_id}-{phase}-{kind}"
+
+
+def ledger_record_findings(
+    name: str,
+    record: Mapping[str, object],
+    records: Mapping[str, Mapping[str, object]],
+) -> tuple[str, ...]:
+    """Name why one record is not a complete ledger record of this ledger.
+
+    Used before a record a hard stop left unindexed may be adopted: its name
+    must be a ledger name, its content must be the record that name implies,
+    its numbers must parse, and it must hang from records already present.
+    """
+    match = _RECORD_NAME.fullmatch(name)
+    if match is None:
+        return ("ledger_record_name_unknown",)
+    episode = int(match.group(1))
+    suffix = match.group(2) or match.group(5)
+    try:
+        if (
+            record.get("kind") != _RECORD_KINDS[suffix]
+            or _count(record.get("episode")) != episode
+        ):
+            return ("ledger_record_identity_mismatch",)
+        if match.group(3) and (
+            record.get("attempt_id") != match.group(3)
+            or record.get("phase") != match.group(4)
+        ):
+            return ("ledger_record_identity_mismatch",)
+        if suffix == "opening":
+            _count(record.get("allocated_operations"))
+            _seconds(record.get("allocated_seconds"))
+            _time(record.get("opened_at_utc"))
+            return ()
+        if f"{episode_name(episode)}-opening" not in records:
+            return ("ledger_record_without_opening",)
+        if suffix == "closing":
+            _time(record.get("closed_at_utc"))
+        elif suffix == "admission":
+            _count(record.get("granted_operations"))
+            _seconds(record.get("granted_seconds"))
+            _time(record.get("admitted_at_utc"))
+        else:
+            _count(record.get("used_operations"))
+            _seconds(record.get("active_seconds"))
+            admission = phase_record_name(
+                episode, match.group(3), match.group(4), "admission"
+            )
+            if admission not in records:
+                return ("ledger_result_without_admission",)
+    except ValueError:
+        return ("ledger_record_malformed",)
+    return ()
 
 
 def _by_kind(records: Mapping[str, Mapping[str, object]], kind: str):

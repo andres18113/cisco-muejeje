@@ -23,6 +23,7 @@ from io import StringIO
 from pathlib import Path
 
 from ...application.ports.service_qualification import OpenedTransport
+from ...application.use_cases.accept_cold_http import MEASURED_EXIT_CODE
 from ...application.use_cases.cleanup_server_pt_commissioning import (
     run_server_pt_cleanup,
 )
@@ -44,9 +45,11 @@ from ...application.use_cases.server_pt_campaign_ledger import (
     closing_findings,
     episode_allowance_left,
     episode_name,
+    ledger_record_findings,
     ledger_totals,
     opening_findings,
     phase_admission_findings,
+    phase_record_name,
     unsettled_phases,
 )
 from ...application.use_cases.server_pt_phase_budget import (
@@ -438,7 +441,7 @@ def _adopt_ledger_residue(
     if not campaign.experimental or not store.index_exists():
         return ()
     try:
-        return store.adopt_ledger_residue()
+        return store.adopt_ledger_residue(ledger_record_findings)
     except (OSError, ValueError) as exc:
         return (f"ledger_residue_unverified:{type(exc).__name__}",)
 
@@ -478,7 +481,7 @@ def _ledger_admit(
         if findings:
             return findings
         store.save_ledger_record(
-            f"{episode_name(episode)}-{attempt_id}-{phase}-admission",
+            phase_record_name(episode, attempt_id, phase, "admission"),
             {
                 "kind": "phase_admission",
                 "episode": episode,
@@ -513,7 +516,7 @@ def _ledger_result(
         return ""
     try:
         store.save_ledger_record(
-            f"{episode_name(episode)}-{attempt_id}-{phase}-result",
+            phase_record_name(episode, attempt_id, phase, "result"),
             {
                 "kind": "phase_result",
                 "episode": episode,
@@ -1613,15 +1616,18 @@ def _accept(
             )
         summary = json.loads(output.getvalue())
         envelope = _retain_acceptance_sources(store, attempt_id)
-        if exit_code == 0 and envelope is None:
+        # The product's success code follows the grant's purpose; only the
+        # one this campaign's purpose implies completes this phase.
+        success = MEASURED_EXIT_CODE if campaign.experimental else 0
+        if exit_code == success and envelope is None:
             raise ValueError("accepted attempt lacks an envelope")
         if raw_path.exists():
             if envelope is not None:
                 raw_index = build_raw_answer_index(raw_path, envelope)
                 store.save_acceptance_raw_index(attempt_id, raw_index)
-        elif exit_code == 0:
+        elif exit_code == success:
             raise ValueError("original acceptance answers were not retained")
-        if exit_code == 0:
+        if exit_code == success:
             envelopes = ColdHttpAcceptanceStore(
                 root / "data" / "acceptance" / "cold-http"
             )
@@ -1651,7 +1657,9 @@ def _accept(
         reason = (
             reason + ";" if reason else ""
         ) + f"source_archive:{type(exc).__name__}"
-    passed = exit_code == 0 and not reason
+    passed = (
+        exit_code == (MEASURED_EXIT_CODE if campaign.experimental else 0) and not reason
+    )
     status = {
         "phase": "acceptance",
         "outcome": (

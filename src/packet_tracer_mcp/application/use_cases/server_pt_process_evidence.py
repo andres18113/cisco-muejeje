@@ -36,6 +36,33 @@ def launch_evidence_findings(
     return tuple(found)
 
 
+#: Title fragments that name a Packet Tracer document on disk.
+_DOCUMENT_MARKERS = (".pkt", ".pka", ".pkz", ".pksz", "\\", "/")
+
+
+def launched_blank(launch: Mapping[str, object]) -> bool:
+    """Whether the launch record proves a new, unnamed document at start.
+
+    The process must have been started with no argument besides its own
+    executable, so no document was opened by the launch, and its main window
+    title must be non-empty and name no file.
+    """
+    title = launch.get("main_window_title")
+    command = launch.get("command_line")
+    path = launch.get("process_path")
+    if not (
+        isinstance(title, str)
+        and title
+        and isinstance(command, str)
+        and isinstance(path, str)
+        and path
+    ):
+        return False
+    if any(marker in title.casefold() for marker in _DOCUMENT_MARKERS):
+        return False
+    return command.strip() in {path, f'"{path}"'}
+
+
 #: The longest graceful wait a forced termination may follow. A capture that
 #: claims a longer or no wait did not bound its graceful attempt.
 FORCED_TERMINATION_MAX_GRACEFUL_WAIT_SECONDS = 120.0
@@ -61,10 +88,13 @@ def exit_evidence_findings(
     PID, path and creation time as the launch after rechecking them, and the
     exit is still observed independently. It is never read as graceful.
 
-    "No valuable user state" is rechecked, not assumed: the main window
-    title at termination must equal the non-empty title the launch captured
-    for its declared new blank document. Opening or saving any file changes
-    that title, so a user document in the owned process refuses the force.
+    "No valuable user state" is rechecked, not assumed: the launch must
+    prove a new unnamed document (`launched_blank`), and the main window title
+    at termination must still equal that title. Opening or saving any file
+    changes it, so a user document in the owned process refuses the force.
+    The unsaved content of that untitled document is the campaign's own; what
+    anyone else typed into it cannot be seen without contacting Packet Tracer,
+    which the exclusive disposable lab rule covers instead.
     """
     found: list[str] = []
     forced = close.get("forced_termination")
@@ -80,8 +110,7 @@ def exit_evidence_findings(
             or forced.get("rechecked_process_incarnation")
             != launch.get("process_incarnation")
             or forced.get("disposable_workspace_rechecked") is not True
-            or not isinstance(launch.get("main_window_title"), str)
-            or not launch.get("main_window_title")
+            or not launched_blank(launch)
             or forced.get("rechecked_window_title") != launch.get("main_window_title")
             or not isinstance(forced.get("requested_at_utc"), str)
             or isinstance(wait, bool)

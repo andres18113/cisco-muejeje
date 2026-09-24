@@ -252,6 +252,10 @@ class LifecycleReceiverContinuity:
         """Hold nothing, release nothing."""
 
 
+#: The exit code of an experimental verdict published in time.
+MEASURED_EXIT_CODE = 3
+
+
 @dataclass
 class AcceptanceResult:
     """What one attempt returns to its adapter."""
@@ -273,8 +277,13 @@ class AcceptanceResult:
     publication_failure: str = ""
 
     @property
-    def accepted(self) -> bool:
-        """Whether acceptance is established: a kept verdict, published in time.
+    def experimental(self) -> bool:
+        """Whether this attempt ran under an experimental grant."""
+        return EXPERIMENTAL_ENVELOPE_LIMITATION in self.envelope.limitations
+
+    @property
+    def measured(self) -> bool:
+        """Whether a kept verdict was published in time, whatever the purpose.
 
         The terminal envelope's `http_accepted` is the provisional verdict
         decided before its link; the publication fact says whether the link
@@ -286,10 +295,21 @@ class AcceptanceResult:
         )
 
     @property
+    def accepted(self) -> bool:
+        """Whether a DELIVERY acceptance is established; never experimental."""
+        return self.measured and not self.experimental
+
+    @property
     def exit_code(self) -> int:
-        """Return 0 accepted, 1 completed or stopped without acceptance, 2 refused."""
+        """Return 0 accepted, 1 not established, 2 refused, 3 measured only.
+
+        3 is an experimental verdict published in time: real product behaviour
+        that is not, and is never reported as, a delivery acceptance.
+        """
         if self.accepted:
             return 0
+        if self.measured:
+            return MEASURED_EXIT_CODE
         if self.envelope.campaign_outcome is CampaignOutcome.REFUSED:
             return 2
         return 1
@@ -302,11 +322,16 @@ class AcceptanceResult:
             "attempt_id": envelope.attempt_id,
             "campaign_outcome": envelope.campaign_outcome.value,
             "http_accepted": self.accepted,
+            "experimental_measured": self.measured and self.experimental,
+            "execution_purpose": (
+                EXPERIMENTAL_PURPOSE if self.experimental else "delivery"
+            ),
             "provisional_http_accepted": envelope.http_accepted,
             "publication": (
                 ""
                 if self.persisted is not True
-                else publication_claim(envelope, publication)[1] or "accepted"
+                else publication_claim(envelope, publication)[1]
+                or ("measured" if self.experimental else "accepted")
             ),
             "publication_path": self.publication_path,
             "publication_failure": self.publication_failure,

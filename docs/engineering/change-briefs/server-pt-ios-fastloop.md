@@ -211,3 +211,26 @@ high-severity findings. Each was verified against the code before acting.
    governed cleanup can prove. This is kept as a limitation with the stop
    rule: stop, name the obstruction, preserve the journal, and retire the
    disposable process only under (4).
+
+## Re-review delta, version 3
+
+A focused re-review of `3ef6d49` found three further gaps, each verified.
+
+1. **Measured is not accepted.** The product still reported an experimental
+   success as `accepted` with exit 0 and `http_accepted: true`. The result
+   now separates `measured` (a kept verdict published in time, any purpose)
+   from `accepted` (delivery only). An experimental success exits 3 and its
+   summary says `experimental_measured`, `execution_purpose` and publication
+   `measured`, with `http_accepted: false`. The campaign CLI completes a
+   phase only on the success code its own purpose implies.
+2. **Residue must be a record.** Adoption now requires every unindexed file
+   to be a `.json` directly under the ledger whose name is a ledger name and
+   whose content is the complete record that name implies, hanging from an
+   existing opening (and, for a result, its admission). A temporary file of an
+   interrupted write, an unknown file or an orphan result stays a refusal.
+3. **Blank launch.** A forced exit now also requires the launch record to
+   prove a new unnamed document: a command line that is only the executable,
+   and a non-empty title that names no file. The untitled document's unsaved
+   content is the campaign's own; what anyone else typed into it cannot be
+   observed without contacting Packet Tracer, which the exclusive disposable
+   lab rule covers instead.

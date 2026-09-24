@@ -225,7 +225,7 @@ def main(
     boundaries_factory=production_boundaries,
     repository_reader=repository_identity,
 ) -> int:
-    """Run one attempt and return 0 accepted, 1 not accepted or 2 refused."""
+    """Run one attempt: 0 accepted, 1 not, 2 refused, 3 experimental measured."""
     args = _parser().parse_args(argv)
     if args.prepare and not args.execute:
         return _prepare(args, environ, repository_reader)
