@@ -19,6 +19,7 @@ import time
 from dataclasses import replace
 from importlib import import_module
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -109,6 +110,24 @@ def _window(
 
 
 DOCUMENT = _window(4242, "Cisco Packet Tracer")
+HELPER_PID = 124
+
+
+def _process_row(pid: int, parent: int, ticks: int, command: str, path: str = PATH):
+    """One Packet Tracer process as the identity census reports it."""
+    return SimpleNamespace(
+        process_id=pid,
+        parent_process_id=parent,
+        start_ticks=ticks,
+        executable_path=path,
+        command_line=command,
+    )
+
+
+OWNED_ROW = _process_row(PID, 4, START_TICKS, COMMAND_LINE)
+HELPER_ROW = _process_row(
+    HELPER_PID, PID, START_TICKS + 50_000_000, f'"{PATH}"  --progress-bar-server'
+)
 LOG = _window(4343, EXTENSION_LOG_WINDOW_TITLE)
 HIDDEN = _window(4444, "QTrayIconMessageWindow", visible=False)
 
@@ -558,6 +577,9 @@ class _FakeOS:
         self.on_close = "exit"
         self.close_refusal = ""
         self.close_error = ""
+        # Packet Tracer processes each census answers after the owned process
+        # has gone, one tuple of rows per call; afterwards none remains.
+        self.rows_after_exit: list[tuple[SimpleNamespace, ...]] = []
         self.calls: list[str] = []
         self.posted: list[int] = []
         # What changes in the world right after the n-th census (1-based).
@@ -642,8 +664,13 @@ class _FakeOS:
         self.present = False
         return TerminationResult(pid, sent=True)
 
-    def census(self):
-        return 0 if not self.present else 1
+    def _rows(self) -> tuple[SimpleNamespace, ...]:
+        if self.present:
+            return (OWNED_ROW, HELPER_ROW)
+        return self.rows_after_exit.pop(0) if self.rows_after_exit else ()
+
+    def packet_tracer_processes(self):
+        return SimpleNamespace(processes=self._rows(), error="")
 
 
 def _checkpoint() -> RepositoryIdentity:

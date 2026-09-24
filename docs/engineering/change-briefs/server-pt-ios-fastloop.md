@@ -856,3 +856,33 @@ ledger at 622 operations and 1,149.5 s.
   LIVE exercise and is left to review. The force contingency was not
   exercised. The signature covers only 9.0.1.0858. UIA corroboration was a
   lead observation, not a product check.
+
+## Re-review delta, version 15
+
+A focused Codex re-check of the changes after `a235b76` returned
+needs-attention with two findings. Both were first reproduced as failing
+regressions at `856a3f4`: four foreign-process cases archived the exit, and a
+`NaN` allocation opened an episode. Both are fixed inside the approved
+contract.
+
+1. **A non-finite allocation bypassed the lifecycle floor (high).** JSON
+   `NaN` passed every comparison, and `max(elapsed, NaN)` returned `elapsed`.
+   The ledger now rejects non-finite seconds in openings, records and totals.
+2. **The helper wait could not tell the owned helper from a foreign Packet
+   Tracer (medium).** The count-only census is replaced by an identity census
+   in the same process control: PID, parent, CIM creation time, image and
+   command line for each `PacketTracer*` process. A rule names each row. It
+   is `owned` when the PID and creation time (at microsecond resolution) are
+   the launch's. It is `owned_helper` when its parent is the owned PID, it was
+   created no earlier than the launch, it carries `--progress-bar-server`,
+   and its command line and any shown image are the launched executable.
+   Anything else is `foreign`. `--retire` waits out only owned helpers, stops
+   at the first foreign row, and refuses with
+   `foreign_packet_tracer_process`. Every census keeps its rows and their
+   roles. The real command was run read-only on this host: empty, one-row and
+   several-row answers parse, and an unreadable creation time fails the
+   census.
+
+This changes the retirement path that attempt 2 exercised, so the delivered
+code is exercised again by lifecycle attempt 3, the last one Addendum 03
+allows.

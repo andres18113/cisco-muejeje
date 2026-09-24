@@ -81,6 +81,33 @@ class OwnedWindowCensus:
 
 
 @dataclass(frozen=True)
+class PacketTracerProcessRow:
+    """One Packet Tracer process as the operating system lists it.
+
+    `start_ticks` is its creation time in UTC .NET ticks at the microsecond
+    resolution Win32_Process reports; `executable_path` may be empty when
+    the OS does not show it.
+    """
+
+    process_id: int
+    parent_process_id: int
+    start_ticks: int
+    executable_path: str
+    command_line: str
+
+
+@dataclass(frozen=True)
+class PacketTracerProcessCensus:
+    """Every Packet Tracer process at one instant, or why not.
+
+    An `error` means the census is unknown, never that none exists.
+    """
+
+    processes: tuple[PacketTracerProcessRow, ...] = ()
+    error: str = ""
+
+
+@dataclass(frozen=True)
 class WindowCloseResult:
     """Whether one revalidated `WM_CLOSE` was posted, and why not otherwise."""
 
@@ -380,6 +407,42 @@ def parse_window_census(pid: int, raw: str) -> OwnedWindowCensus:
     )
 
 
+def parse_packet_tracer_processes(raw: str) -> PacketTracerProcessCensus:
+    """Turn the process census into rows; any doubtful row fails the census."""
+    try:
+        value = json.loads(raw)
+        if not isinstance(value, list):
+            raise ValueError("process census is not a list")
+        rows = []
+        for item in value:
+            if not isinstance(item, dict):
+                raise ValueError("process row is not an object")
+            numbers = [item.get(name) for name in ("pid", "parent", "ticks")]
+            if any(
+                isinstance(number, bool) or not isinstance(number, int) or number <= 0
+                for number in numbers
+            ):
+                raise ValueError("process row identity is unreadable")
+            if not all(
+                isinstance(item.get(name), str) for name in ("path", "command_line")
+            ):
+                raise ValueError("process row text is malformed")
+            rows.append(
+                PacketTracerProcessRow(
+                    process_id=item["pid"],
+                    parent_process_id=item["parent"],
+                    start_ticks=item["ticks"],
+                    executable_path=item["path"],
+                    command_line=item["command_line"],
+                )
+            )
+    except ValueError:
+        return PacketTracerProcessCensus(error="process_census_malformed")
+    if len({row.process_id for row in rows}) != len(rows):
+        return PacketTracerProcessCensus(error="process_census_malformed")
+    return PacketTracerProcessCensus(processes=tuple(rows))
+
+
 def _effect_answer(raw: str) -> tuple[bool, str] | None:
     """Return (sent, refusal) from an effect helper, or `None` if doubtful."""
     try:
@@ -558,13 +621,27 @@ class PowerShellOwnedProcessControl:
             main_window_title=value["title"],
         )
 
-    def census(self) -> int | None:
-        """Count every PacketTracer* process; `None` when unreadable."""
+    def packet_tracer_processes(self) -> PacketTracerProcessCensus:
+        """List every PacketTracer* process with its identity; read-only.
+
+        A process without a readable creation time is reported as 0 ticks,
+        which the parser refuses, so a half-exited process is never guessed.
+        """
         command = (
-            "@(Get-CimInstance Win32_Process | "
-            "Where-Object { $_.Name -like 'PacketTracer*' }).Count"
+            "$rows = @(Get-CimInstance Win32_Process | "
+            "Where-Object { $_.Name -like 'PacketTracer*' } | ForEach-Object { "
+            "[PSCustomObject]@{ pid=[int64]$_.ProcessId; "
+            "parent=[int64]$_.ParentProcessId; "
+            "ticks=$(if ($_.CreationDate) { "
+            "[int64]$_.CreationDate.ToUniversalTime().Ticks } else { [int64]0 }); "
+            "path=[string]$_.ExecutablePath; "
+            "command_line=[string]$_.CommandLine } }); "
+            "ConvertTo-Json -InputObject $rows -Compress"
         )
         try:
-            return int(self._run(command).splitlines()[-1].strip())
-        except (OSError, ValueError, IndexError, subprocess.SubprocessError):
-            return None
+            lines = self._run(command).splitlines()
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            return PacketTracerProcessCensus(
+                error=f"process_census_unobservable:{type(exc).__name__}"
+            )
+        return parse_packet_tracer_processes(lines[-1].strip() if lines else "")

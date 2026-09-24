@@ -18,12 +18,14 @@ of write-once records from which every total is recomputed:
 Charging is conservative and never subtracts. A closed episode charges what
 its phases used and its active seconds; a lifecycle-only episode, which has no
 phase to charge, at least its whole time allocation. An open one charges at
-least its whole allocation, and time keeps running while it is open. An admitted phase
-without a result charges its grant maximum. Nothing here resets on restart.
+least its whole allocation, and time keeps running while it is open. An
+admitted phase without a result charges its grant maximum. Nothing here
+resets on restart.
 """
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -92,8 +94,13 @@ def _count(value: object) -> int:
 
 
 def _seconds(value: object) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
-        raise ValueError("ledger seconds are not non-negative")
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < 0
+    ):
+        raise ValueError("ledger seconds are not finite and non-negative")
     return float(value)
 
 

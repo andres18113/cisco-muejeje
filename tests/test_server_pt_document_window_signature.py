@@ -10,6 +10,7 @@ asserts that no close was posted and no process terminated.
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -22,6 +23,7 @@ from packet_tracer_mcp.application.use_cases import (
 from packet_tracer_mcp.application.use_cases.server_pt_campaign_ledger import (
     FASTLOOP_ALLOWANCE,
     closing_findings,
+    ledger_record_findings,
     ledger_totals,
     opening_findings,
     phase_admission_findings,
@@ -29,6 +31,7 @@ from packet_tracer_mcp.application.use_cases.server_pt_campaign_ledger import (
 from packet_tracer_mcp.application.use_cases.server_pt_process_evidence import (
     EXTENSION_LOG_WINDOW_TITLE,
     exit_evidence_findings,
+    packet_tracer_process_role,
     select_document_window,
     window_signature_for_launch,
 )
@@ -37,18 +40,27 @@ from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight impor
 )
 from packet_tracer_mcp.infrastructure.execution.server_pt_process_control import (
     OwnedWindowCensus,
+    PowerShellOwnedProcessControl,
+    parse_packet_tracer_processes,
 )
 from tests import test_server_pt_fastloop_retirement as retirement
 from tests.test_server_pt_fastloop_retirement import (
     ATTEMPT,
+    COMMAND_LINE,
     DOCUMENT,
+    HELPER_PID,
+    HELPER_ROW,
     HIDDEN,
     LOG,
+    OWNED_ROW,
+    PATH,
     PID,
     SIGNATURE,
+    START_TICKS,
     _appear,
     _attempts,
     _census,
+    _process_row,
     _run,
     _store,
     _window,
@@ -637,17 +649,7 @@ def test_an_episode_cannot_close_before_it_opened():
 
 def _helper_lingers(system, censuses: int) -> None:
     """Keep the owned helper counted for `censuses` calls after the exit."""
-    remaining = {"left": censuses}
-
-    def census():
-        if system.present:
-            return 1
-        if remaining["left"] > 0:
-            remaining["left"] -= 1
-            return 1
-        return 0
-
-    system.census = census
+    system.rows_after_exit = [(HELPER_ROW,)] * censuses
 
 
 def test_the_exit_waits_for_the_owned_helper_before_its_census(
@@ -689,3 +691,126 @@ def test_a_helper_that_never_exits_leaves_the_exit_unarchived(
     assert refused["process_census_readings"]
     assert all(item["count"] == 1 for item in refused["process_census_readings"])
     assert not _store(tmp_path).record_path_for(ATTEMPT, "process-exit").exists()
+
+
+@pytest.mark.parametrize(
+    "stranger",
+    [
+        _process_row(777, 4, START_TICKS + 1, COMMAND_LINE),
+        _process_row(777, PID, START_TICKS + 1, "PacketTracer.exe C:\\coursework.pkt"),
+        _process_row(
+            HELPER_PID, PID, START_TICKS - 50_000_000, HELPER_ROW.command_line
+        ),
+        _process_row(
+            HELPER_PID, PID, START_TICKS + 1, HELPER_ROW.command_line, "C:\\x.exe"
+        ),
+    ],
+    ids=["unrelated", "child-not-helper", "created-before-launch", "other-image"],
+)
+def test_a_packet_tracer_the_campaign_did_not_start_withholds_the_exit(
+    launched, capsys, tmp_path: Path, stranger
+):
+    """A foreign process seen after the exit is not waited out; it refuses."""
+    cli, env, base, system = launched
+    system.rows_after_exit = [(stranger,), (stranger,)]
+
+    code, refused = _run(cli, ["--retire", *base], env, capsys)
+
+    assert code == 2, refused
+    assert "foreign_packet_tracer_process" in refused["refusal"]
+    assert "terminate_helper" not in system.calls
+    assert not _store(tmp_path).record_path_for(ATTEMPT, "process-exit").exists()
+    first = refused["process_census_readings"][0]
+    assert first["processes"][0]["process_id"] == stranger.process_id
+    assert len(refused["process_census_readings"]) == 1
+
+
+def test_a_nonfinite_time_allocation_is_malformed():
+    """NaN or infinity would defeat every time comparison and charge."""
+    records = _closed_first_episode()
+    for value in (float("nan"), float("inf")):
+        opening = {**_lifecycle_opening(), "allocated_seconds": value}
+        assert opening_findings(records, opening, FASTLOOP_ALLOWANCE, OPENED) == (
+            "episode_opening_malformed",
+        )
+        assert ledger_record_findings("episode-0002-opening", opening, records) == (
+            "ledger_record_malformed",
+        )
+
+
+# -- the identity census and its ownership rule -----------------------------------------
+
+
+def _launch_record() -> dict[str, object]:
+    return {"pid": PID, "process_path": PATH}
+
+
+@pytest.mark.parametrize(
+    ("row", "role"),
+    [
+        (OWNED_ROW, "owned"),
+        (_process_row(PID, 4, START_TICKS + 9, COMMAND_LINE), "owned"),
+        (_process_row(PID, 4, START_TICKS + 10, COMMAND_LINE), "foreign"),
+        (HELPER_ROW, "owned_helper"),
+        (
+            _process_row(HELPER_PID, PID, START_TICKS, HELPER_ROW.command_line, ""),
+            "owned_helper",
+        ),
+        (
+            _process_row(HELPER_PID, 999, START_TICKS + 1, HELPER_ROW.command_line),
+            "foreign",
+        ),
+        (_process_row(HELPER_PID, PID, START_TICKS + 1, COMMAND_LINE), "foreign"),
+        (
+            _process_row(
+                HELPER_PID, PID, START_TICKS + 1, '"C:\\y.exe" --progress-bar-server'
+            ),
+            "foreign",
+        ),
+    ],
+    ids=[
+        "owned",
+        "owned-at-census-resolution",
+        "same-pid-other-instant",
+        "helper",
+        "helper-without-image",
+        "helper-of-another-parent",
+        "child-without-helper-argument",
+        "helper-of-another-image",
+    ],
+)
+def test_each_listed_process_is_owned_its_helper_or_foreign(row, role):
+    """Parent, creation, image and argument prove a helper; nothing else does."""
+    assert packet_tracer_process_role(_launch_record(), START_TICKS, row) == role
+
+
+def test_the_identity_census_names_no_external_text_and_fails_closed():
+    """The command is constant; every doubtful answer is an error, not 'none'."""
+    runner = retirement._Runner(
+        stdout='[{"pid":124,"parent":123,"ticks":5,"path":"","command_line":"x"}]'
+    )
+    census = PowerShellOwnedProcessControl(run_command=runner).packet_tracer_processes()
+
+    assert census.error == ""
+    assert census.processes[0].parent_process_id == PID
+    argv = runner.calls[-1]
+    assert argv[:3] == ["powershell.exe", "-NoProfile", "-Command"]
+    assert "PacketTracer*" in argv[3] and str(PID) not in argv[3]
+    for stdout in (
+        "",
+        "{}",
+        "[1]",
+        '[{"pid":1,"parent":2,"ticks":0,"path":"","command_line":""}]',
+        '[{"pid":1,"parent":2,"ticks":true,"path":"","command_line":""}]',
+        '[{"pid":1,"parent":2,"ticks":3,"path":null,"command_line":""}]',
+        '[{"pid":1,"parent":2,"ticks":3,"path":"","command_line":""},'
+        '{"pid":1,"parent":2,"ticks":3,"path":"","command_line":""}]',
+    ):
+        assert parse_packet_tracer_processes(stdout).error == "process_census_malformed"
+    assert parse_packet_tracer_processes("[]").processes == ()
+    failing = retirement._Runner(error=subprocess.TimeoutExpired("powershell", 15))
+    assert (
+        PowerShellOwnedProcessControl(run_command=failing)
+        .packet_tracer_processes()
+        .error.startswith("process_census_unobservable")
+    )

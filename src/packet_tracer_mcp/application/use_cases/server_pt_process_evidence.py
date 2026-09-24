@@ -324,6 +324,59 @@ def select_document_window(
     return documents[0], ()
 
 
+#: Win32_Process reports creation to the microsecond (10 ticks); the launch
+#: record keeps it to 100 ns, so the same instant may differ by up to 9.
+_CENSUS_TICK_RESOLUTION = 10
+_HELPER_ARGUMENT = re.compile(r"(?:^|\s)--progress-bar-server(?:\s|$)")
+
+
+def packet_tracer_process_role(
+    launch: Mapping[str, object], start_ticks: int, row: object
+) -> str:
+    """Name one listed Packet Tracer process relative to the owned launch.
+
+    `owned` is the launched process itself (same PID and creation time).
+    `owned_helper` is a `--progress-bar-server` process the launched process
+    started: its parent is the owned PID, it was created no earlier than the
+    launch, and its command line (and image, when the OS shows it) is the
+    launched executable's. Anything else is `foreign`.
+    """
+    pid = launch.get("pid")
+    path = launch.get("process_path")
+    ticks = getattr(row, "start_ticks", None)
+    if not isinstance(path, str) or not path or not isinstance(ticks, int):
+        return "foreign"
+    if (
+        getattr(row, "process_id", None) == pid
+        and abs(ticks - start_ticks) < _CENSUS_TICK_RESOLUTION
+    ):
+        return "owned"
+    command = getattr(row, "command_line", "")
+    image = getattr(row, "executable_path", "")
+    if (
+        getattr(row, "parent_process_id", None) == pid
+        and ticks > start_ticks - _CENSUS_TICK_RESOLUTION
+        and isinstance(command, str)
+        and command.casefold().startswith(f'"{path}"'.casefold())
+        and _HELPER_ARGUMENT.search(command) is not None
+        and (not image or image.casefold() == path.casefold())
+    ):
+        return "owned_helper"
+    return "foreign"
+
+
+def lingering_process_findings(
+    launch: Mapping[str, object], start_ticks: int, rows: object
+) -> tuple[str, ...]:
+    """Refuse when any listed Packet Tracer process is not the launch's own."""
+    if any(
+        packet_tracer_process_role(launch, start_ticks, row) == "foreign"
+        for row in tuple(rows or ())
+    ):
+        return ("foreign_packet_tracer_process",)
+    return ()
+
+
 def force_window_findings(
     pid: int,
     target: object,

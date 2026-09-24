@@ -81,7 +81,9 @@ from ...application.use_cases.server_pt_process_evidence import (
     incarnation_ticks,
     launch_evidence_findings,
     launched_blank,
+    lingering_process_findings,
     observed_process_findings,
+    packet_tracer_process_role,
     select_document_window,
     window_signature_for_launch,
     window_signature_record,
@@ -159,8 +161,8 @@ _PROCESS_CONTROL = PowerShellOwnedProcessControl
 #: and how long the exit after a termination is awaited. Bounded both ways.
 RETIREMENT_GRACE_SECONDS = 60.0
 RETIREMENT_EXIT_WAIT_SECONDS = 30.0
-#: After the owned process is gone, how long its helper processes (such as
-#: `--progress-bar-server`) are given to exit before the census is judged.
+#: After the owned process is gone, how long its own helper processes (such
+#: as `--progress-bar-server`) are given to exit before the census is judged.
 RETIREMENT_HELPER_WAIT_SECONDS = 30.0
 _RETIREMENT_POLL_SECONDS = 1.0
 #: How far wall and monotonic time may disagree between two readings before
@@ -1083,18 +1085,30 @@ def _wall_clock_continuous(instants: list[tuple[str, float]]) -> bool:
 
 
 def _await_no_packet_tracer(
-    control, seconds: float, readings: list[dict[str, object]]
-) -> int | None:
-    """Count Packet Tracer processes until none remains, within a bounded wait.
+    control,
+    launch: Mapping[str, object],
+    start_ticks: int,
+    seconds: float,
+    readings: list[dict[str, object]],
+) -> tuple[int | None, tuple[str, ...]]:
+    """List Packet Tracer processes until none remains, within a bounded wait.
 
-    Every census is appended to `readings` with its times. The last count is
-    returned; an unreadable census (`None`) is kept and polled again.
+    Only the launched process and its own helpers are waited out. A process
+    the campaign did not start stops the wait at once and is returned as a
+    finding. Every census is appended to `readings` with its times and rows.
+    Returns the last count (`None` if unreadable) and the findings.
     """
     deadline = time.monotonic() + seconds
     while True:
         started, started_monotonic = _instant()
-        count = control.census()
+        census = control.packet_tracer_processes()
         answered, answered_monotonic = _instant()
+        count = None if census.error else len(census.processes)
+        findings = (
+            ()
+            if census.error
+            else lingering_process_findings(launch, start_ticks, census.processes)
+        )
         readings.append(
             {
                 "started_at_utc": started,
@@ -1102,10 +1116,23 @@ def _await_no_packet_tracer(
                 "started_monotonic_s": started_monotonic,
                 "answered_monotonic_s": answered_monotonic,
                 "count": count,
+                "error": census.error,
+                "processes": [
+                    {
+                        "process_id": row.process_id,
+                        "parent_process_id": row.parent_process_id,
+                        "start_ticks": row.start_ticks,
+                        "executable_path": row.executable_path,
+                        "command_line": row.command_line,
+                        "role": packet_tracer_process_role(launch, start_ticks, row),
+                    }
+                    for row in census.processes
+                ],
+                "findings": list(findings),
             }
         )
-        if count == 0 or time.monotonic() >= deadline:
-            return count
+        if findings or count == 0 or time.monotonic() >= deadline:
+            return count, findings
         _retirement_sleep(_RETIREMENT_POLL_SECONDS)
 
 
@@ -1413,9 +1440,15 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
     # The owned process's helpers may outlive it by seconds; they are given a
     # bounded wait, and only an exit of the owned process earns one.
     census_readings: list[dict[str, object]] = []
-    count = _await_no_packet_tracer(
-        control, RETIREMENT_HELPER_WAIT_SECONDS if exited else 0.0, census_readings
+    count, foreign = _await_no_packet_tracer(
+        control,
+        launch,
+        start_ticks,
+        RETIREMENT_HELPER_WAIT_SECONDS if exited else 0.0,
+        census_readings,
     )
+    # A process the campaign did not start is never waited out or ignored.
+    refusal = (*refusal, *foreign)
     close.update(
         {
             "actual_exit_observed": exited,
