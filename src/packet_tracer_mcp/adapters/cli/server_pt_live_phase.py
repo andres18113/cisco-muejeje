@@ -1,4 +1,11 @@
-"""Read-only exact source, CI and receiver preflight for C31 LIVE phases."""
+"""Read-only source, CI and receiver preflight for Server-PT LIVE phases.
+
+The campaign decides what source authority a phase needs. A delivery campaign
+(C31) reads the exact-SHA CI run of its published HEAD; an experimental one
+(FASTLOOP) reads no CI at all, refuses a supplied run ID, and needs only a
+clean committed checkpoint. Everything else -- import isolation, the branch,
+the process identity, the build and an empty mailbox -- is the same for both.
+"""
 
 from __future__ import annotations
 
@@ -8,12 +15,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ...application.use_cases.prepare_server_pt_commissioning import SERVER_PT_BUILD
+from ...application.use_cases.server_pt_campaign import (
+    C31_CAMPAIGN,
+    ServerPtCampaign,
+)
 from ...application.use_cases.server_pt_phase_grant import (
     ServerPtPhaseGrant,
     phase_grant_findings,
 )
 from ...domain.enterprise.models.service_qualification import (
     DiagnosticLifecycleObservation,
+    RefusalSubject,
     RepositoryIdentity,
     diagnostic_lifecycle_continuity,
     repository_refusals,
@@ -55,6 +67,7 @@ class PhasePreflight:
     ci: ExactCiEvidence | None = None
     process: DiagnosticLifecycleObservation | None = None
     findings: tuple[str, ...] = ()
+    campaign: ServerPtCampaign = C31_CAMPAIGN
 
 
 def phase_preflight(
@@ -67,25 +80,43 @@ def phase_preflight(
     source_reader: Callable = repository_identity,
     ci_reader: Callable = lambda run, sha, path: read_exact_ci(run, sha, checkout=path),
     lifecycle_reader: Callable | None = None,
+    campaign: ServerPtCampaign = C31_CAMPAIGN,
 ) -> PhasePreflight:
     """Stop at the first missing authority before opening a mailbox channel."""
     isolation = isolation_reader(root)
     if not isolation.isolated:
-        return PhasePreflight(findings=("import_isolation_unverified",))
+        return PhasePreflight(
+            findings=("import_isolation_unverified",), campaign=campaign
+        )
+    if campaign.experimental and ci_run_id:
+        # A run ID offered to an experimental phase is a claim it cannot
+        # carry. Refusing it keeps a green label from ever riding along.
+        return PhasePreflight(
+            findings=("experimental_ci_claim_refused",), campaign=campaign
+        )
     source = source_reader(root)
     repo_reasons = tuple(
         "repository:" + item.subject.value + ":" + item.kind.value
         for item in repository_refusals(source, source.head, source.tree)
+        # Publication is a delivery requirement. An experimental checkpoint
+        # may be ahead of its upstream; the upstream is still recorded.
+        if not (
+            campaign.experimental and item.subject is RefusalSubject.REPOSITORY_UPSTREAM
+        )
     )
     if source.branch != FEATURE_BRANCH:
         repo_reasons += ("feature_branch_mismatch",)
     if repo_reasons:
-        return PhasePreflight(source=source, findings=repo_reasons)
-    ci, ci_reasons = ci_reader(ci_run_id, source.head, root)
-    if ci_reasons or ci is None:
-        return PhasePreflight(
-            source=source, findings=ci_reasons or ("ci_unobservable",)
-        )
+        return PhasePreflight(source=source, findings=repo_reasons, campaign=campaign)
+    ci = None
+    if not campaign.experimental:
+        ci, ci_reasons = ci_reader(ci_run_id, source.head, root)
+        if ci_reasons or ci is None:
+            return PhasePreflight(
+                source=source,
+                findings=ci_reasons or ("ci_unobservable",),
+                campaign=campaign,
+            )
     reader = lifecycle_reader or PacketTracerDiagnosticLifecycleReader().read
     process = reader(time.monotonic() + 10.0)
     reasons: list[str] = []
@@ -105,6 +136,7 @@ def phase_preflight(
         ci=ci,
         process=process,
         findings=tuple(reasons),
+        campaign=campaign,
     )
 
 
@@ -157,7 +189,7 @@ def bind_live_phase(
     if (
         preflight.findings
         or preflight.source is None
-        or preflight.ci is None
+        or (preflight.ci is None) is not preflight.campaign.experimental
         or preflight.process is None
     ):
         raise ValueError("phase preflight is not complete")
@@ -171,6 +203,7 @@ def bind_live_phase(
         bundle_sha256=grant.bundle_sha256,
         prequalification_sha256=grant.prequalification_sha256,
         bundle=bundle,
+        campaign=preflight.campaign,
     ):
         raise ValueError("phase grant differs from fresh authority")
     started = clock()

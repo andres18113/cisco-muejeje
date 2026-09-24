@@ -88,11 +88,30 @@ READINESS_MAX_GROUPS = 4
 READINESS_GROUP_DEADLINE_SECONDS = 30.0
 READINESS_GROUP_MAX_SAMPLES = 31
 READINESS_GROUP_INTERVAL_SECONDS = 1.0
-READINESS_SAMPLE_CALLS = 6
+#: Pages one readiness sample is sized for. Build 9.0.1.0858 prints `show
+#: spanning-tree` of a 2950T-24 carrying VLANs 1 and 10 as two pages, with 7
+#: and with 24 access rows (C31 attempt `e0a7dfe1`); one page is headroom.
+READINESS_PAGE_ALLOWANCE = 3
+#: What ONE sample may spend: `registered_read_call_ceiling(3)` of the executor
+#: that performs the read, pinned to it by a contract test. The former six
+#: came from a stub that never paginates; a clean two-page table costs seven,
+#: so every sample of that attempt spent its last call on the continuation key.
+READINESS_SAMPLE_CALLS = 16
+#: What one episode's samples may spend TOGETHER, auxiliary read included.
+#: This is the approved allowance every cost model was computed with (30
+#: samples at six calls, plus one), and it is unchanged: the defect was how it
+#: was split, not its size. A sample borrows up to `READINESS_SAMPLE_CALLS`
+#: from it; a sample that finds less left is bounded by what is left.
+READINESS_SAMPLE_ALLOWANCE = 6
+READINESS_EPISODE_CALLS = 30 * READINESS_SAMPLE_ALLOWANCE + 1
 #: One continuity episode: rounds over every switch of its component.
 CONTINUITY_GROUP_DEADLINE_SECONDS = 30.0
 CONTINUITY_MAX_ROUNDS = 31
 CONTINUITY_INTERVAL_SECONDS = 1.0
+#: The approved per-reading share of a continuity episode: the episode may
+#: spend `CONTINUITY_MAX_ROUNDS * switches * 6` calls, one reading at most
+#: `READINESS_SAMPLE_CALLS` of them.
+CONTINUITY_READING_ALLOWANCE = 6
 
 
 #: Episodes one group may take: its own, and at most one narrowed episode.
@@ -158,6 +177,7 @@ class AccessForwardingObserver(Protocol):
         deadline_seconds: float,
         interval_seconds: float,
         sample_calls: int,
+        episode_calls: int,
     ) -> AccessForwardingObservation:
         """Observe one exact group with the caller's remaining time and policy."""
 
@@ -176,6 +196,7 @@ class TrunkContinuityObserver(Protocol):
         deadline_seconds: float,
         interval_seconds: float,
         sample_calls: int,
+        episode_calls: int,
     ) -> TrunkContinuityObservation:
         """Read every listed switch per round until `settled` or the window ends."""
 
@@ -559,6 +580,7 @@ class ServiceAccessReadinessGate:
                 deadline_seconds=READINESS_GROUP_DEADLINE_SECONDS,
                 interval_seconds=READINESS_GROUP_INTERVAL_SECONDS,
                 sample_calls=READINESS_SAMPLE_CALLS,
+                episode_calls=READINESS_EPISODE_CALLS,
             )
         except Exception as exc:
             # An observer that raised observed nothing. That is the absence of
@@ -672,6 +694,9 @@ class ServiceAccessReadinessGate:
                 deadline_seconds=CONTINUITY_GROUP_DEADLINE_SECONDS,
                 interval_seconds=CONTINUITY_INTERVAL_SECONDS,
                 sample_calls=READINESS_SAMPLE_CALLS,
+                episode_calls=(
+                    CONTINUITY_MAX_ROUNDS * len(switches) * CONTINUITY_READING_ALLOWANCE
+                ),
             )
         except Exception as exc:
             return (

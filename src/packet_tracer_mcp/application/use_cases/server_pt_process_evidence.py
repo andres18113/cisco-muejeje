@@ -1,4 +1,4 @@
-"""Pure ownership and graceful process-exit evidence rules for C31."""
+"""Pure ownership and process-exit evidence rules for Server-PT campaigns."""
 
 from __future__ import annotations
 
@@ -36,14 +36,51 @@ def launch_evidence_findings(
     return tuple(found)
 
 
+#: The longest graceful wait a forced termination may follow. A capture that
+#: claims a longer or no wait did not bound its graceful attempt.
+FORCED_TERMINATION_MAX_GRACEFUL_WAIT_SECONDS = 120.0
+
+
+def exit_was_forced(close: Mapping[str, object]) -> bool:
+    """Whether a close capture records an exact-process termination."""
+    return close.get("forced_termination") is not None
+
+
 def exit_evidence_findings(
     launch: Mapping[str, object],
     close: Mapping[str, object],
     *,
     process_count: int | None,
+    allow_forced: bool = False,
 ) -> tuple[str, ...]:
-    """Require graceful request and actual exit of exactly the owned process."""
+    """Require graceful request and actual exit of exactly the owned process.
+
+    A forced termination is admissible only where the caller's campaign
+    allows it (`allow_forced`), and only as its own record: the graceful
+    request still had to be made and bounded, the termination names the same
+    PID, path and creation time as the launch after rechecking them, and the
+    exit is still observed independently. It is never read as graceful.
+    """
     found: list[str] = []
+    forced = close.get("forced_termination")
+    if forced is not None:
+        wait = close.get("graceful_wait_seconds")
+        if not allow_forced:
+            found.append("forced_termination_not_permitted")
+        elif (
+            not isinstance(forced, Mapping)
+            or forced.get("method") != "Stop-Process"
+            or forced.get("pid") != launch.get("pid")
+            or forced.get("rechecked_process_path") != launch.get("process_path")
+            or forced.get("rechecked_process_incarnation")
+            != launch.get("process_incarnation")
+            or forced.get("disposable_workspace_rechecked") is not True
+            or not isinstance(forced.get("requested_at_utc"), str)
+            or isinstance(wait, bool)
+            or not isinstance(wait, (int, float))
+            or not 0 < wait <= FORCED_TERMINATION_MAX_GRACEFUL_WAIT_SECONDS
+        ):
+            found.append("forced_termination_identity_unproven")
     if (
         close.get("pid") != launch.get("pid")
         or close.get("process_path") != launch.get("process_path")

@@ -861,6 +861,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         interval_seconds: float = ACCESS_FORWARDING_INTERVAL_SECONDS,
         sample_calls: int = ACCESS_FORWARDING_SAMPLE_CALLS,
         remaining_seconds: float | None = None,
+        episode_calls: int | None = None,
     ) -> AccessForwardingObservation:
         """Observe one switch/VLAN group's exact interfaces, neutrally.
 
@@ -884,6 +885,12 @@ class PacketTracerEnterpriseConfigurationRuntime:
         so a read that failed recoverably early cannot refuse a complete read
         that followed it. `deadline_reached` with `deadline_cause` is the only
         decision here: the window is closed, and by which boundary.
+
+        `episode_calls`, when given, is what all samples and the auxiliary
+        read may spend together. Each sample may still spend up to
+        `sample_calls`, but never more than the episode has left, and no
+        sample starts once nothing is left. Without it the episode is bounded
+        by its samples alone, as before.
         """
         requested = tuple(dict.fromkeys(str(item) for item in interfaces if item))
         if (
@@ -909,6 +916,12 @@ class PacketTracerEnterpriseConfigurationRuntime:
             raise ValueError("access forwarding sample_calls must be an int")
         if sample_calls < 1:
             raise ValueError("access forwarding sample_calls must be positive")
+        if episode_calls is not None and (
+            isinstance(episode_calls, bool)
+            or not isinstance(episode_calls, int)
+            or episode_calls < 1
+        ):
+            raise ValueError("access forwarding episode_calls must be a positive int")
         ceiling = max_samples
         group_window = float(deadline_seconds)
         parent_window = (
@@ -948,10 +961,20 @@ class PacketTracerEnterpriseConfigurationRuntime:
             if self._clock() >= deadline:
                 episode_end_reason = "deadline"
                 break
+            granted = sample_calls
+            if episode_calls is not None:
+                left = episode_calls - self._forwarding_channel.calls
+                if left <= 0:
+                    # The episode's allowance is spent. Starting a sample that
+                    # can dispatch nothing would only record an exhaustion.
+                    episode_budget_exhausted = True
+                    episode_end_reason = "episode_call_budget_exhausted"
+                    break
+                granted = min(sample_calls, left)
             # The bound travels with the call, not around it: each nested
             # dispatch is capped by the time this observation has left and
             # refused past the sample's own call budget.
-            self._forwarding_channel.open(calls=sample_calls, deadline=deadline)
+            self._forwarding_channel.open(calls=granted, deadline=deadline)
             calls_before = self._forwarding_channel.calls
             show = self._forwarding_ios.execute(
                 device_name,
@@ -1016,7 +1039,13 @@ class PacketTracerEnterpriseConfigurationRuntime:
         auxiliary_budget_exhausted = False
         auxiliary_read_after_deadline = False
         simulation_time = "not_sampled"
-        if samples and self._clock() < deadline:
+        if (
+            samples
+            and episode_calls is not None
+            and self._forwarding_channel.calls >= episode_calls
+        ):
+            simulation_time = "not_sampled_call_budget"
+        elif samples and self._clock() < deadline:
             # The default reader performs one bridge call over the same bounded
             # channel. An injected reader is an opaque auxiliary call; it is
             # charged here and its elapsed time is checked before permission.
@@ -1091,6 +1120,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         deadline_seconds: float,
         interval_seconds: float,
         sample_calls: int,
+        episode_calls: int | None = None,
     ) -> TrunkContinuityObservation:
         """Read the registered trunk table of every listed switch, per round.
 
@@ -1103,11 +1133,21 @@ class PacketTracerEnterpriseConfigurationRuntime:
         appear. Each reading keeps only the requested trunk interfaces, and a
         reading that is late, incomplete, not fresh or not attributed to
         exactly its switch is kept as such and authorizes nothing.
+
+        `episode_calls`, when given, bounds every reading of the episode
+        together: a reading may spend up to `sample_calls` but never more than
+        is left, and no reading starts once nothing is left.
         """
         if isinstance(max_rounds, bool) or not isinstance(max_rounds, int):
             raise ValueError("trunk continuity max_rounds must be an int")
         if sample_calls < 1:
             raise ValueError("trunk continuity sample_calls must be positive")
+        if episode_calls is not None and (
+            isinstance(episode_calls, bool)
+            or not isinstance(episode_calls, int)
+            or episode_calls < 1
+        ):
+            raise ValueError("trunk continuity episode_calls must be a positive int")
         requested = tuple((str(name), tuple(ports)) for name, ports in switches)
         window = min(float(deadline_seconds), float(remaining_seconds))
         started = self._clock()
@@ -1123,10 +1163,18 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 end_reason = "deadline"
                 break
             readings: list[TrunkSwitchReading] = []
+            allowance_spent = False
             for name, ports in requested:
                 if self._forwarding_channel.stopped or self._clock() >= deadline:
                     break
-                self._forwarding_channel.open(calls=sample_calls, deadline=deadline)
+                granted = sample_calls
+                if episode_calls is not None:
+                    left = episode_calls - calls
+                    if left <= 0:
+                        allowance_spent = True
+                        break
+                    granted = min(sample_calls, left)
+                self._forwarding_channel.open(calls=granted, deadline=deadline)
                 before = self._forwarding_channel.calls
                 show = self._forwarding_ios.execute(
                     name, OperationalQueryId.SHOW_INTERFACES_TRUNK
@@ -1165,6 +1213,11 @@ class PacketTracerEnterpriseConfigurationRuntime:
             rounds.append(round_)
             if round_.complete and settled(round_):
                 end_reason = "required_pairs_joined"
+                break
+            if allowance_spent or (
+                episode_calls is not None and calls >= episode_calls
+            ):
+                end_reason = "episode_call_budget_exhausted"
                 break
             remaining = deadline - self._clock()
             if remaining <= 0:

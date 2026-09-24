@@ -22,9 +22,11 @@ from cold_http_acceptance_harness import (
 )
 
 from packet_tracer_mcp.application.use_cases.service_access_readiness_gate import (
+    READINESS_EPISODE_CALLS,
     READINESS_GROUP_DEADLINE_SECONDS,
     READINESS_GROUP_INTERVAL_SECONDS,
     READINESS_GROUP_MAX_SAMPLES,
+    READINESS_SAMPLE_ALLOWANCE,
     READINESS_SAMPLE_CALLS,
 )
 from packet_tracer_mcp.domain.enterprise.models.cold_http_acceptance import (
@@ -483,7 +485,19 @@ def test_the_readiness_line_is_derived_from_the_readiness_constants():
     line = dict(COLD_HTTP_ARITHMETIC)["readiness_30_samples_x6_calls_plus_auxiliary"]
 
     assert samples == 30
-    assert line == samples * READINESS_SAMPLE_CALLS + 1
+    # The line is the episode allowance the runtime enforces; one sample may
+    # borrow more than its six-call share of it to finish a paginated table.
+    assert line == READINESS_EPISODE_CALLS
+    assert line == samples * READINESS_SAMPLE_ALLOWANCE + 1
+    assert READINESS_SAMPLE_CALLS > READINESS_SAMPLE_ALLOWANCE
+
+
+def test_the_legacy_route_runs_the_product_gate_ceiling(tmp_path: Path):
+    """Same product as the MCP tool: the recorded sample ceiling is the gate's."""
+    envelope = build_harness(tmp_path).run().envelope
+
+    budgets = {row["sample"]["sample_call_budget"] for row in envelope.readiness}
+    assert budgets == {READINESS_SAMPLE_CALLS}
 
 
 def test_the_wait_lines_are_derived_from_the_runtime_bounds():

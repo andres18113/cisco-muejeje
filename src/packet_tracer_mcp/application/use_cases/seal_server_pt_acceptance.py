@@ -1,4 +1,13 @@
-"""Seal the exact schema-2 proposal and grant after retained C31 setup."""
+"""Seal the exact schema-2 proposal and grant after a retained campaign setup.
+
+The campaign decides two things here. Its purpose decides the source
+authority (delivery: published HEAD and exact-SHA CI; experimental: a clean
+committed checkpoint and no CI claim), and the setup grant must carry the
+same campaign and purpose, so authority never crosses between them. A
+charter that pinned an exact acceptance cost (C31) keeps that pin; an
+experimental campaign instead requires the product's own derived cost to fit
+the allocation its ledger admitted.
+"""
 
 from __future__ import annotations
 
@@ -22,7 +31,12 @@ from ...infrastructure.persistence.server_pt_commissioning_store import (
 from ...shared.utils import resolve_within, safe_name_component
 from .prepare_http_acceptance import prepare_http_acceptance
 from .prepare_server_pt_commissioning import SERVER_PT_BUILD
-from .server_pt_phase_grant import CHARTER_SHA256, ExactCiEvidenceLike
+from .server_pt_campaign import (
+    C31_CAMPAIGN,
+    ExactCiEvidenceLike,
+    ServerPtCampaign,
+    source_authority_findings,
+)
 
 
 @dataclass(frozen=True)
@@ -41,9 +55,15 @@ def seal_server_pt_acceptance(
     store: ServerPtCommissioningStore,
     source: RepositoryIdentity,
     process: DiagnosticLifecycleObservation,
-    ci: ExactCiEvidenceLike,
+    ci: ExactCiEvidenceLike | None,
+    campaign: ServerPtCampaign = C31_CAMPAIGN,
+    allocation: tuple[int, float] | None = None,
 ) -> ServerPtAcceptanceSeal:
-    """Derive unchanged `--prepare` fields; write the grant before contact."""
+    """Derive unchanged `--prepare` fields; write the grant before contact.
+
+    `allocation` is the operations and seconds the experimental ledger still
+    admits for this phase; the product's derived cost must fit inside it.
+    """
     bundle = store.load_bundle(attempt_id)
     store.require_archived_phase(attempt_id, "setup", "ready")
     if store.cleanup_started(attempt_id):
@@ -69,11 +89,15 @@ def seal_server_pt_acceptance(
     ):
         raise ValueError("retained setup is not ready for acceptance")
     if (
+        setup_grant.campaign_id != campaign.campaign_id
+        or setup_grant.charter_sha256 != campaign.charter_sha256
+        or setup_grant.execution_purpose != campaign.purpose.value
+    ):
+        raise ValueError("setup was sealed under another campaign or purpose")
+    if (
         source.head != setup_grant.source_sha
         or source.tree != setup_grant.source_tree
-        or source.clean is not True
-        or source.upstream_head != source.head
-        or ci.head_sha != source.head
+        or source_authority_findings(campaign, source, ci)
         or process.error
         or process.mailbox_entries
         or process.process_id != setup_grant.process_id
@@ -113,12 +137,19 @@ def seal_server_pt_acceptance(
     cost = prepared.scope.cost
     if (
         len(prepared.scope.clients) != 30
-        or cost.max_operations != 7849
-        or cost.max_seconds != 2792
         or cost.reserve_operations != 30
         or cost.reserve_seconds != 40
     ):
         raise ValueError("acceptance proposal exceeds or changes the charter")
+    if campaign.acceptance_cost_pin is not None:
+        if (cost.max_operations, cost.max_seconds) != campaign.acceptance_cost_pin:
+            raise ValueError("acceptance proposal exceeds or changes the charter")
+    elif (
+        allocation is None
+        or cost.max_operations > allocation[0]
+        or cost.max_seconds > allocation[1]
+    ):
+        raise ValueError("acceptance cost does not fit the admitted allocation")
     prepare_document: dict[str, object] = {
         "mode": "prepare",
         "findings": list(prepared.findings),
@@ -130,7 +161,7 @@ def seal_server_pt_acceptance(
     prepare_path = store.save_acceptance_prepare(attempt_id, prepare_document)
     binding = json.dumps(
         {
-            "charter": CHARTER_SHA256,
+            "charter": campaign.charter_sha256,
             "attempt": attempt_id,
             "source": source.head,
             "tree": source.tree,
@@ -140,7 +171,8 @@ def seal_server_pt_acceptance(
         sort_keys=True,
     )
     authorization_id = (
-        "SERVER-PT-C31-" + hashlib.sha256(binding.encode("utf-8")).hexdigest()[:16]
+        campaign.authorization_prefix
+        + hashlib.sha256(binding.encode("utf-8")).hexdigest()[:16]
     )
     grant: dict[str, object] = {
         **prepared.grant_skeleton(),
@@ -164,12 +196,14 @@ def seal_server_pt_acceptance(
     grant_path = store.save_acceptance_grant(attempt_id, grant)
     setup_path = store.record_path_for(attempt_id, "setup-grant")
     seal = {
-        "campaign_id": "SERVER-PT-C31-COMMISSION-01",
-        "charter_sha256": CHARTER_SHA256,
+        "campaign_id": campaign.campaign_id,
+        "charter_sha256": campaign.charter_sha256,
+        "execution_purpose": campaign.purpose.value,
         "source_sha": source.head,
         "source_tree": source.tree,
-        "ci_run_id": ci.run_id,
-        "ci_url": ci.url,
+        "source_upstream_head": source.upstream_head,
+        "ci_run_id": ci.run_id if ci is not None else 0,
+        "ci_url": ci.url if ci is not None else "",
         "process_id": process.process_id,
         "process_path": process.process_path,
         "process_incarnation": process.process_incarnation,

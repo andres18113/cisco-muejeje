@@ -1,4 +1,12 @@
-"""Governed Server-PT commissioning phases for the C31 disposable campaign."""
+"""Governed Server-PT commissioning phases for one disposable campaign.
+
+`--campaign c31` (the default) is the delivery campaign exactly as before:
+exact-SHA CI, a published HEAD and its two-attempt limit. `--campaign
+fastloop` is the experimental campaign: a clean committed checkpoint and no CI
+claim, bounded instead by its cumulative ledger. Every experimental phase
+belongs to an episode opened before contact, and is admitted against that
+episode's allocation before its mailbox is bound.
+"""
 
 from __future__ import annotations
 
@@ -25,18 +33,34 @@ from ...application.use_cases.prequalify_server_pt import prequalify_server_pt
 from ...application.use_cases.seal_server_pt_acceptance import (
     seal_server_pt_acceptance,
 )
+from ...application.use_cases.server_pt_campaign import (
+    C31_CAMPAIGN,
+    FASTLOOP_CAMPAIGN,
+    ServerPtCampaign,
+    source_authority_findings,
+)
+from ...application.use_cases.server_pt_campaign_ledger import (
+    FASTLOOP_ALLOWANCE,
+    closing_findings,
+    episode_allowance_left,
+    episode_name,
+    ledger_totals,
+    opening_findings,
+    phase_admission_findings,
+    unsettled_phases,
+)
 from ...application.use_cases.server_pt_phase_budget import (
     E5_IOS_QUERY_MAX_CALLS,
     E5_IOS_QUERY_MAX_SECONDS,
     derive_phase_budget,
 )
 from ...application.use_cases.server_pt_phase_grant import (
-    CHARTER_SHA256,
     RECOVERY_PREQUALIFICATION_ATTEMPT,
     derive_server_pt_phase_grant,
 )
 from ...application.use_cases.server_pt_process_evidence import (
     exit_evidence_findings,
+    exit_was_forced,
     launch_evidence_findings,
 )
 from ...application.use_cases.server_pt_second_attempt import second_attempt_findings
@@ -79,7 +103,7 @@ from ...infrastructure.persistence.server_pt_commissioning_store import (
 )
 from ...infrastructure.persistence.server_pt_raw_archive import build_raw_answer_index
 from . import cold_http_acceptance as acceptance_cli
-from .server_pt_live_phase import bind_live_phase, phase_preflight
+from .server_pt_live_phase import FEATURE_BRANCH, bind_live_phase, phase_preflight
 from .service_qualification import repository_identity
 
 _ATTEMPT = re.compile(r"[0-9a-f]{32}\Z")
@@ -87,6 +111,18 @@ _RECOVERY_FIRST_ATTEMPT = "979b4636d50290d199e8ea0f95eddab3"
 _RECOVERY_FIRST_STATUS_SHA256 = (
     "c623ec5dbc62e108568cff6a41ab858d451de2e86c1ab426690dfdecae2e2829"
 )
+_CAMPAIGNS = {"c31": C31_CAMPAIGN, "fastloop": FASTLOOP_CAMPAIGN}
+#: The charter digest each campaign's LIVE modes require. Read at call time,
+#: per campaign, so the C31 digest remains this module's one charter seam.
+CHARTER_SHA256 = C31_CAMPAIGN.charter_sha256
+FASTLOOP_CHARTER_SHA256 = FASTLOOP_CAMPAIGN.charter_sha256
+#: One episode plan or closing is operator-written JSON; bound what it may be.
+_LEDGER_INPUT_LIMIT = 16 * 1024
+
+
+def _charter_digest(campaign: ServerPtCampaign) -> str:
+    """Return the digest this campaign's charter must have."""
+    return FASTLOOP_CHARTER_SHA256 if campaign.experimental else CHARTER_SHA256
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -101,7 +137,12 @@ def _parser() -> argparse.ArgumentParser:
     phase.add_argument("--record-correction", action="store_true")
     phase.add_argument("--record-launch", action="store_true")
     phase.add_argument("--record-exit", action="store_true")
-    parser.add_argument("--attempt", required=True)
+    phase.add_argument("--open-episode", action="store_true")
+    phase.add_argument("--close-episode", action="store_true")
+    phase.add_argument("--ledger-status", action="store_true")
+    parser.add_argument("--campaign", choices=sorted(_CAMPAIGNS), default="c31")
+    parser.add_argument("--attempt", default="")
+    parser.add_argument("--episode", type=int, default=0)
     parser.add_argument("--clients", type=int, default=30)
     parser.add_argument("--ci-run", type=int, default=0)
     parser.add_argument("--charter", default="")
@@ -109,6 +150,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--correction-file", default="")
     parser.add_argument("--launch-evidence", default="")
     parser.add_argument("--close-evidence", default="")
+    parser.add_argument("--episode-plan", default="")
+    parser.add_argument("--episode-closing", default="")
     return parser
 
 
@@ -164,6 +207,9 @@ def main(
     if root is None:
         _print({"outcome": "refused", "reason": "governed_root_not_declared"})
         return 2
+    campaign = _CAMPAIGNS[args.campaign]
+    if args.open_episode or args.close_episode or args.ledger_status:
+        return _ledger_mode(root, campaign, args)
     if _ATTEMPT.fullmatch(args.attempt) is None:
         _print({"outcome": "refused", "reason": "invalid_attempt_id"})
         return 2
@@ -171,6 +217,11 @@ def main(
         _print({"outcome": "refused", "reason": "charter_requires_30_clients"})
         return 2
     if args.record_correction:
+        if campaign.experimental:
+            # A causal correction binds C31's second attempt to its first.
+            # An experimental episode states its question when it opens.
+            _print({"outcome": "refused", "reason": "correction_is_a_c31_record"})
+            return 2
         return _record_correction(
             root, args.attempt, args.first_attempt, args.correction_file
         )
@@ -182,41 +233,50 @@ def main(
         or args.record_launch
         or args.record_exit
     ):
-        if not args.ci_run or not args.charter:
+        if campaign.experimental:
+            if args.ci_run:
+                _print(
+                    {"outcome": "refused", "reason": "experimental_ci_claim_refused"}
+                )
+                return 2
+            if not args.charter:
+                _print({"outcome": "refused", "reason": "charter_required"})
+                return 2
+            if args.episode < 1 and not (args.record_launch or args.record_exit):
+                _print({"outcome": "refused", "reason": "episode_required"})
+                return 2
+        elif not args.ci_run or not args.charter:
             _print({"outcome": "refused", "reason": "ci_run_and_charter_required"})
             return 2
-        try:
-            charter_bytes = Path(args.charter).read_bytes()
-        except OSError:
-            _print({"outcome": "refused", "reason": "charter_unreadable"})
-            return 2
-        if (
-            len(charter_bytes) > 1024 * 1024
-            or hashlib.sha256(charter_bytes).hexdigest() != CHARTER_SHA256
-        ):
-            _print({"outcome": "refused", "reason": "charter_digest_mismatch"})
+        refusal = _charter_refusal(campaign, args.charter)
+        if refusal:
+            _print({"outcome": "refused", "reason": refusal})
             return 2
         if args.record_launch:
             if not args.launch_evidence:
                 _print({"outcome": "refused", "reason": "launch_evidence_required"})
                 return 2
-            return _record_launch(root, args.attempt, args.ci_run, args.launch_evidence)
+            return _record_launch(
+                root, args.attempt, args.ci_run, args.launch_evidence, campaign
+            )
         if args.record_exit:
             if not args.close_evidence:
                 _print({"outcome": "refused", "reason": "close_evidence_required"})
                 return 2
-            return _record_exit(root, args.attempt, args.ci_run, args.close_evidence)
+            return _record_exit(
+                root, args.attempt, args.ci_run, args.close_evidence, campaign
+            )
         if args.qualify:
-            return _qualify(root, args.attempt, args.ci_run)
+            return _qualify(root, args.attempt, args.ci_run, campaign, args.episode)
         if args.setup:
-            return _setup(root, args.attempt, args.ci_run)
+            return _setup(root, args.attempt, args.ci_run, campaign, args.episode)
         if args.accept:
-            return _accept(root, args.attempt, args.ci_run)
+            return _accept(root, args.attempt, args.ci_run, campaign, args.episode)
         if args.cleanup:
-            return _cleanup(root, args.attempt, args.ci_run)
+            return _cleanup(root, args.attempt, args.ci_run, campaign, args.episode)
         _print({"outcome": "refused", "reason": "live_phase_not_bound"})
         return 2
-    store = ServerPtCommissioningStore(root)
+    store = ServerPtCommissioningStore(root, campaign.campaign_id)
     try:
         if args.prepare:
             bundle = prepare_server_pt_commissioning(30, "COLD_HTTP_" + args.attempt)
@@ -258,6 +318,251 @@ def main(
         )
         return 2
     return 0 if payload["outcome"] == "ready" else 2
+
+
+def _charter_refusal(campaign: ServerPtCampaign, charter: str) -> str:
+    """Name why the offered charter does not authorize this campaign, if so."""
+    try:
+        charter_bytes = Path(charter).read_bytes()
+    except OSError:
+        return "charter_unreadable"
+    if len(charter_bytes) > 1024 * 1024 or hashlib.sha256(
+        charter_bytes
+    ).hexdigest() != _charter_digest(campaign):
+        return "charter_digest_mismatch"
+    return ""
+
+
+def _read_ledger_input(name: str) -> dict[str, object]:
+    raw = Path(name).read_bytes()
+    if len(raw) > _LEDGER_INPUT_LIMIT:
+        raise ValueError("ledger input exceeds its budget")
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise ValueError("ledger input is not an object")
+    return value
+
+
+def _ledger_mode(root: Path, campaign: ServerPtCampaign, args) -> int:
+    """Open, close or report one experimental episode; nothing contacts PT."""
+    if not campaign.experimental:
+        _print({"outcome": "refused", "reason": "ledger_is_experimental_only"})
+        return 2
+    refusal = _charter_refusal(campaign, args.charter) if args.charter else ""
+    if not args.ledger_status and (not args.charter or refusal):
+        _print({"outcome": "refused", "reason": refusal or "charter_required"})
+        return 2
+    store = ServerPtCommissioningStore(root, campaign.campaign_id)
+    try:
+        if store.index_exists() and store.verify_index():
+            raise ValueError("campaign archive is unverified")
+        records = store.ledger_records()
+        now = datetime.now(UTC)
+        if args.ledger_status:
+            totals = ledger_totals(records, FASTLOOP_ALLOWANCE, now)
+            _print({"outcome": "ready", "ledger": asdict(totals)})
+            return 0
+        if args.open_episode:
+            plan = _read_ledger_input(args.episode_plan)
+            source = repository_identity(root)
+            if (
+                source_authority_findings(campaign, source, None)
+                or source.branch != FEATURE_BRANCH
+            ):
+                raise ValueError("episode source is not a clean committed checkpoint")
+            episodes = [
+                value
+                for value in records.values()
+                if value.get("kind") == "episode_opening"
+            ]
+            opening = {
+                **plan,
+                "kind": "episode_opening",
+                "episode": len(episodes) + 1,
+                "campaign_id": campaign.campaign_id,
+                "charter_sha256": _charter_digest(campaign),
+                "execution_purpose": campaign.purpose.value,
+                "source_sha": source.head,
+                "source_tree": source.tree,
+                "source_upstream_head": source.upstream_head,
+                "opened_at_utc": now.isoformat(),
+            }
+            findings = opening_findings(records, opening, FASTLOOP_ALLOWANCE, now)
+            if findings:
+                _print({"outcome": "refused", "reasons": list(findings)})
+                return 2
+            name = episode_name(int(opening["episode"])) + "-opening"
+            path = store.save_ledger_record(name, opening)
+        else:
+            closing_input = _read_ledger_input(args.episode_closing)
+            findings = closing_findings(records, args.episode)
+            if findings:
+                _print({"outcome": "refused", "reasons": list(findings)})
+                return 2
+            closing = {
+                **closing_input,
+                "kind": "episode_closing",
+                "episode": args.episode,
+                "unsettled_phases": list(unsettled_phases(records, args.episode)),
+                "closed_at_utc": now.isoformat(),
+            }
+            path = store.save_ledger_record(
+                episode_name(args.episode) + "-closing", closing
+            )
+        store.refresh_index()
+        if store.verify_index():
+            raise ValueError("ledger archive is unverified")
+        totals = ledger_totals(store.ledger_records(), FASTLOOP_ALLOWANCE, now)
+    except (OSError, ValueError) as exc:
+        _print({"outcome": "refused", "reason": f"ledger:{type(exc).__name__}"})
+        return 2
+    _print(
+        {
+            "outcome": "recorded",
+            "record_path": str(path),
+            "record_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "ledger": asdict(totals),
+        }
+    )
+    return 0
+
+
+def _ledger_admit(
+    store: ServerPtCommissioningStore,
+    campaign: ServerPtCampaign,
+    episode: int,
+    attempt_id: str,
+    phase: str,
+    operations: int,
+    seconds: float,
+) -> tuple[str, ...]:
+    """Write one phase admission before contact, or name why there is none."""
+    if not campaign.experimental:
+        return ()
+    try:
+        now = datetime.now(UTC)
+        findings, protected = phase_admission_findings(
+            store.ledger_records(),
+            episode=episode,
+            attempt_id=attempt_id,
+            phase=phase,
+            granted_operations=int(operations),
+            granted_seconds=float(seconds),
+            allowance=FASTLOOP_ALLOWANCE,
+            now=now,
+        )
+        if findings:
+            return findings
+        store.save_ledger_record(
+            f"{episode_name(episode)}-{attempt_id}-{phase}-admission",
+            {
+                "kind": "phase_admission",
+                "episode": episode,
+                "attempt_id": attempt_id,
+                "phase": phase,
+                "granted_operations": int(operations),
+                "granted_seconds": float(seconds),
+                "draws_protected": protected,
+                "admitted_at_utc": now.isoformat(),
+            },
+        )
+        store.refresh_index()
+        return store.verify_index()
+    except (OSError, ValueError) as exc:
+        return (f"ledger_admission_unavailable:{type(exc).__name__}",)
+
+
+def _ledger_result(
+    store: ServerPtCommissioningStore,
+    campaign: ServerPtCampaign,
+    episode: int,
+    attempt_id: str,
+    phase: str,
+    used_operations: int,
+    active_seconds: float,
+    outcome: str,
+) -> str:
+    """Record what one admitted phase used; a failure is returned, not raised."""
+    if not campaign.experimental:
+        return ""
+    try:
+        store.save_ledger_record(
+            f"{episode_name(episode)}-{attempt_id}-{phase}-result",
+            {
+                "kind": "phase_result",
+                "episode": episode,
+                "attempt_id": attempt_id,
+                "phase": phase,
+                "used_operations": int(used_operations),
+                "active_seconds": round(max(0.0, active_seconds), 3),
+                "outcome": outcome,
+                "recorded_at_utc": datetime.now(UTC).isoformat(),
+            },
+        )
+    except (OSError, ValueError) as exc:
+        return f"ledger_result_unrecorded:{type(exc).__name__}"
+    return ""
+
+
+def _admit_phase(
+    store: ServerPtCommissioningStore,
+    campaign: ServerPtCampaign,
+    episode: int,
+    attempt_id: str,
+    phase: str,
+    preflight,
+) -> tuple[str, ...]:
+    """Admit a preliminary phase against its episode before any contact."""
+    if not campaign.experimental:
+        return ()
+    try:
+        planned = derive_server_pt_phase_grant(
+            phase,
+            attempt_id,
+            preflight.source,
+            preflight.process,
+            preflight.ci,
+            campaign=campaign,
+        )
+    except ValueError:
+        return ("phase_grant_underivable",)
+    return _ledger_admit(
+        store,
+        campaign,
+        episode,
+        attempt_id,
+        phase,
+        planned.max_operations,
+        planned.max_seconds,
+    )
+
+
+def _settle_phase(
+    store: ServerPtCommissioningStore,
+    campaign: ServerPtCampaign,
+    episode: int,
+    attempt_id: str,
+    phase: str,
+    status: dict[str, object],
+    active_seconds: float,
+) -> None:
+    """Record one experimental phase's use in the ledger and in its status."""
+    if not campaign.experimental:
+        return
+    status["execution_purpose"] = campaign.purpose.value
+    status["ledger_result"] = (
+        _ledger_result(
+            store,
+            campaign,
+            episode,
+            attempt_id,
+            phase,
+            int(status.get("operations_used") or 0),
+            active_seconds,
+            str(status.get("outcome") or ""),
+        )
+        or "recorded"
+    )
 
 
 def _first_retirement(
@@ -359,11 +664,15 @@ def _record_correction(
 
 
 def _record_launch(
-    root: Path, attempt_id: str, ci_run_id: int, evidence_file: str
+    root: Path,
+    attempt_id: str,
+    ci_run_id: int,
+    evidence_file: str,
+    campaign: ServerPtCampaign = C31_CAMPAIGN,
 ) -> int:
     """Pin a campaign-created disposable PT process before qualification."""
-    store = ServerPtCommissioningStore(root)
-    preflight = phase_preflight(root, ci_run_id=ci_run_id)
+    store = ServerPtCommissioningStore(root, campaign.campaign_id)
+    preflight = phase_preflight(root, ci_run_id=ci_run_id, campaign=campaign)
     if preflight.findings or preflight.process is None:
         _print({"outcome": "refused", "reasons": list(preflight.findings)})
         return 2
@@ -381,7 +690,9 @@ def _record_launch(
             **launch,
             "capture_sha256": hashlib.sha256(raw).hexdigest(),
             "capture_text": raw.decode("utf-8"),
-            "charter_sha256": CHARTER_SHA256,
+            "campaign_id": campaign.campaign_id,
+            "charter_sha256": _charter_digest(campaign),
+            "execution_purpose": campaign.purpose.value,
             "source_sha": preflight.source.head if preflight.source else "",
             "source_tree": preflight.source.tree if preflight.source else "",
             "ci_run_id": preflight.ci.run_id if preflight.ci else 0,
@@ -407,33 +718,59 @@ def _record_launch(
 
 
 def _record_exit(
-    root: Path, attempt_id: str, ci_run_id: int, evidence_file: str
+    root: Path,
+    attempt_id: str,
+    ci_run_id: int,
+    evidence_file: str,
+    campaign: ServerPtCampaign = C31_CAMPAIGN,
 ) -> int:
-    """Record graceful close only after OS census proves the owned PT exited."""
-    store = ServerPtCommissioningStore(root)
+    """Record the owned PT's close only after an OS census proves it exited.
+
+    Delivery accepts only a graceful close. An experimental campaign also
+    accepts a recorded exact-process termination after a bounded graceful
+    attempt; it is kept as `_forced`, never relabelled graceful.
+    """
+    store = ServerPtCommissioningStore(root, campaign.campaign_id)
     try:
         try:
             store.require_archived_phase(attempt_id, "cleanup", "restored")
             disposition = "exited"
         except ValueError:
-            store.require_archived_phase(attempt_id, "setup", "stopped")
-            if store.cleanup_started(attempt_id):
-                raise ValueError("dirty retirement conflicts with cleanup") from None
-            disposition = "exited_dirty"
+            if campaign.experimental and attempt_id not in store.setup_attempt_ids():
+                # This attempt deployed no campus of its own. Whatever an
+                # earlier preliminary phase left is in its own archived
+                # record; the disposition claims nothing about the workspace.
+                disposition = "exited_before_setup"
+            else:
+                store.require_archived_phase(attempt_id, "setup", "stopped")
+                if store.cleanup_started(attempt_id):
+                    raise ValueError(
+                        "dirty retirement conflicts with cleanup"
+                    ) from None
+                disposition = "exited_dirty"
         launch = store.load_process_launch(attempt_id)
-        setup_grant = store.load_phase_grant(attempt_id, "setup")
+        # Delivery binds retirement to the setup grant, as before. An
+        # experimental attempt may stop before any grant exists, so it binds
+        # to the checkpoint its launch record pinned.
         source = repository_identity(root)
-        if (
-            source.error
-            or source.clean is not True
-            or source.upstream_head != source.head
-            or source.head != setup_grant.source_sha
-            or source.tree != setup_grant.source_tree
-        ):
+        if campaign.experimental:
+            bound_source = (launch.get("source_sha"), launch.get("source_tree"))
+            unusable = bool(source_authority_findings(campaign, source, None))
+        else:
+            setup_grant = store.load_phase_grant(attempt_id, "setup")
+            bound_source = (setup_grant.source_sha, setup_grant.source_tree)
+            unusable = bool(
+                source.error
+                or source.clean is not True
+                or source.upstream_head != source.head
+            )
+        if unusable or (source.head, source.tree) != bound_source:
             raise ValueError("retirement source differs from setup")
-        ci, findings = read_exact_ci(ci_run_id, source.head, checkout=root)
-        if findings or ci is None:
-            raise ValueError("retirement exact-SHA CI is unobservable")
+        ci = None
+        if not campaign.experimental:
+            ci, findings = read_exact_ci(ci_run_id, source.head, checkout=root)
+            if findings or ci is None:
+                raise ValueError("retirement exact-SHA CI is unobservable")
         raw = Path(evidence_file).read_bytes()
         if len(raw) > 16 * 1024:
             raise ValueError("graceful close capture exceeds input budget")
@@ -444,10 +781,15 @@ def _record_exit(
         if observed.error:
             raise ValueError("process exit census is unreadable")
         findings = exit_evidence_findings(
-            launch, close, process_count=len(observed.processes)
+            launch,
+            close,
+            process_count=len(observed.processes),
+            allow_forced=campaign.experimental,
         )
         if findings:
             raise ValueError("graceful process exit is unverified")
+        if exit_was_forced(close):
+            disposition += "_forced"
         document = {
             **close,
             "disposition": disposition,
@@ -457,8 +799,10 @@ def _record_exit(
             "process_count": len(observed.processes),
             "source_sha": source.head,
             "source_tree": source.tree,
-            "ci_run_id": ci.run_id,
-            "charter_sha256": CHARTER_SHA256,
+            "ci_run_id": ci.run_id if ci is not None else 0,
+            "campaign_id": campaign.campaign_id,
+            "charter_sha256": _charter_digest(campaign),
+            "execution_purpose": campaign.purpose.value,
         }
         path = store.save_process_exit(attempt_id, document)
         status = {
@@ -522,9 +866,30 @@ def _prequalification_recovery_findings(
     return ()
 
 
-def _qualify(root: Path, attempt_id: str, ci_run_id: int) -> int:
+def _ready_prequalification(
+    store: ServerPtCommissioningStore, attempt_ids: Sequence[str]
+) -> str:
+    """Return the campaign's archived ready preliminary attempt, if any."""
+    for candidate in attempt_ids:
+        try:
+            store.require_immutable_phase(
+                candidate, "prequalification", "ready_for_catalog_review"
+            )
+        except (OSError, ValueError):
+            continue
+        return candidate
+    return ""
+
+
+def _qualify(
+    root: Path,
+    attempt_id: str,
+    ci_run_id: int,
+    campaign: ServerPtCampaign = C31_CAMPAIGN,
+    episode: int = 0,
+) -> int:
     """Measure the two authorized prerequisites through one fixed file channel."""
-    store = ServerPtCommissioningStore(root)
+    store = ServerPtCommissioningStore(root, campaign.campaign_id)
     try:
         already = store.prequalification_attempt_ids()
     except OSError:
@@ -532,7 +897,15 @@ def _qualify(root: Path, attempt_id: str, ci_run_id: int) -> int:
             {"outcome": "refused", "reason": "prequalification_inventory_unreadable"}
         )
         return 2
-    if attempt_id == RECOVERY_PREQUALIFICATION_ATTEMPT:
+    if campaign.experimental:
+        # One ready preliminary result serves the whole experimental campaign;
+        # a new one is admitted only while none is ready, never on a used ID.
+        if attempt_id in already or _ready_prequalification(store, already):
+            _print(
+                {"outcome": "refused", "reason": "prequalification_already_reserved"}
+            )
+            return 2
+    elif attempt_id == RECOVERY_PREQUALIFICATION_ATTEMPT:
         recovery = _prequalification_recovery_findings(
             store,
             attempt_id,
@@ -554,14 +927,14 @@ def _qualify(root: Path, attempt_id: str, ci_run_id: int) -> int:
     if store.index_exists() and store.verify_index():
         _print({"outcome": "refused", "reason": "prior_archive_unverified"})
         return 2
-    preflight = phase_preflight(root, ci_run_id=ci_run_id)
+    preflight = phase_preflight(root, ci_run_id=ci_run_id, campaign=campaign)
     if preflight.findings:
         _print({"outcome": "refused", "reasons": list(preflight.findings)})
         return 2
     assert preflight.source is not None
     assert preflight.process is not None
-    assert preflight.ci is not None
-    if attempt_id == RECOVERY_PREQUALIFICATION_ATTEMPT:
+    assert (preflight.ci is None) == campaign.experimental
+    if not campaign.experimental and attempt_id == RECOVERY_PREQUALIFICATION_ATTEMPT:
         recovery = _prequalification_recovery_findings(
             store,
             attempt_id,
@@ -584,11 +957,18 @@ def _qualify(root: Path, attempt_id: str, ci_run_id: int) -> int:
     except (OSError, ValueError):
         _print({"outcome": "refused", "reason": "campaign_launch_unverified"})
         return 2
+    refusal = _admit_phase(
+        store, campaign, episode, attempt_id, "prequalification", preflight
+    )
+    if refusal:
+        _print({"outcome": "refused", "reasons": list(refusal)})
+        return 2
     bound = None
     result = None
     path = None
     reason = ""
     interrupted = False
+    phase_started = time.monotonic()
     try:
         grant = derive_server_pt_phase_grant(
             "prequalification",
@@ -596,6 +976,7 @@ def _qualify(root: Path, attempt_id: str, ci_run_id: int) -> int:
             preflight.source,
             preflight.process,
             preflight.ci,
+            campaign=campaign,
         )
         with bind_live_phase(preflight, grant, store=store) as bound:
             fixed = FixedChannelProductTransport("file", bound.channel)
@@ -639,6 +1020,15 @@ def _qualify(root: Path, attempt_id: str, ci_run_id: int) -> int:
         "operations_used": bound.channel.used_operations if bound else 0,
         "errors": [*(result.errors if result else []), *release],
     }
+    _settle_phase(
+        store,
+        campaign,
+        episode,
+        attempt_id,
+        "prequalification",
+        status,
+        time.monotonic() - phase_started,
+    )
     try:
         store.save_phase_status(attempt_id, "prequalification", status)
     except (OSError, ValueError) as exc:
@@ -657,17 +1047,37 @@ def _qualify(root: Path, attempt_id: str, ci_run_id: int) -> int:
     )
 
 
-def _setup(root: Path, attempt_id: str, ci_run_id: int) -> int:
+def _setup(
+    root: Path,
+    attempt_id: str,
+    ci_run_id: int,
+    campaign: ServerPtCampaign = C31_CAMPAIGN,
+    episode: int = 0,
+) -> int:
     """Deploy exact E4 and L2 E5 after preliminary evidence was pinned."""
-    store = ServerPtCommissioningStore(root)
+    store = ServerPtCommissioningStore(root, campaign.campaign_id)
     used_attempts = store.setup_attempt_ids()
     if attempt_id in used_attempts:
         _print({"outcome": "refused", "reason": "setup_attempt_already_reserved"})
         return 2
-    if len(used_attempts) >= 2:
+    if (
+        campaign.complete_attempt_limit is not None
+        and len(used_attempts) >= campaign.complete_attempt_limit
+    ):
         _print({"outcome": "refused", "reason": "campaign_attempt_allowance_exhausted"})
         return 2
-    qualification_id = used_attempts[0] if used_attempts else attempt_id
+    if campaign.experimental:
+        try:
+            qualification_id = _ready_prequalification(
+                store, store.prequalification_attempt_ids()
+            )
+        except OSError:
+            qualification_id = ""
+        if not qualification_id:
+            _print({"outcome": "refused", "reason": "prequalification_not_verified"})
+            return 2
+    else:
+        qualification_id = used_attempts[0] if used_attempts else attempt_id
     try:
         preliminary = store.load_prequalification(qualification_id)
         bundle = store.load_bundle(attempt_id)
@@ -696,13 +1106,13 @@ def _setup(root: Path, attempt_id: str, ci_run_id: int) -> int:
     except ValueError:
         _print({"outcome": "refused", "reason": "prequalification_scope_invalid"})
         return 2
-    preflight = phase_preflight(root, ci_run_id=ci_run_id)
+    preflight = phase_preflight(root, ci_run_id=ci_run_id, campaign=campaign)
     if preflight.findings:
         _print({"outcome": "refused", "reasons": list(preflight.findings)})
         return 2
     assert preflight.source is not None
     assert preflight.process is not None
-    assert preflight.ci is not None
+    assert (preflight.ci is None) == campaign.experimental
     try:
         launch = store.load_process_launch(attempt_id)
         if launch_evidence_findings(launch, preflight.process):
@@ -710,7 +1120,7 @@ def _setup(root: Path, attempt_id: str, ci_run_id: int) -> int:
     except (OSError, ValueError):
         _print({"outcome": "refused", "reason": "campaign_launch_unverified"})
         return 2
-    if used_attempts:
+    if used_attempts and not campaign.experimental:
         first = used_attempts[0]
         try:
             correction = store.load_causal_correction(attempt_id)
@@ -763,11 +1173,25 @@ def _setup(root: Path, attempt_id: str, ci_run_id: int) -> int:
         prequalification_sha256=hashlib.sha256(prequal_path.read_bytes()).hexdigest(),
         prequalification_attempt_id=qualification_id,
         bundle=bundle,
+        campaign=campaign,
     )
+    refusal = _ledger_admit(
+        store,
+        campaign,
+        episode,
+        attempt_id,
+        "setup",
+        grant.max_operations,
+        grant.max_seconds,
+    )
+    if refusal:
+        _print({"outcome": "refused", "reasons": list(refusal)})
+        return 2
     bound = None
     result = None
     reason = ""
     interrupted = False
+    phase_started = time.monotonic()
     try:
         with bind_live_phase(preflight, grant, store=store, bundle=bundle) as bound:
             fixed = FixedChannelProductTransport("file", bound.channel)
@@ -850,6 +1274,15 @@ def _setup(root: Path, attempt_id: str, ci_run_id: int) -> int:
         "operations_used": bound.channel.used_operations if bound else 0,
         "release_findings": list(bound.release_findings) if bound else [],
     }
+    _settle_phase(
+        store,
+        campaign,
+        episode,
+        attempt_id,
+        "setup",
+        status,
+        time.monotonic() - phase_started,
+    )
     try:
         store.save_phase_status(attempt_id, "setup", status)
     except (OSError, ValueError) as exc:
@@ -860,9 +1293,15 @@ def _setup(root: Path, attempt_id: str, ci_run_id: int) -> int:
     return 130 if interrupted else 0 if status["outcome"] == "ready" else 1
 
 
-def _cleanup(root: Path, attempt_id: str, ci_run_id: int) -> int:
+def _cleanup(
+    root: Path,
+    attempt_id: str,
+    ci_run_id: int,
+    campaign: ServerPtCampaign = C31_CAMPAIGN,
+    episode: int = 0,
+) -> int:
     """Remove only E4-owned objects with the original receiver still bound."""
-    store = ServerPtCommissioningStore(root)
+    store = ServerPtCommissioningStore(root, campaign.campaign_id)
     try:
         bundle = store.load_bundle(attempt_id)
         store.load_baseline(attempt_id)
@@ -885,13 +1324,13 @@ def _cleanup(root: Path, attempt_id: str, ci_run_id: int) -> int:
     if store.verify_index():
         _print({"outcome": "refused", "reason": "prior_archive_unverified"})
         return 2
-    preflight = phase_preflight(root, ci_run_id=ci_run_id)
+    preflight = phase_preflight(root, ci_run_id=ci_run_id, campaign=campaign)
     if preflight.findings:
         _print({"outcome": "refused", "reasons": list(preflight.findings)})
         return 2
     assert preflight.source is not None
     assert preflight.process is not None
-    assert preflight.ci is not None
+    assert (preflight.ci is None) == campaign.experimental
     if (
         preflight.source.head != setup_grant.source_sha
         or preflight.source.tree != setup_grant.source_tree
@@ -911,11 +1350,25 @@ def _cleanup(root: Path, attempt_id: str, ci_run_id: int) -> int:
         prequalification_sha256=prequal_sha,
         prequalification_attempt_id=setup_grant.prequalification_attempt_id,
         bundle=bundle,
+        campaign=campaign,
     )
+    refusal = _ledger_admit(
+        store,
+        campaign,
+        episode,
+        attempt_id,
+        "cleanup",
+        grant.max_operations,
+        grant.max_seconds,
+    )
+    if refusal:
+        _print({"outcome": "refused", "reasons": list(refusal)})
+        return 2
     bound = None
     result = None
     reason = ""
     interrupted = False
+    phase_started = time.monotonic()
     try:
         with bind_live_phase(preflight, grant, store=store, bundle=bundle) as bound:
             fixed = FixedChannelProductTransport("file", bound.channel)
@@ -960,6 +1413,15 @@ def _cleanup(root: Path, attempt_id: str, ci_run_id: int) -> int:
         "operations_used": bound.channel.used_operations if bound else 0,
         "release_findings": list(bound.release_findings) if bound else [],
     }
+    _settle_phase(
+        store,
+        campaign,
+        episode,
+        attempt_id,
+        "cleanup",
+        status,
+        time.monotonic() - phase_started,
+    )
     try:
         store.save_phase_status(attempt_id, "cleanup", status)
     except (OSError, ValueError) as exc:
@@ -996,9 +1458,20 @@ def _retain_acceptance_sources(store: ServerPtCommissioningStore, attempt_id: st
     return envelope
 
 
-def _accept(root: Path, attempt_id: str, ci_run_id: int) -> int:
-    """Run the existing product coordinator with its sealed schema-2 grant."""
-    store = ServerPtCommissioningStore(root)
+def _accept(
+    root: Path,
+    attempt_id: str,
+    ci_run_id: int,
+    campaign: ServerPtCampaign = C31_CAMPAIGN,
+    episode: int = 0,
+) -> int:
+    """Run the existing product coordinator with its sealed schema-2 grant.
+
+    An experimental campaign reports a passing run as `measured`, never as
+    `accepted`: its checkpoint had no delivery checks, and acceptance of the
+    delivery belongs to an independent review.
+    """
+    store = ServerPtCommissioningStore(root, campaign.campaign_id)
     try:
         store.load_bundle(attempt_id)
         store.load_phase_status(attempt_id, "setup")
@@ -1012,13 +1485,13 @@ def _accept(root: Path, attempt_id: str, ci_run_id: int) -> int:
             }
         )
         return 2
-    preflight = phase_preflight(root, ci_run_id=ci_run_id)
+    preflight = phase_preflight(root, ci_run_id=ci_run_id, campaign=campaign)
     if preflight.findings:
         _print({"outcome": "refused", "reasons": list(preflight.findings)})
         return 2
     assert preflight.source is not None
     assert preflight.process is not None
-    assert preflight.ci is not None
+    assert (preflight.ci is None) == campaign.experimental
     try:
         sealed = seal_server_pt_acceptance(
             attempt_id,
@@ -1026,6 +1499,14 @@ def _accept(root: Path, attempt_id: str, ci_run_id: int) -> int:
             source=preflight.source,
             process=preflight.process,
             ci=preflight.ci,
+            campaign=campaign,
+            allocation=(
+                episode_allowance_left(
+                    store.ledger_records(), episode, datetime.now(UTC)
+                )
+                if campaign.experimental
+                else None
+            ),
         )
     except (OSError, ValueError) as exc:
         _print(
@@ -1035,7 +1516,20 @@ def _accept(root: Path, attempt_id: str, ci_run_id: int) -> int:
             }
         )
         return 2
+    refusal = _ledger_admit(
+        store,
+        campaign,
+        episode,
+        attempt_id,
+        "acceptance",
+        int(sealed.grant["max_operations"]),
+        float(sealed.grant["max_seconds"]),
+    )
+    if refusal:
+        _print({"outcome": "refused", "reasons": list(refusal)})
+        return 2
     raw_path = store.journal_path_for(attempt_id, "acceptance")
+    recorded_channels: list[GovernedPhaseChannel] = []
 
     def boundaries_factory(governed_root: Path):
         boundaries = acceptance_cli.production_boundaries(governed_root)
@@ -1052,6 +1546,7 @@ def _accept(root: Path, attempt_id: str, ci_run_id: int) -> int:
                 max_seconds=float(sealed.grant["max_seconds"]),
                 authority=lambda: (),
             )
+            recorded_channels.append(recorded)
             return OpenedTransport(channel, recorded, opened.live, opened.detail)
 
         return replace(boundaries, open_channel=open_recorded)
@@ -1060,6 +1555,7 @@ def _accept(root: Path, attempt_id: str, ci_run_id: int) -> int:
     reason = ""
     interrupted = False
     summary: dict[str, object] = {}
+    phase_started = time.monotonic()
     try:
         with redirect_stdout(output):
             exit_code = acceptance_cli.main(
@@ -1107,9 +1603,14 @@ def _accept(root: Path, attempt_id: str, ci_run_id: int) -> int:
         reason = (
             reason + ";" if reason else ""
         ) + f"source_archive:{type(exc).__name__}"
+    passed = exit_code == 0 and not reason
     status = {
         "phase": "acceptance",
-        "outcome": "accepted" if exit_code == 0 and not reason else "stopped",
+        "outcome": (
+            ("measured" if campaign.experimental else "accepted")
+            if passed
+            else "stopped"
+        ),
         "reason": reason,
         "exit_code": exit_code,
         "attempt_id": attempt_id,
@@ -1118,6 +1619,21 @@ def _accept(root: Path, attempt_id: str, ci_run_id: int) -> int:
         "raw_path": str(raw_path) if raw_path.exists() else "",
         "product_summary": summary,
     }
+    if campaign.experimental:
+        status["execution_purpose"] = campaign.purpose.value
+        status["ledger_result"] = (
+            _ledger_result(
+                store,
+                campaign,
+                episode,
+                attempt_id,
+                "acceptance",
+                recorded_channels[-1].used_operations if recorded_channels else 0,
+                time.monotonic() - phase_started,
+                str(status["outcome"]),
+            )
+            or "recorded"
+        )
     try:
         store.save_acceptance_status(attempt_id, status)
     except (OSError, ValueError) as exc:
@@ -1125,7 +1641,13 @@ def _accept(root: Path, attempt_id: str, ci_run_id: int) -> int:
         status["reason"] = f"acceptance_status_persistence_failed:{type(exc).__name__}"
     _archive_or_stop(store, status)
     _print(status)
-    return 130 if interrupted else 0 if status["outcome"] == "accepted" else 1
+    return (
+        130
+        if interrupted
+        else 0
+        if status["outcome"] in {"accepted", "measured"}
+        else 1
+    )
 
 
 if __name__ == "__main__":

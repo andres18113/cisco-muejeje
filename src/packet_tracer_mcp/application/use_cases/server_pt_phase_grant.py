@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from typing import Literal, Protocol
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -19,6 +19,12 @@ from .prepare_server_pt_commissioning import (
     SERVER_PT_BUILD,
     ServerPtCommissioningBundle,
 )
+from .server_pt_campaign import (
+    C31_CAMPAIGN,
+    ExactCiEvidenceLike,
+    ServerPtCampaign,
+    source_authority_findings,
+)
 from .server_pt_phase_budget import (
     PREQUALIFICATION_MAX_OPERATIONS,
     PREQUALIFICATION_MAX_SECONDS,
@@ -27,17 +33,17 @@ from .server_pt_phase_budget import (
     derive_phase_budget,
 )
 
+__all__ = [
+    "CAMPAIGN_ID",
+    "CHARTER_SHA256",
+    "ExactCiEvidenceLike",
+    "ServerPtPhaseGrant",
+    "derive_server_pt_phase_grant",
+    "phase_grant_findings",
+]
 
-class ExactCiEvidenceLike(Protocol):
-    """Read-only exact-SHA CI result required to seal one phase."""
-
-    run_id: int
-    head_sha: str
-    url: str
-
-
-CHARTER_SHA256 = "7dbc5bbcd575bb0e9bcdac49fa003be6597e5b89e0742790c54237222fe8a200"
-CAMPAIGN_ID = "SERVER-PT-C31-COMMISSION-01"
+CHARTER_SHA256 = C31_CAMPAIGN.charter_sha256
+CAMPAIGN_ID = C31_CAMPAIGN.campaign_id
 RECOVERY_PREQUALIFICATION_ATTEMPT = "5b09a9c35fd572f00945bdb18040d2fb"
 _ATTEMPT = re.compile(r"[0-9a-f]{32}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -62,6 +68,12 @@ class ServerPtPhaseGrant(BaseModel):
     deployment_id: str
     source_sha: str
     source_tree: str
+    #: The upstream observed with the source. Delivery requires it to equal
+    #: `source_sha`; experimental records it without requiring publication.
+    source_upstream_head: str = ""
+    #: `delivery` carries an exact-SHA CI run; `experimental` carries none
+    #: (`ci_run_id` 0, empty URL) and can never be re-derived as delivery.
+    execution_purpose: Literal["delivery", "experimental"] = "delivery"
     ci_run_id: int
     ci_url: str
     build: str = SERVER_PT_BUILD
@@ -89,25 +101,24 @@ def derive_server_pt_phase_grant(
     attempt_id: str,
     source: RepositoryIdentity,
     process: DiagnosticLifecycleObservation,
-    ci: ExactCiEvidenceLike,
+    ci: ExactCiEvidenceLike | None,
     *,
     bundle_sha256: str = "",
     prequalification_sha256: str = "",
     prequalification_attempt_id: str = "",
     bundle: ServerPtCommissioningBundle | None = None,
+    campaign: ServerPtCampaign = C31_CAMPAIGN,
 ) -> ServerPtPhaseGrant:
-    """Derive every target and allowance from the approved recipe and phase."""
+    """Derive every target and allowance from the approved recipe and phase.
+
+    `campaign` decides the source authority: delivery needs the clean
+    published HEAD and its exact-SHA CI run; experimental needs a clean
+    committed checkpoint and refuses any CI claim.
+    """
     if _ATTEMPT.fullmatch(attempt_id) is None:
         raise ValueError("invalid campaign attempt ID")
-    if (
-        source.error
-        or source.clean is not True
-        or not source.head
-        or not source.tree
-        or source.upstream_head != source.head
-        or ci.head_sha != source.head
-    ):
-        raise ValueError("source is not the clean published CI commit")
+    if source_authority_findings(campaign, source, ci):
+        raise ValueError("source is not admissible for this campaign's purpose")
     if (
         process.error
         or process.mailbox_entries
@@ -158,6 +169,8 @@ def derive_server_pt_phase_grant(
             else ["remove_owned_campus_devices", "observe_workspace_restoration_twice"]
         )
     grant = ServerPtPhaseGrant(
+        campaign_id=campaign.campaign_id,
+        charter_sha256=campaign.charter_sha256,
         phase=phase,
         authorization_id="",
         operator_extensions=(
@@ -171,11 +184,13 @@ def derive_server_pt_phase_grant(
         ),
         attempt_id=attempt_id,
         marker=MARKER_PREFIX + attempt_id,
-        deployment_id=f"server-pt-c31-{attempt_id}",
+        deployment_id=campaign.deployment_prefix + attempt_id,
         source_sha=source.head,
         source_tree=source.tree,
-        ci_run_id=ci.run_id,
-        ci_url=ci.url,
+        source_upstream_head=source.upstream_head,
+        execution_purpose=campaign.purpose.value,
+        ci_run_id=ci.run_id if ci is not None else 0,
+        ci_url=ci.url if ci is not None else "",
         process_id=process.process_id,
         process_path=process.process_path,
         process_incarnation=process.process_incarnation,
@@ -205,14 +220,19 @@ def phase_grant_findings(
     attempt_id: str,
     source: RepositoryIdentity,
     process: DiagnosticLifecycleObservation,
-    ci: ExactCiEvidenceLike,
+    ci: ExactCiEvidenceLike | None,
     *,
     bundle_sha256: str = "",
     prequalification_sha256: str = "",
     prequalification_attempt_id: str = "",
     bundle: ServerPtCommissioningBundle | None = None,
+    campaign: ServerPtCampaign = C31_CAMPAIGN,
 ) -> tuple[str, ...]:
-    """Re-derive an existing grant against fresh local and CI observations."""
+    """Re-derive an existing grant against fresh local and CI observations.
+
+    The caller's campaign is the one derived under, so a grant sealed for
+    another campaign or purpose never matches.
+    """
     try:
         expected = derive_server_pt_phase_grant(
             phase,
@@ -225,6 +245,7 @@ def phase_grant_findings(
             prequalification_attempt_id=prequalification_attempt_id
             or given.prequalification_attempt_id,
             bundle=bundle,
+            campaign=campaign,
         )
     except ValueError:
         return ("phase_authority_unobservable",)

@@ -390,13 +390,16 @@ class CostProfile:
     endpoint_readback_seconds: float = 33.0
     #: MAX_ENDPOINT_CALLS_PER_SEND of the E5 runtime.
     endpoint_calls_per_send: int = 64
-    #: One readiness episode: 30 samples of at most 6 nested calls, plus the
-    #: auxiliary read, inside a 30 s window. Narrowing may add one more.
+    #: One readiness episode's enforced call allowance: 30 samples at a
+    #: six-call share, plus the auxiliary read, inside a 30 s window. One
+    #: sample may borrow up to 16 of it to finish a paginated table; together
+    #: they never exceed it. Narrowing may add one more episode.
     readiness_sample_reads: int = 30 * 6 + 1
     readiness_episode_seconds: float = 30.0
     readiness_episodes_per_group: int = 2
-    #: One continuity episode: at most 31 rounds, 6 calls per switch reading,
-    #: inside a 30 s window. Narrowing may add one more.
+    #: One continuity episode: at most 31 rounds at a six-call share per
+    #: switch reading (one reading may borrow up to 16), inside a 30 s window.
+    #: Narrowing may add one more.
     continuity_rounds: int = 31
     continuity_calls_per_reading: int = 6
     continuity_episode_seconds: float = 30.0

@@ -19,6 +19,9 @@ from campus_product_simulation import (
     run_public_campus,
 )
 
+from packet_tracer_mcp.application.use_cases.service_access_readiness_gate import (
+    READINESS_SAMPLE_CALLS,
+)
 from packet_tracer_mcp.domain.enterprise.services.service_path_closure import (
     ROUTED_PATH_CONTRACT,
     PathKind,
@@ -98,6 +101,11 @@ def test_a_multi_access_campus_is_verified_through_the_public_tool(
     access = [row for row in rows if "kind" not in row]
     continuity = [row for row in rows if row.get("kind") == "trunk_continuity"]
     assert {row["switch_device_name"] for row in access} == {SW1, SW2}
+    # The public tool runs the product default: a sample sized for one
+    # paginated table, never the legacy profile's frozen six.
+    assert {row["sample"]["sample_call_budget"] for row in access} == {
+        READINESS_SAMPLE_CALLS
+    }
     assert len(continuity) == 1 and continuity[0]["status"] == "admitted"
     assert continuity[0]["sample"]["episode_end_reason"] == "required_pairs_joined"
     remote = [row for row in continuity[0]["dependents"] if row["admitted"]]

@@ -291,6 +291,7 @@ class _GatedConfigurationRuntime:
         deadline_seconds: float,
         interval_seconds: float,
         sample_calls: int,
+        episode_calls: int,
     ) -> Any:
         """Observe one switch/VLAN group; a read, so always permitted.
 
@@ -307,6 +308,7 @@ class _GatedConfigurationRuntime:
             deadline_seconds=deadline_seconds,
             interval_seconds=interval_seconds,
             sample_calls=sample_calls,
+            episode_calls=episode_calls,
         )
 
     def observe_trunk_continuity(

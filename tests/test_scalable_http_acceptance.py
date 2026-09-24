@@ -358,8 +358,12 @@ def test_the_cost_profile_matches_the_constants_the_product_executes():
     assert COST_PROFILE.endpoint_calls_per_send == (
         enterprise_configuration_runtime.MAX_ENDPOINT_CALLS_PER_SEND
     )
-    assert COST_PROFILE.readiness_sample_reads == (
-        (gate.READINESS_GROUP_MAX_SAMPLES - 1) * gate.READINESS_SAMPLE_CALLS + 1
+    # The episode line is the allowance the runtime enforces per episode, not
+    # a product of the per-sample ceiling: one sample may borrow up to
+    # READINESS_SAMPLE_CALLS of it, and all of them together never exceed it.
+    assert COST_PROFILE.readiness_sample_reads == gate.READINESS_EPISODE_CALLS
+    assert gate.READINESS_EPISODE_CALLS == (
+        (gate.READINESS_GROUP_MAX_SAMPLES - 1) * gate.READINESS_SAMPLE_ALLOWANCE + 1
     )
     assert (
         COST_PROFILE.readiness_episode_seconds == gate.READINESS_GROUP_DEADLINE_SECONDS
@@ -368,7 +372,9 @@ def test_the_cost_profile_matches_the_constants_the_product_executes():
     assert COST_PROFILE.continuity_episode_seconds == (
         gate.CONTINUITY_GROUP_DEADLINE_SECONDS
     )
-    assert COST_PROFILE.continuity_calls_per_reading == gate.READINESS_SAMPLE_CALLS
+    assert COST_PROFILE.continuity_calls_per_reading == (
+        gate.CONTINUITY_READING_ALLOWANCE
+    )
 
 
 def test_a_legacy_grant_keeps_its_frozen_ceiling_and_rules(tmp_path: Path):

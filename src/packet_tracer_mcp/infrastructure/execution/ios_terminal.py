@@ -403,6 +403,32 @@ _PAGER_PAGE_TIMEOUT_SECONDS = 8.0
 _PAGER_CONTINUATION_KEY = "String.fromCharCode(32)"
 
 
+def registered_read_call_ceiling(pages: int) -> int:
+    """Return the bridge calls one registered read of `pages` pages may need.
+
+    Each term is one call `ControlledIosExecutor.execute` makes, with one
+    extra read for every wait that polls until a state converges:
+
+    - session: one state read, and isolation of a pager an earlier read left
+      behind (cancel key, confirming read plus one slack read, re-read);
+    - dispatch: one guarded `enterCommand`;
+    - output: one convergence read plus one slack read;
+    - attribution: one read;
+    - a paginated table: one capture session read, then per continuation
+      page one key, one progress read and one slack read.
+
+    The second C31 attempt showed why a stub count is not enough: a clean
+    two-page `show spanning-tree` on build 9.0.1.0858 costs seven calls, and a
+    six-call sample always spent its last call on the continuation key.
+    """
+    if isinstance(pages, bool) or not isinstance(pages, int) or pages < 1:
+        raise ValueError("a registered read has at least one page")
+    single_page = 5 + 1 + 2 + 1
+    if pages == 1:
+        return single_page
+    return single_page + 1 + 3 * (pages - 1)
+
+
 @dataclass(frozen=True)
 class IosCommandResult:
     """One registered IOS query result and its provenance."""

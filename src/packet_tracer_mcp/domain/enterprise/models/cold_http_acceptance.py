@@ -84,8 +84,10 @@ COLD_HTTP_PROPOSAL = ColdHttpProposal(
 #: dispatch. It corrects the proposal's breakdown in two places: E6 applies in
 #: two phase batches before its direct read (3, not 2), and a 30-second
 #: readiness window sampled every second cannot start a 31st sample (30 x 6
-#: calls + 1 auxiliary read = 181, not 187). The total is 1,010, of which two
-#: are the protected releases.
+#: calls + 1 auxiliary read = 181, not 187). The 181 is now the episode
+#: allowance the runtime enforces; one sample may borrow more than six of it
+#: to finish a paginated table, but the episode never exceeds it. The total
+#: is 1,010, of which two are the protected releases.
 COLD_HTTP_ARITHMETIC: tuple[tuple[str, int], ...] = (
     ("admission_environment_inventory_drift_reads", 5),
     ("e5_ios_boot_wait_90s_at_0_25s", 361),

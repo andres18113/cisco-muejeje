@@ -1,4 +1,9 @@
-"""Write-once inputs for the C31 Server-PT disposable commissioning campaign."""
+"""Write-once inputs and records of one Server-PT commissioning campaign.
+
+The store is bound to one campaign identity. Its default is C31, so every
+existing caller keeps its directory and index; another campaign, such as the
+experimental FASTLOOP one, gets its own directory, index and ledger.
+"""
 
 from __future__ import annotations
 
@@ -62,17 +67,46 @@ def _write_once(path: Path, payload: bytes) -> None:
 class ServerPtCommissioningStore:
     """Persist one full exported bundle under one explicitly governed root."""
 
-    def __init__(self, governed_root: Path) -> None:
-        """Bind the explicitly declared checkout root without writing files."""
+    def __init__(self, governed_root: Path, campaign_id: str = CAMPAIGN_ID) -> None:
+        """Bind the declared checkout root and one campaign, writing nothing."""
         self.root = Path(governed_root).resolve()
+        self.campaign_id = safe_name_component(campaign_id, "")
+        if not self.campaign_id or self.campaign_id != campaign_id:
+            raise ValueError("commissioning campaign ID is not a safe name")
 
     def _attempt_dir(self, attempt_id: str) -> Path:
         return resolve_within(
-            self.root, "data", "commissioning", CAMPAIGN_ID, _safe_id(attempt_id)
+            self.root, "data", "commissioning", self.campaign_id, _safe_id(attempt_id)
         )
 
     def _campaign_dir(self) -> Path:
-        return resolve_within(self.root, "data", "commissioning", CAMPAIGN_ID)
+        return resolve_within(self.root, "data", "commissioning", self.campaign_id)
+
+    def ledger_path_for(self, name: str) -> Path:
+        """Return one contained campaign-ledger record path."""
+        return resolve_within(self._campaign_dir(), "ledger", _safe_id(name) + ".json")
+
+    def save_ledger_record(self, name: str, document: Mapping[str, object]) -> Path:
+        """Write one ledger record once; an existing record is never replaced."""
+        path = self.ledger_path_for(name)
+        _write_once(path, (json.dumps(dict(document), sort_keys=True) + "\n").encode())
+        return path
+
+    def ledger_records(self) -> dict[str, dict[str, object]]:
+        """Read every ledger record, by name; a malformed one is an error."""
+        root = resolve_within(self._campaign_dir(), "ledger")
+        if not root.exists():
+            return {}
+        records: dict[str, dict[str, object]] = {}
+        for path in sorted(root.glob("*.json")):
+            try:
+                value = json.loads(path.read_bytes())
+            except (OSError, ValueError) as exc:
+                raise ValueError("campaign ledger record is unreadable") from exc
+            if not isinstance(value, dict):
+                raise ValueError("campaign ledger record is malformed")
+            records[path.stem] = value
+        return records
 
     def setup_attempt_ids(self) -> tuple[str, ...]:
         """Count immutable setup grants; no new nonce resets the campaign cap."""
@@ -578,7 +612,7 @@ class ServerPtCommissioningStore:
         document = json.loads(raw)
         if (
             not isinstance(document, dict)
-            or document.get("campaign_id") != CAMPAIGN_ID
+            or document.get("campaign_id") != self.campaign_id
             or not isinstance(document.get("files"), list)
         ):
             raise ValueError("campaign index is malformed")
@@ -658,7 +692,11 @@ class ServerPtCommissioningStore:
                     "bytes": len(raw),
                 }
             )
-        document = {"schema_version": 2, "campaign_id": CAMPAIGN_ID, "files": files}
+        document = {
+            "schema_version": 2,
+            "campaign_id": self.campaign_id,
+            "files": files,
+        }
         target = resolve_within(root, "index.json")
         temporary = resolve_within(root, f".index.{uuid4().hex}.tmp")
         try:
