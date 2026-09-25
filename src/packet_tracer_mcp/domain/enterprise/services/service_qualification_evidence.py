@@ -1684,6 +1684,11 @@ def native_policy_snapshot_complete(
     )
 
 
+def native_policy_exclusion_inventory_complete(snapshot: DefaultPoolSnapshot) -> bool:
+    """Return whether the process exclusion count and every row are coherent."""
+    return _native_policy_exclusions(snapshot) is not None
+
+
 def _native_policy_facts(
     before: DefaultPoolSnapshot, after: DefaultPoolSnapshot, probe: ProbeReading
 ) -> dict[str, Any]:

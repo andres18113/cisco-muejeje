@@ -82,6 +82,7 @@ class QualificationStage(StrEnum):
     Q3_NATIVE_PROBE = "Q3-NATIVE-PROBE"
     Q3_NATIVE_SIZE = "Q3-NATIVE-SIZE"
     Q3_NATIVE_POLICY = "Q3-NATIVE-POLICY"
+    Q3_NATIVE_STABILITY = "Q3-NATIVE-STABILITY"
 
 
 class ExecutionMode(StrEnum):
@@ -416,6 +417,7 @@ STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.Q3_NATIVE_PROBE: (120, 600),
     QualificationStage.Q3_NATIVE_SIZE: (120, 600),
     QualificationStage.Q3_NATIVE_POLICY: (160, 900),
+    QualificationStage.Q3_NATIVE_STABILITY: (180, 1050),
 }
 
 Q0_PC = "__MCP_E6Q_PC1"
@@ -1571,6 +1573,7 @@ Q3_NATIVE_STAGES = (
     QualificationStage.Q3_NATIVE_PROBE,
     QualificationStage.Q3_NATIVE_SIZE,
     QualificationStage.Q3_NATIVE_POLICY,
+    QualificationStage.Q3_NATIVE_STABILITY,
 )
 
 #: Exact episode-1 physical values, not a formula for a second build or pool.
@@ -1751,6 +1754,45 @@ def _q3_native_policy() -> StageDefinition:
     )
 
 
+def _q3_native_stability() -> StageDefinition:
+    """Measure product E5 reapplication against the exact stored policy."""
+    base = _q3_native_policy()
+    return replace(
+        base,
+        stage=QualificationStage.Q3_NATIVE_STABILITY,
+        purpose=(
+            "Repeat exact disabled native pool policy, then reapply the "
+            "compiled server address through E5 and compare complete policy."
+        ),
+        experiments=(
+            *base.experiments,
+            ExperimentSpec(
+                id="M-NATIVE-STABILITY",
+                hypothesis=(
+                    "Product E5 reapplication retains the exact disabled "
+                    "native pool policy with no new pool or exclusion."
+                ),
+                required=True,
+                procedure="Q3_NATIVE_STABILITY",
+                planned_operations=3,
+                capabilities=("server.dhcp_native_policy_reapplication",),
+            ),
+        ),
+        budget=StageBudget(180, 1050, reserve_seconds=300),
+        profile_id="Q3-NATIVE-STABILITY",
+        profile_version="1",
+        steps=(
+            *base.steps,
+            DiagnosticStageStep(
+                id="NATIVE-stability",
+                experiment_id="M-NATIVE-STABILITY",
+                effect="configure",
+                requires=("NATIVE-policy",),
+            ),
+        ),
+    )
+
+
 STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.Q0: _q0(),
     QualificationStage.Q1: _q1(),
@@ -1767,6 +1809,7 @@ STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.Q3_NATIVE_PROBE: _q3_native_probe(),
     QualificationStage.Q3_NATIVE_SIZE: _q3_native_size(),
     QualificationStage.Q3_NATIVE_POLICY: _q3_native_policy(),
+    QualificationStage.Q3_NATIVE_STABILITY: _q3_native_stability(),
 }
 
 

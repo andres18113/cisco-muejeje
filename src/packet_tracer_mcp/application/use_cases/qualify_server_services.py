@@ -237,6 +237,7 @@ from ...domain.enterprise.services.service_qualification_evidence import (
     default_pool_snapshot,
     listener_toggle_established,
     marker_page_established,
+    native_policy_exclusion_inventory_complete,
     native_policy_probe_baseline_admitted,
     native_policy_snapshot_complete,
     native_pool_probe_baseline_admitted,
@@ -1942,6 +1943,8 @@ def _admitted(
             _run_q3_native_size(execution)
         elif definition.stage is QualificationStage.Q3_NATIVE_POLICY:
             _run_q3_native_policy(execution)
+        elif definition.stage is QualificationStage.Q3_NATIVE_STABILITY:
+            _run_q3_native_stability(execution)
         else:
             _run_q3(execution)
     except KeyboardInterrupt as exc:
@@ -4797,6 +4800,11 @@ def _d_dhcp_enable(
 # -- delegated native-pool qualification -------------------------------------------
 
 
+_Q3_NATIVE_POLICY_STAGES = frozenset(
+    {QualificationStage.Q3_NATIVE_POLICY, QualificationStage.Q3_NATIVE_STABILITY}
+)
+
+
 def _register_q3_native_terminal(execution: _Execution) -> None:
     """Keep one final physical read after a stop or normal probe completion."""
 
@@ -4809,14 +4817,13 @@ def _register_q3_native_terminal(execution: _Execution) -> None:
                 execution,
                 "native_before_cleanup",
                 prefix="q3-native",
-                policy=execution.definition.stage
-                is QualificationStage.Q3_NATIVE_POLICY,
+                policy=execution.definition.stage in _Q3_NATIVE_POLICY_STAGES,
             )
             complete = (
                 native_policy_snapshot_complete(
                     final, server=Q3_SERVER, interface="FastEthernet0"
                 )
-                if execution.definition.stage is QualificationStage.Q3_NATIVE_POLICY
+                if execution.definition.stage in _Q3_NATIVE_POLICY_STAGES
                 else final.observed
             )
             execution.conclude(
@@ -4872,7 +4879,7 @@ def _prepare_q3_native_server(
         execution.stop("q3_native_requested_pool_ambiguous")
         return None
     state = _Q3FlState()
-    policy_mode = execution.definition.stage is QualificationStage.Q3_NATIVE_POLICY
+    policy_mode = execution.definition.stage in _Q3_NATIVE_POLICY_STAGES
     if not _q3fl_snapshot(execution, state, "before_e5", "", policy=policy_mode):
         execution.stop("q3_native_baseline_not_admitted")
         return None
@@ -5029,7 +5036,7 @@ def _run_q3_native_size(
             execution,
             "after_native_repeat_start",
             prefix="q3-native-size",
-            policy=execution.definition.stage is QualificationStage.Q3_NATIVE_POLICY,
+            policy=execution.definition.stage in _Q3_NATIVE_POLICY_STAGES,
         )
         execution.conclude(
             "M-NATIVE-REPEAT-START",
@@ -5069,7 +5076,7 @@ def _run_q3_native_size(
             execution,
             "after_native_max",
             prefix="q3-native-size",
-            policy=execution.definition.stage is QualificationStage.Q3_NATIVE_POLICY,
+            policy=execution.definition.stage in _Q3_NATIVE_POLICY_STAGES,
         )
         execution.conclude(
             "M-NATIVE-MAX",
@@ -5092,7 +5099,9 @@ def _run_q3_native_size(
     return None
 
 
-def _run_q3_native_policy(execution: _Execution) -> None:
+def _run_q3_native_policy(
+    execution: _Execution,
+) -> tuple[ConfigureServerDhcpPool, DefaultPoolSnapshot] | None:
     """Probe compiled gateway, DNS and exclusions on one disabled native pool."""
     sized = _run_q3_native_size(execution)
     if sized is None:
@@ -5272,6 +5281,141 @@ def _run_q3_native_policy(execution: _Execution) -> None:
                 ),
             )
     execution.finish("Q3_NATIVE_EXCLUSIONS")
+    if (
+        execution.measurement("M-NATIVE-EXCLUSIONS").conclusion
+        is MeasurementConclusion.SUPPORTED_IN_SAMPLE
+    ):
+        return pool_action, before_exclusion
+    return None
+
+
+def _run_q3_native_stability(execution: _Execution) -> None:
+    """Reapply E5 and compare the complete disabled native policy."""
+    prepared = _run_q3_native_policy(execution)
+    if prepared is None:
+        if not execution.stopped:
+            execution.stop("q3_native_stability_policy_not_supported")
+        return
+    if not execution.selected("NATIVE-stability"):
+        return
+    pool_action, before = prepared
+    expected_row = {
+        **dict(Q3_NATIVE_START_AFTER),
+        "end": pool_action.lease_end,
+        "max": pool_action.max_users,
+        "gateway": pool_action.gateway,
+        "dns": pool_action.dns_server,
+    }
+    exclusions = [item.model_dump(mode="json") for item in pool_action.excluded_ranges]
+    if not native_policy_probe_baseline_admitted(
+        before,
+        server=Q3_SERVER,
+        interface="FastEthernet0",
+        expected_row=expected_row,
+        expected_exclusions=exclusions,
+    ):
+        execution.stop("q3_native_stability_precondition_unobserved")
+        return
+    contract = execution.product_contract
+    if contract is None:
+        execution.stop("q3_native_stability_product_contract_absent")
+        return
+    static_plan = d_dhcp_static_only_plan(
+        contract.configuration_plan, device_name=Q3_SERVER
+    )
+    if len(static_plan.actions) != 1:
+        execution.stop("q3_native_stability_static_action_ambiguous")
+        return
+    ids = ("M-NATIVE-STABILITY",)
+    if not execution.begin(ids, "Q3_NATIVE_STABILITY"):
+        return
+    with execution.procedure(ids):
+        if not execution.run.transition("experiment:Q3_NATIVE_STABILITY_E5:started"):
+            execution.stop("persistence:q3_native_stability_e5_not_announced")
+            return
+        configuration_runtime, _ = _d_dhcp_runtimes(execution, contract)
+        e5_start = len(execution.ledger.entries)
+        with execution.ledger.effect_of(
+            "q3-native-stability:product:e5_server_address"
+        ):
+            result = ConfigurationApplicator(configuration_runtime).apply(
+                static_plan,
+                actual_source_topology_hash=contract.manifest.physical_topology_hash,
+                capabilities=contract.device_capabilities,
+                runtime_context=_q3_context(contract),
+                deployment_manifest=contract.manifest,
+            )
+        e5_operations = execution.ledger.entries[e5_start:]
+        unknown_dispatches = [
+            item.seq
+            for item in e5_operations
+            if item.dispatch == DispatchFact.ACCEPTANCE_UNKNOWN.value
+        ]
+        foundations = _q3fl_foundations(contract, static_plan, result)
+        cause = _q3_e5_foundation_cause(
+            result, foundations, {static_plan.actions[0].id}
+        )
+        if unknown_dispatches:
+            cause = "outcome_unknown:q3_native_stability_e5_dispatch"
+        after = _q3_default_read(
+            execution,
+            "after_native_e5_reapplication",
+            prefix="q3-native-stability",
+            policy=True,
+        )
+        after_exact = native_policy_probe_baseline_admitted(
+            after,
+            server=Q3_SERVER,
+            interface="FastEthernet0",
+            expected_row=expected_row,
+            expected_exclusions=exclusions,
+        )
+        facts = {
+            "before": dict(before.raw),
+            "after": dict(after.raw),
+            "product_action_results": [
+                item.model_dump(mode="json") for item in result.action_results
+            ],
+            "product_verification_results": [
+                item.model_dump(mode="json") for item in result.verification_results
+            ],
+            "e5_operations": [item.model_dump(mode="json") for item in e5_operations],
+            "unknown_dispatch_seqs": unknown_dispatches,
+        }
+        conclusion = (
+            MeasurementConclusion.INCONCLUSIVE
+            if cause
+            or not after.observed
+            or not native_policy_exclusion_inventory_complete(after)
+            else MeasurementConclusion.SUPPORTED_IN_SAMPLE
+            if after_exact
+            else MeasurementConclusion.CONTRADICTED
+        )
+        assessment = Assessment(
+            conclusion,
+            facts=facts,
+            causes=(
+                [cause]
+                if cause
+                else [f"native_policy_after_unobserved:{after.cause}"]
+                if not after.observed
+                else ["native_policy_after_exclusions_incomplete"]
+                if not native_policy_exclusion_inventory_complete(after)
+                else []
+                if after_exact
+                else ["native_policy_changed_or_incomplete_after_e5_reapplication"]
+            ),
+            limitations=[
+                "e5_fire_and_forget_does_not_prove_setter_success",
+                "unchanged_state_does_not_prove_native_setter_idempotence",
+                "restart_reload_not_measured",
+            ],
+            outcome_unknown=cause.startswith("outcome_unknown"),
+        )
+        execution.conclude("M-NATIVE-STABILITY", assessment)
+    execution.finish("Q3_NATIVE_STABILITY")
+    if assessment.conclusion is not MeasurementConclusion.SUPPORTED_IN_SAMPLE:
+        execution.stop("q3_native_stability_not_supported")
 
 
 # -- Q3-FL: the versioned DHCP qualification profile ------------------------------

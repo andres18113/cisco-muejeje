@@ -742,3 +742,67 @@ The provisional ceiling is 160 operations and 900 stage seconds including a
 launch and retirement. RED controls will cover each effect through the Node
 engine/coordinator, plus wrong pool, unexpected exclusion, no-op, throw and
 unknown-result cases. Full product and scale verification remain pending.
+
+## Native policy result and serving design delta, version 8
+
+Episode 3 ran `Q3-NATIVE-POLICY` from clean commit
+`76a60a8d259e1f2cee571a446664ef3cb1a2d6bc` (tree
+`190f53c41ee0a930be08a3253633fc706eb72f23`), build 9.0.1.0858,
+attempt `3abd3d33dfeb48e0bbd689c314418ed4`, instance
+`6f66d1d16a3d49fbbbfff96829dfcde4`, file channel. The original
+qualification record SHA-256 is
+`3222546e0497fae88139ad0cd6fbc20dff6223118cb1e494f0bba00e42020f01`;
+the complete 74-entry archive is
+[`dhcp-autonomy-02/e3`](../../reference/server-pt/evidence/dhcp-autonomy-02/e3/README.md).
+The first launch record was refused on a changing window title and retained;
+the same process incarnation was revalidated and recorded before contact.
+
+The single physical disabled `serverPool` read back the compiled one-user
+range `192.0.2.100-192.0.2.100`, `192.0.2.0/24`, gateway
+`192.0.2.1`, DNS `192.0.2.10`, capacity 1 and singleton exclusions for
+`.1` and `.10`. The repeated start, size, gateway, DNS, exclusions and final
+inventory measurements were each **SUPPORTED_IN_SAMPLE**. Each policy call
+was bracketed by complete process/pool/exclusion reads; no second named pool
+was created. This establishes stored disabled-server policy on this build,
+not serving, reapplication, renewal, or product capability. The run used 45
+operations and proved fixture restoration. The maintained retirement observed
+the owned PID exit; no save-prompt button was sent because a fresh document
+check had changed. Final process/mailbox/claim census was empty. Episode 3
+closed at 45 operations and 258.04685 seconds, cumulative 115 operations and
+910.882859 seconds.
+
+**Next discriminating question.** A fresh bounded `Q3-NATIVE-STABILITY`
+profile will first repeat the exact disabled native policy under the same
+complete guards. It will then reapply the compiled E5 static server-address
+action as a distinct product intervention and compare complete physical
+pool/process/exclusion inventories before and after. The expected result is
+the identical singleton `serverPool` policy, with no new pool or exclusion,
+and a disabled process. A retained `already_satisfied` product decision is
+recorded distinctly from a newly dispatched setter; a skipped action never
+proves the setter itself is idempotent. Unknown E5 outcome, changed policy,
+enabled process or missing inventory stops the episode. The profile will not
+activate clients or call `dhcpRun` or HTTP. Restart/reload persistence, actual
+serving and the maintained service/HTTP path remain separate subsequent
+questions; this episode does not promote the global DHCP catalog.
+
+The current E5 generator catches a JavaScript setter exception inside its
+fire-and-forget call. A positive reapplication interval establishes retained
+physical state, not that the native setter succeeded or is idempotent. The
+record retains the product action row as reported and carries that explicit
+limitation; neither an `APPLIED` label nor an unchanged post-read removes it.
+
+E5's endpoint runtime reports a boolean batch result while the counted
+transport retains the separate dispatch fact. A `False` or exception after a
+queued command may leave the effect unknown even if the product action row
+says `FAILED`. The stability coordinator will inspect only the counted
+operations of this E5 intervention; any `ACCEPTANCE_UNKNOWN` makes the
+measurement `INCONCLUSIVE` with `outcome_unknown=True`. A later readback
+cannot turn earlier dispatch into known acceptance.
+
+The stability profile will reuse the compiled E5 action, application result,
+campaign ledger, counted file transport and owned fixture finalizer. It adds
+one full policy read before and after reapplication and an exact interval
+assessment. RED tests cover a repeated no-op, regeneration, overlap, throw,
+unknown dispatch, and the unchanged positive control. The risk remains L.
+Its finite operation/time allocation and reserve are computed before LIVE,
+followed by focused/affected verification and independent pre-LIVE review.

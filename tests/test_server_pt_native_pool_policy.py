@@ -66,6 +66,383 @@ def test_policy_profile_requires_size_before_gateway_dns_and_exclusions() -> Non
     assert step_selection_refusals(definition, ["NATIVE-policy"])
 
 
+def test_stability_profile_requires_exact_policy_before_e5_reapplication() -> None:
+    """The reapplication effect belongs after all policy measurements."""
+    definition = stage_definition("Q3-NATIVE-STABILITY")
+    assert definition is not None
+    assert definition.step_ids == (
+        "NATIVE-size",
+        "NATIVE-policy",
+        "NATIVE-stability",
+    )
+    assert (definition.profile_id, definition.profile_version) == (
+        "Q3-NATIVE-STABILITY",
+        "1",
+    )
+    assert definition.budget.max_operations == 180
+    assert definition.budget.max_seconds == 1050
+    assert definition.budget.reserve_seconds == 300
+    assert step_selection_refusals(definition, definition.step_ids) == []
+    assert step_selection_refusals(definition, ["NATIVE-stability"])
+
+
+def test_stability_reapplies_product_e5_and_retains_exact_policy(tmp_path) -> None:
+    """The complete native inventory is read through the real coordinator."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+    )
+
+    class RetainingReapplicationTransport(NodeEngineTransport):
+        exclusions = 0
+
+        def dispatch_and_wait(self, js_code, timeout):
+            outcome = super().dispatch_and_wait(js_code, timeout)
+            if 'step:"dhcp_native_exclusion_probe"' in js_code:
+                self.exclusions += 1
+                if self.exclusions == 2:
+                    self.engine.configure(default_pool_realigns_on_address=False)
+            return outcome
+
+    try:
+        transport = RetainingReapplicationTransport(engine)
+        definition = stage_definition("Q3-NATIVE-STABILITY")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-STABILITY")
+                + authorization_args("Q3-NATIVE-STABILITY")
+            ),
+            simulated_boundaries(tmp_path, transport),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.COMPLETED, (
+            result.record.primary_failure if result.record else result.refusals
+        )
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        assert (
+            measured["M-NATIVE-STABILITY"].conclusion
+            is MeasurementConclusion.SUPPORTED_IN_SAMPLE
+        )
+        before = measured["M-NATIVE-STABILITY"].facts["before"]
+        after = measured["M-NATIVE-STABILITY"].facts["after"]
+        assert before == after
+        assert after["pools"][0]["start"] == "192.0.2.100"
+        assert after["pools"][0]["gateway"] == "192.0.2.1"
+        assert after["pools"][0]["dns"] == "192.0.2.10"
+        assert after["excluded_count"] == 2
+        assert (
+            measured["M-NATIVE-STABILITY"].facts["product_action_results"][0]["status"]
+            == "applied"
+        )
+        assert measured["M-NATIVE-STABILITY"].facts["unknown_dispatch_seqs"] == []
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_stability_detects_e5_reapplication_regenerating_native_range(tmp_path) -> None:
+    """A real repeated E5 setter can reset start/end despite a correct pre-read."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+    )
+    try:
+        definition = stage_definition("Q3-NATIVE-STABILITY")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-STABILITY")
+                + authorization_args("Q3-NATIVE-STABILITY")
+            ),
+            simulated_boundaries(tmp_path, NodeEngineTransport(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        assert (
+            measured["M-NATIVE-STABILITY"].conclusion
+            is MeasurementConclusion.CONTRADICTED
+        )
+        before = measured["M-NATIVE-STABILITY"].facts["before"]
+        after = measured["M-NATIVE-STABILITY"].facts["after"]
+        assert before["pools"][0]["start"] == "192.0.2.100"
+        assert after["pools"][0]["start"] == "192.0.2.0"
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_stability_does_not_support_lost_post_read_and_keeps_terminal(tmp_path) -> None:
+    """A lost policy read cannot establish preservation after product E5."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+    )
+
+    class LostPostReadTransport(NodeEngineTransport):
+        static_sends = 0
+        lose_policy = False
+
+        def send(self, js_code):
+            if "configurePcIp(" in js_code:
+                self.static_sends += 1
+                if self.static_sends == 2:
+                    self.lose_policy = True
+            return super().send(js_code)
+
+        def dispatch_and_wait(self, js_code, timeout):
+            outcome = super().dispatch_and_wait(js_code, timeout)
+            if self.lose_policy and 'step:"dhcp_server_policy"' in js_code:
+                self.lose_policy = False
+                return BridgeDispatchOutcome(
+                    dispatch=DispatchFact.ACCEPTANCE_UNKNOWN,
+                    result=ResultFact.NOT_OBSERVED,
+                    detail="post_reapplication_policy_read_lost",
+                )
+            return outcome
+
+    try:
+        transport = LostPostReadTransport(engine)
+        definition = stage_definition("Q3-NATIVE-STABILITY")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-STABILITY")
+                + authorization_args("Q3-NATIVE-STABILITY")
+            ),
+            simulated_boundaries(tmp_path, transport),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        stability = measured["M-NATIVE-STABILITY"]
+        assert stability.conclusion is MeasurementConclusion.INCONCLUSIVE, (
+            stability.causes,
+            stability.facts["product_action_results"],
+        )
+        assert stability.outcome_unknown is False
+        assert stability.causes[0].startswith("native_policy_after_unobserved:")
+        assert measured["M-NATIVE-FINAL"].status.value == "ran"
+        assert transport.static_sends == 2
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_stability_marks_queued_e5_with_lost_ack_unknown(tmp_path) -> None:
+    """The counted E5 dispatch fact overrides a misleading failed batch row."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+    )
+
+    class LostE5AckTransport(NodeEngineTransport):
+        static_sends = 0
+
+        def send(self, js_code):
+            if "configurePcIp(" in js_code:
+                self.static_sends += 1
+                if self.static_sends == 2:
+                    super().send(js_code)
+                    return False
+            return super().send(js_code)
+
+    try:
+        transport = LostE5AckTransport(engine)
+        definition = stage_definition("Q3-NATIVE-STABILITY")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-STABILITY")
+                + authorization_args("Q3-NATIVE-STABILITY")
+            ),
+            simulated_boundaries(tmp_path, transport),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        stability = measured["M-NATIVE-STABILITY"]
+        assert stability.conclusion is MeasurementConclusion.INCONCLUSIVE
+        assert stability.outcome_unknown is True
+        assert stability.causes == ["outcome_unknown:q3_native_stability_e5_dispatch"]
+        assert len(stability.facts["unknown_dispatch_seqs"]) == 1
+        assert measured["M-NATIVE-FINAL"].status.value == "ran"
+        assert transport.static_sends == 2
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_stability_refuses_extra_pool_coupled_to_second_e5(tmp_path) -> None:
+    """A readable overlapping physical pool breaks the singleton contract."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+    )
+
+    class ExtraPoolTransport(NodeEngineTransport):
+        static_sends = 0
+
+        def send(self, js_code):
+            if "configurePcIp(" in js_code:
+                self.static_sends += 1
+                if self.static_sends == 2:
+                    accepted = super().send(js_code)
+                    self.engine.queue(
+                        'var d=ipc.network().getDevice("__MCP_E6Q_SRV");'
+                        'd.getProcess("DhcpServerMain")'
+                        '.getDhcpServerProcessByPortName("FastEthernet0")'
+                        '.addPool("overlappingPool");'
+                    )
+                    return accepted
+            return super().send(js_code)
+
+    try:
+        transport = ExtraPoolTransport(engine)
+        definition = stage_definition("Q3-NATIVE-STABILITY")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-STABILITY")
+                + authorization_args("Q3-NATIVE-STABILITY")
+            ),
+            simulated_boundaries(tmp_path, transport),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        stability = measured["M-NATIVE-STABILITY"]
+        assert stability.conclusion is MeasurementConclusion.CONTRADICTED
+        assert stability.facts["after"]["pool_count"] == 2
+        assert measured["M-NATIVE-FINAL"].status.value == "ran"
+        assert transport.static_sends == 2
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_stability_refuses_second_e5_transport_exception(tmp_path) -> None:
+    """An exception at dispatch leaves E5 acceptance unknown and stops."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+    )
+
+    class ThrowingE5Transport(NodeEngineTransport):
+        static_sends = 0
+
+        def send(self, js_code):
+            if "configurePcIp(" in js_code:
+                self.static_sends += 1
+                if self.static_sends == 2:
+                    raise TimeoutError("second_e5_dispatch_failed")
+            return super().send(js_code)
+
+    try:
+        transport = ThrowingE5Transport(engine)
+        definition = stage_definition("Q3-NATIVE-STABILITY")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-STABILITY")
+                + authorization_args("Q3-NATIVE-STABILITY")
+            ),
+            simulated_boundaries(tmp_path, transport),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        stability = measured["M-NATIVE-STABILITY"]
+        assert stability.conclusion is MeasurementConclusion.INCONCLUSIVE
+        assert stability.outcome_unknown is True
+        assert stability.facts["before"] == stability.facts["after"]
+        assert measured["M-NATIVE-FINAL"].status.value == "ran"
+        assert transport.static_sends == 2
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_stability_classifies_incomplete_exclusion_count_as_unknown(tmp_path) -> None:
+    """A mismatched count/list is unreadable, not a proved physical change."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+    )
+
+    class CountMismatchTransport(NodeEngineTransport):
+        static_sends = 0
+        tampered = False
+
+        def send(self, js_code):
+            if "configurePcIp(" in js_code:
+                self.static_sends += 1
+            return super().send(js_code)
+
+        def dispatch_and_wait(self, js_code, timeout):
+            outcome = super().dispatch_and_wait(js_code, timeout)
+            if (
+                self.static_sends == 2
+                and not self.tampered
+                and 'step:"dhcp_server_policy"' in js_code
+                and outcome.result is ResultFact.CORRELATED
+            ):
+                self.tampered = True
+                body = json.loads(outcome.body)
+                body["excluded_count"] = 3
+                return replace(outcome, body=json.dumps(body))
+            return outcome
+
+    try:
+        definition = stage_definition("Q3-NATIVE-STABILITY")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-STABILITY")
+                + authorization_args("Q3-NATIVE-STABILITY")
+            ),
+            simulated_boundaries(tmp_path, CountMismatchTransport(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        stability = measured["M-NATIVE-STABILITY"]
+        assert stability.conclusion is MeasurementConclusion.INCONCLUSIVE
+        assert stability.causes == ["native_policy_after_exclusions_incomplete"]
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
 def test_policy_stage_applies_each_compiled_field_through_governed_runtime(
     tmp_path,
 ) -> None:
