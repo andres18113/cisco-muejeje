@@ -438,6 +438,7 @@ def _archive_qualification(tmp_path: Path, **status) -> None:
             {
                 "outcome": "completed",
                 "effects_dispatched": True,
+                "workspace_baseline_observed": True,
                 "workspace_baseline_empty": True,
                 "restoration_proven": True,
             },
@@ -448,6 +449,7 @@ def _archive_qualification(tmp_path: Path, **status) -> None:
             {
                 "outcome": "stopped",
                 "effects_dispatched": True,
+                "workspace_baseline_observed": True,
                 "workspace_baseline_empty": True,
                 "restoration_proven": False,
             },
@@ -520,6 +522,7 @@ def test_a_qualification_whose_baseline_was_not_empty_establishes_no_basis(
         tmp_path,
         outcome="stopped",
         effects_dispatched=True,
+        workspace_baseline_observed=True,
         workspace_baseline_empty=False,
         restoration_proven=False,
     )
@@ -548,6 +551,64 @@ def test_a_refusal_after_a_foreign_baseline_establishes_no_basis(
     assert system.posted == []
 
 
+@pytest.mark.parametrize(
+    "status",
+    [
+        {
+            "outcome": "refused",
+            "effects_dispatched": None,
+            "workspace_baseline_observed": True,
+            "workspace_baseline_empty": False,
+            "restoration_proven": False,
+        },
+        {
+            "outcome": "completed",
+            "effects_dispatched": True,
+            "workspace_baseline_empty": True,
+            "restoration_proven": True,
+        },
+        {
+            "outcome": "completed",
+            "effects_dispatched": "yes",
+            "workspace_baseline_observed": True,
+            "workspace_baseline_empty": True,
+            "restoration_proven": True,
+        },
+        {
+            "outcome": "invented",
+            "effects_dispatched": True,
+            "workspace_baseline_observed": True,
+            "workspace_baseline_empty": True,
+            "restoration_proven": True,
+        },
+        {
+            "outcome": "interrupted",
+            "effects_dispatched": None,
+            "workspace_baseline_observed": None,
+            "workspace_baseline_empty": None,
+            "restoration_proven": False,
+        },
+    ],
+    ids=[
+        "refused-with-unknown-effects",
+        "baseline-observation-missing",
+        "effects-not-boolean",
+        "unknown-outcome",
+        "interrupted-without-unsettled-admission",
+    ],
+)
+def test_an_incoherent_qualification_status_establishes_no_basis(
+    launched, capsys, tmp_path: Path, status
+):
+    """Only a coherent status can be a basis; nothing is closed on doubt."""
+    cli, env, base, system = launched
+    _archive_qualification(tmp_path, **status)
+    code, refused = _run(cli, ["--retire", *base], env, capsys)
+    assert code == 2, refused
+    assert refused["reason"].startswith("retirement_unestablished")
+    assert system.posted == []
+
+
 def test_the_dhcp_campaign_never_forces_a_laboratory_that_does_not_exit(
     launched, capsys, tmp_path: Path
 ):
@@ -557,6 +618,7 @@ def test_the_dhcp_campaign_never_forces_a_laboratory_that_does_not_exit(
         tmp_path,
         outcome="completed",
         effects_dispatched=True,
+        workspace_baseline_observed=True,
         workspace_baseline_empty=True,
         restoration_proven=True,
     )

@@ -472,6 +472,18 @@ def qualification_admitted(
     )
 
 
+def qualification_settled(
+    records: Mapping[str, Mapping[str, object]], attempt_id: str
+) -> bool:
+    """Whether any episode recorded a qualification result for this attempt."""
+    return any(
+        value.get("kind") == "phase_result"
+        and value.get("phase") == "qualification"
+        and value.get("attempt_id") == attempt_id
+        for value in records.values()
+    )
+
+
 def episode_attempts(
     records: Mapping[str, Mapping[str, object]], episode: int
 ) -> Sequence[str]:

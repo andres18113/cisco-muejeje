@@ -62,6 +62,7 @@ from ...application.use_cases.server_pt_campaign_ledger import (
     ledger_totals,
     opening_findings,
     qualification_admitted,
+    qualification_settled,
     unsettled_phases,
 )
 from ...application.use_cases.server_pt_historical_exit import (
@@ -978,6 +979,10 @@ def _retirement_basis(
     return "exited_dirty", "empty_baseline_then_campaign_effects"
 
 
+#: The outcomes a completed qualification use case archives.
+_QUALIFICATION_OUTCOMES = frozenset({"completed", "stopped", "refused"})
+
+
 def _qualification_basis(
     store: ServerPtCommissioningStore, attempt_id: str
 ) -> tuple[str, str] | None:
@@ -1000,11 +1005,34 @@ def _qualification_basis(
     store.require_immutable_phase(
         attempt_id, "qualification", str(status.get("outcome"))
     )
+    outcome = status.get("outcome")
     effects = status.get("effects_dispatched")
-    if status.get("outcome") == "interrupted" or effects is None:
-        # Effects of unknown state: the ownership still rests on the blank
-        # launch, which `--retire` rechecks, and the disposition says so.
+    if outcome == "interrupted":
+        # Effects of unknown state. The ownership still rests on the blank
+        # launch, which `--retire` rechecks, and only if the ledger agrees
+        # that no result was ever recorded for this qualification.
+        records = store.ledger_records()
+        if (
+            effects is not None
+            or status.get("restoration_proven") is not False
+            or not qualification_admitted(records, attempt_id)
+            or qualification_settled(records, attempt_id)
+        ):
+            raise ValueError("interrupted qualification status is incoherent")
         return "exited_interrupted", "blank_launch_then_interrupted_qualification"
+    # Every other status is a completed use-case result: its outcome is one
+    # the use case returns and each fact it carries is an actual boolean.
+    # Anything else is not evidence of a disposable workspace.
+    facts = (
+        effects,
+        status.get("workspace_baseline_observed"),
+        status.get("workspace_baseline_empty"),
+        status.get("restoration_proven"),
+    )
+    if outcome not in _QUALIFICATION_OUTCOMES or any(
+        not isinstance(item, bool) for item in facts
+    ):
+        raise ValueError("qualification status is incoherent")
     if effects is False:
         # Nothing was dispatched, but a baseline this run observed must
         # still have been the empty disposable one: a blank launch that
