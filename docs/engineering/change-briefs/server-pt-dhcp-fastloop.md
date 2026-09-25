@@ -444,7 +444,7 @@ requirement-to-test and measurement map.
 | Production code after it | `41802ca` alone. M-DHCP-6 now keeps the whole labelled client reading series as `client_readings`, and `test_every_client_reading_is_retained_with_its_label` protects it. No decision changed |
 | Tests added at stabilization | `20b7b2e` (DF12) and `3dfd493` (DF14): test code and the Node stub only |
 | Evidence commits | `eea238e` (episode 1 and its archive) and `651b8c7` (shorter archive paths, every byte unchanged) |
-| Delivery | the commit that adds this section. A commit cannot name itself, so its SHA and its exact-SHA CI are reported with the delivery |
+| Delivery | the last commit of this stabilization, which changes documentation only after `c60116e`. A commit cannot name itself, so its SHA and its exact-SHA CI are reported with the delivery |
 
 **What episode 1's record lacks.** The record predates `41802ca`. Its two
 background readings, at offsets 67.4 s and 78.4 s, survive only as correlated
