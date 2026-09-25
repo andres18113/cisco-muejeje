@@ -378,7 +378,7 @@ channel. Nothing here is a product capability.
 | M-DHCP-5 | measured, SUPPORTED_IN_SAMPLE | `isDhcpClientOn` returned boolean false before activation and true after it, and forwarding was admitted before any client activity | that activation is inert: see M-DHCP-6 |
 | M-DHCP-2 | measured, INCONCLUSIVE | `getLeaseAt` never returned null. It threw `invalid vector subscript` at exactly the row count and at every later index, in all 12 scans: intended pool 0 rows; `serverPool` 0 rows, then 2 rows. Rows are objects whose `ipAddress`, `macAddress` and `port` are strings and whose `leaseTime` is the number 86,400,000 | end-of-table by throw is not admitted by the conservative rule (a getter failure is not automatically an end); no full state and no one-row state of the intended pool was ever reached |
 | M-DHCP-3 | omitted | the approved event deferral stands; no observer was registered | — |
-| M-DHCP-6 | measured, SUPPORTED_IN_SAMPLE for separation | Both clients were served by the **native default**. Each has an exact IP/MAC row in `serverPool` and no row in the intended pool, and the product read-backs are CONTRADICTED `address_outside_intended_allocation`. Each typed request was a known dispatch (`attempted=true`, correlated, no call error) | **causal acquisition by `dhcpRun`: not established.** Both clients already held their addresses before their request, acquired autonomously within about 14 s of the enable; the scans before the request were throw-terminated, so no prior absence was calibrated. Intended-pool attribution: not reached |
+| M-DHCP-6 | measured, SUPPORTED_IN_SAMPLE for separation | Both clients were served by the **native default**. Each has an exact IP/MAC row in `serverPool` and no row in the intended pool, and the product read-backs are CONTRADICTED `address_outside_intended_allocation`. Each typed request was a known dispatch (`attempted=true`, correlated, no call error) | **causal acquisition by `dhcpRun`: not established.** Both clients already held their addresses before their own request. PC1's reading at 79.1 s, about 14 s after the enable at 65.0 s, shows its address; its prior scan was throw-terminated at zero rows, so no prior absence was calibrated. PC2's row first appears in the scan at 99.5 s, after PC1's request and before PC2's own at 102.6 s, so its acquisition is bounded only between 65.0 s and 99.5 s. Intended-pool attribution: not reached |
 | M-DHCP-6-CAP | measured, INCONCLUSIVE | the second client was served by the native default | `lease_not_acquired` from the intended pool: the one-user pool was never filled by the first client, and absence is uncalibrated |
 | M-DHCP-6-REPEAT | measured, SUPPORTED_IN_SAMPLE | The identical replay reported `own_claim_replayed`, correlated, with no call error. The claim script calls `dhcpRun` only on its no-claim path, so no second `dhcpRun` was sent, and the address and lease text were unchanged afterwards | anything about renewal |
 | M-DHCP-6-TIME | measured, INCONCLUSIVE | Two timed readings 15 s apart and three horizon readings over 60 s all showed the same address and "1 days 0:0:0" | natural renewal: a 1-day lease renews at about 12 h, far beyond the declared horizon; nothing was manipulated |
@@ -451,6 +451,14 @@ background readings, at offsets 67.4 s and 78.4 s, survive only as correlated
 operation rows (`seq` 82 and 83), not as content. PC1's pre-request reading at
 79.1 s is in the record, under M-DHCP-6's attribution, and it is the basis of
 the autonomous-acquisition finding. Nothing reconstructs the missing content.
+
+**Independent review.** A Codex adversarial review of `5df8d05..c60116e`
+reproduced one finding from the archived record. Version 3 said both clients
+acquired within about 14 s of the enable, but that bound holds only for PC1.
+PC2's first persisted evidence is its row in the scan at 99.5 s. The M-DHCP-6
+row above and the services brief now state each client's own bound. The
+record is unchanged. The review reported no other finding about the code, the
+stub, the regressions or this section.
 
 **Evidence integrity.** All 41 archived files match `MANIFEST.sha256`, and the
 archived file set is exactly the manifest's. Each file is byte-identical to its
