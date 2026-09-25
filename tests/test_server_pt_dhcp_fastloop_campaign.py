@@ -654,6 +654,41 @@ def test_an_interrupted_status_whose_admission_was_settled_is_refused(
     assert system.posted == []
 
 
+def test_a_settled_qualification_without_a_status_is_refused(
+    launched, capsys, tmp_path: Path
+):
+    """A crash between the ledger result and the status write proves nothing."""
+    cli, env, base, system = launched
+    store = _store(tmp_path)
+    store.save_ledger_record(episode_name(1) + "-opening", _opening())
+    for kind, extra in (
+        (
+            "admission",
+            {
+                "granted_operations": 440,
+                "granted_seconds": 1500.0,
+                "admitted_at_utc": (OPENED + timedelta(seconds=5)).isoformat(),
+            },
+        ),
+        ("result", {"used_operations": 57, "active_seconds": 200.0}),
+    ):
+        store.save_ledger_record(
+            phase_record_name(1, ATTEMPT, "qualification", kind),
+            {
+                "kind": "phase_" + kind,
+                "episode": 1,
+                "attempt_id": ATTEMPT,
+                "phase": "qualification",
+                **extra,
+            },
+        )
+    store.refresh_index()
+    code, refused = _run(cli, ["--retire", *base], env, capsys)
+    assert code == 2, refused
+    assert refused["reason"].startswith("retirement_unestablished")
+    assert system.posted == []
+
+
 def test_the_dhcp_campaign_never_forces_a_laboratory_that_does_not_exit(
     launched, capsys, tmp_path: Path
 ):

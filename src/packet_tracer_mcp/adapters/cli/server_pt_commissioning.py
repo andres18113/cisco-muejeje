@@ -999,7 +999,13 @@ def _qualification_basis(
     try:
         status = store.load_phase_status(attempt_id, "qualification")
     except (OSError, ValueError):
-        if qualification_admitted(store.ledger_records(), attempt_id):
+        records = store.ledger_records()
+        if qualification_settled(records, attempt_id):
+            # A recorded result with no archived status is a crash between
+            # the two writes: the run was not interrupted, and nothing that
+            # survived says its workspace stayed disposable.
+            raise ValueError("settled qualification has no archived status") from None
+        if qualification_admitted(records, attempt_id):
             return "exited_interrupted", "blank_launch_then_interrupted_qualification"
         return None
     store.require_immutable_phase(
