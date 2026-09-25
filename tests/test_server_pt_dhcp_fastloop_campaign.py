@@ -609,6 +609,51 @@ def test_an_incoherent_qualification_status_establishes_no_basis(
     assert system.posted == []
 
 
+def test_an_interrupted_status_whose_admission_was_settled_is_refused(
+    launched, capsys, tmp_path: Path
+):
+    """A recorded result contradicts "interrupted": no basis, nothing closed."""
+    cli, env, base, system = launched
+    store = _store(tmp_path)
+    store.save_ledger_record(episode_name(1) + "-opening", _opening())
+    store.save_ledger_record(
+        phase_record_name(1, ATTEMPT, "qualification", "admission"),
+        {
+            "kind": "phase_admission",
+            "episode": 1,
+            "attempt_id": ATTEMPT,
+            "phase": "qualification",
+            "granted_operations": 440,
+            "granted_seconds": 1500.0,
+            "admitted_at_utc": (OPENED + timedelta(seconds=5)).isoformat(),
+        },
+    )
+    store.save_ledger_record(
+        phase_record_name(1, ATTEMPT, "qualification", "result"),
+        {
+            "kind": "phase_result",
+            "episode": 1,
+            "attempt_id": ATTEMPT,
+            "phase": "qualification",
+            "used_operations": 57,
+            "active_seconds": 200.0,
+        },
+    )
+    store.refresh_index()
+    _archive_qualification(
+        tmp_path,
+        outcome="interrupted",
+        effects_dispatched=None,
+        workspace_baseline_observed=None,
+        workspace_baseline_empty=None,
+        restoration_proven=False,
+    )
+    code, refused = _run(cli, ["--retire", *base], env, capsys)
+    assert code == 2, refused
+    assert refused["reason"].startswith("retirement_unestablished")
+    assert system.posted == []
+
+
 def test_the_dhcp_campaign_never_forces_a_laboratory_that_does_not_exit(
     launched, capsys, tmp_path: Path
 ):
