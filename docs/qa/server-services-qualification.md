@@ -2,9 +2,10 @@
 
 This page is the operator-facing template for staged Packet Tracer
 qualification. It holds **no authorization by itself**. Historical Q0/Q1
-records remain archived and attributed to their executed SHA; this revision
-makes Q3 executable offline but contains no Q3 LIVE result and promotes no
-capability.
+records remain archived and attributed to their executed SHA. This page holds
+no LIVE result and promotes no capability. Q3's three consumed attempts are
+recorded in the Server-PT services brief, and Q3-FL-C1 episode 1 in the
+[DHCP fast-loop brief](../engineering/change-briefs/server-pt-dhcp-fastloop.md).
 
 The design, contracts and oracles are in section 12 of the
 [Server-PT services brief](../engineering/change-briefs/server-pt-services.md).

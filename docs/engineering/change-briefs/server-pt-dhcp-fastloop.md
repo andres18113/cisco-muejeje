@@ -431,3 +431,73 @@ Nothing below is applied. Every catalog record stays UNKNOWN.
 | `PC-PT:acquire_dhcp_lease` (typed `dhcpRun` under a claim) | keep UNKNOWN. Execute-once and replay refusal are demonstrated; the effect is not attributable | M-DHCP-6, M-DHCP-6-REPEAT |
 | `PC-PT:dhcp_lease` read-back and `Server-PT:dhcp_lease_attributed` | keep UNKNOWN. Intended-pool attribution is unreachable while the native default serves the subnet | M-DHCP-6 |
 | DHCP service as a product prerequisite for dependent services | NOT SUPPORTED on this design and build, pending a product decision about the native default | M-DHCP-6, M-DHCP-6-CAP |
+
+## Stabilization and traceability, version 4
+
+The measurements, the projection and the proposals of version 3 stand
+unchanged. This section records what stabilization established and adds the
+requirement-to-test and measurement map.
+
+| Identity | Value |
+| --- | --- |
+| Executed checkpoint | `5df8d05ec89b9bb5042e1dd2a040c0eaad9890e8` (tree `3f1bc384c8bfe5b755839eba67e5b1b4dcddf603`), the only code any LIVE episode ran |
+| Production code after it | `41802ca` alone. M-DHCP-6 now keeps the whole labelled client reading series as `client_readings`, and `test_every_client_reading_is_retained_with_its_label` protects it. No decision changed |
+| Tests added at stabilization | `20b7b2e` (DF12) and `3dfd493` (DF14): test code and the Node stub only |
+| Evidence commits | `eea238e` (episode 1 and its archive) and `651b8c7` (shorter archive paths, every byte unchanged) |
+| Delivery | the commit that adds this section. A commit cannot name itself, so its SHA and its exact-SHA CI are reported with the delivery |
+
+**What episode 1's record lacks.** The record predates `41802ca`. Its two
+background readings, at offsets 67.4 s and 78.4 s, survive only as correlated
+operation rows (`seq` 82 and 83), not as content. PC1's pre-request reading at
+79.1 s is in the record, under M-DHCP-6's attribution, and it is the basis of
+the autonomous-acquisition finding. Nothing reconstructs the missing content.
+
+**Evidence integrity.** All 41 archived files match `MANIFEST.sha256`, and the
+archived file set is exactly the manifest's. Each file is byte-identical to its
+gitignored source: 24 lead files under
+`pt-q-evidence/dhcp-fastloop-01/episode-0001/`, 16 store files under
+`data/commissioning/SERVER-PT-DHCP-FASTLOOP-01/` and the qualification record
+under `data/services/qualification/q3-fl-c1/`. A read-only `--ledger-status`
+reports 123 operations and 28,059.3 s committed, no open episode and
+−7,059.3 s of ordinary time left.
+
+**Two acceptance criteria had no test.** Tracing DF1 to DF16 found them. Both
+are now regressions through the real coordinator and the Node stub, and each
+was proven causally RED. Every mutation was restored, and the tree was
+byte-identical afterwards. No production code changed.
+
+- DF12, *a changed lease string is not renewal.* The stub can return lease text
+  that moves on every read. The unchanged and the changed case both stay
+  INCONCLUSIVE, each with its own named cause, and no renewal is requested.
+  Blinding the change detector, or concluding renewal on changed text, turns
+  the changed case RED.
+- DF14, *a persistence failure ends further experimental effects.* Each of the
+  four Q3-FL boundaries that announce an effect (server address, client mode,
+  E6 server and acquisition) loses its write in turn. The stub's own counters
+  show that the announced effect and every later one were never applied, and
+  that no `dhcpRun` was sent. The terminal reading and owned finalization
+  still ran. Making one boundary ignore its lost write turns exactly that case
+  RED.
+
+**Requirement-to-test and measurement map.** Test files are under `tests/`;
+"coordinator" is `test_q3_fastloop_coordinator.py`. Measurements are episode
+1's.
+
+| ID | Tests | LIVE measurement or evidence |
+| --- | --- | --- |
+| DF1 | `test_server_pt_dhcp_fastloop_campaign.py`: selection by identity and charter, per-charter ledger ceilings, another campaign's charter refused, an episode opened under its own campaign | ledger opening and closing records |
+| DF2 | the same file: phase admitted at its checkpoint, protected tail never drawn, an unsettled phase charged at its grant, an admission naming only its attempt; `test_q3_fastloop_campaign_cli.py`: admit, settle and archive, an interrupted run stays charged | qualification admission and result: 123 operations, 220.4 s |
+| DF3 | `test_q3_fastloop_campaign_cli.py`: an unpublished HEAD refused without authority, an authority for anything else waives nothing, every campaign fact refused before contact, stage and campaign mismatches refused | episode 1 ran at unpublished `5df8d05` under campaign authority |
+| DF4 | the same file: another incarnation at the launched PID refused, every campaign fact refused before contact | `process-launch.json`, PID 47680 |
+| DF5 | `test_server_pt_dhcp_fastloop_campaign.py`: the retirement-basis matrix and never forcing | the refused retirement attempt, `forced_retirement_not_authorized_by_campaign` |
+| DF6 | `test_q3_fastloop_profile.py`, all six | stage `Q3-FL-C1`, ceiling 440 |
+| DF7 | `test_dhcp_native_default_sequence.py`, all eight; coordinator: realignment then stability, an unreviewed movement stops, unchanged admitted, `serverPool` never written | M-DHCP-1, M-DHCP-1-FINAL |
+| DF8 | `test_service_access_readiness_dhcp.py`, all three; coordinator: the forwarding worst case is the gate's cap, a refused group blocks exactly its dependent | FWD after 11 samples and 47 calls |
+| DF9 | `test_dhcp_lease_evidence.py`: scan termination and calibration; coordinator: C2 discriminates one row from full | M-DHCP-2, INCONCLUSIVE |
+| DF10 | `test_dhcp_lease_evidence.py`: exact text, calibrated absence, causality, native-default service, ambiguity, the wrong-MAC row; coordinator: C1 claim separation, activation before the enable, every reading retained | M-DHCP-4, M-DHCP-5, M-DHCP-6 |
+| DF11 | `test_dhcp_lease_evidence.py`: the capacity-one negative cases; coordinator: an unfilled pool decides no negative | M-DHCP-6-CAP, INCONCLUSIVE |
+| DF12 | coordinator: `test_a_changed_lease_string_is_never_a_renewal`, C1 timing, declared omissions; `test_q3_fastloop_profile.py`: declared omissions | M-DHCP-6-TIME, INCONCLUSIVE; M-DHCP-6-RENEW, omitted |
+| DF13 | coordinator: C1 (one `dhcpRun` per client), a repeat that dispatches again is CONTRADICTED | M-DHCP-6-REPEAT |
+| DF14 | coordinator: an unknown acquisition outcome stops later effects, an unreviewed movement stops, `test_an_unannounced_effect_is_never_applied_and_finalization_still_runs`; `test_service_qualification_coordinator.py`: persistence loss before and after an effect | no stop in episode 1; the terminal reading and finalization ran and restoration was proven |
+| DF15 | `test_dhcp_lease_evidence.py::test_attribution_is_linear_in_clients_and_rows` and `test_service_access_readiness_dhcp.py::test_one_group_serves_every_client_of_a_switch_and_vlan`, each at 2, 20, 200 and 1000 clients | offline only; two clients ran natively |
+| DF16 | `test_q3_fastloop_campaign_cli.py`: a campaign run archives its phase; `test_dhcp_native_default_lifecycle.py::test_product_dhcp_capabilities_remain_unknown` | the `dhcp-fl-01/` archive of 41 files; no catalog or capability file changed since `2a44b38` |
