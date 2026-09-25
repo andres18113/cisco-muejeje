@@ -36,6 +36,8 @@ qualify anything.
 | Q3 | executable; file channel only on build 9.0.1.0858 | Server-PT `192.0.2.10/24`, two DHCP PC-PT clients, 2960-24TT on exact Fa0/1..3 links | 60 / 1200 s | 59 (17 setup + 31 measurement/application + 11 reserve) | M-DHCP-1, 2, 4, 5, 6; one-address pool `MCP_E6Q_DHCP`; guarded acquisitions (M-DHCP-3 omitted: the event source and its release are not qualified) |
 | D-DHCP | executable diagnostic; file channel only on build 9.0.1.0858 | the Q3 fixture, with no client ever activated | 50 / 900 s | 45 (17 setup + 17 measurement + 11 reserve) | M-DDHCP-0..4: the disabled baseline with its drift control, the server's static addressing alone, the intended pool while still disabled, the enable, the pre-cleanup reading |
 | D-WEB | executable diagnostic; file channel only on build 9.0.1.0858 | the Q1 fixture, statically addressed | 80 / 900 s | 74 (19 setup + 45 measurement + 10 reserve) | M-DWEB-0..5: the listener and endpoint boundaries, the per-VLAN forwarding state of the exact switch ports, the marked page, one attributed ping, one instrumented fetch, the same boundaries again |
+| Q3-FL-C1 | executable only under campaign `SERVER-PT-DHCP-FASTLOOP-01`; file channel, build 9.0.1.0858 | the Q3 fixture | 440 / 1500 s | 439 (17 setup + 411 measurement + 11 reserve; 362 of it is the gate's two capped forwarding episodes) | M-DHCP-1, 2, 4, 5, 6, 6-CAP, 6-REPEAT, 6-TIME, 1-FINAL on a one-user intended pool (M-DHCP-3 and 6-RENEW omitted with their reasons) |
+| Q3-FL-C2 | as Q3-FL-C1 | the Q3 fixture | 440 / 1500 s | 439 | the same on a two-user intended pool, so one row and a full table differ (6-CAP omitted: it needs a one-user pool) |
 
 The two `D-` stages are **diagnostics**: each asks an open question and
 measures a boundary or a transition. What they observe confirms no product
@@ -54,6 +56,20 @@ case is 56 with the 10-operation finalization reserve intact: the readiness
 gate's four aggregate reads are charged to the trace rather than to unlogged
 preparation. It authorizes no LIVE run, and it changes neither Q0's 20 / 300
 nor declarative Q2. The runner never raises a ceiling by itself.
+
+The two `Q3-FL` stages are the versioned experimental Q3 profile of the
+[DHCP fast-loop brief](../engineering/change-briefs/server-pt-dhcp-fastloop.md).
+They are not a renewal of Q3's 60 / 1200 bound or of its three consumed
+attempts. They run only through the qualification CLI's campaign composition:
+`--campaign dhcp-fastloop --charter <work order> --episode <n>`, with the
+attempt's `--record-launch` record, an open ledger episode at the exact
+checkpoint, and the full diagnostic identity (profile `Q3-FL` version 1, tree,
+models, links, steps, reserve, process, instance token and attempt). Without
+the campaign the CLI refuses them (`stage_requires_its_campaign`). The campaign
+waives exactly one rule, publication of the executed HEAD, for exactly that
+attempt. Its record is archived in the campaign store by digest, and
+retirement goes through `server_pt_commissioning --campaign dhcp-fastloop
+--retire`, which never forces.
 
 ## Readiness before any network attempt
 
