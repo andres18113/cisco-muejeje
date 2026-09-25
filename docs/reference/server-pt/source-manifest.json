@@ -268,16 +268,16 @@
     },
     {
       "source_name": "MANIFEST.sha256",
-      "archive_path": "evidence/campaign-dhcp-fastloop-01/MANIFEST.sha256",
-      "bytes": 4829,
-      "sha256": "8156d60eb934884203ecbb1174b17e5a73554bc5895a42e8ff12439fea98e45f",
+      "archive_path": "evidence/dhcp-fl-01/MANIFEST.sha256",
+      "bytes": 4309,
+      "sha256": "7aede0c5aebbf24aab283c2fcada251fa17b5ed951e2d9c08177bc0c647a51c2",
       "origin": "digest list of the 41 archived episode 1 files, generated at archive time, 2026-09-25"
     },
     {
       "source_name": "README.md",
-      "archive_path": "evidence/campaign-dhcp-fastloop-01/README.md",
-      "bytes": 1664,
-      "sha256": "22e8856ce488836a0abbd204803759f132b510afa025c6bfb328d011b33c0e9c",
+      "archive_path": "evidence/dhcp-fl-01/README.md",
+      "bytes": 1745,
+      "sha256": "1a81ab8d3d620dcb275379ecf162d79cb65d313570757614f7747b2a0cb42e47",
       "origin": "index of the archived episode 1 evidence, 2026-09-25"
     }
   ],

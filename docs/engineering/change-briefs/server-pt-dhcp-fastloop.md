@@ -327,7 +327,7 @@ restore.
 | Stage | `Q3-FL-C1`, file channel, run `2026-09-25T03-12-05Z-97cc881e` |
 | Record | `q3-fl-c1-2026-09-25T03-12-05Z-97cc881e.json`, SHA-256 `4139f6c97c27ea6b33e2a485032467d1351ea6729770b9ecbf83077c83b17223` |
 | Result | `completed`, 123 of 440 operations, 219.3 s, restoration proven, no primary or secondary failure, `dirty_state: unknown` because both product claims are engine residue retained until retirement |
-| Evidence | archived byte for byte, 41 files under [`evidence/campaign-dhcp-fastloop-01/`](../../reference/server-pt/README.md), with `MANIFEST.sha256` |
+| Evidence | archived byte for byte, 41 files under [`evidence/dhcp-fl-01/`](../../reference/server-pt/README.md), with `MANIFEST.sha256` |
 
 **Chronology, from the record's own offsets.** Fixtures and links were created
 first. The typed baseline admitted the exact stock `serverPool`. The server's
