@@ -1,0 +1,54 @@
+{
+  "question": "After measured native start/size transitions, do documented native gateway, DNS, and global exclusion setters store the compiled one-user DHCP policy on the disabled singleton serverPool, without collateral field changes?",
+  "stop_rule": "Stop on source/process/mailbox ambiguity, incomplete or enabled baseline, mismatched start/size, unknown or contradictory policy effect, exclusion count/list mismatch, budget expiry, or cleanup uncertainty. Observe terminal state and retire owned lab.",
+  "attempt_ids": [
+    "3abd3d33dfeb48e0bbd689c314418ed4"
+  ],
+  "tests_run": [
+    "108 focused and affected tests passed at 76a60a8",
+    "18 policy tests passed including lost reply and malformed inventory controls",
+    "quality_gate.py --base cisco/main --delivery-commit HEAD passed at 76a60a8",
+    "mkdocs build exit 0",
+    "independent pre-LIVE read-only adversarial review found no blocker"
+  ],
+  "targets": [
+    "__MCP_E6Q_SRV"
+  ],
+  "permitted_effects": [
+    "qualification:Q3-NATIVE-POLICY",
+    "configurePcIp:owned_server_static_address",
+    "DhcpPool.setStartIp:serverPool:192.0.2.100",
+    "DhcpPool.setMaxUsers:serverPool:1",
+    "DhcpPool.setDefaultRouter:serverPool:192.0.2.1",
+    "DhcpPool.setDnsServerIp:serverPool:192.0.2.10",
+    "DhcpServerProcess.addExcludedAddress:192.0.2.1-192.0.2.1",
+    "DhcpServerProcess.addExcludedAddress:192.0.2.10-192.0.2.10",
+    "owned_fixture_create_and_cleanup",
+    "owned_process_retirement"
+  ],
+  "allocated_operations": 160,
+  "allocated_seconds": 1200.0,
+  "profile_id": "Q3-NATIVE-POLICY",
+  "profile_version": "1",
+  "source_sha": "76a60a8d259e1f2cee571a446664ef3cb1a2d6bc",
+  "source_tree": "190f53c41ee0a930be08a3253633fc706eb72f23",
+  "instance_token": "6f66d1d16a3d49fbbbfff96829dfcde4",
+  "intent_name": "MCP-E6Q",
+  "requested_pool": "MCP_E6Q_DHCP",
+  "effective_pool_hypothesis": "serverPool",
+  "requested_start": "192.0.2.100",
+  "requested_capacity": 1,
+  "compiled_gateway": "192.0.2.1",
+  "compiled_dns": "192.0.2.10",
+  "compiled_exclusions": [
+    {
+      "start": "192.0.2.1",
+      "end": "192.0.2.1"
+    },
+    {
+      "start": "192.0.2.10",
+      "end": "192.0.2.10"
+    }
+  ],
+  "allocation_arithmetic": "46 profile planned minimum operations including 6 repeated-start, 2 max, 3 gateway, 2 DNS, 4 exclusions and terminal plus fixture/finalization; 160 phase cap for bounded reads and errors. 900 stage seconds including 300 finalization + 60 launch + 120 retirement + 120 contingency = 1200 episode seconds."
+}
