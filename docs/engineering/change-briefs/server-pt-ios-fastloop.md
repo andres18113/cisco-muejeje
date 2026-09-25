@@ -942,3 +942,70 @@ spent, so this error-path change was not run against Packet Tracer. The
 delivered retirement code differs from the code LIVE-exercised at `1281c92`
 only in this census error boundary. The command's output on success is
 unchanged, and that was verified natively on this host.
+
+## Closure decision: observed-class signature, version 18
+
+The independent closure decision on Addendum 03 at `4d26695`
+(`CLOSURE_DECISION.md`, SHA-256
+`54a51f03a1022a4621d6a441239a0bd383dca96ff77da9239b22d859cd8ee896`) accepts
+the demonstrated normal retirement of a fresh, unnamed, campaign-owned
+9.0.1.0858 laboratory. Attempt 3 at `1281c92` is the strongest retained native
+execution. The decision authorizes one narrowing before retirement is used on
+another live laboratory. Both window roles of 9.0.1.0858 must accept only the
+class the three censuses observed, `Qt687QWindowIcon`. The
+`Qt687QWindowOwnDCIcon` class was derived from the installed Qt version and
+never observed. Its possible existence in Qt does not qualify it. Risk stays
+**L**, because the change reduces an effect-authorizing signature.
+
+**Scope.** The change covers the 9.0.1.0858 class set in
+`server_pt_process_evidence`, the signature's `basis`, focused tests and this
+delta. It excludes any native run, forced-kill test, recovery feature,
+classification framework or new build. It also excludes the HTTP code, the
+consumed attempts and their counters, and every historical launch, attempt,
+exit and ledger record. Those records keep the signature they applied, and
+this change does not rewrite them.
+
+| ID | Requirement | Acceptance criterion |
+| --- | --- | --- |
+| S1 | Only the observed class is effect-authorizing | The 9.0.1.0858 document and extension-log roles each name exactly `Qt687QWindowIcon`, and the signature recorded on an attempt or exit says so |
+| S2 | The removed class is unclassified and sends nothing | A visible `Qt687QWindowOwnDCIcon` window titled like the document or the log gives `unclassified_window_visible`. It is never selected, closed or forced, and `--retire` posts nothing and terminates nothing, whether it stands beside the log or beside the document. An exit record naming such a close target is refused (`graceful_close_identity_unproven`) |
+| S3 | The observed path keeps working | A `Qt687QWindowIcon` window with the exact document title is still selected and closed, and its exit is still archived |
+| S4 | Existing controls stay intact | Dialog, unknown title or class, wrong process or incarnation, attribution, completeness, ownership, focus and order controls pass unchanged |
+| S5 | The basis names the evidence | `basis` cites the observed titles and the class observed in the three Addendum 03 censuses, and it says that no other Qt class is qualified |
+
+**Design.** `_QT_687_TOP_LEVEL_CLASSES` becomes `_QT_687_OBSERVED_CLASSES`, a
+set of one class, `Qt687QWindowIcon`. It feeds both roles. Selection, the
+force recheck and `_document_target_proven` read the roles, so they all
+narrow together, and no new code path is added. This replaces the
+two-class expectation of version 11 and resolves the class limitation left
+open in versions 14 and 16. The historical targets were all
+`Qt687QWindowIcon`, so the retained exit records still pass
+`exit_evidence_findings`.
+
+**Invariants.** The ownership basis remains the only destructive authority. A
+signature, a handle or a title can only withhold an effect. The measured
+`Qt687QWindowIcon` path is not invalidated retroactively. No counter resets,
+and no lifecycle attempt is issued or renewed.
+
+**Test design.** Unit tests cover the removed class titled like the document,
+alone and beside the log, and titled like the log beside the document. They
+also cover the force recheck after a failed close, a `WM_CLOSE` exit record
+naming the removed class, and the pinned class sets of both roles. CLI
+integration runs `--retire` with the removed class beside the log and beside
+the document, and nothing is posted or terminated. The existing exit test also
+asserts the recorded classes. The regressions must be RED at `4d26695` before
+the set is narrowed. A system or acceptance test on Packet Tracer does not
+apply: the decision requires no native run, and the retained attempt 3 stays
+attributed to `1281c92`. The focused modules, the full suite, the quality
+gate, MkDocs and the whitespace check then run as ordinary final validation.
+
+**Results.** The regressions were RED at `4d26695`: 10 failed and the 70
+existing tests of the module passed. With the removed class titled like the
+document beside the log, `--retire` posted the close and archived the exit.
+An exit record naming that class passed, and the class titled like the log
+was accepted beside the document. With the narrowed set, all pass, and so do
+the retirement and authority modules (281 passed, 2 skipped). A read-only
+check then loaded the retained exits of attempts 2 and 3 from their hashed
+records. Each recorded signature still names both classes, as it was applied.
+Each target is `Qt687QWindowIcon`, and `exit_evidence_findings` returns no
+finding under the narrowed signature. None of the 175 campaign files changed.

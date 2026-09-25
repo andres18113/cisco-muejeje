@@ -147,24 +147,24 @@ class BuildWindowSignature:
 #: Win32's own dialog class. Such a window is never a document.
 DIALOG_WINDOW_CLASSES = frozenset({"#32770"})
 
-#: Qt 6.8.7, as installed with 9.0.1.0858, registers one of these two classes
-#: for an ordinary top-level window with a system menu: `QWindowIcon`
-#: (raster or Direct3D surface) or `QWindowOwnDCIcon` (OpenGL surface).
-_QT_687_TOP_LEVEL_CLASSES = frozenset({"Qt687QWindowIcon", "Qt687QWindowOwnDCIcon"})
+#: The one Qt 6.8.7 class that 9.0.1.0858's document and extension log were
+#: observed to have. Another class Qt could register for a top-level window
+#: is not evidence that this build shows it, so it stays unclassified.
+_QT_687_OBSERVED_CLASSES = frozenset({"Qt687QWindowIcon"})
 
 #: Only builds whose windows are known are listed. Another build selects
 #: nothing until its own signature is established.
 PT_WINDOW_SIGNATURES: Mapping[str, BuildWindowSignature] = {
     SERVER_PT_BUILD: BuildWindowSignature(
         build=SERVER_PT_BUILD,
-        document=WindowRole(_QT_687_TOP_LEVEL_CLASSES, BLANK_DOCUMENT_TITLE),
-        extension_log=WindowRole(_QT_687_TOP_LEVEL_CLASSES, EXTENSION_LOG_WINDOW_TITLE),
+        document=WindowRole(_QT_687_OBSERVED_CLASSES, BLANK_DOCUMENT_TITLE),
+        extension_log=WindowRole(_QT_687_OBSERVED_CLASSES, EXTENSION_LOG_WINDOW_TITLE),
         basis=(
             "titles observed on 9.0.1.0858 (FASTLOOP episode 1 window listing; "
             "UIA inventory 2026-09-15: PtApp.CAppWindowBase, Qt class CAppWindow, "
-            "named Cisco Packet Tracer); classes are the Qt 6.8.7 top-level "
-            "window classes of the installed build's Qt, confirmed only by a "
-            "laboratory census"
+            "named Cisco Packet Tracer); class Qt687QWindowIcon observed for "
+            "both roles in the three Addendum 03 lifecycle censuses of "
+            "2026-09-24; no other Qt class is qualified"
         ),
     ),
 }

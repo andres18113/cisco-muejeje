@@ -31,9 +31,11 @@ from packet_tracer_mcp.application.use_cases.server_pt_campaign_ledger import (
 from packet_tracer_mcp.application.use_cases.server_pt_process_evidence import (
     EXTENSION_LOG_WINDOW_TITLE,
     exit_evidence_findings,
+    force_window_findings,
     packet_tracer_process_role,
     select_document_window,
     window_signature_for_launch,
+    window_signature_record,
 )
 from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
     ImportIsolationPreflight,
@@ -78,6 +80,15 @@ DIALOG_AS_DOCUMENT = _window(6363, "Cisco Packet Tracer", class_name=DIALOG_CLAS
 TOOL_AS_DOCUMENT = _window(
     6464, "Cisco Packet Tracer", class_name="Qt687QWindowToolSaveBits"
 )
+# Qt 6.8.7's OpenGL top-level class: plausible for this build, never observed in
+# its laboratory, and therefore not part of the signature (closure decision).
+UNOBSERVED_CLASS = "Qt687QWindowOwnDCIcon"
+UNOBSERVED_AS_DOCUMENT = _window(
+    6565, "Cisco Packet Tracer", class_name=UNOBSERVED_CLASS
+)
+UNOBSERVED_AS_LOG = _window(
+    6666, EXTENSION_LOG_WINDOW_TITLE, class_name=UNOBSERVED_CLASS
+)
 
 
 def _refused_without_effect(launched, capsys, tmp_path: Path, windows, finding):
@@ -106,6 +117,9 @@ def _refused_without_effect(launched, capsys, tmp_path: Path, windows, finding):
         ((LOG, STARTUP_NOTICE), "unclassified_window_visible"),
         ((DIALOG_AS_DOCUMENT, LOG), "dialog_window_visible"),
         ((TOOL_AS_DOCUMENT, LOG), "unclassified_window_visible"),
+        ((UNOBSERVED_AS_DOCUMENT, LOG), "unclassified_window_visible"),
+        ((LOG, UNOBSERVED_AS_DOCUMENT), "unclassified_window_visible"),
+        ((UNOBSERVED_AS_DOCUMENT,), "unclassified_window_visible"),
     ],
     ids=[
         "save-dialog-then-log",
@@ -115,6 +129,9 @@ def _refused_without_effect(launched, capsys, tmp_path: Path, windows, finding):
         "log-then-startup-notice",
         "dialog-titled-like-the-document",
         "tool-window-titled-like-the-document",
+        "unobserved-class-titled-like-the-document",
+        "log-then-unobserved-class-document",
+        "unobserved-class-document-alone",
     ],
 )
 def test_a_dialog_or_unknown_window_beside_the_log_is_never_closed(
@@ -126,8 +143,8 @@ def test_a_dialog_or_unknown_window_beside_the_log_is_never_closed(
 
 @pytest.mark.parametrize(
     "extra",
-    [SAVE_DIALOG, STARTUP_NOTICE],
-    ids=["save-dialog", "startup-notice"],
+    [SAVE_DIALOG, STARTUP_NOTICE, UNOBSERVED_AS_LOG],
+    ids=["save-dialog", "startup-notice", "unobserved-class-log"],
 )
 def test_a_dialog_or_unknown_window_beside_the_document_withholds_the_close(
     launched, capsys, tmp_path: Path, extra
@@ -159,6 +176,8 @@ def test_the_exit_record_keeps_its_signature_readings_and_mailbox(
     signature = record["window_signature"]
     assert signature["build"] == "9.0.1.0858"
     assert signature["document_title"] == "Cisco Packet Tracer"
+    assert signature["document_classes"] == ["Qt687QWindowIcon"]
+    assert signature["extension_log_classes"] == ["Qt687QWindowIcon"]
     assert signature["basis"]
     readings = record["absence_observations"]
     assert readings and readings[-1]["present"] is False
@@ -276,6 +295,11 @@ def test_the_signed_document_is_selected_in_any_order(windows):
             (TOOL_AS_DOCUMENT, LOG),
             ("unclassified_window_visible", "document_window_absent"),
         ),
+        (
+            (UNOBSERVED_AS_DOCUMENT, LOG),
+            ("unclassified_window_visible", "document_window_absent"),
+        ),
+        ((DOCUMENT, UNOBSERVED_AS_LOG), ("unclassified_window_visible",)),
         ((DOCUMENT, SAVE_DIALOG, LOG), ("dialog_window_visible",)),
         (
             (_window(4242, "Cisco Packet Tracer - C:\\coursework.pkt"), LOG),
@@ -299,6 +323,8 @@ def test_the_signed_document_is_selected_in_any_order(windows):
         "startup-notice",
         "dialog-with-document-title",
         "tool-with-document-title",
+        "unobserved-class-with-document-title",
+        "unobserved-class-with-log-title",
         "dialog-beside-document",
         "file-named-document",
         "dialog-with-log-title",
@@ -362,10 +388,43 @@ def test_a_signature_needs_an_observed_known_build(launch, expected):
     assert (window_signature_for_launch(launch) is SIGNATURE) is expected
 
 
+def test_only_the_observed_class_authorizes_either_role():
+    """Both 9.0.1.0858 roles name the one class its laboratory censuses showed."""
+    record = window_signature_record(SIGNATURE)
+
+    assert record["document_classes"] == ["Qt687QWindowIcon"]
+    assert record["extension_log_classes"] == ["Qt687QWindowIcon"]
+    assert "Qt687QWindowIcon" in record["basis"]
+
+
+def test_an_unobserved_class_after_a_failed_close_withholds_the_force():
+    """The removed class is doubt in the force recheck, as in the selection."""
+    assert force_window_findings(
+        PID, DOCUMENT, _census(UNOBSERVED_AS_DOCUMENT, LOG), signature=SIGNATURE
+    ) == ("unclassified_window_visible", "document_window_closed_process_alive")
+    assert force_window_findings(
+        PID, DOCUMENT, _census(DOCUMENT, UNOBSERVED_AS_LOG), signature=SIGNATURE
+    ) == ("unclassified_window_visible",)
+
+
 @pytest.mark.parametrize(
     "window",
-    [SAVE_DIALOG, STARTUP_NOTICE, DIALOG_AS_DOCUMENT, TOOL_AS_DOCUMENT, LOG],
-    ids=["save-dialog", "startup-notice", "dialog-titled", "tool-titled", "log"],
+    [
+        SAVE_DIALOG,
+        STARTUP_NOTICE,
+        DIALOG_AS_DOCUMENT,
+        TOOL_AS_DOCUMENT,
+        UNOBSERVED_AS_DOCUMENT,
+        LOG,
+    ],
+    ids=[
+        "save-dialog",
+        "startup-notice",
+        "dialog-titled",
+        "tool-titled",
+        "unobserved-class-titled",
+        "log",
+    ],
 )
 def test_a_targeted_close_record_must_name_the_signed_document(window):
     """An exit record whose target was not the build's document is refused."""
