@@ -659,3 +659,35 @@ cover the exact repeated start transition and max result; a Node integration
 test runs the generated calls through the real coordinator and retained
 record, including no-op/throw and unexpected-pool controls. The next LIVE
 episode remains bounded by a fresh allocation and its exact committed source.
+
+**Windows quality-gate command bound.** At 218 Ruff-gated Python files, the
+provisional gate failed before Ruff started with Windows `CreateProcess`
+`WinError 206`: its current `run_ruff` passes every absolute file path in one
+command. This is a tooling limit exposed by the required delta, not a lint
+violation or permission to skip files. The gate will partition the *same*
+selected paths into bounded command lines, run both lint and format over
+every partition, and return failure if any partition fails. A focused RED
+regression proves complete path coverage and preserved failure status.
+
+**Immutable raw-source archive boundary.** The quality gate's newly complete
+Windows run also identified the two original Python launch scripts archived
+under `dhcp-autonomy-02/e1/lead/`. They are raw episode evidence, copied
+byte-for-byte and committed with `-text -diff`, not maintained Python source.
+Ruff would require changing their bytes and invalidate the immutable evidence
+manifest. The gate will register only those two exact paths and SHA-256 values,
+verify the pinned 38-file manifest digest and every archived byte and path,
+then report those two files as immutable-evidence exempt. Missing, added or
+changed archive bytes fail the gate; every other authored or unverifiable
+Python path remains Ruff-gated. This evidence classification is separate from
+the mechanical-migration exemption and grants no general path ignore.
+
+**Offline checkpoint before a second LIVE episode.** The design delta began
+from clean `a9207513244d7447597ea0db42693fd0509e6e4e` (tree
+`16d788998ed239e0b79fa2cfc582b9c562aa3c77`). Causal RED controls
+exposed and closed three pre-LIVE defects: a start no-op reaching the capacity
+setter, an incomplete or enabled baseline reaching E5, and a path alias or
+deleted archive escaping the evidence gate. The affected regression group
+finished `357 passed, 1 skipped`; the provisional `cisco/main` quality gate
+reported 219 Ruff-gated Python files, two exact immutable-evidence files,
+and zero mechanical exemptions. These are offline results; they establish
+neither native `setMaxUsers` behavior nor product DHCP support.

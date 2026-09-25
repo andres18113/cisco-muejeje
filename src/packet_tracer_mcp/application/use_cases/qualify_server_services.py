@@ -114,6 +114,10 @@ from ...domain.enterprise.models.service_qualification import (
     Q3_FL_TIMED_INTERVAL_SECONDS,
     Q3_LEASE_IPV4,
     Q3_NATIVE_STAGES,
+    Q3_NATIVE_START_AFTER,
+    Q3_NATIVE_START_BEFORE,
+    Q3_NATIVE_START_EVIDENCE_SHA256,
+    Q3_OBSERVED_NATIVE_DEFAULT_POOL,
     Q3_PC1,
     Q3_PC2,
     Q3_POOL,
@@ -221,6 +225,8 @@ from ...domain.enterprise.services.service_qualification_evidence import (
     assess_https_listener,
     assess_native_default_cumulative,
     assess_native_default_interval,
+    assess_native_pool_max_probe,
+    assess_native_pool_repeated_start_probe,
     assess_native_pool_start_probe,
     assess_observer_release,
     assess_page_tables,
@@ -229,6 +235,7 @@ from ...domain.enterprise.services.service_qualification_evidence import (
     default_pool_snapshot,
     listener_toggle_established,
     marker_page_established,
+    native_pool_probe_baseline_admitted,
     page_read_admits_second_write,
     page_write_established,
 )
@@ -1925,8 +1932,10 @@ def _admitted(
             _run_d_web(execution)
         elif definition.stage in Q3_FL_STAGES:
             _run_q3_fastloop(execution)
-        elif definition.stage in Q3_NATIVE_STAGES:
+        elif definition.stage is QualificationStage.Q3_NATIVE_PROBE:
             _run_q3_native_probe(execution)
+        elif definition.stage is QualificationStage.Q3_NATIVE_SIZE:
+            _run_q3_native_size(execution)
         else:
             _run_q3(execution)
     except KeyboardInterrupt as exc:
@@ -4773,8 +4782,8 @@ def _d_dhcp_enable(
 # -- delegated native-pool qualification -------------------------------------------
 
 
-def _run_q3_native_probe(execution: _Execution) -> None:
-    """Bracket one documented native setter inside the governed Q3 fixture."""
+def _register_q3_native_terminal(execution: _Execution) -> None:
+    """Keep one final physical read after a stop or normal probe completion."""
 
     def final_read() -> None:
         ids = ("M-NATIVE-FINAL",)
@@ -4800,6 +4809,90 @@ def _run_q3_native_probe(execution: _Execution) -> None:
         execution.finish("Q3_NATIVE_FINAL")
 
     execution.register_terminal(("M-NATIVE-FINAL",), "Q3_NATIVE_FINAL", final_read)
+
+
+def _prepare_q3_native_server(
+    execution: _Execution,
+) -> tuple[Q3ProductContract, DefaultPoolSnapshot, ConfigureServerDhcpPool] | None:
+    """Apply the product's server address and admit only its reviewed move."""
+    contract = execution.product_contract
+    if contract is None:
+        execution.stop("q3_native_product_contract_absent")
+        return None
+    state = _Q3FlState()
+    if not _q3fl_snapshot(execution, state, "before_e5", ""):
+        execution.stop("q3_native_baseline_not_admitted")
+        return None
+    if not native_pool_probe_baseline_admitted(
+        state.snapshots[-1],
+        server=Q3_SERVER,
+        interface="FastEthernet0",
+        expected_row=Q3_OBSERVED_NATIVE_DEFAULT_POOL,
+    ):
+        execution.stop("q3_native_baseline_not_admitted")
+        return None
+    static_plan = d_dhcp_static_only_plan(
+        contract.configuration_plan, device_name=Q3_SERVER
+    )
+    if len(static_plan.actions) != 1:
+        execution.stop("q3_native_static_action_ambiguous")
+        return None
+    configuration_runtime, _ = _d_dhcp_runtimes(execution, contract)
+    if not execution.run.transition("experiment:Q3_NATIVE_E5:started"):
+        execution.stop("persistence:q3_native_e5_not_announced")
+        return None
+    with execution.ledger.effect_of("q3-native:product:e5_server_address"):
+        configuration = ConfigurationApplicator(configuration_runtime).apply(
+            static_plan,
+            actual_source_topology_hash=contract.manifest.physical_topology_hash,
+            capabilities=contract.device_capabilities,
+            runtime_context=_q3_context(contract),
+            deployment_manifest=contract.manifest,
+        )
+    foundation_plan = contract.service_plan.model_copy(
+        update={
+            "source_configuration_id": static_plan.id,
+            "source_configuration_hash": static_plan.semantic_hash,
+        },
+        deep=True,
+    )
+    foundations = derive_service_foundational_statuses(foundation_plan, configuration)
+    cause = _q3_e5_foundation_cause(
+        configuration, foundations, {static_plan.actions[0].id}
+    )
+    if cause:
+        execution.stop(cause)
+        return None
+    if not _q3fl_snapshot(
+        execution,
+        state,
+        "after_server_address",
+        execution.run.boundaries.reviewed_native_default_intervention,
+    ):
+        execution.stop("q3_native_server_address_transition_not_admitted")
+        return None
+    if not native_pool_probe_baseline_admitted(
+        state.snapshots[-1],
+        server=Q3_SERVER,
+        interface="FastEthernet0",
+        expected_row=Q3_NATIVE_START_BEFORE,
+    ):
+        execution.stop("q3_native_process_not_disabled_after_e5")
+        return None
+    pool_actions = [
+        item
+        for item in contract.service_plan.actions
+        if isinstance(item, ConfigureServerDhcpPool)
+    ]
+    if len(pool_actions) != 1 or pool_actions[0].pool_name != Q3_POOL:
+        execution.stop("q3_native_requested_pool_ambiguous")
+        return None
+    return contract, state.snapshots[-1], pool_actions[0]
+
+
+def _run_q3_native_probe(execution: _Execution) -> None:
+    """Bracket one documented native setter inside the governed Q3 fixture."""
+    _register_q3_native_terminal(execution)
     if not _diagnostic_start(execution):
         return
     ids = ("M-NATIVE-START",)
@@ -4808,66 +4901,11 @@ def _run_q3_native_probe(execution: _Execution) -> None:
     ):
         return
     with execution.procedure(ids):
-        contract = execution.product_contract
-        if contract is None:
-            execution.stop("q3_native_product_contract_absent")
+        prepared = _prepare_q3_native_server(execution)
+        if prepared is None:
             return
-        state = _Q3FlState()
-        if not _q3fl_snapshot(execution, state, "before_e5", ""):
-            execution.stop("q3_native_baseline_not_admitted")
-            return
-        static_plan = d_dhcp_static_only_plan(
-            contract.configuration_plan, device_name=Q3_SERVER
-        )
-        if len(static_plan.actions) != 1:
-            execution.stop("q3_native_static_action_ambiguous")
-            return
-        configuration_runtime, _ = _d_dhcp_runtimes(execution, contract)
-        if not execution.run.transition("experiment:Q3_NATIVE_E5:started"):
-            execution.stop("persistence:q3_native_e5_not_announced")
-            return
-        with execution.ledger.effect_of("q3-native:product:e5_server_address"):
-            configuration = ConfigurationApplicator(configuration_runtime).apply(
-                static_plan,
-                actual_source_topology_hash=contract.manifest.physical_topology_hash,
-                capabilities=contract.device_capabilities,
-                runtime_context=_q3_context(contract),
-                deployment_manifest=contract.manifest,
-            )
-        foundation_plan = contract.service_plan.model_copy(
-            update={
-                "source_configuration_id": static_plan.id,
-                "source_configuration_hash": static_plan.semantic_hash,
-            },
-            deep=True,
-        )
-        foundations = derive_service_foundational_statuses(
-            foundation_plan, configuration
-        )
-        cause = _q3_e5_foundation_cause(
-            configuration, foundations, {static_plan.actions[0].id}
-        )
-        if cause:
-            execution.stop(cause)
-            return
-        if not _q3fl_snapshot(
-            execution,
-            state,
-            "after_server_address",
-            execution.run.boundaries.reviewed_native_default_intervention,
-        ):
-            execution.stop("q3_native_server_address_transition_not_admitted")
-            return
-        before = state.snapshots[-1]
-        pool_actions = [
-            item
-            for item in contract.service_plan.actions
-            if isinstance(item, ConfigureServerDhcpPool)
-        ]
-        if len(pool_actions) != 1 or pool_actions[0].pool_name != Q3_POOL:
-            execution.stop("q3_native_requested_pool_ambiguous")
-            return
-        requested_start = pool_actions[0].lease_start
+        _, before, pool_action = prepared
+        requested_start = pool_action.lease_start
         if not execution.run.transition("experiment:Q3_NATIVE_SETTER:started"):
             execution.stop("persistence:q3_native_setter_not_announced")
             return
@@ -4889,6 +4927,87 @@ def _run_q3_native_probe(execution: _Execution) -> None:
             ),
         )
     execution.finish("Q3_NATIVE_START")
+
+
+def _run_q3_native_size(execution: _Execution) -> None:
+    """Measure capacity after a separately proved repeat of episode 1's move."""
+    _register_q3_native_terminal(execution)
+    if not _diagnostic_start(execution):
+        return
+    start_ids = ("M-NATIVE-REPEAT-START",)
+    if not execution.selected("NATIVE-size") or not execution.begin(
+        start_ids, "Q3_NATIVE_REPEAT_START"
+    ):
+        return
+    with execution.procedure(start_ids):
+        prepared = _prepare_q3_native_server(execution)
+        if prepared is None:
+            return
+        _, before, pool_action = prepared
+        if pool_action.lease_start != Q3_NATIVE_START_AFTER["start"]:
+            execution.stop("q3_native_size_intent_differs_from_episode1")
+            return
+        if not execution.run.transition("experiment:Q3_NATIVE_REPEAT_SETTER:started"):
+            execution.stop("persistence:q3_native_repeat_setter_not_announced")
+            return
+        with execution.ledger.effect_of("q3-native-size:serverPool:setStartIp"):
+            with execution.ledger.purpose_of("q3-native-size:serverPool:setStartIp"):
+                start_probe = execution.probes.probe_native_pool_start(
+                    Q3_SERVER, "FastEthernet0", pool_action.lease_start
+                )
+        after_start = _q3_default_read(
+            execution, "after_native_repeat_start", prefix="q3-native-size"
+        )
+        execution.conclude(
+            "M-NATIVE-REPEAT-START",
+            assess_native_pool_repeated_start_probe(
+                before=before,
+                probe=start_probe,
+                after=after_start,
+                server=Q3_SERVER,
+                interface="FastEthernet0",
+                expected_before=Q3_NATIVE_START_BEFORE,
+                expected_after=Q3_NATIVE_START_AFTER,
+                evidence_sha256=Q3_NATIVE_START_EVIDENCE_SHA256,
+            ),
+        )
+    execution.finish("Q3_NATIVE_REPEAT_START")
+    max_ids = ("M-NATIVE-MAX",)
+    repeat = execution.measurement("M-NATIVE-REPEAT-START").conclusion
+    if repeat is not MeasurementConclusion.SUPPORTED_IN_SAMPLE:
+        execution.not_run(max_ids, f"repeat_start_not_supported:{repeat.value}")
+        execution.stop(f"q3_native_size_repeat_start_not_supported:{repeat.value}")
+        return
+    if not execution.begin(max_ids, "Q3_NATIVE_MAX"):
+        return
+    with execution.procedure(max_ids):
+        if pool_action.max_users != 1:
+            execution.stop("q3_native_size_capacity_differs_from_intent")
+            return
+        if not execution.run.transition("experiment:Q3_NATIVE_MAX_SETTER:started"):
+            execution.stop("persistence:q3_native_max_setter_not_announced")
+            return
+        with execution.ledger.effect_of("q3-native-size:serverPool:setMaxUsers"):
+            with execution.ledger.purpose_of("q3-native-size:serverPool:setMaxUsers"):
+                max_probe = execution.probes.probe_native_pool_max(
+                    Q3_SERVER, "FastEthernet0", pool_action.max_users
+                )
+        after_max = _q3_default_read(
+            execution, "after_native_max", prefix="q3-native-size"
+        )
+        execution.conclude(
+            "M-NATIVE-MAX",
+            assess_native_pool_max_probe(
+                before=after_start,
+                probe=max_probe,
+                after=after_max,
+                server=Q3_SERVER,
+                interface="FastEthernet0",
+                expected_before=Q3_NATIVE_START_AFTER,
+                requested_max=pool_action.max_users,
+            ),
+        )
+    execution.finish("Q3_NATIVE_MAX")
 
 
 # -- Q3-FL: the versioned DHCP qualification profile ------------------------------

@@ -23,6 +23,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import Enum, StrEnum
+from types import MappingProxyType
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -79,6 +80,7 @@ class QualificationStage(StrEnum):
     Q3_FL_C1 = "Q3-FL-C1"
     Q3_FL_C2 = "Q3-FL-C2"
     Q3_NATIVE_PROBE = "Q3-NATIVE-PROBE"
+    Q3_NATIVE_SIZE = "Q3-NATIVE-SIZE"
 
 
 class ExecutionMode(StrEnum):
@@ -411,6 +413,7 @@ STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.Q3_FL_C1: (440, 1500),
     QualificationStage.Q3_FL_C2: (440, 1500),
     QualificationStage.Q3_NATIVE_PROBE: (120, 600),
+    QualificationStage.Q3_NATIVE_SIZE: (120, 600),
 }
 
 Q0_PC = "__MCP_E6Q_PC1"
@@ -1562,7 +1565,31 @@ def _q3_fastloop(stage: QualificationStage, capacity: int) -> StageDefinition:
 
 #: The Q3-FL stages, one per intended-pool capacity.
 Q3_FL_STAGES = (QualificationStage.Q3_FL_C1, QualificationStage.Q3_FL_C2)
-Q3_NATIVE_STAGES = (QualificationStage.Q3_NATIVE_PROBE,)
+Q3_NATIVE_STAGES = (
+    QualificationStage.Q3_NATIVE_PROBE,
+    QualificationStage.Q3_NATIVE_SIZE,
+)
+
+#: Exact episode-1 physical values, not a formula for a second build or pool.
+#: Record SHA-256 1dcf4d95f2c8d20dc22f67950b86c0bb4c0b4dac3e828d88ae4a2d31494fa9c1.
+Q3_NATIVE_START_EVIDENCE_SHA256 = (
+    "1dcf4d95f2c8d20dc22f67950b86c0bb4c0b4dac3e828d88ae4a2d31494fa9c1"
+)
+Q3_NATIVE_START_BEFORE = MappingProxyType(
+    {
+        "name": "serverPool",
+        "network": "192.0.2.0",
+        "mask": "255.255.255.0",
+        "gateway": "0.0.0.0",
+        "dns": "0.0.0.0",
+        "start": "192.0.2.0",
+        "end": "192.0.3.255",
+        "max": 512,
+    }
+)
+Q3_NATIVE_START_AFTER = MappingProxyType(
+    {**Q3_NATIVE_START_BEFORE, "start": "192.0.2.100", "end": "192.0.2.255", "max": 156}
+)
 
 
 def _q3_native_probe() -> StageDefinition:
@@ -1611,6 +1638,63 @@ def _q3_native_probe() -> StageDefinition:
     )
 
 
+def _q3_native_size() -> StageDefinition:
+    """Measure the native capacity setter after the exact observed start move."""
+    base = _q3_native_probe()
+    return replace(
+        base,
+        stage=QualificationStage.Q3_NATIVE_SIZE,
+        purpose=(
+            "Repeat the episode-1 coupled native start transition, then "
+            "measure one documented setMaxUsers(1) on the same disabled pool."
+        ),
+        experiments=(
+            ExperimentSpec(
+                id="M-NATIVE-REPEAT-START",
+                hypothesis=(
+                    "The exact coupled serverPool start/end/max transition "
+                    "of delegated episode 1 repeats on this build."
+                ),
+                required=True,
+                procedure="Q3_NATIVE_REPEAT_START",
+                planned_operations=6,
+                operational_prerequisites=(DiagnosticPrecondition.SUBJECT_SESSION,),
+                capabilities=("server.dhcp_native_pool_start",),
+            ),
+            ExperimentSpec(
+                id="M-NATIVE-MAX",
+                hypothesis=(
+                    "setMaxUsers(1) makes the effective native allocation "
+                    "exactly 192.0.2.100, with no other field or process change."
+                ),
+                required=True,
+                procedure="Q3_NATIVE_MAX",
+                planned_operations=2,
+                prerequisites=("M-NATIVE-REPEAT-START",),
+                capabilities=("server.dhcp_native_pool_max",),
+            ),
+            ExperimentSpec(
+                id="M-NATIVE-FINAL",
+                hypothesis="The final native-pool inventory is observed before cleanup.",
+                required=True,
+                procedure="Q3_NATIVE_FINAL",
+                planned_operations=1,
+                terminal_observation=True,
+            ),
+        ),
+        profile_id="Q3-NATIVE-SIZE",
+        profile_version="1",
+        steps=(
+            DiagnosticStageStep(
+                id="NATIVE-size",
+                experiment_id="M-NATIVE-REPEAT-START",
+                effect="configure",
+                also_experiments=("M-NATIVE-MAX", "M-NATIVE-FINAL"),
+            ),
+        ),
+    )
+
+
 STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.Q0: _q0(),
     QualificationStage.Q1: _q1(),
@@ -1625,6 +1709,7 @@ STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.Q3_FL_C1: _q3_fastloop(QualificationStage.Q3_FL_C1, 1),
     QualificationStage.Q3_FL_C2: _q3_fastloop(QualificationStage.Q3_FL_C2, 2),
     QualificationStage.Q3_NATIVE_PROBE: _q3_native_probe(),
+    QualificationStage.Q3_NATIVE_SIZE: _q3_native_size(),
 }
 
 

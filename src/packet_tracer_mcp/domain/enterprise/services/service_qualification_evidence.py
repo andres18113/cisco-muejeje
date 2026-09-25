@@ -1324,6 +1324,32 @@ class DefaultPoolSnapshot:
     raw: Mapping[str, Any] = field(default_factory=dict)
 
 
+def native_pool_probe_baseline_admitted(
+    snapshot: DefaultPoolSnapshot,
+    *,
+    server: str,
+    interface: str,
+    expected_row: Mapping[str, object],
+) -> bool:
+    """Require one exact disabled pool before another diagnostic effect."""
+    raw = snapshot.raw
+    return bool(
+        snapshot.observed
+        and not snapshot.intended_present
+        and tuple(snapshot.pools) == (dict(expected_row),)
+        and raw.get("device") == server
+        and raw.get("interface") == interface
+        and raw.get("found") is True
+        and raw.get("process_found") is True
+        and raw.get("enabled_type") == "boolean"
+        and raw.get("enabled") is False
+        and raw.get("pool_count") == 1
+        and raw.get("truncated") is False
+        and raw.get("error") == ""
+        and raw.get("pools") == [dict(expected_row)]
+    )
+
+
 def assess_native_pool_start_probe(
     *,
     before: DefaultPoolSnapshot,
@@ -1432,6 +1458,163 @@ def assess_native_pool_start_probe(
         MeasurementConclusion.CONTRADICTED,
         facts=facts,
         causes=["setter_changed_unrequested_pool_fields_or_incoherent_readback"],
+    )
+
+
+def assess_native_pool_repeated_start_probe(
+    *,
+    before: DefaultPoolSnapshot,
+    probe: ProbeReading,
+    after: DefaultPoolSnapshot,
+    server: str,
+    interface: str,
+    expected_before: Mapping[str, object],
+    expected_after: Mapping[str, object],
+    evidence_sha256: str,
+) -> Assessment:
+    """Admit only a repeat of one exact measured coupled setter transition."""
+    result = assess_native_pool_start_probe(
+        before=before,
+        probe=probe,
+        after=after,
+        server=server,
+        interface=interface,
+        requested_start=str(expected_after["start"]),
+    )
+    facts = {**result.facts, "repeat_basis_sha256": evidence_sha256}
+    if result.outcome_unknown or result.conclusion in (
+        MeasurementConclusion.INCONCLUSIVE,
+        MeasurementConclusion.NEGATIVE_OBSERVED,
+    ):
+        result.facts = facts
+        return result
+    if (
+        facts["before_inventory"] == [dict(expected_before)]
+        and facts["after_inventory"] == [dict(expected_after)]
+        and facts["before_envelope"] == facts["after_envelope"]
+        and probe.observed
+        and probe.payload.get("attempted") is True
+        and probe.payload.get("call_error") == ""
+        and probe.payload.get("post_start") == expected_after["start"]
+    ):
+        return Assessment(
+            MeasurementConclusion.SUPPORTED_IN_SAMPLE,
+            facts=facts,
+            limitations=["repeat_of_one_build_scoped_coupled_result_not_pool_policy"],
+        )
+    return Assessment(
+        MeasurementConclusion.CONTRADICTED,
+        facts=facts,
+        causes=["episode1_coupled_start_transition_not_reproduced"],
+    )
+
+
+def assess_native_pool_max_probe(
+    *,
+    before: DefaultPoolSnapshot,
+    probe: ProbeReading,
+    after: DefaultPoolSnapshot,
+    server: str,
+    interface: str,
+    expected_before: Mapping[str, object],
+    requested_max: int,
+) -> Assessment:
+    """Judge one native capacity call by its complete physical footprint."""
+    prior_inventory = (
+        [dict(row) for row in before.raw.get("pools", ())] if before.observed else []
+    )
+    after_inventory = (
+        [dict(row) for row in after.raw.get("pools", ())] if after.observed else []
+    )
+    prior = prior_inventory[0] if len(prior_inventory) == 1 else {}
+    current = after_inventory[0] if len(after_inventory) == 1 else {}
+    before_envelope = {
+        key: value for key, value in before.raw.items() if key != "pools"
+    }
+    after_envelope = {key: value for key, value in after.raw.items() if key != "pools"}
+    facts = {
+        "before": prior,
+        "after": current,
+        "probe": dict(probe.payload) if probe.observed else {},
+        "before_inventory": prior_inventory,
+        "after_inventory": after_inventory,
+        "before_envelope": before_envelope,
+        "after_envelope": after_envelope,
+    }
+    if (
+        prior_inventory != [dict(expected_before)]
+        or before.intended_present
+        or not before.observed
+    ):
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=["native_max_precondition_unobserved_or_changed"],
+        )
+    if not probe.observed:
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=[f"native_max_outcome_unobserved:{probe.cause}"],
+            outcome_unknown=True,
+        )
+    payload = probe.payload
+    if (
+        payload.get("device") != server
+        or payload.get("interface") != interface
+        or payload.get("pool") != "serverPool"
+        or payload.get("found") is not True
+        or payload.get("pre_max") != prior["max"]
+    ):
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=["native_max_subject_or_pre_read_mismatch"],
+            outcome_unknown=payload.get("attempted") is True,
+        )
+    if payload.get("attempted") is not True:
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=["native_max_not_attempted"],
+        )
+    if payload.get("call_error"):
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=["native_max_reported_error"],
+            outcome_unknown=True,
+        )
+    if not after.observed or not after_inventory:
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=["native_max_after_unobserved"],
+            outcome_unknown=True,
+        )
+    if before_envelope != after_envelope or after.intended_present:
+        return Assessment(
+            MeasurementConclusion.CONTRADICTED,
+            facts=facts,
+            causes=["native_max_changed_process_or_inventory_envelope"],
+        )
+    expected = {**prior, "max": requested_max, "end": prior["start"]}
+    if after_inventory == [expected] and payload.get("post_max") == requested_max:
+        return Assessment(
+            MeasurementConclusion.SUPPORTED_IN_SAMPLE,
+            facts=facts,
+            limitations=["range_and_capacity_only_gateway_dns_exclusions_unqualified"],
+        )
+    if after_inventory == [prior] and payload.get("post_max") == prior["max"]:
+        return Assessment(
+            MeasurementConclusion.NEGATIVE_OBSERVED,
+            facts=facts,
+            causes=["native_max_setter_returned_without_physical_change"],
+        )
+    return Assessment(
+        MeasurementConclusion.CONTRADICTED,
+        facts=facts,
+        causes=["native_max_changed_unrequested_pool_fields_or_incoherent_readback"],
     )
 
 

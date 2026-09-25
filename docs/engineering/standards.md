@@ -213,6 +213,15 @@ grants an exemption prints every authorization and exempted path. The
 [mechanical migration quality boundary](change-briefs/mechanical-migration-quality-boundary.md)
 brief holds the contract and the procedure for registering a new transformation.
 
+Raw executable scripts preserved as immutable LIVE evidence are data, not
+maintained Python. The only such quality-gate classification is the exact
+registered archive paths and SHA-256 bytes in `scripts/quality_gate.py`. The
+gate also verifies the pinned manifest digest, every archived file hash, and
+the complete file set before omitting those raw scripts from Ruff. A missing,
+added or changed archive file fails the gate; every other Python file, including
+new or unverifiable evidence, remains Ruff-gated. This classification does not
+authorize a source edit, a mechanical-migration exemption, or LIVE behavior.
+
 | Automated | Requires human or independent review |
 | --- | --- |
 | Ruff lint and format on changed Python | Risk classification and justified test levels |

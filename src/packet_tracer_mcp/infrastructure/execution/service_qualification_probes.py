@@ -219,6 +219,16 @@ _SPECS: dict[str, dict[str, tuple[type, ...]]] = {
         "pre_start": _STR,
         "post_start": _STR,
     },
+    "dhcp_native_max_probe": {
+        "device": _STR,
+        "interface": _STR,
+        "pool": _STR,
+        "found": _BOOL,
+        "attempted": _BOOL,
+        "call_error": _STR,
+        "pre_max": _INT,
+        "post_max": _INT,
+    },
     "dhcp_clients": {"clients": _LIST},
     "dhcp_table": {
         "found": _BOOL,
@@ -975,6 +985,37 @@ class PacketTracerQualificationProbes:
             "reportResult(JSON.stringify({device:__dn,interface:__if,"
             "pool:__name,found:!!__q,attempted:__attempted,call_error:__error,"
             "pre_start:__pre,post_start:__post}));",
+        )
+
+    def probe_native_pool_max(
+        self, server: str, interface: str, max_users: int
+    ) -> ProbeReading:
+        """Test documented `setMaxUsers` on the owned native pool once."""
+        if (
+            isinstance(max_users, bool)
+            or not isinstance(max_users, int)
+            or not 1 <= max_users <= 65_536
+        ):
+            raise ValueError("native pool capacity is out of bounds")
+        return self._read(
+            "dhcp_native_max_probe",
+            f"var __dn={json.dumps(server)},__if={json.dumps(interface)},"
+            f"__max={json.dumps(max_users)},__name='serverPool';"
+            "var __d=ipc.network().getDevice(__dn);"
+            "var __m=__d?__d.getProcess('DhcpServerMain'):null;"
+            "var __p=__m&&__m.getDhcpServerProcessByPortName(__if);"
+            "var __q=__p?__p.getPool(__name):null;"
+            "var __pre=null,__post=null,__attempted=false,__error='';"
+            "if(__q){try{var __v=__q.getMaxUsers();"
+            "if(typeof __v==='number'&&isFinite(__v)&&Math.floor(__v)===__v){"
+            "__pre=__v;__attempted=true;__q.setMaxUsers(__max);}}"
+            "catch(__x){__error=__er(__x);}"
+            "try{var __w=__q.getMaxUsers();"
+            "if(typeof __w==='number'&&isFinite(__w)&&Math.floor(__w)===__w){"
+            "__post=__w;}}catch(__x){if(!__error){__error='post_read:'+__er(__x);}}}"
+            "reportResult(JSON.stringify({device:__dn,interface:__if,"
+            "pool:__name,found:!!__q,attempted:__attempted,call_error:__error,"
+            "pre_max:__pre,post_max:__post}));",
         )
 
     def read_dhcp_clients(self, clients: Sequence[tuple[str, str]]) -> ProbeReading:

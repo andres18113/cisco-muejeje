@@ -130,6 +130,9 @@ const config = Object.assign({
   default_pool_drift_reads: 0, default_pool_realigns_on_address: false,
   dhcp_mode_acquires: false, dhcp_failure_address: '',
   dhcp_native_start_behavior: 'change',
+  dhcp_native_max_behavior: 'change',
+  dhcp_server_initial_enabled: false, dhcp_pool_count_invalid: false,
+  dhcp_enable_on_server_address: false,
   drop_product_claims_after_eval: false,
   terminals: false, terminal_refuses: false, ping_reachable: true,
   terminal_response_delay_reads: 0,
@@ -331,7 +334,9 @@ const makeClient = (owner) => {
 
 const dhcpState = (dev) => {
   if (!dev.dhcpServer) {
-    dev.dhcpServer = {enabled: false, exclusions: [], pools: {}};
+    dev.dhcpServer = {
+      enabled: config.dhcp_server_initial_enabled === true, exclusions: [], pools: {}
+    };
     const kind = config.dhcp_default_pool === true
       ? 'arbitrary' : config.dhcp_default_pool;
     const template = kind ? DEFAULT_POOLS[kind] : null;
@@ -371,12 +376,36 @@ const dhcpPool = (dev, pool) => ({
       return;
     }
     pool.start = String(value);
+    if (pool.name === 'serverPool'
+        && ['coupled', 'coupled_extra_pool'].includes(config.dhcp_native_start_behavior)) {
+      // Exact episode-1 observation, not a claimed general backend algorithm.
+      pool.end = '192.0.2.255'; pool.max = 156;
+    }
+    if (pool.name === 'serverPool'
+        && config.dhcp_native_start_behavior === 'coupled_extra_pool') {
+      dhcpState(dev).pools.MCP_E6Q_DHCP = {
+        name: 'MCP_E6Q_DHCP', network: '192.0.2.0', mask: '255.255.255.0',
+        gateway: '192.0.2.1', dns: '192.0.2.10', start: '192.0.2.100',
+        end: '192.0.2.100', max: 1, leases: []
+      };
+    }
   },
   setEndIp: (value) => {
     dhcpSetterCalls.setEndIp++; pool.end = String(value);
   },
   setMaxUsers: (value) => {
-    dhcpSetterCalls.setMaxUsers++; pool.max = Number(value);
+    dhcpSetterCalls.setMaxUsers++;
+    if (pool.name === 'serverPool' && config.dhcp_native_max_behavior === 'throw') {
+      throw new Error('native max setter refused');
+    }
+    if (pool.name === 'serverPool' && config.dhcp_native_max_behavior === 'noop') {
+      return;
+    }
+    pool.max = Number(value);
+    if (pool.name === 'serverPool' && config.dhcp_native_max_behavior === 'resize'
+        && Number(value) === 1) {
+      pool.end = pool.start;
+    }
   },
   getLeaseAt: (index) => {
     if (index < pool.leases.length) { return pool.leases[index]; }
@@ -406,6 +435,7 @@ const dhcpServerProcess = (dev) => {
       }
     },
     getPoolCount: () => {
+      if (config.dhcp_pool_count_invalid) { return 'unreadable'; }
       // Autonomous drift: the workspace moves on its own between two
       // readings with no intervention between them. It is a scenario the
       // control observation has to be able to tell from an effect, so the
@@ -834,6 +864,7 @@ global.configurePcIp = (name, dhcp, ip, mask, gateway, dns, iface) => {
   if (dns) { port.dns = String(dns); }
   if (ip && mask && dev && dev.model === 'Server-PT' && config.default_pool_realigns_on_address) {
     const state = dhcpState(dev);
+    if (config.dhcp_enable_on_server_address) { state.enabled = true; }
     const network = intToIp(ipToInt(ip) - (ipToInt(ip) % (4294967296 - ipToInt(mask))));
     for (const poolName of Object.keys(state.pools)) {
       if (poolName === 'MCP_E6Q_DHCP') { continue; }

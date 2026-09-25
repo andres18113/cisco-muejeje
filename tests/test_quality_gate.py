@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts import quality_gate
 from scripts.quality_gate import (
     QualityGateError,
     run_ruff,
@@ -17,6 +18,36 @@ from scripts.quality_gate import (
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 QUALITY_GATE = REPOSITORY_ROOT / "scripts" / "quality_gate.py"
+
+
+def test_ruff_batches_every_long_windows_path_and_keeps_a_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Windows command length cannot silently drop any selected Python file."""
+    files = tuple(
+        tmp_path / ("nested_" * 20) / f"candidate_{index:03}.py" for index in range(220)
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **_kwargs):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(
+            argv,
+            1 if argv[3] == "check" and len(calls) == 1 else 0,
+        )
+
+    monkeypatch.setattr(quality_gate.subprocess, "run", fake_run)
+    assert run_ruff(files, repository=tmp_path) == 1
+    for phase in ("check", "format"):
+        phase_calls = [argv for argv in calls if argv[3] == phase]
+        assert len(phase_calls) > 1
+        observed = [
+            Path(name)
+            for argv in phase_calls
+            for name in argv[argv.index("--config") + 2 :]
+        ]
+        assert sorted(observed) == sorted(files)
+        assert all(len(subprocess.list2cmdline(argv)) <= 8_000 for argv in phase_calls)
 
 
 def _git(repository: Path, *arguments: str) -> subprocess.CompletedProcess[str]:

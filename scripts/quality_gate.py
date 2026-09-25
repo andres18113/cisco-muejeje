@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
+import re
 import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path, PurePath
+from pathlib import Path, PurePath, PurePosixPath
 from typing import Literal
 
 # This module runs both as the documented `python scripts/quality_gate.py` script
@@ -32,10 +34,124 @@ else:
         raise
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+_RAW_EVIDENCE_ROOT = PurePosixPath(
+    "docs/reference/server-pt/evidence/dhcp-autonomy-02/e1"
+)
+_RAW_EVIDENCE_MANIFEST_SHA256 = (
+    "390772066149b6b0926566227a2bbdc518aac14d62d885e070b4906d302be623"
+)
+_RAW_EVIDENCE_PYTHON_SHA256 = {
+    (_RAW_EVIDENCE_ROOT / "lead/launch_owned_lab.py").as_posix(): (
+        "85b09d91b5e96077d05724fe2a9eb82dec92525cc0ba90171a1a654c85e4c2e5"
+    ),
+    (_RAW_EVIDENCE_ROOT / "lead/run_qualification.py").as_posix(): (
+        "265c2e5e905f42c5885cadad38da851ad580577a42267ed9fbdaacdb5a078964"
+    ),
+}
 
 
 class QualityGateError(RuntimeError):
     """Report an input or repository state that makes the gate inconclusive."""
+
+
+def classify_immutable_evidence(
+    files: Sequence[Path], repository: Path = REPOSITORY_ROOT
+) -> tuple[tuple[Path, ...], tuple[Path, ...]]:
+    """Exempt only exact raw episode scripts under a fully verified archive."""
+    root = repository.resolve()
+    selected: list[tuple[Path, str]] = []
+    for path in files:
+        lexical = path.absolute()
+        try:
+            relative = lexical.relative_to(root).as_posix()
+        except ValueError as exc:
+            raise QualityGateError(
+                f"Selected Python path escapes checkout: {path}."
+            ) from exc
+        if path.is_symlink() or path.resolve() != lexical:
+            raise QualityGateError(
+                f"Selected Python symlink or alias is refused: {path}."
+            )
+        selected.append((path, relative))
+    archive_path = root / _RAW_EVIDENCE_ROOT
+    if (
+        not any(name in _RAW_EVIDENCE_PYTHON_SHA256 for _, name in selected)
+        and not archive_path.exists()
+    ):
+        manifest_name = (_RAW_EVIDENCE_ROOT / "MANIFEST.sha256").as_posix()
+        history = subprocess.run(
+            ["git", "log", "-1", "--format=%H", "--", manifest_name],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        tracked = subprocess.run(
+            [
+                "git",
+                "ls-files",
+                "--error-unmatch",
+                "--",
+                manifest_name,
+            ],
+            cwd=root,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if history.returncode != 0:
+            raise QualityGateError("immutable evidence history is unobservable")
+        if not history.stdout.strip() and tracked.returncode != 0:
+            return tuple(files), ()
+
+    archive = archive_path.resolve()
+    if archive != archive_path.absolute() or not archive.is_relative_to(root):
+        raise QualityGateError("immutable evidence archive is a symlink or alias")
+    manifest = archive / "MANIFEST.sha256"
+    try:
+        raw = manifest.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != _RAW_EVIDENCE_MANIFEST_SHA256:
+            raise ValueError("manifest digest mismatch")
+        lines = raw.decode("utf-8").splitlines()
+        declared: dict[str, str] = {}
+        for line in lines:
+            if not re.fullmatch(r"[0-9a-f]{64}  .+", line):
+                raise ValueError("manifest row malformed")
+            digest, name = line.split("  ", 1)
+            relative = PurePosixPath(name)
+            if (
+                name in declared
+                or relative.is_absolute()
+                or ".." in relative.parts
+                or relative.as_posix() != name
+            ):
+                raise ValueError("manifest path malformed or duplicated")
+            candidate = (archive / relative).resolve()
+            if not candidate.is_relative_to(archive) or not candidate.is_file():
+                raise ValueError("manifest file unavailable or escaped")
+            if hashlib.sha256(candidate.read_bytes()).hexdigest() != digest:
+                raise ValueError("manifest file digest mismatch")
+            declared[name] = digest
+        actual = {
+            path.relative_to(archive).as_posix()
+            for path in archive.rglob("*")
+            if path.is_file() and path != manifest
+        }
+        if actual != set(declared):
+            raise ValueError("manifest inventory changed")
+        for name, digest in _RAW_EVIDENCE_PYTHON_SHA256.items():
+            member = PurePosixPath(name).relative_to(_RAW_EVIDENCE_ROOT).as_posix()
+            if declared.get(member) != digest:
+                raise ValueError("registered Python evidence differs from manifest")
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise QualityGateError(f"immutable evidence is unverified: {exc}") from exc
+    gated = tuple(
+        path for path, name in selected if name not in _RAW_EVIDENCE_PYTHON_SHA256
+    )
+    exempt = tuple(
+        Path(name) for _, name in selected if name in _RAW_EVIDENCE_PYTHON_SHA256
+    )
+    return gated, exempt
 
 
 @dataclass(frozen=True)
@@ -176,7 +292,11 @@ def _existing_python_files(repository: Path, names: set[str]) -> tuple[Path, ...
     for name in names:
         if Path(name).suffix != ".py":
             continue
-        candidate = (repository / name).resolve()
+        candidate = (repository / name).absolute()
+        if candidate.is_symlink() or candidate.resolve() != candidate:
+            raise QualityGateError(
+                f"Selected Python symlink or alias is refused: {name!r}."
+            )
         if not candidate.is_relative_to(repository):
             raise QualityGateError(f"Selected path escapes the repository: {name!r}.")
         if not candidate.is_file():
@@ -570,18 +690,59 @@ def run_ruff(files: Sequence[Path], repository: Path = REPOSITORY_ROOT) -> int:
         return 0
 
     config = repository / "pyproject.toml"
-    common = ["--config", str(config), *(str(path) for path in files)]
-    lint = subprocess.run(
-        [sys.executable, "-m", "ruff", "check", *common],
-        cwd=repository,
-        check=False,
-    )
-    formatting = subprocess.run(
-        [sys.executable, "-m", "ruff", "format", "--check", *common],
-        cwd=repository,
-        check=False,
-    )
-    return int(lint.returncode != 0 or formatting.returncode != 0)
+    # Windows CreateProcess has a command-line limit below the length of this
+    # branch's full absolute-path selection. Ruff checks files independently;
+    # partition only argv, never the selected set or the failure result.
+    max_command_chars = 8_000
+    longest_prefix = [
+        sys.executable,
+        "-m",
+        "ruff",
+        "format",
+        "--check",
+        "--config",
+        str(config),
+    ]
+    batches: list[tuple[str, ...]] = []
+    pending: list[str] = []
+    for path in files:
+        name = str(path)
+        proposed = [*pending, name]
+        if (
+            len(subprocess.list2cmdline([*longest_prefix, *proposed]))
+            > max_command_chars
+        ):
+            if not pending:
+                raise QualityGateError(f"Ruff path exceeds command limit: {path!s}.")
+            batches.append(tuple(pending))
+            pending = [name]
+            if (
+                len(subprocess.list2cmdline([*longest_prefix, name]))
+                > max_command_chars
+            ):
+                raise QualityGateError(f"Ruff path exceeds command limit: {path!s}.")
+        else:
+            pending = proposed
+    if pending:
+        batches.append(tuple(pending))
+    failed = False
+    for phase in (("check",), ("format", "--check")):
+        for batch in batches:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "ruff",
+                    *phase,
+                    "--config",
+                    str(config),
+                    *batch,
+                ],
+                cwd=repository,
+                check=False,
+            )
+            failed |= result.returncode != 0
+    return int(failed)
 
 
 def _explicit_files(paths: Sequence[Path]) -> tuple[Path, ...]:
@@ -597,7 +758,9 @@ def _explicit_files(paths: Sequence[Path]) -> tuple[Path, ...]:
     return tuple(sorted(selected, key=lambda path: path.as_posix()))
 
 
-def _print_selection(selection: ChangeSelection) -> None:
+def _print_selection(
+    selection: ChangeSelection, immutable_exempt: Sequence[Path] = ()
+) -> None:
     """Print auditable comparison identity and validation semantics."""
     if selection.mode == "delivery":
         print(
@@ -616,9 +779,13 @@ def _print_selection(selection: ChangeSelection) -> None:
     )
     print(f"Merge base: {selection.merge_base_sha}", flush=True)
     exempt = len(selection.exempt)
-    ruff_gated = len(selection.files)
-    print(f"Changed Python files: {exempt + ruff_gated}", flush=True)
+    ruff_gated = len(selection.files) - len(immutable_exempt)
+    print(f"Changed Python files: {exempt + len(selection.files)}", flush=True)
     print(f"Mechanical-only exempt: {exempt}", flush=True)
+    if immutable_exempt:
+        print(f"Immutable evidence exempt: {len(immutable_exempt)}", flush=True)
+        for path in immutable_exempt:
+            print(f"Immutable evidence: {path.as_posix()}", flush=True)
     print(f"Ruff-gated Python files: {ruff_gated}", flush=True)
     _print_mechanical_boundary(selection)
 
@@ -787,9 +954,11 @@ def main(arguments: Sequence[str] | None = None) -> int:
                     parsed.delivery_commit,
                     authorizations=authorizations,
                 )
-            _print_selection(selection)
+            files, immutable_exempt = classify_immutable_evidence(
+                selection.files, REPOSITORY_ROOT
+            )
+            _print_selection(selection, immutable_exempt)
             unverifiable_status = _report_unverifiable(selection)
-            files = selection.files
     except QualityGateError as error:
         print(f"Ruff gate inconclusive: {error}", file=sys.stderr, flush=True)
         return 2

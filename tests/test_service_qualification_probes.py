@@ -920,3 +920,25 @@ def test_native_pool_probe_brackets_a_documented_setter_with_physical_reads(
     }
     assert before.payload["pools"][0]["start"] == "0.0.0.0"
     assert after.payload["pools"][0]["start"] == "192.0.2.100"
+
+
+def test_native_capacity_probe_reports_call_and_immediate_readback(engine_factory):
+    """The fixed candidate calls documented setMaxUsers on serverPool once."""
+    engine = engine_factory(dhcp_default_pool="native")
+    engine.seed_device(SERVER, "Server-PT")
+    probes, _transport = _probes(engine)
+    assert hasattr(probes, "probe_native_pool_max")
+    reading = probes.probe_native_pool_max(SERVER, "FastEthernet0", 1)
+    assert reading.observed
+    assert reading.payload == {
+        "device": SERVER,
+        "interface": "FastEthernet0",
+        "pool": "serverPool",
+        "found": True,
+        "attempted": True,
+        "call_error": "",
+        "pre_max": 512,
+        "post_max": 1,
+    }
+    physical = probes.read_dhcp_server_baseline(SERVER, "FastEthernet0")
+    assert physical.payload["pools"][0]["max"] == 1

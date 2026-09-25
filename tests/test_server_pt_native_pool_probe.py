@@ -275,7 +275,23 @@ def test_direct_live_application_refuses_campaign_stage_without_mission_authorit
     }
 
 
-def test_new_campaign_cli_binds_and_archives_the_probe(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize(
+    ("stage", "engine_config", "max_calls"),
+    [
+        ("Q3-NATIVE-PROBE", {}, 0),
+        (
+            "Q3-NATIVE-SIZE",
+            {
+                "dhcp_native_start_behavior": "coupled",
+                "dhcp_native_max_behavior": "resize",
+            },
+            1,
+        ),
+    ],
+)
+def test_new_campaign_cli_binds_and_archives_the_probe(
+    tmp_path, monkeypatch, capsys, stage, engine_config, max_calls
+):
     """The fixed probe executes only after the new mandate, launch and grant bind."""
     require_node()
     assert (
@@ -297,14 +313,14 @@ def test_new_campaign_cli_binds_and_archives_the_probe(tmp_path, monkeypatch, ca
         {
             "kind": "episode_opening",
             "episode": 1,
-            "question": "Does setStartIp change the effective native pool?",
+            "question": f"Does {stage} measure its native setter?",
             "stop_rule": "stop on unknown effect or incomplete readback",
             "source_sha": SIM_SHA,
             "source_tree": SIM_TREE,
             "attempt_ids": [ATTEMPT],
             "tests_run": ["tests/test_server_pt_native_pool_probe.py"],
             "targets": ["__MCP_E6Q_SRV"],
-            "permitted_effects": ["qualification:Q3-NATIVE-PROBE"],
+            "permitted_effects": [f"qualification:{stage}"],
             "allocated_operations": 120,
             "allocated_seconds": 1800.0,
             "opened_at_utc": (datetime.now(UTC) - timedelta(seconds=5)).isoformat(),
@@ -327,6 +343,7 @@ def test_new_campaign_cli_binds_and_archives_the_probe(tmp_path, monkeypatch, ca
         tmp_path,
         dhcp_default_pool="native",
         default_pool_realigns_on_address=True,
+        **engine_config,
     )
     try:
         transport = NodeEngineTransport(engine)
@@ -342,8 +359,8 @@ def test_new_campaign_cli_binds_and_archives_the_probe(tmp_path, monkeypatch, ca
             )
 
         code = service_qualification.main(
-            request_args("Q3-NATIVE-PROBE")
-            + authorization_args("Q3-NATIVE-PROBE", attempt_id=ATTEMPT)
+            request_args(stage)
+            + authorization_args(stage, attempt_id=ATTEMPT)
             + [
                 "--campaign",
                 "dhcp-autonomy",
@@ -361,5 +378,6 @@ def test_new_campaign_cli_binds_and_archives_the_probe(tmp_path, monkeypatch, ca
         assert store.load_phase_status(ATTEMPT, "qualification")["restoration_proven"]
         assert store.verify_index() == ()
         assert engine.snapshot()["dhcp_setter_calls"]["setStartIp"] == 1
+        assert engine.snapshot()["dhcp_setter_calls"]["setMaxUsers"] == max_calls
     finally:
         engine.close()
