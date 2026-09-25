@@ -113,6 +113,7 @@ from ...domain.enterprise.models.service_qualification import (
     Q3_FL_STAGES,
     Q3_FL_TIMED_INTERVAL_SECONDS,
     Q3_LEASE_IPV4,
+    Q3_NATIVE_STAGES,
     Q3_PC1,
     Q3_PC2,
     Q3_POOL,
@@ -220,6 +221,7 @@ from ...domain.enterprise.services.service_qualification_evidence import (
     assess_https_listener,
     assess_native_default_cumulative,
     assess_native_default_interval,
+    assess_native_pool_start_probe,
     assess_observer_release,
     assess_page_tables,
     assess_port_readiness,
@@ -246,7 +248,7 @@ from .deploy_enterprise_topology import (
     disposable_workspace_error,
 )
 from .foundational_evidence import derive_service_foundational_statuses
-from .server_pt_campaign import DHCP_FASTLOOP_CAMPAIGN
+from .server_pt_campaign import DHCP_AUTONOMY_CAMPAIGN, DHCP_FASTLOOP_CAMPAIGN
 from .service_access_readiness_gate import (
     ReadinessNotRequired,
     ServiceAccessReadinessGate,
@@ -939,8 +941,16 @@ class CampaignQualificationAuthority:
         return bool(
             authorization is not None
             and definition is not None
-            and definition.stage in Q3_FL_STAGES
-            and self.campaign_id == DHCP_FASTLOOP_CAMPAIGN.campaign_id
+            and (
+                (
+                    definition.stage in Q3_FL_STAGES
+                    and self.campaign_id == DHCP_FASTLOOP_CAMPAIGN.campaign_id
+                )
+                or (
+                    definition.stage in Q3_NATIVE_STAGES
+                    and self.campaign_id == DHCP_AUTONOMY_CAMPAIGN.campaign_id
+                )
+            )
             and self.episode >= 1
             and self.admission_record
             == f"episode-{self.episode:04d}-{self.attempt_id}-qualification-admission"
@@ -1052,7 +1062,7 @@ _DIAGNOSTIC_BOUNDARIES: dict[QualificationStage, tuple[str, ...]] = {
             "diagnostic_lifecycle",
             "native_default_transitions",
         )
-        for stage in Q3_FL_STAGES
+        for stage in (*Q3_FL_STAGES, *Q3_NATIVE_STAGES)
     },
 }
 
@@ -1107,6 +1117,16 @@ def qualify_server_services(
             ]
         )
 
+    if type(boundaries.execution_mode) is not ExecutionMode:
+        return _refused(
+            [
+                refusal(
+                    RefusalKind.MALFORMED,
+                    RefusalSubject.EXECUTION,
+                    "Execution mode must be a typed boundary value.",
+                )
+            ]
+        )
     isolation = _isolation(boundaries)
     if not isolation.isolated:
         kind = (
@@ -1131,6 +1151,20 @@ def qualify_server_services(
         authorization.tree if authorization is not None else "",
     )
     authority = boundaries.campaign_source_authority
+    if (
+        boundaries.execution_mode is ExecutionMode.LIVE
+        and definition.stage in (*Q3_FL_STAGES, *Q3_NATIVE_STAGES)
+        and authority is None
+    ):
+        return _refused(
+            [
+                refusal(
+                    RefusalKind.MISSING,
+                    RefusalSubject.AUTHORIZATION,
+                    "This experimental DHCP stage requires its campaign authority.",
+                )
+            ]
+        )
     if authority is not None:
         if not authority.permits(request, repository):
             return _refused(
@@ -1197,7 +1231,7 @@ def _with_campaign_claim(
     moment = boundaries.now()
     run_id = boundaries.new_run_id(moment)
     product_contract: Q3ProductContract | None = None
-    if definition.stage in Q3_FL_STAGES:
+    if definition.stage in (*Q3_FL_STAGES, *Q3_NATIVE_STAGES):
         if (
             not boundaries.q3_required_build
             or request.packet_tracer_build != boundaries.q3_required_build
@@ -1891,6 +1925,8 @@ def _admitted(
             _run_d_web(execution)
         elif definition.stage in Q3_FL_STAGES:
             _run_q3_fastloop(execution)
+        elif definition.stage in Q3_NATIVE_STAGES:
+            _run_q3_native_probe(execution)
         else:
             _run_q3(execution)
     except KeyboardInterrupt as exc:
@@ -4734,6 +4770,127 @@ def _d_dhcp_enable(
     execution.establish(DiagnosticPrecondition.PROCESS_ENABLED_VERIFIED)
 
 
+# -- delegated native-pool qualification -------------------------------------------
+
+
+def _run_q3_native_probe(execution: _Execution) -> None:
+    """Bracket one documented native setter inside the governed Q3 fixture."""
+
+    def final_read() -> None:
+        ids = ("M-NATIVE-FINAL",)
+        if not execution.begin_terminal(ids, "Q3_NATIVE_FINAL"):
+            return
+        with execution.procedure(ids):
+            final = _q3_default_read(
+                execution, "native_before_cleanup", prefix="q3-native"
+            )
+            execution.conclude(
+                "M-NATIVE-FINAL",
+                Assessment(
+                    MeasurementConclusion.SUPPORTED_IN_SAMPLE
+                    if final.observed
+                    else MeasurementConclusion.INCONCLUSIVE,
+                    facts={
+                        "observed": final.observed,
+                        "pools": [dict(item) for item in final.pools],
+                    },
+                    causes=[] if final.observed else [final.cause],
+                ),
+            )
+        execution.finish("Q3_NATIVE_FINAL")
+
+    execution.register_terminal(("M-NATIVE-FINAL",), "Q3_NATIVE_FINAL", final_read)
+    if not _diagnostic_start(execution):
+        return
+    ids = ("M-NATIVE-START",)
+    if not execution.selected("NATIVE-start") or not execution.begin(
+        ids, "Q3_NATIVE_START"
+    ):
+        return
+    with execution.procedure(ids):
+        contract = execution.product_contract
+        if contract is None:
+            execution.stop("q3_native_product_contract_absent")
+            return
+        state = _Q3FlState()
+        if not _q3fl_snapshot(execution, state, "before_e5", ""):
+            execution.stop("q3_native_baseline_not_admitted")
+            return
+        static_plan = d_dhcp_static_only_plan(
+            contract.configuration_plan, device_name=Q3_SERVER
+        )
+        if len(static_plan.actions) != 1:
+            execution.stop("q3_native_static_action_ambiguous")
+            return
+        configuration_runtime, _ = _d_dhcp_runtimes(execution, contract)
+        if not execution.run.transition("experiment:Q3_NATIVE_E5:started"):
+            execution.stop("persistence:q3_native_e5_not_announced")
+            return
+        with execution.ledger.effect_of("q3-native:product:e5_server_address"):
+            configuration = ConfigurationApplicator(configuration_runtime).apply(
+                static_plan,
+                actual_source_topology_hash=contract.manifest.physical_topology_hash,
+                capabilities=contract.device_capabilities,
+                runtime_context=_q3_context(contract),
+                deployment_manifest=contract.manifest,
+            )
+        foundation_plan = contract.service_plan.model_copy(
+            update={
+                "source_configuration_id": static_plan.id,
+                "source_configuration_hash": static_plan.semantic_hash,
+            },
+            deep=True,
+        )
+        foundations = derive_service_foundational_statuses(
+            foundation_plan, configuration
+        )
+        cause = _q3_e5_foundation_cause(
+            configuration, foundations, {static_plan.actions[0].id}
+        )
+        if cause:
+            execution.stop(cause)
+            return
+        if not _q3fl_snapshot(
+            execution,
+            state,
+            "after_server_address",
+            execution.run.boundaries.reviewed_native_default_intervention,
+        ):
+            execution.stop("q3_native_server_address_transition_not_admitted")
+            return
+        before = state.snapshots[-1]
+        pool_actions = [
+            item
+            for item in contract.service_plan.actions
+            if isinstance(item, ConfigureServerDhcpPool)
+        ]
+        if len(pool_actions) != 1 or pool_actions[0].pool_name != Q3_POOL:
+            execution.stop("q3_native_requested_pool_ambiguous")
+            return
+        requested_start = pool_actions[0].lease_start
+        if not execution.run.transition("experiment:Q3_NATIVE_SETTER:started"):
+            execution.stop("persistence:q3_native_setter_not_announced")
+            return
+        with execution.ledger.effect_of("q3-native:serverPool:setStartIp"):
+            with execution.ledger.purpose_of("q3-native:serverPool:setStartIp"):
+                probe = execution.probes.probe_native_pool_start(
+                    Q3_SERVER, "FastEthernet0", requested_start
+                )
+        after = _q3_default_read(execution, "after_native_start", prefix="q3-native")
+        execution.conclude(
+            "M-NATIVE-START",
+            assess_native_pool_start_probe(
+                before=before,
+                probe=probe,
+                after=after,
+                server=Q3_SERVER,
+                interface="FastEthernet0",
+                requested_start=requested_start,
+            ),
+        )
+    execution.finish("Q3_NATIVE_START")
+
+
 # -- Q3-FL: the versioned DHCP qualification profile ------------------------------
 
 Q3_FL_DEFAULT_PURPOSE = "q3-fl:native_default"
@@ -4767,6 +4924,7 @@ class _Q3FlState:
     clients: tuple[_Q3FlClient, ...] = ()
     native_pools: tuple[str, ...] = ()
     readings: list[NativeDefaultReading] = field(default_factory=list)
+    snapshots: list[DefaultPoolSnapshot] = field(default_factory=list)
     sequence: NativeDefaultSequenceAssessment | None = None
     scans: list[tuple[str, dict[str, LeaseScan]]] = field(default_factory=list)
     client_reads: list[tuple[str, dict[str, ClientReading]]] = field(
@@ -4920,6 +5078,7 @@ def _q3fl_snapshot(
 ) -> bool:
     """Take one native-default reading after `intervention` and re-decide."""
     snapshot = _q3_default_read(execution, label, prefix=Q3_FL_DEFAULT_PURPOSE)
+    state.snapshots.append(snapshot)
     state.readings.append(
         NativeDefaultReading(
             label=label,

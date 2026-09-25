@@ -509,3 +509,104 @@ byte-identical afterwards. No production code changed.
 | DF14 | coordinator: an unknown acquisition outcome stops later effects, an unreviewed movement stops, `test_an_unannounced_effect_is_never_applied_and_finalization_still_runs`; `test_service_qualification_coordinator.py`: persistence loss before and after an effect | no stop in episode 1; the terminal reading and finalization ran and restoration was proven |
 | DF15 | `test_dhcp_lease_evidence.py::test_attribution_is_linear_in_clients_and_rows` and `test_service_access_readiness_dhcp.py::test_one_group_serves_every_client_of_a_switch_and_vlan`, each at 2, 20, 200 and 1000 clients | offline only; two clients ran natively |
 | DF16 | `test_q3_fastloop_campaign_cli.py`: a campaign run archives its phase; `test_dhcp_native_default_lifecycle.py::test_product_dhcp_capabilities_remain_unknown` | the `dhcp-fl-01/` archive of 41 files; no catalog or capability file changed since `2a44b38` |
+
+## Delegated DHCP autonomy, version 5: active design delta
+
+**Authority and starting state.** The operator's execution mandate is
+`C:\Users\Andres\Downloads\ServerPT_DHCP_Delegated_Autonomy_Mandate.md`, SHA-256
+`3bb343ef80d75c0ebf37204c8fbfd57da23eea4e5de57a7227ee1ded2e2d1ea2`.
+This checkout is `feature/server-pt-goal-foundations` at
+`a921a688a7f7103db2cff3915172d812a8e26644` (tree
+`d8ae5896e816d5710877be3dc2f558c6a54a713d`), clean at inspection.
+`cisco/main` resolves to `6263344e31ba3b0de6539d652f2cd06fc73a3562`.
+Risk stays **L**: changing effect admission, pool authority, evidence and LIVE
+behavior. This section is the active change brief; earlier episode records and
+their interpretation above remain historical.
+
+**Problem and outcome.** Episode 1 established that the native `serverPool`
+served both clients outside the requested `192.0.2.100` one-user allocation.
+Both addresses preceded their respective explicit requests. The product must
+realize the intent's range, mask, exclusions, gateway, DNS and capacity through
+an observed effective Server-PT pool, attribute each selected client's coherent
+configuration to it, then admit dependent HTTP through the registered product
+path. Existing static HTTP and offline scale behavior remain valid.
+
+**Scope.** Reuse the current E5/E6 compiler, typed runtime, readiness gate,
+claim store, campaign ledger, lifecycle automation and evidence archive. A
+dedicated versioned probe may test documented native-pool setters or removal on
+an owned disposable server, bracketing each effect with complete physical pool
+inventory and readback. It may not issue arbitrary operator-supplied source.
+The implementation may select a verified effective pool and may treat a
+background-acquired lease as a state prerequisite. It must preserve a logical
+requested pool identity separately from its physical binding and refuse an
+explicit pool-name requirement if the binding cannot honor it. No router DHCP,
+hidden API, static client injection, global capability override, main merge,
+or rewrite of episode 1 is in scope.
+
+| ID | Requirement | Acceptance criterion |
+| --- | --- | --- |
+| DA1 | A new prospective mission authority uses the existing ledger and lifecycle controls | Its charter digest, source SHA/tree, profile, episode, attempt, instance, nonce, effects and finite allocation are checked before contact; old exhausted grants stay closed |
+| DA2 | Select an effective pool from evidence, not a name or subnet coincidence | Complete pre/post inventory and exact pool fields distinguish successful native management, no-op, throw, regeneration and overlap; an unsupported route stops before clients |
+| DA3 | Preserve the requested address policy | Effective range, mask, exclusions, gateway, DNS and capacity match the compiled requirement; an address outside the allocation contradicts it |
+| DA4 | Separate usable state from request causality | A fresh client address/mask, selected interface and MAC, acceptable policy, and exact effective-pool lease row establish state; no `dhcpRun` causality or renewal is inferred from that state |
+| DA5 | Admit dependent HTTP through the maintained path | E5/E6 prerequisite and readiness verdicts are stored, then each selected DHCP client makes its first HTTP-by-IP request through the registered four-argument MCP route, with durable reload agreement |
+| DA6 | Preserve scale and failure containment | Real affected-flow tests cover 2/20/200/1000 clients offline with shared readiness and indexed lease scans; one client's uncertainty cannot authorize another or repeat an uncertain effect |
+| DA7 | Preserve laboratory and evidence integrity | Each LIVE episode has finite arithmetic, primary observations, exact identities, cleanup or quarantine, immutable artifacts and a hash manifest; an uncertain effect blocks dependents |
+
+**Decision sequence.** The first experiment is the smallest discriminating
+native-pool probe on a fresh owned server: read full inventory, apply one
+documented setter to `serverPool`, read back, then observe whether a known
+server-address reapplication regenerates it. If a setter is ineffective,
+investigate documented `removePool` on a new disposable instance; do not chain
+an uncertain mutation. Choose the least complex route whose physical readback
+and lease attribution establish the intent. A separately named pool cannot be
+called effective while the overlapping native pool actually serves. C2 is
+deferred until it can distinguish a real outcome. A positive exact lease row
+does not need an end-of-table claim; negative and renewal claims retain their
+separate evidence rules.
+
+**Architecture and invariants.** Domain code owns the pool-selection and
+usable-lease predicates. Application orchestration derives subjects from the
+compiled intent, gates each effect, and persists the logical-to-physical
+binding. Infrastructure owns only fixed documented API calls and readbacks.
+The existing MCP signature is unchanged. A candidate capability is private to
+the experiment. No missing identity, unobserved field, arbitrary exception,
+late read, contradictory row, foreign claim or unknown effect can authorize a
+dependent action. R-EVT-05 remains unless separately qualified. Every new
+source value entering generated JavaScript uses JSON serialization.
+
+**Verification design.** Start with causal RED tests for the native-pool
+decision and state prerequisite through the real runtime and composition;
+include no-op, throw, regeneration, competing row, wrong MAC, out-of-range,
+missing DNS/gateway, unknown effect and static-client positive controls. Run
+focused tests, affected tests, then the full suite and repository gates on the
+final candidate. The first LIVE probe is system evidence for build 9.0.1.0858;
+the later maintained-path DHCP plus HTTP run is acceptance evidence. Offline
+tests do not qualify native behavior. Exact-delivery CI and an independent
+review follow the clean delivery commit; reviewer approval remains separate.
+
+**Prospective resource design.** The new mission ledger is separate from the
+closed `SERVER-PT-DHCP-FASTLOOP-01` ledger. Its initial finite ceiling is
+10,000 operations and 14,400 active seconds, with 1,000 operations and 600 s
+protected for finalization. The forecast is: native probes 600 operations /
+1,800 s, candidate behavior 1,200 / 3,000, DHCP plus HTTP 1,600 / 3,600,
+repeat and representative scale 1,800 / 2,400, contingency 3,800 / 3,000,
+and the protected tail 1,000 / 600. Each episode receives its own lower
+allocation computed from actual calls and waits before it opens. Idle lab
+residence is charged and retirement is immediate after its work.
+
+**Pre-LIVE design refinements.** The first `Q3-NATIVE-PROBE` stage tests only
+whether one documented `setStartIp` call changes the physical `serverPool`
+immediately after the already reviewed server-address realignment. Its result
+cannot qualify persistence, reapplication, service, or the full requested
+policy. A separate discriminating episode must test reapplication before any
+native-management strategy is selected. The assessment compares the complete
+typed pool inventory and process envelope before/after the call; a new pool,
+changed enable state, no-op, exception or partial read is never clean support.
+The direct LIVE use-case entry requires this stage's campaign authority even
+when the checkout is published. Retirement must hold the same shared writer
+claim as qualification, without consuming a second attempt marker. Its exact
+owned save prompt receives an identified `No` response only after process,
+window, prompt and button revalidation; otherwise the lab is quarantined and
+the uncertainty is recorded. These controls respond to the separate pre-LIVE
+adversarial review, not to an observed native capability.

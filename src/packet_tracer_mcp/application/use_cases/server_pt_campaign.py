@@ -97,9 +97,24 @@ DHCP_FASTLOOP_CAMPAIGN = ServerPtCampaign(
     acceptance_cost_pin=None,
     forced_retirement_authorized=False,
 )
+DHCP_AUTONOMY_CAMPAIGN = ServerPtCampaign(
+    campaign_id="SERVER-PT-DHCP-AUTONOMOUS-02",
+    charter_sha256="3bb343ef80d75c0ebf37204c8fbfd57da23eea4e5de57a7227ee1ded2e2d1ea2",
+    purpose=ExecutionPurpose.EXPERIMENTAL,
+    deployment_prefix="server-pt-dhcp-autonomy-",
+    authorization_prefix="SERVER-PT-DHCP-AUTONOMY-",
+    complete_attempt_limit=None,
+    acceptance_cost_pin=None,
+    forced_retirement_authorized=True,
+)
 CAMPAIGNS = {
     item.campaign_id: item
-    for item in (C31_CAMPAIGN, FASTLOOP_CAMPAIGN, DHCP_FASTLOOP_CAMPAIGN)
+    for item in (
+        C31_CAMPAIGN,
+        FASTLOOP_CAMPAIGN,
+        DHCP_FASTLOOP_CAMPAIGN,
+        DHCP_AUTONOMY_CAMPAIGN,
+    )
 }
 
 

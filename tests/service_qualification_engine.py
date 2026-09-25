@@ -129,6 +129,7 @@ const config = Object.assign({
   dhcp_pool_selection: 'first', default_pool_change_on_enable: null,
   default_pool_drift_reads: 0, default_pool_realigns_on_address: false,
   dhcp_mode_acquires: false, dhcp_failure_address: '',
+  dhcp_native_start_behavior: 'change',
   drop_product_claims_after_eval: false,
   terminals: false, terminal_refuses: false, ping_reachable: true,
   terminal_response_delay_reads: 0,
@@ -362,7 +363,14 @@ const dhcpPool = (dev, pool) => ({
     dhcpSetterCalls.setDnsServerIp++; pool.dns = String(value);
   },
   setStartIp: (value) => {
-    dhcpSetterCalls.setStartIp++; pool.start = String(value);
+    dhcpSetterCalls.setStartIp++;
+    if (pool.name === 'serverPool' && config.dhcp_native_start_behavior === 'throw') {
+      throw new Error('native start setter refused');
+    }
+    if (pool.name === 'serverPool' && config.dhcp_native_start_behavior === 'noop') {
+      return;
+    }
+    pool.start = String(value);
   },
   setEndIp: (value) => {
     dhcpSetterCalls.setEndIp++; pool.end = String(value);

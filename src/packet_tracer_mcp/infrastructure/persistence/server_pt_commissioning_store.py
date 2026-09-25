@@ -509,6 +509,41 @@ class ServerPtCommissioningStore:
             raise ValueError("retirement attempt stamp is not a compact UTC time")
         return self._save_mapping(attempt_id, "retirement-attempt-" + stamp, document)
 
+    def retirement_attempts(self, attempt_id: str) -> tuple[dict[str, object], ...]:
+        """Read only indexed, byte-verified prior retirement attempts."""
+        findings = self.verify_index()
+        if findings:
+            raise ValueError("retirement history archive is unverified")
+        directory = self._attempt_dir(attempt_id)
+        attempts: list[dict[str, object]] = []
+        for path in sorted(directory.glob("retirement-attempt-*.json")):
+            if not re.fullmatch(
+                r"retirement-attempt-[0-9]{8}T[0-9]{6}Z\.json", path.name
+            ):
+                raise ValueError("retirement attempt name is malformed")
+            raw = path.read_bytes()
+            value = json.loads(raw)
+            if not isinstance(value, dict):
+                raise ValueError("retirement attempt is malformed")
+            attempts.append(
+                {
+                    **value,
+                    "_archive_file": path.name,
+                    "_archive_sha256": hashlib.sha256(raw).hexdigest(),
+                }
+            )
+        return tuple(attempts)
+
+    def save_retirement_claim_release(
+        self, attempt_id: str, holder: str, document: Mapping[str, object]
+    ) -> Path:
+        """Retain one claim-release outcome under its unique holder identity."""
+        if not isinstance(holder, str) or not re.fullmatch(r"[0-9a-f]{32}", holder):
+            raise ValueError("retirement claim holder is malformed")
+        return self._save_mapping(
+            attempt_id, f"retirement-claim-release-{holder}", document
+        )
+
     def load_process_exit(self, attempt_id: str) -> dict[str, object]:
         """Reload the indexed observed exit of the campaign-owned process."""
         return self._load_mapping(attempt_id, "process-exit")

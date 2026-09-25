@@ -209,6 +209,16 @@ _SPECS: dict[str, dict[str, tuple[type, ...]]] = {
         "truncated": _BOOL,
         "error": _STR,
     },
+    "dhcp_native_start_probe": {
+        "device": _STR,
+        "interface": _STR,
+        "pool": _STR,
+        "found": _BOOL,
+        "attempted": _BOOL,
+        "call_error": _STR,
+        "pre_start": _STR,
+        "post_start": _STR,
+    },
     "dhcp_clients": {"clients": _LIST},
     "dhcp_table": {
         "found": _BOOL,
@@ -936,6 +946,35 @@ class PacketTracerQualificationProbes:
             "process_found:!!__p,interface:__if,enabled:__enabled,"
             "enabled_type:__etype,pool_count:__count,pools:__pools,"
             "truncated:__tr,error:__error}));",
+        )
+
+    def probe_native_pool_start(
+        self, server: str, interface: str, start: str
+    ) -> ProbeReading:
+        """Test one documented native-pool setter on an owned fixture.
+
+        This fixed probe runs only under a diagnostic effect grant. Its
+        correlated reply describes the call and immediate readback; the
+        orchestrator must also compare complete inventory before and after.
+        An absent or unreadable pool is never written.
+        """
+        return self._read(
+            "dhcp_native_start_probe",
+            f"var __dn={json.dumps(server)},__if={json.dumps(interface)},"
+            f"__start={json.dumps(start)},__name='serverPool';"
+            "var __d=ipc.network().getDevice(__dn);"
+            "var __m=__d?__d.getProcess('DhcpServerMain'):null;"
+            "var __p=__m&&__m.getDhcpServerProcessByPortName(__if);"
+            "var __q=__p?__p.getPool(__name):null;"
+            "var __pre='',__post='',__attempted=false,__error='';"
+            "if(__q){try{__pre=String(__q.getStartIp()).substring(0,64);"
+            "__attempted=true;__q.setStartIp(__start);"
+            "}catch(__x){__error=__er(__x);}"
+            "try{__post=String(__q.getStartIp()).substring(0,64);"
+            "}catch(__x){if(!__error){__error='post_read:'+__er(__x);}}}"
+            "reportResult(JSON.stringify({device:__dn,interface:__if,"
+            "pool:__name,found:!!__q,attempted:__attempted,call_error:__error,"
+            "pre_start:__pre,post_start:__post}));",
         )
 
     def read_dhcp_clients(self, clients: Sequence[tuple[str, str]]) -> ProbeReading:

@@ -119,6 +119,19 @@ class WindowCloseResult:
 
 
 @dataclass(frozen=True)
+class SavePromptResponse:
+    """One exact owned save dialog's identified No-button response."""
+
+    process_id: int
+    handle: int
+    sent: bool = False
+    refusal: str = ""
+    prompt: str = ""
+    button: str = ""
+    error: str = ""
+
+
+@dataclass(frozen=True)
 class TerminationResult:
     """Whether one revalidated termination was issued, and why not otherwise.
 
@@ -182,12 +195,14 @@ def _hex_digest(value: object) -> str:
 #: output is ASCII JSON, so no console code page can alter a title.
 _WINDOW_HELPER = r"""
 $ErrorActionPreference = 'Stop'
-Add-Type -TypeDefinition @'
+Add-Type -ReferencedAssemblies @('UIAutomationClient','UIAutomationTypes') -TypeDefinition @'
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
+using System.Windows.Automation;
 public static class PtMcpOwnedWindows {
     public delegate bool EnumProc(IntPtr h, IntPtr l);
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc f, IntPtr l);
@@ -329,6 +344,65 @@ public static class PtMcpOwnedWindows {
             return "{\"sent\":true,\"refusal\":\"\"}";
         } finally { CloseHandle(p); }
     }
+    static string SaveAnswer(bool sent, string refusal, string prompt, string button) {
+        return "{\"sent\":" + (sent ? "true" : "false")
+            + ",\"refusal\":" + Esc(refusal) + ",\"prompt\":" + Esc(prompt)
+            + ",\"button\":" + Esc(button) + "}";
+    }
+    // The process handle pins the PID while the exact modal and its UIA
+    // descendants are revalidated. No keystroke or focus change is used.
+    public static string AnswerNo(uint target, long dialog, long document, string expected,
+        string set, long ticks, int limit) {
+        IntPtr p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, target);
+        if (p == IntPtr.Zero) { return SaveAnswer(false, "process_changed", "", ""); }
+        try {
+            if (HandleTicks(p) != ticks) { return SaveAnswer(false, "process_changed", "", ""); }
+            if (SetDigest(target, limit) != set) { return SaveAnswer(false, "window_set_changed", "", ""); }
+            var d = new IntPtr(dialog); var doc = new IntPtr(document);
+            if (!IsWindow(d) || !IsWindow(doc)) { return SaveAnswer(false, "window_absent", "", ""); }
+            uint owner, docOwner;
+            GetWindowThreadProcessId(d, out owner);
+            GetWindowThreadProcessId(doc, out docOwner);
+            if (owner != target || docOwner != target || GetWindow(d, GW_OWNER) != doc) {
+                return SaveAnswer(false, "dialog_owner_changed", "", "");
+            }
+            if (!IsWindowVisible(d) || !IsWindowEnabled(d)
+                || TitleOf(d) != "Exit -- Cisco Packet Tracer"
+                || Digest(ClassOf(d), TitleOf(d)) != expected) {
+                return SaveAnswer(false, "dialog_identity_changed", "", "");
+            }
+            var root = AutomationElement.FromHandle(d);
+            if (root == null) { return SaveAnswer(false, "dialog_uia_absent", "", ""); }
+            var texts = root.FindAll(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Text));
+            var words = new List<string>();
+            foreach (AutomationElement item in texts) {
+                var name = item.Current.Name;
+                if (!String.IsNullOrWhiteSpace(name)) { words.Add(name); }
+            }
+            var prompt = Regex.Replace(String.Join(" ", words), @"\s+", " ").Trim();
+            const string expectedPrompt = "Any unsaved changes will be lost. Do you want to save your work?";
+            if (prompt != expectedPrompt) {
+                return SaveAnswer(false, "prompt_text_changed", prompt, "");
+            }
+            var buttons = root.FindAll(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
+            AutomationElement selected = null;
+            foreach (AutomationElement item in buttons) {
+                if (item.Current.Name == "No" && item.Current.IsEnabled) {
+                    if (selected != null) { return SaveAnswer(false, "no_button_ambiguous", prompt, ""); }
+                    selected = item;
+                }
+            }
+            if (selected == null) { return SaveAnswer(false, "no_button_absent", prompt, ""); }
+            object pattern;
+            if (!selected.TryGetCurrentPattern(InvokePattern.Pattern, out pattern)) {
+                return SaveAnswer(false, "no_button_not_invokable", prompt, "No");
+            }
+            ((InvokePattern)pattern).Invoke();
+            return SaveAnswer(true, "", prompt, "No");
+        } finally { CloseHandle(p); }
+    }
 }
 '@
 """
@@ -467,6 +541,38 @@ def parse_window_close(pid: int, handle: int, raw: str) -> WindowCloseResult:
     return WindowCloseResult(pid, handle, sent=answer[0], refusal=answer[1])
 
 
+def parse_save_prompt_response(pid: int, handle: int, raw: str) -> SavePromptResponse:
+    """Accept only an exact No response to the measured Packet Tracer prompt."""
+    answer = _effect_answer(raw)
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        value = None
+    if (
+        answer is None
+        or not isinstance(value, dict)
+        or not isinstance(value.get("prompt"), str)
+        or not isinstance(value.get("button"), str)
+        or (
+            answer[0]
+            and (
+                value["prompt"]
+                != "Any unsaved changes will be lost. Do you want to save your work?"
+                or value["button"] != "No"
+            )
+        )
+    ):
+        return SavePromptResponse(pid, handle, error="save_prompt_response_malformed")
+    return SavePromptResponse(
+        pid,
+        handle,
+        sent=answer[0],
+        refusal=answer[1],
+        prompt=value["prompt"],
+        button=value["button"],
+    )
+
+
 def parse_termination(pid: int, raw: str) -> TerminationResult:
     """Turn the termination helper's output into a result; doubt is an error."""
     answer = _effect_answer(raw)
@@ -570,6 +676,36 @@ class PowerShellOwnedProcessControl:
                 pid, handle, error=f"window_close_unobservable:{type(exc).__name__}"
             )
         return parse_window_close(pid, handle, raw)
+
+    def answer_owned_save_prompt_no(
+        self,
+        pid: int,
+        handle: int,
+        document_handle: int,
+        digest: str,
+        *,
+        set_digest: str,
+        start_ticks: int,
+    ) -> SavePromptResponse:
+        """Invoke only the No button of the revalidated owned save prompt."""
+        pid = _pid(pid)
+        handle = _handle(handle)
+        document_handle = _handle(document_handle)
+        digest = _hex_digest(digest)
+        set_digest = _hex_digest(set_digest)
+        start_ticks = _ticks(start_ticks)
+        try:
+            raw = self._run_window_helper(
+                f"[PtMcpOwnedWindows]::AnswerNo({pid}, {handle}, {document_handle}, "
+                f"'{digest}', '{set_digest}', {start_ticks}, {WINDOW_CENSUS_LIMIT})"
+            )
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            return SavePromptResponse(
+                pid,
+                handle,
+                error=f"save_prompt_unobservable:{type(exc).__name__}",
+            )
+        return parse_save_prompt_response(pid, handle, raw)
 
     def terminate(
         self, pid: int, *, set_digest: str, start_ticks: int

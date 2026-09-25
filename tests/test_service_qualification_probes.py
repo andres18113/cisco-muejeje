@@ -894,3 +894,29 @@ def test_the_dhcp_baseline_echoes_the_subject_it_was_asked_about(engine_factory)
     missing = probes.read_dhcp_server_baseline("__MCP_E6Q_ABSENT", "FastEthernet0")
     assert missing.payload["device"] == "__MCP_E6Q_ABSENT"
     assert missing.payload["found"] is False
+
+
+def test_native_pool_probe_brackets_a_documented_setter_with_physical_reads(
+    engine_factory,
+):
+    """A returned setter call alone cannot establish an effective pool change."""
+    engine = engine_factory(dhcp_default_pool="native")
+    engine.seed_device(SERVER, "Server-PT")
+    probes, _transport = _probes(engine)
+    assert hasattr(probes, "probe_native_pool_start")
+    before = probes.read_dhcp_server_baseline(SERVER, "FastEthernet0")
+    changed = probes.probe_native_pool_start(SERVER, "FastEthernet0", "192.0.2.100")
+    after = probes.read_dhcp_server_baseline(SERVER, "FastEthernet0")
+    assert changed.observed
+    assert changed.payload == {
+        "device": SERVER,
+        "interface": "FastEthernet0",
+        "pool": "serverPool",
+        "found": True,
+        "attempted": True,
+        "call_error": "",
+        "pre_start": "0.0.0.0",
+        "post_start": "192.0.2.100",
+    }
+    assert before.payload["pools"][0]["start"] == "0.0.0.0"
+    assert after.payload["pools"][0]["start"] == "192.0.2.100"

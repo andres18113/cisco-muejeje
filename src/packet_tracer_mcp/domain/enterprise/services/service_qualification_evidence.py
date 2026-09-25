@@ -1324,6 +1324,117 @@ class DefaultPoolSnapshot:
     raw: Mapping[str, Any] = field(default_factory=dict)
 
 
+def assess_native_pool_start_probe(
+    *,
+    before: DefaultPoolSnapshot,
+    probe: ProbeReading,
+    after: DefaultPoolSnapshot,
+    server: str,
+    interface: str,
+    requested_start: str,
+) -> Assessment:
+    """Classify one documented setter from complete physical pool readbacks."""
+    before_inventory = (
+        [dict(row) for row in before.raw.get("pools", ())] if before.observed else []
+    )
+    after_inventory = (
+        [dict(row) for row in after.raw.get("pools", ())] if after.observed else []
+    )
+    before_envelope = {
+        key: value for key, value in before.raw.items() if key != "pools"
+    }
+    after_envelope = {key: value for key, value in after.raw.items() if key != "pools"}
+    prior = before_inventory[0] if len(before_inventory) == 1 else {}
+    current = after_inventory[0] if len(after_inventory) == 1 else {}
+    facts = {
+        "before": prior,
+        "probe": dict(probe.payload) if probe.observed else {},
+        "after": current,
+        "before_inventory": before_inventory,
+        "after_inventory": after_inventory,
+        "before_envelope": before_envelope,
+        "after_envelope": after_envelope,
+        "before_observed": before.observed,
+        "after_observed": after.observed,
+    }
+    if not prior or prior.get("name") != "serverPool" or before.intended_present:
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=["native_pool_before_unobserved_or_ambiguous"],
+        )
+    if not probe.observed:
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=[f"setter_outcome_unobserved:{probe.cause}"],
+            outcome_unknown=True,
+        )
+    payload = probe.payload
+    if (
+        payload.get("device") != server
+        or payload.get("interface") != interface
+        or payload.get("pool") != "serverPool"
+        or payload.get("found") is not True
+        or payload.get("pre_start") != prior.get("start")
+    ):
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=["setter_subject_or_pre_read_mismatch"],
+            outcome_unknown=payload.get("attempted") is True,
+        )
+    if payload.get("attempted") is not True:
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=["setter_not_attempted"],
+        )
+    if payload.get("call_error"):
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=["setter_reported_error"],
+            outcome_unknown=True,
+        )
+    if not after.observed or not after_inventory:
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=facts,
+            causes=["native_pool_after_unobserved_or_ambiguous"],
+            outcome_unknown=True,
+        )
+    if before_envelope != after_envelope:
+        return Assessment(
+            MeasurementConclusion.CONTRADICTED,
+            facts=facts,
+            causes=["setter_changed_process_or_inventory_envelope"],
+        )
+    expected = {**prior, "start": requested_start}
+    if (
+        after_inventory == [expected]
+        and not after.intended_present
+        and payload.get("post_start") == requested_start
+        and prior.get("start") != requested_start
+    ):
+        return Assessment(
+            MeasurementConclusion.SUPPORTED_IN_SAMPLE,
+            facts=facts,
+            limitations=["build_scoped_setter_result_not_pool_service"],
+        )
+    if after_inventory == [prior] and payload.get("post_start") == prior.get("start"):
+        return Assessment(
+            MeasurementConclusion.NEGATIVE_OBSERVED,
+            facts=facts,
+            causes=["setter_returned_without_physical_change"],
+        )
+    return Assessment(
+        MeasurementConclusion.CONTRADICTED,
+        facts=facts,
+        causes=["setter_changed_unrequested_pool_fields_or_incoherent_readback"],
+    )
+
+
 def _is_observed_native_default(row: Any) -> bool:
     """Return whether one row is the exact observed native pool, field by field."""
     if not isinstance(row, Mapping) or set(row) != set(Q3_OBSERVED_NATIVE_DEFAULT_POOL):

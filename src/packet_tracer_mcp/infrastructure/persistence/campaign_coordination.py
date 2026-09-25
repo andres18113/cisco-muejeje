@@ -151,6 +151,51 @@ class FileCampaignCoordinator:
             attempt_id=attempt_id,
         )
 
+    def claim_lifecycle(self, *, attempt_id: str) -> CampaignClaim:
+        """Exclude a concurrent writer during an existing attempt's retirement.
+
+        The attempt was reserved by its qualification. Retirement creates only
+        the same shared lock, never a new attempt marker and never removes an
+        existing one. A held or unreadable lock refuses the whole lifecycle
+        action before process control can run.
+        """
+        if not attempt_id or safe_name_component(attempt_id, "") != attempt_id:
+            raise CampaignCoordinationError(
+                "campaign_attempt_identity_is_not_a_safe_name"
+            )
+        holder = uuid4().hex
+        try:
+            self._scope.mkdir(parents=True, exist_ok=True, mode=0o700)
+            lock_path = resolve_within(self._scope, LOCK_NAME)
+            attempt_path = resolve_within(self._scope, f"attempt-{attempt_id}.json")
+            try:
+                self._create_exclusive(
+                    lock_path,
+                    {
+                        "holder": holder,
+                        "attempt_id": attempt_id,
+                        "pid": os.getpid(),
+                        "claimed_at": datetime.now(UTC).isoformat(),
+                    },
+                    "campaign_already_claimed",
+                )
+            except BaseException:
+                # The lock may have been linked before interruption. Only a
+                # lock naming this new holder is ours to release.
+                self._remove_own(lock_path, holder)
+                raise
+        except (OSError, ValueError) as exc:
+            raise CampaignCoordinationError(
+                f"campaign_scope_unavailable:{type(exc).__name__}"
+            ) from exc
+        return CampaignClaim(
+            scope=self._scope,
+            lock_path=lock_path,
+            attempt_path=attempt_path,
+            holder=holder,
+            attempt_id=attempt_id,
+        )
+
     def recover(self, *, attempt_id: str, holder: str) -> CampaignClaim | None:
         """Return the claim an unfinished `claim` reserved for `holder`, if any.
 

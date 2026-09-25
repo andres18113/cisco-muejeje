@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import Enum, StrEnum
 from typing import Any, Literal
@@ -78,6 +78,7 @@ class QualificationStage(StrEnum):
     #: design bound and its three consumed attempts are unchanged.
     Q3_FL_C1 = "Q3-FL-C1"
     Q3_FL_C2 = "Q3-FL-C2"
+    Q3_NATIVE_PROBE = "Q3-NATIVE-PROBE"
 
 
 class ExecutionMode(StrEnum):
@@ -409,6 +410,7 @@ STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     # 362 of it is the two capped forwarding episodes. See `_q3_fastloop`.
     QualificationStage.Q3_FL_C1: (440, 1500),
     QualificationStage.Q3_FL_C2: (440, 1500),
+    QualificationStage.Q3_NATIVE_PROBE: (120, 600),
 }
 
 Q0_PC = "__MCP_E6Q_PC1"
@@ -1560,6 +1562,53 @@ def _q3_fastloop(stage: QualificationStage, capacity: int) -> StageDefinition:
 
 #: The Q3-FL stages, one per intended-pool capacity.
 Q3_FL_STAGES = (QualificationStage.Q3_FL_C1, QualificationStage.Q3_FL_C2)
+Q3_NATIVE_STAGES = (QualificationStage.Q3_NATIVE_PROBE,)
+
+
+def _q3_native_probe() -> StageDefinition:
+    """Probe one documented setter in the existing owned Q3 fixture."""
+    base = _q3_fastloop(QualificationStage.Q3_FL_C1, 1)
+    return replace(
+        base,
+        stage=QualificationStage.Q3_NATIVE_PROBE,
+        purpose=(
+            "Measure whether documented setStartIp changes the physical "
+            "native serverPool on an owned Server-PT after static addressing."
+        ),
+        experiments=(
+            ExperimentSpec(
+                id="M-NATIVE-START",
+                hypothesis=(
+                    "The native serverPool start address can be changed and "
+                    "read back without altering its other policy fields."
+                ),
+                required=True,
+                procedure="Q3_NATIVE_START",
+                planned_operations=6,
+                operational_prerequisites=(DiagnosticPrecondition.SUBJECT_SESSION,),
+                capabilities=("server.dhcp_native_pool_start",),
+            ),
+            ExperimentSpec(
+                id="M-NATIVE-FINAL",
+                hypothesis="The final native-pool inventory is observed before cleanup.",
+                required=True,
+                procedure="Q3_NATIVE_FINAL",
+                planned_operations=1,
+                terminal_observation=True,
+            ),
+        ),
+        budget=StageBudget(120, 600, reserve_seconds=300),
+        profile_id="Q3-NATIVE",
+        profile_version="1",
+        steps=(
+            DiagnosticStageStep(
+                id="NATIVE-start",
+                experiment_id="M-NATIVE-START",
+                effect="configure",
+                also_experiments=("M-NATIVE-FINAL",),
+            ),
+        ),
+    )
 
 
 STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
@@ -1575,6 +1624,7 @@ STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.D_WEB: _d_web(),
     QualificationStage.Q3_FL_C1: _q3_fastloop(QualificationStage.Q3_FL_C1, 1),
     QualificationStage.Q3_FL_C2: _q3_fastloop(QualificationStage.Q3_FL_C2, 2),
+    QualificationStage.Q3_NATIVE_PROBE: _q3_native_probe(),
 }
 
 

@@ -48,6 +48,7 @@ from ...application.use_cases.seal_server_pt_acceptance import (
 )
 from ...application.use_cases.server_pt_campaign import (
     C31_CAMPAIGN,
+    DHCP_AUTONOMY_CAMPAIGN,
     DHCP_FASTLOOP_CAMPAIGN,
     FASTLOOP_CAMPAIGN,
     ServerPtCampaign,
@@ -90,7 +91,9 @@ from ...application.use_cases.server_pt_process_evidence import (
     lingering_process_findings,
     observed_process_findings,
     packet_tracer_process_role,
+    recoverable_save_prompt_close,
     select_document_window,
+    select_owned_save_prompt,
     window_signature_for_launch,
     window_signature_record,
 )
@@ -133,9 +136,15 @@ from ...infrastructure.execution.server_pt_campaign_authority import (
 from ...infrastructure.execution.server_pt_phase_channel import GovernedPhaseChannel
 from ...infrastructure.execution.server_pt_process_control import (
     PowerShellOwnedProcessControl,
+    WindowCloseResult,
 )
 from ...infrastructure.execution.service_qualification_lifecycle import (
     PacketTracerDiagnosticLifecycleReader,
+)
+from ...infrastructure.persistence.campaign_coordination import (
+    CampaignClaim,
+    CampaignCoordinationError,
+    FileCampaignCoordinator,
 )
 from ...infrastructure.persistence.cold_http_acceptance_store import (
     ColdHttpAcceptanceStore,
@@ -169,16 +178,19 @@ _CAMPAIGNS = {
     "c31": C31_CAMPAIGN,
     "fastloop": FASTLOOP_CAMPAIGN,
     "dhcp-fastloop": DHCP_FASTLOOP_CAMPAIGN,
+    "dhcp-autonomy": DHCP_AUTONOMY_CAMPAIGN,
 }
 #: The charter digest each campaign's LIVE modes require. Read at call time,
 #: per campaign, so the C31 digest remains this module's one charter seam.
 CHARTER_SHA256 = C31_CAMPAIGN.charter_sha256
 FASTLOOP_CHARTER_SHA256 = FASTLOOP_CAMPAIGN.charter_sha256
 DHCP_FASTLOOP_CHARTER_SHA256 = DHCP_FASTLOOP_CAMPAIGN.charter_sha256
+DHCP_AUTONOMY_CHARTER_SHA256 = DHCP_AUTONOMY_CAMPAIGN.charter_sha256
 #: One episode plan or closing is operator-written JSON; bound what it may be.
 _LEDGER_INPUT_LIMIT = 16 * 1024
 #: The OS helper that observes, closes and terminates one exact PID.
 _PROCESS_CONTROL = PowerShellOwnedProcessControl
+_RETIREMENT_COORDINATOR = FileCampaignCoordinator
 #: How long a graceful close may take before the owned process may be forced,
 #: and how long the exit after a termination is awaited. Bounded both ways.
 RETIREMENT_GRACE_SECONDS = 60.0
@@ -227,6 +239,8 @@ _IMPORT_LIMITATIONS = (
 
 def _charter_digest(campaign: ServerPtCampaign) -> str:
     """Return the digest this campaign's charter must have."""
+    if campaign.campaign_id == DHCP_AUTONOMY_CAMPAIGN.campaign_id:
+        return DHCP_AUTONOMY_CHARTER_SHA256
     if campaign.campaign_id == DHCP_FASTLOOP_CAMPAIGN.campaign_id:
         return DHCP_FASTLOOP_CHARTER_SHA256
     return FASTLOOP_CHARTER_SHA256 if campaign.experimental else CHARTER_SHA256
@@ -241,7 +255,10 @@ _DHCP_CAMPAIGN_MODES = frozenset(
 
 def _dhcp_campaign_mode_refusal(campaign: ServerPtCampaign, args) -> str:
     """Name why this mode is not one the DHCP campaign may use, if so."""
-    if campaign.campaign_id != DHCP_FASTLOOP_CAMPAIGN.campaign_id:
+    if campaign.campaign_id not in {
+        DHCP_FASTLOOP_CAMPAIGN.campaign_id,
+        DHCP_AUTONOMY_CAMPAIGN.campaign_id,
+    }:
         return ""
     chosen = [
         name
@@ -1100,6 +1117,72 @@ def _await_absence(
         _retirement_sleep(_RETIREMENT_POLL_SECONDS)
 
 
+def _answer_owned_save_prompt(
+    control,
+    pid: int,
+    launch: Mapping[str, object],
+    document,
+    signature,
+    start_ticks: int,
+    coordination: tuple[FileCampaignCoordinator, CampaignClaim] | None = None,
+) -> dict[str, object]:
+    """Answer No only for a freshly identified prompt of the owned document."""
+    census = control.windows(pid)
+    prompt, findings = select_owned_save_prompt(
+        pid,
+        census,
+        document=document,
+        signature=signature,
+        start_ticks=start_ticks,
+    )
+    record: dict[str, object] = {
+        "sent": False,
+        "window_census": _census_record(census),
+        "observed_at_utc": datetime.now(UTC).isoformat(),
+        "modal_visible": (
+            None
+            if census.error or not census.complete
+            else any(
+                window.visible
+                and (window.owner_handle or window.class_name == "#32770")
+                for window in census.windows
+            )
+        ),
+    }
+    if findings or prompt is None:
+        record["refusal"] = list(findings)
+        return record
+    process_findings = observed_process_findings(launch, control.observe(pid))
+    if coordination is not None:
+        process_findings = (
+            *process_findings,
+            *coordination[0].verify(coordination[1]),
+        )
+    if process_findings:
+        record["refusal"] = list(process_findings)
+        return record
+    response = control.answer_owned_save_prompt_no(
+        pid,
+        prompt.handle,
+        document.handle,
+        prompt.identity_digest,
+        set_digest=census.visible_set_digest,
+        start_ticks=census.process_start_ticks,
+    )
+    record.update(
+        {
+            "sent": response.sent,
+            "refusal": [response.refusal] if response.refusal else [],
+            "error": response.error,
+            "prompt": response.prompt,
+            "button": response.button,
+            "target": _window_record(prompt),
+            "answered_at_utc": datetime.now(UTC).isoformat(),
+        }
+    )
+    return record
+
+
 def _wall_clock_continuous(instants: list[tuple[str, float]]) -> bool:
     """Whether wall time advanced like monotonic time between each instant."""
     for (wall_a, mono_a), (wall_b, mono_b) in pairwise(instants):
@@ -1258,6 +1341,79 @@ def _record_retirement_attempt(
 
 
 def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
+    """Hold the shared writer lock while retiring an autonomy laboratory."""
+    if campaign.campaign_id != DHCP_AUTONOMY_CAMPAIGN.campaign_id:
+        return _retire_claimed(root, attempt_id, campaign)
+    coordinator = _RETIREMENT_COORDINATOR()
+    try:
+        claim = coordinator.claim_lifecycle(attempt_id=attempt_id)
+    except CampaignCoordinationError as exc:
+        _print({"outcome": "refused", "reason": str(exc)})
+        return 2
+    try:
+        interruption: BaseException | None = None
+        try:
+            result = _retire_claimed(
+                root, attempt_id, campaign, coordination=(coordinator, claim)
+            )
+        except BaseException as exc:
+            result = None
+            interruption = exc
+    finally:
+        released = coordinator.release(claim)
+    store = ServerPtCommissioningStore(root, campaign.campaign_id)
+    try:
+        release_path = store.save_retirement_claim_release(
+            attempt_id,
+            claim.holder,
+            {
+                "campaign_id": campaign.campaign_id,
+                "attempt_id": attempt_id,
+                "claim_holder": claim.holder,
+                "released": not released,
+                "release_findings": list(released),
+                "retirement_result_before_release": (
+                    f"interrupted:{type(interruption).__name__}"
+                    if interruption is not None
+                    else result
+                ),
+                "observed_at_utc": datetime.now(UTC).isoformat(),
+            },
+        )
+        store.refresh_index()
+        if store.verify_index():
+            raise ValueError("retirement claim release archive unverified")
+    except (OSError, ValueError) as exc:
+        _print(
+            {
+                "outcome": "refused",
+                "reason": f"retirement_claim_release_unarchived:{type(exc).__name__}",
+                "release_findings": list(released),
+            }
+        )
+        return 2
+    if interruption is not None:
+        raise interruption
+    if released:
+        _print(
+            {
+                "outcome": "refused",
+                "refusal": ["retirement_claim_release_unverified"],
+                "release_findings": list(released),
+                "claim_release_record": str(release_path),
+            }
+        )
+        return 2
+    return result
+
+
+def _retire_claimed(
+    root: Path,
+    attempt_id: str,
+    campaign: ServerPtCampaign,
+    *,
+    coordination: tuple[FileCampaignCoordinator, CampaignClaim] | None = None,
+) -> int:
     """Retire the campaign-launched disposable Packet Tracer of one attempt.
 
     The owned PID's identity (image, creation time, command line) is read
@@ -1326,6 +1482,9 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
         "window_signature": (
             window_signature_record(signature) if signature is not None else None
         ),
+        "retirement_claim": (
+            coordination[1].compact_summary() if coordination is not None else None
+        ),
     }
     reading = control.observe(pid)
     refusal = observed_process_findings(launch, reading)
@@ -1346,6 +1505,26 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
     target, refusal = select_document_window(
         pid, before, signature=signature, start_ticks=start_ticks
     )
+    recovered_close: Mapping[str, object] | None = None
+    if refusal and campaign.campaign_id == DHCP_AUTONOMY_CAMPAIGN.campaign_id:
+        try:
+            previous = store.retirement_attempts(attempt_id)
+            document, prior, recovery_findings = recoverable_save_prompt_close(
+                launch,
+                previous,
+                before,
+                signature=signature,
+                start_ticks=start_ticks,
+            )
+        except (OSError, ValueError) as exc:
+            document, prior = None, None
+            recovery_findings = (
+                f"save_prompt_prior_archive_unverified:{type(exc).__name__}",
+            )
+        if document is not None and prior is not None:
+            target, refusal, recovered_close = document, (), prior
+        else:
+            refusal = (*refusal, *recovery_findings)
     if not refusal:
         refusal = observed_process_findings(launch, control.observe(pid))
     mailbox_before = _mailbox_state()
@@ -1360,30 +1539,79 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
                 "refusal": list(refusal),
                 "window_census_before": _census_record(before),
                 "mailbox_before_close": mailbox_before,
+                "quarantine": (
+                    "owned_lab_open_prompt_unresolved"
+                    if campaign.campaign_id == DHCP_AUTONOMY_CAMPAIGN.campaign_id
+                    and any(
+                        window.visible and window.owner_handle
+                        for window in before.windows
+                    )
+                    else ""
+                ),
                 "observed_at_utc": datetime.now(UTC).isoformat(),
             },
         )
     readings: list[dict[str, object]] = []
+    if coordination is not None:
+        claim_findings = coordination[0].verify(coordination[1])
+        if claim_findings:
+            return _record_retirement_attempt(
+                store,
+                attempt_id,
+                campaign,
+                {
+                    **identity,
+                    "requested": False,
+                    "refusal": list(claim_findings),
+                    "window_census_before": _census_record(before),
+                    "mailbox_before_close": mailbox_before,
+                    "observed_at_utc": datetime.now(UTC).isoformat(),
+                },
+            )
     requested = _instant()
-    requested_at = requested[0]
-    # The helper posts only while the process and its visible windows are
-    # still exactly what this census saw.
-    sent = control.close_window(
-        pid,
-        target.handle,
-        target.identity_digest,
-        set_digest=before.visible_set_digest,
-        start_ticks=before.process_start_ticks,
+    requested_at = (
+        str(recovered_close["requested_at_utc"])
+        if recovered_close is not None
+        else requested[0]
     )
+    if recovered_close is not None:
+        # The indexed prior attempt already posted WM_CLOSE. A second close
+        # would be an unreviewed repeat; this invocation only answers its
+        # still-visible, freshly identified prompt.
+        sent = WindowCloseResult(pid, target.handle, sent=True)
+    else:
+        # The helper posts only while the process and its visible windows are
+        # still exactly what this census saw.
+        sent = control.close_window(
+            pid,
+            target.handle,
+            target.identity_digest,
+            set_digest=before.visible_set_digest,
+            start_ticks=before.process_start_ticks,
+        )
     close: dict[str, object] = {
         **identity,
         "method": "WM_CLOSE",
-        "close_target": _window_record(target),
+        "close_target": (
+            recovered_close["close_target"]
+            if recovered_close is not None
+            else _window_record(target)
+        ),
         "requested": sent.sent,
         "requested_at_utc": requested_at,
         "close_refusal": sent.refusal,
         "close_error": sent.error,
         "window_census_before": _census_record(before),
+        "recovered_prior_close": (
+            {
+                "archive_file": recovered_close.get("_archive_file"),
+                "archive_sha256": recovered_close.get("_archive_sha256"),
+                "requested_at_utc": requested_at,
+                "recovery_alive_observation_at_utc": requested[0],
+            }
+            if recovered_close is not None
+            else None
+        ),
         "mailbox_before_close": mailbox_before,
         "graceful_wait_seconds": RETIREMENT_GRACE_SECONDS,
         "absence_observations": readings,
@@ -1402,10 +1630,37 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
         )
     # A helper error leaves the close's outcome unknown: absence is still
     # observed, but an unknown request never authorizes a force.
-    exited = _await_absence(control, pid, RETIREMENT_GRACE_SECONDS, readings)
+    first_wait = (
+        min(3.0, RETIREMENT_GRACE_SECONDS)
+        if campaign.campaign_id == DHCP_AUTONOMY_CAMPAIGN.campaign_id
+        else RETIREMENT_GRACE_SECONDS
+    )
+    exited = _await_absence(control, pid, first_wait, readings)
+    prompt_refusal: tuple[str, ...] = ()
+    if not exited and campaign.campaign_id == DHCP_AUTONOMY_CAMPAIGN.campaign_id:
+        prompt_record = _answer_owned_save_prompt(
+            control,
+            pid,
+            launch,
+            target,
+            signature,
+            start_ticks,
+            coordination,
+        )
+        close["save_prompt_response"] = prompt_record
+        if prompt_record.get("sent") is True:
+            exited = _await_absence(control, pid, RETIREMENT_GRACE_SECONDS, readings)
+        elif prompt_record.get("modal_visible") is False:
+            remaining = max(0.0, RETIREMENT_GRACE_SECONDS - first_wait)
+            exited = _await_absence(control, pid, remaining, readings)
+        else:
+            prompt_refusal = ("save_prompt_unanswered_or_unobservable",)
+            close["quarantine"] = "owned_lab_open_prompt_unresolved"
     forced: dict[str, object] | None = None
     kill_readings: list[dict[str, object]] = []
-    refusal = () if sent.sent else ("close_outcome_unknown",)
+    refusal = prompt_refusal if sent.sent else ("close_outcome_unknown",)
+    if recovered_close is not None and not exited and not refusal:
+        refusal = ("save_prompt_recovery_exit_unobserved",)
     if not exited and not refusal:
         again = _timed_reading(control, pid, readings)
         if not again.error and not again.present:
@@ -1422,6 +1677,8 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
                 refusal = force_window_findings(
                     pid, target, after, signature=signature, start_ticks=start_ticks
                 )
+            if not refusal and coordination is not None:
+                refusal = coordination[0].verify(coordination[1])
             if not refusal:
                 forced = {
                     "method": "Process.Kill",

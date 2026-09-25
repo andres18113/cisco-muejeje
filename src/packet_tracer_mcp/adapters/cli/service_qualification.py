@@ -59,6 +59,7 @@ from ...application.use_cases.qualify_server_services import (
     qualify_server_services,
 )
 from ...application.use_cases.server_pt_campaign import (
+    DHCP_AUTONOMY_CAMPAIGN,
     DHCP_FASTLOOP_CAMPAIGN,
     source_authority_findings,
 )
@@ -86,6 +87,7 @@ from ...domain.enterprise.models.service_qualification import (
     Q3_DNS_IPV4,
     Q3_FL_STAGES,
     Q3_GATEWAY_IPV4,
+    Q3_NATIVE_STAGES,
     Q3_PC1,
     Q3_PC2,
     Q3_POOL,
@@ -703,9 +705,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--authorized-process-path")
     parser.add_argument("--instance-token")
     parser.add_argument("--attempt-id")
-    # Campaign composition: only `dhcp-fastloop`, only for its Q3-FL stages,
-    # and only with its own charter and an opened episode.
-    parser.add_argument("--campaign", choices=("dhcp-fastloop",), default="")
+    # Each fixed experimental DHCP stage needs its own campaign authority.
+    parser.add_argument(
+        "--campaign", choices=("dhcp-fastloop", "dhcp-autonomy"), default=""
+    )
     parser.add_argument("--charter", default="")
     parser.add_argument("--episode", type=int, default=0)
     return parser
@@ -824,8 +827,11 @@ def main(
             return _campaign_main(
                 request, args, governed_root, boundaries_factory, capabilities
             )
-        if definition is not None and definition.stage in Q3_FL_STAGES:
-            # A Q3-FL profile exists only under its campaign's authority.
+        if definition is not None and definition.stage in (
+            *Q3_FL_STAGES,
+            *Q3_NATIVE_STAGES,
+        ):
+            # Experimental DHCP profiles exist only under campaign authority.
             _print({"outcome": "refused", "reason": "stage_requires_its_campaign"})
             return 2
         result = qualify_server_services(
@@ -853,6 +859,7 @@ def main(
 #: seam, read at call time, so a test binds its own charter without touching
 #: the campaign identity.
 DHCP_FASTLOOP_CHARTER_SHA256 = DHCP_FASTLOOP_CAMPAIGN.charter_sha256
+DHCP_AUTONOMY_CHARTER_SHA256 = DHCP_AUTONOMY_CAMPAIGN.charter_sha256
 _CHARTER_LIMIT = 1024 * 1024
 _ATTEMPT_ID = re.compile(r"[0-9a-f]{32}\Z")
 
@@ -929,7 +936,7 @@ def _campaign_main(
     boundaries_factory,
     capabilities: frozenset[str],
 ) -> int:
-    """Run one Q3-FL stage under campaign SERVER-PT-DHCP-FASTLOOP-01.
+    """Run one fixed DHCP stage under its exact experimental campaign.
 
     Every campaign fact is validated before the use case sees anything: the
     charter digest, the stage, the attempt's launch record and process, the
@@ -939,7 +946,14 @@ def _campaign_main(
     active seconds are recorded whatever the stage concluded, and the full
     record is pinned in the campaign archive by digest.
     """
-    campaign = DHCP_FASTLOOP_CAMPAIGN
+    if args.campaign == "dhcp-autonomy":
+        campaign = DHCP_AUTONOMY_CAMPAIGN
+        stages = Q3_NATIVE_STAGES
+        charter_sha256 = DHCP_AUTONOMY_CHARTER_SHA256
+    else:
+        campaign = DHCP_FASTLOOP_CAMPAIGN
+        stages = Q3_FL_STAGES
+        charter_sha256 = DHCP_FASTLOOP_CHARTER_SHA256
     try:
         charter = Path(args.charter).read_bytes() if args.charter else b""
     except OSError:
@@ -947,11 +961,11 @@ def _campaign_main(
     if (
         not charter
         or len(charter) > _CHARTER_LIMIT
-        or hashlib.sha256(charter).hexdigest() != DHCP_FASTLOOP_CHARTER_SHA256
+        or hashlib.sha256(charter).hexdigest() != charter_sha256
     ):
         return _campaign_refused("charter_digest_mismatch")
     definition = stage_definition(request.stage)
-    if definition is None or definition.stage not in Q3_FL_STAGES:
+    if definition is None or definition.stage not in stages:
         return _campaign_refused("stage_not_part_of_the_dhcp_campaign")
     authorization = request.authorization
     if (

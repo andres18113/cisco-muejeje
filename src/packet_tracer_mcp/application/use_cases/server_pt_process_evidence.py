@@ -324,6 +324,111 @@ def select_document_window(
     return documents[0], ()
 
 
+def select_owned_save_prompt(
+    pid: int,
+    census: object,
+    *,
+    document: object,
+    signature: BuildWindowSignature | None,
+    start_ticks: int,
+) -> tuple[object | None, tuple[str, ...]]:
+    """Select one exact save prompt owned by the identified disposable document.
+
+    The actual prompt text and `No` button remain separate in-band UIA checks
+    in the process helper immediately before invocation. A surprising window
+    set is never answered.
+    """
+    if getattr(census, "error", "") or getattr(census, "complete", False) is not True:
+        return None, ("save_prompt_window_census_unobservable",)
+    if (
+        getattr(census, "process_id", None) != pid
+        or getattr(census, "process_start_ticks", None) != start_ticks
+    ):
+        return None, ("save_prompt_process_changed",)
+    windows = tuple(getattr(census, "windows", ()) or ())
+    if any(getattr(window, "owner_pid", None) != pid for window in windows):
+        return None, ("save_prompt_window_attribution_mismatch",)
+    if signature is None or not signature.document.matches(document):
+        return None, ("save_prompt_document_identity_unestablished",)
+    visible = [window for window in windows if window.visible is True]
+    documents = [
+        window
+        for window in visible
+        if window.handle == document.handle
+        and window.identity_digest == document.identity_digest
+        and signature.document.matches(window)
+    ]
+    if len(documents) != 1:
+        return None, ("save_prompt_document_changed",)
+    other = [window for window in visible if window.handle != document.handle]
+    logs = [window for window in other if signature.extension_log.matches(window)]
+    prompts = [
+        window
+        for window in other
+        if window.owner_handle == document.handle
+        and window.title == "Exit -- Cisco Packet Tracer"
+        and bool(window.class_name)
+        and window.enabled is True
+    ]
+    if len(logs) > 1 or len(prompts) != 1 or len(other) != len(logs) + 1:
+        return None, ("save_prompt_window_set_unexpected",)
+    return prompts[0], ()
+
+
+def recoverable_save_prompt_close(
+    launch: Mapping[str, object],
+    attempts: tuple[Mapping[str, object], ...],
+    census: object,
+    *,
+    signature: BuildWindowSignature | None,
+    start_ticks: int,
+) -> tuple[object | None, Mapping[str, object] | None, tuple[str, ...]]:
+    """Bind an already-open save prompt to one indexed prior WM_CLOSE."""
+    if not attempts:
+        return None, None, ("save_prompt_prior_close_absent",)
+    prior = attempts[-1]
+    response = prior.get("save_prompt_response")
+    if (
+        prior.get("method") != "WM_CLOSE"
+        or prior.get("requested") is not True
+        or prior.get("pid") != launch.get("pid")
+        or prior.get("process_path") != launch.get("process_path")
+        or prior.get("process_incarnation") != launch.get("process_incarnation")
+        or not isinstance(prior.get("requested_at_utc"), str)
+        or prior.get("actual_exit_observed") is not False
+        or not _document_target_proven(launch, prior.get("close_target"))
+        or (
+            response is not None
+            and (
+                not isinstance(response, Mapping)
+                or response.get("sent") is not False
+                or bool(response.get("error"))
+            )
+        )
+    ):
+        return None, None, ("save_prompt_prior_close_unproven",)
+    target = prior["close_target"]
+    documents = [
+        window
+        for window in tuple(getattr(census, "windows", ()) or ())
+        if getattr(window, "handle", None) == target["handle"]
+        and getattr(window, "identity_digest", None) == target["identity_digest"]
+    ]
+    if len(documents) != 1:
+        return None, None, ("save_prompt_prior_document_not_present",)
+    document = documents[0]
+    prompt, findings = select_owned_save_prompt(
+        launch["pid"],
+        census,
+        document=document,
+        signature=signature,
+        start_ticks=start_ticks,
+    )
+    if findings or prompt is None:
+        return None, None, findings or ("save_prompt_not_identified",)
+    return document, prior, ()
+
+
 #: Win32_Process reports creation to the microsecond (10 ticks); the launch
 #: record keeps it to 100 ns, so the same instant may differ by up to 9.
 _CENSUS_TICK_RESOLUTION = 10

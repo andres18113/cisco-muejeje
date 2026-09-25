@@ -80,9 +80,16 @@ DHCP_FASTLOOP_ALLOWANCE = CampaignAllowance(
     protected_operations=1_000,
     protected_seconds=600,
 )
+DHCP_AUTONOMY_ALLOWANCE = CampaignAllowance(
+    total_operations=10_000,
+    total_seconds=14_400,
+    protected_operations=1_000,
+    protected_seconds=600,
+)
 _ALLOWANCES = {
     "SERVER-PT-IOS-FASTLOOP-01": FASTLOOP_ALLOWANCE,
     "SERVER-PT-DHCP-FASTLOOP-01": DHCP_FASTLOOP_ALLOWANCE,
+    "SERVER-PT-DHCP-AUTONOMOUS-02": DHCP_AUTONOMY_ALLOWANCE,
 }
 
 
