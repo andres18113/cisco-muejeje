@@ -1000,7 +1000,19 @@ def _qualification_basis(
     store.require_immutable_phase(
         attempt_id, "qualification", str(status.get("outcome"))
     )
-    if status.get("effects_dispatched") is False:
+    effects = status.get("effects_dispatched")
+    if status.get("outcome") == "interrupted" or effects is None:
+        # Effects of unknown state: the ownership still rests on the blank
+        # launch, which `--retire` rechecks, and the disposition says so.
+        return "exited_interrupted", "blank_launch_then_interrupted_qualification"
+    if effects is False:
+        # Nothing was dispatched, but a baseline this run observed must
+        # still have been the empty disposable one: a blank launch that
+        # later showed foreign devices is not the campaign's to close.
+        if status.get("workspace_baseline_observed") is not False and (
+            status.get("workspace_baseline_empty") is not True
+        ):
+            raise ValueError("qualification observed a non-disposable workspace")
         return "exited_before_setup", "blank_launch_without_qualification_effects"
     if status.get("workspace_baseline_empty") is not True:
         raise ValueError("qualification baseline was not an empty disposable workspace")

@@ -64,6 +64,7 @@ from ...application.use_cases.server_pt_campaign import (
 )
 from ...application.use_cases.server_pt_campaign_ledger import (
     ledger_record_findings,
+    phase_record_name,
 )
 from ...domain.enterprise.models.capabilities import CapabilityStatus
 from ...domain.enterprise.models.configuration import ConfigurationPolicy
@@ -864,8 +865,31 @@ def _campaign_refused(reason: str) -> int:
 def _campaign_status(
     result: QualificationResult | None, *, active_seconds: float, ledger_result: str
 ) -> dict[str, Any]:
-    """Return the qualification status the campaign archive retains."""
-    record = result.record if result is not None else None
+    """Return the qualification status the campaign archive retains.
+
+    Without a result the run was interrupted inside the use case, after it
+    may have dispatched effects. Nothing here then claims what happened:
+    effects and the workspace baseline are unknown (`None`), which the
+    retirement basis reads as an interrupted qualification.
+    """
+    if result is None:
+        return {
+            "outcome": "interrupted",
+            "stage": "",
+            "run_id": "",
+            "record_path": "",
+            "refusals": [],
+            "operations_used": None,
+            "active_seconds": round(active_seconds, 3),
+            "effects_dispatched": None,
+            "workspace_baseline_observed": None,
+            "workspace_baseline_empty": None,
+            "restoration_proven": False,
+            "dirty_state": "",
+            "primary_failure": "interrupted",
+            "ledger_result": ledger_result,
+        }
+    record = result.record
     operations = list(record.operations) if record is not None else []
     baseline = dict(record.workspace_baseline) if record is not None else {}
     return {
@@ -885,6 +909,7 @@ def _campaign_status(
         "effects_dispatched": any(
             item.seq and item.purpose.startswith("create:") for item in operations
         ),
+        "workspace_baseline_observed": baseline.get("observed") is True,
         "workspace_baseline_empty": (
             baseline.get("observed") is True
             and baseline.get("semantic_device_count") == 0
@@ -977,6 +1002,9 @@ def _campaign_main(
     authority = CampaignQualificationAuthority(
         campaign_id=campaign.campaign_id,
         episode=args.episode,
+        admission_record=phase_record_name(
+            args.episode, attempt, "qualification", "admission"
+        ),
         attempt_id=attempt,
         authorization_id=authorization.authorization_id,
         sha=source.head,
@@ -995,19 +1023,22 @@ def _campaign_main(
     finally:
         active = time.monotonic() - started
         record = result.record if result is not None else None
-        used = record.budget.used_operations if record is not None else 0
-        # A hard stop before this line leaves the admission unsettled, and
-        # the ledger then charges this phase its whole grant.
-        recorded = ledger_result(
-            store,
-            campaign,
-            args.episode,
-            attempt,
-            "qualification",
-            used,
-            active,
-            result.outcome.value if result is not None else "interrupted",
-        )
+        if result is None:
+            # No trustworthy count exists: the use case was interrupted after
+            # it may have dispatched. The admission stays unsettled, so the
+            # ledger keeps charging this phase its whole grant.
+            recorded = "unsettled:charged_at_grant"
+        else:
+            recorded = ledger_result(
+                store,
+                campaign,
+                args.episode,
+                attempt,
+                "qualification",
+                record.budget.used_operations if record is not None else 0,
+                active,
+                result.outcome.value,
+            )
         status = {
             "phase": "qualification",
             "attempt_id": attempt,

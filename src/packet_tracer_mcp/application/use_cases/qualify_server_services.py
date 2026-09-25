@@ -246,6 +246,7 @@ from .deploy_enterprise_topology import (
     disposable_workspace_error,
 )
 from .foundational_evidence import derive_service_foundational_statuses
+from .server_pt_campaign import DHCP_FASTLOOP_CAMPAIGN
 from .service_access_readiness_gate import (
     ReadinessNotRequired,
     ServiceAccessReadinessGate,
@@ -920,6 +921,9 @@ class CampaignQualificationAuthority:
 
     campaign_id: str
     episode: int
+    #: The ledger record the composition wrote before contact. It must be
+    #: the qualification admission of exactly this episode and attempt.
+    admission_record: str
     attempt_id: str
     authorization_id: str
     sha: str
@@ -936,8 +940,10 @@ class CampaignQualificationAuthority:
             authorization is not None
             and definition is not None
             and definition.stage in Q3_FL_STAGES
-            and self.campaign_id
+            and self.campaign_id == DHCP_FASTLOOP_CAMPAIGN.campaign_id
             and self.episode >= 1
+            and self.admission_record
+            == f"episode-{self.episode:04d}-{self.attempt_id}-qualification-admission"
             and self.process_incarnation
             and (
                 self.attempt_id,

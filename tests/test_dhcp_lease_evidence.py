@@ -151,6 +151,36 @@ def test_an_absent_or_incoherent_pool_is_not_an_empty_table():
     assert other.cause == "scan_pool_not_answered"
 
 
+def test_an_undefined_read_is_not_a_null_end():
+    """Only an observed null ends rows; undefined is kept distinct and unclean."""
+    scan = _scan(INTENDED, [_entry(index, kind="undefined") for index in range(3)])
+    assert scan.observed and not scan.clean
+    assert scan.termination == ev.TERMINATION_UNDEFINED
+    result = ev.assess_lease_calibration(
+        [
+            ev.CalibrationState("empty", scan),
+            ev.CalibrationState("one", _with([_row("192.0.2.100", MAC_1)])),
+        ],
+        pool=INTENDED,
+        capacity=1,
+        fixture_macs=[MAC_1, MAC_2],
+    )
+    assert result.conclusion is MeasurementConclusion.INCONCLUSIVE
+    assert result.null_ends_rows is False
+
+
+def test_an_exact_row_never_hides_a_same_ip_row_with_another_mac():
+    """A same-IP foreign MAC is a contradiction even beside the exact row."""
+    scan = _with(
+        [_row("192.0.2.100", MAC_1), _row("192.0.2.100", MAC_2)], capacity=2, window=4
+    )
+    reading = _reading("pc1", MAC_1, "192.0.2.100")
+    assert ev.row_status(scan, reading, None) == ev.ROW_WRONG_MAC
+    result = _attribute(_reading("pc1", MAC_1), reading, scan, _empty(NATIVE, 512, 4))
+    assert result.contradictions == ("intended:" + ev.ROW_WRONG_MAC,)
+    assert result.served_by != ev.SERVED_INTENDED
+
+
 def test_the_throw_text_and_every_raw_entry_are_retained():
     """A getter failure is evidence, kept whole, never a quiet end of table."""
     scan = _scan(INTENDED, [_entry(0, error="Invalid index")])
@@ -558,5 +588,6 @@ def test_attribution_is_linear_in_clients_and_rows(clients, monkeypatch):
     for ip, mac in zip(addresses, macs, strict=True):
         status = ev.row_status(scan, _reading("c", mac, ip), None)
         assert status == ev.ROW_EXACT
-    # Index construction touches each row once; each exact lookup touches none.
-    assert calls["count"] <= 2 * clients + 8
+    # Index construction touches each row once; each lookup normalizes the
+    # client's own MAC and its one same-IP row. All pairs would be clients**2.
+    assert calls["count"] <= 4 * clients + 8

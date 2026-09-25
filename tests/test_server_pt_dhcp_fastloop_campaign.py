@@ -458,6 +458,7 @@ def _archive_qualification(tmp_path: Path, **status) -> None:
             {
                 "outcome": "refused",
                 "effects_dispatched": False,
+                "workspace_baseline_observed": False,
                 "workspace_baseline_empty": False,
                 "restoration_proven": False,
             },
@@ -519,6 +520,25 @@ def test_a_qualification_whose_baseline_was_not_empty_establishes_no_basis(
         tmp_path,
         outcome="stopped",
         effects_dispatched=True,
+        workspace_baseline_empty=False,
+        restoration_proven=False,
+    )
+    code, refused = _run(cli, ["--retire", *base], env, capsys)
+    assert code == 2
+    assert refused["reason"].startswith("retirement_unestablished")
+    assert system.posted == []
+
+
+def test_a_refusal_after_a_foreign_baseline_establishes_no_basis(
+    launched, capsys, tmp_path: Path
+):
+    """A blank launch that later showed foreign devices is not ours to close."""
+    cli, env, base, system = launched
+    _archive_qualification(
+        tmp_path,
+        outcome="refused",
+        effects_dispatched=False,
+        workspace_baseline_observed=True,
         workspace_baseline_empty=False,
         restoration_proven=False,
     )

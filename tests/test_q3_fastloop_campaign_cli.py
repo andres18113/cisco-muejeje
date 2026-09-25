@@ -253,6 +253,45 @@ def test_every_campaign_fact_refuses_before_contact(
     assert not (tmp_path / "data" / "services" / "qualification").exists()
 
 
+def test_an_interrupted_run_stays_charged_and_is_archived_interrupted(
+    campaign, tmp_path, capsys, monkeypatch
+):
+    """No trustworthy count: the grant stays charged and effects stay unknown."""
+    from packet_tracer_mcp.application.use_cases.qualify_server_services import (
+        QualificationCancelled,
+    )
+    from packet_tracer_mcp.application.use_cases.server_pt_campaign_ledger import (
+        unsettled_phases,
+    )
+
+    cli, run, _charter = campaign
+    _open_episode(tmp_path)
+    _launch(tmp_path)
+
+    def cancelled(*_args, **_kwargs):
+        raise QualificationCancelled(KeyboardInterrupt(), None)
+
+    monkeypatch.setattr(cli, "qualify_server_services", cancelled)
+    code = run()
+
+    assert code == 130
+    store = _store(tmp_path)
+    records = store.ledger_records()
+    assert f"episode-0001-{ATTEMPT}-qualification-admission" in records
+    assert f"episode-0001-{ATTEMPT}-qualification-result" not in records
+    assert unsettled_phases(records, 1) == (f"{ATTEMPT}:qualification",)
+    status = store.load_phase_status(ATTEMPT, "qualification")
+    assert status["outcome"] == "interrupted"
+    assert status["effects_dispatched"] is None
+    commissioning = import_module(
+        "packet_tracer_mcp.adapters.cli.server_pt_commissioning"
+    )
+    assert commissioning._qualification_basis(store, ATTEMPT) == (
+        "exited_interrupted",
+        "blank_launch_then_interrupted_qualification",
+    )
+
+
 def test_a_non_campaign_stage_is_refused_by_the_campaign(campaign, tmp_path, capsys):
     """The campaign runs its Q3-FL profiles only, never the historical Q3."""
     _cli, run, _charter = campaign
@@ -308,6 +347,7 @@ def _authority(**overrides) -> CampaignQualificationAuthority:
     values = {
         "campaign_id": DHCP_FASTLOOP_CAMPAIGN.campaign_id,
         "episode": 1,
+        "admission_record": f"episode-0001-{ATTEMPT}-qualification-admission",
         "attempt_id": ATTEMPT,
         "authorization_id": f"TD-{STAGE}-simulated",
         "sha": SIM_SHA,
@@ -334,8 +374,18 @@ def test_without_campaign_authority_an_unpublished_head_is_refused(tmp_path):
         {"sha": "d" * 40},
         {"tree": "d" * 40},
         {"episode": 0},
+        {"campaign_id": "UNRELATED-CAMPAIGN"},
+        {"admission_record": "episode-0001-other-qualification-admission"},
     ],
-    ids=["attempt", "authorization", "sha", "tree", "episode"],
+    ids=[
+        "attempt",
+        "authorization",
+        "sha",
+        "tree",
+        "episode",
+        "campaign",
+        "admission",
+    ],
 )
 def test_an_authority_for_anything_else_waives_nothing(tmp_path, override):
     """It names exactly one attempt, authorization, HEAD and tree, or refuses."""

@@ -40,6 +40,9 @@ _HEX = re.compile(r"[^0-9a-f]")
 
 #: How one scan ended.
 TERMINATION_NULL = "null"
+#: `undefined` is not `null`. The probe keeps them apart and so does the
+#: classification: only an observed null can end the rows.
+TERMINATION_UNDEFINED = "undefined"
 TERMINATION_WINDOW = "window_exhausted"
 TERMINATION_THROW = "throw"
 TERMINATION_NON_MONOTONE = "non_monotone"
@@ -269,7 +272,10 @@ def classify_lease_scan(entry: object, *, pool_name: str) -> LeaseScan:
         if item.get("error"):
             termination = termination or TERMINATION_THROW
             continue
-        if kind in ("null", "undefined"):
+        if kind == "undefined":
+            termination = termination or TERMINATION_UNDEFINED
+            continue
+        if kind == "null":
             if first_null is None:
                 first_null = index
             continue
@@ -564,14 +570,15 @@ def row_status(
     if not reading.observed or not reading.mac:
         return ROW_UNOBSERVED
     same_ip = scan.rows_with_ip(reading.ipv4) if reading.ipv4 else ()
+    # A same-IP row for another MAC contradicts the claim, and it takes
+    # precedence even when an exact row is also present.
+    own = normalized_mac(reading.mac)
+    if any(normalized_mac(row.mac) != own for row in same_ip):
+        return ROW_WRONG_MAC
     if any(row.mac == reading.mac for row in same_ip):
         return ROW_EXACT
     if same_ip:
-        if any(
-            normalized_mac(row.mac) == normalized_mac(reading.mac) for row in same_ip
-        ):
-            return ROW_REPRESENTATION
-        return ROW_WRONG_MAC
+        return ROW_REPRESENTATION
     if scan.rows_with_mac(reading.mac) or scan.rows_with_normalized_mac(reading.mac):
         # A row for this MAC while the port still reports no address is an
         # inconsistency between two readers at two instants, not a lease on
