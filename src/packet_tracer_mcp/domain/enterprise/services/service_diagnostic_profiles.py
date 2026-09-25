@@ -25,11 +25,18 @@ its vendor findings, its seams and the plan projections the stage reuses.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum, StrEnum
 
-from ..models.configuration import ConfigurationPlan, SetEndpointStaticAddress
+from ..models.configuration import (
+    ConfigurationPlan,
+    ConfigureAccessPort,
+    SetEndpointDhcp,
+    SetEndpointStaticAddress,
+)
 from ..models.service_plan import (
+    AcquireDhcpLease,
     ConfigureServerDhcpPool,
     EnableServerDhcp,
     ServicePlan,
@@ -574,6 +581,184 @@ def _projected_service_plan(
             )
         )
     return plan.model_copy(update=update, deep=True), tuple(rewrites)
+
+
+# -- Q3-FL: the versioned DHCP qualification profile -----------------------------
+
+#: The identities the Q3-FL projections carry beside the source plan's.
+Q3_FL_SERVER_PROJECTION = "q3-fl-server"
+Q3_FL_ACQUISITION_PROJECTION = "q3-fl-acquire"
+
+
+def q3_fastloop_client_mode_plan(
+    plan: ConfigurationPlan, *, device_names: Sequence[str]
+) -> ConfigurationPlan:
+    """Project E5 to the DHCP mode of the named clients, and to nothing else.
+
+    The same projection idiom as the server's static address: actions and
+    already-owned fixture dependencies are dropped, nothing an action means is
+    rewritten. Only clients whose forwarding was admitted are named, so a
+    refused client is never put into DHCP mode.
+    """
+    wanted = set(device_names)
+    actions = [
+        item.model_copy(update={"depends_on": [], "apply_dependencies": []})
+        for item in plan.actions
+        if isinstance(item, SetEndpointDhcp) and item.device_name in wanted
+    ]
+    action_ids = {item.id for item in actions}
+    device_ids = {item.device_id for item in actions}
+    projected = ConfigurationPlan(
+        id=f"{plan.id}/q3-fl-client-mode",
+        source_topology_id=plan.source_topology_id,
+        source_topology_hash=plan.source_topology_hash,
+        source_topology_hash_schema=plan.source_topology_hash_schema,
+        actions=actions,
+        devices=[
+            item.model_copy(deep=True)
+            for item in plan.devices
+            if item.device_id in device_ids
+        ],
+        verification_expectations=[
+            item.model_copy(deep=True)
+            for item in plan.verification_expectations
+            if item.action_id in action_ids
+        ],
+    )
+    projected.semantic_hash = configuration_plan_semantic_hash(projected)
+    return projected
+
+
+def q3_fastloop_service_plan(
+    plan: ServicePlan, *, client_device_id: str = ""
+) -> tuple[ServicePlan, tuple[ProjectionRewrite, ...]]:
+    """Project E6 to the server setup, or to one client's acquisition.
+
+    Without a client: the enable and the pool, their compiled server-state
+    read-back, and the server's own foundation. With one: the same two server
+    actions, which the caller passes as retained rows so they are never
+    dispatched twice, that client's acquisition, its lease and attribution
+    read-backs, and the server-state read-back the acquisition is staged on.
+    The compiler makes every acquisition wait for that read-back to be
+    VERIFIED, so it is read fresh before each client rather than borrowed.
+    The compiler's dependency chain is kept whole, so no ordering is
+    rewritten.
+
+    One assertion does change, and it is returned: a foundation of a device
+    this projection does not act on is removed. A client whose forwarding was
+    refused has no verified DHCP mode, and it must not block the server setup
+    or another client.
+    """
+    server_ids = {
+        item.id
+        for item in plan.actions
+        if isinstance(item, EnableServerDhcp | ConfigureServerDhcpPool)
+    }
+    actions = [
+        item
+        for item in plan.actions
+        if item.id in server_ids
+        or (
+            client_device_id
+            and isinstance(item, AcquireDhcpLease)
+            and item.host_device_id == client_device_id
+        )
+    ]
+    action_ids = {item.id for item in actions}
+    hosts = {item.host_device_id for item in actions}
+    rewrites: list[ProjectionRewrite] = []
+    expectations = []
+    for item in plan.verification_expectations:
+        if item.action_id not in action_ids:
+            continue
+        if item.kind is ServiceVerificationKind.DHCP_SERVER_STATE:
+            expectations.append(item.model_copy(deep=True))
+            continue
+        if not client_device_id or item.client_device_id != client_device_id:
+            continue
+        expectations.append(item.model_copy(deep=True))
+    foundations = []
+    for item in plan.foundational_requirements:
+        if item.device_id not in hosts:
+            rewrites.append(
+                ProjectionRewrite(
+                    "foundation_removed",
+                    item.configuration_action_id,
+                    f"kind:{item.kind}:device:{item.device_name}:not_acted_on",
+                )
+            )
+            continue
+        foundations.append(item.model_copy(deep=True))
+    expectation_ids = {item.id for item in expectations}
+    services = [
+        item.model_copy(
+            update={
+                "action_ids": [
+                    value for value in item.action_ids if value in action_ids
+                ],
+                "verification_expectation_ids": [
+                    value
+                    for value in item.verification_expectation_ids
+                    if value in expectation_ids
+                ],
+            },
+            deep=True,
+        )
+        for item in plan.services
+        if item.id in {row.service_id for row in actions}
+    ]
+    suffix = (
+        f"{Q3_FL_ACQUISITION_PROJECTION}:{client_device_id}"
+        if client_device_id
+        else Q3_FL_SERVER_PROJECTION
+    )
+    rewrites.append(
+        ProjectionRewrite(
+            "projection_identity",
+            f"{plan.id}/{suffix}",
+            f"source:{plan.id}:semantic_hash_retained:{plan.semantic_hash}",
+        )
+    )
+    return (
+        plan.model_copy(
+            update={
+                "id": f"{plan.id}/{suffix}",
+                "services": services,
+                "actions": actions,
+                "foundational_requirements": foundations,
+                "verification_expectations": expectations,
+            },
+            deep=True,
+        ),
+        tuple(rewrites),
+    )
+
+
+def q3_fastloop_fixture_placements(
+    plan: ConfigurationPlan, *, vlan_id: int
+) -> tuple[list, tuple[ProjectionRewrite, ...]]:
+    """Return the compiled access placements bound to the fixture's own VLAN.
+
+    The runner owns the physical fixture and applies no switch action, so the
+    ports stay in the stock VLAN. The compiled switch, interface and endpoint
+    placement is kept exactly; only the VLAN is rebound, and each rebinding is
+    returned. Nothing is inferred from a device name.
+    """
+    actions = []
+    rewrites: list[ProjectionRewrite] = []
+    for item in plan.actions:
+        if isinstance(item, ConfigureAccessPort) and item.data_vlan_id != vlan_id:
+            rewrites.append(
+                ProjectionRewrite(
+                    "access_vlan_rebound",
+                    f"{item.device_name}:{item.interface}",
+                    f"{item.data_vlan_id}->{vlan_id}:runner_owned_fixture",
+                )
+            )
+            actions.append(item.model_copy(update={"data_vlan_id": vlan_id}))
+            continue
+        actions.append(item)
+    return actions, tuple(rewrites)
 
 
 POOL_BEFORE_ENABLE = "pool-configured-before-enable"

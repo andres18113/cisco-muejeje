@@ -190,22 +190,66 @@ read.
   and at most one narrowed) are each capped at `READINESS_EPISODE_CALLS = 181`.
 - Client mode is 6: one E5 `send`, two mode read-backs, the client reading,
   the snapshot and the scan.
-- Server setup is 7: two E6 actions, the server-state read-back, the snapshot,
-  the scan and two timed readings.
-- Acquisition is 9 per client: the pre-read, the dispatch, two read-backs,
-  four settle reads and the scan. With the repeat and its post-read that is
-  2 × 9 + 2 = 20.
+- Server setup is 5: two E6 actions, the server-state read-back, the snapshot
+  and the scan.
+- Acquisition is 2 background readings, then 10 per client: the pre-read, the
+  dispatch, three read-backs (the server state the compiled acquisition is
+  staged on, the lease and the attribution), four settle reads and the scan.
+  With the repeat and its post-read that is 2 + 2 × 10 + 2 = 24.
 - Timing is 6: two timed readings, three horizon readings and a scan.
 - The terminal reading is 2, and the finalization reserve is 11.
 
-The total is 17 + 3 + 3 + 362 + 6 + 7 + 20 + 6 + 2 + 11 = **437**. The ceiling
+The total is 17 + 3 + 3 + 362 + 6 + 5 + 24 + 6 + 2 + 11 = **439**. The ceiling
 of both profiles is **440 operations**, with no spare that could fund a retry.
+The server-state read-back is read fresh before each acquisition because the
+compiled acquisition carries it as a `verification_dependencies` entry: the
+product admits no acquisition until that read-back is VERIFIED, and the
+projection does not rewrite that prerequisite away.
 The time ceiling is **1,500 s**, with a 300 s finalization reserve. That
 covers the gate's 120 s total, 16 s of settle, 75 s of timed and horizon
 waits, and the per-call time of the ceiling. The ledger grant of a
 qualification phase equals the stage ceiling. An episode's allocation adds the
 lifecycle time, so it is 440 operations and 2,400 s. These are ceilings, not
 forecasts. A typical run spends one forwarding sample of about ten calls.
+
+## Design refinements made during implementation
+
+Each of these was found by a test against the real product components, and
+each is a narrower reading of the approved design, not a wider one.
+
+1. **A known dispatch is not a settled postcondition.** Under the canonical
+   product rules, a void `dhcpRun` stays off the decision frontier until a
+   read-back VERIFIES it. `DHCP_LEASE` never verifies under the R-EVT-05
+   fallback, so historical Q3 ended `outcome_unknown` by construction. Q3-FL
+   adds one explicit predicate, `_q3fl_request`. A row that reproduces its
+   canonical decision, was accepted and correlated, reported
+   `attempted=true` and carried no call error is a *known dispatch*.
+   `attempted=false` with a refusal cause is a *known non-dispatch*, and a
+   preflight refusal dispatched nothing. Anything else is *outcome unknown*:
+   it stops every later effect and is never retried. The predicate admits
+   only the next independent subject's acquisition and the same-subject
+   replay control. The product frontier rule, and everything that depends on
+   `DHCP_LEASE`, are unchanged. Causal controls: a call error stops the run
+   before the second client's dispatch, and the replay is never attempted.
+2. **An own-claim replay reports `attempted=None`.** The runtime cannot speak
+   for the earlier evaluation, so it states nothing. The replay's branch
+   report `own_claim_replayed`, correlated and without a call error, is the
+   evidence that *this* evaluation reached no `dhcpRun`, because the claim
+   script calls it only on the no-claim path. This is the same reading
+   historical Q3 used. Negative control: with the claim store dropped, the
+   replay dispatches again and the repeat is CONTRADICTED.
+3. **The server-state read-back is staged per acquisition.** The compiled
+   acquisition lists it in `verification_dependencies`, so the product admits
+   no acquisition until it is VERIFIED. The per-client projection keeps it and
+   reads it fresh, one operation per client, which the budget now counts
+   (439 of 440).
+4. **A measurement that was not reached is NOT_RUN, with its reason.** A
+   capacity, repeat or timing row whose procedure a stop cut off is never
+   recorded as a RAN row that says nothing happened.
+5. **A declared omission keeps its own reason.** The diagnostic start used to
+   overwrite every unselected measurement with `not_selected_by_authorization`.
+   It now leaves a measurement the profile already omits, such as M-DHCP-3 or
+   requested renewal, with the reason the profile declares.
 
 ## Invariants
 

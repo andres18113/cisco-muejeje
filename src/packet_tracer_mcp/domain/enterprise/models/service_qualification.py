@@ -72,6 +72,12 @@ class QualificationStage(StrEnum):
     #: write-ahead record as Q0/Q1/Q3, plus the step binding below.
     D_WEB = "D-WEB"
     D_DHCP = "D-DHCP"
+    #: The versioned experimental Q3 profile of campaign
+    #: `SERVER-PT-DHCP-FASTLOOP-01`: one procedure over a one-user (C1) and a
+    #: two-user (C2) intended pool. The historical Q3 stage, its 60/1200
+    #: design bound and its three consumed attempts are unchanged.
+    Q3_FL_C1 = "Q3-FL-C1"
+    Q3_FL_C2 = "Q3-FL-C2"
 
 
 class ExecutionMode(StrEnum):
@@ -145,6 +151,10 @@ class DiagnosticPrecondition(StrEnum):
     MARKER_PAGE = "marker_page_established"
     #: One attributed ping between two verified bindings was taken.
     PING_ATTRIBUTED = "ping_attributed"
+    #: Every admitted client's DHCP mode was activated and read back true.
+    CLIENT_DHCP_MODE = "client_dhcp_mode_verified"
+    #: The versioned native-default policy permitted every interval so far.
+    NATIVE_DEFAULT_PERMITS = "native_default_policy_permits"
 
 
 @dataclass(frozen=True)
@@ -212,6 +222,10 @@ class DiagnosticStageStep:
     #: True when the step activates a process rather than only configuring or
     #: observing one, so an authorization has to name it deliberately.
     separately_authorized: bool = False
+    #: Further measurements one step runs. A Q3-FL step performs the shared
+    #: procedure whose readings several M-DHCP measurements conclude from, and
+    #: selecting it must not omit them as unselected.
+    also_experiments: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -235,6 +249,10 @@ class StageDefinition:
     profile_id: str = ""
     profile_version: str = ""
     steps: tuple[DiagnosticStageStep, ...] = ()
+    #: The intended pool's capacity for a DHCP qualification profile, and 0
+    #: for every other stage. It is part of the product contract the stage
+    #: composes, never a value read from the engine.
+    dhcp_pool_capacity: int = 0
 
     @property
     def fixture_names(self) -> tuple[str, ...]:
@@ -273,6 +291,8 @@ class StageDefinition:
         for item in self.steps:
             if item.id in chosen:
                 seen.setdefault(item.experiment_id, None)
+                for extra in item.also_experiments:
+                    seen.setdefault(extra, None)
         return tuple(seen)
 
     @property
@@ -385,6 +405,10 @@ STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.Q3: (60, 1200),
     QualificationStage.D_DHCP: (50, 1500),
     QualificationStage.D_WEB: (80, 1800),
+    # The versioned Q3-FL profiles: their composed worst case is 439, and
+    # 362 of it is the two capped forwarding episodes. See `_q3_fastloop`.
+    QualificationStage.Q3_FL_C1: (440, 1500),
+    QualificationStage.Q3_FL_C2: (440, 1500),
 }
 
 Q0_PC = "__MCP_E6Q_PC1"
@@ -1209,6 +1233,335 @@ def _declarative(
     )
 
 
+Q3_FL_PROFILE = "Q3-FL"
+Q3_FL_PROFILE_VERSION = "1"
+#: The versioned native-default policy the Q3-FL coordinator applies. It admits
+#: the one reviewed realignment on the server-address interval in its exact
+#: context and requires every later interval to be unchanged.
+Q3_FL_NATIVE_DEFAULT_POLICY = "q3-fl-native-default/v1"
+#: The access VLAN the runner-owned fixture carries. No Q3-FL step configures a
+#: switch, so the compiled VLAN 10 placements are rebound to the stock VLAN 1
+#: and the rewrite is recorded, never inferred.
+Q3_FL_FIXTURE_ACCESS_VLAN = 1
+#: Worst case of the forwarding decision: one access group, its own episode
+#: and at most one narrowed episode, each capped at `READINESS_EPISODE_CALLS`
+#: (181) by the product gate. A contract test pins the two together.
+Q3_FL_FORWARDING_OPERATIONS = 2 * 181
+#: Bounded observation after one acquisition request: client readings taken
+#: at a fixed interval, stopping early only when the address changed.
+Q3_FL_SETTLE_READS = 4
+Q3_FL_SETTLE_INTERVAL_SECONDS = 2.0
+#: Two readings without any request after the server is enabled and before
+#: the first acquisition, to see background activity rather than assume none.
+Q3_FL_BACKGROUND_INTERVAL_SECONDS = 10.0
+#: Two timed readings after the acquisitions with no new request, then the
+#: declared natural-renewal horizon: three readings twenty seconds apart. No
+#: clock or lease setting is changed to make a renewal happen inside it.
+Q3_FL_TIMED_INTERVAL_SECONDS = 15.0
+Q3_FL_RENEWAL_HORIZON_READS = 3
+Q3_FL_RENEWAL_INTERVAL_SECONDS = 20.0
+#: The explicit lease-index window: each intended pool is read at every index
+#: below its capacity plus two, the native pool at its first four indexes.
+Q3_FL_INTENDED_EXTRA_INDEXES = 2
+Q3_FL_NATIVE_SCAN_INDEXES = 4
+#: Why requested renewal is not measured. Cisco documents `dhcpRun`,
+#: `dhcpRelease` and `resetDhcpConfOn` on `DhcpClientProcess` and no renewal;
+#: `dhcpRun` under the same subject claim is replay, which the claim refuses.
+REQUESTED_RENEWAL_CONTRACT_ABSENT = (
+    "requested_renewal_contract_absent: DhcpClientProcess documents dhcpRun, "
+    "dhcpRelease and resetDhcpConfOn and no renewal operation; dhcpRun under "
+    "the same subject claim is replay, which the product claim refuses, and "
+    "deleting the claim or changing the nonce to force one is not a typed "
+    "renewal contract"
+)
+
+
+def _q3_fastloop(stage: QualificationStage, capacity: int) -> StageDefinition:
+    """Return one versioned Q3-FL profile over an intended pool of `capacity`.
+
+    Both profiles run one procedure: the server's address alone, forwarding,
+    client DHCP mode while the server process is still disabled, the pool and
+    the enable, one typed acquisition per admitted client, the same-action
+    repeat, timed readings and the natural-renewal horizon. C1's second client
+    is the capacity-one negative; C2 discriminates a one-row table from a
+    full one. Every planned figure below is its step's bounded worst case.
+    """
+    ceiling_operations, ceiling_seconds = STAGE_CEILINGS[stage]
+    fixtures = (
+        FixtureDevice(Q3_SERVER, "Server-PT", Q3_SERVER_IPV4, Q3_NETMASK),
+        FixtureDevice(Q3_PC1, "PC-PT"),
+        FixtureDevice(Q3_PC2, "PC-PT"),
+        FixtureDevice(Q3_SWITCH, "2960-24TT"),
+    )
+    clients = sum(1 for item in fixtures if item.model == "PC-PT")
+    # Baseline 3 (server, clients, native scan); address 3 (E5 send, its
+    # read-back, one snapshot); forwarding; client mode 3 + clients (E5 send,
+    # one mode read-back per client, the client reading, a snapshot and a
+    # scan); server setup 5 (two E6 actions, the server-state read-back, a
+    # snapshot and the empty-state scan).
+    setup_procedure = 3 + 3 + Q3_FL_FORWARDING_OPERATIONS + (4 + clients) + 5
+    # Two background readings, then per client: the pre-request reading, the
+    # dispatch, three product read-backs (the server state the acquisition is
+    # staged on, the lease and the attribution), the settle readings and a
+    # scan.
+    per_client = 1 + 1 + 3 + Q3_FL_SETTLE_READS + 1
+    acquisition_procedure = 2 + clients * per_client
+    repeat_procedure = 2
+    timing_procedure = 2 + Q3_FL_RENEWAL_HORIZON_READS + 1
+    dhcp_prerequisites = (
+        DiagnosticPrecondition.SUBJECT_SESSION,
+        DiagnosticPrecondition.INVENTORY_COHERENT,
+        DiagnosticPrecondition.SERVER_ADDRESSING,
+        DiagnosticPrecondition.POOL_CONFIGURED,
+        DiagnosticPrecondition.PROCESS_ENABLED_VERIFIED,
+        DiagnosticPrecondition.FORWARDING_OBSERVED,
+        DiagnosticPrecondition.CLIENT_DHCP_MODE,
+        DiagnosticPrecondition.NATIVE_DEFAULT_PERMITS,
+    )
+    experiments = [
+        ExperimentSpec(
+            id="M-DHCP-1",
+            hypothesis=(
+                "The exact Server-PT interface binds a DHCP process, the "
+                "native default moves only by the reviewed realignment and "
+                "then stays put, and the ensure-present pool path stores the "
+                f"{capacity}-user intended pool."
+            ),
+            required=True,
+            procedure="Q3FL_SERVER",
+            planned_operations=setup_procedure,
+            operational_prerequisites=(DiagnosticPrecondition.SUBJECT_SESSION,),
+            capabilities=(
+                "server.dhcp_process_binding",
+                "server.dhcp_pool_configuration",
+                "server.dhcp_process_enable",
+                "server.dhcp_default_pool_observation",
+            ),
+        ),
+        ExperimentSpec(
+            id="M-DHCP-4",
+            hypothesis="Each exact PC-PT port exposes bounded native MAC text.",
+            required=True,
+            procedure="Q3FL_SERVER",
+            planned_operations=0,
+            operational_prerequisites=(DiagnosticPrecondition.SUBJECT_SESSION,),
+            capabilities=("client.dhcp_mac_reader",),
+        ),
+        ExperimentSpec(
+            id="M-DHCP-5",
+            hypothesis=(
+                "HostPort.isDhcpClientOn returns an actual boolean on each "
+                "manifest-bound client interface, false before and true after "
+                "the typed mode activation, which follows admitted forwarding."
+            ),
+            required=True,
+            procedure="Q3FL_SERVER",
+            planned_operations=0,
+            operational_prerequisites=(DiagnosticPrecondition.SUBJECT_SESSION,),
+            capabilities=(
+                "client.dhcp_mode_reader",
+                "client.dhcp_mode_activation",
+                "network.access_forwarding_observation",
+            ),
+        ),
+        ExperimentSpec(
+            id="M-DHCP-2",
+            hypothesis=(
+                "An explicit getLeaseAt index window keeps each index, return "
+                "type, raw row, exception and repetition, and discriminates "
+                "the empty, one-row and full states it was calibrated on."
+            ),
+            required=True,
+            procedure="Q3FL_DHCP",
+            planned_operations=0,
+            operational_prerequisites=dhcp_prerequisites,
+            capabilities=("server.dhcp_lease_table",),
+        ),
+        ExperimentSpec(
+            id="M-DHCP-3",
+            hypothesis=(
+                "Qualification-only dhcpSucceed/dhcpFailed observers receive "
+                "bounded events and are released or made inert."
+            ),
+            required=False,
+            procedure="Q3FL_DHCP",
+            planned_operations=0,
+            capabilities=("engine.dhcp_event_delivery",),
+            omission_reason=(
+                "qualification_event_source_and_release_not_qualified: the "
+                "approved event deferral stands; no observer is registered, "
+                "and callbacks, zero-event unregister, dhcpRelease and "
+                "resetDhcpConfOn are not qualified by this profile"
+            ),
+        ),
+        ExperimentSpec(
+            id="M-DHCP-6",
+            hypothesis=(
+                "One typed acquisition per admitted client is dispatched at "
+                "most once under its claim, and native addressing, an exact "
+                "intended or native-default row, calibrated absence and "
+                "causal acquisition are established separately."
+            ),
+            required=True,
+            procedure="Q3FL_DHCP",
+            planned_operations=acquisition_procedure,
+            operational_prerequisites=dhcp_prerequisites,
+            capabilities=("client.dhcp_acquisition", "server.dhcp_lease_table"),
+        ),
+    ]
+    steps = [
+        DiagnosticStageStep(
+            "Q3FL-core",
+            "M-DHCP-1",
+            "request",
+            also_experiments=("M-DHCP-4", "M-DHCP-5", "M-DHCP-2", "M-DHCP-6"),
+        ),
+    ]
+    if capacity == 1:
+        experiments.append(
+            ExperimentSpec(
+                id="M-DHCP-6-CAP",
+                hypothesis=(
+                    "A second client on the full one-user intended pool gets "
+                    "no intended-pool lease, and any address it does get is "
+                    "attributed to the pool that holds its row."
+                ),
+                required=True,
+                procedure="Q3FL_DHCP",
+                planned_operations=0,
+                operational_prerequisites=dhcp_prerequisites,
+                capabilities=("client.dhcp_acquisition",),
+            )
+        )
+        steps.append(
+            DiagnosticStageStep(
+                "Q3FL-capacity", "M-DHCP-6-CAP", "observe", ("Q3FL-core",)
+            )
+        )
+    else:
+        experiments.append(
+            ExperimentSpec(
+                id="M-DHCP-6-CAP",
+                hypothesis="The capacity-one negative.",
+                required=False,
+                procedure="Q3FL_DHCP",
+                planned_operations=0,
+                omission_reason=(
+                    "capacity_one_negative_needs_a_one_user_pool: this "
+                    f"profile's intended pool holds {capacity} users; "
+                    "Q3-FL-C1 measures it"
+                ),
+            )
+        )
+    experiments.extend(
+        [
+            ExperimentSpec(
+                id="M-DHCP-6-REPEAT",
+                hypothesis=(
+                    "Replaying the identical acquisition after an effect of "
+                    "known outcome sends no second dhcpRun."
+                ),
+                required=True,
+                procedure="Q3FL_DHCP",
+                planned_operations=repeat_procedure,
+                operational_prerequisites=dhcp_prerequisites,
+                capabilities=("client.dhcp_acquisition_claim",),
+            ),
+            ExperimentSpec(
+                id="M-DHCP-6-TIME",
+                hypothesis=(
+                    "Two timed readings with no new request, then the declared "
+                    "natural-renewal horizon, keep every raw lease-time value; "
+                    "a changed string is not a renewal."
+                ),
+                required=True,
+                procedure="Q3FL_DHCP",
+                planned_operations=timing_procedure,
+                operational_prerequisites=dhcp_prerequisites,
+                capabilities=("client.dhcp_lease_time_reader",),
+            ),
+            ExperimentSpec(
+                id="M-DHCP-6-RENEW",
+                hypothesis="A requested renewal under an explicit typed contract.",
+                required=False,
+                procedure="Q3FL_DHCP",
+                planned_operations=0,
+                omission_reason=REQUESTED_RENEWAL_CONTRACT_ABSENT,
+            ),
+            ExperimentSpec(
+                id="M-DHCP-1-FINAL",
+                hypothesis=(
+                    "The pre-cleanup native default and lease tables are "
+                    "retained whatever the sequence did, including after a stop."
+                ),
+                required=True,
+                procedure="Q3FL_FINAL",
+                planned_operations=2,
+                operational_prerequisites=(DiagnosticPrecondition.SUBJECT_SESSION,),
+                capabilities=(
+                    "server.dhcp_default_pool_observation",
+                    "server.dhcp_lease_table",
+                ),
+                terminal_observation=True,
+            ),
+        ]
+    )
+    steps.extend(
+        [
+            DiagnosticStageStep(
+                "Q3FL-repeat", "M-DHCP-6-REPEAT", "request", ("Q3FL-core",)
+            ),
+            DiagnosticStageStep(
+                "Q3FL-timing", "M-DHCP-6-TIME", "observe", ("Q3FL-core",)
+            ),
+            DiagnosticStageStep(
+                "Q3FL-final", "M-DHCP-1-FINAL", "observe", ("Q3FL-core",)
+            ),
+        ]
+    )
+    return StageDefinition(
+        stage=stage,
+        executable=True,
+        purpose=(
+            "Server-PT DHCP serving pool, calibrated lease table, acquisition "
+            f"and attribution on one owned segment with a {capacity}-user "
+            "intended pool, under the versioned native-default policy."
+        ),
+        fixtures=fixtures,
+        links=(
+            FixtureLink(Q3_SERVER, "FastEthernet0", Q3_SWITCH, "FastEthernet0/1"),
+            FixtureLink(Q3_PC1, "FastEthernet0", Q3_SWITCH, "FastEthernet0/2"),
+            FixtureLink(Q3_PC2, "FastEthernet0", Q3_SWITCH, "FastEthernet0/3"),
+        ),
+        setup=(
+            PlannedStep("read:executable_build", 1),
+            PlannedStep("read:workspace_baseline", 1),
+            *(PlannedStep(f"create:{item.name}", 2) for item in fixtures),
+            PlannedStep("create:link:1", 2),
+            PlannedStep("create:link:2", 2),
+            PlannedStep("create:link:3", 2),
+            PlannedStep("read:fixture_identity", 1),
+        ),
+        experiments=tuple(experiments),
+        reserve=(
+            *(PlannedStep(f"remove:{item.name}", 2) for item in fixtures),
+            PlannedStep("read:restoration:1", 1),
+            PlannedStep("read:restoration:2", 1),
+            PlannedStep("release:run_bag", 1),
+        ),
+        budget=StageBudget(ceiling_operations, ceiling_seconds, reserve_seconds=300),
+        allowed_channels=("file",),
+        profile_id=Q3_FL_PROFILE,
+        profile_version=Q3_FL_PROFILE_VERSION,
+        steps=tuple(steps),
+        dhcp_pool_capacity=capacity,
+    )
+
+
+#: The Q3-FL stages, one per intended-pool capacity.
+Q3_FL_STAGES = (QualificationStage.Q3_FL_C1, QualificationStage.Q3_FL_C2)
+
+
 STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.Q0: _q0(),
     QualificationStage.Q1: _q1(),
@@ -1220,6 +1573,8 @@ STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.Q3: _q3(),
     QualificationStage.D_DHCP: _d_dhcp(),
     QualificationStage.D_WEB: _d_web(),
+    QualificationStage.Q3_FL_C1: _q3_fastloop(QualificationStage.Q3_FL_C1, 1),
+    QualificationStage.Q3_FL_C2: _q3_fastloop(QualificationStage.Q3_FL_C2, 2),
 }
 
 

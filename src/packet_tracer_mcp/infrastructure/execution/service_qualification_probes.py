@@ -219,6 +219,14 @@ _SPECS: dict[str, dict[str, tuple[type, ...]]] = {
         "termination": _STR,
         "error": _STR,
     },
+    "dhcp_lease_calibration": {
+        "device": _STR,
+        "interface": _STR,
+        "found": _BOOL,
+        "process_found": _BOOL,
+        "pools": _LIST,
+        "error": _STR,
+    },
     "dhcp_events_register": {
         "owned": _BOOL,
         "registered": _INT,
@@ -974,6 +982,64 @@ class PacketTracerQualificationProbes:
             "process_found:!!__p,pool_found:!!__q,pool_name:__q?String("
             "__q.getDhcpPoolName()).substring(0,64):'',rows:__rows,"
             "termination:__term,error:__error}));",
+        )
+
+    #: The largest explicit index window one calibration may request per pool.
+    #: It bounds the native loop before the script exists; it is not a claim
+    #: about how many leases a pool holds.
+    LEASE_CALIBRATION_MAX_WINDOW = 16
+
+    def read_dhcp_lease_calibration(
+        self,
+        server: str,
+        interface: str,
+        pools: Sequence[tuple[str, int]],
+    ) -> ProbeReading:
+        """Read an explicit `getLeaseAt` index window of every named pool.
+
+        Unlike `read_dhcp_table`, a null does not stop the scan: every index of
+        the window is read, so a row after a null, a throw at one index and a
+        repeated row are all observed rather than hidden by an assumed end.
+        Each index keeps its return kind, exception text and, for an object,
+        every documented field with its own `typeof`. `getMaxUsers` is read
+        as configuration beside the rows and never as a count.
+        """
+        requested = []
+        for name, window in pools:
+            if (
+                not isinstance(name, str)
+                or not name
+                or isinstance(window, bool)
+                or not isinstance(window, int)
+                or not 1 <= window <= self.LEASE_CALIBRATION_MAX_WINDOW
+            ):
+                raise ValueError("lease calibration window out of bounds")
+            requested.append([name, window])
+        return self._read(
+            "dhcp_lease_calibration",
+            f"var __dn={json.dumps(server)};var __if={json.dumps(interface)};"
+            f"var __req={json.dumps(requested)};var __d=ipc.network().getDevice(__dn);"
+            "var __m=__d?__d.getProcess('DhcpServerMain'):null;"
+            "var __p=__m&&__m.getDhcpServerProcessByPortName(__if);var __out=[];"
+            "var __fields=['ipAddress','macAddress','leaseTime','port'];"
+            "for(var __i=0;__i<__req.length;__i++){var __n=__req[__i][0],"
+            "__w=__req[__i][1],__q=null,__qe='';try{__q=__p?__p.getPool(__n):null;}"
+            "catch(__x){__qe=__er(__x);}var __e={requested:__n,found:!!__q,name:'',"
+            "max:null,max_type:'absent',window:__w,entries:[],error:__qe};if(__q){"
+            "try{__e.name=String(__q.getDhcpPoolName()).substring(0,64);}catch(__x){}"
+            "try{var __mx=__q.getMaxUsers();__e.max_type=typeof __mx;if(typeof __mx"
+            "==='number'&&isFinite(__mx)){__e.max=__mx;}}catch(__x){"
+            "__e.max_type='throw';}for(var __j=0;__j<__w;__j++){var __it={index:__j,"
+            "return_kind:'',error:'',row:null};try{var __r=__q.getLeaseAt(__j);"
+            "if(__r===null){__it.return_kind='null';}else if(__r===undefined){"
+            "__it.return_kind='undefined';}else{__it.return_kind=typeof __r;"
+            "if(typeof __r==='object'){var __row={};for(var __k=0;__k<__fields.length;"
+            "__k++){var __f=__fields[__k],__v=__r[__f];__row[__f+'_type']=typeof __v;"
+            "__row[__f]=(__f==='leaseTime'&&typeof __v==='number'&&isFinite(__v))"
+            "?__v:String(__v).substring(0,64);}__it.row=__row;}}}catch(__x){"
+            "__it.return_kind='throw';__it.error=__er(__x);}__e.entries.push(__it);}}"
+            "__out.push(__e);}reportResult(JSON.stringify({device:__dn,interface:__if,"
+            "found:!!__d,process_found:!!__p,pools:__out,error:''}));",
         )
 
     def register_dhcp_observers(

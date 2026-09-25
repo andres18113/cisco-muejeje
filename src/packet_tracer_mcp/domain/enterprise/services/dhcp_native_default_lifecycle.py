@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from itertools import pairwise
 
 #: The fields one native pool row carries, and the type each one must have.
 #: A row missing a field, carrying an extra one, or carrying the right name
@@ -298,6 +299,133 @@ def assess_native_default_transition(
             *sorted(set(context_mismatch)),
         ),
         limitations=limitations,
+    )
+
+
+#: What the versioned sequence policy decided about one interval.
+INTERVAL_PERMITTED = "permitted"
+INTERVAL_REFUSED = "refused"
+
+
+@dataclass(frozen=True)
+class NativeDefaultReading:
+    """One bounded native-default reading and the intervention just before it.
+
+    `rows` are the native rows only: the intended pool is accounted for
+    separately once its own row is valid, so it can never look like a pool the
+    default gained. `intervention` names the whole call made between the
+    previous reading and this one; the first reading has none.
+    """
+
+    label: str
+    observed: bool
+    rows: tuple[Mapping[str, object], ...] = ()
+    intervention: str = ""
+    cause: str = ""
+
+
+@dataclass(frozen=True)
+class NativeDefaultInterval:
+    """One adjacent pair of readings and what the policy made of it."""
+
+    before_label: str
+    after_label: str
+    intervention: str
+    assessment: NativeDefaultTransitionAssessment
+    decision: str
+    cause: str = ""
+
+
+@dataclass(frozen=True)
+class NativeDefaultSequenceAssessment:
+    """Every interval of one run under one versioned policy."""
+
+    policy: str
+    intervals: tuple[NativeDefaultInterval, ...]
+    causes: tuple[str, ...] = ()
+    limitations: tuple[str, ...] = (MEASURED_VALUES_ONLY, TRANSITION_IS_NOT_ALLOCATION)
+
+    @property
+    def permits_continuation(self) -> bool:
+        """Whether every interval so far is one the policy permits."""
+        return all(item.decision == INTERVAL_PERMITTED for item in self.intervals)
+
+    @property
+    def authorizes_allocation(self) -> bool:
+        """Always False, for the same reason as a single assessment."""
+        return False
+
+
+def assess_native_default_sequence(
+    readings: Sequence[NativeDefaultReading],
+    *,
+    policy: str,
+    model: str,
+    backend_version: str,
+    interface: str,
+    reviewed_intervention: str,
+    admitted: Sequence[AdmittedNativeDefaultTransition],
+) -> NativeDefaultSequenceAssessment:
+    """Apply one versioned policy to every adjacent pair of readings.
+
+    The policy is deliberately small. Exactly one interval may carry the
+    reviewed intervention, and it is decided against the reviewed records in
+    its exact context: it may be the admitted realignment or unchanged. Every
+    other interval, before it or after it, is decided with no admitted record
+    at all, so any movement there is drift: that is the "subsequent
+    stability" the realignment has to be followed by. An unobserved reading
+    decides nothing and permits nothing, and a second interval claiming the
+    reviewed intervention is refused rather than admitted twice.
+    """
+    intervals: list[NativeDefaultInterval] = []
+    causes: list[str] = []
+    reviewed_seen = False
+    for before, after in pairwise(readings):
+        reviewed = after.intervention == reviewed_intervention
+        repeated = reviewed and reviewed_seen
+        reviewed_seen = reviewed_seen or reviewed
+        assessment = assess_native_default_transition(
+            before=before.rows,
+            after=after.rows,
+            context=NativeDefaultContext(
+                model=model,
+                backend_version=backend_version,
+                interface=interface,
+                intervention=after.intervention,
+            ),
+            admitted=admitted if reviewed and not repeated else (),
+            before_observed=before.observed,
+            after_observed=after.observed,
+        )
+        allowed = (UNCHANGED, ADMITTED_REALIGNMENT) if reviewed else (UNCHANGED,)
+        cause = ""
+        if repeated:
+            cause = "reviewed_intervention_repeated"
+        elif assessment.classification not in allowed:
+            base = (
+                assessment.causes[0]
+                if assessment.causes
+                else f"native_default_{assessment.classification}"
+            )
+            # Outside the reviewed interval only an unchanged default permits
+            # anything; a movement there is a stability failure by definition.
+            unstable = not reviewed and assessment.classification != NOT_ASSESSED
+            cause = f"stability_required:{base}" if unstable else base
+        decision = INTERVAL_REFUSED if cause else INTERVAL_PERMITTED
+        if cause:
+            causes.append(f"{after.label}:{cause}")
+        intervals.append(
+            NativeDefaultInterval(
+                before_label=before.label,
+                after_label=after.label,
+                intervention=after.intervention,
+                assessment=assessment,
+                decision=decision,
+                cause=cause,
+            )
+        )
+    return NativeDefaultSequenceAssessment(
+        policy=policy, intervals=tuple(intervals), causes=tuple(causes)
     )
 
 

@@ -53,6 +53,17 @@ HTTP_REQUEST_KINDS: frozenset[ServiceVerificationKind] = frozenset(
     }
 )
 
+#: The dependents a DHCP acquisition is gated through. The compiled
+#: `DHCP_LEASE` expectation follows exactly one `AcquireDhcpLease`, names the
+#: DHCP server as its host and the PC as its client, and the discover that
+#: acquisition broadcasts must leave the client's access port and reach the
+#: server's. A caller decides this dependent BEFORE dispatching the
+#: acquisition it follows; deciding it after the request would be a verdict
+#: about a request that already happened. No HTTP caller uses this set.
+DHCP_ACQUISITION_KINDS: frozenset[ServiceVerificationKind] = frozenset(
+    {ServiceVerificationKind.DHCP_LEASE}
+)
+
 
 @dataclass(frozen=True)
 class AccessPortPlacement:
@@ -232,8 +243,14 @@ def derive_access_readiness_plan(
     *,
     configuration_actions: Iterable[object],
     verification_expectations: Sequence[object],
+    request_kinds: frozenset[ServiceVerificationKind] = HTTP_REQUEST_KINDS,
 ) -> AccessReadinessPlan:
-    """Group the HTTP-family expectations by every group their path needs.
+    """Group the request expectations by every group their path needs.
+
+    `request_kinds` names which expectations are requests through the access
+    ports. It defaults to the HTTP family, so every existing caller derives
+    exactly what it always did; a DHCP qualification passes
+    `DHCP_ACQUISITION_KINDS` explicitly.
 
     One access group per `(switch, VLAN)`, holding the union of the interfaces
     its dependents need on that switch, so the observation cost follows the
@@ -266,7 +283,7 @@ def derive_access_readiness_plan(
 
     for expectation in verification_expectations:
         kind = getattr(expectation, "kind", None)
-        if kind not in HTTP_REQUEST_KINDS:
+        if kind not in request_kinds:
             continue
         expectation_id = str(getattr(expectation, "id", "") or "")
         service_id = str(getattr(expectation, "service_id", "") or "")

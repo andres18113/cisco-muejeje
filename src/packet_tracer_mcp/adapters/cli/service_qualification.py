@@ -27,10 +27,13 @@ the reserve, which keeps the owned client's release inside the budget.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import sys
 import time
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -45,13 +48,22 @@ from ...application.use_cases.compose_enterprise_reference import (
     compose_enterprise_reference,
 )
 from ...application.use_cases.qualify_server_services import (
+    CampaignQualificationAuthority,
     IsolationObservation,
     LedgeredTransport,
     Q3ProductContract,
     QualificationBoundaries,
     QualificationCancelled,
+    QualificationResult,
     RuntimeIdentity,
     qualify_server_services,
+)
+from ...application.use_cases.server_pt_campaign import (
+    DHCP_FASTLOOP_CAMPAIGN,
+    source_authority_findings,
+)
+from ...application.use_cases.server_pt_campaign_ledger import (
+    ledger_record_findings,
 )
 from ...domain.enterprise.models.capabilities import CapabilityStatus
 from ...domain.enterprise.models.configuration import ConfigurationPolicy
@@ -71,6 +83,7 @@ from ...domain.enterprise.models.service_qualification import (
     D_WEB_LATE_READ_OFFSET,
     D_WEB_PING_INSPECTIONS,
     Q3_DNS_IPV4,
+    Q3_FL_STAGES,
     Q3_GATEWAY_IPV4,
     Q3_PC1,
     Q3_PC2,
@@ -93,6 +106,10 @@ from ...domain.enterprise.services.service_policy import derive_service_policy
 from ...domain.enterprise.services.topology_identity import stamp_topology_hashes
 from ...domain.models.plans import DevicePlan, LinkPlan
 from ...infrastructure.catalog.devices import ALL_MODELS
+from ...infrastructure.catalog.dhcp_native_default_transitions import (
+    WHOLE_CONFIGURE_PC_IP,
+    admitted_native_default_transitions,
+)
 from ...infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
 )
@@ -134,9 +151,13 @@ from ...infrastructure.execution.typed_ping import TypedPingExecutor
 from ...infrastructure.persistence.campaign_coordination import (
     FileCampaignCoordinator,
 )
+from ...infrastructure.persistence.server_pt_commissioning_store import (
+    ServerPtCommissioningStore,
+)
 from ...infrastructure.persistence.service_qualification_store import (
     QualificationRecordStore,
 )
+from .server_pt_campaign_archive import archive_or_stop, ledger_admit, ledger_result
 
 #: Service runtime timings for a qualification fetch; see the module docstring.
 HTTP_TIMEOUT_SECONDS = 8.0
@@ -173,8 +194,12 @@ class _Q3HardwareCatalog(EnterpriseCapabilityAdapter):
         return [item for item in candidates if item.model == "2960-24TT"]
 
 
-def _q3_intent() -> EnterpriseIntent:
-    """Return the exact one-segment product intent the Q3 fixture measures."""
+def _q3_intent(max_users: int = 1) -> EnterpriseIntent:
+    """Return the exact one-segment product intent the Q3 fixture measures.
+
+    `max_users` is the intended pool's capacity. Q3 and Q3-FL-C1 compose one
+    user; Q3-FL-C2 composes two so one row and a full table differ.
+    """
     return EnterpriseIntent.model_validate(
         {
             "name": "MCP-E6Q",
@@ -219,7 +244,7 @@ def _q3_intent() -> EnterpriseIntent:
                                 "interface": "FastEthernet0",
                                 "pool_name": Q3_POOL,
                                 "start_offset": 99,
-                                "max_users": 1,
+                                "max_users": max_users,
                             },
                         }
                     ],
@@ -263,9 +288,16 @@ def _q3_service_capabilities(build: str):
 
 def q3_product_contract(build: str, run_id: str) -> Q3ProductContract:
     """Compose real E4/E5/E6 plans and bind them to the exact Q3 names/ports."""
+    return dhcp_product_contract(build, run_id, 1)
+
+
+def dhcp_product_contract(build: str, run_id: str, max_users: int) -> Q3ProductContract:
+    """Compose the real plans for the Q3 fixture with a pool of `max_users`."""
     if build != Q3_PACKET_TRACER_BUILD:
         raise ValueError("Q3 has no reviewed native contract for this build.")
-    intent = _q3_intent()
+    if isinstance(max_users, bool) or not isinstance(max_users, int) or max_users < 1:
+        raise ValueError("The intended pool capacity must be a positive integer.")
+    intent = _q3_intent(max_users)
     catalog = _Q3HardwareCatalog()
     base = compose_enterprise_reference(
         intent,
@@ -617,6 +649,9 @@ def production_boundaries(governed_root: Path) -> QualificationBoundaries:
         new_nonce=lambda: uuid4().hex,
         q3_product_contract=q3_product_contract,
         q3_required_build=Q3_PACKET_TRACER_BUILD,
+        dhcp_product_contract=dhcp_product_contract,
+        native_default_transitions=admitted_native_default_transitions,
+        reviewed_native_default_intervention=WHOLE_CONFIGURE_PC_IP,
         forwarding_probe=_forwarding_probe,
         diagnostic_service_runtime=_diagnostic_service_runtime,
         diagnostic_lifecycle=PacketTracerDiagnosticLifecycleReader().read,
@@ -667,11 +702,19 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--authorized-process-path")
     parser.add_argument("--instance-token")
     parser.add_argument("--attempt-id")
+    # Campaign composition: only `dhcp-fastloop`, only for its Q3-FL stages,
+    # and only with its own charter and an opened episode.
+    parser.add_argument("--campaign", choices=("dhcp-fastloop",), default="")
+    parser.add_argument("--charter", default="")
+    parser.add_argument("--episode", type=int, default=0)
     return parser
 
 
 def _request(argv: Sequence[str] | None) -> QualificationRequest:
-    args = _parser().parse_args(argv)
+    return _request_from(_parser().parse_args(argv))
+
+
+def _request_from(args: argparse.Namespace) -> QualificationRequest:
     named = (
         args.authorization_id,
         args.authorized_stage,
@@ -738,7 +781,8 @@ def main(
     boundaries_factory=production_boundaries,
 ) -> int:
     """Run one stage and return 0 completed, 1 stopped or 2 refused."""
-    request = _request(argv)
+    args = _parser().parse_args(argv)
+    request = _request_from(args)
     if not request.execute:
         _print(
             {
@@ -775,6 +819,14 @@ def main(
         else frozenset()
     )
     try:
+        if args.campaign:
+            return _campaign_main(
+                request, args, governed_root, boundaries_factory, capabilities
+            )
+        if definition is not None and definition.stage in Q3_FL_STAGES:
+            # A Q3-FL profile exists only under its campaign's authority.
+            _print({"outcome": "refused", "reason": "stage_requires_its_campaign"})
+            return 2
         result = qualify_server_services(
             request,
             boundaries_factory(governed_root),
@@ -793,6 +845,195 @@ def main(
         _print({"outcome": "stopped", "primary_failure": "cancelled"})
         return 130
     _print(result.compact_summary())
+    return result.exit_code
+
+
+#: The charter digest the DHCP campaign's qualification runs require. A module
+#: seam, read at call time, so a test binds its own charter without touching
+#: the campaign identity.
+DHCP_FASTLOOP_CHARTER_SHA256 = DHCP_FASTLOOP_CAMPAIGN.charter_sha256
+_CHARTER_LIMIT = 1024 * 1024
+_ATTEMPT_ID = re.compile(r"[0-9a-f]{32}\Z")
+
+
+def _campaign_refused(reason: str) -> int:
+    _print({"outcome": "refused", "reason": reason})
+    return 2
+
+
+def _campaign_status(
+    result: QualificationResult | None, *, active_seconds: float, ledger_result: str
+) -> dict[str, Any]:
+    """Return the qualification status the campaign archive retains."""
+    record = result.record if result is not None else None
+    operations = list(record.operations) if record is not None else []
+    baseline = dict(record.workspace_baseline) if record is not None else {}
+    return {
+        "outcome": result.outcome.value if result is not None else "refused",
+        "stage": record.stage.value if record is not None else "",
+        "run_id": record.run_id if record is not None else "",
+        "record_path": result.record_path if result is not None else "",
+        "refusals": (
+            [item.model_dump(mode="json") for item in result.refusals]
+            if result is not None
+            else []
+        ),
+        "operations_used": record.budget.used_operations if record is not None else 0,
+        "active_seconds": round(active_seconds, 3),
+        # The first effect of any stage is a fixture creation, so a run with
+        # no counted creation dispatched nothing into the workspace.
+        "effects_dispatched": any(
+            item.seq and item.purpose.startswith("create:") for item in operations
+        ),
+        "workspace_baseline_empty": (
+            baseline.get("observed") is True
+            and baseline.get("semantic_device_count") == 0
+            and baseline.get("link_count") == 0
+        ),
+        "restoration_proven": bool(record.restoration_proven) if record else False,
+        "dirty_state": record.dirty_state.value if record is not None else "",
+        "primary_failure": record.primary_failure if record is not None else "",
+        "ledger_result": ledger_result or "recorded",
+    }
+
+
+def _campaign_main(
+    request: QualificationRequest,
+    args: argparse.Namespace,
+    governed_root: Path,
+    boundaries_factory,
+    capabilities: frozenset[str],
+) -> int:
+    """Run one Q3-FL stage under campaign SERVER-PT-DHCP-FASTLOOP-01.
+
+    Every campaign fact is validated before the use case sees anything: the
+    charter digest, the stage, the attempt's launch record and process, the
+    exact clean checkpoint the episode declared, and the ledger admission of
+    this qualification phase. Only then is the one-rule publication waiver
+    composed, and only for this attempt. The result, used operations and
+    active seconds are recorded whatever the stage concluded, and the full
+    record is pinned in the campaign archive by digest.
+    """
+    campaign = DHCP_FASTLOOP_CAMPAIGN
+    try:
+        charter = Path(args.charter).read_bytes() if args.charter else b""
+    except OSError:
+        return _campaign_refused("charter_unreadable")
+    if (
+        not charter
+        or len(charter) > _CHARTER_LIMIT
+        or hashlib.sha256(charter).hexdigest() != DHCP_FASTLOOP_CHARTER_SHA256
+    ):
+        return _campaign_refused("charter_digest_mismatch")
+    definition = stage_definition(request.stage)
+    if definition is None or definition.stage not in Q3_FL_STAGES:
+        return _campaign_refused("stage_not_part_of_the_dhcp_campaign")
+    authorization = request.authorization
+    if (
+        authorization is None
+        or not _ATTEMPT_ID.fullmatch(authorization.attempt_id or "")
+        or args.episode < 1
+    ):
+        return _campaign_refused("campaign_attempt_or_episode_invalid")
+    attempt = authorization.attempt_id
+    store = ServerPtCommissioningStore(governed_root, campaign.campaign_id)
+    source = repository_identity(governed_root)
+    try:
+        if store.index_exists() and store.adopt_ledger_residue(ledger_record_findings):
+            raise ValueError("ledger residue unverified")
+        if store.verify_index():
+            raise ValueError("campaign archive unverified")
+        launch = store.load_process_launch(attempt)
+    except (OSError, ValueError):
+        return _campaign_refused("campaign_launch_unestablished")
+    if (
+        launch.get("campaign_id") != campaign.campaign_id
+        or launch.get("execution_purpose") != campaign.purpose.value
+        or launch.get("pid") != authorization.process_id
+        or launch.get("process_path") != authorization.process_path
+        or not launch.get("process_incarnation")
+    ):
+        return _campaign_refused("authorization_differs_from_the_campaign_launch")
+    if (
+        source_authority_findings(campaign, source, None)
+        or (source.head, source.tree) != (request.expected_head, authorization.tree)
+        or (source.head, source.tree)
+        != (launch.get("source_sha"), launch.get("source_tree"))
+    ):
+        return _campaign_refused("source_differs_from_the_launch_checkpoint")
+    findings = ledger_admit(
+        store,
+        campaign,
+        args.episode,
+        attempt,
+        "qualification",
+        definition.budget.max_operations,
+        float(definition.budget.max_seconds),
+        source=source,
+    )
+    if findings:
+        _print({"outcome": "refused", "reasons": list(findings)})
+        return 2
+    authority = CampaignQualificationAuthority(
+        campaign_id=campaign.campaign_id,
+        episode=args.episode,
+        attempt_id=attempt,
+        authorization_id=authorization.authorization_id,
+        sha=source.head,
+        tree=source.tree,
+        process_incarnation=str(launch["process_incarnation"]),
+    )
+    boundaries = replace(
+        boundaries_factory(governed_root), campaign_source_authority=authority
+    )
+    started = time.monotonic()
+    result: QualificationResult | None = None
+    try:
+        result = qualify_server_services(
+            request, boundaries, experimental_capabilities=capabilities
+        )
+    finally:
+        active = time.monotonic() - started
+        record = result.record if result is not None else None
+        used = record.budget.used_operations if record is not None else 0
+        # A hard stop before this line leaves the admission unsettled, and
+        # the ledger then charges this phase its whole grant.
+        recorded = ledger_result(
+            store,
+            campaign,
+            args.episode,
+            attempt,
+            "qualification",
+            used,
+            active,
+            result.outcome.value if result is not None else "interrupted",
+        )
+        status = {
+            "phase": "qualification",
+            "attempt_id": attempt,
+            "episode": args.episode,
+            "campaign_id": campaign.campaign_id,
+            **_campaign_status(result, active_seconds=active, ledger_result=recorded),
+        }
+        try:
+            store.save_phase_status(attempt, "qualification", status)
+            if result is not None and result.record_path:
+                store.register_external_source(
+                    attempt, "qualification-record", Path(result.record_path)
+                )
+        except (OSError, ValueError) as exc:
+            status["archive_findings"] = [f"status_unrecorded:{type(exc).__name__}"]
+        archive_or_stop(store, status)
+    summary = result.compact_summary()
+    summary["campaign"] = {
+        "campaign_id": campaign.campaign_id,
+        "episode": args.episode,
+        "attempt_id": attempt,
+        "ledger_result": status.get("ledger_result"),
+        "archive_findings": status.get("archive_findings", []),
+        "publication_waived_for_this_attempt_only": True,
+    }
+    _print(summary)
     return result.exit_code
 
 

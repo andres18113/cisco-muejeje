@@ -55,6 +55,20 @@ Behaviour switches (`config`) select the engine facts under test:
   non-intended pool on its own, with no intervention between the readings.
   It is the autonomous-drift scenario the D-DHCP control observation has to
   tell apart from an effect;
+- `default_pool_realigns_on_address`: addressing a Server-PT through
+  `configurePcIp` realigns every non-intended pool to the address's network,
+  start at the network, end `max` addresses later -- the transition D-DHCP
+  attempt 2 recorded, reproduced here as a scenario, never as evidence;
+- `dhcp_mode_acquires`: activating a client's DHCP mode runs one background
+  acquisition when an enabled server exists, which is the confound Q3-FL has
+  to observe rather than assume away;
+- `dhcp_failure_address`: the address a failed acquisition leaves on the
+  port (for example a link-local one), or empty to leave it unchanged;
+- `dhcp_pool_selection`: also `intended_then_default`, which falls back to
+  the other pool when the intended one is full;
+- `drop_product_claims_after_eval`: the product claim store vanishes after
+  every evaluation, so a replay finds no claim and dispatches again -- the
+  negative control of the same-action repeat;
 - `fetch_failure`: `error_page` renders fresh non-marker content for a refused
   fetch; `unchanged` leaves the client page as it was (a timeout);
 - `serve_nothing`: no fetch is served whatever the listeners say, which with
@@ -113,7 +127,9 @@ const config = Object.assign({
   dhcp_emit_events: true, dhcp_lease_time: '3600',
   dhcp_client_address_override: null, dhcp_default_pool: false,
   dhcp_pool_selection: 'first', default_pool_change_on_enable: null,
-  default_pool_drift_reads: 0,
+  default_pool_drift_reads: 0, default_pool_realigns_on_address: false,
+  dhcp_mode_acquires: false, dhcp_failure_address: '',
+  drop_product_claims_after_eval: false,
   terminals: false, terminal_refuses: false, ping_reachable: true,
   terminal_response_delay_reads: 0,
   delete_client_throws: false, delete_client_inert: false,
@@ -174,6 +190,11 @@ const registrations = [];
 const unregisterCalls = [];
 const clients = {};
 const dhcpRuns = [];
+const backgroundAcquisitions = [];
+const ipToInt = (value) => String(value).split('.').reduce(
+  (total, part) => (total * 256) + Number(part), 0);
+const intToIp = (value) => [24, 16, 8, 0].map(
+  (shift) => Math.floor(value / Math.pow(2, shift)) % 256).join('.');
 const dhcpSetterCalls = {
   setDhcpFlag: 0, configurePcIpDhcp: 0, setEnable: 0, addPool: 0,
   setNetworkMask: 0,
@@ -421,36 +442,61 @@ const emitDhcp = (port, eventName, args) => {
   else if (config.deliver_events === 'after_eval') { pending.push(event); }
 };
 
+// The next free address of one pool: inside its range, not its network
+// address, not held by another lease and not configured on any port.
+const nextFree = (pool) => {
+  const used = new Set(pool.leases.map((row) => row.ipAddress));
+  for (const d of devices) { for (const p of d.ports) { if (p.ip) { used.add(p.ip); } } }
+  for (let value = ipToInt(pool.start); value <= ipToInt(pool.end); value += 1) {
+    const address = intToIp(value);
+    if (address !== pool.network && !used.has(address)) { return address; }
+  }
+  return '';
+};
+
+const acquire = (dev, port) => {
+  const server = devices.find((item) => item.model === 'Server-PT' && item.dhcpServer);
+  const state = server ? dhcpState(server) : null;
+  // Which pool a native server answers from is unqualified, so the stub
+  // never hard-codes the intended one: the selection is configured.
+  const names = state ? Object.keys(state.pools).sort() : [];
+  const other = names.filter((name) => name !== 'MCP_E6Q_DHCP')[0];
+  const order = config.dhcp_pool_selection === 'intended'
+    ? ['MCP_E6Q_DHCP']
+    : (config.dhcp_pool_selection === 'default'
+      ? [other]
+      : (config.dhcp_pool_selection === 'intended_then_default'
+        ? ['MCP_E6Q_DHCP', other] : [names[0]]));
+  for (const chosen of order) {
+    const pool = state && chosen ? state.pools[chosen] : null;
+    if (!state || !state.enabled || !pool) { continue; }
+    const existing = pool.leases.find((row) => row.macAddress === port.mac);
+    if (!existing && pool.leases.length >= pool.max) { continue; }
+    const leaseAddress = existing ? existing.ipAddress : nextFree(pool);
+    if (!leaseAddress) { continue; }
+    const address = config.dhcp_client_address_override || leaseAddress;
+    const row = existing || {ipAddress: leaseAddress, macAddress: port.mac,
+      leaseTime: 3600, port: port.name};
+    if (!existing) { pool.leases.push(row); }
+    port.ip = address; port.mask = pool.mask; port.leaseTime = config.dhcp_lease_time;
+    emitDhcp(port, 'dhcpSucceed', {deviceName: dev.name, portName: port.name,
+      newip: port.ip, newmask: port.mask});
+    return true;
+  }
+  if (config.dhcp_failure_address) {
+    port.ip = config.dhcp_failure_address; port.mask = '255.255.0.0';
+  }
+  emitDhcp(port, 'dhcpFailed', {deviceName: dev.name, portName: port.name});
+  return false;
+};
+
 const dhcpClientProcess = (dev) => ({
   dhcpRun: (portName) => {
     if (config.dhcp_acquire_throws) { throw new Error('dhcp acquisition failed'); }
     const port = dev.ports.find((item) => item.name === String(portName));
     dhcpRuns.push({device: dev.name, port: String(portName)});
     if (!port) { throw new Error('dhcp client port missing'); }
-    const server = devices.find((item) => item.model === 'Server-PT' && item.dhcpServer);
-    const state = server ? dhcpState(server) : null;
-    // Which pool a native server answers from is unqualified, so the stub
-    // never hard-codes the intended one: the selection is configured.
-    const names = state ? Object.keys(state.pools).sort() : [];
-    const chosen = config.dhcp_pool_selection === 'intended'
-      ? 'MCP_E6Q_DHCP'
-      : (config.dhcp_pool_selection === 'default'
-        ? names.filter((name) => name !== 'MCP_E6Q_DHCP')[0]
-        : names[0]);
-    const pool = state && chosen ? state.pools[chosen] : null;
-    const existing = pool && pool.leases.find((row) => row.macAddress === port.mac);
-    if (state && state.enabled && pool && (existing || pool.leases.length < pool.max)) {
-      const leaseAddress = existing ? existing.ipAddress : pool.start;
-      const address = config.dhcp_client_address_override || leaseAddress;
-      const row = existing || {ipAddress: leaseAddress, macAddress: port.mac,
-        leaseTime: 3600, port: port.name};
-      if (!existing) { pool.leases.push(row); }
-      port.ip = address; port.mask = pool.mask; port.leaseTime = config.dhcp_lease_time;
-      emitDhcp(port, 'dhcpSucceed', {deviceName: dev.name, portName: port.name,
-        newip: port.ip, newmask: port.mask});
-      return;
-    }
-    emitDhcp(port, 'dhcpFailed', {deviceName: dev.name, portName: port.name});
+    acquire(dev, port);
   },
   getDataOfPort: (portName) => {
     const port = dev.ports.find((item) => item.name === String(portName));
@@ -764,10 +810,25 @@ global.lwAddLink = (d1, p1, d2, p2, cable) => {
 global.configurePcIp = (name, dhcp, ip, mask, gateway, dns, iface) => {
   const port = findPort(String(name), String(iface || 'FastEthernet0'));
   if (!port) { return false; }
+  const dev = findDevice(String(name));
   if (dhcp) { dhcpSetterCalls.configurePcIpDhcp++; }
   port.dhcpMode = !!dhcp;
   if (ip && mask) { port.ip = String(ip); port.mask = String(mask); }
   if (dns) { port.dns = String(dns); }
+  if (ip && mask && dev && dev.model === 'Server-PT' && config.default_pool_realigns_on_address) {
+    const state = dhcpState(dev);
+    const network = intToIp(ipToInt(ip) - (ipToInt(ip) % (4294967296 - ipToInt(mask))));
+    for (const poolName of Object.keys(state.pools)) {
+      if (poolName === 'MCP_E6Q_DHCP') { continue; }
+      const pool = state.pools[poolName];
+      pool.network = network; pool.mask = String(mask); pool.start = network;
+      pool.end = intToIp(ipToInt(network) + Number(pool.max) - 1);
+    }
+  }
+  if (dhcp && dev && config.dhcp_mode_acquires) {
+    backgroundAcquisitions.push({device: dev.name, port: port.name});
+    acquire(dev, port);
+  }
   return true;
 };
 if (config.unregister_available) {
@@ -843,6 +904,7 @@ const snapshot = () => {
     servers: servers,
     dhcp_servers: dhcpServers,
     dhcp_runs: dhcpRuns.slice(),
+    background_acquisitions: backgroundAcquisitions.slice(),
     dhcp_setter_calls: Object.assign({}, dhcpSetterCalls),
     terminal_commands: terminalCommands.slice(),
     remove_calls: removeCalls.slice(),
@@ -870,6 +932,7 @@ readline.createInterface({input: process.stdin}).on('line', (line) => {
     runQueued();
     const reported = evaluate(message.script);
     if (config.deliver_events === 'after_eval') { flushEvents(); }
+    if (config.drop_product_claims_after_eval) { delete globalThis.__mcpE6Claims; }
     reply = {reported: reported};
   } else if (message.kind === 'seed_device') {
     const dev = makeDevice(message.name, message.model);
