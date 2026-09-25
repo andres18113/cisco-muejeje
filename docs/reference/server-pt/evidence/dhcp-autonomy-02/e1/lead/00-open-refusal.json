@@ -1,0 +1,8 @@
+{
+  "step": "first_open_episode_attempt",
+  "exit_code": 1,
+  "reported_reason": "ledger:ValueError",
+  "observed_worktree_state": "untracked pt-q-evidence/ made the source checkout dirty",
+  "episode_opened": false,
+  "correction": "moved only this newly created evidence directory to the named external campaign directory; checkout returned clean"
+}

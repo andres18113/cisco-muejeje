@@ -610,3 +610,52 @@ owned save prompt receives an identified `No` response only after process,
 window, prompt and button revalidation; otherwise the lab is quarantined and
 the uncertainty is recorded. These controls respond to the separate pre-LIVE
 adversarial review, not to an observed native capability.
+
+## Delegated LIVE episode 1 and size-probe design delta, version 6
+
+Episode 1 ran the maintained `Q3-NATIVE-PROBE` at clean commit
+`c76ab02bc177ba0e0c60f481d009432fdb886485` (tree
+`79d7025419191bf0ecbe7f1c376f81aa2af605d2`), Packet Tracer
+9.0.1.0858, file channel, attempt `e61273ccccbf4492a33d5e02798facfb`,
+instance `6ff7bc8aed7a4187b8e98187b74473e8`. The opened ledger granted
+120 operations / 900 seconds. The original qualification record is
+`q3-native-probe-2026-09-25T20-36-44Z-84514155.json`, SHA-256
+`1dcf4d95f2c8d20dc22f67950b86c0bb4c0b4dac3e828d88ae4a2d31494fa9c1`.
+Its source bytes and the closed ledger, launch, exit and lead files are in
+[`dhcp-autonomy-02/e1`](../../reference/server-pt/evidence/dhcp-autonomy-02/e1/README.md)
+under a 38-entry SHA-256 manifest. Every archived source copy matched its
+original at archive time.
+
+The documented `setStartIp("192.0.2.100")` call was attempted once, returned
+without a call error and read back `start=192.0.2.100`. It also changed the
+same `serverPool` row's `end` from `192.0.3.255` to `192.0.2.255` and `max`
+from 512 to 156. The process stayed disabled; the complete pool inventory
+remained one row. This is a **known coupled mutation**, so M-NATIVE-START is
+CONTRADICTED against its single-field hypothesis. It does not realize the
+requested one-user allocation. The final read and fixture restoration were
+observed. The identified owned save prompt's `No` was invoked and PID exit,
+zero Packet Tracer processes, an empty mailbox and claim release were
+observed. The closed ledger charged 34 operations and 347.474369 seconds.
+No client serving, reapplication, requested gateway/DNS/exclusions, dependent
+HTTP, renewal or capacity behavior was measured.
+
+**Next discriminating question.** A new versioned `Q3-NATIVE-SIZE` stage on a
+fresh owned lab will reproduce only the exact build-scoped coupled start
+transition above, then call documented `setMaxUsers(1)` once while DHCP is
+disabled. Each effect has its own write-ahead boundary and full before/after
+inventory and process envelope. The second measurement is positive only if
+`serverPool` reads back the requested start and end as `192.0.2.100` and
+capacity 1, with no other field, pool or process change. A no-op, error,
+regeneration or other coupled movement is recorded as such and stops further
+effects. This stage neither enables DHCP nor contacts clients. If successful,
+later distinct episodes must establish gateway, DNS, exclusions, stability
+under reapplication and actual serving before the product can bind to the
+native pool. The former episode and its classification are not rewritten.
+
+The new stage reuses the current qualification runner, charter/ledger,
+exclusive claim, fixture lifecycle and fixed file transport. It adds no MCP
+argument, generic script route or catalog promotion. Unit assessment tests
+cover the exact repeated start transition and max result; a Node integration
+test runs the generated calls through the real coordinator and retained
+record, including no-op/throw and unexpected-pool controls. The next LIVE
+episode remains bounded by a fresh allocation and its exact committed source.

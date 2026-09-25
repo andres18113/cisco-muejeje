@@ -1,0 +1,11 @@
+{
+  "cli_exit_code": 0,
+  "cli_stdout_not_separately_captured": true,
+  "primary_exit_record": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\data\\commissioning\\SERVER-PT-DHCP-AUTONOMOUS-02\\e61273ccccbf4492a33d5e02798facfb\\process-exit.json",
+  "primary_exit_sha256": "6d1a055717d3ba37646630991263539d777c1f8919b03a0a04466fbfa220aa98",
+  "disposition": "exited",
+  "actual_exit_observed": true,
+  "process_count": 0,
+  "save_prompt_sent": true,
+  "save_prompt_button": "No"
+}

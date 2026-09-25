@@ -1,0 +1,5 @@
+{
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "{\"attempt_id\": \"e61273ccccbf4492a33d5e02798facfb\", \"blank_document_proven\": true, \"launch_sha256\": \"101b8f0e8b760d1756cd0f857bcc4d7f30f760b23aac02891976aa5ded29cef9\", \"outcome\": \"owned\", \"phase\": \"launch\", \"process_id\": 21080}\n"
+}

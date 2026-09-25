@@ -1,0 +1,1065 @@
+{
+  "schema_version": 1,
+  "record_kind": "server_services_qualification",
+  "run_id": "2026-09-25T20-36-44Z-84514155",
+  "stage": "Q3-NATIVE-PROBE",
+  "execution_mode": "live",
+  "created_at": "2026-09-25T20:36:44.833777Z",
+  "completed_at": "2026-09-25T20:37:35.652469Z",
+  "authorization": {
+    "authorization_id": "SERVER-PT-DHCP-AUTONOMY-E1-e61273ccccbf4492a33d5e02798facfb",
+    "stage": "Q3-NATIVE-PROBE",
+    "sha": "c76ab02bc177ba0e0c60f481d009432fdb886485",
+    "targets": [
+      "__MCP_E6Q_SRV",
+      "__MCP_E6Q_PC1",
+      "__MCP_E6Q_PC2",
+      "__MCP_E6Q_SW"
+    ],
+    "channel": "file",
+    "build": "9.0.1.0858",
+    "max_operations": 120,
+    "max_seconds": 600,
+    "profile_id": "Q3-NATIVE",
+    "profile_version": "1",
+    "tree": "79d7025419191bf0ecbe7f1c376f81aa2af605d2",
+    "models": [
+      "__MCP_E6Q_SRV:Server-PT",
+      "__MCP_E6Q_PC1:PC-PT",
+      "__MCP_E6Q_PC2:PC-PT",
+      "__MCP_E6Q_SW:2960-24TT"
+    ],
+    "links": [
+      "__MCP_E6Q_SRV:FastEthernet0-__MCP_E6Q_SW:FastEthernet0/1",
+      "__MCP_E6Q_PC1:FastEthernet0-__MCP_E6Q_SW:FastEthernet0/2",
+      "__MCP_E6Q_PC2:FastEthernet0-__MCP_E6Q_SW:FastEthernet0/3"
+    ],
+    "step_ids": [
+      "NATIVE-start"
+    ],
+    "reserve_operations": 11,
+    "instance_token": "6ff7bc8aed7a4187b8e98187b74473e8",
+    "attempt_id": "e61273ccccbf4492a33d5e02798facfb",
+    "process_id": 21080,
+    "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe"
+  },
+  "source": {
+    "expected_head": "c76ab02bc177ba0e0c60f481d009432fdb886485",
+    "executed_sha": "c76ab02bc177ba0e0c60f481d009432fdb886485",
+    "executed_tree": "79d7025419191bf0ecbe7f1c376f81aa2af605d2",
+    "clean": true,
+    "branch": "feature/server-pt-goal-foundations",
+    "upstream": "cisco/feature/server-pt-goal-foundations",
+    "upstream_head": "a921a688a7f7103db2cff3915172d812a8e26644"
+  },
+  "environment": {
+    "python_executable": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\.venv\\Scripts\\python.exe",
+    "package_file": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\src\\packet_tracer_mcp\\__init__.py",
+    "isolation_state": "ISOLATED",
+    "requested_build": "9.0.1.0858",
+    "observed_build": "9.0.1.0858",
+    "build_reader_id": "AppWindow.getVersion",
+    "build_reader_sha256": "c3a9b240898a89007111c4397eb4cb5464da69551021484d4bc6b7d0fc7f5935",
+    "build_observation": "{\"found\":true,\"backend\":\"packet_tracer\",\"backend_version\":\"9.0.1.0858\",\"extension_version\":\"\",\"runtime_mode\":\"logical-workspace\"}",
+    "build_reason": ""
+  },
+  "transport": {
+    "channel": "file",
+    "fixed_at": "2026-09-25T20:36:44.843305Z",
+    "liveness": "heartbeat_fresh"
+  },
+  "fixtures": [
+    {
+      "name": "__MCP_E6Q_SRV",
+      "model": "Server-PT",
+      "ipv4": "192.0.2.10",
+      "netmask": "255.255.255.0",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "__MCP_E6Q_PC1",
+      "model": "PC-PT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "__MCP_E6Q_PC2",
+      "model": "PC-PT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "__MCP_E6Q_SW",
+      "model": "2960-24TT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    }
+  ],
+  "links": [
+    {
+      "device_a": "__MCP_E6Q_SRV",
+      "port_a": "FastEthernet0",
+      "device_b": "__MCP_E6Q_SW",
+      "port_b": "FastEthernet0/1"
+    },
+    {
+      "device_a": "__MCP_E6Q_PC1",
+      "port_a": "FastEthernet0",
+      "device_b": "__MCP_E6Q_SW",
+      "port_b": "FastEthernet0/2"
+    },
+    {
+      "device_a": "__MCP_E6Q_PC2",
+      "port_a": "FastEthernet0",
+      "device_b": "__MCP_E6Q_SW",
+      "port_b": "FastEthernet0/3"
+    }
+  ],
+  "budget": {
+    "max_operations": 120,
+    "max_seconds": 600,
+    "reserve_operations": 11,
+    "reserve_seconds": 300,
+    "planned_minimum_operations": 35,
+    "used_operations": 34,
+    "refused_calls": 0,
+    "elapsed_seconds": 50.813,
+    "local_observation_seconds": 23.219
+  },
+  "experimental_capabilities": [
+    "server.dhcp_native_pool_start"
+  ],
+  "operations": [
+    {
+      "seq": 1,
+      "phase": "admission",
+      "call": "send_and_wait",
+      "purpose": "read:executable_build",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 0.0,
+      "elapsed_seconds": 1.11,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 2,
+      "phase": "admission",
+      "call": "send_and_wait",
+      "purpose": "read:workspace_baseline",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 1.11,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 3,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_SRV",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 3.094,
+      "elapsed_seconds": 1.516,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 4,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_SRV",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 5.36,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 5,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_PC1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 7.063,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 6,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_PC1",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 9.0,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 7,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_PC2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 10.657,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 8,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_PC2",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 12.375,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 9,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_SW",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 14.219,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 10,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_SW",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 16.047,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 11,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 17.766,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 12,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:1",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 19.516,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 13,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 21.188,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 14,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:2",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 22.985,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 15,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:3",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 24.813,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 16,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:3",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 26.516,
+      "elapsed_seconds": 1.125,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 17,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "read:fixture_identity",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 27.641,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 18,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:native_default:before_e5",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 28.579,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 19,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "q3-native:product:e5_server_address",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 30.297,
+      "elapsed_seconds": 0.016,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 20,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-native:product:e5_server_address",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 31.063,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 21,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:native_default:after_server_address",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 31.375,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 22,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-native:serverPool:setStartIp",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 32.485,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 23,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-native:after_native_start",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 33.391,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 24,
+      "phase": "terminal_observation",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-native:native_before_cleanup",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 34.469,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 25,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_SW",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 37.032,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 26,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_SW",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 37.985,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 27,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_PC2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 39.969,
+      "elapsed_seconds": 0.813,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 28,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_PC2",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 41.61,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 29,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_PC1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 43.36,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 30,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_PC1",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 45.063,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 31,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_SRV",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 46.907,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 32,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_SRV",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 48.61,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 33,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "read:restoration:1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 49.516,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 34,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "read:restoration:2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 49.813,
+      "elapsed_seconds": 0.219,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    }
+  ],
+  "transitions": [
+    {
+      "step": "admitted",
+      "at": "2026-09-25T20:36:46.156995Z",
+      "outcome": ""
+    },
+    {
+      "step": "fixtures:started",
+      "at": "2026-09-25T20:36:47.027871Z",
+      "outcome": ""
+    },
+    {
+      "step": "fixtures:ready",
+      "at": "2026-09-25T20:37:12.694203Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3_NATIVE_START:started",
+      "at": "2026-09-25T20:37:13.420930Z",
+      "outcome": ""
+    },
+    {
+      "step": "native_default:before_e5",
+      "at": "2026-09-25T20:37:14.437909Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3_NATIVE_E5:started",
+      "at": "2026-09-25T20:37:14.442134Z",
+      "outcome": ""
+    },
+    {
+      "step": "native_default:after_server_address",
+      "at": "2026-09-25T20:37:16.523270Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3_NATIVE_SETTER:started",
+      "at": "2026-09-25T20:37:16.527352Z",
+      "outcome": ""
+    },
+    {
+      "step": "native_default:after_native_start",
+      "at": "2026-09-25T20:37:18.550445Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3_NATIVE_START:concluded",
+      "at": "2026-09-25T20:37:18.554453Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3_NATIVE_FINAL:started",
+      "at": "2026-09-25T20:37:19.316946Z",
+      "outcome": ""
+    },
+    {
+      "step": "native_default:native_before_cleanup",
+      "at": "2026-09-25T20:37:20.334785Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3_NATIVE_FINAL:concluded",
+      "at": "2026-09-25T20:37:20.338797Z",
+      "outcome": ""
+    },
+    {
+      "step": "finalization:started",
+      "at": "2026-09-25T20:37:20.343170Z",
+      "outcome": ""
+    },
+    {
+      "step": "finalization:completed",
+      "at": "2026-09-25T20:37:35.646026Z",
+      "outcome": ""
+    }
+  ],
+  "persisted_step": "finalization:completed",
+  "admission_reads": [
+    "isolation:ISOLATED",
+    "repository:c76ab02bc177ba0e0c60f481d009432fdb886485:79d7025419191bf0ecbe7f1c376f81aa2af605d2",
+    "build:9.0.1.0858",
+    "workspace:semantic=0,links=0,engine_managed=0"
+  ],
+  "diagnostic_lifecycle": {
+    "process_id": 21080,
+    "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+    "product_version": "9.0.1.0858",
+    "file_version": "9.0.1.0858",
+    "process_incarnation": "2026-09-25T15:35:34.6275907-05:00",
+    "mailbox_entries": [],
+    "error": ""
+  },
+  "diagnostic_lifecycle_postflight": {
+    "process_id": 21080,
+    "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+    "product_version": "9.0.1.0858",
+    "file_version": "9.0.1.0858",
+    "process_incarnation": "2026-09-25T15:35:34.6275907-05:00",
+    "mailbox_entries": [],
+    "error": ""
+  },
+  "workspace_baseline": {
+    "observed": true,
+    "semantic_device_count": 0,
+    "backend_managed_device_count": 0,
+    "link_count": 0,
+    "devices": [],
+    "links": [],
+    "message": "fresh_complete_workspace_inventory"
+  },
+  "refusals": [],
+  "native_default_pool": [
+    {
+      "label": "before_e5",
+      "purpose": "q3-fl:native_default:before_e5",
+      "operation_seq": 18,
+      "observed": true,
+      "cause": "",
+      "pools": [
+        {
+          "name": "serverPool",
+          "network": "0.0.0.0",
+          "mask": "0.0.0.0",
+          "gateway": "0.0.0.0",
+          "dns": "0.0.0.0",
+          "start": "0.0.0.0",
+          "end": "0.0.2.0",
+          "max": 512
+        }
+      ],
+      "intended_pool_present": false,
+      "raw": {
+        "device": "__MCP_E6Q_SRV",
+        "found": true,
+        "process_found": true,
+        "interface": "FastEthernet0",
+        "enabled": false,
+        "enabled_type": "boolean",
+        "pool_count": 1,
+        "pools": [
+          {
+            "name": "serverPool",
+            "network": "0.0.0.0",
+            "mask": "0.0.0.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "0.0.0.0",
+            "end": "0.0.2.0",
+            "max": 512
+          }
+        ],
+        "truncated": false,
+        "error": ""
+      },
+      "differences": []
+    },
+    {
+      "label": "after_server_address",
+      "purpose": "q3-fl:native_default:after_server_address",
+      "operation_seq": 21,
+      "observed": true,
+      "cause": "",
+      "pools": [
+        {
+          "name": "serverPool",
+          "network": "192.0.2.0",
+          "mask": "255.255.255.0",
+          "gateway": "0.0.0.0",
+          "dns": "0.0.0.0",
+          "start": "192.0.2.0",
+          "end": "192.0.3.255",
+          "max": 512
+        }
+      ],
+      "intended_pool_present": false,
+      "raw": {
+        "device": "__MCP_E6Q_SRV",
+        "found": true,
+        "process_found": true,
+        "interface": "FastEthernet0",
+        "enabled": false,
+        "enabled_type": "boolean",
+        "pool_count": 1,
+        "pools": [
+          {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.0",
+            "end": "192.0.3.255",
+            "max": 512
+          }
+        ],
+        "truncated": false,
+        "error": ""
+      },
+      "differences": [
+        "default_pool_changed:serverPool.end",
+        "default_pool_changed:serverPool.mask",
+        "default_pool_changed:serverPool.network",
+        "default_pool_changed:serverPool.start"
+      ]
+    },
+    {
+      "label": "after_native_start",
+      "purpose": "q3-native:after_native_start",
+      "operation_seq": 23,
+      "observed": true,
+      "cause": "",
+      "pools": [
+        {
+          "name": "serverPool",
+          "network": "192.0.2.0",
+          "mask": "255.255.255.0",
+          "gateway": "0.0.0.0",
+          "dns": "0.0.0.0",
+          "start": "192.0.2.100",
+          "end": "192.0.2.255",
+          "max": 156
+        }
+      ],
+      "intended_pool_present": false,
+      "raw": {
+        "device": "__MCP_E6Q_SRV",
+        "found": true,
+        "process_found": true,
+        "interface": "FastEthernet0",
+        "enabled": false,
+        "enabled_type": "boolean",
+        "pool_count": 1,
+        "pools": [
+          {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.100",
+            "end": "192.0.2.255",
+            "max": 156
+          }
+        ],
+        "truncated": false,
+        "error": ""
+      },
+      "differences": [
+        "default_pool_changed:serverPool.end",
+        "default_pool_changed:serverPool.mask",
+        "default_pool_changed:serverPool.max",
+        "default_pool_changed:serverPool.network",
+        "default_pool_changed:serverPool.start"
+      ]
+    },
+    {
+      "label": "native_before_cleanup",
+      "purpose": "q3-native:native_before_cleanup",
+      "operation_seq": 24,
+      "observed": true,
+      "cause": "",
+      "pools": [
+        {
+          "name": "serverPool",
+          "network": "192.0.2.0",
+          "mask": "255.255.255.0",
+          "gateway": "0.0.0.0",
+          "dns": "0.0.0.0",
+          "start": "192.0.2.100",
+          "end": "192.0.2.255",
+          "max": 156
+        }
+      ],
+      "intended_pool_present": false,
+      "raw": {
+        "device": "__MCP_E6Q_SRV",
+        "found": true,
+        "process_found": true,
+        "interface": "FastEthernet0",
+        "enabled": false,
+        "enabled_type": "boolean",
+        "pool_count": 1,
+        "pools": [
+          {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.100",
+            "end": "192.0.2.255",
+            "max": 156
+          }
+        ],
+        "truncated": false,
+        "error": ""
+      },
+      "differences": [
+        "default_pool_changed:serverPool.end",
+        "default_pool_changed:serverPool.mask",
+        "default_pool_changed:serverPool.max",
+        "default_pool_changed:serverPool.network",
+        "default_pool_changed:serverPool.start"
+      ]
+    }
+  ],
+  "measurements": [
+    {
+      "experiment_id": "M-NATIVE-START",
+      "hypothesis": "The native serverPool start address can be changed and read back without altering its other policy fields.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "contradicted",
+      "facts": {
+        "before": {
+          "name": "serverPool",
+          "network": "192.0.2.0",
+          "mask": "255.255.255.0",
+          "gateway": "0.0.0.0",
+          "dns": "0.0.0.0",
+          "start": "192.0.2.0",
+          "end": "192.0.3.255",
+          "max": 512
+        },
+        "probe": {
+          "device": "__MCP_E6Q_SRV",
+          "interface": "FastEthernet0",
+          "pool": "serverPool",
+          "found": true,
+          "attempted": true,
+          "call_error": "",
+          "pre_start": "192.0.2.0",
+          "post_start": "192.0.2.100"
+        },
+        "after": {
+          "name": "serverPool",
+          "network": "192.0.2.0",
+          "mask": "255.255.255.0",
+          "gateway": "0.0.0.0",
+          "dns": "0.0.0.0",
+          "start": "192.0.2.100",
+          "end": "192.0.2.255",
+          "max": 156
+        },
+        "before_inventory": [
+          {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.0",
+            "end": "192.0.3.255",
+            "max": 512
+          }
+        ],
+        "after_inventory": [
+          {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.100",
+            "end": "192.0.2.255",
+            "max": 156
+          }
+        ],
+        "before_envelope": {
+          "device": "__MCP_E6Q_SRV",
+          "found": true,
+          "process_found": true,
+          "interface": "FastEthernet0",
+          "enabled": false,
+          "enabled_type": "boolean",
+          "pool_count": 1,
+          "truncated": false,
+          "error": ""
+        },
+        "after_envelope": {
+          "device": "__MCP_E6Q_SRV",
+          "found": true,
+          "process_found": true,
+          "interface": "FastEthernet0",
+          "enabled": false,
+          "enabled_type": "boolean",
+          "pool_count": 1,
+          "truncated": false,
+          "error": ""
+        },
+        "before_observed": true,
+        "after_observed": true
+      },
+      "causes": [
+        "setter_changed_unrequested_pool_fields_or_incoherent_readback"
+      ],
+      "limitations": [],
+      "reason": "",
+      "outcome_unknown": false
+    },
+    {
+      "experiment_id": "M-NATIVE-FINAL",
+      "hypothesis": "The final native-pool inventory is observed before cleanup.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "supported_in_sample",
+      "facts": {
+        "observed": true,
+        "pools": [
+          {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.100",
+            "end": "192.0.2.255",
+            "max": 156
+          }
+        ]
+      },
+      "causes": [],
+      "limitations": [],
+      "reason": "",
+      "outcome_unknown": false
+    }
+  ],
+  "primary_failure": "contradiction:M-NATIVE-START",
+  "secondary_failures": [],
+  "releases": [
+    {
+      "resource": "device:__MCP_E6Q_SW",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:__MCP_E6Q_PC2",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:__MCP_E6Q_PC1",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:__MCP_E6Q_SRV",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "campaign:lock",
+      "kind": "claim",
+      "outcome": "released",
+      "detail": ""
+    }
+  ],
+  "restoration": [
+    {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 1,
+      "link_count": 0,
+      "devices": [
+        {
+          "name": "Power Distribution Device0",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        }
+      ],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    },
+    {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 1,
+      "link_count": 0,
+      "devices": [
+        {
+          "name": "Power Distribution Device0",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        }
+      ],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    }
+  ],
+  "restoration_proven": true,
+  "engine_residue": [],
+  "coordination_residue": [],
+  "dirty_state": "clean",
+  "persist_error": "",
+  "limitations": [
+    "effect_gate_is_local_and_not_an_in_band_receiver_fence",
+    "local_process_observation_bounded_seconds:30.0",
+    "restoration_scope:semantic_devices_and_links",
+    "backend_managed_devices_changed:0->1"
+  ],
+  "outcome": "stopped"
+}
