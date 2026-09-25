@@ -26,6 +26,7 @@ from packet_tracer_mcp.application.use_cases.prepare_server_pt_commissioning imp
 from packet_tracer_mcp.application.use_cases.server_pt_campaign import (
     C31_CAMPAIGN,
     CAMPAIGNS,
+    DHCP_FASTLOOP_CAMPAIGN,
     FASTLOOP_CAMPAIGN,
     ExecutionPurpose,
     source_authority_findings,
@@ -108,6 +109,7 @@ def test_each_campaign_names_its_purpose_and_fixed_limits():
     assert CAMPAIGNS == {
         C31_CAMPAIGN.campaign_id: C31_CAMPAIGN,
         FASTLOOP_CAMPAIGN.campaign_id: FASTLOOP_CAMPAIGN,
+        DHCP_FASTLOOP_CAMPAIGN.campaign_id: DHCP_FASTLOOP_CAMPAIGN,
     }
     assert C31_CAMPAIGN.purpose is ExecutionPurpose.DELIVERY
     assert C31_CAMPAIGN.complete_attempt_limit == 2

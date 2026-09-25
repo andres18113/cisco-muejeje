@@ -6,6 +6,11 @@ fastloop` is the experimental campaign: a clean committed checkpoint and no CI
 claim, bounded instead by its cumulative ledger. Every experimental phase
 belongs to an episode opened before contact, and is admitted against that
 episode's allocation before its mailbox is bound.
+
+`--campaign dhcp-fastloop` is the S3/Q3 DHCP campaign. Its bridge work is a
+governed qualification stage run by the qualification CLI, so here it may
+only open, close and report its ledger episodes, record a launch and retire
+it. It never forces a retirement: its charter does not authorize one.
 """
 
 from __future__ import annotations
@@ -43,20 +48,20 @@ from ...application.use_cases.seal_server_pt_acceptance import (
 )
 from ...application.use_cases.server_pt_campaign import (
     C31_CAMPAIGN,
+    DHCP_FASTLOOP_CAMPAIGN,
     FASTLOOP_CAMPAIGN,
     ServerPtCampaign,
     source_authority_findings,
 )
 from ...application.use_cases.server_pt_campaign_ledger import (
-    FASTLOOP_ALLOWANCE,
+    allowance_for,
     closing_findings,
     episode_allowance_left,
     episode_name,
     ledger_record_findings,
     ledger_totals,
     opening_findings,
-    phase_admission_findings,
-    phase_record_name,
+    qualification_admitted,
     unsettled_phases,
 )
 from ...application.use_cases.server_pt_historical_exit import (
@@ -98,7 +103,6 @@ from ...domain.enterprise.models.scalable_http_acceptance import (
     EXPERIMENTAL_ENVELOPE_LIMITATION,
 )
 from ...domain.enterprise.models.service_qualification import (
-    RepositoryIdentity,
     diagnostic_lifecycle_continuity,
 )
 from ...domain.models.plans import TopologyPlan
@@ -140,6 +144,18 @@ from ...infrastructure.persistence.server_pt_commissioning_store import (
 )
 from ...infrastructure.persistence.server_pt_raw_archive import build_raw_answer_index
 from . import cold_http_acceptance as acceptance_cli
+from .server_pt_campaign_archive import (
+    archive_or_stop as _archive_or_stop,
+)
+from .server_pt_campaign_archive import (
+    ledger_admit as _ledger_admit,
+)
+from .server_pt_campaign_archive import (
+    ledger_result as _ledger_result,
+)
+from .server_pt_campaign_archive import (
+    refresh_archive as _refresh_archive,
+)
 from .server_pt_live_phase import FEATURE_BRANCH, bind_live_phase, phase_preflight
 from .service_qualification import repository_identity
 
@@ -148,11 +164,16 @@ _RECOVERY_FIRST_ATTEMPT = "979b4636d50290d199e8ea0f95eddab3"
 _RECOVERY_FIRST_STATUS_SHA256 = (
     "c623ec5dbc62e108568cff6a41ab858d451de2e86c1ab426690dfdecae2e2829"
 )
-_CAMPAIGNS = {"c31": C31_CAMPAIGN, "fastloop": FASTLOOP_CAMPAIGN}
+_CAMPAIGNS = {
+    "c31": C31_CAMPAIGN,
+    "fastloop": FASTLOOP_CAMPAIGN,
+    "dhcp-fastloop": DHCP_FASTLOOP_CAMPAIGN,
+}
 #: The charter digest each campaign's LIVE modes require. Read at call time,
 #: per campaign, so the C31 digest remains this module's one charter seam.
 CHARTER_SHA256 = C31_CAMPAIGN.charter_sha256
 FASTLOOP_CHARTER_SHA256 = FASTLOOP_CAMPAIGN.charter_sha256
+DHCP_FASTLOOP_CHARTER_SHA256 = DHCP_FASTLOOP_CAMPAIGN.charter_sha256
 #: One episode plan or closing is operator-written JSON; bound what it may be.
 _LEDGER_INPUT_LIMIT = 16 * 1024
 #: The OS helper that observes, closes and terminates one exact PID.
@@ -205,7 +226,45 @@ _IMPORT_LIMITATIONS = (
 
 def _charter_digest(campaign: ServerPtCampaign) -> str:
     """Return the digest this campaign's charter must have."""
+    if campaign.campaign_id == DHCP_FASTLOOP_CAMPAIGN.campaign_id:
+        return DHCP_FASTLOOP_CHARTER_SHA256
     return FASTLOOP_CHARTER_SHA256 if campaign.experimental else CHARTER_SHA256
+
+
+#: What the DHCP campaign may do through this adapter. Its bridge work is a
+#: qualification stage; every HTTP commissioning phase refuses for it.
+_DHCP_CAMPAIGN_MODES = frozenset(
+    {"open_episode", "close_episode", "ledger_status", "record_launch", "retire"}
+)
+
+
+def _dhcp_campaign_mode_refusal(campaign: ServerPtCampaign, args) -> str:
+    """Name why this mode is not one the DHCP campaign may use, if so."""
+    if campaign.campaign_id != DHCP_FASTLOOP_CAMPAIGN.campaign_id:
+        return ""
+    chosen = [
+        name
+        for name in (
+            "prepare",
+            "inspect",
+            "qualify",
+            "setup",
+            "accept",
+            "cleanup",
+            "record_correction",
+            "record_launch",
+            "record_exit",
+            "retire",
+            "import_exit",
+            "open_episode",
+            "close_episode",
+            "ledger_status",
+        )
+        if getattr(args, name, False)
+    ]
+    if any(name not in _DHCP_CAMPAIGN_MODES for name in chosen) or not chosen:
+        return "mode_not_part_of_the_dhcp_campaign"
+    return ""
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -246,43 +305,6 @@ def _print(payload: Mapping[str, object]) -> None:
     print(json.dumps(payload, sort_keys=True), flush=True)
 
 
-def _refresh_archive(
-    store: ServerPtCommissioningStore, status: Mapping[str, object]
-) -> tuple[str, ...]:
-    """Update one current projection and verify the single hash index."""
-    try:
-        store.update_current_status(status)
-        store.refresh_index()
-        return store.verify_index()
-    except (OSError, ValueError) as exc:
-        return (f"archive_index_unavailable:{type(exc).__name__}",)
-
-
-def _archive_or_stop(
-    store: ServerPtCommissioningStore, status: dict[str, object]
-) -> None:
-    """Never report phase success when its source-byte index is unverified."""
-    findings = _refresh_archive(store, status)
-    if not findings:
-        try:
-            store.save_archive_admission(
-                str(status["attempt_id"]), str(status["phase"])
-            )
-            store.refresh_index()
-            findings = store.verify_index()
-        except (OSError, ValueError, KeyError) as exc:
-            findings = (f"archive_admission_unavailable:{type(exc).__name__}",)
-        if not findings:
-            return
-    status["outcome"] = "stopped"
-    status["archive_findings"] = list(findings)
-    try:
-        store.update_current_status(status)
-        store.refresh_index()
-    except (OSError, ValueError):
-        pass
-
-
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -295,6 +317,10 @@ def main(
         _print({"outcome": "refused", "reason": "governed_root_not_declared"})
         return 2
     campaign = _CAMPAIGNS[args.campaign]
+    refusal = _dhcp_campaign_mode_refusal(campaign, args)
+    if refusal:
+        _print({"outcome": "refused", "reason": refusal})
+        return 2
     if args.open_episode or args.close_episode or args.ledger_status:
         return _ledger_mode(root, campaign, args)
     if _ATTEMPT.fullmatch(args.attempt) is None:
@@ -471,7 +497,7 @@ def _ledger_mode(root: Path, campaign: ServerPtCampaign, args) -> int:
         records = store.ledger_records()
         now = datetime.now(UTC)
         if args.ledger_status:
-            totals = ledger_totals(records, FASTLOOP_ALLOWANCE, now)
+            totals = ledger_totals(records, allowance_for(campaign.campaign_id), now)
             _print({"outcome": "ready", "ledger": asdict(totals)})
             return 0
         if args.open_episode:
@@ -499,7 +525,9 @@ def _ledger_mode(root: Path, campaign: ServerPtCampaign, args) -> int:
                 "source_upstream_head": source.upstream_head,
                 "opened_at_utc": now.isoformat(),
             }
-            findings = opening_findings(records, opening, FASTLOOP_ALLOWANCE, now)
+            findings = opening_findings(
+                records, opening, allowance_for(campaign.campaign_id), now
+            )
             if findings:
                 _print({"outcome": "refused", "reasons": list(findings)})
                 return 2
@@ -524,7 +552,9 @@ def _ledger_mode(root: Path, campaign: ServerPtCampaign, args) -> int:
         store.refresh_index()
         if store.verify_index():
             raise ValueError("ledger archive is unverified")
-        totals = ledger_totals(store.ledger_records(), FASTLOOP_ALLOWANCE, now)
+        totals = ledger_totals(
+            store.ledger_records(), allowance_for(campaign.campaign_id), now
+        )
     except (OSError, ValueError) as exc:
         _print({"outcome": "refused", "reason": f"ledger:{type(exc).__name__}"})
         return 2
@@ -549,93 +579,6 @@ def _adopt_ledger_residue(
         return store.adopt_ledger_residue(ledger_record_findings)
     except (OSError, ValueError) as exc:
         return (f"ledger_residue_unverified:{type(exc).__name__}",)
-
-
-def _ledger_admit(
-    store: ServerPtCommissioningStore,
-    campaign: ServerPtCampaign,
-    episode: int,
-    attempt_id: str,
-    phase: str,
-    operations: int,
-    seconds: float,
-    *,
-    source: RepositoryIdentity,
-) -> tuple[str, ...]:
-    """Write one phase admission before contact, or name why there is none.
-
-    `source` is the checkout this phase will execute, observed by its own
-    preflight; it must be the checkpoint the episode declared when it opened.
-    """
-    if not campaign.experimental:
-        return ()
-    try:
-        now = datetime.now(UTC)
-        findings, protected = phase_admission_findings(
-            store.ledger_records(),
-            episode=episode,
-            attempt_id=attempt_id,
-            phase=phase,
-            granted_operations=int(operations),
-            granted_seconds=float(seconds),
-            allowance=FASTLOOP_ALLOWANCE,
-            now=now,
-            source_sha=source.head,
-            source_tree=source.tree,
-        )
-        if findings:
-            return findings
-        store.save_ledger_record(
-            phase_record_name(episode, attempt_id, phase, "admission"),
-            {
-                "kind": "phase_admission",
-                "episode": episode,
-                "attempt_id": attempt_id,
-                "phase": phase,
-                "granted_operations": int(operations),
-                "granted_seconds": float(seconds),
-                "draws_protected": protected,
-                "source_sha": source.head,
-                "source_tree": source.tree,
-                "admitted_at_utc": now.isoformat(),
-            },
-        )
-        store.refresh_index()
-        return store.verify_index()
-    except (OSError, ValueError) as exc:
-        return (f"ledger_admission_unavailable:{type(exc).__name__}",)
-
-
-def _ledger_result(
-    store: ServerPtCommissioningStore,
-    campaign: ServerPtCampaign,
-    episode: int,
-    attempt_id: str,
-    phase: str,
-    used_operations: int,
-    active_seconds: float,
-    outcome: str,
-) -> str:
-    """Record what one admitted phase used; a failure is returned, not raised."""
-    if not campaign.experimental:
-        return ""
-    try:
-        store.save_ledger_record(
-            phase_record_name(episode, attempt_id, phase, "result"),
-            {
-                "kind": "phase_result",
-                "episode": episode,
-                "attempt_id": attempt_id,
-                "phase": phase,
-                "used_operations": int(used_operations),
-                "active_seconds": round(max(0.0, active_seconds), 3),
-                "outcome": outcome,
-                "recorded_at_utc": datetime.now(UTC).isoformat(),
-            },
-        )
-    except (OSError, ValueError) as exc:
-        return f"ledger_result_unrecorded:{type(exc).__name__}"
-    return ""
 
 
 def _admit_phase(
@@ -1011,6 +954,9 @@ def _retirement_basis(
         return "exited", "owned_cleanup_restored"
     except (OSError, ValueError):
         pass
+    qualification = _qualification_basis(store, attempt_id)
+    if qualification is not None:
+        return qualification
     if attempt_id not in store.setup_attempt_ids():
         try:
             status = store.load_phase_status(attempt_id, "prequalification")
@@ -1030,6 +976,37 @@ def _retirement_basis(
         return "exited_interrupted", "empty_baseline_before_interrupted_setup"
     store.require_immutable_phase(attempt_id, "setup", str(setup.get("outcome")))
     return "exited_dirty", "empty_baseline_then_campaign_effects"
+
+
+def _qualification_basis(
+    store: ServerPtCommissioningStore, attempt_id: str
+) -> tuple[str, str] | None:
+    """Return the basis an archived qualification run establishes, if any.
+
+    A qualification attempt runs in a laboratory the campaign launched blank.
+    Its own admission read an empty disposable workspace before its first
+    effect, and its record says whether owned cleanup restored it. A ledger
+    admission without an archived status means the run may have had effects
+    whose state is unknown: the ownership still rests on the blank launch,
+    and the disposition says the qualification was interrupted. `None` means
+    this attempt never admitted a qualification, so the existing bases apply.
+    """
+    try:
+        status = store.load_phase_status(attempt_id, "qualification")
+    except (OSError, ValueError):
+        if qualification_admitted(store.ledger_records(), attempt_id):
+            return "exited_interrupted", "blank_launch_then_interrupted_qualification"
+        return None
+    store.require_immutable_phase(
+        attempt_id, "qualification", str(status.get("outcome"))
+    )
+    if status.get("effects_dispatched") is False:
+        return "exited_before_setup", "blank_launch_without_qualification_effects"
+    if status.get("workspace_baseline_empty") is not True:
+        raise ValueError("qualification baseline was not an empty disposable workspace")
+    if status.get("restoration_proven") is True:
+        return "exited", "owned_qualification_restored"
+    return "exited_dirty", "empty_baseline_then_qualification_effects"
 
 
 def _instant() -> tuple[str, float]:
@@ -1383,6 +1360,10 @@ def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
         again = _timed_reading(control, pid, readings)
         if not again.error and not again.present:
             exited = True
+        elif not campaign.forced_retirement_authorized:
+            # The charter never authorized a force: the laboratory stays open
+            # and its ownership stays recorded as unresolved.
+            refusal = ("forced_retirement_not_authorized_by_campaign",)
         else:
             refusal = observed_process_findings(launch, again)
             after = control.windows(pid) if not refusal else None

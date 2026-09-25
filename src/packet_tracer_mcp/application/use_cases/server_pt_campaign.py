@@ -54,6 +54,10 @@ class ServerPtCampaign:
     authorization_prefix: str
     complete_attempt_limit: int | None
     acceptance_cost_pin: tuple[int, int] | None
+    #: Whether this charter lets retirement terminate an owned process after
+    #: a failed graceful close. FASTLOOP's Addendum 02 authorized one; the
+    #: DHCP charter says it "does not newly authorize force termination".
+    forced_retirement_authorized: bool = True
 
     @property
     def experimental(self) -> bool:
@@ -79,7 +83,24 @@ FASTLOOP_CAMPAIGN = ServerPtCampaign(
     complete_attempt_limit=None,
     acceptance_cost_pin=None,
 )
-CAMPAIGNS = {item.campaign_id: item for item in (C31_CAMPAIGN, FASTLOOP_CAMPAIGN)}
+#: The S3/Q3 DHCP qualification campaign. Its charter is the adopted work
+#: order `Next_Work_S3_Q3_FASTLOOP_PROPOSAL.md`. It runs versioned Q3-FL
+#: qualification stages, never the HTTP commissioning phases, so its prefixes
+#: name no deployment the commissioning setup would create.
+DHCP_FASTLOOP_CAMPAIGN = ServerPtCampaign(
+    campaign_id="SERVER-PT-DHCP-FASTLOOP-01",
+    charter_sha256="6c24e5eaf0044e11191012fdd061d02db2098af3422664984844a876330ac5fe",
+    purpose=ExecutionPurpose.EXPERIMENTAL,
+    deployment_prefix="server-pt-dhcp-fastloop-",
+    authorization_prefix="SERVER-PT-DHCP-FASTLOOP-",
+    complete_attempt_limit=None,
+    acceptance_cost_pin=None,
+    forced_retirement_authorized=False,
+)
+CAMPAIGNS = {
+    item.campaign_id: item
+    for item in (C31_CAMPAIGN, FASTLOOP_CAMPAIGN, DHCP_FASTLOOP_CAMPAIGN)
+}
 
 
 def source_authority_findings(

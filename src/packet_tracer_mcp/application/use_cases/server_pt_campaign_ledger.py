@@ -34,7 +34,7 @@ from datetime import datetime
 _SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 _RECORD_NAME = re.compile(
     r"episode-(\d{4})-(?:(opening|closing)|([0-9a-f]{32})-"
-    r"(prequalification|setup|acceptance|cleanup)-(admission|result))\Z"
+    r"(prequalification|setup|acceptance|cleanup|qualification)-(admission|result))\Z"
 )
 _RECORD_KINDS = {
     "opening": "episode_opening",
@@ -46,7 +46,12 @@ _ATTEMPT = re.compile(r"[0-9a-f]{32}\Z")
 #: Phases that may draw the protected reserve. Retirement costs no bridge
 #: operation; its time is charged to the open episode like any other.
 FINAL_ELIGIBLE_PHASES = frozenset({"cleanup"})
-LEDGER_PHASES = frozenset({"prequalification", "setup", "acceptance", "cleanup"})
+#: `qualification` is one governed Q-stage run (the DHCP campaign's Q3-FL
+#: profiles). Its own finalization reserve is inside its grant, so it is an
+#: ordinary phase and never draws the campaign's protected tail.
+LEDGER_PHASES = frozenset(
+    {"prequalification", "setup", "acceptance", "cleanup", "qualification"}
+)
 
 
 @dataclass(frozen=True)
@@ -65,6 +70,32 @@ FASTLOOP_ALLOWANCE = CampaignAllowance(
     protected_operations=1_000,
     protected_seconds=600,
 )
+#: The DHCP campaign's charter states the same ceilings in its own words:
+#: 50,000 bridge operations and 21,600 s in total, 1,000 and 600 protected
+#: for eligible finalization. It is a separate object so that one charter's
+#: numbers can never silently become the other's.
+DHCP_FASTLOOP_ALLOWANCE = CampaignAllowance(
+    total_operations=50_000,
+    total_seconds=21_600,
+    protected_operations=1_000,
+    protected_seconds=600,
+)
+_ALLOWANCES = {
+    "SERVER-PT-IOS-FASTLOOP-01": FASTLOOP_ALLOWANCE,
+    "SERVER-PT-DHCP-FASTLOOP-01": DHCP_FASTLOOP_ALLOWANCE,
+}
+
+
+def allowance_for(campaign_id: str) -> CampaignAllowance:
+    """Return the ledger ceilings one experimental campaign's charter grants.
+
+    A campaign without a ledger allowance has no experimental ledger at all,
+    so asking for one is an error rather than a default.
+    """
+    try:
+        return _ALLOWANCES[campaign_id]
+    except KeyError:
+        raise ValueError(f"campaign {campaign_id!r} has no ledger allowance") from None
 
 
 @dataclass(frozen=True)
@@ -426,6 +457,18 @@ def unsettled_phases(
     _, phases = _episode_phases(records, episode)
     return tuple(
         f"{attempt}:{phase}" for attempt, phase, _used, settled in phases if not settled
+    )
+
+
+def qualification_admitted(
+    records: Mapping[str, Mapping[str, object]], attempt_id: str
+) -> bool:
+    """Whether any episode admitted a qualification phase for this attempt."""
+    return any(
+        value.get("kind") == "phase_admission"
+        and value.get("phase") == "qualification"
+        and value.get("attempt_id") == attempt_id
+        for value in records.values()
     )
 
 

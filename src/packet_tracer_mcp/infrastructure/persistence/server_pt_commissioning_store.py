@@ -38,6 +38,10 @@ from ...shared.utils import resolve_within, safe_name_component
 CAMPAIGN_ID = "SERVER-PT-C31-COMMISSION-01"
 _ATTEMPT = re.compile(r"[0-9a-f]{32}\Z")
 _EXIT_IMPORT_SUFFIXES = frozenset({".json", ".jsonl", ".txt"})
+#: Phases whose exit is a mapping status record. `qualification` is one
+#: governed Q-stage run of an experimental campaign; its full record lives in
+#: the qualification store and is bound here by an external source reference.
+_STATUS_PHASES = frozenset({"prequalification", "setup", "cleanup", "qualification"})
 
 
 def _safe_id(value: str) -> str:
@@ -216,6 +220,8 @@ class ServerPtCommissioningStore:
             "setup-archive-admission",
             "acceptance-archive-admission",
             "cleanup-archive-admission",
+            "qualification-status",
+            "qualification-archive-admission",
         }:
             raise ValueError("unknown commissioning record name")
         return resolve_within(self._attempt_dir(attempt_id), name + ".json")
@@ -378,7 +384,7 @@ class ServerPtCommissioningStore:
         self, attempt_id: str, phase: str, status: Mapping[str, object]
     ) -> Path:
         """Retain one named phase exit, including failures before a typed result."""
-        if phase not in {"prequalification", "setup", "cleanup"}:
+        if phase not in _STATUS_PHASES:
             raise ValueError("unknown commissioning phase")
         name = phase + "-status"
         directory = self._attempt_dir(attempt_id)
@@ -393,7 +399,7 @@ class ServerPtCommissioningStore:
 
     def load_phase_status(self, attempt_id: str, phase: str) -> dict[str, object]:
         """Reload one byte-bound phase exit for cross-phase admission."""
-        if phase not in {"prequalification", "setup", "cleanup"}:
+        if phase not in _STATUS_PHASES:
             raise ValueError("unknown commissioning phase")
         return self._load_mapping(attempt_id, phase + "-status")
 
@@ -678,7 +684,7 @@ class ServerPtCommissioningStore:
 
     def save_archive_admission(self, attempt_id: str, phase: str) -> Path:
         """Seal that this phase's immutable result passed a source-byte index."""
-        if phase not in {"prequalification", "setup", "acceptance", "cleanup"}:
+        if phase not in {*_STATUS_PHASES, "acceptance"}:
             raise ValueError("unknown archive admission phase")
         status_name = (
             "acceptance-status" if phase == "acceptance" else phase + "-status"
