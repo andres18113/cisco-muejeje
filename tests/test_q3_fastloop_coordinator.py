@@ -34,6 +34,7 @@ from tests.service_qualification_engine import (
     FORWARDING_ROWS,
     NodeEngine,
     NodeEngineTransport,
+    RecordingStore,
     authorization_args,
     request_args,
     require_node,
@@ -302,6 +303,54 @@ def test_an_unknown_acquisition_outcome_stops_every_later_effect(run_stage):
     repeat = run.measurement("M-DHCP-6-REPEAT")
     assert repeat.status is MeasurementStatus.NOT_RUN
     assert repeat.reason.startswith("repeat_not_reached:outcome_unknown:")
+
+
+@pytest.mark.parametrize(
+    ("step", "failure", "applied"),
+    [
+        (
+            "experiment:Q3FL_SERVER:e5_server_address",
+            "persistence:q3fl_e5_server_address_not_announced",
+            set(),
+        ),
+        (
+            "experiment:Q3FL_SERVER:e5_client_mode",
+            "persistence:q3fl_e5_client_mode_not_announced",
+            {"server_address"},
+        ),
+        (
+            "experiment:Q3FL_SERVER:e6_server",
+            "persistence:q3fl_e6_server_not_announced",
+            {"server_address", "client_mode"},
+        ),
+        (
+            f"experiment:Q3FL_DHCP:acquire:{PC1}",
+            "persistence:q3fl_acquisition_not_announced",
+            {"server_address", "client_mode", "server_setup"},
+        ),
+    ],
+)
+def test_an_unannounced_effect_is_never_applied_and_finalization_still_runs(
+    run_stage, tmp_path, step, failure, applied
+):
+    """A lost boundary write stops its effect and every later one, not cleanup."""
+    store = RecordingStore(tmp_path / "lost-boundary", fail_at={step})
+    run = run_stage(record_store=store)
+
+    assert run.record.primary_failure == failure
+    setters = run.snapshot["dhcp_setter_calls"]
+    observed = {
+        "server_address": any(
+            item["device"] == SERVER for item in run.snapshot["static_addresses"]
+        ),
+        "client_mode": setters["configurePcIpDhcp"] > 0,
+        "server_setup": setters["addPool"] + setters["setEnable"] > 0,
+    }
+    assert {name for name, seen in observed.items() if seen} == applied
+    assert run.snapshot["dhcp_runs"] == []
+    assert run.measurement("M-DHCP-1-FINAL").status is MeasurementStatus.RAN
+    assert run.record.restoration_proven is True
+    assert run.snapshot["devices"] == []
 
 
 def test_a_repeat_that_dispatches_again_is_a_contradiction(run_stage):

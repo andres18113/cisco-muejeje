@@ -191,6 +191,7 @@ const unregisterCalls = [];
 const clients = {};
 const dhcpRuns = [];
 const backgroundAcquisitions = [];
+const staticAddresses = [];
 const ipToInt = (value) => String(value).split('.').reduce(
   (total, part) => (total * 256) + Number(part), 0);
 const intToIp = (value) => [24, 16, 8, 0].map(
@@ -818,7 +819,10 @@ global.configurePcIp = (name, dhcp, ip, mask, gateway, dns, iface) => {
   const dev = findDevice(String(name));
   if (dhcp) { dhcpSetterCalls.configurePcIpDhcp++; }
   port.dhcpMode = !!dhcp;
-  if (ip && mask) { port.ip = String(ip); port.mask = String(mask); }
+  if (ip && mask) {
+    port.ip = String(ip); port.mask = String(mask);
+    staticAddresses.push({device: String(name), ip: port.ip});
+  }
   if (dns) { port.dns = String(dns); }
   if (ip && mask && dev && dev.model === 'Server-PT' && config.default_pool_realigns_on_address) {
     const state = dhcpState(dev);
@@ -910,6 +914,7 @@ const snapshot = () => {
     dhcp_servers: dhcpServers,
     dhcp_runs: dhcpRuns.slice(),
     background_acquisitions: backgroundAcquisitions.slice(),
+    static_addresses: staticAddresses.slice(),
     dhcp_setter_calls: Object.assign({}, dhcpSetterCalls),
     terminal_commands: terminalCommands.slice(),
     remove_calls: removeCalls.slice(),
