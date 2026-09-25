@@ -306,6 +306,24 @@ def test_a_pool_the_first_client_never_filled_decides_no_negative(run_stage):
     assert _attribution(run, PC1)["served_by"] == "native_default"
 
 
+def test_every_client_reading_is_retained_with_its_label(run_stage):
+    """Background, settle, timed and repeat readings stay in the record."""
+    run = run_stage()
+
+    series = run.measurement("M-DHCP-6").facts["client_readings"]
+    labels = [item["label"] for item in series]
+    assert labels[:4] == [
+        "baseline",
+        "after_client_mode",
+        "background_1",
+        "background_2",
+    ]
+    assert {"timed_1", "timed_2", "horizon_3"} <= set(labels)
+    assert any(label.startswith("settle:") for label in labels)
+    first = next(item for item in series if item["label"] == "background_1")
+    assert set(first["clients"]) == {PC1, PC2}
+
+
 def test_the_native_default_is_never_written(run_stage):
     """Only the intended pool is ever configured; `serverPool` moves only by address."""
     run = run_stage()

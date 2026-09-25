@@ -5426,24 +5426,7 @@ def _q3fl_conclude_server(execution: _Execution, state: _Q3FlState, cause: str) 
             ],
         ),
     )
-    readings = [
-        {
-            "label": label,
-            "clients": {
-                name: {
-                    "observed": item.observed,
-                    "mode": item.mode,
-                    "mac": item.mac,
-                    "ipv4": item.ipv4,
-                    "netmask": item.netmask,
-                    "lease_time": item.lease_time,
-                    "cause": item.cause,
-                }
-                for name, item in values.items()
-            },
-        }
-        for label, values in state.client_reads
-    ]
+    readings = _q3fl_reading_series(state)
     execution.conclude("M-DHCP-4", _q3fl_mac_assessment(state, readings))
     execution.conclude("M-DHCP-5", _q3fl_mode_assessment(state, readings))
 
@@ -5910,11 +5893,36 @@ def _q3fl_ranges(
     return intended, native, netmask
 
 
+def _q3fl_reading_series(state: _Q3FlState) -> list[dict[str, Any]]:
+    """Return every labelled client reading the run took, in order."""
+    return [
+        {
+            "label": label,
+            "clients": {
+                name: {
+                    "observed": item.observed,
+                    "mode": item.mode,
+                    "mac": item.mac,
+                    "ipv4": item.ipv4,
+                    "netmask": item.netmask,
+                    "lease_time": item.lease_time,
+                    "cause": item.cause,
+                }
+                for name, item in values.items()
+            },
+        }
+        for label, values in state.client_reads
+    ]
+
+
 def _q3fl_acquisition_assessment(
     state: _Q3FlState, attributions: Mapping[str, ClientAttribution]
 ) -> Assessment:
     """Keep every client's claims separate; conclude only from all of them."""
     facts = {
+        # Every reading, background and settle included: when an address
+        # first appeared is itself evidence about autonomous acquisition.
+        "client_readings": _q3fl_reading_series(state),
         "clients": {
             name: {**state.acquisitions.get(name, {}), "attribution": item.as_facts()}
             for name, item in attributions.items()
