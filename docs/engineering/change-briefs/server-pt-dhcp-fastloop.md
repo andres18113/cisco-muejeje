@@ -294,3 +294,140 @@ reported with their original chronology. Behavioral changes get causal RED at
 their boundary. Focused and affected tests run per checkpoint. The full suite,
 delivery gate, MkDocs, namespace inventory and whitespace run once on the final
 candidate.
+
+## Pre-LIVE independent review, version 2
+
+Four focused Codex adversarial reviews ran against the committed delta before
+any LIVE contact. The work order requires a review of safety-sensitive deltas
+before they execute. Every finding was reproduced as a failing regression
+first, fixed at its owning layer, and then proven causally RED by disabling
+the fix.
+
+| Review | Findings | Closed by |
+| --- | --- | --- |
+| 1, on `a6eaf50..ae6c530` | Interrupted run settled at zero operations; no-effect retirement basis accepted before the baseline was checked; any non-empty campaign id waived publication; `undefined` lease read counted as a null end; exact row hid a same-IP wrong-MAC row | `4a59d9e` |
+| 2, on `ae6c530..4a59d9e` | Four closed; a `refused` status with unknown effects still passed as an interrupted basis | `8b164c5`, `733d670` |
+| 3, on `831e501..8b164c5` | A settled qualification with no archived status read as interrupted | `68ad08d` |
+| 4, the full basis matrix | One combination left: an effectful status claiming an unobserved empty baseline | `5df8d05` |
+
+Causal RED on the implementation itself found one rule no test protected: the
+capacity negative's calibrated-absence requirement. `3a899b4` added its
+regression. In total, 31 causal cases were disabled one at a time, and each
+turned its named regression RED. The tree was byte-identical after every
+restore.
+
+## LIVE episode 1, version 3
+
+| Field | Value |
+| --- | --- |
+| Checkpoint | `5df8d05ec89b9bb5042e1dd2a040c0eaad9890e8` (tree `3f1bc384c8bfe5b755839eba67e5b1b4dcddf603`), clean, unpublished, no CI claimed |
+| Ledger episode | 1, opened 2026-09-25T03:11:07Z (`bc75a86f…582de6`), closed 10:58:46Z (`4859805b…b1c3`) |
+| Attempt / instance | `8500b4688a054130a2b18cdb183b0a0a` / `e75c633c76924a69b12ef693fcac724c` |
+| Laboratory | one blank Packet Tracer 9.0.1.0858, PID 47680, created 03:11:20Z, launched with no argument; `--record-launch` proved a blank document |
+| Stage | `Q3-FL-C1`, file channel, run `2026-09-25T03-12-05Z-97cc881e` |
+| Record | `q3-fl-c1-2026-09-25T03-12-05Z-97cc881e.json`, SHA-256 `4139f6c97c27ea6b33e2a485032467d1351ea6729770b9ecbf83077c83b17223` |
+| Result | `completed`, 123 of 440 operations, 219.3 s, restoration proven, no primary or secondary failure, `dirty_state: unknown` because both product claims are engine residue retained until retirement |
+| Evidence | archived byte for byte, 41 files under [`evidence/campaign-dhcp-fastloop-01/`](../../reference/server-pt/README.md), with `MANIFEST.sha256` |
+
+**Chronology, from the record's own offsets.** Fixtures and links were created
+first. The typed baseline admitted the exact stock `serverPool`. The server's
+address alone moved it to `192.0.2.0/255.255.255.0`, `192.0.2.0`–`192.0.3.255`.
+The versioned policy matched that move to the reviewed D-DHCP record, and every
+later interval was unchanged, through `before_cleanup`. The product readiness
+gate admitted both clients on its first episode: `Fa0/1`–`Fa0/3` were FWD in
+VLAN 1 after 11 samples and 47 channel calls in 27 s. Client DHCP mode was
+activated while the process was still disabled. Both mode read-backs were
+true, and neither client had an address then. The pool and the enable were
+dispatched once, at offsets 61.6–65.0 s. At 79.1 s, PC1's pre-request reading
+already showed `192.0.2.3/24`, lease "1 days 0:0:0". The typed acquisitions
+were then dispatched, one per client under its claim. The same-action repeat,
+the timed readings, the 60 s horizon and the terminal reading followed, then
+owned finalization.
+
+**Retirement.** `--retire` selected the document window by the build signature
+(`Qt687QWindowIcon`, "Cisco Packet Tracer"), with basis
+`owned_qualification_restored`. It posted one revalidated `WM_CLOSE` at
+03:15:59Z. Packet Tracer raised the modal `QMessageBox` "Exit -- Cisco Packet
+Tracer": *"Any unsaved changes will be lost. Do you want to save your work?"*
+(Yes / No / Cancel), read read-only through UI Automation. The process did not
+exit within the 60 s grace. The campaign refused to force
+(`forced_retirement_not_authorized_by_campaign`), and the attempt is archived
+as a refused retirement. The dialog was not answered by the lead. The
+operator, asked, answered "No". A read-only census at 10:58:33Z then found no
+Packet Tracer process, and the mailbox held only its heartbeat. That exit is
+lead-observed evidence (`06-exit-observation.json`); it is not a campaign
+retirement record, and its instant is bounded only by that census.
+
+**Ledger.** The qualification phase settled at 123 operations and 220.4 s.
+The closed episode charges its whole open interval, 28,059 s, because a
+laboratory stayed up with the prompt unanswered while the lead's session was
+paused. The ledger's rule is deliberately conservative and never subtracts, so
+the campaign has committed 123 of 50,000 operations and 28,059 of 21,600
+seconds. Its ordinary time is **exhausted (−7,059 s)**, and no further episode
+can open under this charter without a new operator grant.
+
+## Measured results per M-DHCP identifier, version 3
+
+Every row belongs to episode 1, `5df8d05`, build 9.0.1.0858 and the file
+channel. Nothing here is a product capability.
+
+| Id | Record status | What is established | What is not |
+| --- | --- | --- | --- |
+| M-DHCP-1 | measured, SUPPORTED_IN_SAMPLE | `DhcpServerMain` binds `FastEthernet0`. The native default moved only by the reviewed realignment and stayed put after it. The ensure-present path stored `MCP_E6Q_DHCP` (the product server-state read-back was VERIFIED, enabled true, two exclusions). The intended range lies inside the realigned native range | that a stored intended pool serves anyone |
+| M-DHCP-4 | measured, SUPPORTED_IN_SAMPLE | Each port reports dotted-hex MAC text, stable across every reading. The lease rows carry the same MAC text exactly (`0009.7CBD.2093`, `0001.C9C3.9696`) | a general MAC-representation equivalence |
+| M-DHCP-5 | measured, SUPPORTED_IN_SAMPLE | `isDhcpClientOn` returned boolean false before activation and true after it, and forwarding was admitted before any client activity | that activation is inert: see M-DHCP-6 |
+| M-DHCP-2 | measured, INCONCLUSIVE | `getLeaseAt` never returned null. It threw `invalid vector subscript` at exactly the row count and at every later index, in all 12 scans: intended pool 0 rows; `serverPool` 0 rows, then 2 rows. Rows are objects whose `ipAddress`, `macAddress` and `port` are strings and whose `leaseTime` is the number 86,400,000 | end-of-table by throw is not admitted by the conservative rule (a getter failure is not automatically an end); no full state and no one-row state of the intended pool was ever reached |
+| M-DHCP-3 | omitted | the approved event deferral stands; no observer was registered | — |
+| M-DHCP-6 | measured, SUPPORTED_IN_SAMPLE for separation | Both clients were served by the **native default**. Each has an exact IP/MAC row in `serverPool` and no row in the intended pool, and the product read-backs are CONTRADICTED `address_outside_intended_allocation`. Each typed request was a known dispatch (`attempted=true`, correlated, no call error) | **causal acquisition by `dhcpRun`: not established.** Both clients already held their addresses before their request, acquired autonomously within about 14 s of the enable; the scans before the request were throw-terminated, so no prior absence was calibrated. Intended-pool attribution: not reached |
+| M-DHCP-6-CAP | measured, INCONCLUSIVE | the second client was served by the native default | `lease_not_acquired` from the intended pool: the one-user pool was never filled by the first client, and absence is uncalibrated |
+| M-DHCP-6-REPEAT | measured, SUPPORTED_IN_SAMPLE | The identical replay reported `own_claim_replayed`, correlated, with no call error. The claim script calls `dhcpRun` only on its no-claim path, so no second `dhcpRun` was sent, and the address and lease text were unchanged afterwards | anything about renewal |
+| M-DHCP-6-TIME | measured, INCONCLUSIVE | Two timed readings 15 s apart and three horizon readings over 60 s all showed the same address and "1 days 0:0:0" | natural renewal: a 1-day lease renews at about 12 h, far beyond the declared horizon; nothing was manipulated |
+| M-DHCP-6-RENEW | omitted | `requested_renewal_contract_absent`: no typed renewal operation exists, and replay is not renewal | — |
+| M-DHCP-1-FINAL | measured, SUPPORTED_IN_SAMPLE | the pre-cleanup native default equals the realigned reading; both tables were read again | — |
+
+## Current projection and the remaining boundary, version 3
+
+- **The first unmet boundary is native, and it is demonstrated.** On 9.0.1.0858,
+  giving the Server-PT its address realigns `serverPool` to the server's
+  subnet. Once the process is enabled, DHCP-mode clients on that segment are
+  served from `serverPool`, not from the product's intended pool, even though
+  the intended pool is stored and enabled. The product may not delete, rename,
+  reset or rewrite `serverPool`. So on this fixture and build, an intended pool
+  that shares the server's subnet has no observed path to serving a client.
+  That is a product-design question for review, not a qualification defect.
+- **Causal acquisition is not observable on this path.** A DHCP-mode client
+  acquires autonomously once a server becomes available, so the typed
+  `dhcpRun` met a client that already held a lease. The request is proven to
+  have been dispatched once, and the replay is proven refused. What the
+  request caused is not.
+- **Table completion stays open.** Every observed end of rows was the same
+  throw at the same index. Admitting it as a calibrated end would be a new
+  decision predicate, which needs its own design delta, causal controls and
+  review. No full state is reachable while `serverPool` serves: its capacity
+  is 512, and the intended pool is never filled. This is why `Q3-FL-C2` was
+  not run. Beyond the exhausted time ceiling, a two-user intended pool that is
+  never served cannot discriminate one row from a full table.
+- **Renewal.** Natural renewal is outside any reasonable horizon at a 1-day
+  lease. Requested renewal has no typed contract.
+- **Events.** M-DHCP-3 stays deferred. `DHCP_LEASE` is never promoted to
+  VERIFIED, and the R-EVT-05 fallback stays active.
+- **HTTP on DHCP clients stays blocked.** The product's DHCP prerequisite,
+  a VERIFIED lease from the intended pool, is not established, and a native
+  default address is not a substitute.
+- **Retirement of a laboratory with campaign effects** raises Packet Tracer's
+  save prompt. Graceful retirement of such a laboratory therefore needs an
+  operator answer, or a separately reviewed and authorized dismissal step. The
+  blank-lab retirement qualified by FASTLOOP does not cover it.
+
+## Proposed operation-specific capability decisions, awaiting independent review
+
+Nothing below is applied. Every catalog record stays UNKNOWN.
+
+| Operation, 9.0.1.0858 / file channel | Proposal | Evidence |
+| --- | --- | --- |
+| `Server-PT:enable_server_dhcp`, `configure_server_dhcp_pool` (ensure-present of a pool with exclusions) | candidate for SUPPORTED as *configuration*, with the explicit limitation "stored configuration is not service" | M-DHCP-1: product read-back VERIFIED; setters dispatched once |
+| `Server-PT:dhcp_server_state` read-back | candidate for SUPPORTED | M-DHCP-1 |
+| `PC-PT:endpoint_dhcp_mode` reader and activation | candidate for SUPPORTED, with the limitation "activation is effectful: the client acquires autonomously once a server is available" | M-DHCP-5, M-DHCP-6 |
+| `PC-PT:acquire_dhcp_lease` (typed `dhcpRun` under a claim) | keep UNKNOWN. Execute-once and replay refusal are demonstrated; the effect is not attributable | M-DHCP-6, M-DHCP-6-REPEAT |
+| `PC-PT:dhcp_lease` read-back and `Server-PT:dhcp_lease_attributed` | keep UNKNOWN. Intended-pool attribution is unreachable while the native default serves the subnet | M-DHCP-6 |
+| DHCP service as a product prerequisite for dependent services | NOT SUPPORTED on this design and build, pending a product decision about the native default | M-DHCP-6, M-DHCP-6-CAP |

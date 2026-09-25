@@ -1,0 +1,15 @@
+{
+  "note": "Lead read-only observation after the operator answered 'No' in the 'Exit -- Cisco Packet Tracer' save prompt raised by --retire's WM_CLOSE. Not a campaign retirement record.",
+  "operator_action": "operator selected 'No' in the save prompt (decision relayed in session, 2026-09-25)",
+  "census_readings": [
+    {
+      "started_at_utc": "2026-09-25T10:58:33.979719+00:00",
+      "answered_at_utc": "2026-09-25T10:58:34.675367+00:00",
+      "error": "",
+      "processes": []
+    }
+  ],
+  "mailbox_files": [
+    "alive.txt"
+  ]
+}

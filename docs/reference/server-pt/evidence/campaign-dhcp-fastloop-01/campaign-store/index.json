@@ -1,0 +1,86 @@
+{
+  "campaign_id": "SERVER-PT-DHCP-FASTLOOP-01",
+  "files": [
+    {
+      "bytes": 4300,
+      "path": "data/commissioning/SERVER-PT-DHCP-FASTLOOP-01/8500b4688a054130a2b18cdb183b0a0a/process-launch.json",
+      "sha256": "f7d81089f984c7e901adad4928af5497dc2916e7eb2ce77177ac3269cd118a8b"
+    },
+    {
+      "bytes": 65,
+      "path": "data/commissioning/SERVER-PT-DHCP-FASTLOOP-01/8500b4688a054130a2b18cdb183b0a0a/process-launch.sha256",
+      "sha256": "b1214aca80e79bbaa5c8be288814491e87a85e21f4ce46cb17287d0a0ed80ae0"
+    },
+    {
+      "bytes": 162,
+      "path": "data/commissioning/SERVER-PT-DHCP-FASTLOOP-01/8500b4688a054130a2b18cdb183b0a0a/qualification-archive-admission.json",
+      "sha256": "082d8d0cac5d7a0613d274efaabe1d3249636dbffd3a663cfb0c7e632fa9cd55"
+    },
+    {
+      "bytes": 65,
+      "path": "data/commissioning/SERVER-PT-DHCP-FASTLOOP-01/8500b4688a054130a2b18cdb183b0a0a/qualification-archive-admission.sha256",
+      "sha256": "8765f41ae37b5f175f6bf225fd33606917a1b4c972d04dffe673fb9b23830d1a"
+    },
+    {
+      "bytes": 704,
+      "path": "data/commissioning/SERVER-PT-DHCP-FASTLOOP-01/8500b4688a054130a2b18cdb183b0a0a/qualification-status.json",
+      "sha256": "5e112a5aae78d6160be95c34e29f89a411605c9509cef577f34429975450fd42"
+    },
+    {
+      "bytes": 65,
+      "path": "data/commissioning/SERVER-PT-DHCP-FASTLOOP-01/8500b4688a054130a2b18cdb183b0a0a/qualification-status.sha256",
+      "sha256": "56f16ca2587377abde135d477769620b9b9f690e9b1c80250420aac27e7737e0"
+    },
+    {
+      "bytes": 13615,
+      "path": "data/commissioning/SERVER-PT-DHCP-FASTLOOP-01/8500b4688a054130a2b18cdb183b0a0a/retirement-attempt-20260925T031701Z.json",
+      "sha256": "a1b5f292238774983ea0dfd215f32859a2a01cb05d4c105c82402f08a33f827d"
+    },
+    {
+      "bytes": 65,
+      "path": "data/commissioning/SERVER-PT-DHCP-FASTLOOP-01/8500b4688a054130a2b18cdb183b0a0a/retirement-attempt-20260925T031701Z.sha256",
+      "sha256": "0714430df1d01b9315fd8f209c46ea1f3d85858537124154f226210b75edbb34"
+    },
+    {
+      "bytes": 188,
+      "path": "data/commissioning/SERVER-PT-DHCP-FASTLOOP-01/8500b4688a054130a2b18cdb183b0a0a/source-ref-qualification-record.json",
+      "sha256": "e2d5de44a5ab7573873a3b74922b82c9544fbff31e185091e6ff6fb2cdde7049"
+    },
+    {
+      "bytes": 65,
+      "path": "data/commissioning/SERVER-PT-DHCP-FASTLOOP-01/8500b4688a054130a2b18cdb183b0a0a/source-ref-qualification-record.sha256",
+      "sha256": "06c96d2af0c3f33d092a93beda6b771808d4e6a7debee490dcbe061b639bdda7"
+    },
+    {
+      "bytes": 704,
+      "path": "data/commissioning/SERVER-PT-DHCP-FASTLOOP-01/current-status.json",
+      "sha256": "5e112a5aae78d6160be95c34e29f89a411605c9509cef577f34429975450fd42"
+    },
+    {
+      "bytes": 370,
+      "path": "data/commissioning/SERVER-PT-DHCP-FASTLOOP-01/ledger/episode-0001-8500b4688a054130a2b18cdb183b0a0a-qualification-admission.json",
+      "sha256": "cab74f1f0b955aeef4318f361020f6732473c148ad6f592386edf41f4e6e2c0b"
+    },
+    {
+      "bytes": 245,
+      "path": "data/commissioning/SERVER-PT-DHCP-FASTLOOP-01/ledger/episode-0001-8500b4688a054130a2b18cdb183b0a0a-qualification-result.json",
+      "sha256": "393670a662ded545a359e2b13db9a8945332bda5ed7d1e08e45c6af267ab0f9b"
+    },
+    {
+      "bytes": 704,
+      "path": "data/commissioning/SERVER-PT-DHCP-FASTLOOP-01/ledger/episode-0001-closing.json",
+      "sha256": "4859805bf457edbf87da082de170580118f45f5410302824ae4784c9d772b1c3"
+    },
+    {
+      "bytes": 2640,
+      "path": "data/commissioning/SERVER-PT-DHCP-FASTLOOP-01/ledger/episode-0001-opening.json",
+      "sha256": "bc75a86fee59fb22de24499a8685a257ed58f938a476869224289d2efc582de6"
+    },
+    {
+      "bytes": 200969,
+      "path": "data/services/qualification/q3-fl-c1/q3-fl-c1-2026-09-25T03-12-05Z-97cc881e.json",
+      "sha256": "4139f6c97c27ea6b33e2a485032467d1351ea6729770b9ecbf83077c83b17223"
+    }
+  ],
+  "schema_version": 2
+}

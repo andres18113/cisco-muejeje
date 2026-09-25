@@ -1,0 +1,22 @@
+{
+  "command_line": "\"C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe\" ",
+  "created_by_campaign": true,
+  "heartbeat_fresh": true,
+  "heartbeat_observed_at_utc": "2026-09-25T03:11:30.129660+00:00",
+  "launch_method": "Start-Process",
+  "launched_at_utc": "2026-09-25T03:11:19.698795+00:00",
+  "lifecycle_reading": {
+    "error": "",
+    "file_version": "9.0.1.0858",
+    "mailbox_entries": [],
+    "process_id": 47680,
+    "process_incarnation": "2026-09-24T22:11:20.0221653-05:00",
+    "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+    "product_version": "9.0.1.0858"
+  },
+  "main_window_title": "Logs - MCP BUILDER",
+  "pid": 47680,
+  "process_incarnation": "2026-09-24T22:11:20.0221653-05:00",
+  "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+  "workspace_kind": "disposable_declared"
+}

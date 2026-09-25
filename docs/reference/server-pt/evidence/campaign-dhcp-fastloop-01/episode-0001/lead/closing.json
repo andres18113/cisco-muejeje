@@ -1,0 +1,6 @@
+{
+  "operations_used": 123,
+  "retirement": "retirement attempt refused (forced_retirement_not_authorized_by_campaign); exit completed by the operator answering the save prompt, not by the campaign",
+  "lab_state": "qualification completed with restoration_proven true (record q3-fl-c1-2026-09-25T03-12-05Z-97cc881e); --retire posted one WM_CLOSE to the document window, PT raised its save prompt, no exit within 60 s, force refused by the campaign; the operator answered No; a later read-only census found no Packet Tracer process and an empty mailbox",
+  "qualification_outcome": "completed"
+}
