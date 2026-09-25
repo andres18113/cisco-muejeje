@@ -81,6 +81,7 @@ class QualificationStage(StrEnum):
     Q3_FL_C2 = "Q3-FL-C2"
     Q3_NATIVE_PROBE = "Q3-NATIVE-PROBE"
     Q3_NATIVE_SIZE = "Q3-NATIVE-SIZE"
+    Q3_NATIVE_POLICY = "Q3-NATIVE-POLICY"
 
 
 class ExecutionMode(StrEnum):
@@ -414,6 +415,7 @@ STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.Q3_FL_C2: (440, 1500),
     QualificationStage.Q3_NATIVE_PROBE: (120, 600),
     QualificationStage.Q3_NATIVE_SIZE: (120, 600),
+    QualificationStage.Q3_NATIVE_POLICY: (160, 900),
 }
 
 Q0_PC = "__MCP_E6Q_PC1"
@@ -1568,6 +1570,7 @@ Q3_FL_STAGES = (QualificationStage.Q3_FL_C1, QualificationStage.Q3_FL_C2)
 Q3_NATIVE_STAGES = (
     QualificationStage.Q3_NATIVE_PROBE,
     QualificationStage.Q3_NATIVE_SIZE,
+    QualificationStage.Q3_NATIVE_POLICY,
 )
 
 #: Exact episode-1 physical values, not a formula for a second build or pool.
@@ -1695,6 +1698,59 @@ def _q3_native_size() -> StageDefinition:
     )
 
 
+def _q3_native_policy() -> StageDefinition:
+    """Measure compiled gateway, DNS and exclusions after a verified size."""
+    base = _q3_native_size()
+    return replace(
+        base,
+        stage=QualificationStage.Q3_NATIVE_POLICY,
+        purpose=(
+            "Repeat exact native start/size measurements, then measure the "
+            "compiled gateway, DNS and exclusions on the disabled server."
+        ),
+        experiments=(
+            *base.experiments,
+            ExperimentSpec(
+                id="M-NATIVE-GATEWAY",
+                hypothesis="The native pool stores the compiled gateway only.",
+                required=True,
+                procedure="Q3_NATIVE_GATEWAY",
+                planned_operations=3,
+                capabilities=("server.dhcp_native_pool_gateway",),
+            ),
+            ExperimentSpec(
+                id="M-NATIVE-DNS",
+                hypothesis="The native pool stores the compiled DNS address only.",
+                required=True,
+                procedure="Q3_NATIVE_DNS",
+                planned_operations=2,
+                capabilities=("server.dhcp_native_pool_dns",),
+            ),
+            ExperimentSpec(
+                id="M-NATIVE-EXCLUSIONS",
+                hypothesis="The DHCP process stores both compiled exclusions.",
+                required=True,
+                procedure="Q3_NATIVE_EXCLUSIONS",
+                planned_operations=4,
+                capabilities=("server.dhcp_native_exclusions",),
+            ),
+        ),
+        budget=StageBudget(160, 900, reserve_seconds=300),
+        profile_id="Q3-NATIVE-POLICY",
+        profile_version="1",
+        steps=(
+            base.steps[0],
+            DiagnosticStageStep(
+                id="NATIVE-policy",
+                experiment_id="M-NATIVE-GATEWAY",
+                effect="configure",
+                requires=("NATIVE-size",),
+                also_experiments=("M-NATIVE-DNS", "M-NATIVE-EXCLUSIONS"),
+            ),
+        ),
+    )
+
+
 STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.Q0: _q0(),
     QualificationStage.Q1: _q1(),
@@ -1710,6 +1766,7 @@ STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.Q3_FL_C2: _q3_fastloop(QualificationStage.Q3_FL_C2, 2),
     QualificationStage.Q3_NATIVE_PROBE: _q3_native_probe(),
     QualificationStage.Q3_NATIVE_SIZE: _q3_native_size(),
+    QualificationStage.Q3_NATIVE_POLICY: _q3_native_policy(),
 }
 
 

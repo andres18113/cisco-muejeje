@@ -229,6 +229,51 @@ _SPECS: dict[str, dict[str, tuple[type, ...]]] = {
         "pre_max": _INT,
         "post_max": _INT,
     },
+    "dhcp_server_policy": {
+        "device": _STR,
+        "found": _BOOL,
+        "process_found": _BOOL,
+        "interface": _STR,
+        "enabled": _OPTIONAL_BOOL,
+        "enabled_type": _STR,
+        "pool_count": _INT,
+        "pools": _LIST,
+        "truncated": _BOOL,
+        "excluded_count": _INT,
+        "exclusions": _LIST,
+        "error": _STR,
+    },
+    "dhcp_native_gateway_probe": {
+        "device": _STR,
+        "interface": _STR,
+        "pool": _STR,
+        "field": _STR,
+        "found": _BOOL,
+        "attempted": _BOOL,
+        "call_error": _STR,
+        "pre_value": _STR,
+        "post_value": _STR,
+    },
+    "dhcp_native_dns_probe": {
+        "device": _STR,
+        "interface": _STR,
+        "pool": _STR,
+        "field": _STR,
+        "found": _BOOL,
+        "attempted": _BOOL,
+        "call_error": _STR,
+        "pre_value": _STR,
+        "post_value": _STR,
+    },
+    "dhcp_native_exclusion_probe": {
+        "device": _STR,
+        "interface": _STR,
+        "found": _BOOL,
+        "attempted": _BOOL,
+        "call_error": _STR,
+        "pre_count": _INT,
+        "post_count": _INT,
+    },
     "dhcp_clients": {"clients": _LIST},
     "dhcp_table": {
         "found": _BOOL,
@@ -265,6 +310,12 @@ _SPECS: dict[str, dict[str, tuple[type, ...]]] = {
 _ERR = (
     "var __er=function(x){var s='';try{s=String(x&&x.message?x.message:x);}"
     "catch(y){s='error';}return (s||'error').substring(0,200);};"
+)
+_NATIVE_POOL_GUARD = (
+    "var __q=null;try{if(__p&&__p.isEnable()===false&&__p.getPoolCount()===1){"
+    "var __candidate=__p.getPool('serverPool');"
+    "if(__candidate&&String(__candidate.getDhcpPoolName())==='serverPool'){"
+    "__q=__candidate;}}}catch(__z){}"
 )
 _OWN = "var __has=function(o,k){return Object.prototype.hasOwnProperty.call(o,k);};"
 
@@ -975,11 +1026,12 @@ class PacketTracerQualificationProbes:
             "var __d=ipc.network().getDevice(__dn);"
             "var __m=__d?__d.getProcess('DhcpServerMain'):null;"
             "var __p=__m&&__m.getDhcpServerProcessByPortName(__if);"
-            "var __q=__p?__p.getPool(__name):null;"
-            "var __pre='',__post='',__attempted=false,__error='';"
-            "if(__q){try{__pre=String(__q.getStartIp()).substring(0,64);"
-            "__attempted=true;__q.setStartIp(__start);"
-            "}catch(__x){__error=__er(__x);}"
+            + _NATIVE_POOL_GUARD
+            + "var __pre='',__post='',__attempted=false,__error='';"
+            "if(__q){try{if(__p.getExcludedAddressCount()===0){"
+            "__pre=String(__q.getStartIp()).substring(0,64);"
+            "__attempted=true;__q.setStartIp(__start);}}"
+            "catch(__x){__error=__er(__x);}"
             "try{__post=String(__q.getStartIp()).substring(0,64);"
             "}catch(__x){if(!__error){__error='post_read:'+__er(__x);}}}"
             "reportResult(JSON.stringify({device:__dn,interface:__if,"
@@ -1004,10 +1056,11 @@ class PacketTracerQualificationProbes:
             "var __d=ipc.network().getDevice(__dn);"
             "var __m=__d?__d.getProcess('DhcpServerMain'):null;"
             "var __p=__m&&__m.getDhcpServerProcessByPortName(__if);"
-            "var __q=__p?__p.getPool(__name):null;"
-            "var __pre=null,__post=null,__attempted=false,__error='';"
+            + _NATIVE_POOL_GUARD
+            + "var __pre=null,__post=null,__attempted=false,__error='';"
             "if(__q){try{var __v=__q.getMaxUsers();"
-            "if(typeof __v==='number'&&isFinite(__v)&&Math.floor(__v)===__v){"
+            "if(typeof __v==='number'&&isFinite(__v)&&Math.floor(__v)===__v&&"
+            "__p.getExcludedAddressCount()===0){"
             "__pre=__v;__attempted=true;__q.setMaxUsers(__max);}}"
             "catch(__x){__error=__er(__x);}"
             "try{var __w=__q.getMaxUsers();"
@@ -1016,6 +1069,135 @@ class PacketTracerQualificationProbes:
             "reportResult(JSON.stringify({device:__dn,interface:__if,"
             "pool:__name,found:!!__q,attempted:__attempted,call_error:__error,"
             "pre_max:__pre,post_max:__post}));",
+        )
+
+    def read_dhcp_server_policy(self, server: str, interface: str) -> ProbeReading:
+        """Read every physical pool and bounded global DHCP exclusion."""
+        return self._read(
+            "dhcp_server_policy",
+            f"var __dn={json.dumps(server)},__if={json.dumps(interface)};"
+            "var __d=ipc.network().getDevice(__dn);"
+            "var __m=__d?__d.getProcess('DhcpServerMain'):null;"
+            "var __p=__m&&__m.getDhcpServerProcessByPortName(__if);"
+            "var __enabled=null,__etype='absent',__count=0,__pools=[],"
+            "__tr=false,__excluded=0,__xs=[],__error='';if(__p){try{"
+            "var __ev=__p.isEnable();__etype=typeof __ev;"
+            "if(__etype==='boolean'){__enabled=__ev;}"
+            "var __n=__p.getPoolCount();if(typeof __n!=='number'||!isFinite(__n)||"
+            "__n<0||Math.floor(__n)!==__n){throw new Error('pool_count');}"
+            "__count=__n;__tr=__n>16;for(var __i=0;__i<Math.min(__n,16);__i++){"
+            "var __q=__p.getPoolAt(__i);if(!__q){throw new Error('pool_row');}"
+            "__pools.push({name:String(__q.getDhcpPoolName()).substring(0,64),"
+            "network:String(__q.getNetworkAddress()).substring(0,64),"
+            "mask:String(__q.getSubnetMask()).substring(0,64),"
+            "gateway:String(__q.getDefaultRouter()).substring(0,64),"
+            "dns:String(__q.getDnsServerIp()).substring(0,64),"
+            "start:String(__q.getStartIp()).substring(0,64),"
+            "end:String(__q.getEndIp()).substring(0,64),max:__q.getMaxUsers()});}"
+            "var __k=__p.getExcludedAddressCount();"
+            "if(typeof __k!=='number'||!isFinite(__k)||__k<0||"
+            "Math.floor(__k)!==__k||__k>16){throw new Error('excluded_count');}"
+            "__excluded=__k;for(var __j=0;__j<__k;__j++){"
+            "var __x=__p.getExcludedAddressAt(__j);"
+            "if(!__x){throw new Error('excluded_row');}"
+            "__xs.push({start:String(__x.first).substring(0,64),"
+            "end:String(__x.second).substring(0,64)});}}"
+            "catch(__z){__error=__er(__z);}}"
+            "reportResult(JSON.stringify({device:__dn,found:!!__d,"
+            "process_found:!!__p,interface:__if,enabled:__enabled,"
+            "enabled_type:__etype,pool_count:__count,pools:__pools,"
+            "truncated:__tr,excluded_count:__excluded,exclusions:__xs,"
+            "error:__error}));",
+        )
+
+    def _native_pool_address_probe(
+        self, step: str, server: str, interface: str, value: str
+    ) -> ProbeReading:
+        """Bracket one of two fixed documented native-pool IP setters."""
+        methods = {
+            "dhcp_native_gateway_probe": (
+                "gateway",
+                "getDefaultRouter",
+                "setDefaultRouter",
+            ),
+            "dhcp_native_dns_probe": ("dns", "getDnsServerIp", "setDnsServerIp"),
+        }
+        field, getter, setter = methods[step]
+        return self._read(
+            step,
+            f"var __dn={json.dumps(server)},__if={json.dumps(interface)},"
+            f"__value={json.dumps(value)},__field={json.dumps(field)};"
+            "var __d=ipc.network().getDevice(__dn);"
+            "var __m=__d?__d.getProcess('DhcpServerMain'):null;"
+            "var __p=__m&&__m.getDhcpServerProcessByPortName(__if);"
+            + _NATIVE_POOL_GUARD
+            + "var __pre='',__post='',__attempted=false,__error='';"
+            f"if(__q){{try{{if(__p.getExcludedAddressCount()===0){{"
+            f"__pre=String(__q.{getter}()).substring(0,64);"
+            f"__attempted=true;__q.{setter}(__value);}}}}"
+            "catch(__x){__error=__er(__x);}"
+            f"try{{__post=String(__q.{getter}()).substring(0,64);}}"
+            "catch(__x){if(!__error){__error='post_read:'+__er(__x);}}}"
+            "reportResult(JSON.stringify({device:__dn,interface:__if,"
+            "pool:'serverPool',field:__field,found:!!__q,"
+            "attempted:__attempted,call_error:__error,"
+            "pre_value:__pre,post_value:__post}));",
+        )
+
+    def probe_native_pool_gateway(
+        self, server: str, interface: str, gateway: str
+    ) -> ProbeReading:
+        """Test documented native `setDefaultRouter` once."""
+        return self._native_pool_address_probe(
+            "dhcp_native_gateway_probe", server, interface, gateway
+        )
+
+    def probe_native_pool_dns(
+        self, server: str, interface: str, dns_server: str
+    ) -> ProbeReading:
+        """Test documented native `setDnsServerIp` once."""
+        return self._native_pool_address_probe(
+            "dhcp_native_dns_probe", server, interface, dns_server
+        )
+
+    def probe_native_exclusion(
+        self,
+        server: str,
+        interface: str,
+        start: str,
+        end: str,
+        *,
+        expected_prior: Sequence[Mapping[str, str]] = (),
+    ) -> ProbeReading:
+        """Test one documented `addExcludedAddress` interval once."""
+        return self._read(
+            "dhcp_native_exclusion_probe",
+            f"var __dn={json.dumps(server)},__if={json.dumps(interface)},"
+            f"__start={json.dumps(start)},__end={json.dumps(end)},"
+            f"__expected={json.dumps([[item['start'], item['end']] for item in expected_prior])};"
+            "var __d=ipc.network().getDevice(__dn);"
+            "var __m=__d?__d.getProcess('DhcpServerMain'):null;"
+            "var __p=__m&&__m.getDhcpServerProcessByPortName(__if);"
+            + _NATIVE_POOL_GUARD
+            + "var __pre=null,__post=null,__attempted=false,__error='';"
+            "if(__q){try{var __n=__p.getExcludedAddressCount();"
+            "if(typeof __n==='number'&&isFinite(__n)&&__n>=0&&"
+            "Math.floor(__n)===__n&&__n===__expected.length){"
+            "var __actual=[];for(var __i=0;__i<__n;__i++){"
+            "var __x=__p.getExcludedAddressAt(__i);"
+            "if(!__x){throw new Error('excluded_row');}"
+            "__actual.push([String(__x.first),String(__x.second)]);}"
+            "__actual.sort();__expected.sort();"
+            "if(JSON.stringify(__actual)===JSON.stringify(__expected)){"
+            "__pre=__n;__attempted=true;__p.addExcludedAddress(__start,__end);}}}"
+            "catch(__x){__error=__er(__x);}"
+            "try{var __k=__p.getExcludedAddressCount();"
+            "if(typeof __k==='number'&&isFinite(__k)&&__k>=0&&"
+            "Math.floor(__k)===__k){__post=__k;}}"
+            "catch(__x){if(!__error){__error='post_read:'+__er(__x);}}}"
+            "reportResult(JSON.stringify({device:__dn,interface:__if,"
+            "found:!!__q,attempted:__attempted,call_error:__error,"
+            "pre_count:__pre,post_count:__post}));",
         )
 
     def read_dhcp_clients(self, clients: Sequence[tuple[str, str]]) -> ProbeReading:

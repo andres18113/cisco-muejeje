@@ -225,6 +225,8 @@ from ...domain.enterprise.services.service_qualification_evidence import (
     assess_https_listener,
     assess_native_default_cumulative,
     assess_native_default_interval,
+    assess_native_policy_address_probe,
+    assess_native_policy_exclusion_probe,
     assess_native_pool_max_probe,
     assess_native_pool_repeated_start_probe,
     assess_native_pool_start_probe,
@@ -235,6 +237,8 @@ from ...domain.enterprise.services.service_qualification_evidence import (
     default_pool_snapshot,
     listener_toggle_established,
     marker_page_established,
+    native_policy_probe_baseline_admitted,
+    native_policy_snapshot_complete,
     native_pool_probe_baseline_admitted,
     page_read_admits_second_write,
     page_write_established,
@@ -1936,6 +1940,8 @@ def _admitted(
             _run_q3_native_probe(execution)
         elif definition.stage is QualificationStage.Q3_NATIVE_SIZE:
             _run_q3_native_size(execution)
+        elif definition.stage is QualificationStage.Q3_NATIVE_POLICY:
+            _run_q3_native_policy(execution)
         else:
             _run_q3(execution)
     except KeyboardInterrupt as exc:
@@ -3338,7 +3344,11 @@ def _q3_default_observed(
 
 
 def _q3_default_read(
-    execution: _Execution, label: str, *, prefix: str = Q3_DEFAULT_PURPOSE
+    execution: _Execution,
+    label: str,
+    *,
+    prefix: str = Q3_DEFAULT_PURPOSE,
+    policy: bool = False,
 ) -> DefaultPoolSnapshot:
     """Dispatch one bounded default reading under its own purpose and persist it.
 
@@ -3360,9 +3370,14 @@ def _q3_default_read(
         )
     try:
         with ledger.purpose_of(purpose):
-            reading = execution.probes.read_dhcp_server_baseline(
-                Q3_SERVER, "FastEthernet0"
-            )
+            if policy:
+                reading = execution.probes.read_dhcp_server_policy(
+                    Q3_SERVER, "FastEthernet0"
+                )
+            else:
+                reading = execution.probes.read_dhcp_server_baseline(
+                    Q3_SERVER, "FastEthernet0"
+                )
     except OperationRefused as exc:
         return _q3_default_persist(
             execution,
@@ -4791,19 +4806,41 @@ def _register_q3_native_terminal(execution: _Execution) -> None:
             return
         with execution.procedure(ids):
             final = _q3_default_read(
-                execution, "native_before_cleanup", prefix="q3-native"
+                execution,
+                "native_before_cleanup",
+                prefix="q3-native",
+                policy=execution.definition.stage
+                is QualificationStage.Q3_NATIVE_POLICY,
+            )
+            complete = (
+                native_policy_snapshot_complete(
+                    final, server=Q3_SERVER, interface="FastEthernet0"
+                )
+                if execution.definition.stage is QualificationStage.Q3_NATIVE_POLICY
+                else final.observed
             )
             execution.conclude(
                 "M-NATIVE-FINAL",
                 Assessment(
                     MeasurementConclusion.SUPPORTED_IN_SAMPLE
-                    if final.observed
+                    if complete
                     else MeasurementConclusion.INCONCLUSIVE,
                     facts={
                         "observed": final.observed,
+                        "complete": complete,
                         "pools": [dict(item) for item in final.pools],
+                        "exclusions": final.raw.get("exclusions"),
+                        "excluded_count": final.raw.get("excluded_count"),
                     },
-                    causes=[] if final.observed else [final.cause],
+                    causes=(
+                        []
+                        if complete
+                        else [
+                            final.cause
+                            if not final.observed
+                            else "native_policy_final_inventory_incomplete"
+                        ]
+                    ),
                 ),
             )
         execution.finish("Q3_NATIVE_FINAL")
@@ -4819,16 +4856,43 @@ def _prepare_q3_native_server(
     if contract is None:
         execution.stop("q3_native_product_contract_absent")
         return None
+    pool_actions = [
+        item
+        for item in contract.service_plan.actions
+        if isinstance(item, ConfigureServerDhcpPool)
+    ]
+    if (
+        len(pool_actions) != 1
+        or pool_actions[0].pool_name != Q3_POOL
+        or pool_actions[0].host_device_id != "endpoint/q3/default/server/001"
+        or pool_actions[0].host_device_name != Q3_SERVER
+        or pool_actions[0].interface != "FastEthernet0"
+        or pool_actions[0].segment_id != "q3-data"
+    ):
+        execution.stop("q3_native_requested_pool_ambiguous")
+        return None
     state = _Q3FlState()
-    if not _q3fl_snapshot(execution, state, "before_e5", ""):
+    policy_mode = execution.definition.stage is QualificationStage.Q3_NATIVE_POLICY
+    if not _q3fl_snapshot(execution, state, "before_e5", "", policy=policy_mode):
         execution.stop("q3_native_baseline_not_admitted")
         return None
-    if not native_pool_probe_baseline_admitted(
-        state.snapshots[-1],
-        server=Q3_SERVER,
-        interface="FastEthernet0",
-        expected_row=Q3_OBSERVED_NATIVE_DEFAULT_POOL,
-    ):
+    baseline_admitted = (
+        native_policy_probe_baseline_admitted(
+            state.snapshots[-1],
+            server=Q3_SERVER,
+            interface="FastEthernet0",
+            expected_row=Q3_OBSERVED_NATIVE_DEFAULT_POOL,
+            expected_exclusions=(),
+        )
+        if policy_mode
+        else native_pool_probe_baseline_admitted(
+            state.snapshots[-1],
+            server=Q3_SERVER,
+            interface="FastEthernet0",
+            expected_row=Q3_OBSERVED_NATIVE_DEFAULT_POOL,
+        )
+    )
+    if not baseline_admitted:
         execution.stop("q3_native_baseline_not_admitted")
         return None
     static_plan = d_dhcp_static_only_plan(
@@ -4868,24 +4932,28 @@ def _prepare_q3_native_server(
         state,
         "after_server_address",
         execution.run.boundaries.reviewed_native_default_intervention,
+        policy=policy_mode,
     ):
         execution.stop("q3_native_server_address_transition_not_admitted")
         return None
-    if not native_pool_probe_baseline_admitted(
-        state.snapshots[-1],
-        server=Q3_SERVER,
-        interface="FastEthernet0",
-        expected_row=Q3_NATIVE_START_BEFORE,
-    ):
+    after_address_admitted = (
+        native_policy_probe_baseline_admitted(
+            state.snapshots[-1],
+            server=Q3_SERVER,
+            interface="FastEthernet0",
+            expected_row=Q3_NATIVE_START_BEFORE,
+            expected_exclusions=(),
+        )
+        if policy_mode
+        else native_pool_probe_baseline_admitted(
+            state.snapshots[-1],
+            server=Q3_SERVER,
+            interface="FastEthernet0",
+            expected_row=Q3_NATIVE_START_BEFORE,
+        )
+    )
+    if not after_address_admitted:
         execution.stop("q3_native_process_not_disabled_after_e5")
-        return None
-    pool_actions = [
-        item
-        for item in contract.service_plan.actions
-        if isinstance(item, ConfigureServerDhcpPool)
-    ]
-    if len(pool_actions) != 1 or pool_actions[0].pool_name != Q3_POOL:
-        execution.stop("q3_native_requested_pool_ambiguous")
         return None
     return contract, state.snapshots[-1], pool_actions[0]
 
@@ -4929,7 +4997,9 @@ def _run_q3_native_probe(execution: _Execution) -> None:
     execution.finish("Q3_NATIVE_START")
 
 
-def _run_q3_native_size(execution: _Execution) -> None:
+def _run_q3_native_size(
+    execution: _Execution,
+) -> tuple[ConfigureServerDhcpPool, DefaultPoolSnapshot] | None:
     """Measure capacity after a separately proved repeat of episode 1's move."""
     _register_q3_native_terminal(execution)
     if not _diagnostic_start(execution):
@@ -4956,7 +5026,10 @@ def _run_q3_native_size(execution: _Execution) -> None:
                     Q3_SERVER, "FastEthernet0", pool_action.lease_start
                 )
         after_start = _q3_default_read(
-            execution, "after_native_repeat_start", prefix="q3-native-size"
+            execution,
+            "after_native_repeat_start",
+            prefix="q3-native-size",
+            policy=execution.definition.stage is QualificationStage.Q3_NATIVE_POLICY,
         )
         execution.conclude(
             "M-NATIVE-REPEAT-START",
@@ -4993,7 +5066,10 @@ def _run_q3_native_size(execution: _Execution) -> None:
                     Q3_SERVER, "FastEthernet0", pool_action.max_users
                 )
         after_max = _q3_default_read(
-            execution, "after_native_max", prefix="q3-native-size"
+            execution,
+            "after_native_max",
+            prefix="q3-native-size",
+            policy=execution.definition.stage is QualificationStage.Q3_NATIVE_POLICY,
         )
         execution.conclude(
             "M-NATIVE-MAX",
@@ -5008,6 +5084,194 @@ def _run_q3_native_size(execution: _Execution) -> None:
             ),
         )
     execution.finish("Q3_NATIVE_MAX")
+    if (
+        execution.measurement("M-NATIVE-MAX").conclusion
+        is MeasurementConclusion.SUPPORTED_IN_SAMPLE
+    ):
+        return pool_action, after_max
+    return None
+
+
+def _run_q3_native_policy(execution: _Execution) -> None:
+    """Probe compiled gateway, DNS and exclusions on one disabled native pool."""
+    sized = _run_q3_native_size(execution)
+    if sized is None:
+        if not execution.stopped:
+            execution.stop("q3_native_policy_size_not_supported")
+        return
+    if not execution.selected("NATIVE-policy"):
+        return
+    pool_action, after_max = sized
+    size_row = {
+        **dict(Q3_NATIVE_START_AFTER),
+        "end": pool_action.lease_end,
+        "max": pool_action.max_users,
+    }
+    if (
+        pool_action.max_users != 1
+        or pool_action.lease_start != size_row["start"]
+        or pool_action.lease_end != size_row["end"]
+    ):
+        execution.stop("q3_native_policy_intent_differs_from_size_measurement")
+        return
+    if not native_pool_probe_baseline_admitted(
+        after_max,
+        server=Q3_SERVER,
+        interface="FastEthernet0",
+        expected_row=size_row,
+    ):
+        execution.stop("q3_native_policy_size_readback_not_admitted")
+        return
+    before_gateway = _q3_default_read(
+        execution, "before_native_gateway", prefix="q3-native-policy", policy=True
+    )
+    if not native_policy_probe_baseline_admitted(
+        before_gateway,
+        server=Q3_SERVER,
+        interface="FastEthernet0",
+        expected_row=size_row,
+        expected_exclusions=(),
+    ):
+        execution.stop("q3_native_policy_baseline_not_admitted")
+        return
+    gateway_row = {**size_row, "gateway": pool_action.gateway}
+    ids = ("M-NATIVE-GATEWAY",)
+    if not execution.begin(ids, "Q3_NATIVE_GATEWAY"):
+        return
+    with execution.procedure(ids):
+        if not execution.run.transition("experiment:Q3_NATIVE_GATEWAY_SETTER:started"):
+            execution.stop("persistence:q3_native_gateway_not_announced")
+            return
+        with execution.ledger.effect_of("q3-native-policy:serverPool:setDefaultRouter"):
+            with execution.ledger.purpose_of(
+                "q3-native-policy:serverPool:setDefaultRouter"
+            ):
+                gateway_probe = execution.probes.probe_native_pool_gateway(
+                    Q3_SERVER, "FastEthernet0", pool_action.gateway
+                )
+        after_gateway = _q3_default_read(
+            execution, "after_native_gateway", prefix="q3-native-policy", policy=True
+        )
+        gateway_result = assess_native_policy_address_probe(
+            before=before_gateway,
+            probe=gateway_probe,
+            after=after_gateway,
+            server=Q3_SERVER,
+            interface="FastEthernet0",
+            field="gateway",
+            expected_before=size_row,
+            expected_after=gateway_row,
+            expected_exclusions=(),
+        )
+        execution.conclude("M-NATIVE-GATEWAY", gateway_result)
+    execution.finish("Q3_NATIVE_GATEWAY")
+    if gateway_result.conclusion is not MeasurementConclusion.SUPPORTED_IN_SAMPLE:
+        execution.stop("q3_native_policy_gateway_not_supported")
+        return
+
+    dns_row = {**gateway_row, "dns": pool_action.dns_server}
+    ids = ("M-NATIVE-DNS",)
+    if not execution.begin(ids, "Q3_NATIVE_DNS"):
+        return
+    with execution.procedure(ids):
+        if not execution.run.transition("experiment:Q3_NATIVE_DNS_SETTER:started"):
+            execution.stop("persistence:q3_native_dns_not_announced")
+            return
+        with execution.ledger.effect_of("q3-native-policy:serverPool:setDnsServerIp"):
+            with execution.ledger.purpose_of(
+                "q3-native-policy:serverPool:setDnsServerIp"
+            ):
+                dns_probe = execution.probes.probe_native_pool_dns(
+                    Q3_SERVER, "FastEthernet0", pool_action.dns_server
+                )
+        after_dns = _q3_default_read(
+            execution, "after_native_dns", prefix="q3-native-policy", policy=True
+        )
+        dns_result = assess_native_policy_address_probe(
+            before=after_gateway,
+            probe=dns_probe,
+            after=after_dns,
+            server=Q3_SERVER,
+            interface="FastEthernet0",
+            field="dns",
+            expected_before=gateway_row,
+            expected_after=dns_row,
+            expected_exclusions=(),
+        )
+        execution.conclude("M-NATIVE-DNS", dns_result)
+    execution.finish("Q3_NATIVE_DNS")
+    if dns_result.conclusion is not MeasurementConclusion.SUPPORTED_IN_SAMPLE:
+        execution.stop("q3_native_policy_dns_not_supported")
+        return
+
+    ranges = [item.model_dump(mode="json") for item in pool_action.excluded_ranges]
+    if (
+        len(ranges) != 2
+        or ranges[0] != {"start": pool_action.gateway, "end": pool_action.gateway}
+        or ranges[1] != {"start": pool_action.dns_server, "end": pool_action.dns_server}
+    ):
+        execution.stop("q3_native_policy_exclusions_differ_from_intent")
+        return
+    ids = ("M-NATIVE-EXCLUSIONS",)
+    if not execution.begin(ids, "Q3_NATIVE_EXCLUSIONS"):
+        return
+    before_exclusion = after_dns
+    completed: list[Assessment] = []
+    with execution.procedure(ids):
+        for index, wanted in enumerate(ranges, start=1):
+            if not execution.run.transition(
+                f"experiment:Q3_NATIVE_EXCLUSION_{index}:started"
+            ):
+                execution.stop("persistence:q3_native_exclusion_not_announced")
+                return
+            purpose = f"q3-native-policy:exclude:{index}"
+            with execution.ledger.effect_of(purpose):
+                with execution.ledger.purpose_of(purpose):
+                    exclusion_probe = execution.probes.probe_native_exclusion(
+                        Q3_SERVER,
+                        "FastEthernet0",
+                        wanted["start"],
+                        wanted["end"],
+                        expected_prior=ranges[: index - 1],
+                    )
+            after_exclusion = _q3_default_read(
+                execution,
+                f"after_native_exclusion_{index}",
+                prefix="q3-native-policy",
+                policy=True,
+            )
+            assessment = assess_native_policy_exclusion_probe(
+                before=before_exclusion,
+                probe=exclusion_probe,
+                after=after_exclusion,
+                server=Q3_SERVER,
+                interface="FastEthernet0",
+                expected_row=dns_row,
+                expected_before=ranges[: index - 1],
+                added=wanted,
+            )
+            completed.append(assessment)
+            if assessment.conclusion is not MeasurementConclusion.SUPPORTED_IN_SAMPLE:
+                execution.conclude("M-NATIVE-EXCLUSIONS", assessment)
+                execution.stop(f"q3_native_policy_exclusion_{index}_not_supported")
+                break
+            before_exclusion = after_exclusion
+        else:
+            execution.conclude(
+                "M-NATIVE-EXCLUSIONS",
+                Assessment(
+                    MeasurementConclusion.SUPPORTED_IN_SAMPLE,
+                    facts={
+                        **completed[-1].facts,
+                        "steps": [item.facts for item in completed],
+                        "compiled_exclusions": ranges,
+                    },
+                    limitations=[
+                        "stored_policy_is_not_serving_or_reapplication_evidence"
+                    ],
+                ),
+            )
+    execution.finish("Q3_NATIVE_EXCLUSIONS")
 
 
 # -- Q3-FL: the versioned DHCP qualification profile ------------------------------
@@ -5193,10 +5457,17 @@ def _q3fl_sequence(execution: _Execution, state: _Q3FlState) -> bool:
 
 
 def _q3fl_snapshot(
-    execution: _Execution, state: _Q3FlState, label: str, intervention: str
+    execution: _Execution,
+    state: _Q3FlState,
+    label: str,
+    intervention: str,
+    *,
+    policy: bool = False,
 ) -> bool:
     """Take one native-default reading after `intervention` and re-decide."""
-    snapshot = _q3_default_read(execution, label, prefix=Q3_FL_DEFAULT_PURPOSE)
+    snapshot = _q3_default_read(
+        execution, label, prefix=Q3_FL_DEFAULT_PURPOSE, policy=policy
+    )
     state.snapshots.append(snapshot)
     state.readings.append(
         NativeDefaultReading(

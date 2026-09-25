@@ -942,3 +942,38 @@ def test_native_capacity_probe_reports_call_and_immediate_readback(engine_factor
     }
     physical = probes.read_dhcp_server_baseline(SERVER, "FastEthernet0")
     assert physical.payload["pools"][0]["max"] == 1
+
+
+def test_native_policy_setters_refuse_enabled_or_missing_pool_in_the_same_eval(
+    engine_factory,
+):
+    """A stale prior snapshot cannot permit a mutation after backend drift."""
+    enabled = engine_factory(
+        dhcp_default_pool="native", dhcp_server_initial_enabled=True
+    )
+    enabled.seed_device(SERVER, "Server-PT")
+    probes, _ = _probes(enabled)
+    for invoke in (
+        lambda: probes.probe_native_pool_start(SERVER, "FastEthernet0", "192.0.2.100"),
+        lambda: probes.probe_native_pool_max(SERVER, "FastEthernet0", 1),
+        lambda: probes.probe_native_pool_gateway(SERVER, "FastEthernet0", "192.0.2.1"),
+        lambda: probes.probe_native_pool_dns(SERVER, "FastEthernet0", "192.0.2.10"),
+        lambda: probes.probe_native_exclusion(
+            SERVER, "FastEthernet0", "192.0.2.1", "192.0.2.1"
+        ),
+    ):
+        invoke()
+    calls = enabled.snapshot()["dhcp_setter_calls"]
+    assert calls["setStartIp"] == 0
+    assert calls["setMaxUsers"] == 0
+    assert calls["setDefaultRouter"] == 0
+    assert calls["setDnsServerIp"] == 0
+    assert calls["addExcludedAddress"] == 0
+
+    missing = engine_factory(dhcp_default_pool=None)
+    missing.seed_device(SERVER, "Server-PT")
+    absent_probes, _ = _probes(missing)
+    absent_probes.probe_native_exclusion(
+        SERVER, "FastEthernet0", "192.0.2.1", "192.0.2.1"
+    )
+    assert missing.snapshot()["dhcp_setter_calls"]["addExcludedAddress"] == 0

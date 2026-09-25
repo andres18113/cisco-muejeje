@@ -276,9 +276,9 @@ def test_direct_live_application_refuses_campaign_stage_without_mission_authorit
 
 
 @pytest.mark.parametrize(
-    ("stage", "engine_config", "max_calls"),
+    ("stage", "engine_config", "max_calls", "policy_calls"),
     [
-        ("Q3-NATIVE-PROBE", {}, 0),
+        ("Q3-NATIVE-PROBE", {}, 0, False),
         (
             "Q3-NATIVE-SIZE",
             {
@@ -286,11 +286,21 @@ def test_direct_live_application_refuses_campaign_stage_without_mission_authorit
                 "dhcp_native_max_behavior": "resize",
             },
             1,
+            False,
+        ),
+        (
+            "Q3-NATIVE-POLICY",
+            {
+                "dhcp_native_start_behavior": "coupled",
+                "dhcp_native_max_behavior": "resize",
+            },
+            1,
+            True,
         ),
     ],
 )
 def test_new_campaign_cli_binds_and_archives_the_probe(
-    tmp_path, monkeypatch, capsys, stage, engine_config, max_calls
+    tmp_path, monkeypatch, capsys, stage, engine_config, max_calls, policy_calls
 ):
     """The fixed probe executes only after the new mandate, launch and grant bind."""
     require_node()
@@ -307,6 +317,7 @@ def test_new_campaign_cli_binds_and_archives_the_probe(
         upstream_head="b" * 40,
     )
     monkeypatch.setattr(service_qualification, "repository_identity", lambda _: source)
+    definition = stage_definition(stage)
     store = ServerPtCommissioningStore(tmp_path, CAMPAIGN)
     store.save_ledger_record(
         "episode-0001-opening",
@@ -321,7 +332,7 @@ def test_new_campaign_cli_binds_and_archives_the_probe(
             "tests_run": ["tests/test_server_pt_native_pool_probe.py"],
             "targets": ["__MCP_E6Q_SRV"],
             "permitted_effects": [f"qualification:{stage}"],
-            "allocated_operations": 120,
+            "allocated_operations": definition.budget.max_operations,
             "allocated_seconds": 1800.0,
             "opened_at_utc": (datetime.now(UTC) - timedelta(seconds=5)).isoformat(),
         },
@@ -379,5 +390,14 @@ def test_new_campaign_cli_binds_and_archives_the_probe(
         assert store.verify_index() == ()
         assert engine.snapshot()["dhcp_setter_calls"]["setStartIp"] == 1
         assert engine.snapshot()["dhcp_setter_calls"]["setMaxUsers"] == max_calls
+        assert engine.snapshot()["dhcp_setter_calls"]["setDefaultRouter"] == int(
+            policy_calls
+        )
+        assert engine.snapshot()["dhcp_setter_calls"]["setDnsServerIp"] == int(
+            policy_calls
+        )
+        assert engine.snapshot()["dhcp_setter_calls"]["addExcludedAddress"] == (
+            2 if policy_calls else 0
+        )
     finally:
         engine.close()

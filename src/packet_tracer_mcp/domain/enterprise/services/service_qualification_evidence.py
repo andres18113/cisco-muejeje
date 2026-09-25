@@ -1618,6 +1618,299 @@ def assess_native_pool_max_probe(
     )
 
 
+def _native_policy_exclusions(
+    snapshot: DefaultPoolSnapshot,
+) -> tuple[tuple[str, str], ...] | None:
+    """Return the complete typed exclusion set, or unknown."""
+    rows = snapshot.raw.get("exclusions")
+    count = snapshot.raw.get("excluded_count")
+    if (
+        not snapshot.observed
+        or isinstance(count, bool)
+        or not isinstance(count, int)
+        or count < 0
+        or not isinstance(rows, list)
+        or len(rows) != count
+    ):
+        return None
+    values: list[tuple[str, str]] = []
+    for row in rows:
+        if (
+            not isinstance(row, Mapping)
+            or set(row) != {"start", "end"}
+            or not isinstance(row["start"], str)
+            or not isinstance(row["end"], str)
+            or not row["start"]
+            or not row["end"]
+        ):
+            return None
+        values.append((row["start"], row["end"]))
+    if len(set(values)) != len(values):
+        return None
+    return tuple(sorted(values))
+
+
+def native_policy_probe_baseline_admitted(
+    snapshot: DefaultPoolSnapshot,
+    *,
+    server: str,
+    interface: str,
+    expected_row: Mapping[str, object],
+    expected_exclusions: Sequence[Mapping[str, str]],
+) -> bool:
+    """Require an exact physical pool, disabled process and exclusion set."""
+    wanted = tuple(sorted((item["start"], item["end"]) for item in expected_exclusions))
+    return (
+        native_pool_probe_baseline_admitted(
+            snapshot, server=server, interface=interface, expected_row=expected_row
+        )
+        and _native_policy_exclusions(snapshot) == wanted
+    )
+
+
+def native_policy_snapshot_complete(
+    snapshot: DefaultPoolSnapshot, *, server: str, interface: str
+) -> bool:
+    """Recognize a coherent final disabled pool and complete exclusion list."""
+    return bool(
+        len(snapshot.pools) == 1
+        and native_pool_probe_baseline_admitted(
+            snapshot,
+            server=server,
+            interface=interface,
+            expected_row=snapshot.pools[0],
+        )
+        and _native_policy_exclusions(snapshot) is not None
+    )
+
+
+def _native_policy_facts(
+    before: DefaultPoolSnapshot, after: DefaultPoolSnapshot, probe: ProbeReading
+) -> dict[str, Any]:
+    """Retain both complete physical snapshots around one policy call."""
+    prior = before.raw.get("pools") if before.observed else None
+    current = after.raw.get("pools") if after.observed else None
+    exclusions_before = _native_policy_exclusions(before)
+    exclusions_after = _native_policy_exclusions(after)
+    return {
+        "before": dict(prior[0]) if isinstance(prior, list) and len(prior) == 1 else {},
+        "after": (
+            dict(current[0]) if isinstance(current, list) and len(current) == 1 else {}
+        ),
+        "before_inventory": prior,
+        "after_inventory": current,
+        "before_exclusions": (
+            [{"start": a, "end": b} for a, b in exclusions_before]
+            if exclusions_before is not None
+            else None
+        ),
+        "after_exclusions": (
+            [{"start": a, "end": b} for a, b in exclusions_after]
+            if exclusions_after is not None
+            else None
+        ),
+        "probe": dict(probe.payload) if probe.observed else {},
+        "before_envelope": {
+            key: value
+            for key, value in before.raw.items()
+            if key not in {"pools", "exclusions", "excluded_count"}
+        },
+        "after_envelope": {
+            key: value
+            for key, value in after.raw.items()
+            if key not in {"pools", "exclusions", "excluded_count"}
+        },
+    }
+
+
+def assess_native_policy_address_probe(
+    *,
+    before: DefaultPoolSnapshot,
+    probe: ProbeReading,
+    after: DefaultPoolSnapshot,
+    server: str,
+    interface: str,
+    field: str,
+    expected_before: Mapping[str, object],
+    expected_after: Mapping[str, object],
+    expected_exclusions: Sequence[Mapping[str, str]],
+) -> Assessment:
+    """Require exactly one gateway or DNS change on a disabled native pool."""
+    if field not in {"gateway", "dns"}:
+        raise ValueError("native policy address field is not fixed")
+    facts = _native_policy_facts(before, after, probe)
+    expected_xs = tuple(
+        sorted((item["start"], item["end"]) for item in expected_exclusions)
+    )
+    if (
+        not native_pool_probe_baseline_admitted(
+            before, server=server, interface=interface, expected_row=expected_before
+        )
+        or _native_policy_exclusions(before) != expected_xs
+    ):
+        return Assessment(
+            INCONCLUSIVE, facts=facts, causes=["native_policy_precondition_unobserved"]
+        )
+    if not probe.observed:
+        return Assessment(
+            INCONCLUSIVE,
+            facts=facts,
+            causes=[f"native_policy_setter_unobserved:{probe.cause}"],
+            outcome_unknown=True,
+        )
+    payload = probe.payload
+    if (
+        payload.get("device") != server
+        or payload.get("interface") != interface
+        or payload.get("pool") != "serverPool"
+        or payload.get("field") != field
+        or payload.get("found") is not True
+        or payload.get("pre_value") != expected_before[field]
+    ):
+        return Assessment(
+            INCONCLUSIVE,
+            facts=facts,
+            causes=["native_policy_subject_or_pre_read_mismatch"],
+            outcome_unknown=payload.get("attempted") is True,
+        )
+    if payload.get("attempted") is not True:
+        return Assessment(
+            INCONCLUSIVE, facts=facts, causes=["native_policy_not_attempted"]
+        )
+    if payload.get("call_error"):
+        return Assessment(
+            INCONCLUSIVE,
+            facts=facts,
+            causes=["native_policy_setter_error"],
+            outcome_unknown=True,
+        )
+    if not after.observed or _native_policy_exclusions(after) is None:
+        return Assessment(
+            INCONCLUSIVE,
+            facts=facts,
+            causes=["native_policy_after_unobserved"],
+            outcome_unknown=True,
+        )
+    if (
+        native_pool_probe_baseline_admitted(
+            after, server=server, interface=interface, expected_row=expected_after
+        )
+        and _native_policy_exclusions(after) == expected_xs
+        and facts["before_envelope"] == facts["after_envelope"]
+        and payload.get("post_value") == expected_after[field]
+    ):
+        return Assessment(SUPPORTED, facts=facts, limitations=["policy_field_only"])
+    if (
+        facts["after"] == dict(expected_before)
+        and _native_policy_exclusions(after) == expected_xs
+        and facts["before_envelope"] == facts["after_envelope"]
+        and payload.get("post_value") == expected_before[field]
+    ):
+        return Assessment(
+            NEGATIVE,
+            facts=facts,
+            causes=["native_policy_setter_returned_without_change"],
+        )
+    return Assessment(
+        CONTRADICTED,
+        facts=facts,
+        causes=["native_policy_changed_unrequested_field_or_inventory"],
+    )
+
+
+def assess_native_policy_exclusion_probe(
+    *,
+    before: DefaultPoolSnapshot,
+    probe: ProbeReading,
+    after: DefaultPoolSnapshot,
+    server: str,
+    interface: str,
+    expected_row: Mapping[str, object],
+    expected_before: Sequence[Mapping[str, str]],
+    added: Mapping[str, str],
+) -> Assessment:
+    """Require one exact added exclusion and no other process or pool change."""
+    facts = _native_policy_facts(before, after, probe)
+    before_xs = tuple(sorted((item["start"], item["end"]) for item in expected_before))
+    expected_xs = tuple(sorted((*before_xs, (added["start"], added["end"]))))
+    if (
+        not native_pool_probe_baseline_admitted(
+            before, server=server, interface=interface, expected_row=expected_row
+        )
+        or _native_policy_exclusions(before) != before_xs
+    ):
+        return Assessment(
+            INCONCLUSIVE,
+            facts=facts,
+            causes=["native_exclusion_precondition_unobserved"],
+        )
+    if not probe.observed:
+        return Assessment(
+            INCONCLUSIVE,
+            facts=facts,
+            causes=[f"native_exclusion_outcome_unobserved:{probe.cause}"],
+            outcome_unknown=True,
+        )
+    payload = probe.payload
+    if (
+        payload.get("device") != server
+        or payload.get("interface") != interface
+        or payload.get("found") is not True
+        or payload.get("pre_count") != len(before_xs)
+    ):
+        return Assessment(
+            INCONCLUSIVE,
+            facts=facts,
+            causes=["native_exclusion_subject_or_pre_read_mismatch"],
+            outcome_unknown=payload.get("attempted") is True,
+        )
+    if payload.get("attempted") is not True:
+        return Assessment(
+            INCONCLUSIVE, facts=facts, causes=["native_exclusion_not_attempted"]
+        )
+    if payload.get("call_error"):
+        return Assessment(
+            INCONCLUSIVE,
+            facts=facts,
+            causes=["native_exclusion_setter_error"],
+            outcome_unknown=True,
+        )
+    if not after.observed or _native_policy_exclusions(after) is None:
+        return Assessment(
+            INCONCLUSIVE,
+            facts=facts,
+            causes=["native_exclusion_after_unobserved"],
+            outcome_unknown=True,
+        )
+    if (
+        native_pool_probe_baseline_admitted(
+            after, server=server, interface=interface, expected_row=expected_row
+        )
+        and _native_policy_exclusions(after) == expected_xs
+        and facts["before_envelope"] == facts["after_envelope"]
+        and payload.get("post_count") == len(expected_xs)
+    ):
+        return Assessment(
+            SUPPORTED, facts=facts, limitations=["exclusion_readback_only"]
+        )
+    if (
+        facts["after"] == dict(expected_row)
+        and _native_policy_exclusions(after) == before_xs
+        and facts["before_envelope"] == facts["after_envelope"]
+        and payload.get("post_count") == len(before_xs)
+    ):
+        return Assessment(
+            NEGATIVE,
+            facts=facts,
+            causes=["native_exclusion_setter_returned_without_change"],
+        )
+    return Assessment(
+        CONTRADICTED,
+        facts=facts,
+        causes=["native_exclusion_changed_unrequested_state"],
+    )
+
+
 def _is_observed_native_default(row: Any) -> bool:
     """Return whether one row is the exact observed native pool, field by field."""
     if not isinstance(row, Mapping) or set(row) != set(Q3_OBSERVED_NATIVE_DEFAULT_POOL):

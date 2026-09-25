@@ -133,6 +133,9 @@ const config = Object.assign({
   dhcp_native_max_behavior: 'change',
   dhcp_server_initial_enabled: false, dhcp_pool_count_invalid: false,
   dhcp_enable_on_server_address: false,
+  dhcp_native_gateway_behavior: 'change', dhcp_native_dns_behavior: 'change',
+  dhcp_native_exclusion_behavior: 'change',
+  dhcp_initial_exclusions: [],
   drop_product_claims_after_eval: false,
   terminals: false, terminal_refuses: false, ping_reachable: true,
   terminal_response_delay_reads: 0,
@@ -335,7 +338,10 @@ const makeClient = (owner) => {
 const dhcpState = (dev) => {
   if (!dev.dhcpServer) {
     dev.dhcpServer = {
-      enabled: config.dhcp_server_initial_enabled === true, exclusions: [], pools: {}
+      enabled: config.dhcp_server_initial_enabled === true,
+      exclusions: (config.dhcp_initial_exclusions || []).map((x) => ({
+        start: String(x.start), end: String(x.end)
+      })), pools: {}
     };
     const kind = config.dhcp_default_pool === true
       ? 'arbitrary' : config.dhcp_default_pool;
@@ -362,10 +368,24 @@ const dhcpPool = (dev, pool) => ({
     pool.network = String(network); pool.mask = String(mask);
   },
   setDefaultRouter: (value) => {
-    dhcpSetterCalls.setDefaultRouter++; pool.gateway = String(value);
+    dhcpSetterCalls.setDefaultRouter++;
+    if (pool.name === 'serverPool' && config.dhcp_native_gateway_behavior === 'throw') {
+      throw new Error('native gateway setter refused');
+    }
+    if (pool.name === 'serverPool' && config.dhcp_native_gateway_behavior === 'noop') {
+      return;
+    }
+    pool.gateway = String(value);
   },
   setDnsServerIp: (value) => {
-    dhcpSetterCalls.setDnsServerIp++; pool.dns = String(value);
+    dhcpSetterCalls.setDnsServerIp++;
+    if (pool.name === 'serverPool' && config.dhcp_native_dns_behavior === 'throw') {
+      throw new Error('native dns setter refused');
+    }
+    if (pool.name === 'serverPool' && config.dhcp_native_dns_behavior === 'noop') {
+      return;
+    }
+    pool.dns = String(value);
   },
   setStartIp: (value) => {
     dhcpSetterCalls.setStartIp++;
@@ -377,7 +397,8 @@ const dhcpPool = (dev, pool) => ({
     }
     pool.start = String(value);
     if (pool.name === 'serverPool'
-        && ['coupled', 'coupled_extra_pool'].includes(config.dhcp_native_start_behavior)) {
+        && ['coupled', 'coupled_extra_pool', 'coupled_with_exclusion']
+          .includes(config.dhcp_native_start_behavior)) {
       // Exact episode-1 observation, not a claimed general backend algorithm.
       pool.end = '192.0.2.255'; pool.max = 156;
     }
@@ -388,6 +409,10 @@ const dhcpPool = (dev, pool) => ({
         gateway: '192.0.2.1', dns: '192.0.2.10', start: '192.0.2.100',
         end: '192.0.2.100', max: 1, leases: []
       };
+    }
+    if (pool.name === 'serverPool'
+        && config.dhcp_native_start_behavior === 'coupled_with_exclusion') {
+      dhcpState(dev).exclusions.push({start: '192.0.2.77', end: '192.0.2.77'});
     }
   },
   setEndIp: (value) => {
@@ -469,7 +494,19 @@ const dhcpServerProcess = (dev) => {
     },
     addExcludedAddress: (start, end) => {
       dhcpSetterCalls.addExcludedAddress++;
+      if (config.dhcp_native_exclusion_behavior === 'throw_second'
+          && dhcpSetterCalls.addExcludedAddress === 2) {
+        throw new Error('native second exclusion refused');
+      }
+      if (config.dhcp_native_exclusion_behavior === 'noop_first'
+          && dhcpSetterCalls.addExcludedAddress === 1) {
+        return;
+      }
       state.exclusions.push({start: String(start), end: String(end)});
+      if (config.dhcp_native_exclusion_behavior === 'extra_first'
+          && dhcpSetterCalls.addExcludedAddress === 1) {
+        state.exclusions.push({start: '192.0.2.77', end: '192.0.2.77'});
+      }
     },
   };
 };
