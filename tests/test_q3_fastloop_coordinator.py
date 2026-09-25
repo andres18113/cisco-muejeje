@@ -210,6 +210,26 @@ def test_declared_omissions_keep_their_own_reasons(run_stage):
     assert not run.scripts("registerEvent")
 
 
+@pytest.mark.parametrize(
+    ("ticks", "changed", "cause"),
+    [
+        (False, [], "automatic_renewal_not_observed_within_declared_horizon"),
+        (True, [PC1, PC2], "lease_time_string_changed_renewal_unproven"),
+    ],
+)
+def test_a_changed_lease_string_is_never_a_renewal(run_stage, ticks, changed, cause):
+    """Lease text that moves between timed readings is named, never concluded."""
+    run = run_stage(config={"dhcp_lease_time_ticks": ticks})
+
+    timing = run.measurement("M-DHCP-6-TIME")
+    assert timing.conclusion is MeasurementConclusion.INCONCLUSIVE
+    assert sorted(timing.facts["changed_lease_strings"]) == changed
+    assert timing.causes == [cause]
+    assert "a_lease_string_change_is_not_renewal" in timing.limitations
+    # No renewal was requested: one dhcpRun per client, whatever the text did.
+    assert [item["device"] for item in run.snapshot["dhcp_runs"]] == [PC1, PC2]
+
+
 def test_an_unreviewed_default_movement_stops_before_any_client_request(run_stage):
     """Drift at the enable is contradiction; no dhcpRun follows it."""
     run = run_stage(config={"default_pool_change_on_enable": {"gateway": "192.0.2.1"}})

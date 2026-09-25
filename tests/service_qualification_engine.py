@@ -124,7 +124,7 @@ const config = Object.assign({
   ports_up: true, protocol_up: true, serve_nothing: false,
   ports_down_calls: 0, port_up_return: 'boolean', protocol_up_return: 'boolean',
   dhcp_table_end: 'null', dhcp_acquire_throws: false,
-  dhcp_emit_events: true, dhcp_lease_time: '3600',
+  dhcp_emit_events: true, dhcp_lease_time: '3600', dhcp_lease_time_ticks: false,
   dhcp_client_address_override: null, dhcp_default_pool: false,
   dhcp_pool_selection: 'first', default_pool_change_on_enable: null,
   default_pool_drift_reads: 0, default_pool_realigns_on_address: false,
@@ -500,7 +500,12 @@ const dhcpClientProcess = (dev) => ({
   },
   getDataOfPort: (portName) => {
     const port = dev.ports.find((item) => item.name === String(portName));
-    return port ? {getLeaseTimeStr: () => port.leaseTime} : null;
+    if (!port) { return null; }
+    return {getLeaseTimeStr: () => {
+      if (!config.dhcp_lease_time_ticks || !port.leaseTime) { return port.leaseTime; }
+      port.leaseReads = (port.leaseReads || 0) + 1;
+      return `${port.leaseTime} #${port.leaseReads}`;
+    }};
   },
 });
 
