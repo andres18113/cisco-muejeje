@@ -1039,6 +1039,10 @@ def _qualification_basis(
         not isinstance(item, bool) for item in facts
     ):
         raise ValueError("qualification status is incoherent")
+    if status["workspace_baseline_empty"] and not status["workspace_baseline_observed"]:
+        # A baseline is empty only if it was observed; the status writer
+        # never produces the other combination.
+        raise ValueError("qualification status claims an unobserved empty baseline")
     if effects is False:
         # Nothing was dispatched, but a baseline this run observed must
         # still have been the empty disposable one: a blank launch that

@@ -555,6 +555,13 @@ def test_a_refusal_after_a_foreign_baseline_establishes_no_basis(
     "status",
     [
         {
+            "outcome": "stopped",
+            "effects_dispatched": True,
+            "workspace_baseline_observed": False,
+            "workspace_baseline_empty": True,
+            "restoration_proven": False,
+        },
+        {
             "outcome": "refused",
             "effects_dispatched": None,
             "workspace_baseline_observed": True,
@@ -590,6 +597,7 @@ def test_a_refusal_after_a_foreign_baseline_establishes_no_basis(
         },
     ],
     ids=[
+        "empty-but-never-observed",
         "refused-with-unknown-effects",
         "baseline-observation-missing",
         "effects-not-boolean",
