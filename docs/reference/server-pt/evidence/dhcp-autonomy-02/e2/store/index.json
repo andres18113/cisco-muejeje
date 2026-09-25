@@ -1,0 +1,181 @@
+{
+  "campaign_id": "SERVER-PT-DHCP-AUTONOMOUS-02",
+  "files": [
+    {
+      "bytes": 13209,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/42adc4770e544d1e9705478faca0f058/process-exit.json",
+      "sha256": "f6fcea505454ee73edf4f313d6501583ceea1349e4b2c6654d3814a8d0c05c66"
+    },
+    {
+      "bytes": 65,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/42adc4770e544d1e9705478faca0f058/process-exit.sha256",
+      "sha256": "1103992a46edf745b4ca4b4e86605e8fdafb2c121ee93a5df2803c30193d8bd8"
+    },
+    {
+      "bytes": 3304,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/42adc4770e544d1e9705478faca0f058/process-launch.json",
+      "sha256": "0d2ca9a3009c8ec9397e9e982731f524e1c5cea4305f07abc1431cdc2f2c6f2e"
+    },
+    {
+      "bytes": 65,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/42adc4770e544d1e9705478faca0f058/process-launch.sha256",
+      "sha256": "e3ad292f2ae8a5dbc16e9ad516b19196f683ad9f4655194bea5571f1b528926d"
+    },
+    {
+      "bytes": 162,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/42adc4770e544d1e9705478faca0f058/qualification-archive-admission.json",
+      "sha256": "c04c6fb341c9f6224922d4b281ee8892df4e445f38e3673bac5e54ca96559d7d"
+    },
+    {
+      "bytes": 65,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/42adc4770e544d1e9705478faca0f058/qualification-archive-admission.sha256",
+      "sha256": "2380fc64f3facbc12a42e1189de726613a2ab7b4dffcc1092774342d22d83ede"
+    },
+    {
+      "bytes": 718,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/42adc4770e544d1e9705478faca0f058/qualification-status.json",
+      "sha256": "1aa2dd5c28715d45a8015a4ce7790a783d470199edff72e9690643392e93d6bf"
+    },
+    {
+      "bytes": 65,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/42adc4770e544d1e9705478faca0f058/qualification-status.sha256",
+      "sha256": "cc730cbcd8864e0a6088b7a1f274d012b7322660322853732f5148d09f2aee7f"
+    },
+    {
+      "bytes": 286,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/42adc4770e544d1e9705478faca0f058/retirement-claim-release-7fd53b2ec8234e0e86d2bc1a086a5483.json",
+      "sha256": "d6319a68f8cef3a96aacde08d5182afd8ff776b9def2f5b8980e42cb8b70d6b6"
+    },
+    {
+      "bytes": 65,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/42adc4770e544d1e9705478faca0f058/retirement-claim-release-7fd53b2ec8234e0e86d2bc1a086a5483.sha256",
+      "sha256": "2b2b635f26626fa9cd8583c3a6fd3c51a5d10c865fccedec4ad0995cc8058685"
+    },
+    {
+      "bytes": 199,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/42adc4770e544d1e9705478faca0f058/source-ref-qualification-record.json",
+      "sha256": "5f449511f4fb8c57e76906e66286a9cb146ca63bc71b88411e2c6018c30d1ea0"
+    },
+    {
+      "bytes": 65,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/42adc4770e544d1e9705478faca0f058/source-ref-qualification-record.sha256",
+      "sha256": "e845f46525677f59c102126fc605589c97b5bf06de20d57ab7f5d3614cccf2d6"
+    },
+    {
+      "bytes": 249,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/current-status.json",
+      "sha256": "0179e794ae028efa23dc149b22a776db60b97f444d150bae5a961b5901858c8a"
+    },
+    {
+      "bytes": 14715,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/e61273ccccbf4492a33d5e02798facfb/process-exit.json",
+      "sha256": "6d1a055717d3ba37646630991263539d777c1f8919b03a0a04466fbfa220aa98"
+    },
+    {
+      "bytes": 65,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/e61273ccccbf4492a33d5e02798facfb/process-exit.sha256",
+      "sha256": "99ba1c26db2e401d65e1d847991aeb5bdd3be11d49839167090a91614149fa93"
+    },
+    {
+      "bytes": 3291,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/e61273ccccbf4492a33d5e02798facfb/process-launch.json",
+      "sha256": "101b8f0e8b760d1756cd0f857bcc4d7f30f760b23aac02891976aa5ded29cef9"
+    },
+    {
+      "bytes": 65,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/e61273ccccbf4492a33d5e02798facfb/process-launch.sha256",
+      "sha256": "cca03f94ee8aa013688b42f314d09dfb22df2c534779f202361a665abfd63c47"
+    },
+    {
+      "bytes": 162,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/e61273ccccbf4492a33d5e02798facfb/qualification-archive-admission.json",
+      "sha256": "85a826822442a460669ceee80b7ae49b7a6bbc20b1445ef42914a284dc757ad9"
+    },
+    {
+      "bytes": 65,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/e61273ccccbf4492a33d5e02798facfb/qualification-archive-admission.sha256",
+      "sha256": "94be276866b225fab455d94784aba5af16880a668f91a2cabfadb4131c93ac34"
+    },
+    {
+      "bytes": 749,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/e61273ccccbf4492a33d5e02798facfb/qualification-status.json",
+      "sha256": "0f8748cefe39fd4be65f5b27505c004469b54ceac023b0c0f42ff94e113ef259"
+    },
+    {
+      "bytes": 65,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/e61273ccccbf4492a33d5e02798facfb/qualification-status.sha256",
+      "sha256": "74ae1a0c4de2dd5e94e521a573d483f7c16c45a41ecd92c0becbc97578a7b855"
+    },
+    {
+      "bytes": 286,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/e61273ccccbf4492a33d5e02798facfb/retirement-claim-release-964eefe614b64d86a173b30f6a6491db.json",
+      "sha256": "6a1fe616094ebfa61de390bbcee3814f40b92d562472a50007591bd2b07d286b"
+    },
+    {
+      "bytes": 65,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/e61273ccccbf4492a33d5e02798facfb/retirement-claim-release-964eefe614b64d86a173b30f6a6491db.sha256",
+      "sha256": "eb4be8b5bbc7f74133bfbb52f605c749b216c1651135fbce188faabcdb6a494b"
+    },
+    {
+      "bytes": 201,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/e61273ccccbf4492a33d5e02798facfb/source-ref-qualification-record.json",
+      "sha256": "bd9d250575b9433e5860d6d802a042a17205156d8fcdd4053819a87a791cd4d4"
+    },
+    {
+      "bytes": 65,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/e61273ccccbf4492a33d5e02798facfb/source-ref-qualification-record.sha256",
+      "sha256": "4e5a16085e39efb589785dfac318c484a97c1911d34ab73a4aef092f5cb2e820"
+    },
+    {
+      "bytes": 479,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/ledger/episode-0001-closing.json",
+      "sha256": "26117c7c336c61fc2a76dcb9c0e0ef7f2c4f8db624935b1f023da4dae14ec3da"
+    },
+    {
+      "bytes": 369,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/ledger/episode-0001-e61273ccccbf4492a33d5e02798facfb-qualification-admission.json",
+      "sha256": "43afcb8716e152e8dea1c3a2959d1ab1ae47f4b863214e5de41685f5b816d6f3"
+    },
+    {
+      "bytes": 241,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/ledger/episode-0001-e61273ccccbf4492a33d5e02798facfb-qualification-result.json",
+      "sha256": "09faf4dea5e4ae24cfc8865c9f1787ec751d554681d41284cdb6187d882357ae"
+    },
+    {
+      "bytes": 1734,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/ledger/episode-0001-opening.json",
+      "sha256": "4f388e3493dcbfd11a7047accfad8cbdef7fb6679b9257877bb03d25aa2e6df5"
+    },
+    {
+      "bytes": 369,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/ledger/episode-0002-42adc4770e544d1e9705478faca0f058-qualification-admission.json",
+      "sha256": "853b81ba9b18fbbdc8e3f7c84ba053aa2f87b530fbf1fac29c81c2e86b48a95a"
+    },
+    {
+      "bytes": 241,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/ledger/episode-0002-42adc4770e544d1e9705478faca0f058-qualification-result.json",
+      "sha256": "91da3839b105d59c838c12f676b50575f6d6f95a535e15b47c4f8e8957eff545"
+    },
+    {
+      "bytes": 501,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/ledger/episode-0002-closing.json",
+      "sha256": "40ef84abb85656a659d0fa6b000c41b60d2eab03193cd1b6774be75a11057d6b"
+    },
+    {
+      "bytes": 1892,
+      "path": "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02/ledger/episode-0002-opening.json",
+      "sha256": "722d7f95d0db28fff0045aefe2293732f925c40dab842ca55ba4eaa8538122f4"
+    },
+    {
+      "bytes": 30332,
+      "path": "data/services/qualification/q3-native-probe/q3-native-probe-2026-09-25T20-36-44Z-84514155.json",
+      "sha256": "1dcf4d95f2c8d20dc22f67950b86c0bb4c0b4dac3e828d88ae4a2d31494fa9c1"
+    },
+    {
+      "bytes": 35830,
+      "path": "data/services/qualification/q3-native-size/q3-native-size-2026-09-25T21-20-06Z-d431ff46.json",
+      "sha256": "771cd15b5807244b1642c6cae12075b5c35317417dce5d145d946ba35ab5f6b3"
+    }
+  ],
+  "schema_version": 2
+}

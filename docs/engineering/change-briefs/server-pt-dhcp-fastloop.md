@@ -691,3 +691,54 @@ finished `357 passed, 1 skipped`; the provisional `cisco/main` quality gate
 reported 219 Ruff-gated Python files, two exact immutable-evidence files,
 and zero mechanical exemptions. These are offline results; they establish
 neither native `setMaxUsers` behavior nor product DHCP support.
+
+## Delegated LIVE episode 2 and policy-probe design delta, version 7
+
+Episode 2 ran `Q3-NATIVE-SIZE` from clean commit
+`fcafebd2b4638c69b984a9df529af177f0b9b34e` (tree
+`853c51cc0c2c5cb224b1d22184983e34b506569e`), build 9.0.1.0858,
+file channel, attempt `42adc4770e544d1e9705478faca0f058` and instance
+`49756272b9414810ac5daaf9d84840bf`. The original record is
+`q3-native-size-2026-09-25T21-20-06Z-d431ff46.json`, SHA-256
+`771cd15b5807244b1642c6cae12075b5c35317417dce5d145d946ba35ab5f6b3`.
+The complete original record, the cumulative store snapshot and every lead
+file are archived under
+[`dhcp-autonomy-02/e2`](../../reference/server-pt/evidence/dhcp-autonomy-02/e2/README.md).
+The first launch record was refused on a changing OS main-window title and
+recovered by a fresh observation of the same PID/incarnation. One
+qualification argv incorrectly named closed episode 1 and was refused before
+contact. Both attempts are retained; only `08b` executed this stage.
+
+`setStartIp` reproduced episode 1's exact coupled transition. After it,
+`setMaxUsers(1)` returned without error and the single physical `serverPool`
+read back `start=end=192.0.2.100`, `max=1`, network `192.0.2.0` and mask
+`255.255.255.0`. The process remained disabled. This is a build-scoped
+**SUPPORTED_IN_SAMPLE** range/capacity result, not a DHCP service or product
+capability. Gateway and DNS still read `0.0.0.0`; exclusions were not read.
+The run used 36 operations, proved fixture restoration, and retired its
+owned PID after an exact save-prompt `No`. The census showed no process,
+pending mailbox file or claim lock. The closed ledger charged 36 operations
+and 305.36164 seconds; cumulative totals are 70 operations and 652.836009
+seconds. No client acquisition, reapplication, renewal or HTTP was measured.
+
+**Next discriminating question.** The compiled one-user requirement contains
+gateway `192.0.2.1`, DNS `192.0.2.10`, and two singleton exclusions for those
+addresses. A new versioned `Q3-NATIVE-POLICY` stage will repeat the two exact
+known pool transitions on a fresh disabled server, then apply documented
+`setDefaultRouter`, `setDnsServerIp` and `addExcludedAddress` operations as
+distinct interventions. The values come from the compiled requirement.
+Each call has a write-ahead boundary and a fresh full policy read including
+physical pool identity, range/mask/capacity, process state and exclusions.
+Only the intended field/range change may authorize the next effect. Any
+unobservable result, no-op, overlapping new pool or other movement stops the
+sequence. The stage does not enable DHCP or activate a client. A later distinct
+episode must test reapplication/persistence and actual serving before the
+product may choose the native pool.
+
+The profile reuses the campaign, source/process gates, counted file transport
+and finalizer. It adds fixed typed probes rather than a general script route.
+The provisional ceiling is 160 operations and 900 stage seconds including a
+300-second finalization reserve; the next episode will separately budget
+launch and retirement. RED controls will cover each effect through the Node
+engine/coordinator, plus wrong pool, unexpected exclusion, no-op, throw and
+unknown-result cases. Full product and scale verification remain pending.
