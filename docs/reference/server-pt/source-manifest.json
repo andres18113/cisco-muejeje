@@ -214,6 +214,13 @@
       "sha256": "e11b4667b2e35480abfe41ecfe938fec3c9425fe6bc702da3bd476eda401d638"
     },
     {
+      "source_name": "Next_Work_S3_Q3_FASTLOOP_PROPOSAL.md",
+      "archive_path": "assignments/Next_Work_S3_Q3_FASTLOOP_PROPOSAL.md",
+      "bytes": 11309,
+      "sha256": "6c24e5eaf0044e11191012fdd061d02db2098af3422664984844a876330ac5fe",
+      "origin": "maintainer Downloads directory, 2026-09-24; adopted by the operator for campaign SERVER-PT-DHCP-FASTLOOP-01"
+    },
+    {
       "source_name": "ADDENDUM-01.sha256",
       "archive_path": "evidence/campaign-diag-0ea-01/ADDENDUM-01.sha256",
       "bytes": 1246,

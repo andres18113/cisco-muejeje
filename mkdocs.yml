@@ -84,6 +84,7 @@ nav:
       - Server-PT Services Brief: engineering/change-briefs/server-pt-services.md
       - Server-PT Goal Foundations Brief: engineering/change-briefs/server-pt-goal-foundations.md
       - Server-PT IOS Fast Loop Brief: engineering/change-briefs/server-pt-ios-fastloop.md
+      - Server-PT DHCP Fast Loop Brief: engineering/change-briefs/server-pt-dhcp-fastloop.md
       - Server-PT Historical Inputs: reference/server-pt/README.md
       - Enterprise Planning: architecture/enterprise-planning.md
       - Enterprise Hardware Planner: architecture/enterprise-hardware.md

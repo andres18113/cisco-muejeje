@@ -24,7 +24,7 @@ permission, and a LIVE permission recorded in one never applies to a new run.
 | S1 — product entry point (`pt_apply_enterprise_services`) | `1f08afa` | accepted, offline only | archived brief `9973f66`, sections 10 and 11 |
 | S4a — qualification runner and Q0/Q1 probes | `0850de3` (tree `acc6caf`) | accepted | archived brief `0850de3`; archived brief `9973f66`, section 12 |
 | S2 — mail and repaired Q1 candidate | `cdc30cd` (tree `629573e`) | offline candidate; S2-R1 C0 closed on the S3 branch, independent review pending | this brief, Blocks A to C and C0 below |
-| S3 — DHCP candidate reviewed for correction | `d02ddac` (tree `2e62042`) | `REQUIRES_CHANGES`; bounded correction and qualification campaign active | this brief, Blocks D and E |
+| S3 — DHCP candidate reviewed for correction | `d02ddac` (tree `2e62042`) | implemented; no client acquisition measured. The `SERVER-PT-D02-Q3-Q1-AUTOFIX-01` attempts are consumed (Q3 3 of 3, Q1 2 of 2), and D-DHCP localized the native-default movement. Q3 qualification continues under campaign `SERVER-PT-DHCP-FASTLOOP-01` | this brief, Blocks D to H; the [DHCP fast-loop brief](server-pt-dhcp-fastloop.md) |
 
 Authoritative main observed by delivery CI:
 `6263344e31ba3b0de6539d652f2cd06fc73a3562` (`cisco/main` in the maintainer
@@ -73,6 +73,15 @@ No inconclusive row is deleted or rewritten, no capability is promoted, and the
 three execution authorizations are consumed.
 
 ## Active scope
+
+**Current phase (2026-09-24).** The campaign described below is closed by
+consumption: its Q3 and Q1 attempt pools are spent, as the residual limitations
+record. Nothing in this section authorizes another attempt. S3/Q3 continues
+under the adopted work order for campaign `SERVER-PT-DHCP-FASTLOOP-01`, whose
+design, versioned Q3-FL profiles and results live in the
+[DHCP fast-loop brief](server-pt-dhcp-fastloop.md). S2/Q2 and HTTPS/Q1b remain
+open parallel workstreams and are not prerequisites of it. The text below is
+the historical scope of the consumed campaign.
 
 One governed correction and qualification campaign on
 `feature/server-pt-s3-dhcp`, starting from audited commit
@@ -1347,7 +1356,7 @@ intended paths, not the worst cases. No granted ceiling moves: Q0 stays
 | 4 | **Claim scope on HTTP.** | The claim bounds duplicates only within one evaluation. HTTP separate-evaluation atomicity is INCONCLUSIVE, so the claim is a candidate mechanism, not a qualified one. |
 | 5 | **R-QUAL-05/06.** | A repaired-Q1 sample would be attributed to its own SHA and can never be relabeled as S1b/Q1b evidence. |
 | 6 | **S1b content contract.** | Decided by the Q1 ordinal-1 record: `shared_content`. Implemented offline in Block F. Promotion still needs Q1b at the S1b SHA or a reviewer-approved exact-equivalence argument; neither exists. |
-| 7 | **Q3 native default.** | `serverPool` coexists under the Block F admission policy for this disposable fixture, build and channel only. Whether Packet Tracer serves from the native pool or from `MCP_E6Q_DHCP` when the process is enabled is unqualified and is not assumed either way. |
+| 7 | **Q3 native default.** | `serverPool` coexists under the Block F admission policy for this disposable fixture, build and channel only. D-DHCP attempt 2 localized its first movement to the whole `configurePcIp` interval of the server's address. The versioned Q3-FL policy of the [DHCP fast-loop brief](server-pt-dhcp-fastloop.md) admits only that reviewed transition, then requires stability. Which pool serves a client is what Q3-FL measures; it is not assumed either way. |
 
 Deferred, with its consumers identified in the `0850de3` archive: reducing root
 `handoff.md` to a route.

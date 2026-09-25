@@ -42,6 +42,7 @@ them in the current brief.
 | `assignments/Codex_Next_Product_Readiness_5296984.md` | the diagnostic closeout and product-readiness work order, Downloads, 2026-09-21 | nothing yet: it is the active authority for the closeout and product-readiness block of the goal-foundations brief |
 | `assignments/Codex_ServerPT_Diagnostic_Goal_DRAFT.md` | the pre-authorization proposal for campaign `SERVER-PT-DIAG-0EA-01`, Downloads, 2026-09-21 | nothing: its own header says `READY_FOR_AUTHORIZATION - NOT A LIVE GRANT`, and it is kept as the authority source for the campaign lifecycle rules |
 | `evidence/campaign-diag-0ea-01/` | the additive closeout addendum for campaign `SERVER-PT-DIAG-0EA-01` and its 62-comparison verification, 2026-09-21 | nothing: it extends the campaign chain and replaces no attempt file, manifest or envelope |
+| `assignments/Next_Work_S3_Q3_FASTLOOP_PROPOSAL.md` | the S3/Q3 DHCP qualification work order, Downloads, 2026-09-24, adopted by the operator for campaign `SERVER-PT-DHCP-FASTLOOP-01` | nothing yet: it is the active authority of the [DHCP fast-loop brief](../../engineering/change-briefs/server-pt-dhcp-fastloop.md) |
 
 The companion overlay ZIP named by the S1 review was not present, so the
 individually supplied source files were used and hash-verified without
