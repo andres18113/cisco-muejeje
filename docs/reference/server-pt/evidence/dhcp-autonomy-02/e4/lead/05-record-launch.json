@@ -1,0 +1,5 @@
+{
+  "exit_code": 2,
+  "stderr": "",
+  "stdout": "{\"outcome\": \"refused\", \"reason\": \"launch_evidence:ValueError\"}\n"
+}

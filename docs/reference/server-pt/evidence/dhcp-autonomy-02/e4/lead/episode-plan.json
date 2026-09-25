@@ -1,0 +1,54 @@
+{
+  "question": "Does reapplication of the compiled E5 static Server-PT address preserve the exact disabled one-user native serverPool policy and singleton exclusion list after it has been established through measured setters?",
+  "stop_rule": "Stop on source/process/mailbox ambiguity, incomplete/changed policy precondition, any unknown E5 dispatch, changed or unreadable post-policy, budget expiry, or cleanup uncertainty; preserve terminal read and retire owned lab.",
+  "attempt_ids": [
+    "2242018879574929b400839cc5f60059"
+  ],
+  "tests_run": [
+    "116 focused and affected tests passed at fee6a15",
+    "quality_gate.py --base cisco/main --delivery-commit HEAD passed at fee6a15",
+    "mkdocs build exit 0",
+    "independent read-only adversarial pre-LIVE review found no blocker"
+  ],
+  "targets": [
+    "__MCP_E6Q_SRV"
+  ],
+  "permitted_effects": [
+    "qualification:Q3-NATIVE-STABILITY",
+    "configurePcIp:owned_server_static_address_initial_and_reapplication",
+    "DhcpPool.setStartIp:serverPool:192.0.2.100",
+    "DhcpPool.setMaxUsers:serverPool:1",
+    "DhcpPool.setDefaultRouter:serverPool:192.0.2.1",
+    "DhcpPool.setDnsServerIp:serverPool:192.0.2.10",
+    "DhcpServerProcess.addExcludedAddress:192.0.2.1-192.0.2.1",
+    "DhcpServerProcess.addExcludedAddress:192.0.2.10-192.0.2.10",
+    "owned_fixture_create_and_cleanup",
+    "owned_process_retirement"
+  ],
+  "allocated_operations": 180,
+  "allocated_seconds": 1350.0,
+  "profile_id": "Q3-NATIVE-STABILITY",
+  "profile_version": "1",
+  "source_sha": "fee6a152f64fb48350127d3c0d8f124bf885ba84",
+  "source_tree": "3b8b858440acb4c871d4c113bac53d6eb712ba6b",
+  "instance_token": "9c7bce4bbf1849f0ade10e82b825090e",
+  "intent_name": "MCP-E6Q",
+  "requested_pool": "MCP_E6Q_DHCP",
+  "effective_pool_hypothesis": "serverPool",
+  "requested_start": "192.0.2.100",
+  "requested_capacity": 1,
+  "compiled_gateway": "192.0.2.1",
+  "compiled_dns": "192.0.2.10",
+  "compiled_exclusions": [
+    {
+      "end": "192.0.2.1",
+      "start": "192.0.2.1"
+    },
+    {
+      "end": "192.0.2.10",
+      "start": "192.0.2.10"
+    }
+  ],
+  "allocation_arithmetic": "46 policy planned minimum + 3 stability calls plus fixture/finalization; 180 phase cap for full before/after reads and errors. 1050 stage seconds including 300 finalization + 60 launch + 120 retirement + 120 contingency = 1350 episode seconds.",
+  "interpretation_limit": "Unchanged state after E5 does not prove setter success because generated fire-and-forget JavaScript catches native call exceptions."
+}

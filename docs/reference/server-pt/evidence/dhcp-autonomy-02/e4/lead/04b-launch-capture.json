@@ -1,0 +1,10 @@
+{
+  "command_line": "\"C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe\" ",
+  "created_by_campaign": true,
+  "launch_method": "Start-Process",
+  "main_window_title": "Logs - MCP BUILDER",
+  "pid": 46640,
+  "process_incarnation": "2026-09-25T17:23:54.7606344-05:00",
+  "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+  "workspace_kind": "disposable_declared"
+}
