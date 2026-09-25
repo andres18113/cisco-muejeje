@@ -479,6 +479,37 @@ def test_a_pool_the_first_client_never_filled_decides_nothing():
     assert "intended_pool_not_full_with_the_first_client" in result.causes
 
 
+def test_an_uncalibrated_absence_is_not_a_negative():
+    """A throw after the first row leaves the second client's absence incomplete."""
+    unclean = _scan(
+        INTENDED,
+        [_entry(0, _row("192.0.2.100", MAC_1)), _entry(1, error="index"), _entry(2)],
+    )
+    full = _with([_row("192.0.2.100", MAC_1)])
+    first = _attribute(
+        _reading("pc1", MAC_1),
+        _reading("pc1", MAC_1, "192.0.2.100"),
+        full,
+        _empty(NATIVE, 512, 4),
+    )
+    second = _attribute(
+        _reading("pc2", MAC_2),
+        _reading("pc2", MAC_2),
+        unclean,
+        _empty(NATIVE, 512, 4),
+        prior_intended=full,
+    )
+    assert second.intended_row == ev.ABSENT_INCOMPLETE
+    result = ev.assess_capacity_one_negative(
+        first=first, second=second, intended=unclean, capacity=1
+    )
+    assert result.conclusion is MeasurementConclusion.INCONCLUSIVE
+    assert any(
+        item.startswith("second_client_absence_not_calibrated")
+        for item in result.causes
+    )
+
+
 def test_a_second_intended_row_on_a_one_user_pool_contradicts():
     """Two clients in a one-user pool is not a negative at all."""
     full = _with([_row("192.0.2.100", MAC_1)])
