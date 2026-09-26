@@ -31,6 +31,7 @@ from packet_tracer_mcp.application.use_cases.qualify_server_services import (
 )
 from packet_tracer_mcp.application.use_cases.service_access_readiness_gate import (
     READINESS_GROUP_DEADLINE_SECONDS,
+    READINESS_GROUP_INTERVAL_SECONDS,
     READINESS_GROUP_MAX_SAMPLES,
     READINESS_MAX_GROUPS,
     READINESS_TOTAL_BUDGET_SECONDS,
@@ -534,7 +535,15 @@ def test_the_gate_and_its_stored_row_name_the_boundary_that_expired(
     row is what a later reader has. Both have to say the same true thing.
     """
     if scenario == "persistent_lis":
-        decision, rows = _gated(None)
+        # A budget of one window and one poll interval offers no simulation-
+        # time extension, so this stays the window's own boundary; persistent
+        # listening through an extension is covered where the extension is.
+        decision, rows = _gated(
+            None,
+            total_budget_seconds=(
+                READINESS_GROUP_DEADLINE_SECONDS + READINESS_GROUP_INTERVAL_SECONDS
+            ),
+        )
     elif scenario == "late_sample":
         decision, rows = _gated(
             0.0, seconds_before_attribution=4.0, total_budget_seconds=1.0

@@ -266,9 +266,31 @@ def access_forwarding_facts(
                 "channel_calls": sample.channel_calls,
                 "sample_budget_exhausted": sample.sample_budget_exhausted,
                 "deadline_reached": sample.deadline_reached,
+                "phase": sample.phase,
             }
             for sample in observation.sample_history
         ],
+        "extension": {
+            "candidate": observation.extension.candidate,
+            "target_ms": observation.extension.target_ms,
+            "wall_cap_seconds": observation.extension.wall_cap_seconds,
+            "allowance_seconds": observation.extension.allowance_seconds,
+            "clock": (
+                "packet_tracer_simulation_time"
+                if observation.extension.authorized
+                else "none"
+            ),
+            "authorized": observation.extension.authorized,
+            "simulation_start_ms": observation.extension.simulation_start_ms,
+            "simulation_end_ms": observation.extension.simulation_end_ms,
+            "simulation_progress_ms": observation.extension.simulation_progress_ms,
+            "clock_samples": observation.extension.clock_samples,
+            "samples": observation.extension.samples,
+            "stop_reason": observation.extension.stop_reason,
+            "outcome": observation.extension.outcome,
+            "failure_reason": observation.extension.failure_reason,
+            "converged": observation.extension.converged,
+        },
         "max_samples": observation.max_samples,
         "deadline_seconds": observation.deadline_seconds,
         "elapsed_ms": observation.elapsed_ms,

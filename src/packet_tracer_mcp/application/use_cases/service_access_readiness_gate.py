@@ -178,8 +178,13 @@ class AccessForwardingObserver(Protocol):
         interval_seconds: float,
         sample_calls: int,
         episode_calls: int,
+        extension_seconds: float = 0.0,
     ) -> AccessForwardingObservation:
-        """Observe one exact group with the caller's remaining time and policy."""
+        """Observe one exact group with the caller's remaining time and policy.
+
+        `extension_seconds` is the wall-clock allowance this gate offers for
+        one simulation-time extension after the group window; zero offers none.
+        """
 
 
 class TrunkContinuityObserver(Protocol):
@@ -536,6 +541,31 @@ class ServiceAccessReadinessGate:
             )
         return remaining, ""
 
+    def _extension_allowance(self, key: GroupKey, remaining: float) -> float:
+        """Return what one group may spend on a simulation-time extension.
+
+        It is what the shared budget has left after this group's own window,
+        the first window still owed to every group not yet observed, and one
+        poll interval of margin, so a converged extension returns inside the
+        shared budget and never starves a later group.
+        """
+        owed = sum(
+            READINESS_GROUP_DEADLINE_SECONDS
+            for other in self._requirements
+            if other != key and other not in self._results
+        ) + sum(
+            CONTINUITY_GROUP_DEADLINE_SECONDS
+            for other in self._continuity
+            if other != key and other not in self._results
+        )
+        return max(
+            0.0,
+            remaining
+            - READINESS_GROUP_DEADLINE_SECONDS
+            - owed
+            - READINESS_GROUP_INTERVAL_SECONDS,
+        )
+
     def _observe(
         self, requirement: AccessReadinessRequirement, *, narrowed: bool = False
     ) -> tuple[AccessReadinessGroupResult, AccessForwardingObservation | None]:
@@ -570,6 +600,7 @@ class ServiceAccessReadinessGate:
         group_started: float,
     ) -> tuple[AccessReadinessGroupResult, AccessForwardingObservation | None]:
         """Call the observer once and judge what it returned."""
+        allowance = self._extension_allowance(requirement.key, remaining)
         try:
             observation = self._observer.observe_access_forwarding(
                 switch_name,
@@ -581,6 +612,7 @@ class ServiceAccessReadinessGate:
                 interval_seconds=READINESS_GROUP_INTERVAL_SECONDS,
                 sample_calls=READINESS_SAMPLE_CALLS,
                 episode_calls=READINESS_EPISODE_CALLS,
+                extension_seconds=allowance,
             )
         except Exception as exc:
             # An observer that raised observed nothing. That is the absence of
@@ -592,9 +624,20 @@ class ServiceAccessReadinessGate:
                 ),
                 None,
             )
-        if self._clock() - group_started >= min(
-            remaining, READINESS_GROUP_DEADLINE_SECONDS
-        ):
+        # A result after the group window is timely only through a converged
+        # extension that stayed within the allowance offered here; the shared
+        # budget still closes it.
+        extension = observation.extension
+        extended = (
+            extension.converged
+            and allowance > 0
+            and extension.allowance_seconds == allowance
+            and 0 < extension.wall_cap_seconds <= allowance
+        )
+        window = (
+            remaining if extended else min(remaining, READINESS_GROUP_DEADLINE_SECONDS)
+        )
+        if self._clock() - group_started >= window:
             # The rows remain available, but the product deadline is a closed
             # permission boundary even if an observer returned a late FWD.
             # This is the PARENT bound closing, which is not a claim that the

@@ -48,6 +48,7 @@ from ...domain.enterprise.models.execution import (
     TransitionFact,
 )
 from ...domain.enterprise.models.forwarding import (
+    AccessForwardingExtension,
     AccessForwardingObservation,
     AccessForwardingRow,
     AccessForwardingSampleEvidence,
@@ -84,9 +85,14 @@ from .ios_terminal import (
 )
 from .runtime_inventory import normalize_runtime_inventory
 from .simulation_time_convergence import (
+    PVST_LISTENING_SIMULATION_PROGRESS_WALL_CAP_SECONDS,
+    PVST_SIMULATION_PROGRESS_WALL_CAP_SECONDS,
     BoundedPvstLearningExtension,
     SimulationTimeConvergenceResult,
+    SimulationTimeConvergenceWaiter,
+    classify_extension_stop_reason,
     pvst_learning_progress_target_ms,
+    pvst_listening_progress_target_ms,
 )
 from .simulation_trace_runtime import (
     SimulationStateObservation,
@@ -194,6 +200,44 @@ def _access_forwarding_row(instance, interface: str) -> AccessForwardingRow:
         state=str(first.state).upper() if first is not None else "",
         role=str(first.role) if first is not None else "",
     )
+
+
+#: The PVST states a port passes through on its way to forwarding. `BLK` is
+#: deliberately absent: a blocked port may stay blocked, so it earns nothing.
+_TRANSITIONAL_STP_STATES = frozenset({"LIS", "LRN"})
+
+
+def access_forwarding_extension_budget(
+    rows: Sequence[AccessForwardingRow],
+    forward_delay_seconds: object,
+) -> tuple[float, float] | None:
+    """Return the (simulation ms, wall cap) one transitional sample earns.
+
+    Every requested port must resolve to exactly one row whose state is
+    `LIS`, `LRN` or forwarding, at least one port must still be `LIS` or
+    `LRN`, and the instance must report the qualified forward delay.
+    `LRN` alone earns the qualified learning budget; any `LIS` earns the
+    listening-plus-learning budget. Anything else earns nothing.
+    """
+    if not rows:
+        return None
+    states = []
+    for row in rows:
+        state = str(row.state).upper()
+        if row.matches != 1 or (
+            state not in _TRANSITIONAL_STP_STATES and state not in FORWARDING_STATES
+        ):
+            return None
+        states.append(state)
+    if not _TRANSITIONAL_STP_STATES.intersection(states):
+        return None
+    if "LIS" in states:
+        target = pvst_listening_progress_target_ms(forward_delay_seconds)
+        cap = PVST_LISTENING_SIMULATION_PROGRESS_WALL_CAP_SECONDS
+    else:
+        target = pvst_learning_progress_target_ms(forward_delay_seconds)
+        cap = PVST_SIMULATION_PROGRESS_WALL_CAP_SECONDS
+    return None if target is None else (target, cap)
 
 
 def voice_access_learning_extension_is_authorized(
@@ -869,6 +913,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         sample_calls: int = ACCESS_FORWARDING_SAMPLE_CALLS,
         remaining_seconds: float | None = None,
         episode_calls: int | None = None,
+        extension_seconds: float = 0.0,
     ) -> AccessForwardingObservation:
         """Observe one switch/VLAN group's exact interfaces, neutrally.
 
@@ -898,6 +943,20 @@ class PacketTracerEnterpriseConfigurationRuntime:
         `sample_calls`, but never more than the episode has left, and no
         sample starts once nothing is left. Without it the episode is bounded
         by its samples alone, as before.
+
+        `extension_seconds` is the wall-clock allowance the caller grants for
+        one simulation-time extension; zero, the default, grants none and
+        keeps the behavior above exactly. When the window ended on its own
+        boundary and its most recent authoritative sample earns a budget from
+        `access_forwarding_extension_budget`, sampling continues on Packet
+        Tracer's simulation clock under the lesser of that budget's wall cap
+        and the allowance. A later window sample that the window's deadline
+        truncated does not deny it; any other later failure does. Extension
+        reads are the same registered query on the same bounded channel and
+        draw on the same call budgets; a read that ends after the extension's
+        boundary is late evidence. Only a timely, authoritative extension read
+        that shows every port forwarding converges it, and only then is the
+        wall window's closing not charged against the authorizing sample.
         """
         requested = tuple(dict.fromkeys(str(item) for item in interfaces if item))
         if (
@@ -906,7 +965,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             or max_samples < 0
         ):
             raise ValueError("access forwarding max_samples must be a non-negative int")
-        numeric_bounds = (deadline_seconds, interval_seconds)
+        numeric_bounds = (deadline_seconds, interval_seconds, extension_seconds)
         if remaining_seconds is not None:
             numeric_bounds += (remaining_seconds,)
         if any(
@@ -959,6 +1018,11 @@ class PacketTracerEnterpriseConfigurationRuntime:
         history: list[AccessForwardingSampleEvidence] = []
         vlan_present = False
         authoritative = False
+        # The most recent authoritative window sample's rows and forward
+        # delay, and whether a later sample failed for a reason other than the
+        # window's own deadline. Only these decide an extension.
+        window_evidence: tuple[tuple[AccessForwardingRow, ...], object] | None = None
+        window_contradicted = False
         while samples < ceiling:
             if self._forwarding_channel.stopped:
                 # Nothing below will answer again, so polling for it is not
@@ -1001,6 +1065,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
             authoritative = spanning_tree_sample_is_authoritative(show, device_name)
             vlan_present = False
             rows = ()
+            instance = None
             if authoritative:
                 instance = spanning_tree_vlan_instance(show.output, vlan_id)
                 vlan_present = instance is not None
@@ -1009,6 +1074,14 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         _access_forwarding_row(instance, interface)
                         for interface in requested
                     )
+            if authoritative:
+                window_evidence = (
+                    rows,
+                    instance.forward_delay_seconds if instance is not None else None,
+                )
+                window_contradicted = False
+            elif not sample_after_deadline:
+                window_contradicted = True
             history.append(
                 AccessForwardingSampleEvidence(
                     elapsed_ms=int(max(0.0, self._clock() - started) * 1000),
@@ -1064,13 +1137,209 @@ class PacketTracerEnterpriseConfigurationRuntime:
             auxiliary_read_after_deadline = self._clock() >= deadline
         elif samples:
             simulation_time = "not_sampled_deadline"
+        extension = AccessForwardingExtension(
+            allowance_seconds=float(extension_seconds)
+        )
+        extension_aux_calls = 0
+        budget = (
+            access_forwarding_extension_budget(*window_evidence)
+            if (
+                extension_seconds > 0
+                and window_evidence is not None
+                and not window_contradicted
+                and episode_end_reason in {"deadline", "max_samples_reached"}
+                and not self._forwarding_channel.stopped
+                and not (
+                    episode_calls is not None
+                    and self._forwarding_channel.calls >= episode_calls
+                )
+            )
+            else None
+        )
+        if budget is not None:
+            target_ms, state_cap = budget
+            # Never past the caller's own invocation allowance, whatever the
+            # offer says.
+            cap = min(
+                state_cap,
+                float(extension_seconds),
+                started + parent_window - self._clock(),
+            )
+            if cap <= 0:
+                budget = None
+        if budget is not None:
+            extension_deadline = self._clock() + cap
+            latest: dict[str, Any] = {"samples": 0}
+
+            def calls_left() -> int | None:
+                if episode_calls is None:
+                    return None
+                return (
+                    episode_calls - self._forwarding_channel.calls - extension_aux_calls
+                )
+
+            def read_clock() -> SimulationStateObservation:
+                # One counted call on the same bounded channel; a spent
+                # episode ends the extension as an unreadable clock.
+                nonlocal extension_aux_calls
+                left = calls_left()
+                if left is not None and left <= 0:
+                    raise RuntimeError("episode_call_budget_exhausted")
+                self._forwarding_channel.open(calls=1, deadline=extension_deadline)
+                extension_aux_calls += int(self._forwarding_aux_is_injected)
+                return self._forwarding_simulation_time_observer()
+
+            def inspect() -> dict[str, object]:
+                left = calls_left()
+                if left is not None and left <= 0:
+                    latest["episode_budget_exhausted"] = True
+                    return {
+                        "configuration_channel": False,
+                        "continuation_authorized": False,
+                        "failure_reason": "episode_call_budget_exhausted",
+                    }
+                granted = sample_calls if left is None else min(sample_calls, left)
+                self._forwarding_channel.open(
+                    calls=granted, deadline=extension_deadline
+                )
+                calls_before = self._forwarding_channel.calls
+                read = self._forwarding_ios.execute(
+                    device_name,
+                    OperationalQueryId.SHOW_SPANNING_TREE,
+                )
+                exhausted = self._forwarding_channel.exhausted
+                late = self._clock() >= extension_deadline
+                read_authoritative = spanning_tree_sample_is_authoritative(
+                    read, device_name
+                )
+                read_rows: tuple[AccessForwardingRow, ...] = ()
+                present = False
+                delay = None
+                if read_authoritative:
+                    found = spanning_tree_vlan_instance(read.output, vlan_id)
+                    present = found is not None
+                    if found is not None:
+                        delay = found.forward_delay_seconds
+                        read_rows = tuple(
+                            _access_forwarding_row(found, interface)
+                            for interface in requested
+                        )
+                history.append(
+                    AccessForwardingSampleEvidence(
+                        elapsed_ms=int(max(0.0, self._clock() - started) * 1000),
+                        rows=read_rows,
+                        executed=read.executed,
+                        fresh_output_observed=read.fresh_output_observed,
+                        output_complete=read.output_complete,
+                        observed_device_name=read.observed_device_name,
+                        device_identity_provenance=read.device_identity_provenance,
+                        vlan_present=present,
+                        channel_calls=self._forwarding_channel.calls - calls_before,
+                        sample_budget_exhausted=exhausted,
+                        deadline_reached=late,
+                        phase="extension",
+                    )
+                )
+                timely = read_authoritative and not late and not exhausted
+                converged = (
+                    timely
+                    and bool(read_rows)
+                    and all(
+                        row.matches == 1 and str(row.state).upper() in FORWARDING_STATES
+                        for row in read_rows
+                    )
+                )
+                latest.update(
+                    {
+                        "show": read,
+                        "rows": read_rows,
+                        "vlan_present": present,
+                        "authoritative": read_authoritative,
+                        "exhausted": exhausted,
+                        "late": late,
+                        "converged": converged,
+                        "samples": latest["samples"] + 1,
+                    }
+                )
+                if late:
+                    # A read that ended at or after the boundary is the
+                    # observer running out of time, not a network answer, so
+                    # the waiter is left to close on its own wall cap.
+                    return {
+                        "configuration_channel": False,
+                        "continuation_authorized": True,
+                        "failure_reason": "extension_read_after_boundary",
+                    }
+                return {
+                    "configuration_channel": converged,
+                    "continuation_authorized": converged
+                    or (
+                        timely
+                        and access_forwarding_extension_budget(read_rows, delay)
+                        is not None
+                    ),
+                    "failure_reason": read.failure_reason,
+                }
+
+            # The waiter is the one simulation-time contract Trunk and Voice
+            # use; it is built here with this observer's own clock and
+            # ledger-capped sleeper instead of the process defaults.
+            result = SimulationTimeConvergenceWaiter(
+                inspect,
+                observe_simulation_state=read_clock,
+                required_simulation_progress_ms=target_ms,
+                max_wall_seconds=cap,
+                interval_seconds=interval,
+                clock=self._clock,
+                sleeper=self._sleeper,
+            ).wait()
+            extension_samples = int(latest["samples"])
+            if extension_samples:
+                show = latest["show"]
+                rows = latest["rows"]
+                vlan_present = bool(latest["vlan_present"])
+                authoritative = bool(latest["authoritative"])
+                sample_budget_exhausted = bool(latest["exhausted"])
+                sample_after_deadline = bool(latest["late"])
+                episode_budget_exhausted = (
+                    episode_budget_exhausted or sample_budget_exhausted
+                )
+                samples += extension_samples
+            if latest.get("episode_budget_exhausted"):
+                episode_budget_exhausted = True
+            converged = bool(result.converged and latest.get("converged"))
+            extension = AccessForwardingExtension(
+                candidate=True,
+                target_ms=target_ms,
+                wall_cap_seconds=cap,
+                allowance_seconds=float(extension_seconds),
+                authorized=result.simulation_start_ms is not None,
+                simulation_start_ms=result.simulation_start_ms,
+                simulation_end_ms=result.simulation_end_ms,
+                simulation_progress_ms=result.simulation_progress_ms,
+                clock_samples=result.clock_samples,
+                samples=extension_samples,
+                stop_reason=result.stop_reason,
+                outcome=classify_extension_stop_reason(result.stop_reason).value,
+                failure_reason=result.failure_reason,
+                converged=converged,
+            )
+            episode_end_reason = (
+                "all_requested_interfaces_observed_forwarding"
+                if converged
+                else f"extension:{result.stop_reason}"
+            )
         # The window is closed when a boundary closed it, and the boundary that
         # did is the one reported. The order is most specific first: this
         # sample's own lateness, then the auxiliary read's overrun, then the
         # window simply ending. An episode that stopped for any other reason
-        # while the window was still open closes nothing.
+        # while the window was still open closes nothing. A converged
+        # extension's authorizing read was timely inside its own granted
+        # boundary, so the wall window's closing is not charged against it.
         deadline_cause = ""
-        if sample_after_deadline:
+        if extension.converged:
+            pass
+        elif sample_after_deadline:
             deadline_cause = CAUSE_SAMPLE_AFTER_DEADLINE
         elif auxiliary_read_after_deadline:
             deadline_cause = CAUSE_AUXILIARY_READ_AFTER_DEADLINE
@@ -1098,7 +1367,9 @@ class PacketTracerEnterpriseConfigurationRuntime:
             deadline_cause=deadline_cause,
             deadline_scope=deadline_scope,
             sample_call_budget=sample_calls,
-            channel_calls=self._forwarding_channel.calls + auxiliary_calls,
+            channel_calls=(
+                self._forwarding_channel.calls + auxiliary_calls + extension_aux_calls
+            ),
             sample_budget_exhausted=sample_budget_exhausted,
             sample_after_deadline=sample_after_deadline,
             episode_budget_exhausted=episode_budget_exhausted,
@@ -1114,6 +1385,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     or ("" if authoritative else "stp_sample_not_authoritative")
                 )
             ),
+            extension=extension,
         )
 
     def observe_trunk_continuity(

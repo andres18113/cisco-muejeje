@@ -204,6 +204,37 @@ class AccessForwardingSampleEvidence:
     channel_calls: int
     sample_budget_exhausted: bool
     deadline_reached: bool
+    #: `window` for a read inside the wall-clock window, `extension` for one
+    #: inside a granted simulation-time extension; `deadline_reached` is
+    #: measured against the boundary of the phase the read belongs to.
+    phase: str = "window"
+
+
+@dataclass(frozen=True)
+class AccessForwardingExtension:
+    """One simulation-time extension after a window ended on transitional STP.
+
+    Nothing here is granted by default. `candidate` says the window's evidence
+    earned an extension; `target_ms` and `wall_cap_seconds` are the budget it
+    was given; the simulation fields, stop reason and outcome are what the
+    extension actually measured. `converged` is true only when a timely,
+    authoritative extension read showed every requested port forwarding.
+    """
+
+    candidate: bool = False
+    target_ms: float | None = None
+    wall_cap_seconds: float = 0.0
+    allowance_seconds: float = 0.0
+    authorized: bool = False
+    simulation_start_ms: float | None = None
+    simulation_end_ms: float | None = None
+    simulation_progress_ms: float = 0.0
+    clock_samples: int = 0
+    samples: int = 0
+    stop_reason: str = "not_authorized"
+    outcome: str = ""
+    failure_reason: str = ""
+    converged: bool = False
 
 
 @dataclass(frozen=True)
@@ -289,6 +320,10 @@ class AccessForwardingObservation:
     simulation_time: str = "absent"
     failure_reason: str = ""
     lights: tuple[PortLightReading, ...] = ()
+    #: The simulation-time extension the window's evidence earned, if any.
+    #: When it converged, the authorizing sample is its last read and the
+    #: wall window's closing is not charged against it.
+    extension: AccessForwardingExtension = AccessForwardingExtension()
 
 
 @dataclass(frozen=True)

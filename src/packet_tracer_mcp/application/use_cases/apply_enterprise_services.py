@@ -292,12 +292,14 @@ class _GatedConfigurationRuntime:
         interval_seconds: float,
         sample_calls: int,
         episode_calls: int,
+        extension_seconds: float = 0.0,
     ) -> Any:
         """Observe one switch/VLAN group; a read, so always permitted.
 
         Raises `AttributeError` when the composed runtime has no such reader,
         which the readiness gate turns into a named refusal rather than a
-        silent pass. It is never synthesized here.
+        silent pass. It is never synthesized here. The gate's extension
+        allowance is forwarded unchanged.
         """
         return self.inner.observe_access_forwarding(
             device_name,
@@ -309,6 +311,7 @@ class _GatedConfigurationRuntime:
             interval_seconds=interval_seconds,
             sample_calls=sample_calls,
             episode_calls=episode_calls,
+            extension_seconds=extension_seconds,
         )
 
     def observe_trunk_continuity(

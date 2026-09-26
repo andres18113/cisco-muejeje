@@ -1217,3 +1217,27 @@ late extension sample; call-budget exhaustion; and the gate admitting
 only a converged extension within its offered allowance while reserving
 later groups' first windows. Episode 8 is admitted after focused and
 affected verification and an independent adversarial review.
+
+**Implementation refinements.** Retained voice evidence (a recorded
+extension from 1172103 to 1173124 over two samples) establishes that
+`getCurrentSimTime()` reports milliseconds, which the targets use. The
+extension builds `SimulationTimeConvergenceWaiter` directly rather than
+through `BoundedPvstLearningExtension`, because that object hard-wires the
+process clock and sleep while this observer must keep its injected clock
+and ledger-capped sleeper; the clock semantics and stop reasons are the
+same. A read that ends at or after the extension boundary is reported as
+the observer running out of time, so the extension closes on
+`wall_clock_safety_cap` (`observer_incomplete`) and the observation names
+`sample_after_deadline`, never a network answer. The product's gated E5
+runtime forwarded an explicit keyword list and would have silently
+dropped the allowance on the exact product path; it now forwards it, with
+a regression. The existing `persistent_lis` boundary test keeps its
+original meaning with a budget of one window and one interval, which offers
+no extension; persistent listening through an extension is tested
+separately and ends on the wall cap. With the pre-change sources restored,
+the real gate replaying episode 7's shape (listening until 60 s, about 19 s
+per read) refuses with the same dimension and cause as LIVE
+(`EXECUTION`, `sample_call_budget_exhausted`); with the change it admits
+after the extension's reads observe forwarding. Touching
+`simulation_time_convergence.py` brought it under Ruff (import order, three
+docstrings and formatting).

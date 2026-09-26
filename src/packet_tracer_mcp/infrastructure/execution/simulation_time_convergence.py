@@ -12,7 +12,6 @@ from ...domain.enterprise.models.configuration_runtime import (
 )
 from .simulation_trace_runtime import SimulationStateObservation
 
-
 Inspection = Callable[[], dict[str, object]]
 SimulationStateObserver = Callable[[], SimulationStateObservation]
 
@@ -41,14 +40,31 @@ def pvst_learning_progress_target_ms(
         isinstance(observed_forward_delay_seconds, bool)
         or not isinstance(observed_forward_delay_seconds, (int, float))
         or not math.isfinite(float(observed_forward_delay_seconds))
-        or float(observed_forward_delay_seconds)
-        != QUALIFIED_PVST_FORWARD_DELAY_SECONDS
+        or float(observed_forward_delay_seconds) != QUALIFIED_PVST_FORWARD_DELAY_SECONDS
     ):
         return None
     return (
-        QUALIFIED_PVST_FORWARD_DELAY_SECONDS
-        + PVST_FORWARD_DELAY_MARGIN_SECONDS
+        QUALIFIED_PVST_FORWARD_DELAY_SECONDS + PVST_FORWARD_DELAY_MARGIN_SECONDS
     ) * 1000.0
+
+
+# A port still LISTENING owes one more forward delay before LEARNING, so the
+# budget is two forward delays plus the same margin: 35 simulated seconds.
+# At the slowest retained rate (0.53 simulated seconds per wall second) that
+# needs 66 wall seconds; 80 keeps the 2.25 ratio the qualified 45-second cap
+# gives the 20-second learning budget. Like that cap, it is an admission
+# boundary, never a deadline that interrupts a read in flight.
+PVST_LISTENING_SIMULATION_PROGRESS_WALL_CAP_SECONDS = 80.0
+
+
+def pvst_listening_progress_target_ms(
+    observed_forward_delay_seconds: object,
+) -> float | None:
+    """Return the listening-plus-learning budget, otherwise fail closed."""
+    learning = pvst_learning_progress_target_ms(observed_forward_delay_seconds)
+    if learning is None:
+        return None
+    return learning + QUALIFIED_PVST_FORWARD_DELAY_SECONDS * 1000.0
 
 
 #: Stop causes that mean the OBSERVER ran out of authority, not that the
@@ -56,25 +72,29 @@ def pvst_learning_progress_target_ms(
 #: describing a round the observer could not complete, so none of them may
 #: support a network verdict.  ``wall_clock_safety_cap`` is here deliberately:
 #: it means the qualified simulation budget was NOT spent.
-OBSERVER_INCOMPLETE_STOP_REASONS = frozenset({
-    "simulation_clock_read_failed",
-    "simulation_clock_unobservable",
-    "simulation_clock_not_realtime",
-    "simulation_clock_invalid",
-    "simulation_clock_untyped",
-    "simulation_clock_regressed",
-    "wall_clock_safety_cap",
-    "inspection_failed",
-})
+OBSERVER_INCOMPLETE_STOP_REASONS = frozenset(
+    {
+        "simulation_clock_read_failed",
+        "simulation_clock_unobservable",
+        "simulation_clock_not_realtime",
+        "simulation_clock_invalid",
+        "simulation_clock_untyped",
+        "simulation_clock_regressed",
+        "wall_clock_safety_cap",
+        "inspection_failed",
+    }
+)
 
 #: Stop causes where a fresh sample ended the authority, so the terminal state
 #: is the answer.  ``not_authorized`` means no extension was ever granted and
 #: the initial convergence's own terminal sample stands.
-NETWORK_MEASURED_STOP_REASONS = frozenset({
-    "simulation_progress_exhausted",
-    "continuation_unauthorized",
-    "not_authorized",
-})
+NETWORK_MEASURED_STOP_REASONS = frozenset(
+    {
+        "simulation_progress_exhausted",
+        "continuation_unauthorized",
+        "not_authorized",
+    }
+)
 
 
 def classify_extension_stop_reason(stop_reason: object) -> ConvergenceOutcome:
@@ -112,6 +132,7 @@ class SimulationTimeConvergenceResult:
 
     @property
     def configuration_channel(self) -> bool:
+        """Return the converged fact under the waiter-result name callers read."""
         return self.converged
 
 
@@ -122,24 +143,18 @@ def simulation_time_extension_evidence(
     max_wall_seconds: float = PVST_SIMULATION_PROGRESS_WALL_CAP_SECONDS,
 ) -> dict[str, object]:
     """Project one stable evidence shape for every convergence consumer."""
-    authorized = bool(
-        result is not None and result.simulation_start_ms is not None
-    )
-    stop_reason = (
-        result.stop_reason if result is not None else "not_authorized"
-    )
+    authorized = bool(result is not None and result.simulation_start_ms is not None)
+    stop_reason = result.stop_reason if result is not None else "not_authorized"
     return {
         "learning_extension_authorized": authorized,
         "learning_extension_seconds": (
-            requested_progress_ms / 1000.0
-            if requested_progress_ms is not None else 0.0
+            requested_progress_ms / 1000.0 if requested_progress_ms is not None else 0.0
         ),
         "learning_extension_clock": (
             "packet_tracer_simulation_time" if authorized else "none"
         ),
         "learning_extension_max_wall_seconds": (
-            max_wall_seconds
-            if requested_progress_ms is not None else 0.0
+            max_wall_seconds if requested_progress_ms is not None else 0.0
         ),
         "learning_extension_simulation_start_ms": (
             result.simulation_start_ms if result is not None else None
@@ -191,6 +206,11 @@ class SimulationTimeConvergenceWaiter:
         clock: Callable[[], float] = monotonic,
         sleeper: Callable[[float], None] = sleep,
     ) -> None:
+        """Bind one inspection to its simulation and wall-clock budgets.
+
+        Raises `ValueError` when either budget is not positive or the poll
+        interval is negative.
+        """
         if required_simulation_progress_ms <= 0:
             raise ValueError("required simulation progress must be positive")
         if max_wall_seconds <= 0:
@@ -206,6 +226,7 @@ class SimulationTimeConvergenceWaiter:
         self._sleep = sleeper
 
     def wait(self) -> SimulationTimeConvergenceResult:
+        """Spend the budgets once and return what stopped the authority."""
         started = self._clock()
         attempts = 0
         clock_samples = 0
@@ -216,8 +237,14 @@ class SimulationTimeConvergenceWaiter:
         clock_samples += 1
         if baseline is None:
             return self._result(
-                False, attempts, started, start_sim_time, last_sim_time,
-                clock_samples, reason, detail,
+                False,
+                attempts,
+                started,
+                start_sim_time,
+                last_sim_time,
+                clock_samples,
+                reason,
+                detail,
             )
         start_sim_time = baseline
         last_sim_time = baseline
@@ -227,21 +254,37 @@ class SimulationTimeConvergenceWaiter:
             # round already under way is not interrupted.
             if self._clock() - started >= self._max_wall_seconds:
                 return self._result(
-                    False, attempts, started, start_sim_time, last_sim_time,
-                    clock_samples, "wall_clock_safety_cap",
+                    False,
+                    attempts,
+                    started,
+                    start_sim_time,
+                    last_sim_time,
+                    clock_samples,
+                    "wall_clock_safety_cap",
                 )
 
             current, reason, detail = self._read_simulation_time()
             clock_samples += 1
             if current is None:
                 return self._result(
-                    False, attempts, started, start_sim_time, last_sim_time,
-                    clock_samples, reason, detail,
+                    False,
+                    attempts,
+                    started,
+                    start_sim_time,
+                    last_sim_time,
+                    clock_samples,
+                    reason,
+                    detail,
                 )
             if current < last_sim_time:
                 return self._result(
-                    False, attempts, started, start_sim_time, current,
-                    clock_samples, "simulation_clock_regressed",
+                    False,
+                    attempts,
+                    started,
+                    start_sim_time,
+                    current,
+                    clock_samples,
+                    "simulation_clock_regressed",
                 )
             last_sim_time = current
 
@@ -250,25 +293,45 @@ class SimulationTimeConvergenceWaiter:
                 observed = self._inspect()
             except Exception as exc:
                 return self._result(
-                    False, attempts, started, start_sim_time, last_sim_time,
-                    clock_samples, "inspection_failed",
+                    False,
+                    attempts,
+                    started,
+                    start_sim_time,
+                    last_sim_time,
+                    clock_samples,
+                    "inspection_failed",
                     f"{type(exc).__name__}: {exc}",
                 )
             if observed.get("configuration_channel") is True:
                 return self._result(
-                    True, attempts, started, start_sim_time, last_sim_time,
-                    clock_samples, "converged",
+                    True,
+                    attempts,
+                    started,
+                    start_sim_time,
+                    last_sim_time,
+                    clock_samples,
+                    "converged",
                 )
             if observed.get("continuation_authorized") is not True:
                 return self._result(
-                    False, attempts, started, start_sim_time, last_sim_time,
-                    clock_samples, "continuation_unauthorized",
+                    False,
+                    attempts,
+                    started,
+                    start_sim_time,
+                    last_sim_time,
+                    clock_samples,
+                    "continuation_unauthorized",
                     str(observed.get("failure_reason") or ""),
                 )
             if current - start_sim_time >= self._required_progress_ms:
                 return self._result(
-                    False, attempts, started, start_sim_time, last_sim_time,
-                    clock_samples, "simulation_progress_exhausted",
+                    False,
+                    attempts,
+                    started,
+                    start_sim_time,
+                    last_sim_time,
+                    clock_samples,
+                    "simulation_progress_exhausted",
                     str(observed.get("failure_reason") or ""),
                 )
             remaining_wall_seconds = max(
@@ -282,8 +345,10 @@ class SimulationTimeConvergenceWaiter:
         try:
             observation = self._observe_simulation_state()
         except Exception as exc:
-            return None, "simulation_clock_read_failed", (
-                f"{type(exc).__name__}: {exc}"
+            return (
+                None,
+                "simulation_clock_read_failed",
+                (f"{type(exc).__name__}: {exc}"),
             )
         if not isinstance(observation, SimulationStateObservation):
             return None, "simulation_clock_untyped", ""
