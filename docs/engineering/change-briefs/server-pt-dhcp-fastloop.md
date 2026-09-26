@@ -1313,3 +1313,20 @@ independent product acceptance. The simulation-time extension's listening
 budget is qualified for this fixture only; this run spent 1.75 simulated
 seconds between its two clock reads before its one extension read, so it
 does not measure the protocol clock rate.
+
+## Delivery, version 14
+
+**Default catalog decision.** The compiler admits the native binding only
+for the measured policy (`192.0.2.0/24`, `.100`-`.100`, gateway `.1`, DNS
+`.10`, the two exclusions) and every native measurement so far is at
+capacity one. Registering the binding in the default catalog now would
+publish a capability that refuses every other address plan, so it stays a
+private exact-build candidate snapshot; the public four-argument entry
+therefore still refuses state-only DHCP and was not run LIVE with it. Policy
+generalization and native capacity above one user are the prerequisites for
+any default registration.
+
+The READY_FOR_REVIEW delivery, with source and CI identities, design and
+rejected alternatives, decisive records, scale measurements, resource use,
+residual limitations and its integrity manifest, is
+[`dhcp-autonomy-02/DELIVERY.md`](../../reference/server-pt/evidence/dhcp-autonomy-02/DELIVERY.md).
