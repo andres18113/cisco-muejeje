@@ -1511,3 +1511,39 @@ two native-window tests require the explicit Windows opt-in. All required
 native/public path tests ran on this job. The provisional quality gate and
 MkDocs build passed; exact clean-commit validation and governed LIVE remain
 separate gates.
+
+## Registered public product result, version 19
+
+Episode 11 executed the profile-4 registered four-input MCP handler at
+`dda07fc03e0831af519e1ece373b9fc4851e5d1e` (tree
+`08fbec4459cba4d2acd48bc1138e47d1c20c2227`), attempt
+`a017dff41bb546d4b33bf495596bb265`, Packet Tracer 9.0.1.0858/file.
+The default catalog's bounded native marker was the only DHCP capability
+source; no private snapshot or support override was passed. The exact
+requested `.125`-`.126` capacity-two policy read back on the physical
+`serverPool`. PC1 received `.125` and PC2 `.126` with distinct stable MACs,
+matching physical IP/MAC/interface rows in two consecutive samples after
+one unassigned sample. Both first HTTP-by-IP requests VERIFIED. The
+registered handler response, typed use-case result and completed product
+record agreed; the stage retained a fresh matching build observation.
+
+`M-NATIVE-PRODUCT` and its terminal inventory are SUPPORTED_IN_SAMPLE for
+this exact source/build/fixture. The product record SHA-256 is
+`cdff0155a22f44e115c002081906d3b7f27b8103b6429b1c165ec4c51af50f33`;
+the qualification record SHA-256 is
+`a89301ea32038d7c5e8c930c1a0543a92f3749870fa5ae9a22d224154ee6a17c`.
+The [episode 11 archive](../../reference/server-pt/evidence/dhcp-autonomy-02/e11/README.md)
+contains 216 manifest-verified files; its manifest SHA-256 is
+`05b7b85129a55f92801deb678e846c924ec402998e7b303ddb589281c618016b`.
+Qualification spent 90 operations and 162.61 active seconds. Fixture
+restoration was proven; owned PID 34644 exited and the final census found
+no Packet Tracer process, mailbox file or campaign lock. The closed ledger
+totals 698 operations and 3420.531649 seconds, with 8302 ordinary operations
+and 10379.468351 ordinary seconds remaining outside protected reserve.
+
+The public supported boundary is the exact policy family documented in
+[`server-pt-dhcp-public-delivery.md`](../../reference/server-pt/server-pt-dhcp-public-delivery.md).
+Generic/named pool DHCP, explicit acquisition causality, renewal, table-end
+proof, other builds/networks/channels and native capacity above two remain
+unqualified. This feature-branch result is READY_FOR_REVIEW; independent
+product approval and integration to `main` are separate decisions.

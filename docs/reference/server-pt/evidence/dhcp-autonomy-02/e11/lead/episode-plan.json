@@ -1,0 +1,58 @@
+{
+  "allocated_operations": 600,
+  "allocated_seconds": 2400.0,
+  "allocation_arithmetic": "The stage caps 600 operations and 2100 seconds, including its 11-operation and 300-second finalization reserves. Episode 10 consumed 89 operations for two selected clients. The registered MCP route adds one fresh build read and a bounded record reload while the interior .125 start retains the same native setters and two HTTP requests. A 220-operation forecast leaves 380 within the fixed stage ceiling; 2400 episode seconds cover 2100 stage seconds plus 60 launch, 120 retirement, and 120 contingency. No in-flight increase.",
+  "attempt_ids": [
+    "a017dff41bb546d4b33bf495596bb265"
+  ],
+  "compiled_dns": "192.0.2.10",
+  "compiled_exclusions": [
+    {
+      "end": "192.0.2.1",
+      "start": "192.0.2.1"
+    },
+    {
+      "end": "192.0.2.10",
+      "start": "192.0.2.10"
+    }
+  ],
+  "compiled_gateway": "192.0.2.1",
+  "effective_pool_hypothesis": "serverPool",
+  "instance_token": "510bc23b6b0e4002979b7e963e7c1db2",
+  "interpretation_limit": "Scoped default-catalog public-route qualification, not universal DHCP; explicit dhcpRun causality, renewal, and table-end remain unqualified.",
+  "permitted_effects": [
+    "qualification:Q3-NATIVE-PRODUCT profile 4 registered four-input MCP route",
+    "create/verify/remove exact disposable four-device three-link fixture",
+    "maintained product A1-E6 on owned fixture with two selected PC-PT clients",
+    "guarded E5 server static and both client DHCP modes",
+    "guarded native serverPool .125-.126 capacity-two policy and enable",
+    "HTTP content setter and each client's first HTTP-by-IP request without warm-up",
+    "owned process retirement"
+  ],
+  "physical_topology_hash": "3de4cfc945a0a485a0b87ef556e885e4167bdea01bc86eea0ba85a7436418a9a",
+  "profile_id": "Q3-NATIVE-PRODUCT",
+  "profile_version": "4",
+  "question": "Does the registered four-input pt_apply_enterprise_services route, using only the scoped default catalog, configure the requested interior capacity-two native serverPool allocation at .125-.126, verify two distinct stable PC leases and physical rows, then serve each client's first HTTP-by-IP request without ping, DNS, static injection, warm-up, PortFast, or clock acceleration?",
+  "requested_capacity": 2,
+  "requested_end": "192.0.2.126",
+  "requested_pool": "derived Q3_DATA (unnamed input)",
+  "requested_start": "192.0.2.125",
+  "source_sha": "dda07fc03e0831af519e1ece373b9fc4851e5d1e",
+  "source_tree": "08fbec4459cba4d2acd48bc1138e47d1c20c2227",
+  "stop_rule": "Stop dependent effects on identity mismatch, unexpected setter, incomplete policy/lease/HTTP evidence, budget expiry, persistence or cleanup uncertainty; retain terminal readings and retire only the owned lab.",
+  "targets": [
+    "Q3-DEFAULT-SERVER-01",
+    "Q3-DEFAULT-PC-01",
+    "Q3-DEFAULT-PC-02",
+    "Q3-DEFAULT-ACCESS-SW-01"
+  ],
+  "tests_run": [
+    "229 affected public/legacy/campaign tests passed before profile 4 LIVE",
+    "full Windows offline suite: 8163 passed, 6 skipped, 3 warnings",
+    "skip audit: 667 passed, 6 skipped with exact reasons retained",
+    "clean exact-commit quality gate passed at dda07fc",
+    "MkDocs build exit 0 at candidate source",
+    "independent read-only adversarial review found no pre-LIVE blocker",
+    "independent read-only adversarial review closed two safety findings"
+  ]
+}
