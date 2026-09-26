@@ -80,6 +80,7 @@ from ...domain.enterprise.models.intent import EnterpriseIntent
 from ...domain.enterprise.models.service_plan import (
     CapabilityProvenance,
     ClientOperationCapability,
+    NativeDhcpPolicyScope,
     ServiceActionType,
     ServiceCapabilityRecords,
     ServiceType,
@@ -314,12 +315,26 @@ def _native_candidate_capabilities(build: str):
         operation="dhcp_native_default_binding",
         support=CapabilityStatus.SUPPORTED,
         provenance=CapabilityProvenance.RECORDED_RUN,
-        source="SERVER-PT-DHCP-AUTONOMOUS-02/e5 physical serverPool attribution",
+        source=(
+            "Experimental candidate extrapolated from "
+            "SERVER-PT-DHCP-AUTONOMOUS-02/e5 physical serverPool attribution; "
+            "capacity and shifted policies unmeasured"
+        ),
         packet_tracer_version=build,
         build=build,
         executed_sha="04f5337eef67f0c850e057537ce80757e3aa73b1",
         transport="file",
         run_id="2026-09-26T00-30-30Z-f961bd3d",
+        native_policy_scope=NativeDhcpPolicyScope(
+            network="192.0.2.0",
+            netmask="255.255.255.0",
+            gateway="192.0.2.1",
+            dns_server="192.0.2.10",
+            first_lease="192.0.2.2",
+            last_lease="192.0.2.254",
+            max_users=16,
+            max_exclusion_ranges=16,
+        ),
     )
     key = f"Server-PT:{ServiceType.DHCP.value}"
     profile = records[key]
@@ -358,34 +373,47 @@ def q3_product_contract(build: str, run_id: str) -> Q3ProductContract:
     return dhcp_product_contract(build, run_id, 1)
 
 
-def _native_dhcp_http_intent() -> EnterpriseIntent:
-    """Select one client and a physical native binding without a named request."""
+def _native_dhcp_http_intent(
+    selected_count: int = 1, start_offset: int = 99
+) -> EnterpriseIntent:
+    """Select owned clients and a native binding without a named request."""
+    if selected_count not in {1, 2}:
+        raise ValueError("The native product fixture has one or two clients.")
     payload = _q3_intent(1).model_dump(mode="json")
     services = payload["sites"][0]["services"]
     dhcp = services[0]
-    dhcp["client_device_ids"] = [_Q3_PC1_ID]
+    selected = [_Q3_PC1_ID, _Q3_PC2_ID][:selected_count]
+    dhcp["client_device_ids"] = selected
     dhcp["verification_mode"] = "state_only"
     dhcp["dhcp_pool"].pop("pool_name")
     dhcp["dhcp_pool"]["dns_server"] = Q3_DNS_IPV4
+    dhcp["dhcp_pool"]["max_users"] = selected_count
+    dhcp["dhcp_pool"]["start_offset"] = start_offset
     services.append(
         {
             "name": "q3-native-http",
             "service_type": "http",
             "host_device_id": _Q3_SERVER_ID,
-            "client_device_ids": [_Q3_PC1_ID],
+            "client_device_ids": selected,
             "http_content": "MCP-Q3-NATIVE-HTTP-READY",
         }
     )
     return EnterpriseIntent.model_validate(payload)
 
 
-def native_dhcp_http_product_contract(build: str, run_id: str) -> Q3ProductContract:
-    """Compose the exact measured one-client native DHCP plus HTTP candidate."""
+def native_dhcp_http_product_contract(
+    build: str,
+    run_id: str,
+    *,
+    selected_count: int = 1,
+    start_offset: int = 99,
+) -> Q3ProductContract:
+    """Compose the bounded native DHCP plus HTTP candidate fixture."""
     return dhcp_product_contract(
         build,
         run_id,
-        1,
-        intent_override=_native_dhcp_http_intent(),
+        selected_count,
+        intent_override=_native_dhcp_http_intent(selected_count, start_offset),
         capabilities_override=_native_candidate_capabilities(build),
         preserve_reference_topology=True,
     )
@@ -844,7 +872,9 @@ def production_boundaries(governed_root: Path) -> QualificationBoundaries:
         q3_product_contract=q3_product_contract,
         q3_required_build=Q3_PACKET_TRACER_BUILD,
         dhcp_product_contract=dhcp_product_contract,
-        native_product_contract=native_dhcp_http_product_contract,
+        native_product_contract=lambda build, run_id: native_dhcp_http_product_contract(
+            build, run_id, selected_count=2
+        ),
         native_product_runtimes=_native_product_runtimes,
         native_product_import_preflight=lambda: ImportIsolationPreflight(governed_root),
         native_product_record_store_factory=lambda: ServiceRunRecordStore(

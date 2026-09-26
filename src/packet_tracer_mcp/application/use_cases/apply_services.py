@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from time import monotonic
 from typing import Protocol
@@ -863,6 +864,7 @@ class ServiceApplicator:
                 ],
                 [],
             )
+        native_group_json: dict[str, str] = {}
         for expectation in ordered:
             if expectation.id in results:
                 continue
@@ -1047,8 +1049,32 @@ class ServiceApplicator:
                 )
                 continue
             try:
+                runtime_expected = dict(expectation.expected)
+                if (
+                    expectation.kind is ServiceVerificationKind.DHCP_LEASE
+                    and runtime_expected.get("state_only") is True
+                ):
+                    if expectation.service_id not in native_group_json:
+                        group = [
+                            {
+                                "expectation_id": item.id,
+                                "device_name": deployed_names[item.client_device_id],
+                                "interface": item.expected["interface"],
+                            }
+                            for item in plan.verification_expectations
+                            if item.service_id == expectation.service_id
+                            and item.kind is ServiceVerificationKind.DHCP_LEASE
+                            and item.expected.get("state_only") is True
+                        ]
+                        native_group_json[expectation.service_id] = json.dumps(
+                            group, sort_keys=True, separators=(",", ":")
+                        )
+                    runtime_expected["native_selected_clients_json"] = (
+                        native_group_json[expectation.service_id]
+                    )
                 runtime_expectation = expectation.model_copy(
                     update={
+                        "expected": runtime_expected,
                         "host_device_name": deployed_names[expectation.host_device_id],
                         "client_device_name": (
                             deployed_names[expectation.client_device_id]

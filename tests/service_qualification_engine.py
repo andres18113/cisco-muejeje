@@ -407,6 +407,12 @@ const dhcpPool = (dev, pool) => ({
       pool.end = '192.0.2.255'; pool.max = 156;
     }
     if (pool.name === 'serverPool'
+        && config.dhcp_native_start_behavior === 'coupled_candidate') {
+      const broadcast = intToIp(ipToInt(pool.network) + 255);
+      pool.end = broadcast;
+      pool.max = ipToInt(broadcast) - ipToInt(pool.start) + 1;
+    }
+    if (pool.name === 'serverPool'
         && config.dhcp_native_start_behavior === 'coupled_extra_pool') {
       dhcpState(dev).pools.MCP_E6Q_DHCP = {
         name: 'MCP_E6Q_DHCP', network: '192.0.2.0', mask: '255.255.255.0',
@@ -434,6 +440,10 @@ const dhcpPool = (dev, pool) => ({
     if (pool.name === 'serverPool' && config.dhcp_native_max_behavior === 'resize'
         && Number(value) === 1) {
       pool.end = pool.start;
+    }
+    if (pool.name === 'serverPool'
+        && config.dhcp_native_max_behavior === 'resize_candidate') {
+      pool.end = intToIp(ipToInt(pool.start) + Number(value) - 1);
     }
   },
   getLeaseAt: (index) => {
@@ -546,6 +556,7 @@ const nextFree = (pool) => {
 };
 
 const acquire = (dev, port) => {
+  if (dev.name === config.dhcp_skip_client) { return false; }
   const server = devices.find((item) => item.model === 'Server-PT' && item.dhcpServer);
   const state = server ? dhcpState(server) : null;
   // Which pool a native server answers from is unqualified, so the stub
@@ -824,7 +835,14 @@ const makeDevice = (name, model) => {
       setDnsServerIp: (value) => { port.dns = String(value); },
       setDefaultGateway: (value) => { port.gateway = String(value); },
       isDhcpClientOn: () => port.dhcpMode,
-      getMacAddress: () => port.mac,
+      getMacAddress: () => {
+        const server = devices.find((item) => item.model === 'Server-PT');
+        if (dev.name === config.dhcp_client_read_throw_device
+            && server && server.dhcpServer && server.dhcpServer.enabled) {
+          throw new Error('client MAC getter failed');
+        }
+        return port.mac;
+      },
       // Cisco documents `eOffLight = 0, eAmberLight = 1, eGreenLight = 2,
       // eBlink = 3`. `light_status_return` answers with something that is not
       // a number so the strict reading can be exercised too.

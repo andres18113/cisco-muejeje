@@ -70,6 +70,11 @@ from .configuration_dependencies import (
     ConfigurationDependencyError,
     order_dependency_actions,
 )
+from .native_dhcp_policy import (
+    MAX_NATIVE_CLIENTS,
+    native_policy_network,
+    native_policy_within_scope,
+)
 from .service_capability_resolution import resolve_action_capability
 
 _HOSTNAME_RE = re.compile(
@@ -1187,12 +1192,11 @@ class ServiceCompiler:
             or requirement.verification_mode != "state_only"
             or host.model != "Server-PT"
             or interface != "FastEthernet0"
-            or max_users != 1
         ):
             issues.append(
                 _error(
                     ConfigurationIssueCode.DHCP_POOL_INVALID,
-                    "Native Server-PT binding requires an unnamed one-user "
+                    "Native Server-PT binding requires an unnamed "
                     "state-only DHCP service on FastEthernet0.",
                     service_id,
                 )
@@ -1209,6 +1213,26 @@ class ServiceCompiler:
             return []
         client_actions = [foundations[client_id] for client_id in client_ids]
         first = cast(SetEndpointDhcp, client_actions[0])
+        inactive_client_ids = (
+            [
+                device_id
+                for device_id, item in foundations.items()
+                if isinstance(item, SetEndpointDhcp)
+                and item.segment_id == first.segment_id
+                and device_id not in client_ids
+            ]
+            if native_binding
+            else []
+        )
+        if native_binding and len(inactive_client_ids) > MAX_NATIVE_CLIENTS:
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.DHCP_POOL_INVALID,
+                    "Native Server-PT binding exceeds its competing-client read bound.",
+                    service_id,
+                )
+            )
+            return []
         if any(
             not isinstance(item, SetEndpointDhcp)
             or (
@@ -1322,25 +1346,45 @@ class ServiceCompiler:
             )
             return []
         lease_start, lease_end = window
-        if native_binding and (
-            str(network.network_address) != "192.0.2.0"
-            or network.prefixlen != 24
-            or first.netmask != "255.255.255.0"
-            or str(gateway) != "192.0.2.1"
-            or dns_server != "192.0.2.10"
-            or lease_start != "192.0.2.100"
-            or lease_end != "192.0.2.100"
-            or [item.model_dump(mode="json") for item in excluded_ranges]
-            != [
-                {"start": "192.0.2.1", "end": "192.0.2.1"},
-                {"start": "192.0.2.10", "end": "192.0.2.10"},
-            ]
+        if (
+            native_binding
+            and native_policy_network(
+                network=str(network.network_address),
+                netmask=first.netmask,
+                gateway=str(gateway),
+                dns_server=dns_server,
+                lease_start=lease_start,
+                lease_end=lease_end,
+                max_users=max_users,
+                excluded_ranges=[(item.start, item.end) for item in excluded_ranges],
+                selected_count=len(client_ids),
+            )
+            is None
         ):
             issues.append(
                 _error(
                     ConfigurationIssueCode.DHCP_POOL_INVALID,
-                    "Native Server-PT binding has no measured transition for "
-                    "this derived address policy.",
+                    "Native Server-PT binding does not admit this derived "
+                    "address policy.",
+                    service_id,
+                )
+            )
+            return []
+        if native_binding and not native_policy_within_scope(
+            native_record.native_policy_scope,
+            network=str(network.network_address),
+            netmask=first.netmask,
+            gateway=str(gateway),
+            dns_server=dns_server,
+            lease_start=lease_start,
+            lease_end=lease_end,
+            max_users=max_users,
+            exclusion_count=len(excluded_ranges),
+        ):
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.DHCP_POOL_INVALID,
+                    "Native Server-PT binding is outside its recorded policy scope.",
                     service_id,
                 )
             )
@@ -1422,9 +1466,7 @@ class ServiceCompiler:
                             interface=item.interface,
                         )
                         for device_id, item in foundations.items()
-                        if isinstance(item, SetEndpointDhcp)
-                        and item.segment_id == first.segment_id
-                        and device_id not in client_ids
+                        if device_id in inactive_client_ids
                     ],
                     key=lambda item: item.device_name,
                 ),
@@ -2016,25 +2058,26 @@ class ServiceCompiler:
                         },
                     )
                     expectations.append(lease)
-                    expectations.append(
-                        ServiceVerificationExpectation(
-                            id=_stable_id(
-                                "verify-dhcp-attribution", service.id, client_id
-                            ),
-                            service_id=service.id,
-                            action_id=pool.id,
-                            kind=ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED,
-                            evidence_kind=ServiceEvidenceKind.DIRECT_STATE,
-                            host_device_id=service.host_device_id,
-                            host_device_name=service.host_device_name,
-                            client_device_id=client_id,
-                            client_device_name=client.name,
-                            host_model=service.host_model,
-                            client_model=client.model,
-                            expected=dict(lease.expected),
-                            required=False,
+                    if requirement.verification_mode != "state_only":
+                        expectations.append(
+                            ServiceVerificationExpectation(
+                                id=_stable_id(
+                                    "verify-dhcp-attribution", service.id, client_id
+                                ),
+                                service_id=service.id,
+                                action_id=pool.id,
+                                kind=ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED,
+                                evidence_kind=ServiceEvidenceKind.DIRECT_STATE,
+                                host_device_id=service.host_device_id,
+                                host_device_name=service.host_device_name,
+                                client_device_id=client_id,
+                                client_device_name=client.name,
+                                host_model=service.host_model,
+                                client_model=client.model,
+                                expected=dict(lease.expected),
+                                required=False,
+                            )
                         )
-                    )
                 continue
             # `verification_required=False` makes the expectations OPTIONAL, it
             # does not delete them. Compiling nothing would leave the selected

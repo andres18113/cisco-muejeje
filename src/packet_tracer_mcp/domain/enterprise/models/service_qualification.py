@@ -1853,7 +1853,7 @@ def _q3_native_serve() -> StageDefinition:
 
 
 def _q3_native_product() -> StageDefinition:
-    """Run the real one-client DHCP and cold HTTP product entry on an owned lab."""
+    """Run bounded native DHCP and cold HTTP on an owned lab."""
     fixtures = (
         FixtureDevice("Q3-DEFAULT-SERVER-01", "Server-PT", Q3_SERVER_IPV4, Q3_NETMASK),
         FixtureDevice("Q3-DEFAULT-PC-01", "PC-PT"),
@@ -1864,8 +1864,8 @@ def _q3_native_product() -> StageDefinition:
         stage=QualificationStage.Q3_NATIVE_PRODUCT,
         executable=True,
         purpose=(
-            "Apply the compiled native Server-PT DHCP state and one cold "
-            "dependent HTTP request through the governed product entry."
+            "Apply compiled native Server-PT DHCP state and each selected "
+            "client's first HTTP request through the governed product entry."
         ),
         fixtures=fixtures,
         links=(
@@ -1901,7 +1901,7 @@ def _q3_native_product() -> StageDefinition:
             ExperimentSpec(
                 id="M-NATIVE-PRODUCT",
                 hypothesis=(
-                    "The maintained A1-E6 product path verifies the selected "
+                    "The maintained A1-E6 product path verifies each selected "
                     "client's native DHCP state before its first HTTP request by IP."
                 ),
                 required=True,
@@ -1927,7 +1927,7 @@ def _q3_native_product() -> StageDefinition:
         budget=StageBudget(600, 2100, reserve_seconds=300),
         allowed_channels=("file",),
         profile_id="Q3-NATIVE-PRODUCT",
-        profile_version="1",
+        profile_version="2",
         steps=(
             DiagnosticStageStep(
                 id="NATIVE-product",
@@ -1936,7 +1936,7 @@ def _q3_native_product() -> StageDefinition:
                 also_experiments=("M-NATIVE-PRODUCT-FINAL",),
             ),
         ),
-        dhcp_pool_capacity=1,
+        dhcp_pool_capacity=2,
     )
 
 

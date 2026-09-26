@@ -67,6 +67,7 @@ from ...domain.enterprise.models.service_runtime import (
     RuntimeObservationStep,
     RuntimeServiceVerification,
 )
+from ...domain.enterprise.services.native_dhcp_policy import native_policy_network
 from .command_dispatch import PAGER_GUARD_JS
 from .runtime_inventory import normalize_runtime_inventory
 from .secret_resolver import EvidenceSanitizer
@@ -820,6 +821,9 @@ class PacketTracerEnterpriseServiceRuntime:
         )
         self._budget_reader = budget_reader
         self._owned_release = owned_release
+        self._native_group_results: dict[
+            str, dict[str, RuntimeServiceVerification]
+        ] = {}
 
     def inventory(self) -> list[RuntimeConfigurationTarget]:
         """Return the runtime inventory, normalized to typed targets."""
@@ -837,6 +841,11 @@ class PacketTracerEnterpriseServiceRuntime:
         disposition, failure code, residue, frontier and stickiness are the
         applicator's, through the one domain decision.
         """
+        if any(
+            isinstance(item, (ConfigureServerDhcpPool, EnableServerDhcp))
+            for item in actions
+        ):
+            self._native_group_results.clear()
         if not actions:
             return []
         host_names = {item.host_device_name for item in actions}
@@ -1815,20 +1824,34 @@ class PacketTracerEnterpriseServiceRuntime:
         policy = action.native_policy
         if policy is None:
             raise ValueError("native policy missing")
-        exclusions = [[item.start, item.end] for item in policy.excluded_ranges]
+        exclusions = sorted([[item.start, item.end] for item in policy.excluded_ranges])
+        subnet = native_policy_network(
+            network=policy.network,
+            netmask=policy.netmask,
+            gateway=policy.gateway,
+            dns_server=policy.dns_server,
+            lease_start=policy.lease_start,
+            lease_end=policy.lease_end,
+            max_users=policy.max_users,
+            excluded_ranges=[(item.start, item.end) for item in policy.excluded_ranges],
+            selected_count=len(policy.selected_clients),
+        )
+        selected = [
+            [item.device_name, item.interface] for item in policy.selected_clients
+        ]
+        inactive = [
+            [item.device_name, item.interface] for item in policy.inactive_clients
+        ]
         candidate = (
-            action.host_model == "Server-PT"
+            subnet is not None
+            and action.host_model == "Server-PT"
             and action.interface == "FastEthernet0"
             and action.effective_pool_name == policy.effective_pool_name == "serverPool"
-            and policy.network == "192.0.2.0"
-            and policy.netmask == "255.255.255.0"
-            and policy.gateway == "192.0.2.1"
-            and policy.dns_server == "192.0.2.10"
-            and policy.lease_start == policy.lease_end == "192.0.2.100"
-            and policy.max_users == 1
-            and exclusions == [["192.0.2.1", "192.0.2.1"], ["192.0.2.10", "192.0.2.10"]]
-            and len(policy.selected_clients) == 1
-            and len(policy.inactive_clients) <= 1
+            and len(selected) == len({tuple(item) for item in selected})
+            and len(inactive) == len({tuple(item) for item in inactive})
+            and not (
+                {tuple(item) for item in selected} & {tuple(item) for item in inactive}
+            )
         )
         if not candidate:
             return [
@@ -1849,12 +1872,6 @@ class PacketTracerEnterpriseServiceRuntime:
             "pool_count": 1,
         }
         after = {**wanted, "enabled": True}
-        selected = [
-            [item.device_name, item.interface] for item in policy.selected_clients
-        ]
-        inactive = [
-            [item.device_name, item.interface] for item in policy.inactive_clients
-        ]
         return [
             row,
             'var m=d.getProcess("DhcpServerMain"),p=null,pv=null,qv=null;',
@@ -1868,7 +1885,8 @@ class PacketTracerEnterpriseServiceRuntime:
             "throw new Error('native_pool_count');}"
             "var q=p.getPool('serverPool');if(!q){throw new Error('native_pool_absent');}"
             "var x=p.getExcludedAddressCount();"
-            "if(typeof x!=='number'||!isFinite(x)||Math.floor(x)!==x||x!==2){"
+            "if(typeof x!=='number'||!isFinite(x)||Math.floor(x)!==x||"
+            "x!==__want.exclusions.length){"
             "throw new Error('native_exclusion_count');}"
             "var xs=[];for(var i=0;i<x;i++){var e=p.getExcludedAddressAt(i);"
             "if(!e){throw new Error('native_exclusion_row');}"
@@ -1921,66 +1939,75 @@ class PacketTracerEnterpriseServiceRuntime:
         action: ConfigureServerDhcpPool,
         reader: str,
     ) -> list[str]:
-        """Apply only the exact one-user transition measured in episodes 1-5."""
-        exclusions = [[item.start, item.end] for item in action.excluded_ranges]
+        """Apply a bounded native transition with a read after every setter."""
+        exclusions = sorted([[item.start, item.end] for item in action.excluded_ranges])
+        subnet = native_policy_network(
+            network=action.network,
+            netmask=action.netmask,
+            gateway=action.gateway,
+            dns_server=action.dns_server,
+            lease_start=action.lease_start,
+            lease_end=action.lease_end,
+            max_users=action.max_users,
+            excluded_ranges=[(item.start, item.end) for item in action.excluded_ranges],
+            selected_count=1,
+        )
         candidate = (
-            action.host_model == "Server-PT"
+            subnet is not None
+            and action.host_model == "Server-PT"
             and action.interface == "FastEthernet0"
             and action.effective_pool_name == "serverPool"
             and action.pool_name != "serverPool"
-            and action.network == "192.0.2.0"
-            and action.netmask == "255.255.255.0"
-            and action.gateway == "192.0.2.1"
-            and action.dns_server == "192.0.2.10"
-            and action.lease_start == action.lease_end == "192.0.2.100"
-            and action.max_users == 1
-            and exclusions
-            == [
-                ["192.0.2.1", "192.0.2.1"],
-                ["192.0.2.10", "192.0.2.10"],
-            ]
         )
         if not candidate:
             return [
                 row,
                 f'r.skip_reason="{_SKIP_FAMILY_NOT_IMPLEMENTED}";results.push(r);',
             ]
+        assert subnet is not None
         base = {
             "name": "serverPool",
-            "network": "192.0.2.0",
-            "mask": "255.255.255.0",
+            "network": action.network,
+            "mask": action.netmask,
             "gateway": "0.0.0.0",
             "dns": "0.0.0.0",
-            "start": "192.0.2.0",
-            "end": "192.0.3.255",
+            "start": str(subnet.network_address),
+            "end": str(ip_address(int(subnet.network_address) + 511)),
             "max": 512,
             "exclusions": [],
             "enabled": False,
             "pool_count": 1,
         }
-        after_start = {**base, "start": "192.0.2.100", "end": "192.0.2.255", "max": 156}
-        after_size = {**after_start, "end": "192.0.2.100", "max": 1}
-        after_gateway = {**after_size, "gateway": "192.0.2.1"}
-        after_dns = {**after_gateway, "dns": "192.0.2.10"}
-        after_first_exclusion = {
-            **after_dns,
-            "exclusions": [["192.0.2.1", "192.0.2.1"]],
+        after_start = {
+            **base,
+            "start": action.lease_start,
+            "end": str(subnet.broadcast_address),
+            "max": int(subnet.broadcast_address)
+            - int(ip_address(action.lease_start))
+            + 1,
         }
-        wanted = {**after_first_exclusion, "exclusions": exclusions}
+        after_size = {
+            **after_start,
+            "end": action.lease_end,
+            "max": action.max_users,
+        }
+        after_gateway = {**after_size, "gateway": action.gateway}
+        after_dns = {**after_gateway, "dns": action.dns_server}
+        wanted = {**after_dns, "exclusions": exclusions}
         return [
             row,
             'var m=d.getProcess("DhcpServerMain"),p=null,pv=null,qv=null;',
             f"var __if={json.dumps(action.interface)},__base={json.dumps(base)},"
             f"__start={json.dumps(after_start)},__size={json.dumps(after_size)},"
             f"__gateway={json.dumps(after_gateway)},__dns={json.dumps(after_dns)},"
-            f"__first={json.dumps(after_first_exclusion)},__want={json.dumps(wanted)};",
+            f"__want={json.dumps(wanted)};",
             "function __state(){var n=p.getPoolCount();"
             "if(typeof n!=='number'||!isFinite(n)||Math.floor(n)!==n||n!==1){"
             "throw new Error('native_pool_count');}"
             "var q=p.getPool('serverPool');if(!q){throw new Error('native_pool_absent');}"
             "var x=p.getExcludedAddressCount();"
             "if(typeof x!=='number'||!isFinite(x)||Math.floor(x)!==x||"
-            "x<0||x>2){throw new Error('native_exclusion_count');}"
+            "x<0||x>16){throw new Error('native_exclusion_count');}"
             "var xs=[];for(var i=0;i<x;i++){var e=p.getExcludedAddressAt(i);"
             "if(!e){throw new Error('native_exclusion_row');}"
             "xs.push([String(e.first),String(e.second)]);}xs.sort();"
@@ -2011,9 +2038,11 @@ class PacketTracerEnterpriseServiceRuntime:
             "if(!__same(__state(),__gateway)){throw new Error('native_gateway_drift');}"
             "q.setDnsServerIp(__want.dns);"
             "if(!__same(__state(),__dns)){throw new Error('native_dns_drift');}"
-            "p.addExcludedAddress(__want.exclusions[0][0],__want.exclusions[0][1]);"
-            "if(!__same(__state(),__first)){throw new Error('native_first_exclusion_drift');}"
-            "p.addExcludedAddress(__want.exclusions[1][0],__want.exclusions[1][1]);"
+            "for(var j=0;j<__want.exclusions.length;j++){"
+            "p.addExcludedAddress(__want.exclusions[j][0],__want.exclusions[j][1]);"
+            "var step=__state(),expected=JSON.parse(JSON.stringify(__dns));"
+            "expected.exclusions=__want.exclusions.slice(0,j+1).sort();"
+            "if(!__same(step,expected)){throw new Error('native_exclusion_drift');}}"
             "if(!__same(__state(),__want)){throw new Error('native_final_drift');}"
             f"}}catch(e){{r.call_error={reader}(e);}}}}"
             "try{qv=__state();r.post_read=true;r.post=__dg(JSON.stringify(qv));}"
@@ -2486,6 +2515,11 @@ class PacketTracerEnterpriseServiceRuntime:
                 "excluded_range_count": len(ranges),
                 "expected_enabled": expected_enabled,
                 "observed_enabled": payload["enabled"],
+                "native_policy_json": (
+                    json.dumps(payload, sort_keys=True, separators=(",", ":"))
+                    if native_binding
+                    else ""
+                ),
             },
             limitations=("lease_allocation_state_unobserved",),
         )
@@ -2704,6 +2738,17 @@ class PacketTracerEnterpriseServiceRuntime:
     def _verify_native_dhcp_usable_state(self, expectation):
         """Join fresh client, complete native policy and exact lease row twice."""
         expected = expectation.expected
+        if "native_selected_clients_json" in expected:
+            group = self._native_group_results.get(expectation.service_id)
+            if group is None:
+                group = self._verify_native_dhcp_group(expectation)
+                self._native_group_results[expectation.service_id] = group
+            return group.get(expectation.id) or self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="native_dhcp_group_state",
+                cause="native_group_expectation_missing",
+            )
         try:
             inactive = json.loads(
                 str(expected.get("native_inactive_clients_json") or "")
@@ -2712,14 +2757,14 @@ class PacketTracerEnterpriseServiceRuntime:
             inactive = None
         if (
             expected.get("effective_pool_name") != "serverPool"
-            or expected.get("max_users") != 1
             or expected.get("configure_only") is True
             or not isinstance(inactive, list)
-            or len(inactive) != 1
-            or not isinstance(inactive[0], dict)
-            or set(inactive[0]) != {"device_name", "interface"}
-            or not all(
-                isinstance(value, str) and value for value in inactive[0].values()
+            or len(inactive) > 16
+            or any(
+                not isinstance(item, dict)
+                or set(item) != {"device_name", "interface"}
+                or not all(isinstance(value, str) and value for value in item.values())
+                for item in inactive
             )
         ):
             return self._observed(
@@ -2739,7 +2784,7 @@ class PacketTracerEnterpriseServiceRuntime:
         assigned_unattributed = False
         saw_incomplete = False
         sampled = 0
-        inactive_mac: str | None = None
+        inactive_macs: dict[str, str] = {}
         for index in range(self._dhcp_state_max_samples):
             if index:
                 self._sleep(self._dhcp_state_interval)
@@ -2757,30 +2802,32 @@ class PacketTracerEnterpriseServiceRuntime:
                     cause=f"native_server_policy:{server.cause or server.observation.value}",
                     observed={"samples": sampled},
                 )
-            inactive_state, observed_mac = self._native_inactive_client_state(
-                inactive[0]["device_name"], inactive[0]["interface"]
-            )
-            if inactive_state == "contradicted" or (
-                inactive_state == "clear"
-                and inactive_mac is not None
-                and observed_mac != inactive_mac
-            ):
-                return self._observed(
-                    expectation,
-                    observation=ObservationFact.CONTRADICTED,
-                    method="native_dhcp_usable_state",
-                    cause="native_inactive_client_changed",
-                    observed={"samples": sampled},
+            for other in inactive:
+                inactive_state, observed_mac = self._native_inactive_client_state(
+                    other["device_name"], other["interface"]
                 )
-            if inactive_state != "clear":
-                return self._observed(
-                    expectation,
-                    observation=ObservationFact.INCONCLUSIVE,
-                    method="native_dhcp_usable_state",
-                    cause="native_inactive_client_unobserved",
-                    observed={"samples": sampled},
-                )
-            inactive_mac = observed_mac
+                prior_mac = inactive_macs.get(other["device_name"])
+                if inactive_state == "contradicted" or (
+                    inactive_state == "clear"
+                    and prior_mac is not None
+                    and observed_mac != prior_mac
+                ):
+                    return self._observed(
+                        expectation,
+                        observation=ObservationFact.CONTRADICTED,
+                        method="native_dhcp_usable_state",
+                        cause="native_inactive_client_changed",
+                        observed={"samples": sampled},
+                    )
+                if inactive_state != "clear":
+                    return self._observed(
+                        expectation,
+                        observation=ObservationFact.INCONCLUSIVE,
+                        method="native_dhcp_usable_state",
+                        cause="native_inactive_client_unobserved",
+                        observed={"samples": sampled},
+                    )
+                inactive_macs[other["device_name"]] = observed_mac
             client = self._verify_dhcp_lease(client_expectation)
             if client.observation is ObservationFact.CONTRADICTED:
                 return self._observed(
@@ -2857,8 +2904,17 @@ class PacketTracerEnterpriseServiceRuntime:
                         "client_mac": identity[2],
                         "effective_pool_name": "serverPool",
                         "requested_pool_name": str(expected.get("pool_name") or ""),
-                        "inactive_client_name": inactive[0]["device_name"],
-                        "inactive_client_mac": inactive_mac or "",
+                        "inactive_client_name": (
+                            inactive[0]["device_name"] if len(inactive) == 1 else ""
+                        ),
+                        "inactive_client_mac": (
+                            inactive_macs.get(inactive[0]["device_name"], "")
+                            if len(inactive) == 1
+                            else ""
+                        ),
+                        "inactive_clients_json": json.dumps(
+                            inactive_macs, sort_keys=True
+                        ),
                         "stable_samples": consecutive,
                         "samples": sampled,
                     },
@@ -2882,6 +2938,371 @@ class PacketTracerEnterpriseServiceRuntime:
             ),
             observed={"samples": sampled},
         )
+
+    def _native_group_snapshot(self, expectation, selected, bound):
+        """Read every selected port and the physical lease table once."""
+        server = json.dumps(expectation.host_device_name)
+        interface = json.dumps(str(expectation.expected.get("server_interface") or ""))
+        selected_json = json.dumps(selected)
+        bound_json = json.dumps(bound)
+        reader = "__ec" if self._sanitizer.holds_values else "__er"
+        helper = (
+            _ERROR_CATEGORY_HELPER
+            if self._sanitizer.holds_values
+            else _ERROR_TEXT_HELPER
+        )
+        script = (
+            helper + f"try{{var sd=ipc.network().getDevice({server});"
+            f"var sm=sd&&sd.getProcess('DhcpServerMain');"
+            f"var sp=sm&&sm.getDhcpServerProcessByPortName({interface});"
+            "var pool=sp&&sp.getPool('serverPool');"
+            f"var group={selected_json},clients=[],rows=[],scanError='',"
+            "termination='not_started';"
+            "for(var i=0;i<group.length;i++){var item=group[i],"
+            "dev=null,port=null;try{dev=ipc.network().getDevice(item.device_name);"
+            "if(dev){var n=dev.getPortCount();"
+            "if(typeof n==='number'&&n>=0&&n<=32){"
+            "for(var k=0;k<n;k++){var q=dev.getPortAt(k);"
+            "if(q&&String(q.getName())===item.interface){port=q;break;}}}}"
+            "var mode=port?port.isDhcpClientOn():null;"
+            "clients.push({expectation_id:item.expectation_id,"
+            "device_name:item.device_name,interface:item.interface,"
+            "found:!!dev,port_found:!!port,mode:mode,mode_type:typeof mode,"
+            "ipv4:port?String(port.getIpAddress()):'',"
+            "netmask:port?String(port.getSubnetMask()):'',"
+            "mac:port?String(port.getMacAddress()):'',error:''});}"
+            "catch(e){clients.push({expectation_id:item.expectation_id,"
+            "device_name:item.device_name,interface:item.interface,"
+            "found:!!dev,port_found:!!port,mode:null,mode_type:'error',"
+            "ipv4:'',netmask:'',mac:'',"
+            f"error:{reader}(e)}});}}}}"
+            f"if(pool){{termination='bound';for(var j=0;j<{bound_json};j++){{"
+            "try{var r=pool.getLeaseAt(j);if(!r){termination='null';break;}"
+            "rows.push({ipAddress:String(r.ipAddress),"
+            "macAddress:String(r.macAddress),leaseTime:r.leaseTime,"
+            "port:String(r.port)});"
+            f"}}catch(e){{scanError={reader}(e);termination='error';break;}}}}}}"
+            "reportResult(JSON.stringify({server_found:!!sd,process_found:!!sp,"
+            "pool_found:!!pool,pool_name:pool?String(pool.getDhcpPoolName()):'',"
+            "clients:clients,rows:rows,scan_error:scanError,"
+            "termination:termination,error:''}));}catch(e){"
+            f"reportResult(JSON.stringify({{error:{reader}(e)}}));}}"
+        )
+        return self._observe(script, self._mail_timeout)
+
+    def _verify_native_dhcp_group(self, expectation):
+        """Verify clients independently from two shared, fresh group scans."""
+        expected = expectation.expected
+        try:
+            selected = json.loads(str(expected["native_selected_clients_json"]))
+            inactive = json.loads(str(expected["native_inactive_clients_json"]))
+        except (KeyError, ValueError, TypeError):
+            selected = None
+            inactive = None
+        if (
+            not isinstance(selected, list)
+            or not 1 <= len(selected) <= 16
+            or not isinstance(inactive, list)
+            or len(inactive) > 16
+            or any(
+                not isinstance(item, dict)
+                or set(item) != {"expectation_id", "device_name", "interface"}
+                or not all(isinstance(value, str) and value for value in item.values())
+                for item in selected
+            )
+            or len({item["expectation_id"] for item in selected}) != len(selected)
+            or len({(item["device_name"], item["interface"]) for item in selected})
+            != len(selected)
+            or expectation.id not in {item["expectation_id"] for item in selected}
+            or expected.get("effective_pool_name") != "serverPool"
+            or expected.get("configure_only") is True
+        ):
+            return {
+                expectation.id: self._observed(
+                    expectation,
+                    observation=ObservationFact.MALFORMED,
+                    method="native_dhcp_group_state",
+                    cause="native_group_contract_invalid",
+                )
+            }
+        allocation = _expected_dhcp_allocation(expected)
+        bound = expected.get("max_users")
+        if (
+            allocation is None
+            or isinstance(bound, bool)
+            or not isinstance(bound, int)
+            or not 1 <= len(selected) <= bound <= 16
+        ):
+            return {
+                expectation.id: self._observed(
+                    expectation,
+                    observation=ObservationFact.MALFORMED,
+                    method="native_dhcp_group_state",
+                    cause="native_group_allocation_invalid",
+                )
+            }
+        network, lease_start, lease_end, excluded = allocation
+        expectations = {
+            item["expectation_id"]: expectation.model_copy(
+                update={
+                    "id": item["expectation_id"],
+                    "client_device_name": item["device_name"],
+                }
+            )
+            for item in selected
+        }
+        history: list[dict] = []
+        identities: dict[str, tuple[str, str, str]] = {}
+        stable: dict[str, int] = {item["expectation_id"]: 0 for item in selected}
+        saw_address: dict[str, bool] = {
+            item["expectation_id"]: False for item in selected
+        }
+        failures: dict[str, tuple[ObservationFact, str]] = {}
+        inactive_macs: dict[str, str] = {}
+        global_failure: tuple[ObservationFact, str] | None = None
+        for sample_index in range(self._dhcp_state_max_samples):
+            if sample_index:
+                self._sleep(self._dhcp_state_interval)
+            server = self._verify_dhcp_server_state(
+                expectation.model_copy(
+                    update={"expected": {**expected, "enabled": True}}
+                )
+            )
+            if server.status is not ActionExecutionStatus.VERIFIED:
+                global_failure = (
+                    ObservationFact.CONTRADICTED
+                    if server.observation is ObservationFact.CONTRADICTED
+                    else ObservationFact.INCONCLUSIVE,
+                    "native_server_policy:"
+                    + (server.cause or server.observation.value),
+                )
+                break
+            for other in inactive:
+                if not isinstance(other, dict) or set(other) != {
+                    "device_name",
+                    "interface",
+                }:
+                    global_failure = (
+                        ObservationFact.MALFORMED,
+                        "native_inactive_shape",
+                    )
+                    break
+                state, mac = self._native_inactive_client_state(
+                    other["device_name"], other["interface"]
+                )
+                old_mac = inactive_macs.get(other["device_name"])
+                if state != "clear" or (old_mac is not None and mac != old_mac):
+                    global_failure = (
+                        ObservationFact.CONTRADICTED
+                        if state == "contradicted" or old_mac is not None
+                        else ObservationFact.INCONCLUSIVE,
+                        "native_inactive_client_changed"
+                        if state == "contradicted" or old_mac is not None
+                        else "native_inactive_client_unobserved",
+                    )
+                    break
+                inactive_macs[other["device_name"]] = mac
+            if global_failure:
+                break
+            observation = self._native_group_snapshot(expectation, selected, bound)
+            if observation.kind is not BridgeObservationKind.PAYLOAD:
+                global_failure = (
+                    self._transport_fact(observation),
+                    "native_group_scan_unobserved",
+                )
+                break
+            payload = observation.payload or {}
+            history.append(
+                {
+                    "server_policy_json": server.observed.get("native_policy_json", ""),
+                    "inactive_clients": dict(inactive_macs),
+                    "lease_snapshot": payload,
+                }
+            )
+            if (
+                payload.get("error")
+                or not all(
+                    payload.get(key) is True
+                    for key in ("server_found", "process_found", "pool_found")
+                )
+                or payload.get("pool_name") != "serverPool"
+            ):
+                global_failure = (
+                    ObservationFact.INCONCLUSIVE,
+                    "native_group_subject_unobserved",
+                )
+                break
+            clients = payload.get("clients")
+            rows = payload.get("rows")
+            if (
+                not isinstance(clients, list)
+                or len(clients) != len(selected)
+                or not isinstance(rows, list)
+                or len(rows) > bound
+                or payload.get("termination") not in {"bound", "null", "error"}
+                or not isinstance(payload.get("scan_error"), str)
+            ):
+                global_failure = (ObservationFact.MALFORMED, "native_group_scan_shape")
+                break
+            if any(
+                not isinstance(row, dict)
+                or set(row) != {"ipAddress", "macAddress", "leaseTime", "port"}
+                or not all(
+                    isinstance(row.get(key), str)
+                    for key in ("ipAddress", "macAddress", "port")
+                )
+                or not _MAC_TEXT.fullmatch(row["macAddress"])
+                or isinstance(row["leaseTime"], bool)
+                or not isinstance(row["leaseTime"], (int, float))
+                or not isfinite(float(row["leaseTime"]))
+                for row in rows
+            ):
+                global_failure = (
+                    ObservationFact.MALFORMED,
+                    "native_group_lease_row_invalid",
+                )
+                break
+            sample_identities: list[tuple[str, str]] = []
+            for item, client in zip(selected, clients, strict=True):
+                identifier = item["expectation_id"]
+                if identifier in failures:
+                    continue
+                if (
+                    not isinstance(client, dict)
+                    or client.get("expectation_id") != identifier
+                    or client.get("device_name") != item["device_name"]
+                    or client.get("interface") != item["interface"]
+                    or client.get("found") is not True
+                    or client.get("port_found") is not True
+                    or not isinstance(client.get("error"), str)
+                    or bool(client.get("error"))
+                    or client.get("mode_type") != "boolean"
+                    or not all(
+                        isinstance(client.get(key), str)
+                        for key in ("ipv4", "netmask", "mac")
+                    )
+                ):
+                    failures[identifier] = (
+                        ObservationFact.INCONCLUSIVE,
+                        "native_client_identity_unobserved",
+                    )
+                    continue
+                if client.get("mode") is not True:
+                    failures[identifier] = (
+                        ObservationFact.CONTRADICTED,
+                        "native_client_mode_disabled",
+                    )
+                    continue
+                if client["ipv4"] in {"", "0.0.0.0"}:
+                    stable[identifier] = 0
+                    continue
+                saw_address[identifier] = True
+                sample_identities.append((client["ipv4"], client["mac"]))
+                try:
+                    address = ip_address(client["ipv4"])
+                except ValueError:
+                    address = None
+                if (
+                    address is None
+                    or address.version != 4
+                    or client["netmask"] != expected.get("netmask")
+                    or not _MAC_TEXT.fullmatch(client["mac"])
+                    or address not in network
+                    or not lease_start <= address <= lease_end
+                    or _in_address_ranges(address, excluded)
+                ):
+                    failures[identifier] = (
+                        ObservationFact.CONTRADICTED,
+                        "native_client_outside_policy",
+                    )
+                    continue
+                same_ip = [row for row in rows if row["ipAddress"] == client["ipv4"]]
+                exact = [
+                    row
+                    for row in same_ip
+                    if row["macAddress"] == client["mac"]
+                    and row["port"] == item["interface"]
+                ]
+                if any(row not in exact for row in same_ip):
+                    failures[identifier] = (
+                        ObservationFact.CONTRADICTED,
+                        "foreign_lease_row",
+                    )
+                    continue
+                if len(exact) != 1:
+                    stable[identifier] = 0
+                    continue
+                identity = (client["ipv4"], client["netmask"], client["mac"])
+                stable[identifier] = (
+                    stable[identifier] + 1
+                    if identities.get(identifier) == identity
+                    else 1
+                )
+                identities[identifier] = identity
+            if len({item[0] for item in sample_identities}) != len(
+                sample_identities
+            ) or len({item[1] for item in sample_identities}) != len(sample_identities):
+                global_failure = (
+                    ObservationFact.CONTRADICTED,
+                    "native_selected_identity_duplicate",
+                )
+                break
+            if all(
+                identifier in failures or count >= 2
+                for identifier, count in stable.items()
+            ):
+                break
+        # The applicator may have blocked an earlier selected expectation
+        # before reaching this reader. The triggering row is guaranteed to
+        # be returned and persisted; a positional first client is not.
+        leader = expectation.id
+        trace_json = json.dumps(history, sort_keys=True, separators=(",", ":"))
+        results = {}
+        for item in selected:
+            identifier = item["expectation_id"]
+            failure = global_failure or failures.get(identifier)
+            if failure:
+                fact, cause = failure
+            elif stable[identifier] >= 2:
+                fact, cause = ObservationFact.OBSERVED, ""
+            elif not saw_address[identifier]:
+                fact, cause = (
+                    ObservationFact.CONTRADICTED,
+                    "native_client_unassigned_in_window",
+                )
+            else:
+                fact, cause = (
+                    ObservationFact.INCONCLUSIVE,
+                    "native_lease_attribution_incomplete",
+                )
+            identity = identities.get(identifier, ("", "", ""))
+            results[identifier] = self._observed(
+                expectations[identifier],
+                observation=fact,
+                method="native_dhcp_group_state",
+                cause=cause,
+                claim_level="attributed_to_effective_server_pool"
+                if fact is ObservationFact.OBSERVED
+                else "",
+                observed={
+                    "client_ipv4": identity[0],
+                    "client_netmask": identity[1],
+                    "client_mac": identity[2],
+                    "effective_pool_name": "serverPool",
+                    "requested_pool_name": str(expected.get("pool_name") or ""),
+                    "stable_samples": stable[identifier],
+                    "samples": len(history),
+                    "group_trace_json": trace_json if identifier == leader else "",
+                    "group_trace_ref": leader,
+                },
+                limitations=(
+                    "autonomous_state_not_explicit_dhcpRun_causality",
+                    "positive_row_does_not_establish_table_end",
+                )
+                if fact is ObservationFact.OBSERVED
+                else (),
+            )
+        return results
 
     def _native_inactive_client_state(
         self, device_name: str, interface: str

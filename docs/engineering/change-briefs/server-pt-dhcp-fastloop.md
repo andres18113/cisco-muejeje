@@ -1330,3 +1330,74 @@ The READY_FOR_REVIEW delivery, with source and CI identities, design and
 rejected alternatives, decisive records, scale measurements, resource use,
 residual limitations and its integrity manifest, is
 [`dhcp-autonomy-02/DELIVERY.md`](../../reference/server-pt/evidence/dhcp-autonomy-02/DELIVERY.md).
+
+## Public policy and multi-client continuation, version 15 design delta
+
+**Starting identity and risk.** This continuation starts from clean
+`feature/server-pt-goal-foundations` at `543adbe8e761c04fb824b7fbd5de1c6aedf34530`
+(tree `13f8e33c11972c0b9cc1cb364e4e5d09ee0d4ea3`). Risk remains **L**:
+the public capability, native effect admission, and DHCP-to-HTTP evidence gate
+change. Episode 8 remains immutable evidence for its exact one-client policy.
+Its readiness observation records 53.639 seconds total elapsed; about 34.327
+seconds elapsed from the first retained sample. The archived delivery report's
+roughly-34-second description is corrected here without changing its pinned
+historical bytes. The final Ubuntu/Python 3.13 CI at `543adbe` reported 8116
+passed and 22 skipped; the skip reasons must be retained and inspected, not
+inferred from the platform or replaced by the earlier local pass count.
+
+**Outcome and bounded family.** Admit unnamed `state_only` Server-PT DHCP on
+`FastEthernet0` only with exact-build recorded native capability and an
+independently checked policy scope. Represent the requested allocation in the
+existing intent and typed pool action, with physical `serverPool` recorded
+separately. The current private candidate binds `192.0.2.0/24`, one wired
+segment, a
+contiguous usable interval within that subnet, 1 through 16 selected PC-PT
+clients, capacity at least the selected count and at most 16, and no more
+than 16 compact exclusion ranges. Require a server and gateway inside the
+segment, a complete DNS address, disjoint exclusions and allocation, unique
+client identities, and one native pool. The initial observed one-client
+policy is included, but other values remain candidate behavior until measured
+LIVE. Other masks, larger capacity, explicit pool names, other models/builds,
+and incomplete policy are refused before effects. A recorded capability scope
+narrows the policy family independently of the generic `/24` implementation;
+the private candidate's wider values remain experimental. The runtime independently
+validates the same family and each exact physical transition; it never treats
+the capability marker alone as proof of a setter's effect.
+
+**Composition and evidence.** Derive selected and competing clients from the
+plan and deployed manifest. A one-PC plan has no invented inactive control;
+each selected E5 effect checks the disabled owned server and real competing
+ports before changing DHCP mode. Enabling the pool requires all selected
+ports eligible and all actual competing ports still inactive. The native
+state reader obtains fresh complete policy and one bounded indexed lease
+scan per group sample, reads each selected port, and joins every positive row
+to the exact server, physical pool, IP, MAC and interface. Two stable positive
+samples establish usable state per client. Duplicate/conflicting addresses or
+global server/pool ownership loss block all dependent operations; a client's
+incomplete evidence blocks that client's HTTP. Persist shared scan evidence
+once and retain per-client outcomes and sample history. No success wording
+implies `dhcpRun` causality, renewal, or lease-table end. The optional
+`dhcp_lease_attributed` projection duplicates the required native-state
+join and produced `lease_client_identity_invalid` in episodes 7 and 8; omit
+it for native `state_only` plans while preserving it for other DHCP modes.
+
+**Public authority.** Register only the measured scope in the trusted
+exact-build default catalog after discriminating owned-lab evidence. Keep the
+four-argument MCP signature and the standard application composition. An
+unqualified policy is rejected before E5. No global support override or
+public strategy selector is introduced.
+
+**Verification and acceptance.** First prove causal RED for the old fixture
+restriction, real one-PC and multi-client selection, transition rejection,
+shared scan/index behavior, duplicate/foreign rows, partial client failures,
+optional-check removal, and public catalog admission. Verify focused module,
+affected product composition, durable records and 2/20/200/1000 offline
+workloads with explicit backend substitution and measured operation/byte
+growth. Then run new exact-SHA owned-lab episodes with finite recorded
+allocations: contrasting address policies and capacity above one, followed
+by registered four-input DHCP plus each client's cold HTTP-by-IP request.
+Preserve campaign archives, result/exit/persistence/cleanup agreement and
+exact-SHA CI. Static-client HTTP controls remain positive. Router DHCP,
+alternate transports, renewal proof, other masks and native thousand-client
+capacity are outside this delivery. Unit, integration, system and acceptance
+levels all apply; LIVE acceptance is required for a SUPPORTED public scope.

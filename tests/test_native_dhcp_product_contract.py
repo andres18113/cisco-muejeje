@@ -48,6 +48,10 @@ from packet_tracer_mcp.infrastructure.execution.endpoint_address_observer import
 from packet_tracer_mcp.infrastructure.execution.enterprise_configuration_runtime import (
     PacketTracerEnterpriseConfigurationRuntime,
 )
+from packet_tracer_mcp.infrastructure.execution.enterprise_service_runtime import (
+    BridgeObservationKind,
+    PacketTracerEnterpriseServiceRuntime,
+)
 from packet_tracer_mcp.infrastructure.persistence.service_run_record_store import (
     ServiceRunRecordStore,
 )
@@ -158,6 +162,212 @@ def test_native_binding_refuses_an_explicit_different_pool_name() -> None:
     intent = type(_native_dhcp_http_intent()).model_validate(payload)
     with pytest.raises(ValueError, match="Native Server-PT binding requires"):
         dhcp_product_contract("9.0.1.0858", "explicit-name", 1, intent_override=intent)
+
+
+def test_native_policy_derives_two_selected_clients_without_inactive_twins() -> None:
+    """The requested capacity and selection reach the physical native plan."""
+    payload = _native_dhcp_http_intent().model_dump(mode="json")
+    services = payload["sites"][0]["services"]
+    services[0]["client_device_ids"] = [
+        "endpoint/q3/default/user_pc/001",
+        "endpoint/q3/default/user_pc/002",
+    ]
+    services[0]["dhcp_pool"]["max_users"] = 2
+    services[1]["client_device_ids"] = services[0]["client_device_ids"]
+    intent = type(_native_dhcp_http_intent()).model_validate(payload)
+    contract = dhcp_product_contract(
+        "9.0.1.0858",
+        "two-clients",
+        2,
+        intent_override=intent,
+        capabilities_override=_native_candidate_capabilities("9.0.1.0858"),
+        preserve_reference_topology=True,
+    )
+
+    [pool] = [
+        item
+        for item in contract.service_plan.actions
+        if isinstance(item, ConfigureServerDhcpPool)
+    ]
+    [enable] = [
+        item
+        for item in contract.service_plan.actions
+        if isinstance(item, EnableServerDhcp)
+    ]
+    assert (pool.lease_start, pool.lease_end, pool.max_users) == (
+        "192.0.2.100",
+        "192.0.2.101",
+        2,
+    )
+    assert enable.native_policy is not None
+    assert len(enable.native_policy.selected_clients) == 2
+    assert enable.native_policy.inactive_clients == []
+    lease_checks = [
+        item
+        for item in contract.service_plan.verification_expectations
+        if item.kind is ServiceVerificationKind.DHCP_LEASE
+    ]
+    assert len(lease_checks) == 2
+    assert all(item.required for item in lease_checks)
+    assert not any(
+        item.kind is ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED
+        for item in contract.service_plan.verification_expectations
+    )
+
+
+def test_native_candidate_derives_shifted_requested_allocation() -> None:
+    """The requested offset reaches E6 rather than a fixed .100 fixture."""
+    contract = native_dhcp_http_product_contract(
+        "9.0.1.0858", "shifted", selected_count=2, start_offset=150
+    )
+    [pool] = [
+        item
+        for item in contract.service_plan.actions
+        if isinstance(item, ConfigureServerDhcpPool)
+    ]
+    assert (pool.lease_start, pool.lease_end, pool.max_users) == (
+        "192.0.2.151",
+        "192.0.2.152",
+        2,
+    )
+
+
+def test_native_capability_without_recorded_policy_scope_refuses_before_e5(
+    tmp_path,
+) -> None:
+    """A broad marker cannot be an implicit public policy grant."""
+    payload = _native_dhcp_http_intent().model_dump(mode="json")
+    harness = _harness(tmp_path, payload)
+
+    def unscoped(build):
+        records = _native_candidate_capabilities(build)
+        key = "Server-PT:dhcp_native_default_binding"
+        records[key] = records[key].model_copy(update={"native_policy_scope": None})
+        return records
+
+    result = harness.run(intent_json=json.dumps(payload), capability_catalog=unscoped)
+    assert result.refusal_code is ServiceEntryRefusal.COMPOSITION_FAILED
+    assert "recorded policy scope" in result.blocked_reason
+    assert harness.mutating_calls == []
+
+
+@pytest.mark.parametrize("bad_duplicate", [False, True])
+def test_group_trace_owner_is_the_client_that_reached_the_reader(
+    monkeypatch, bad_duplicate
+) -> None:
+    """A skipped first client cannot leave a verified row with a dangling trace."""
+    contract = native_dhcp_http_product_contract(
+        "9.0.1.0858", "later-client", selected_count=2
+    )
+    leases = [
+        item
+        for item in contract.service_plan.verification_expectations
+        if item.kind is ServiceVerificationKind.DHCP_LEASE
+    ]
+    group = [
+        {
+            "expectation_id": item.id,
+            "device_name": item.client_device_name,
+            "interface": item.expected["interface"],
+        }
+        for item in leases
+    ]
+    later = leases[1].model_copy(
+        update={
+            "expected": {
+                **leases[1].expected,
+                "native_selected_clients_json": json.dumps(group),
+            }
+        }
+    )
+    payload = {
+        "server_found": True,
+        "process_found": True,
+        "pool_found": True,
+        "pool_name": "serverPool",
+        "scan_error": "",
+        "termination": "bound",
+        "error": "",
+        "clients": [
+            {
+                **item,
+                "found": True,
+                "port_found": True,
+                "mode": True,
+                "mode_type": "boolean",
+                "ipv4": f"192.0.2.{100 + index}",
+                "netmask": "255.255.255.0",
+                "mac": f"0000.0000.{index + 1:04d}",
+                "error": "",
+            }
+            for index, item in enumerate(group)
+        ],
+        "rows": [
+            {
+                "ipAddress": f"192.0.2.{100 + index}",
+                "macAddress": f"0000.0000.{index + 1:04d}",
+                "leaseTime": 3600,
+                "port": "FastEthernet0",
+            }
+            for index in range(2)
+        ],
+    }
+    if bad_duplicate:
+        payload["clients"][1]["ipv4"] = "192.0.2.100"
+        payload["clients"][1]["netmask"] = "255.255.0.0"
+    runtime = PacketTracerEnterpriseServiceRuntime(
+        lambda: [], lambda *_: None, sleeper=lambda _: None
+    )
+    runtime._dhcp_state_max_samples = 2
+    monkeypatch.setattr(
+        runtime,
+        "_verify_dhcp_server_state",
+        lambda _: SimpleNamespace(
+            status=ActionExecutionStatus.VERIFIED,
+            observed={"native_policy_json": "{}"},
+        ),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_native_group_snapshot",
+        lambda *_: SimpleNamespace(kind=BridgeObservationKind.PAYLOAD, payload=payload),
+    )
+
+    row = runtime.verify(later)
+
+    assert row.status is (
+        ActionExecutionStatus.FAILED
+        if bad_duplicate
+        else ActionExecutionStatus.VERIFIED
+    )
+    assert row.observed["group_trace_ref"] == later.id
+    assert len(json.loads(row.observed["group_trace_json"])) == (
+        1 if bad_duplicate else 2
+    )
+    if bad_duplicate:
+        first = runtime.verify(
+            leases[0].model_copy(update={"expected": later.expected})
+        )
+        assert first.status is ActionExecutionStatus.FAILED
+
+
+def test_native_single_pc_product_has_no_invented_inactive_client(tmp_path) -> None:
+    """A one-PC deployment composes without a fictitious competing port."""
+    payload = _native_dhcp_http_intent().model_dump(mode="json")
+    site = payload["sites"][0]
+    next(item for item in site["endpoints"] if item["role"] == "user_pc")["count"] = 1
+    harness = _harness(tmp_path, payload)
+    harness.configuration = _ModeConfigurationRuntime(
+        targets=harness.configuration.targets
+    )
+    result = harness.run(
+        intent_json=json.dumps(payload),
+        capability_catalog=_native_candidate_capabilities,
+    )
+
+    assert result.refusal_code is ServiceEntryRefusal.NONE, result.blocked_reason
+    assert result.service_result is not None
+    assert len(result.clients) == 1
 
 
 def test_native_e5_zero_address_and_zero_mask_are_unassigned() -> None:
@@ -290,10 +500,12 @@ def test_native_product_client_mode_is_guarded_in_its_effect_evaluation(
         engine.close()
 
 
-def test_native_binding_rejects_an_off_policy_window_before_e5(tmp_path) -> None:
-    """The marker cannot authorize a different compiled lease window."""
+def test_native_binding_rejects_capacity_beyond_scoped_family_before_e5(
+    tmp_path,
+) -> None:
+    """The marker cannot authorize capacity beyond the candidate scope."""
     payload = _native_dhcp_http_intent().model_dump(mode="json")
-    payload["sites"][0]["services"][0]["dhcp_pool"]["start_offset"] = 50
+    payload["sites"][0]["services"][0]["dhcp_pool"]["max_users"] = 17
     harness = _harness(tmp_path, payload)
 
     result = harness.run(
@@ -302,7 +514,7 @@ def test_native_binding_rejects_an_off_policy_window_before_e5(tmp_path) -> None
     )
 
     assert result.refusal_code is ServiceEntryRefusal.COMPOSITION_FAILED
-    assert "no measured transition" in result.blocked_reason
+    assert "does not admit" in result.blocked_reason
     assert harness.mutating_calls == []
 
 
@@ -338,6 +550,29 @@ def test_native_e5_runtime_reports_the_guarded_client_effect(
         assert engine.snapshot()["dhcp_setter_calls"]["configurePcIpDhcp"] == (
             0 if server_enabled else 1
         )
+    finally:
+        engine.close()
+
+
+def test_native_e5_guard_accepts_a_real_one_pc_inventory(tmp_path) -> None:
+    """No competing PC is needed to authorize the selected client effect."""
+    require_node()
+    contract = native_dhcp_http_product_contract("9.0.1.0858", "one-pc-guard")
+    action = next(
+        item
+        for item in contract.configuration_plan.actions
+        if isinstance(item, SetEndpointDhcp) and item.device_name == "Q3-DEFAULT-PC-01"
+    ).model_copy(update={"native_inactive_clients": []})
+    engine = NodeEngine(tmp_path, dhcp_default_pool="native")
+    try:
+        engine.seed_device("Q3-DEFAULT-SERVER-01", "Server-PT")
+        engine.seed_device("Q3-DEFAULT-PC-01", "PC-PT")
+        runtime = PacketTracerEnterpriseConfigurationRuntime(
+            lambda: [], engine.queue, lambda script, _timeout: engine.evaluate(script)
+        )
+        [mutation] = runtime.apply_actions([action])
+        assert decide_mutation(mutation).frontier is True
+        assert engine.snapshot()["dhcp_setter_calls"]["configurePcIpDhcp"] == 1
     finally:
         engine.close()
 

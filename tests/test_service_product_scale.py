@@ -8,8 +8,15 @@ over service membership, and one lookup per emitted check at the admitted
 
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime
+from time import perf_counter
+
 import pytest
 
+from packet_tracer_mcp.adapters.cli.service_qualification import (
+    _native_candidate_capabilities,
+)
 from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
     MAX_CLIENT_CHECK_ROWS,
     MAX_REPORTING_CLIENTS,
@@ -17,10 +24,13 @@ from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
     _client_rows,
     _reporting_budget_exceeded,
 )
+from packet_tracer_mcp.application.use_cases.apply_services import ServiceApplicator
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    ActionApplicationResult,
     ActionExecutionStatus,
     ConfigurationApplicationStatus,
 )
+from packet_tracer_mcp.domain.enterprise.models.service_entry import ServiceRunStatus
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceDefinition,
     ServiceEvidenceKind,
@@ -29,10 +39,17 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceVerificationExpectation,
     ServiceVerificationKind,
 )
+from packet_tracer_mcp.domain.enterprise.models.service_run_record import (
+    ServiceRunRecord,
+)
 from packet_tracer_mcp.domain.enterprise.models.service_runtime import (
     ObservationFact,
+    RuntimeServiceVerification,
     ServiceApplicationResult,
     ServiceVerificationResult,
+)
+from packet_tracer_mcp.infrastructure.persistence.service_run_record_store import (
+    ServiceRunRecordStore,
 )
 
 _CHECKS_PER_CLIENT = 5
@@ -249,3 +266,118 @@ def test_combined_seven_row_workload_is_explicitly_refused_at_1000_clients():
     assert len(clients) == MAX_REPORTING_CLIENTS
     assert len(combined.verification_expectations) == MAX_REPORTING_CLIENTS * 7
     assert _reporting_budget_exceeded(combined)
+
+
+@pytest.mark.parametrize("client_count", [2, 20, 200, MAX_REPORTING_CLIENTS])
+def test_group_assembly_evaluation_and_persistence_scale_with_fake_backend(
+    tmp_path, client_count
+):
+    """Exercise the actual E6 group derivation and durable product rows offline."""
+    clients, service, plan, _unused = _dhcp_reporting_fixture(client_count)
+    plan.verification_expectations = [
+        item.model_copy(
+            update={
+                "action_id": "action/dhcp",
+                "expected": {
+                    "state_only": True,
+                    "interface": "FastEthernet0",
+                },
+            }
+        )
+        for item in plan.verification_expectations
+        if item.kind is ServiceVerificationKind.DHCP_LEASE
+    ]
+
+    class FakeBackend:
+        calls = 0
+        group_json = None
+
+        def verify(self, expectation):
+            self.calls += 1
+            group = expectation.expected["native_selected_clients_json"]
+            if self.group_json is None:
+                self.group_json = group
+                selected = json.loads(group)
+                assert len(selected) == client_count
+                assert (
+                    len({item["expectation_id"] for item in selected}) == client_count
+                )
+            else:
+                assert group is self.group_json
+            return RuntimeServiceVerification(
+                expectation_id=expectation.id,
+                status=ActionExecutionStatus.VERIFIED,
+                evidence_kind=expectation.evidence_kind,
+                fresh_evidence=True,
+                observation=ObservationFact.OBSERVED,
+            )
+
+    backend = FakeBackend()
+    applicator = ServiceApplicator(backend)
+    verify_started = perf_counter()
+    verified, limitations = applicator._verify(
+        plan,
+        {
+            "action/dhcp": ActionApplicationResult(
+                action_id="action/dhcp", status=ActionExecutionStatus.VERIFIED
+            )
+        },
+        _native_candidate_capabilities("9.0.1.0858"),
+        {"server-1": "SERVER-1", **{item: item.upper() for item in clients}},
+        {},
+    )
+    verify_ms = round((perf_counter() - verify_started) * 1000, 3)
+    assert limitations == []
+    assert len(verified) == backend.calls == client_count
+    result = ServiceApplicationResult(
+        service_plan_id=plan.id,
+        service_semantic_hash="offline-scale",
+        source_topology_hash=plan.source_topology_hash,
+        source_configuration_hash=plan.source_configuration_hash,
+        status=ConfigurationApplicationStatus.VERIFIED,
+        verification_results=verified,
+    )
+    metrics = ClientRowAssemblyMetrics()
+    rows = _client_rows(
+        plan,
+        result,
+        [service],
+        {item: item.upper() for item in clients},
+        {item: "PC-PT" for item in clients},
+        metrics=metrics,
+    )
+    record = ServiceRunRecord(
+        run_id=f"offline-scale-{client_count}",
+        created_at=datetime.now(UTC),
+        deployment_id="offline-scale",
+        status=ServiceRunStatus.VERIFIED,
+        service_result=result,
+        clients=rows,
+        selected_clients=clients,
+    )
+    store = ServiceRunRecordStore(tmp_path)
+    persist_started = perf_counter()
+    store.complete(record)
+    loaded = store.load("offline-scale", record.run_id)
+    persist_ms = round((perf_counter() - persist_started) * 1000, 3)
+    assert len(loaded.clients) == client_count
+    assert all(len(row.results[service.id].checks) == 1 for row in loaded.clients)
+    assert metrics.expectations_indexed == client_count
+    assert metrics.check_lookups == client_count
+    print(
+        json.dumps(
+            {
+                "clients": client_count,
+                "group_assemblies": 1,
+                "verification_calls": backend.calls,
+                "check_lookups": metrics.check_lookups,
+                "group_json_bytes": len(backend.group_json.encode("utf-8")),
+                "record_bytes": store.path_for("offline-scale", record.run_id)
+                .stat()
+                .st_size,
+                "verify_ms": verify_ms,
+                "persist_round_trip_ms": persist_ms,
+            },
+            sort_keys=True,
+        )
+    )

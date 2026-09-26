@@ -1890,7 +1890,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     action.native_effective_pool_name != "serverPool"
                     or not action.native_server_device_name
                     or not action.native_server_interface
-                    or len(action.native_inactive_clients) != 1
+                    or len(action.native_inactive_clients) > 16
                 ):
                     return "try{}catch(__e){}"
                 server = json.dumps(action.native_server_device_name)

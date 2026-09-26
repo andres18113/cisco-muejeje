@@ -204,6 +204,19 @@ class ServiceCapabilityProfile(BaseModel):
     provenance: CapabilityProvenance = CapabilityProvenance.DOCUMENTARY_BASELINE
 
 
+class NativeDhcpPolicyScope(BaseModel):
+    """Recorded bounds for one native physical pool binding."""
+
+    network: str
+    netmask: str
+    gateway: str
+    dns_server: str
+    first_lease: str
+    last_lease: str
+    max_users: int
+    max_exclusion_ranges: int
+
+
 class ClientOperationCapability(BaseModel):
     """One operation authorized on one target model, with its provenance.
 
@@ -229,6 +242,7 @@ class ClientOperationCapability(BaseModel):
     executed_sha: str = ""
     transport: str = ""
     run_id: str = ""
+    native_policy_scope: NativeDhcpPolicyScope | None = None
 
 
 #: One resolution for compilation, admission and execution. Profiles are keyed

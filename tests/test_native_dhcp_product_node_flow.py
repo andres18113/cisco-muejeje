@@ -11,6 +11,7 @@ from service_entry_fixture import IsolationPreflight, RecordingConfigurationRunt
 from packet_tracer_mcp.adapters.cli.service_qualification import (
     _native_candidate_capabilities,
     _native_dhcp_http_intent,
+    dhcp_product_contract,
     native_dhcp_http_product_contract,
 )
 from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
@@ -52,21 +53,72 @@ from tests.service_qualification_engine import (
 
 
 @pytest.mark.parametrize(
-    ("retry_on_enable", "pc2_late"),
-    [(False, False), (True, False), (True, True)],
+    (
+        "retry_on_enable",
+        "pc2_late",
+        "client_count",
+        "duplicate_address",
+        "skip_second",
+        "getter_throw_second",
+    ),
+    [
+        (False, False, 1, False, False, False),
+        (True, False, 1, False, False, False),
+        (True, True, 1, False, False, False),
+        (True, False, 2, False, False, False),
+        (True, False, 2, True, False, False),
+        (True, False, 2, False, True, False),
+        (True, False, 2, False, False, True),
+    ],
 )
-def test_product_native_dhcp_state_gates_cold_http(tmp_path, retry_on_enable, pc2_late):
+def test_product_native_dhcp_state_gates_cold_http(
+    tmp_path,
+    retry_on_enable,
+    pc2_late,
+    client_count,
+    duplicate_address,
+    skip_second,
+    getter_throw_second,
+):
     """The product can request HTTP only after an attributable native lease."""
     require_node()
-    contract = native_dhcp_http_product_contract("9.0.1.0858", "node-product")
+    intent = _native_dhcp_http_intent()
+    if client_count == 2:
+        payload = intent.model_dump(mode="json")
+        services = payload["sites"][0]["services"]
+        selected = [
+            "endpoint/q3/default/user_pc/001",
+            "endpoint/q3/default/user_pc/002",
+        ]
+        services[0]["client_device_ids"] = selected
+        services[0]["dhcp_pool"]["max_users"] = 2
+        services[1]["client_device_ids"] = selected
+        intent = type(intent).model_validate(payload)
+        contract = dhcp_product_contract(
+            "9.0.1.0858",
+            "node-product-two",
+            2,
+            intent_override=intent,
+            capabilities_override=_native_candidate_capabilities("9.0.1.0858"),
+            preserve_reference_topology=True,
+        )
+    else:
+        contract = native_dhcp_http_product_contract("9.0.1.0858", "node-product")
     engine = NodeEngine(
         tmp_path,
         dhcp_default_pool="native",
         default_pool_realigns_on_address=True,
         dhcp_native_start_behavior="coupled",
-        dhcp_native_max_behavior="resize",
+        dhcp_native_max_behavior=(
+            "resize_candidate" if client_count == 2 else "resize"
+        ),
         dhcp_mode_acquires=True,
         dhcp_retry_on_server_enable=retry_on_enable,
+        dhcp_client_address_override=("192.0.2.100" if duplicate_address else ""),
+        dhcp_skip_client="Q3-DEFAULT-PC-02" if skip_second else "",
+        dhcp_client_read_throw_device=(
+            "Q3-DEFAULT-PC-02" if getter_throw_second else ""
+        ),
         pc2_mode_on_server_enable=pc2_late,
         stp_rows=FORWARDING_ROWS,
         terminals=True,
@@ -161,7 +213,7 @@ def test_product_native_dhcp_state_gates_cold_http(tmp_path, retry_on_enable, pc
                 )
 
         result = apply_enterprise_services(
-            json.dumps(_native_dhcp_http_intent().model_dump(mode="json")),
+            intent.model_dump_json(),
             deployment_id=contract.manifest.deployment_id,
             packet_tracer_version="9.0.1.0858",
             import_preflight=IsolationPreflight(),
@@ -177,7 +229,11 @@ def test_product_native_dhcp_state_gates_cold_http(tmp_path, retry_on_enable, pc
             ),
             capability_catalog=_native_candidate_capabilities,
             source_tree=SourceTreeIdentity(sha=SIM_SHA, tree=SIM_TREE, dirty=False),
-            run_id=f"native-node-{int(retry_on_enable)}-{int(pc2_late)}",
+            run_id=(
+                f"native-node-{int(retry_on_enable)}-{int(pc2_late)}-"
+                f"{client_count}-{int(duplicate_address)}-"
+                f"{int(skip_second)}-{int(getter_throw_second)}"
+            ),
         )
         assert result.service_result is not None, (
             result.refusal_code,
@@ -189,7 +245,7 @@ def test_product_native_dhcp_state_gates_cold_http(tmp_path, retry_on_enable, pc
             "serverPool"
         }
         assert snapshot["dhcp_runs"] == []
-        assert snapshot["dhcp_setter_calls"]["configurePcIpDhcp"] == 1
+        assert snapshot["dhcp_setter_calls"]["configurePcIpDhcp"] == client_count
         assert snapshot["dhcp_setter_calls"]["setEnable"] == 1, (
             [
                 (
@@ -216,23 +272,62 @@ def test_product_native_dhcp_state_gates_cold_http(tmp_path, retry_on_enable, pc
             item.expectation_id: item
             for item in result.service_result.verification_results
         }
-        lease_id = next(
+        lease_ids = [
             item.id
             for item in contract.service_plan.verification_expectations
             if item.kind.value == "dhcp_lease"
-        )
-        fetch_id = next(
+        ]
+        fetch_ids = [
             item.id
             for item in contract.service_plan.verification_expectations
             if item.kind.value == "http_fetch"
-        )
-        ready = retry_on_enable and not pc2_late
-        assert kinds[lease_id].status.value == ("verified" if ready else "failed")
-        assert kinds[fetch_id].status.value == (
-            "verified" if ready else "dependency_blocked"
-        )
+        ]
+        assert len(lease_ids) == len(fetch_ids) == client_count
+        ready = retry_on_enable and not pc2_late and not duplicate_address
+        for index, identifier in enumerate(lease_ids):
+            client_ready = ready and not (
+                (skip_second or getter_throw_second) and index == 1
+            )
+            assert kinds[identifier].status.value == (
+                "unknown"
+                if getter_throw_second and index == 1
+                else "verified"
+                if client_ready
+                else "failed"
+            ), [(kinds[item].status.value, kinds[item].cause) for item in lease_ids]
+        for index, identifier in enumerate(fetch_ids):
+            client_ready = ready and not (
+                (skip_second or getter_throw_second) and index == 1
+            )
+            assert kinds[identifier].status.value == (
+                "verified" if client_ready else "dependency_blocked"
+            )
         requests = [script for _kind, script in transport.calls if ".go(" in script]
-        assert len(requests) == (1 if ready else 0)
+        assert len(requests) == (
+            client_count - int(skip_second or getter_throw_second) if ready else 0
+        )
+        if client_count == 2:
+            scans = [
+                script
+                for _kind, script in transport.calls
+                if "pool.getLeaseAt(j)" in script
+            ]
+            assert len(scans) == (1 if duplicate_address else 3 if skip_second else 2)
+            if ready:
+                addresses = {
+                    kinds[identifier].observed["client_ipv4"]
+                    for identifier in lease_ids
+                }
+                assert addresses == (
+                    {"", "192.0.2.100"}
+                    if skip_second or getter_throw_second
+                    else {"192.0.2.100", "192.0.2.101"}
+                )
+                traces = [
+                    kinds[identifier].observed["group_trace_json"]
+                    for identifier in lease_ids
+                ]
+                assert sum(bool(value) for value in traces) == 1
         assert all("192.0.2.10" in script for script in requests)
         assert not any("ping " in script for _kind, script in transport.calls)
         assert snapshot["live_clients"] == 0

@@ -6066,7 +6066,7 @@ def _run_q3_native_product(execution: _Execution) -> None:
         or pool.effective_pool_name != "serverPool"
         or pool.pool_name_explicit
         or pool.host_device_name != server
-        or pool.max_users != 1
+        or not 1 <= pool.max_users <= 2
     ):
         execution.stop("native_product_manifest_or_pool_binding_mismatch")
         return
@@ -6269,7 +6269,7 @@ def _run_q3_native_product(execution: _Execution) -> None:
             and product.persisted_stage is ServiceStage.COMPLETED
             and bool(product.record_path)
             and not product.persist_error
-            and len(lease_ids) == len(fetch_ids) == 1
+            and len(lease_ids) == len(fetch_ids) == pool.max_users
             and all(
                 by_id.get(identifier) is not None
                 and by_id[identifier].status is ActionExecutionStatus.VERIFIED

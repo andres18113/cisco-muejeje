@@ -36,6 +36,9 @@ from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
 from packet_tracer_mcp.domain.enterprise.models.service_entry import (
     ServiceRunStatus,
 )
+from packet_tracer_mcp.domain.enterprise.models.service_plan import (
+    ConfigureServerDhcpPool,
+)
 from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     MeasurementConclusion,
     QualificationRecord,
@@ -174,11 +177,18 @@ def _run(
     *,
     retry_on_enable,
     pc2_late=False,
+    selected_count=1,
+    start_offset=99,
     inject_partial_product=False,
     fail_complete=False,
 ):
     definition = stage_definition(STAGE)
-    contract = native_dhcp_http_product_contract(SIM_BUILD, "offline-stage")
+    contract = native_dhcp_http_product_contract(
+        SIM_BUILD,
+        "offline-stage",
+        selected_count=selected_count,
+        start_offset=start_offset,
+    )
     inventory = [item.model_dump(mode="json") for item in contract.inventory]
     source = RepositoryIdentity(
         branch="feature/server-pt-goal-foundations",
@@ -246,8 +256,12 @@ def _run(
         **{
             "dhcp_default_pool": "native",
             "default_pool_realigns_on_address": True,
-            "dhcp_native_start_behavior": "coupled",
-            "dhcp_native_max_behavior": "resize",
+            "dhcp_native_start_behavior": (
+                "coupled_candidate" if start_offset != 99 else "coupled"
+            ),
+            "dhcp_native_max_behavior": (
+                "resize_candidate" if selected_count == 2 else "resize"
+            ),
             "dhcp_mode_acquires": True,
             "dhcp_retry_on_server_enable": retry_on_enable,
             "pc2_mode_on_server_enable": pc2_late,
@@ -266,7 +280,14 @@ def _run(
                 record_store=QualificationRecordStore(
                     directory / "data/services/qualification"
                 ),
-                native_product_contract=native_dhcp_http_product_contract,
+                native_product_contract=lambda build, run_id: (
+                    native_dhcp_http_product_contract(
+                        build,
+                        run_id,
+                        selected_count=selected_count,
+                        start_offset=start_offset,
+                    )
+                ),
                 native_product_runtimes=lambda bound, _rows: ServiceStageRuntimes(
                     configuration=_without_enumeration(
                         _hybrid_configuration(bound, contract.inventory)
@@ -308,6 +329,25 @@ def _run(
         return code, summary, record, transport.calls, engine.snapshot(), store
     finally:
         engine.close()
+
+
+def test_production_stage_binds_two_selected_clients_and_profile_revision(tmp_path):
+    """The actual LIVE composition is the two-client candidate under version 2."""
+    boundaries = production_boundaries(tmp_path)
+    contract = boundaries.native_product_contract("9.0.1.0858", "current-candidate")
+    [pool] = [
+        item
+        for item in contract.service_plan.actions
+        if isinstance(item, ConfigureServerDhcpPool)
+    ]
+    definition = stage_definition(STAGE)
+    assert (pool.lease_start, pool.lease_end, pool.max_users) == (
+        "192.0.2.100",
+        "192.0.2.101",
+        2,
+    )
+    assert definition.profile_version == "2"
+    assert definition.dhcp_pool_capacity == 2
 
 
 def test_production_product_runtimes_supply_inner_inventory(tmp_path):
@@ -424,6 +464,50 @@ def test_owned_stage_runs_one_attributed_dhcp_then_cold_http(
     assert snapshot["links"] == 0
     assert snapshot["live_clients"] == 0
     assert store.load_phase_status(ATTEMPT, "qualification")["restoration_proven"]
+
+
+def test_owned_stage_runs_two_attributed_clients_then_two_cold_http_requests(
+    tmp_path, capsys, monkeypatch
+):
+    """The governed stage accepts independent two-client product results."""
+    require_node()
+    code, summary, record, calls, snapshot, store = _run(
+        tmp_path,
+        capsys,
+        monkeypatch,
+        retry_on_enable=True,
+        selected_count=2,
+    )
+    assert code == 0, summary
+    measured = {item.experiment_id: item for item in record.measurements}
+    assert (
+        measured["M-NATIVE-PRODUCT"].conclusion
+        is MeasurementConclusion.SUPPORTED_IN_SAMPLE
+    )
+    assert len([script for _kind, script in calls if ".go(" in script]) == 2
+    assert snapshot["devices"] == []
+    assert store.load_phase_status(ATTEMPT, "qualification")["restoration_proven"]
+
+
+def test_owned_stage_uses_shifted_policy_for_two_clients(tmp_path, capsys, monkeypatch):
+    """The full stage carries a requested .151-.152 window to the runtime."""
+    require_node()
+    code, summary, record, calls, _snapshot, _store = _run(
+        tmp_path,
+        capsys,
+        monkeypatch,
+        retry_on_enable=True,
+        selected_count=2,
+        start_offset=150,
+    )
+    assert code == 0, summary
+    measured = {item.experiment_id: item for item in record.measurements}
+    assert (
+        measured["M-NATIVE-PRODUCT"].conclusion
+        is MeasurementConclusion.SUPPORTED_IN_SAMPLE
+    )
+    assert any("192.0.2.151" in script for _kind, script in calls)
+    assert len([script for _kind, script in calls if ".go(" in script]) == 2
 
 
 def test_positive_run_seals_its_product_record_in_the_campaign_archive(
