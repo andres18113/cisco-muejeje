@@ -472,17 +472,7 @@ def test_the_prepare_command_prints_the_derived_grant_fields(
     assert harness.terminal.log == []
 
 
-#: The readiness extension's offer and effective cap derive from the time
-#: left in the shared readiness budget, so they are clock facts as well.
-_CLOCK_KEYS = {
-    "elapsed_ms",
-    "duration_ms",
-    "run_id",
-    "run_label",
-    "record_path",
-    "allowance_seconds",
-    "wall_cap_seconds",
-}
+_CLOCK_KEYS = {"elapsed_ms", "duration_ms", "run_id", "run_label", "record_path"}
 
 
 def _without_clock(value):

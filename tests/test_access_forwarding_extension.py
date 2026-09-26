@@ -305,6 +305,15 @@ def test_without_an_allowance_the_window_result_is_unchanged():
     assert observation.episode_end_reason == "deadline"
 
 
+def test_a_run_that_needs_no_extension_records_no_offer():
+    """The offer is clock-derived, so equivalent runs must not record it."""
+    observation, ios, _clock = _observe([_read("FWD", "FWD")])
+
+    assert access_forwarding_admission(observation).admitted is True
+    assert observation.extension == AccessForwardingExtension()
+    assert observation.samples == ios.calls == 1
+
+
 def test_learning_only_evidence_earns_the_qualified_learning_budget():
     """The existing 20-second, 45-second-cap contract, unchanged."""
     observation, _ios, _clock = _observe(

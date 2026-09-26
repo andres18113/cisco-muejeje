@@ -1264,9 +1264,14 @@ nothing left is refused as `reserved_for_other_groups`. Narrowing windows
 of later groups are not reserved against an extension; their first windows
 are. Under the derived ceilings of two windows per group, plans without an
 extension behave as before, and the injected tight-budget test keeps its
-first-come result. The offer and the effective cap derive from remaining
-time, so the scalable equivalence test treats them as clock facts beside
-`elapsed_ms`; before that, it compared them and failed intermittently.
+first-come result. The offer derives from remaining time, so recording it
+on every observation made two route-equivalence tests (scalable envelope
+and cold HTTP acceptance) fail intermittently in CI on runs that never
+needed an extension. An observation now records nothing about an extension
+unless one was a candidate, so equivalent runs record identical facts; both
+equivalence tests keep their original comparisons and passed 20 of 20
+repeated runs, with a regression proving a run admitted in its window
+records no offer.
 With the pre-change sources restored,
 the real gate replaying episode 7's shape (listening until 60 s, about 19 s
 per read) refuses with the same dimension and cause as LIVE

@@ -1149,9 +1149,10 @@ class PacketTracerEnterpriseConfigurationRuntime:
             auxiliary_read_after_deadline = self._clock() >= deadline
         elif samples:
             simulation_time = "not_sampled_deadline"
-        extension = AccessForwardingExtension(
-            allowance_seconds=float(extension_seconds)
-        )
+        # Nothing about an extension is recorded unless one was a candidate:
+        # the offer derives from the caller's remaining time, and a run that
+        # never needed it must record the same facts as any equivalent run.
+        extension = AccessForwardingExtension()
         extension_aux_calls = 0
         budget = (
             access_forwarding_extension_budget(*window_evidence)
