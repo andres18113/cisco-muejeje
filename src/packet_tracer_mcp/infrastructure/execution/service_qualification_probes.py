@@ -274,6 +274,30 @@ _SPECS: dict[str, dict[str, tuple[type, ...]]] = {
         "pre_count": _INT,
         "post_count": _INT,
     },
+    "dhcp_native_enable_probe": {
+        "device": _STR,
+        "interface": _STR,
+        "found": _BOOL,
+        "policy_match": _BOOL,
+        "clients_clear": _BOOL,
+        "attempted": _BOOL,
+        "call_error": _STR,
+        "pre_enabled": _OPTIONAL_BOOL,
+        "post_enabled": _OPTIONAL_BOOL,
+    },
+    "dhcp_native_client_mode_probe": {
+        "server": _STR,
+        "server_interface": _STR,
+        "client": _STR,
+        "client_interface": _STR,
+        "policy_match": _BOOL,
+        "inactive_clients_clear": _BOOL,
+        "client_found": _BOOL,
+        "attempted": _BOOL,
+        "call_error": _STR,
+        "pre_mode": _OPTIONAL_BOOL,
+        "post_mode": _OPTIONAL_BOOL,
+    },
     "dhcp_clients": {"clients": _LIST},
     "dhcp_table": {
         "found": _BOOL,
@@ -1198,6 +1222,161 @@ class PacketTracerQualificationProbes:
             "reportResult(JSON.stringify({device:__dn,interface:__if,"
             "found:!!__q,attempted:__attempted,call_error:__error,"
             "pre_count:__pre,post_count:__post}));",
+        )
+
+    def probe_native_server_enable(
+        self,
+        server: str,
+        interface: str,
+        expected_row: Mapping[str, object],
+        expected_exclusions: Sequence[Mapping[str, str]],
+        clients: Sequence[tuple[str, str]],
+    ) -> ProbeReading:
+        """Enable once only if the live process still has the exact policy."""
+        expected_pairs = [[item["start"], item["end"]] for item in expected_exclusions]
+        return self._read(
+            "dhcp_native_enable_probe",
+            f"var __dn={json.dumps(server)},__if={json.dumps(interface)},"
+            f"__want={json.dumps(dict(expected_row))},"
+            f"__wex={json.dumps(expected_pairs)},"
+            f"__clients={json.dumps([list(item) for item in clients])};"
+            "var __d=ipc.network().getDevice(__dn);"
+            "var __m=__d?__d.getProcess('DhcpServerMain'):null;"
+            "var __p=__m&&__m.getDhcpServerProcessByPortName(__if);"
+            "var __pre=null,__post=null,__match=false,__clear=true,"
+            "__attempted=false,__error='';"
+            "try{if(__clients.length!==2){__clear=false;}"
+            "for(var __j=0;__j<__clients.length&&__clear;__j++){"
+            "var __cn=__clients[__j][0],__ci=__clients[__j][1];"
+            "var __cd=ipc.network().getDevice(__cn),__cp=null;"
+            "if(!__cd){__clear=false;break;}"
+            "var __count=__cd.getPortCount();"
+            "if(typeof __count!=='number'||__count<0||__count>32){"
+            "__clear=false;break;}"
+            "for(var __k=0;__k<__count;__k++){"
+            "var __v=__cd.getPortAt(__k);"
+            "if(__v&&String(__v.getName())===__ci){__cp=__v;break;}}"
+            "if(!__cp||__cp.isDhcpClientOn()!==false){__clear=false;break;}"
+            "var __ip=String(__cp.getIpAddress());"
+            "var __mask=String(__cp.getSubnetMask());"
+            "if((__ip!==''&&__ip!=='0.0.0.0')||"
+            "(__mask!==''&&__mask!=='0.0.0.0')){__clear=false;break;}}}"
+            "catch(__x){__clear=false;__error=__er(__x);}"
+            "if(__p&&__clear){try{var __ev=__p.isEnable();"
+            "if(typeof __ev==='boolean'){__pre=__ev;}"
+            "if(__ev===false&&__p.getPoolCount()===1){"
+            "var __q=__p.getPool('serverPool');if(__q){"
+            "var __row={name:String(__q.getDhcpPoolName()),"
+            "network:String(__q.getNetworkAddress()),"
+            "mask:String(__q.getSubnetMask()),"
+            "gateway:String(__q.getDefaultRouter()),"
+            "dns:String(__q.getDnsServerIp()),"
+            "start:String(__q.getStartIp()),end:String(__q.getEndIp()),"
+            "max:__q.getMaxUsers()};"
+            "var __n=__p.getExcludedAddressCount();"
+            "if(typeof __n==='number'&&isFinite(__n)&&"
+            "Math.floor(__n)===__n&&__n===__wex.length){"
+            "var __xs=[];for(var __i=0;__i<__n;__i++){"
+            "var __x=__p.getExcludedAddressAt(__i);"
+            "if(!__x){throw new Error('excluded_row');}"
+            "__xs.push([String(__x.first),String(__x.second)]);}"
+            "__xs.sort();__wex.sort();"
+            "__match=JSON.stringify(__row)===JSON.stringify(__want)&&"
+            "JSON.stringify(__xs)===JSON.stringify(__wex);"
+            "if(__match){__attempted=true;__p.setEnable(true);}}}}}"
+            "catch(__x){__error=__er(__x);}"
+            "try{var __postRaw=__p.isEnable();"
+            "if(typeof __postRaw==='boolean'){__post=__postRaw;}}"
+            "catch(__x){if(!__error){__error='post_read:'+__er(__x);}}}"
+            "reportResult(JSON.stringify({device:__dn,interface:__if,found:!!__p,"
+            "policy_match:__match,clients_clear:__clear,"
+            "attempted:__attempted,call_error:__error,"
+            "pre_enabled:__pre,post_enabled:__post}));",
+        )
+
+    def probe_native_client_mode(
+        self,
+        server: str,
+        server_interface: str,
+        client: str,
+        client_interface: str,
+        expected_row: Mapping[str, object],
+        expected_exclusions: Sequence[Mapping[str, str]],
+        inactive_clients: Sequence[tuple[str, str]],
+    ) -> ProbeReading:
+        """Activate one client only under the live exact enabled pool policy."""
+        expected_pairs = [[item["start"], item["end"]] for item in expected_exclusions]
+        return self._read(
+            "dhcp_native_client_mode_probe",
+            f"var __sn={json.dumps(server)},__si={json.dumps(server_interface)},"
+            f"__cn={json.dumps(client)},__ci={json.dumps(client_interface)},"
+            f"__want={json.dumps(dict(expected_row))},"
+            f"__wex={json.dumps(expected_pairs)},"
+            f"__inactive={json.dumps([list(item) for item in inactive_clients])};"
+            "var __sd=ipc.network().getDevice(__sn);"
+            "var __sm=__sd?__sd.getProcess('DhcpServerMain'):null;"
+            "var __sp=__sm&&__sm.getDhcpServerProcessByPortName(__si);"
+            "var __cd=ipc.network().getDevice(__cn),__cp=null;"
+            "var __match=false,__inactiveClear=true,__pre=null,__post=null,"
+            "__attempted=false,__error='';"
+            "try{if(__cd){var __ports=__cd.getPortCount();"
+            "if(typeof __ports==='number'&&__ports>=0&&__ports<=32){"
+            "for(var __j=0;__j<__ports;__j++){var __v=__cd.getPortAt(__j);"
+            "if(__v&&String(__v.getName())===__ci){__cp=__v;break;}}}}"
+            "if(__cp){var __mode=__cp.isDhcpClientOn();"
+            "if(typeof __mode==='boolean'){__pre=__mode;}}"
+            "if(__inactive.length!==1){__inactiveClear=false;}"
+            "for(var __t=0;__t<__inactive.length&&__inactiveClear;__t++){"
+            "var __id=ipc.network().getDevice(__inactive[__t][0]),__ip=null;"
+            "if(!__id){__inactiveClear=false;break;}"
+            "var __num=__id.getPortCount();"
+            "if(typeof __num!=='number'||__num<0||__num>32){"
+            "__inactiveClear=false;break;}"
+            "for(var __z=0;__z<__num;__z++){var __port=__id.getPortAt(__z);"
+            "if(__port&&String(__port.getName())===__inactive[__t][1]){"
+            "__ip=__port;break;}}"
+            "if(!__ip||__ip.isDhcpClientOn()!==false){"
+            "__inactiveClear=false;break;}"
+            "var __addr=String(__ip.getIpAddress());"
+            "var __mask=String(__ip.getSubnetMask());"
+            "if((__addr!==''&&__addr!=='0.0.0.0')||"
+            "(__mask!==''&&__mask!=='0.0.0.0')){"
+            "__inactiveClear=false;break;}}"
+            "var __ownIp=__cp?String(__cp.getIpAddress()):'';"
+            "var __ownMask=__cp?String(__cp.getSubnetMask()):'';"
+            "if(__sp&&__cp&&__pre===false&&__inactiveClear&&"
+            "(__ownIp===''||__ownIp==='0.0.0.0')&&"
+            "(__ownMask===''||__ownMask==='0.0.0.0')&&"
+            "__sp.isEnable()===true&&"
+            "__sp.getPoolCount()===1){var __q=__sp.getPool('serverPool');"
+            "if(__q){var __row={name:String(__q.getDhcpPoolName()),"
+            "network:String(__q.getNetworkAddress()),"
+            "mask:String(__q.getSubnetMask()),"
+            "gateway:String(__q.getDefaultRouter()),"
+            "dns:String(__q.getDnsServerIp()),"
+            "start:String(__q.getStartIp()),end:String(__q.getEndIp()),"
+            "max:__q.getMaxUsers()};"
+            "var __n=__sp.getExcludedAddressCount();"
+            "if(typeof __n==='number'&&isFinite(__n)&&"
+            "Math.floor(__n)===__n&&__n===__wex.length){"
+            "var __xs=[];for(var __i=0;__i<__n;__i++){"
+            "var __x=__sp.getExcludedAddressAt(__i);"
+            "if(!__x){throw new Error('excluded_row');}"
+            "__xs.push([String(__x.first),String(__x.second)]);}"
+            "__xs.sort();__wex.sort();"
+            "__match=JSON.stringify(__row)===JSON.stringify(__want)&&"
+            "JSON.stringify(__xs)===JSON.stringify(__wex);"
+            "if(__match){__attempted=true;"
+            "configurePcIp(__cn,true,null,null,null,null,__ci);}}}}}"
+            "catch(__x){__error=__er(__x);}"
+            "if(__cp){try{var __m=__cp.isDhcpClientOn();"
+            "if(typeof __m==='boolean'){__post=__m;}}"
+            "catch(__x){if(!__error){__error='post_read:'+__er(__x);}}}"
+            "reportResult(JSON.stringify({server:__sn,server_interface:__si,"
+            "client:__cn,client_interface:__ci,policy_match:__match,"
+            "inactive_clients_clear:__inactiveClear,"
+            "client_found:!!__cp,attempted:__attempted,call_error:__error,"
+            "pre_mode:__pre,post_mode:__post}));",
         )
 
     def read_dhcp_clients(self, clients: Sequence[tuple[str, str]]) -> ProbeReading:

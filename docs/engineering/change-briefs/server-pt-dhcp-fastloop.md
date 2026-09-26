@@ -806,3 +806,111 @@ assessment. RED tests cover a repeated no-op, regeneration, overlap, throw,
 unknown dispatch, and the unchanged positive control. The risk remains L.
 Its finite operation/time allocation and reserve are computed before LIVE,
 followed by focused/affected verification and independent pre-LIVE review.
+
+## E5 stability result and native serving design delta, version 9
+
+Episode 4 ran `Q3-NATIVE-STABILITY` from clean commit
+`fee6a152f64fb48350127d3c0d8f124bf885ba84` (tree
+`3b8b858440acb4c871d4c113bac53d6eb712ba6b`), build 9.0.1.0858,
+attempt `2242018879574929b400839cc5f60059`, instance
+`9c7bce4bbf1849f0ade10e82b825090e`, file channel. The original
+qualification record SHA-256 is
+`b5ed514137c88e0fd9230bfd36d06e5452109935d15b27988ee30b19853493c8`;
+its complete 90-entry archive is
+[`dhcp-autonomy-02/e4`](../../reference/server-pt/evidence/dhcp-autonomy-02/e4/README.md).
+The first launch record was refused during a changing window title and
+retained, then the same PID/incarnation was revalidated and recorded.
+
+The compiled server static-address action was reapplied by product E5 after
+the exact native policy was established. The full before/after reads matched:
+one disabled `serverPool` with `192.0.2.100-192.0.2.100`, network
+`192.0.2.0/24`, gateway `.1`, DNS `.10`, capacity 1 and both singleton
+exclusions. The product action row reported `APPLIED`, with no counted
+acceptance-unknown dispatch. This is **SUPPORTED_IN_SAMPLE** for retained
+physical state under one E5 reapplication; the generated JavaScript catches
+native setter exceptions, so setter success/idempotence is unproven. The
+run used 48 operations and proved fixture restoration. The exact owned
+save prompt was answered `No`; the process exited and final
+process/mailbox/claim census was empty. Episode 4 closed at 48 operations
+and 221.202394 seconds, cumulative 163 operations and 1132.085253 seconds.
+
+**Next discriminating question.** A fresh `Q3-NATIVE-SERVE` profile will
+repeat the measured disabled policy and E5 stability gate, then enable only
+the exact Server-PT DHCP process behind an in-evaluation complete policy
+guard. It will immediately read the entire physical policy and stop on drift
+or unknown enable. Once an enabled exact policy is established, one compiled
+owned client will enter DHCP mode through a fixed diagnostic call using the
+same documented `configurePcIp` signature as product E5. Its script checks
+the complete enabled physical pool policy and the client's mode in the same
+evaluation that could activate the client. The product E5 fire-and-forget
+batch has no such admission guard and remains for a later product correction.
+A fresh full policy read also brackets the call; any unknown mode dispatch
+stops. The stage will then
+take bounded repeated client and physical `serverPool` lease reads without
+calling `dhcpRun`, reset, ping, DNS or HTTP. The separately named logical
+pool is also read as an absence/overlap control. A positive serving result
+requires two consecutive fresh observations of DHCP mode, the exact usable
+address/mask, stable MAC, and a matching IP/MAC/port row in the physical
+native pool. A lease-time string, an IP alone or a named-pool row is not
+sufficient. Positive row attribution does not require proving a table end;
+client-side autonomous acquisition is distinguished from explicit request
+causality. The fixture's second client stays inactive.
+
+The serving profile will reuse the governed fixture, compiled E5 client action,
+counted file transport, typed client and lease readers, and finalizer. A
+fixed native enable probe performs one documented setter only after its own
+complete policy precondition; this remains a diagnostic until the product's
+compiled enable/pool ordering and logical-to-physical binding are corrected.
+An unknown or contradicted effect stops dependents and retains terminal
+state. RED tests cover missing/changed policy, lost enable or mode result,
+autonomous acquisition from a wrong pool, wrong MAC/port and a matching
+native row, plus unchanged static-client HTTP and 2/20/200/1000 offline
+scale. Risk remains L; the operation schedule and reserve are bounded before
+LIVE and reviewed independently.
+
+The mode procedure reserves nine bridge calls: up to four forwarding
+readiness reads, then one client read, one full policy read, the guarded mode
+call, one client read and one full policy read. The serving window reserves
+39 calls for thirteen client/lease/policy triples, with at most twelve
+ten-second waits. The profile ceiling is 260 operations and 1800 seconds,
+including a protected 300-second finalization reserve.
+
+The one-user pool makes the second fixture client a competing consumer even
+though this stage never activates it. Before server enable, both compiled
+client ports must be freshly observed with DHCP mode off and no assigned
+address or mask. The native enable probe repeats those checks inside the exact
+evaluation that could call `setEnable(true)`. A client that becomes active
+between the pre-read and dispatch therefore withholds server enable. During
+serving samples PC2 must stay off and unassigned; any departure stops native
+attribution. The bounded enable procedure adds one aggregate client read,
+so its three planned calls remain sufficient.
+
+The separately named logical-pool scan is an independent overlap control.
+If that entry is unreadable, the bounded serving window remains
+`INCONCLUSIVE` even when client and native-row observations are positive;
+absence is never inferred from a missing scan entry.
+The existing lease-scan classifier also treated a `getPool` exception as
+observed pool absence when the probe returned `found=false` with a nonempty
+error. That false absence would admit a positive native attribution. It will
+instead mark that pool entry unobserved and carry `pool_lookup_error`; the
+separate `found=false,error=""` positive absence control remains valid.
+For a found pool, the returned physical `getDhcpPoolName()` text must also
+equal the requested scan name. An exact IP/MAC row reached through a
+misidentified object cannot be attributed to `serverPool`; a blank or
+different returned name marks the scan unobserved and cannot support serving.
+At the serving window's end, a still-unassigned client with complete reads
+is a bounded negative. A client already at the intended address without a
+qualified native row or readable capacity is `INCONCLUSIVE`, including a
+throw-terminated native scan; table absence is not invented. A coherent
+native scan with more lease rows than the one-user capacity is instead a
+direct `CONTRADICTED` over-capacity observation.
+An observed intended address with a different client netmask is a direct
+contradiction of usable configuration, not a timeout or mere absence.
+
+The terminal `M-NATIVE-FINAL` measures whether the final physical inventory
+was completely observed. The serving stage may end with DHCP enabled, so its
+terminal admission accepts either typed boolean process state while still
+requiring the exact subject, singleton physical pool, and complete exclusion
+count/list. Earlier disabled-policy stages retain their disabled terminal
+predicate. Terminal support never substitutes for the separate serving
+measurement or proves the policy fields are correct.

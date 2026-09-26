@@ -83,6 +83,7 @@ class QualificationStage(StrEnum):
     Q3_NATIVE_SIZE = "Q3-NATIVE-SIZE"
     Q3_NATIVE_POLICY = "Q3-NATIVE-POLICY"
     Q3_NATIVE_STABILITY = "Q3-NATIVE-STABILITY"
+    Q3_NATIVE_SERVE = "Q3-NATIVE-SERVE"
 
 
 class ExecutionMode(StrEnum):
@@ -418,6 +419,7 @@ STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.Q3_NATIVE_SIZE: (120, 600),
     QualificationStage.Q3_NATIVE_POLICY: (160, 900),
     QualificationStage.Q3_NATIVE_STABILITY: (180, 1050),
+    QualificationStage.Q3_NATIVE_SERVE: (260, 1800),
 }
 
 Q0_PC = "__MCP_E6Q_PC1"
@@ -1574,6 +1576,7 @@ Q3_NATIVE_STAGES = (
     QualificationStage.Q3_NATIVE_SIZE,
     QualificationStage.Q3_NATIVE_POLICY,
     QualificationStage.Q3_NATIVE_STABILITY,
+    QualificationStage.Q3_NATIVE_SERVE,
 )
 
 #: Exact episode-1 physical values, not a formula for a second build or pool.
@@ -1793,6 +1796,59 @@ def _q3_native_stability() -> StageDefinition:
     )
 
 
+def _q3_native_serve() -> StageDefinition:
+    """Measure autonomous client service from the exact physical native pool."""
+    base = _q3_native_stability()
+    return replace(
+        base,
+        stage=QualificationStage.Q3_NATIVE_SERVE,
+        purpose=(
+            "Repeat measured native policy and E5 stability, then enable the "
+            "server and observe one client's autonomous lease and pool row."
+        ),
+        experiments=(
+            *base.experiments,
+            ExperimentSpec(
+                id="M-NATIVE-ENABLE",
+                hypothesis="The exact disabled policy remains intact when DHCP is enabled.",
+                required=True,
+                procedure="Q3_NATIVE_ENABLE",
+                planned_operations=3,
+                capabilities=("server.dhcp_native_policy_enable",),
+            ),
+            ExperimentSpec(
+                id="M-NATIVE-MODE",
+                hypothesis="One owned client enters DHCP mode under the exact enabled policy.",
+                required=True,
+                procedure="Q3_NATIVE_MODE",
+                planned_operations=9,
+                capabilities=("client.dhcp_mode",),
+            ),
+            ExperimentSpec(
+                id="M-NATIVE-SERVE",
+                hypothesis="The client holds a usable address with its exact row in serverPool.",
+                required=True,
+                procedure="Q3_NATIVE_SERVE",
+                planned_operations=39,
+                capabilities=("server.dhcp_native_client_serving",),
+            ),
+        ),
+        budget=StageBudget(260, 1800, reserve_seconds=300),
+        profile_id="Q3-NATIVE-SERVE",
+        profile_version="1",
+        steps=(
+            *base.steps,
+            DiagnosticStageStep(
+                id="NATIVE-serve",
+                experiment_id="M-NATIVE-ENABLE",
+                effect="configure",
+                requires=("NATIVE-stability",),
+                also_experiments=("M-NATIVE-MODE", "M-NATIVE-SERVE"),
+            ),
+        ),
+    )
+
+
 STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.Q0: _q0(),
     QualificationStage.Q1: _q1(),
@@ -1810,6 +1866,7 @@ STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.Q3_NATIVE_SIZE: _q3_native_size(),
     QualificationStage.Q3_NATIVE_POLICY: _q3_native_policy(),
     QualificationStage.Q3_NATIVE_STABILITY: _q3_native_stability(),
+    QualificationStage.Q3_NATIVE_SERVE: _q3_native_serve(),
 }
 
 

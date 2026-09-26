@@ -40,6 +40,20 @@ from tests.service_qualification_engine import (
 )
 
 
+class _RetainingReapplicationTransport(NodeEngineTransport):
+    """Keep the first E5 realignment, then model an unchanged repeat."""
+
+    exclusions = 0
+
+    def dispatch_and_wait(self, js_code, timeout):
+        outcome = super().dispatch_and_wait(js_code, timeout)
+        if 'step:"dhcp_native_exclusion_probe"' in js_code:
+            self.exclusions += 1
+            if self.exclusions == 2:
+                self.engine.configure(default_pool_realigns_on_address=False)
+        return outcome
+
+
 def test_policy_profile_requires_size_before_gateway_dns_and_exclusions() -> None:
     """Policy effects cannot run as a stand-alone diagnostic selection."""
     definition = stage_definition("Q3-NATIVE-POLICY")
@@ -86,6 +100,923 @@ def test_stability_profile_requires_exact_policy_before_e5_reapplication() -> No
     assert step_selection_refusals(definition, ["NATIVE-stability"])
 
 
+def test_serve_profile_requires_stability_and_binds_one_client() -> None:
+    """Only the full measured chain authorizes client activation."""
+    definition = stage_definition("Q3-NATIVE-SERVE")
+    assert definition is not None
+    assert definition.step_ids == (
+        "NATIVE-size",
+        "NATIVE-policy",
+        "NATIVE-stability",
+        "NATIVE-serve",
+    )
+    assert (definition.profile_id, definition.profile_version) == (
+        "Q3-NATIVE-SERVE",
+        "1",
+    )
+    assert definition.budget.max_operations == 260
+    assert definition.budget.max_seconds == 1800
+    assert definition.budget.reserve_seconds == 300
+    assert definition.experiment("M-NATIVE-MODE").planned_operations == 9
+    assert definition.experiment("M-NATIVE-SERVE").planned_operations == 39
+    assert definition.planned_minimum_operations <= 260
+    assert step_selection_refusals(definition, definition.step_ids) == []
+    assert step_selection_refusals(definition, ["NATIVE-serve"])
+
+
+@pytest.mark.parametrize("table_end", ["null", "throw"])
+def test_native_serve_attributes_autonomous_client_to_physical_pool(
+    tmp_path, table_end
+) -> None:
+    """One client gets two matching mode/address/native-row observations."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+        dhcp_mode_acquires=True,
+        dhcp_pool_selection="default",
+        dhcp_table_end=table_end,
+    )
+
+    try:
+        transport = _RetainingReapplicationTransport(engine)
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, transport),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.COMPLETED, (
+            result.record.primary_failure if result.record else result.refusals
+        )
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        for name in ("M-NATIVE-ENABLE", "M-NATIVE-MODE", "M-NATIVE-SERVE"):
+            assert (
+                measured[name].conclusion is MeasurementConclusion.SUPPORTED_IN_SAMPLE
+            )
+        assert (
+            measured["M-NATIVE-FINAL"].conclusion
+            is MeasurementConclusion.SUPPORTED_IN_SAMPLE
+        )
+        assert measured["M-NATIVE-FINAL"].facts["complete"] is True
+        samples = measured["M-NATIVE-SERVE"].facts["samples"]
+        assert samples[-1]["ready"] is True
+        assert measured["M-NATIVE-SERVE"].facts["consecutive_matches"] == 2
+        calls = engine.snapshot()["dhcp_setter_calls"]
+        assert calls["setEnable"] == 1
+        assert calls["configurePcIpDhcp"] == 1
+        assert engine.snapshot()["dhcp_runs"] == []
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_native_serve_stops_when_enable_changes_pool_policy(tmp_path) -> None:
+    """A successful enable flag cannot authorize the client after range drift."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+        default_pool_change_on_enable={"start": "192.0.2.2"},
+        dhcp_mode_acquires=True,
+    )
+    try:
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, _RetainingReapplicationTransport(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        assert (
+            measured["M-NATIVE-ENABLE"].conclusion is MeasurementConclusion.CONTRADICTED
+        )
+        assert measured["M-NATIVE-MODE"].status.value == "not_run"
+        assert engine.snapshot()["dhcp_setter_calls"]["configurePcIpDhcp"] == 0
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_native_serve_retains_unknown_enable_and_withholds_client_mode(
+    tmp_path,
+) -> None:
+    """A setter that ran without its correlated reply cannot admit E5 mode."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+        dhcp_mode_acquires=True,
+    )
+
+    class LostEnable(_RetainingReapplicationTransport):
+        def dispatch_and_wait(self, js_code, timeout):
+            outcome = super().dispatch_and_wait(js_code, timeout)
+            if 'step:"dhcp_native_enable_probe"' in js_code:
+                return BridgeDispatchOutcome(
+                    dispatch=DispatchFact.ACCEPTANCE_UNKNOWN,
+                    result=ResultFact.NOT_OBSERVED,
+                    detail="enable_reply_lost_after_execution",
+                )
+            return outcome
+
+    try:
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, LostEnable(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        assert (
+            measured["M-NATIVE-ENABLE"].conclusion is MeasurementConclusion.INCONCLUSIVE
+        )
+        assert measured["M-NATIVE-ENABLE"].outcome_unknown is True
+        assert engine.snapshot()["dhcp_setter_calls"]["setEnable"] == 1
+        assert engine.snapshot()["dhcp_setter_calls"]["configurePcIpDhcp"] == 0
+        assert measured["M-NATIVE-FINAL"].status.value == "ran"
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_native_serve_guard_refuses_policy_drift_before_enable(tmp_path) -> None:
+    """A stale positive snapshot cannot enable a newly changed pool."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+    )
+
+    class DriftBeforeEnable(_RetainingReapplicationTransport):
+        drifted = False
+
+        def dispatch_and_wait(self, js_code, timeout):
+            if 'step:"dhcp_native_enable_probe"' in js_code and not self.drifted:
+                self.drifted = True
+                self.engine.evaluate(
+                    'ipc.network().getDevice("__MCP_E6Q_SRV")'
+                    '.getProcess("DhcpServerMain")'
+                    '.getDhcpServerProcessByPortName("FastEthernet0")'
+                    '.getPool("serverPool").setDefaultRouter("192.0.2.99");'
+                )
+            return super().dispatch_and_wait(js_code, timeout)
+
+    try:
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, DriftBeforeEnable(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        assert (
+            measured["M-NATIVE-ENABLE"].conclusion is MeasurementConclusion.CONTRADICTED
+        )
+        assert measured["M-NATIVE-ENABLE"].facts["probe"]["attempted"] is False
+        assert engine.snapshot()["dhcp_setter_calls"]["setEnable"] == 0
+        assert engine.snapshot()["dhcp_setter_calls"]["configurePcIpDhcp"] == 0
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_native_serve_enable_guard_refuses_active_second_client(tmp_path) -> None:
+    """PC2 becoming DHCP-on at dispatch cannot consume the one-user pool."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+        dhcp_mode_acquires=True,
+    )
+
+    class Pc2OnAtEnable(_RetainingReapplicationTransport):
+        activated = False
+
+        def dispatch_and_wait(self, js_code, timeout):
+            if 'step:"dhcp_native_enable_probe"' in js_code and not self.activated:
+                self.activated = True
+                self.engine.evaluate(
+                    'configurePcIp("__MCP_E6Q_PC2",true,null,null,null,null,'
+                    '"FastEthernet0");'
+                )
+            return super().dispatch_and_wait(js_code, timeout)
+
+    try:
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, Pc2OnAtEnable(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        enable = measured["M-NATIVE-ENABLE"]
+        assert enable.conclusion is MeasurementConclusion.CONTRADICTED
+        assert enable.facts["prior_clients"]["__MCP_E6Q_PC2"]["mode"] is False
+        assert enable.facts["probe"]["clients_clear"] is False
+        assert enable.facts["probe"]["attempted"] is False
+        assert engine.snapshot()["dhcp_setter_calls"]["setEnable"] == 0
+        assert measured["M-NATIVE-MODE"].status.value == "not_run"
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_native_serve_enable_guard_refuses_zero_ip_with_residual_mask(tmp_path) -> None:
+    """An off client with 0.0.0.0 and a nonzero mask is not unassigned."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+    )
+
+    class ResidualMaskAtEnable(_RetainingReapplicationTransport):
+        altered = False
+
+        def dispatch_and_wait(self, js_code, timeout):
+            if 'step:"dhcp_native_enable_probe"' in js_code and not self.altered:
+                self.altered = True
+                self.engine.evaluate(
+                    'ipc.network().getDevice("__MCP_E6Q_PC2")'
+                    '.getPort("FastEthernet0")'
+                    '.setIpSubnetMask("0.0.0.0","255.255.255.0");'
+                )
+            return super().dispatch_and_wait(js_code, timeout)
+
+    try:
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, ResidualMaskAtEnable(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        enable = measured["M-NATIVE-ENABLE"]
+        assert enable.facts["prior_clients"]["__MCP_E6Q_PC2"]["netmask"] == ""
+        assert enable.facts["probe"]["clients_clear"] is False
+        assert enable.facts["probe"]["attempted"] is False
+        assert engine.snapshot()["dhcp_setter_calls"]["setEnable"] == 0
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_native_serve_lost_client_mode_ack_withholds_serving_reads(tmp_path) -> None:
+    """An executed mode probe with lost reply cannot authorize attribution."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+        dhcp_mode_acquires=True,
+    )
+
+    class LostMode(_RetainingReapplicationTransport):
+        mode_calls = 0
+
+        def dispatch_and_wait(self, js_code, timeout):
+            outcome = super().dispatch_and_wait(js_code, timeout)
+            if 'step:"dhcp_native_client_mode_probe"' in js_code:
+                self.mode_calls += 1
+                return BridgeDispatchOutcome(
+                    dispatch=DispatchFact.ACCEPTANCE_UNKNOWN,
+                    result=ResultFact.NOT_OBSERVED,
+                    detail="client_mode_reply_lost_after_execution",
+                )
+            return outcome
+
+    try:
+        transport = LostMode(engine)
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, transport),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        assert (
+            measured["M-NATIVE-MODE"].conclusion is MeasurementConclusion.INCONCLUSIVE
+        )
+        assert measured["M-NATIVE-MODE"].outcome_unknown is True
+        assert measured["M-NATIVE-SERVE"].status.value == "not_run"
+        assert transport.mode_calls == 1
+        assert engine.snapshot()["dhcp_setter_calls"]["configurePcIpDhcp"] == 1
+        assert engine.snapshot()["dhcp_runs"] == []
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_native_serve_mode_guard_refuses_policy_drift_at_dispatch(tmp_path) -> None:
+    """A changed server policy in the effect evaluation withholds DHCP mode."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+        dhcp_mode_acquires=True,
+    )
+
+    class DriftAtMode(_RetainingReapplicationTransport):
+        drifted = False
+
+        def dispatch_and_wait(self, js_code, timeout):
+            if 'step:"dhcp_native_client_mode_probe"' in js_code and not self.drifted:
+                self.drifted = True
+                self.engine.evaluate(
+                    'ipc.network().getDevice("__MCP_E6Q_SRV")'
+                    '.getProcess("DhcpServerMain")'
+                    '.getDhcpServerProcessByPortName("FastEthernet0")'
+                    '.getPool("serverPool").setDefaultRouter("192.0.2.99");'
+                )
+            return super().dispatch_and_wait(js_code, timeout)
+
+    try:
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, DriftAtMode(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        mode = measured["M-NATIVE-MODE"]
+        assert mode.conclusion is MeasurementConclusion.CONTRADICTED
+        assert mode.facts["probe"]["policy_match"] is False
+        assert mode.facts["probe"]["attempted"] is False
+        assert engine.snapshot()["dhcp_setter_calls"]["configurePcIpDhcp"] == 0
+        assert engine.snapshot()["dhcp_runs"] == []
+        assert measured["M-NATIVE-SERVE"].status.value == "not_run"
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_native_serve_mode_guard_refuses_pc2_activation_at_dispatch(tmp_path) -> None:
+    """The selected PC1 cannot be activated after PC2 starts competing."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+        dhcp_mode_acquires=True,
+    )
+
+    class Pc2OnAtMode(_RetainingReapplicationTransport):
+        activated = False
+
+        def dispatch_and_wait(self, js_code, timeout):
+            if 'step:"dhcp_native_client_mode_probe"' in js_code and not self.activated:
+                self.activated = True
+                self.engine.evaluate(
+                    'configurePcIp("__MCP_E6Q_PC2",true,null,null,null,null,'
+                    '"FastEthernet0");'
+                )
+            return super().dispatch_and_wait(js_code, timeout)
+
+    try:
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, Pc2OnAtMode(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        mode = measured["M-NATIVE-MODE"]
+        assert mode.conclusion is MeasurementConclusion.CONTRADICTED
+        assert mode.facts["probe"]["inactive_clients_clear"] is False
+        assert mode.facts["probe"]["attempted"] is False
+        assert mode.facts["before_inactive_client"]["mode"] is False
+        assert mode.facts["after_inactive_client"]["mode"] is True
+        assert engine.snapshot()["dhcp_setter_calls"]["configurePcIpDhcp"] == 1
+        assert measured["M-NATIVE-SERVE"].status.value == "not_run"
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_native_serve_refuses_named_competing_pool_after_client_mode(tmp_path) -> None:
+    """A late logical pool is observable drift, never native attribution."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+        dhcp_mode_acquires=True,
+        dhcp_pool_selection="default",
+    )
+
+    class CompetingPool(_RetainingReapplicationTransport):
+        inserted = False
+
+        def dispatch_and_wait(self, js_code, timeout):
+            outcome = super().dispatch_and_wait(js_code, timeout)
+            if 'step:"dhcp_native_client_mode_probe"' in js_code and not self.inserted:
+                self.inserted = True
+                self.engine.evaluate(
+                    'ipc.network().getDevice("__MCP_E6Q_SRV")'
+                    '.getProcess("DhcpServerMain")'
+                    '.getDhcpServerProcessByPortName("FastEthernet0")'
+                    '.addPool("MCP_E6Q_DHCP");'
+                )
+            return outcome
+
+    try:
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, CompetingPool(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        assert (
+            measured["M-NATIVE-MODE"].conclusion is MeasurementConclusion.CONTRADICTED
+        )
+        assert measured["M-NATIVE-MODE"].facts["after_policy"]["pool_count"] == 2
+        assert measured["M-NATIVE-SERVE"].status.value == "not_run"
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_native_serve_observes_no_autonomous_lease_without_request(tmp_path) -> None:
+    """The bounded passive window stays negative when mode yields no lease."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+        dhcp_mode_acquires=False,
+    )
+    try:
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, _RetainingReapplicationTransport(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        assert (
+            measured["M-NATIVE-MODE"].conclusion
+            is MeasurementConclusion.SUPPORTED_IN_SAMPLE
+        )
+        assert (
+            measured["M-NATIVE-SERVE"].conclusion
+            is MeasurementConclusion.NEGATIVE_OBSERVED
+        )
+        assert len(measured["M-NATIVE-SERVE"].facts["samples"]) == 13
+        assert engine.snapshot()["dhcp_runs"] == []
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_native_serve_contradicts_client_mask_despite_exact_native_row(
+    tmp_path,
+) -> None:
+    """An exact IP/MAC row cannot make a wrong client mask usable."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+        dhcp_mode_acquires=True,
+        dhcp_pool_selection="default",
+        dhcp_client_mask_override="255.255.0.0",
+    )
+    try:
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, _RetainingReapplicationTransport(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        serving = measured["M-NATIVE-SERVE"]
+        assert serving.conclusion is MeasurementConclusion.CONTRADICTED
+        assert len(serving.facts["samples"]) == 1
+        assert serving.facts["samples"][0]["client"]["ipv4"] == "192.0.2.100"
+        assert serving.facts["samples"][0]["client"]["netmask"] == "255.255.0.0"
+        assert serving.facts["samples"][0]["row_status"] == "exact_ip_mac_row"
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+@pytest.mark.parametrize("fault", ["missing_entry", "lookup_error"])
+def test_native_serve_keeps_unreadable_named_pool_control_inconclusive(
+    tmp_path, fault
+) -> None:
+    """A native exact row cannot prove there is no competing named pool."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+        dhcp_mode_acquires=True,
+        dhcp_pool_selection="default",
+    )
+
+    class MissingNamedEntry(_RetainingReapplicationTransport):
+        def dispatch_and_wait(self, js_code, timeout):
+            outcome = super().dispatch_and_wait(js_code, timeout)
+            if (
+                'step:"dhcp_lease_calibration"' in js_code
+                and outcome.result is ResultFact.CORRELATED
+            ):
+                body = json.loads(outcome.body)
+                for item in body["pools"]:
+                    if item["requested"] == "MCP_E6Q_DHCP":
+                        if fault == "missing_entry":
+                            item["requested"] = "unbound-pool"
+                        else:
+                            item["found"] = False
+                            item["error"] = "getPool threw"
+                return replace(outcome, body=json.dumps(body))
+            return outcome
+
+    try:
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, MissingNamedEntry(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        serving = measured["M-NATIVE-SERVE"]
+        assert serving.conclusion is MeasurementConclusion.INCONCLUSIVE
+        assert len(serving.facts["samples"]) == 13
+        assert serving.facts["samples"][-1]["native"]["observed"] is True
+        assert serving.facts["samples"][-1]["named"]["observed"] is False
+        assert serving.facts["samples"][-1]["policy_exact"] is True
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_native_serve_refuses_row_from_misidentified_physical_pool(tmp_path) -> None:
+    """A lease reached by the serverPool key needs serverPool's own name."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+        dhcp_mode_acquires=True,
+        dhcp_pool_selection="default",
+    )
+
+    class WrongReturnedName(_RetainingReapplicationTransport):
+        def dispatch_and_wait(self, js_code, timeout):
+            outcome = super().dispatch_and_wait(js_code, timeout)
+            if (
+                'step:"dhcp_lease_calibration"' in js_code
+                and outcome.result is ResultFact.CORRELATED
+            ):
+                body = json.loads(outcome.body)
+                for item in body["pools"]:
+                    if item["requested"] == "serverPool":
+                        item["name"] = "otherPool"
+                return replace(outcome, body=json.dumps(body))
+            return outcome
+
+    try:
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, WrongReturnedName(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        serving = measured["M-NATIVE-SERVE"]
+        assert serving.conclusion is MeasurementConclusion.INCONCLUSIVE
+        assert len(serving.facts["samples"]) == 13
+        assert serving.facts["samples"][-1]["client"]["ipv4"] == "192.0.2.100"
+        assert serving.facts["samples"][-1]["native"]["observed"] is False
+        assert serving.facts["samples"][-1]["native"]["cause"] == (
+            "scan_pool_identity_mismatch"
+        )
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+@pytest.mark.parametrize("fault", ["first_index_throw", "capacity_unreadable"])
+def test_native_serve_keeps_assigned_client_with_incomplete_native_scan_unknown(
+    tmp_path, fault
+) -> None:
+    """A client address with incomplete row/capacity evidence is not absent."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+        dhcp_mode_acquires=True,
+        dhcp_pool_selection="default",
+    )
+
+    class IncompleteNative(_RetainingReapplicationTransport):
+        def dispatch_and_wait(self, js_code, timeout):
+            outcome = super().dispatch_and_wait(js_code, timeout)
+            if (
+                'step:"dhcp_lease_calibration"' in js_code
+                and outcome.result is ResultFact.CORRELATED
+            ):
+                body = json.loads(outcome.body)
+                for item in body["pools"]:
+                    if item["requested"] == "serverPool":
+                        if fault == "first_index_throw":
+                            item["entries"][0] = {
+                                "index": 0,
+                                "return_kind": "throw",
+                                "error": "getLeaseAt failed",
+                                "row": None,
+                            }
+                        else:
+                            item["max"] = None
+                            item["max_type"] = "throw"
+                return replace(outcome, body=json.dumps(body))
+            return outcome
+
+    try:
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, IncompleteNative(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        serving = next(
+            item
+            for item in result.record.measurements
+            if item.experiment_id == "M-NATIVE-SERVE"
+        )
+        assert serving.conclusion is MeasurementConclusion.INCONCLUSIVE
+        assert len(serving.facts["samples"]) == 13
+        assert serving.facts["samples"][-1]["client"]["ipv4"] == "192.0.2.100"
+        assert serving.facts["samples"][-1]["native"]["observed"] is True
+        assert serving.facts["samples"][-1]["ready"] is False
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_native_serve_contradicts_more_rows_than_capacity(tmp_path) -> None:
+    """A second observed lease on capacity one is a direct contradiction."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+        dhcp_mode_acquires=True,
+        dhcp_pool_selection="default",
+    )
+
+    class ExtraRow(_RetainingReapplicationTransport):
+        def dispatch_and_wait(self, js_code, timeout):
+            outcome = super().dispatch_and_wait(js_code, timeout)
+            if (
+                'step:"dhcp_lease_calibration"' in js_code
+                and outcome.result is ResultFact.CORRELATED
+            ):
+                body = json.loads(outcome.body)
+                for item in body["pools"]:
+                    if item["requested"] == "serverPool":
+                        item["entries"][1] = {
+                            "index": 1,
+                            "return_kind": "object",
+                            "error": "",
+                            "row": {
+                                "ipAddress": "192.0.2.101",
+                                "ipAddress_type": "string",
+                                "macAddress": "0000.0000.ffff",
+                                "macAddress_type": "string",
+                                "leaseTime": 3600,
+                                "leaseTime_type": "number",
+                                "port": "FastEthernet0",
+                                "port_type": "string",
+                            },
+                        }
+                return replace(outcome, body=json.dumps(body))
+            return outcome
+
+    try:
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, ExtraRow(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        serving = next(
+            item
+            for item in result.record.measurements
+            if item.experiment_id == "M-NATIVE-SERVE"
+        )
+        assert serving.conclusion is MeasurementConclusion.CONTRADICTED
+        assert len(serving.facts["samples"]) == 1
+        assert len(serving.facts["samples"][0]["native"]["rows"]) == 2
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+def test_native_serve_rejects_pc2_activation_during_sampling(tmp_path) -> None:
+    """One good PC1 row cannot hide a newly competing second client."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+        dhcp_mode_acquires=True,
+        dhcp_pool_selection="default",
+    )
+
+    class Pc2DuringSamples(_RetainingReapplicationTransport):
+        activated = False
+
+        def dispatch_and_wait(self, js_code, timeout):
+            outcome = super().dispatch_and_wait(js_code, timeout)
+            if 'step:"dhcp_lease_calibration"' in js_code and not self.activated:
+                self.activated = True
+                self.engine.evaluate(
+                    'configurePcIp("__MCP_E6Q_PC2",true,null,null,null,null,'
+                    '"FastEthernet0");'
+                )
+            return outcome
+
+    try:
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, Pc2DuringSamples(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        serving = measured["M-NATIVE-SERVE"]
+        assert serving.conclusion is MeasurementConclusion.CONTRADICTED
+        assert serving.facts["samples"][0]["ready"] is True
+        assert serving.facts["samples"][-1]["inactive_ok"] is False
+        assert engine.snapshot()["dhcp_runs"] == []
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
+@pytest.mark.parametrize("field", ["macAddress", "port"])
+def test_native_serve_refuses_wrong_native_row_identity(tmp_path, field) -> None:
+    """An address alone cannot attribute a lease to the selected client."""
+    require_node()
+    engine = NodeEngine(
+        tmp_path,
+        dhcp_default_pool="native",
+        default_pool_realigns_on_address=True,
+        dhcp_native_start_behavior="coupled",
+        dhcp_native_max_behavior="resize",
+        dhcp_mode_acquires=True,
+        dhcp_pool_selection="default",
+    )
+
+    class WrongRow(_RetainingReapplicationTransport):
+        tampered = False
+
+        def dispatch_and_wait(self, js_code, timeout):
+            if 'step:"dhcp_lease_calibration"' in js_code and not self.tampered:
+                self.tampered = True
+                value = "0000.0000.0001" if field == "macAddress" else "FastEthernet1"
+                self.engine.evaluate(
+                    'var p=ipc.network().getDevice("__MCP_E6Q_SRV")'
+                    '.getProcess("DhcpServerMain")'
+                    '.getDhcpServerProcessByPortName("FastEthernet0")'
+                    '.getPool("serverPool");'
+                    f"p.getLeaseAt(0).{field}={json.dumps(value)};"
+                )
+            return super().dispatch_and_wait(js_code, timeout)
+
+    try:
+        definition = stage_definition("Q3-NATIVE-SERVE")
+        result = qualify_server_services(
+            _request(
+                request_args("Q3-NATIVE-SERVE") + authorization_args("Q3-NATIVE-SERVE")
+            ),
+            simulated_boundaries(tmp_path, WrongRow(engine)),
+            experimental_capabilities=frozenset(definition.experimental_capabilities),
+        )
+        assert result.outcome is QualificationOutcome.STOPPED
+        assert result.record is not None
+        measured = {item.experiment_id: item for item in result.record.measurements}
+        assert (
+            measured["M-NATIVE-SERVE"].conclusion is MeasurementConclusion.CONTRADICTED
+        )
+        assert len(measured["M-NATIVE-SERVE"].facts["samples"]) == 1
+        assert result.record.restoration_proven
+    finally:
+        engine.close()
+
+
 def test_stability_reapplies_product_e5_and_retains_exact_policy(tmp_path) -> None:
     """The complete native inventory is read through the real coordinator."""
     require_node()
@@ -97,19 +1028,8 @@ def test_stability_reapplies_product_e5_and_retains_exact_policy(tmp_path) -> No
         dhcp_native_max_behavior="resize",
     )
 
-    class RetainingReapplicationTransport(NodeEngineTransport):
-        exclusions = 0
-
-        def dispatch_and_wait(self, js_code, timeout):
-            outcome = super().dispatch_and_wait(js_code, timeout)
-            if 'step:"dhcp_native_exclusion_probe"' in js_code:
-                self.exclusions += 1
-                if self.exclusions == 2:
-                    self.engine.configure(default_pool_realigns_on_address=False)
-            return outcome
-
     try:
-        transport = RetainingReapplicationTransport(engine)
+        transport = _RetainingReapplicationTransport(engine)
         definition = stage_definition("Q3-NATIVE-STABILITY")
         result = qualify_server_services(
             _request(

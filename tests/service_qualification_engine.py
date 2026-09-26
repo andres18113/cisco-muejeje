@@ -125,7 +125,8 @@ const config = Object.assign({
   ports_down_calls: 0, port_up_return: 'boolean', protocol_up_return: 'boolean',
   dhcp_table_end: 'null', dhcp_acquire_throws: false,
   dhcp_emit_events: true, dhcp_lease_time: '3600', dhcp_lease_time_ticks: false,
-  dhcp_client_address_override: null, dhcp_default_pool: false,
+  dhcp_client_address_override: null, dhcp_client_mask_override: null,
+  dhcp_default_pool: false,
   dhcp_pool_selection: 'first', default_pool_change_on_enable: null,
   default_pool_drift_reads: 0, default_pool_realigns_on_address: false,
   dhcp_mode_acquires: false, dhcp_failure_address: '',
@@ -554,7 +555,8 @@ const acquire = (dev, port) => {
     const row = existing || {ipAddress: leaseAddress, macAddress: port.mac,
       leaseTime: 3600, port: port.name};
     if (!existing) { pool.leases.push(row); }
-    port.ip = address; port.mask = pool.mask; port.leaseTime = config.dhcp_lease_time;
+    port.ip = address; port.mask = config.dhcp_client_mask_override || pool.mask;
+    port.leaseTime = config.dhcp_lease_time;
     emitDhcp(port, 'dhcpSucceed', {deviceName: dev.name, portName: port.name,
       newip: port.ip, newmask: port.mask});
     return true;

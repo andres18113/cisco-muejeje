@@ -1668,6 +1668,32 @@ def native_policy_probe_baseline_admitted(
     )
 
 
+def native_policy_enabled_admitted(
+    snapshot: DefaultPoolSnapshot,
+    *,
+    server: str,
+    interface: str,
+    expected_row: Mapping[str, object],
+    expected_exclusions: Sequence[Mapping[str, str]],
+) -> bool:
+    """Require the exact one-pool policy and a verified enabled process."""
+    raw = snapshot.raw
+    wanted = tuple(sorted((item["start"], item["end"]) for item in expected_exclusions))
+    return bool(
+        snapshot.observed
+        and not snapshot.intended_present
+        and tuple(snapshot.pools) == (dict(expected_row),)
+        and raw.get("device") == server
+        and raw.get("interface") == interface
+        and raw.get("found") is True
+        and raw.get("process_found") is True
+        and raw.get("enabled_type") == "boolean"
+        and raw.get("enabled") is True
+        and raw.get("pool_count") == 1
+        and _native_policy_exclusions(snapshot) == wanted
+    )
+
+
 def native_policy_snapshot_complete(
     snapshot: DefaultPoolSnapshot, *, server: str, interface: str
 ) -> bool:
@@ -1680,6 +1706,27 @@ def native_policy_snapshot_complete(
             interface=interface,
             expected_row=snapshot.pools[0],
         )
+        and _native_policy_exclusions(snapshot) is not None
+    )
+
+
+def native_policy_terminal_inventory_complete(
+    snapshot: DefaultPoolSnapshot, *, server: str, interface: str
+) -> bool:
+    """Require a complete singleton final inventory with typed process state."""
+    raw = snapshot.raw
+    return bool(
+        snapshot.observed
+        and not snapshot.intended_present
+        and len(snapshot.pools) == 1
+        and snapshot.pools[0].get("name") == "serverPool"
+        and raw.get("device") == server
+        and raw.get("interface") == interface
+        and raw.get("found") is True
+        and raw.get("process_found") is True
+        and raw.get("enabled_type") == "boolean"
+        and isinstance(raw.get("enabled"), bool)
+        and raw.get("pool_count") == 1
         and _native_policy_exclusions(snapshot) is not None
     )
 

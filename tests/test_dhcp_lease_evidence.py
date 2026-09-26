@@ -48,6 +48,7 @@ def _pool(name, entries, *, capacity=1, found=True):
         "max": capacity,
         "window": len(entries),
         "entries": entries,
+        "error": "",
     }
 
 
@@ -149,6 +150,24 @@ def test_an_absent_or_incoherent_pool_is_not_an_empty_table():
     )
     other = ev.classify_lease_scan(_pool(NATIVE, [_entry(0)]), pool_name=INTENDED)
     assert other.cause == "scan_pool_not_answered"
+
+
+def test_named_pool_lookup_error_is_not_observed_absence():
+    """A thrown getPool cannot prove the competing logical pool is absent."""
+    row = _pool(INTENDED, [], found=False)
+    row["error"] = "getPool threw"
+    scan = ev.classify_lease_scan(row, pool_name=INTENDED)
+    assert scan.observed is False
+    assert scan.cause == "pool_lookup_error"
+
+
+def test_found_pool_with_different_physical_name_is_not_attributed():
+    """A matching lease row from another returned object has unknown identity."""
+    row = _pool(NATIVE, [_entry(0, _row("192.0.2.100", MAC_1))])
+    row["name"] = "otherPool"
+    scan = ev.classify_lease_scan(row, pool_name=NATIVE)
+    assert scan.observed is False
+    assert scan.cause == "scan_pool_identity_mismatch"
 
 
 def test_an_undefined_read_is_not_a_null_end():

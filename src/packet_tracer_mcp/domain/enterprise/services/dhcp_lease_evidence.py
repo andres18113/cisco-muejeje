@@ -232,6 +232,11 @@ def classify_lease_scan(entry: object, *, pool_name: str) -> LeaseScan:
         and capacity_value >= 0
         else None
     )
+    error = entry.get("error")
+    if not isinstance(entry.get("found"), bool) or not isinstance(error, str):
+        return LeaseScan(pool_name, False, "scan_pool_lookup_malformed", capacity)
+    if error:
+        return LeaseScan(pool_name, False, "pool_lookup_error", capacity)
     if entry.get("found") is not True:
         return LeaseScan(
             pool_name,
@@ -240,6 +245,8 @@ def classify_lease_scan(entry: object, *, pool_name: str) -> LeaseScan:
             capacity,
             termination=TERMINATION_POOL_ABSENT,
         )
+    if entry.get("name") != pool_name:
+        return LeaseScan(pool_name, False, "scan_pool_identity_mismatch", capacity)
     window = entry.get("window")
     if (
         isinstance(window, bool)
