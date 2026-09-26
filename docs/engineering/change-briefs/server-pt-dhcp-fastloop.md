@@ -1547,3 +1547,10 @@ Generic/named pool DHCP, explicit acquisition causality, renewal, table-end
 proof, other builds/networks/channels and native capacity above two remain
 unqualified. This feature-branch result is READY_FOR_REVIEW; independent
 product approval and integration to `main` are separate decisions.
+
+**CI reporting delta (S).** The first exact-SHA CI run at `e450920` passed
+all six jobs, with 8163 passed/6 skipped on each Windows Python version and
+8147 passed/22 skipped on each Ubuntu Python version. Its `pytest -q` command
+did not emit skip reasons. Add `-rs` to the existing Windows and Ubuntu pytest
+commands without changing collection, markers, selection or pass criteria;
+the final exact-SHA CI must retain each skip reason in its job log.

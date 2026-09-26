@@ -52,11 +52,11 @@ jobs:
 
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
-        run: .\.venv\Scripts\python.exe -m pytest -q
+        run: .\.venv\Scripts\python.exe -m pytest -q -rs
 
       - name: Run tests (Ubuntu)
         if: runner.os == 'Linux'
-        run: .venv/bin/python -m pytest -q
+        run: .venv/bin/python -m pytest -q -rs
 
   quality:
     runs-on: ubuntu-latest
