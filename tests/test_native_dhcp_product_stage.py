@@ -480,6 +480,36 @@ def test_unsealable_product_record_fails_closed(tmp_path, capsys, monkeypatch):
     assert not store.external_source_registered(ATTEMPT, "product-record")
 
 
+def test_partial_status_write_never_exits_zero(tmp_path, capsys, monkeypatch):
+    """A status whose digest was never written is not a completed phase."""
+    require_node()
+    store_module = import_module(
+        "packet_tracer_mcp.infrastructure.persistence.server_pt_commissioning_store"
+    )
+    real = store_module._write_once
+
+    def fail_status_digest(path, payload):
+        if Path(path).name == "qualification-status.sha256":
+            raise OSError("injected digest write failure")
+        return real(path, payload)
+
+    monkeypatch.setattr(store_module, "_write_once", fail_status_digest)
+    code, summary, record, _calls, _snapshot, store = _run(
+        tmp_path, capsys, monkeypatch, retry_on_enable=True
+    )
+    measure = next(
+        item for item in record.measurements if item.experiment_id == "M-NATIVE-PRODUCT"
+    )
+    assert measure.conclusion is MeasurementConclusion.SUPPORTED_IN_SAMPLE
+    assert code != 0
+    assert "status_unrecorded:OSError" in summary["campaign"]["archive_findings"]
+    with pytest.raises(ValueError):
+        store.load_phase_status(ATTEMPT, "qualification")
+    # Both records are still sealed for recovery.
+    assert store.external_source_registered(ATTEMPT, "product-record")
+    assert store.external_source_registered(ATTEMPT, "qualification-record")
+
+
 def test_owned_stage_never_promotes_partial_product_run(tmp_path, capsys, monkeypatch):
     """Verified lease/fetch rows cannot mask a partial overall product run."""
     require_node()

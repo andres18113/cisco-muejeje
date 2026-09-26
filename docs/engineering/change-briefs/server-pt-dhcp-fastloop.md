@@ -1080,16 +1080,22 @@ review of `27ee68c`, so a fresh Codex adversarial review covered
 The product record was outside the campaign archive: only the
 qualification record was registered, so deleting or changing the product
 JSON after a VERIFIED run left `verify_index()` passing. This is accepted
-and corrected in the owning finalization block. When the sealed
-qualification record's `M-NATIVE-PRODUCT` facts name a product record, it
-is registered as external source `product-record` before the phase status
-is saved, so the index rehashes it thereafter. A sealing failure makes the
-phase status `stopped` with `product_record_unsealed:<type>`, and the CLI
-no longer exits 0 whenever its phase status is `stopped`, including an
-unverified archive. The offline harness now writes product records to
+and corrected in the owning finalization block. When the qualification
+record's `M-NATIVE-PRODUCT` facts name a product record, it is registered
+as external source `product-record`, so the index rehashes it thereafter.
+A follow-up review of that correction found an older gap in the same
+block: a status whose JSON was written but whose digest write failed, or a
+failed qualification-record registration, only appended a finding, so the
+CLI could exit 0 with an unloadable status. Both records are now sealed
+before the status is written, each independently, and any sealing or
+status-write failure stops the phase with a named finding. The CLI exits 0
+only when the use case completed, the phase status is not `stopped`, the
+status reloads under its digest, every cited record is registered, and
+the index verifies. The offline harness now writes product records to
 production's `data/services/product-qualification` location. Regressions
-prove that tampering or deletion fails the index and that an unsealable
-record fails closed while the measurement itself stays supported.
+prove that tampering or deletion fails the index, an unsealable product
+record fails closed, and a failed status digest write never exits 0 while
+both records stay sealed for recovery.
 
 The second finding is that injected fixture inventory resolves names in
 whichever receiver consumes a command, and a replacement receiver in the

@@ -723,6 +723,32 @@ def _native_product_record_path(record: QualificationRecord | None) -> str:
     return ""
 
 
+def _stop_status(status: dict[str, object], finding: str, exc: Exception) -> None:
+    """Stop one phase status and append why, keeping earlier findings."""
+    findings = status.get("archive_findings")
+    status["outcome"] = "stopped"
+    status["archive_findings"] = [
+        *(findings if isinstance(findings, list) else []),
+        f"{finding}:{type(exc).__name__}",
+    ]
+
+
+def _qualification_sealed(
+    store: ServerPtCommissioningStore, attempt: str, sources: Mapping[str, str]
+) -> bool:
+    """Whether the phase status reloads and every cited record is sealed."""
+    try:
+        store.load_phase_status(attempt, "qualification")
+        sealed = all(
+            store.external_source_registered(attempt, label)
+            for label, source in sources.items()
+            if source
+        )
+        return sealed and not store.verify_index()
+    except (OSError, ValueError):
+        return False
+
+
 def _diagnostic_service_runtime(
     bound: LedgeredTransport, allowance
 ) -> PacketTracerEnterpriseServiceRuntime:
@@ -1234,30 +1260,24 @@ def _campaign_main(
             "campaign_id": campaign.campaign_id,
             **_campaign_status(result, active_seconds=active, ledger_result=recorded),
         }
-        product_path = _native_product_record_path(record)
-        if product_path:
-            # The product record is the decisive E5/E6 evidence; sealing it
-            # before the status is saved makes a failure part of that status.
+        # Seal both records before the status is written, so a sealing
+        # failure is part of that status; the product record is the decisive
+        # E5/E6 evidence. Every persistence failure stops the phase.
+        sources = {
+            "product-record": _native_product_record_path(record),
+            "qualification-record": result.record_path if result is not None else "",
+        }
+        for label, source in sources.items():
+            if not source:
+                continue
             try:
-                store.register_external_source(
-                    attempt, "product-record", Path(product_path)
-                )
+                store.register_external_source(attempt, label, Path(source))
             except (OSError, ValueError) as exc:
-                status["outcome"] = "stopped"
-                status["archive_findings"] = [
-                    f"product_record_unsealed:{type(exc).__name__}"
-                ]
+                _stop_status(status, f"{label.replace('-', '_')}_unsealed", exc)
         try:
             store.save_phase_status(attempt, "qualification", status)
-            if result is not None and result.record_path:
-                store.register_external_source(
-                    attempt, "qualification-record", Path(result.record_path)
-                )
         except (OSError, ValueError) as exc:
-            status["archive_findings"] = [
-                *status.get("archive_findings", []),
-                f"status_unrecorded:{type(exc).__name__}",
-            ]
+            _stop_status(status, "status_unrecorded", exc)
         archive_or_stop(store, status)
     summary = result.compact_summary()
     summary["campaign"] = {
@@ -1269,8 +1289,12 @@ def _campaign_main(
         "publication_waived_for_this_attempt_only": True,
     }
     _print(summary)
-    if result.exit_code == 0 and status.get("outcome") == "stopped":
-        # An unsealed or unverified archive never reports phase success.
+    if result.exit_code == 0 and (
+        status.get("outcome") == "stopped"
+        or not _qualification_sealed(store, attempt, sources)
+    ):
+        # An unsealed, unreloadable or unverified archive never reports
+        # phase success.
         return 1
     return result.exit_code
 
