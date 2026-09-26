@@ -1,0 +1,58 @@
+{
+  "question": "After exact native serverPool policy and E5 stability, does one guarded owned PC-PT DHCP-mode activation autonomously yield two consecutive usable 192.0.2.100/24 readings with a matching IP/MAC/port lease row in the physical serverPool and no competing named pool or PC2 activity?",
+  "stop_rule": "Stop on source/process/mailbox ambiguity, incomplete or changed physical policy, any unknown native enable or client-mode effect, active/residually addressed PC2, unobserved competing-pool control, wrong client or lease identity, budget expiry, or cleanup uncertainty; preserve terminal read and retire owned lab.",
+  "attempt_ids": [
+    "66645cff81524e8f93d05295ddcd075f"
+  ],
+  "tests_run": [
+    "580 focused and affected tests passed at 04f5337",
+    "quality_gate.py --base cisco/main --delivery-commit HEAD passed at 04f5337",
+    "mkdocs build exit 0",
+    "independent read-only adversarial pre-LIVE review found no blocker"
+  ],
+  "targets": [
+    "__MCP_E6Q_SRV",
+    "__MCP_E6Q_PC1",
+    "__MCP_E6Q_PC2"
+  ],
+  "permitted_effects": [
+    "qualification:Q3-NATIVE-SERVE",
+    "configurePcIp:owned_server_static_address_initial_and_reapplication",
+    "DhcpPool.setStartIp:serverPool:192.0.2.100",
+    "DhcpPool.setMaxUsers:serverPool:1",
+    "DhcpPool.setDefaultRouter:serverPool:192.0.2.1",
+    "DhcpPool.setDnsServerIp:serverPool:192.0.2.10",
+    "DhcpServerProcess.addExcludedAddress:192.0.2.1-192.0.2.1",
+    "DhcpServerProcess.addExcludedAddress:192.0.2.10-192.0.2.10",
+    "DhcpServerProcess.setEnable:true:guarded_singleton_policy",
+    "configurePcIp:owned_PC1_DHCP_mode:guarded",
+    "owned_fixture_create_and_cleanup",
+    "owned_process_retirement"
+  ],
+  "allocated_operations": 260,
+  "allocated_seconds": 2100.0,
+  "profile_id": "Q3-NATIVE-SERVE",
+  "profile_version": "1",
+  "source_sha": "04f5337eef67f0c850e057537ce80757e3aa73b1",
+  "source_tree": "b0a0d2e0e34b4efd7892ee52aff6d033bfc16ecc",
+  "instance_token": "6d045ac7212f481c91ccd97a6dc621b5",
+  "intent_name": "MCP-E6Q",
+  "requested_pool": "MCP_E6Q_DHCP",
+  "effective_pool_hypothesis": "serverPool",
+  "requested_start": "192.0.2.100",
+  "requested_capacity": 1,
+  "compiled_gateway": "192.0.2.1",
+  "compiled_dns": "192.0.2.10",
+  "compiled_exclusions": [
+    {
+      "start": "192.0.2.1",
+      "end": "192.0.2.1"
+    },
+    {
+      "start": "192.0.2.10",
+      "end": "192.0.2.10"
+    }
+  ],
+  "allocation_arithmetic": "100 profile planned minimum includes 15 fixture, 9 mode worst-case (4 readiness plus 5 reads/effect), and 39 serving calls (13 client/lease/policy triples) with at most twelve 10-second waits; 260 stage operation ceiling. 1800 stage seconds includes 300 finalization reserve; +60 launch +120 retirement +120 contingency =2100 episode seconds.",
+  "interpretation_limit": "This episode measures passive autonomous state and exact physical-row attribution, not explicit dhcpRun causality, table-end proof, restart persistence, or dependent HTTP."
+}

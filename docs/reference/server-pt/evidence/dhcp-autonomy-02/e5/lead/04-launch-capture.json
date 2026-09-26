@@ -1,0 +1,10 @@
+{
+  "command_line": "\"C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe\" ",
+  "created_by_campaign": true,
+  "launch_method": "Start-Process",
+  "main_window_title": "PacketTracer",
+  "pid": 29460,
+  "process_incarnation": "2026-09-25T19:30:04.3034819-05:00",
+  "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+  "workspace_kind": "disposable_declared"
+}
