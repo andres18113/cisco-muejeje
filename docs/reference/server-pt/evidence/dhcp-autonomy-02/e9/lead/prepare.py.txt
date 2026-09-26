@@ -1,0 +1,129 @@
+"""Freeze episode 9 identities and a finite two-client plan before PT contact."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+from uuid import uuid4
+
+from packet_tracer_mcp.adapters.cli.service_qualification import production_boundaries
+from packet_tracer_mcp.domain.enterprise.models.service_plan import (
+    ConfigureServerDhcpPool,
+)
+from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
+    stage_definition,
+)
+
+ROOT = Path(__file__).resolve().parents[3]
+LEAD = Path(__file__).resolve().parent
+BUILD = "9.0.1.0858"
+
+
+def git(*args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=ROOT, check=True, capture_output=True, text=True, timeout=15
+    ).stdout.strip()
+
+
+def save(name: str, payload: object) -> None:
+    with (LEAD / name).open("x", encoding="utf-8") as stream:
+        json.dump(payload, stream, sort_keys=True, indent=2)
+        stream.write("\n")
+
+
+if git("status", "--porcelain=v1"):
+    raise RuntimeError("episode_source_dirty")
+if git("branch", "--show-current") != "feature/server-pt-goal-foundations":
+    raise RuntimeError("episode_wrong_branch")
+head = git("rev-parse", "HEAD")
+tree = git("rev-parse", "HEAD^{tree}")
+definition = stage_definition("Q3-NATIVE-PRODUCT")
+if definition is None or definition.profile_version != "2":
+    raise RuntimeError("episode_profile_mismatch")
+contract = production_boundaries(ROOT).native_product_contract(BUILD, "e9-plan")
+[pool] = [
+    item
+    for item in contract.service_plan.actions
+    if isinstance(item, ConfigureServerDhcpPool)
+]
+if (pool.lease_start, pool.lease_end, pool.max_users) != (
+    "192.0.2.100",
+    "192.0.2.101",
+    2,
+):
+    raise RuntimeError("episode_policy_mismatch")
+attempt = uuid4().hex
+instance = uuid4().hex
+save(
+    "ids.json",
+    {
+        "Attempt": attempt,
+        "Head": head,
+        "Instance": instance,
+        "Plan": str(LEAD / "episode-plan.json"),
+        "Tree": tree,
+    },
+)
+save(
+    "episode-plan.json",
+    {
+        "allocated_operations": definition.budget.max_operations,
+        "allocated_seconds": 2400.0,
+        "allocation_arithmetic": (
+            "The stage caps 600 operations and 2100 seconds, including its 11-operation "
+            "and 300-second finalization reserves. Episode 8 consumed 93 operations; "
+            "the extra selected client adds one E5 setter, grouped client reads, and "
+            "one cold HTTP request. A 200-operation forecast leaves 400 within the "
+            "fixed stage ceiling; 2400 episode seconds cover 2100 stage seconds "
+            "plus 60 launch, 120 retirement, and 120 contingency. No in-flight increase."
+        ),
+        "attempt_ids": [attempt],
+        "compiled_dns": pool.dns_server,
+        "compiled_exclusions": [item.model_dump(mode="json") for item in pool.excluded_ranges],
+        "compiled_gateway": pool.gateway,
+        "effective_pool_hypothesis": "serverPool",
+        "instance_token": instance,
+        "interpretation_limit": (
+            "Private candidate for a two-client policy, not default public support; "
+            "explicit dhcpRun causality, renewal, and table-end remain unqualified."
+        ),
+        "permitted_effects": [
+            "qualification:Q3-NATIVE-PRODUCT profile 2",
+            "create/verify/remove exact disposable four-device three-link fixture",
+            "maintained product A1-E6 on owned fixture with two selected PC-PT clients",
+            "guarded E5 server static and both client DHCP modes",
+            "guarded native serverPool .100-.101 capacity-two policy and enable",
+            "HTTP content setter and each client's first HTTP-by-IP request without warm-up",
+            "owned process retirement",
+        ],
+        "physical_topology_hash": contract.topology.physical_identity_hash,
+        "profile_id": definition.profile_id,
+        "profile_version": definition.profile_version,
+        "question": (
+            "Does the maintained owned-lab A1-E6 path configure the requested "
+            "capacity-two native serverPool allocation, verify two distinct stable "
+            "PC leases and physical rows, then serve each client's first HTTP-by-IP "
+            "request without ping, DNS, static injection, warm-up, PortFast, or clock acceleration?"
+        ),
+        "requested_capacity": 2,
+        "requested_pool": "derived Q3_DATA (unnamed input)",
+        "requested_start": pool.lease_start,
+        "requested_end": pool.lease_end,
+        "source_sha": head,
+        "source_tree": tree,
+        "stop_rule": (
+            "Stop dependent effects on identity mismatch, unexpected setter, "
+            "incomplete policy/lease/HTTP evidence, budget expiry, persistence or "
+            "cleanup uncertainty; retain terminal readings and retire only the owned lab."
+        ),
+        "targets": list(definition.fixture_names),
+        "tests_run": [
+            "244 affected tests passed at 6868020",
+            "clean exact-commit quality gate at 6868020",
+            "MkDocs build passed at 6868020",
+            "independent read-only adversarial review closed two safety findings",
+        ],
+    },
+)
+print(json.dumps({"attempt": attempt, "instance": instance, "head": head, "tree": tree}))

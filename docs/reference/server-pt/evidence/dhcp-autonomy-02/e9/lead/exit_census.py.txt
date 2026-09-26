@@ -1,0 +1,32 @@
+"""Read-only final census: Packet Tracer processes, mailbox and campaign lock."""
+
+from __future__ import annotations
+
+import json
+import sys
+from dataclasses import asdict
+from pathlib import Path
+
+from packet_tracer_mcp.infrastructure.execution.file_bridge import bridge_dir
+from packet_tracer_mcp.infrastructure.execution.server_pt_process_control import (
+    PowerShellOwnedProcessControl,
+)
+
+EVIDENCE = Path(__file__).resolve().parent
+name = sys.argv[1]
+box = bridge_dir()
+census = PowerShellOwnedProcessControl().packet_tracer_processes()
+value = {
+    "processes": [asdict(item) for item in census.processes],
+    "process_error": census.error,
+    "mailbox_files": sorted(
+        item.name for item in box.iterdir() if item.is_file() and item.name != "alive.txt"
+    )
+    if box.exists()
+    else [],
+    "campaign_lock_present": (box / "campaign" / "campaign.lock").exists(),
+}
+with (EVIDENCE / name).open("x", encoding="utf-8") as stream:
+    json.dump(value, stream, sort_keys=True, indent=2)
+    stream.write("\n")
+print(json.dumps(value, sort_keys=True))

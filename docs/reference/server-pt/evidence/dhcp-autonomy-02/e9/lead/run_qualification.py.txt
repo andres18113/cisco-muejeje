@@ -1,0 +1,106 @@
+"""Invoke the maintained qualification CLI with exact episode 9 bindings."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
+    stage_definition,
+)
+
+ROOT = Path(
+    r"C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP-server-services-goal-foundations"
+)
+MANDATE = ROOT / "docs/reference/server-pt/assignments/ServerPT_DHCP_Delegated_Autonomy_Mandate.md"
+EVIDENCE = Path(__file__).resolve().parent
+EPISODE = 9
+ids = json.loads((EVIDENCE / "ids.json").read_text(encoding="utf-8"))
+recorded = None
+for suffix in ("", "b", "c"):
+    path = EVIDENCE / f"06{suffix}-record-launch.json"
+    if not path.exists():
+        break
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if value["exit_code"] == 0:
+        recorded = value
+        break
+if recorded is None:
+    raise RuntimeError("launch_not_recorded")
+capture = json.loads((EVIDENCE / recorded["capture_file"]).read_text(encoding="utf-8"))
+definition = stage_definition("Q3-NATIVE-PRODUCT")
+if definition is None:
+    raise RuntimeError("stage_not_registered")
+args = [
+    sys.executable,
+    "-m",
+    "packet_tracer_mcp.adapters.cli.service_qualification",
+    "--execute",
+    "--stage",
+    definition.stage.value,
+    "--expected-head",
+    ids["Head"],
+    "--channel",
+    "file",
+    "--packet-tracer-build",
+    "9.0.1.0858",
+    "--authorization-id",
+    f"SERVER-PT-DHCP-AUTONOMY-E{EPISODE}-" + ids["Attempt"],
+    "--authorized-stage",
+    definition.stage.value,
+    "--authorized-sha",
+    ids["Head"],
+    "--authorized-channel",
+    "file",
+    "--authorized-build",
+    "9.0.1.0858",
+    "--authorized-max-operations",
+    str(definition.budget.max_operations),
+    "--authorized-max-seconds",
+    str(definition.budget.max_seconds),
+    "--authorized-profile",
+    definition.profile_id,
+    "--authorized-profile-version",
+    definition.profile_version,
+    "--authorized-tree",
+    ids["Tree"],
+    "--authorized-reserve-operations",
+    str(definition.reserve_operations),
+    "--authorized-process-id",
+    str(capture["pid"]),
+    "--authorized-process-path",
+    capture["process_path"],
+    "--instance-token",
+    ids["Instance"],
+    "--attempt-id",
+    ids["Attempt"],
+    "--campaign",
+    "dhcp-autonomy",
+    "--charter",
+    str(MANDATE),
+    "--episode",
+    str(EPISODE),
+]
+for target in definition.fixture_names:
+    args.extend(("--target", target, "--authorized-target", target))
+for model in definition.fixture_models:
+    args.extend(("--authorized-model", model))
+for link in definition.link_bindings:
+    args.extend(("--authorized-link", link))
+for step in definition.step_ids:
+    args.extend(("--authorized-step", step))
+with (EVIDENCE / "08-qualification-argv.json").open("x", encoding="utf-8") as out:
+    json.dump(args, out, indent=2)
+    out.write("\n")
+env = dict(os.environ)
+env["PT_MCP_GOVERNED_ROOT"] = str(ROOT)
+with (EVIDENCE / "09-qualification.stdout").open("x", encoding="utf-8") as stdout:
+    with (EVIDENCE / "09-qualification.stderr").open("x", encoding="utf-8") as stderr:
+        result = subprocess.run(args, cwd=ROOT, env=env, stdout=stdout, stderr=stderr)
+(EVIDENCE / "09-qualification.exit").write_text(
+    str(result.returncode) + "\n", encoding="utf-8"
+)
+raise SystemExit(result.returncode)

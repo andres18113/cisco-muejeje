@@ -1401,3 +1401,41 @@ exact-SHA CI. Static-client HTTP controls remain positive. Router DHCP,
 alternate transports, renewal proof, other masks and native thousand-client
 capacity are outside this delivery. Unit, integration, system and acceptance
 levels all apply; LIVE acceptance is required for a SUPPORTED public scope.
+
+## Episode 9 capacity result and shifted-policy decision, version 16
+
+Episode 9 executed `Q3-NATIVE-PRODUCT` profile 2 from clean
+`68680209eaaa5c88fd0f7cc30675232c645cc263` (tree
+`c996b28b9744308b9833fdefdbf847b207fcae96`), attempt
+`22d8ccc6f02540f1842f42ad2d3fdf88`, on Packet Tracer 9.0.1.0858 through
+the file channel. The source-linked, 180-file archive is
+[`dhcp-autonomy-02/e9`](../../reference/server-pt/evidence/dhcp-autonomy-02/e9/README.md)
+with manifest SHA-256 `b37759403d70a5feef1846645b73ce6df31f353e8e2cb3de79d0fe675b1bff12`.
+The maintained A1-E6 product record SHA-256 is
+`cc92eae7e34680db7dbeb510c3f9a83c2e33e88108bce9865cd33971549769de`;
+the qualification record SHA-256 is
+`288286ba175acb1848773120e8df2db3cc13a4c9eb424bdc8dc386185c74c081`.
+
+The private candidate configured physical `serverPool` at capacity two,
+`.100`-`.101` within the requested policy. PC1 received `.100`, PC2 `.101`,
+with distinct stable MACs and exact positive physical rows in two consecutive
+samples for each after one unassigned sample. Both cold first HTTP-by-IP
+requests VERIFIED. The product and both required stage measurements completed
+SUPPORTED_IN_SAMPLE; fixture restoration and owned process retirement were
+proven, with a zero-process, empty-mailbox final census. Qualification spent
+88 operations and 161.016 active seconds; the closed campaign ledger charged
+405.774797 seconds for the episode and totals 519 operations/2754.899112
+seconds. This qualifies capacity two for this exact policy and build, not the
+shifted policy, other networks or public default catalog.
+
+**Next discriminating episode.** Keep the owned four-device fixture and
+capacity two, but change the input `start_offset` from 99 to 150 so the
+requested window is `.151`-`.152`. Advance the stage profile revision and
+freeze a new clean source SHA/tree before contact. The setter's observed
+post-start state and subsequent size, gateway, DNS and exclusion reads must
+match the derived policy before enable; a different native coupling stops the
+episode. Require two distinct attributed client states and both cold HTTP
+requests. The existing finite 600-operation/2100-second stage ceiling and
+per-episode lifecycle allocation remain upper bounds, with a new plan and
+attempt identity recorded before launch. This is a policy discrimination,
+not a repeat of the positive `.100`-`.101` case.
