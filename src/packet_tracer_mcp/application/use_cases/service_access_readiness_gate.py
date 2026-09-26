@@ -541,15 +541,9 @@ class ServiceAccessReadinessGate:
             )
         return remaining, ""
 
-    def _extension_allowance(self, key: GroupKey, remaining: float) -> float:
-        """Return what one group may spend on a simulation-time extension.
-
-        It is what the shared budget has left after this group's own window,
-        the first window still owed to every group not yet observed, and one
-        poll interval of margin, so a converged extension returns inside the
-        shared budget and never starves a later group.
-        """
-        owed = sum(
+    def _owed_seconds(self, key: GroupKey) -> float:
+        """Return the first windows still owed to every other unobserved group."""
+        return sum(
             READINESS_GROUP_DEADLINE_SECONDS
             for other in self._requirements
             if other != key and other not in self._results
@@ -558,11 +552,20 @@ class ServiceAccessReadinessGate:
             for other in self._continuity
             if other != key and other not in self._results
         )
+
+    def _extension_allowance(self, key: GroupKey, remaining: float) -> float:
+        """Return what one group may spend on a simulation-time extension.
+
+        It is what the shared budget has left after this group's own window,
+        the first window still owed to every group not yet observed, and one
+        poll interval of margin, so a converged extension returns inside the
+        shared budget and never starves a later group.
+        """
         return max(
             0.0,
             remaining
             - READINESS_GROUP_DEADLINE_SECONDS
-            - owed
+            - self._owed_seconds(key)
             - READINESS_GROUP_INTERVAL_SECONDS,
         )
 
@@ -600,6 +603,7 @@ class ServiceAccessReadinessGate:
         group_started: float,
     ) -> tuple[AccessReadinessGroupResult, AccessForwardingObservation | None]:
         """Call the observer once and judge what it returned."""
+        owed = self._owed_seconds(requirement.key)
         allowance = self._extension_allowance(requirement.key, remaining)
         try:
             observation = self._observer.observe_access_forwarding(
@@ -625,8 +629,8 @@ class ServiceAccessReadinessGate:
                 None,
             )
         # A result after the group window is timely only through a converged
-        # extension that stayed within the allowance offered here; the shared
-        # budget still closes it.
+        # extension that stayed within the allowance offered here, and never
+        # past the time still owed to the other groups.
         extension = observation.extension
         extended = (
             extension.converged
@@ -635,7 +639,9 @@ class ServiceAccessReadinessGate:
             and 0 < extension.wall_cap_seconds <= allowance
         )
         window = (
-            remaining if extended else min(remaining, READINESS_GROUP_DEADLINE_SECONDS)
+            remaining - owed
+            if extended
+            else min(remaining, READINESS_GROUP_DEADLINE_SECONDS)
         )
         if self._clock() - group_started >= window:
             # The rows remain available, but the product deadline is a closed

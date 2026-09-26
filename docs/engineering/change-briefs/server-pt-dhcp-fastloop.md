@@ -1234,7 +1234,28 @@ dropped the allowance on the exact product path; it now forwards it, with
 a regression. The existing `persistent_lis` boundary test keeps its
 original meaning with a budget of one window and one interval, which offers
 no extension; persistent listening through an extension is tested
-separately and ends on the wall cap. With the pre-change sources restored,
+separately and ends on the wall cap. An independent Codex review of
+`e083979` found three gaps, all accepted and fixed with causal
+regressions that fail on that commit. First, the extension's cap started
+when the window actually ended, so a window read that overran 30 seconds
+pushed it later, and the gate accepted a converged result until the whole
+shared budget expired; together they could starve a later group. The
+observer now anchors the extension's absolute deadline to the episode
+start plus the window plus the offer, and the gate accepts an extended
+result only up to the shared budget minus the windows still owed to other
+groups. Second, a late authoritative read could seed eligibility and a
+late but complete foreign-device read was tolerated as a truncation; now
+only a timely authoritative read seeds, only a late incomplete read is
+tolerated, and a late complete read that has left the transitional path
+denies. Third, the shared waiter reads the clock, then inspects, and only
+afterwards checks progress, so one read could open after the protocol
+budget was spent; the access inspection now refuses to open a read once
+the last clock reading shows the budget spent, and the waiter closes on
+`simulation_progress_exhausted`. The shared waiter itself is unchanged for
+Trunk and Voice. The offer and the effective cap derive from remaining
+time, so the scalable equivalence test treats them as clock facts beside
+`elapsed_ms`; before that, it compared them and failed intermittently.
+With the pre-change sources restored,
 the real gate replaying episode 7's shape (listening until 60 s, about 19 s
 per read) refuses with the same dimension and cause as LIVE
 (`EXECUTION`, `sample_call_budget_exhausted`); with the change it admits

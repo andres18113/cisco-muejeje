@@ -320,13 +320,58 @@ def test_learning_only_evidence_earns_the_qualified_learning_budget():
 
 def test_the_offered_allowance_bounds_the_wall_cap():
     """The caller's allowance is a ceiling the extension never exceeds."""
+    # One sample ends the window at 19 s, inside it, so nothing is overrun.
     observation, _ios, _clock = _observe(
-        [_read("LIS", "LIS"), TRUNCATED, _read("LIS", "LIS")],
+        [_read("LIS", "LIS"), _read("LIS", "LIS")],
         extension_seconds=10.0,
+        max_samples=1,
     )
 
     assert observation.extension.wall_cap_seconds == 10.0
     assert observation.extension.converged is False
+
+
+def test_a_window_read_that_overran_shortens_the_extension():
+    """The offer is anchored to the episode start, never to the late read."""
+    observation, _ios, _clock = _observe(
+        [_read("LIS", "LIS"), TRUNCATED, _read("LIS", "LIS")],
+        extension_seconds=59.0,
+    )
+
+    # The truncated window read ended at 39 s, nine seconds past the window.
+    assert observation.extension.wall_cap_seconds == pytest.approx(50.0)
+
+
+@pytest.mark.parametrize(
+    ("first", "late"),
+    [
+        (_read("BLK", "LIS"), _read("LIS", "LIS")),
+        (_read("LIS", "LIS"), FOREIGN),
+        (_read("LIS", "LIS"), _read("BLK", "LIS")),
+    ],
+    ids=["late_listening_after_blocked", "late_foreign_device", "late_blocked"],
+)
+def test_only_timely_authoritative_window_reads_seed_an_extension(first, late):
+    """A late complete read never seeds one and a contradicting one denies it."""
+    observation, _ios, simulation_clock = _observe([first, late])
+
+    assert observation.extension.candidate is False
+    assert simulation_clock.reads == 0
+    assert access_forwarding_admission(observation).admitted is False
+
+
+def test_no_read_opens_after_the_simulation_budget_is_spent():
+    """The protocol target bounds admission, not only the waiting."""
+    observation, ios, _clock = _observe(
+        [_read("LIS", "LIS"), TRUNCATED, _read("LIS", "LIS"), _read("FWD", "FWD")],
+        simulation={"rate": 2.0},
+    )
+
+    assert observation.extension.stop_reason == "simulation_progress_exhausted"
+    assert observation.extension.converged is False
+    # The forwarding read after the spent budget was never opened.
+    assert ios.calls == 3
+    assert access_forwarding_admission(observation).admitted is False
 
 
 def test_the_extension_never_outlives_the_callers_remaining_allowance():
@@ -492,10 +537,10 @@ def test_the_gate_refuses_forwarding_that_never_arrives():
     assert sample["extension"]["stop_reason"] == "wall_clock_safety_cap"
 
 
-def test_an_extension_never_spends_a_later_groups_first_window():
-    """Two groups: the first may extend only past the window it still owes."""
+def _two_group_plan():
+    """Two access groups on one switch: VLAN 10 and VLAN 20."""
     server_two = "endpoint/hq/default/server/002"
-    plan = _plan(
+    return _plan(
         actions=[
             _Action("FastEthernet1/1", (PC1,)),
             _Action("FastEthernet1/3", (SERVER,)),
@@ -512,6 +557,32 @@ def test_an_extension_never_spends_a_later_groups_first_window():
             ),
         ],
     )
+
+
+@pytest.mark.parametrize(("seconds", "admitted"), [(85.0, True), (95.0, False)])
+def test_a_converged_extension_never_runs_into_a_later_groups_window(seconds, admitted):
+    """With another group still owed 30 s, 90 s is the first group's limit."""
+    clock = SimulatedClock()
+    observer = _LateReporter(clock, cap_over_allowance=-1.0, seconds=seconds)
+    gate = ServiceAccessReadinessGate(
+        _two_group_plan(), observer, clock=clock, device_names={SWITCH: SWITCH_NAME}
+    )
+
+    decision = gate.decide("http-1")
+
+    assert observer.offered == [
+        pytest.approx(
+            READINESS_TOTAL_BUDGET_SECONDS
+            - 2 * READINESS_GROUP_DEADLINE_SECONDS
+            - READINESS_GROUP_INTERVAL_SECONDS
+        )
+    ]
+    assert decision is not None and decision.admitted is admitted
+
+
+def test_an_extension_never_spends_a_later_groups_first_window():
+    """Two groups: the first may extend only past the window it still owes."""
+    plan = _two_group_plan()
     gate = ServiceAccessReadinessGate(
         plan, _NeverCalled(), clock=SimulatedClock(), device_names={}
     )
@@ -541,15 +612,22 @@ class _NeverCalled:
 class _LateReporter:
     """Report a converged extension after the window, as told to."""
 
-    def __init__(self, clock: SimulatedClock, *, cap_over_allowance: float) -> None:
+    def __init__(
+        self,
+        clock: SimulatedClock,
+        *,
+        cap_over_allowance: float,
+        seconds: float = READINESS_GROUP_DEADLINE_SECONDS + 20.0,
+    ) -> None:
         self.clock = clock
         self.cap_over_allowance = cap_over_allowance
+        self.seconds = seconds
         self.offered: list[float] = []
 
     def observe_access_forwarding(self, device_name, vlan_id, interfaces, **bounds):
         allowance = bounds["extension_seconds"]
         self.offered.append(allowance)
-        self.clock.advance(READINESS_GROUP_DEADLINE_SECONDS + 20.0)
+        self.clock.advance(self.seconds)
         rows = tuple(
             AccessForwardingRow(interface=item, matches=1, state="FWD", role="Desg")
             for item in interfaces

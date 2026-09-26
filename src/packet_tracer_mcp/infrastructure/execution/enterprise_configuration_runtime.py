@@ -1074,13 +1074,25 @@ class PacketTracerEnterpriseConfigurationRuntime:
                         _access_forwarding_row(instance, interface)
                         for interface in requested
                     )
-            if authoritative:
-                window_evidence = (
-                    rows,
-                    instance.forward_delay_seconds if instance is not None else None,
-                )
+            delay = instance.forward_delay_seconds if instance is not None else None
+            if authoritative and not sample_after_deadline:
+                window_evidence = (rows, delay)
                 window_contradicted = False
-            elif not sample_after_deadline:
+            elif authoritative:
+                # A late complete read seeds nothing; one that has left the
+                # transitional path contradicts what came before it.
+                if access_forwarding_extension_budget(rows, delay) is None:
+                    window_contradicted = True
+            elif not (
+                sample_after_deadline
+                and not (
+                    show.executed
+                    and show.fresh_output_observed
+                    and show.output_complete
+                )
+            ):
+                # Only an incomplete read that the window's own deadline cut
+                # is not a contradiction; any other failed read is.
                 window_contradicted = True
             history.append(
                 AccessForwardingSampleEvidence(
@@ -1158,18 +1170,23 @@ class PacketTracerEnterpriseConfigurationRuntime:
         )
         if budget is not None:
             target_ms, state_cap = budget
-            # Never past the caller's own invocation allowance, whatever the
-            # offer says.
+            # The offer is anchored to this episode's start, so a window read
+            # that overran the window shortens the extension instead of
+            # pushing it later; and it never passes the caller's own
+            # invocation allowance, whatever the offer says.
+            now = self._clock()
             cap = min(
                 state_cap,
                 float(extension_seconds),
-                started + parent_window - self._clock(),
+                started + deadline_window + float(extension_seconds) - now,
+                started + parent_window - now,
             )
             if cap <= 0:
                 budget = None
         if budget is not None:
             extension_deadline = self._clock() + cap
             latest: dict[str, Any] = {"samples": 0}
+            clock_readings: list[float] = []
 
             def calls_left() -> int | None:
                 if episode_calls is None:
@@ -1187,9 +1204,29 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     raise RuntimeError("episode_call_budget_exhausted")
                 self._forwarding_channel.open(calls=1, deadline=extension_deadline)
                 extension_aux_calls += int(self._forwarding_aux_is_injected)
-                return self._forwarding_simulation_time_observer()
+                reading = self._forwarding_simulation_time_observer()
+                value = getattr(reading, "sim_time", None)
+                if (
+                    getattr(reading, "observed", False)
+                    and isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                ):
+                    clock_readings.append(float(value))
+                return reading
 
             def inspect() -> dict[str, object]:
+                if (
+                    len(clock_readings) > 1
+                    and clock_readings[-1] - clock_readings[0] >= target_ms
+                ):
+                    # The protocol budget was already spent when this round's
+                    # clock was read, so no read is opened; the waiter closes
+                    # on the spent budget.
+                    return {
+                        "configuration_channel": False,
+                        "continuation_authorized": True,
+                        "failure_reason": "simulation_progress_spent_before_read",
+                    }
                 left = calls_left()
                 if left is not None and left <= 0:
                     latest["episode_budget_exhausted"] = True
