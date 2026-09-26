@@ -13,11 +13,19 @@ from service_entry_fixture import IsolationPreflight, RecordingConfigurationRunt
 from packet_tracer_mcp.adapters.cli import service_qualification
 from packet_tracer_mcp.adapters.cli.service_qualification import (
     native_dhcp_http_product_contract,
+    production_boundaries,
 )
 from packet_tracer_mcp.application.ports.service_run_record import (
     RunRecordPersistenceError,
 )
+from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
+    ServiceStageRuntimes,
+)
+from packet_tracer_mcp.application.use_cases.qualify_server_services import (
+    _Q3ConfigurationRuntime,
+)
 from packet_tracer_mcp.domain.enterprise.models.configuration import (
+    CreateVlan,
     SetEndpointDhcp,
     SetEndpointStaticAddress,
     VerificationKind,
@@ -257,6 +265,12 @@ def _run(
                     directory / "data/services/qualification"
                 ),
                 native_product_contract=native_dhcp_http_product_contract,
+                native_product_runtimes=lambda bound, _rows: ServiceStageRuntimes(
+                    configuration=_without_enumeration(
+                        _hybrid_configuration(bound, contract.inventory)
+                    ),
+                    services=_without_enumeration(_service_runtime(bound, inventory)),
+                ),
                 native_product_import_preflight=IsolationPreflight,
                 native_product_record_store_factory=lambda: (
                     CompleteFails(directory)
@@ -265,12 +279,6 @@ def _run(
                 ),
                 native_product_endpoint_observer=lambda bound: (
                     PacketTracerEndpointAddressObserver(bound.send_and_wait)
-                ),
-                configuration_runtime=lambda bound: _without_enumeration(
-                    _hybrid_configuration(bound, contract.inventory)
-                ),
-                service_runtime=lambda bound: _without_enumeration(
-                    _service_runtime(bound, inventory)
                 ),
             )
 
@@ -296,6 +304,93 @@ def _run(
             record_path.read_text(encoding="utf-8")
         )
         return code, summary, record, transport.calls, engine.snapshot(), store
+    finally:
+        engine.close()
+
+
+def test_production_product_runtimes_supply_inner_inventory(tmp_path):
+    """The inner E5/E6 setters can index only the verified four-target fixture."""
+    contract = native_dhcp_http_product_contract(SIM_BUILD, "inner-inventory")
+    boundary = production_boundaries(tmp_path)
+
+    class NeverDispatch:
+        def send(self, _script):
+            raise AssertionError("inventory must not dispatch")
+
+        def send_and_wait(self, _script, _timeout):
+            raise AssertionError("inventory must not dispatch")
+
+        def dispatch_and_wait(self, _script, _timeout):
+            raise AssertionError("inventory must not dispatch")
+
+        def clock(self):
+            return 0.0
+
+        def capped_sleep(self, _seconds):
+            raise AssertionError("inventory must not sleep")
+
+    runtimes = boundary.native_product_runtimes(NeverDispatch(), contract.inventory)
+    expected = list(contract.inventory)
+    expected_ports = {item.device_name: set(item.interfaces) for item in expected}
+    assert {
+        item.device_name: set(item.interfaces)
+        for item in runtimes.configuration.inventory()
+    } == expected_ports
+    assert {
+        item.device_name: set(item.interfaces) for item in runtimes.services.inventory()
+    } == expected_ports
+    assert set(runtimes.configuration._targets) == {
+        item.device_name for item in expected
+    }
+    store = boundary.native_product_record_store_factory()
+    assert store.base_dir == (tmp_path / "data/services/product-qualification")
+    product_path = store.path_for("qualification/probe", "probe-product")
+    product_path.parent.mkdir(parents=True)
+    product_path.write_text("{}", encoding="utf-8")
+    qualification_store = QualificationRecordStore(
+        tmp_path / "data/services/qualification"
+    )
+    assert qualification_store.attempt_exists("fresh-attempt") is False
+    with pytest.raises(RuntimeError, match="never enumerates the workspace"):
+        boundary.configuration_runtime(NeverDispatch()).inventory()
+    with pytest.raises(RuntimeError, match="never enumerates the workspace"):
+        boundary.service_runtime(NeverDispatch()).inventory()
+
+
+def test_product_stage_ios_batch_indexes_inner_fixture_inventory(tmp_path):
+    """The stage wrapper reaches E5 VLAN without the episode 6 inventory error."""
+    require_node()
+    contract = native_dhcp_http_product_contract(SIM_BUILD, "stage-inner-ios")
+    engine = NodeEngine(tmp_path, dhcp_default_pool="native")
+    try:
+        for device in contract.topology.devices:
+            engine.seed_device(device.name, device.model)
+        transport = NodeEngineTransport(engine)
+
+        class Bound:
+            send = transport.send
+            send_and_wait = transport.send_and_wait
+            dispatch_and_wait = transport.dispatch_and_wait
+            clock = staticmethod(lambda: 0.0)
+            capped_sleep = staticmethod(lambda _seconds: None)
+
+        inner = (
+            production_boundaries(tmp_path)
+            .native_product_runtimes(Bound(), contract.inventory)
+            .configuration
+        )
+        inner._ios_readiness = lambda _name: True
+        stage_runtime = _Q3ConfigurationRuntime(inner, contract.inventory)
+        assert len(stage_runtime.inventory()) == 4
+        assert inner._targets == {}
+        vlan = next(
+            action
+            for action in contract.configuration_plan.actions
+            if isinstance(action, CreateVlan)
+        )
+        (result,) = stage_runtime.apply_actions([vlan])
+        assert result.applied, (result.failure_code, result.message)
+        assert set(inner._targets) == {item.device_name for item in contract.inventory}
     finally:
         engine.close()
 

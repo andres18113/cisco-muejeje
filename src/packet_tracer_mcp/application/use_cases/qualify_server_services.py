@@ -932,6 +932,13 @@ class QualificationBoundaries:
     #: reviewed record brackets. None of them is a domain constant.
     dhcp_product_contract: Callable[[str, str, int], Q3ProductContract] | None = None
     native_product_contract: Callable[[str, str], Q3ProductContract] | None = None
+    native_product_runtimes: (
+        Callable[
+            [LedgeredTransport, tuple[RuntimeConfigurationTarget, ...]],
+            ServiceStageRuntimes,
+        ]
+        | None
+    ) = None
     native_product_import_preflight: Callable[[], Any] | None = None
     native_product_record_store_factory: Callable[[], Any] | None = None
     native_product_endpoint_observer: Callable[[LedgeredTransport], Any] | None = None
@@ -1104,6 +1111,7 @@ _DIAGNOSTIC_BOUNDARIES: dict[QualificationStage, tuple[str, ...]] = {
 }
 _DIAGNOSTIC_BOUNDARIES[QualificationStage.Q3_NATIVE_PRODUCT] = (
     "native_product_contract",
+    "native_product_runtimes",
     "native_product_import_preflight",
     "native_product_record_store_factory",
     "native_product_endpoint_observer",
@@ -6199,7 +6207,13 @@ def _run_q3_native_product(execution: _Execution) -> None:
                     else None
                 )
 
-        configuration_runtime, service_runtime = _d_dhcp_runtimes(execution, contract)
+        inner = boundaries.native_product_runtimes(execution.bound, contract.inventory)
+        product_runtimes = ServiceStageRuntimes(
+            configuration=_Q3ConfigurationRuntime(
+                inner.configuration, contract.inventory
+            ),
+            services=_Q3ServiceRuntime(inner.services, contract.inventory),
+        )
         with execution.ledger.effect_of("native-product:apply-enterprise-services"):
             product = apply_enterprise_services(
                 contract.intent_json,
@@ -6207,10 +6221,7 @@ def _run_q3_native_product(execution: _Execution) -> None:
                 packet_tracer_version=execution.record.environment.observed_build,
                 import_preflight=boundaries.native_product_import_preflight(),
                 manifest_store=ExactManifest(),
-                runtimes=ServiceStageRuntimes(
-                    configuration=configuration_runtime,
-                    services=service_runtime,
-                ),
+                runtimes=product_runtimes,
                 record_store=boundaries.native_product_record_store_factory(),
                 environment_fingerprint=contract.manifest.environment_fingerprint,
                 transport_selection=TransportSelection(

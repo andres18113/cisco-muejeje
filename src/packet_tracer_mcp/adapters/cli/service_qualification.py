@@ -40,6 +40,7 @@ from typing import Any
 from uuid import uuid4
 
 from ...application.ports.service_qualification import OpenedTransport
+from ...application.use_cases.apply_enterprise_services import ServiceStageRuntimes
 from ...application.use_cases.compile_configuration import (
     compile_enterprise_configuration,
 )
@@ -657,9 +658,13 @@ def _no_inventory() -> list[dict]:
 
 def _configuration_runtime(
     bound: LedgeredTransport,
+    *,
+    inventory_rows: tuple[RuntimeConfigurationTarget, ...] | None = None,
 ) -> PacketTracerEnterpriseConfigurationRuntime:
     return PacketTracerEnterpriseConfigurationRuntime(
-        _no_inventory,
+        _no_inventory
+        if inventory_rows is None
+        else lambda: [item.model_dump(mode="json") for item in inventory_rows],
         bound.send,
         bound.send_and_wait,
         # The neutral access-forwarding observer is the only path that reads
@@ -671,15 +676,34 @@ def _configuration_runtime(
     )
 
 
-def _service_runtime(bound: LedgeredTransport) -> PacketTracerEnterpriseServiceRuntime:
+def _service_runtime(
+    bound: LedgeredTransport,
+    *,
+    inventory_rows: tuple[RuntimeConfigurationTarget, ...] | None = None,
+) -> PacketTracerEnterpriseServiceRuntime:
     return PacketTracerEnterpriseServiceRuntime(
-        _no_inventory,
+        _no_inventory
+        if inventory_rows is None
+        else lambda: [item.model_dump(mode="json") for item in inventory_rows],
         bound.send_and_wait,
         dispatch_and_wait=bound.dispatch_and_wait,
         http_timeout_seconds=HTTP_TIMEOUT_SECONDS,
         convergence_interval_seconds=HTTP_TIMEOUT_SECONDS,
         clock=bound.clock,
         sleeper=bound.capped_sleep,
+    )
+
+
+def _native_product_runtimes(
+    bound: LedgeredTransport,
+    inventory_rows: tuple[RuntimeConfigurationTarget, ...],
+) -> ServiceStageRuntimes:
+    """Bind both inner product runtimes to the exact owned fixture inventory."""
+    if not inventory_rows:
+        raise ValueError("Native product requires a nonempty fixture inventory.")
+    return ServiceStageRuntimes(
+        configuration=_configuration_runtime(bound, inventory_rows=inventory_rows),
+        services=_service_runtime(bound, inventory_rows=inventory_rows),
     )
 
 
@@ -779,9 +803,10 @@ def production_boundaries(governed_root: Path) -> QualificationBoundaries:
         q3_required_build=Q3_PACKET_TRACER_BUILD,
         dhcp_product_contract=dhcp_product_contract,
         native_product_contract=native_dhcp_http_product_contract,
+        native_product_runtimes=_native_product_runtimes,
         native_product_import_preflight=lambda: ImportIsolationPreflight(governed_root),
         native_product_record_store_factory=lambda: ServiceRunRecordStore(
-            governed_root
+            governed_root / "data/services/product-qualification"
         ),
         native_product_endpoint_observer=lambda bound: (
             PacketTracerEndpointAddressObserver(bound.send_and_wait)

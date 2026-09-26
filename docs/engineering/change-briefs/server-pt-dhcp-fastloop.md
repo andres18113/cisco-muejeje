@@ -1028,3 +1028,25 @@ and accepts only overall VERIFIED plus required DHCP lease and HTTP fetch
 VERIFIED. An independent terminal reading and fixture restoration still
 occur on a failed product result. The private capability snapshot is
 candidate authority for this episode, not default catalog promotion.
+
+**Episode 6 runtime-composition correction.** The first maintained product
+LIVE attempt at `7e06fdc` stopped at E5 VLAN. Its qualification runtime's
+internal inventory callback was `_no_inventory`; the outer manifest-directed
+wrapper returned four targets for product admission, but the inner E5 setter
+still called `_no_inventory`, reported `session_failed` and left effect
+uncertain. No E6 DHCP or HTTP effect ran. The terminal reading and fixture
+restoration completed, and the owned process was retired. The product record
+also exposed a persistence-location defect: writing under the checkout root
+made the source dirty and initially blocked retirement; the original bytes
+were preserved externally before the clean-source retry.
+
+The correction belongs in the qualification runtime composition. Supply
+the already compiled and fixture-verified four-target inventory to both
+inner E5 and E6 runtimes for this one product stage. The ordinary diagnostic
+runtimes keep their workspace-enumeration refusal. Persist the product run
+under ignored sibling `data/services/product-qualification`, then archive its bytes
+with the episode. Focused tests must verify both inner runtimes index exactly
+the fixture inventory and ordinary diagnostics still reject workspace
+enumeration. The sibling location keeps product JSON outside the
+qualification store's recursive attempt-uniqueness scan. This is a
+new candidate SHA and episode; episode 6 is immutable negative evidence.
