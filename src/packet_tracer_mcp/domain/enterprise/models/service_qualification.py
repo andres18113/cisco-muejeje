@@ -1927,7 +1927,7 @@ def _q3_native_product() -> StageDefinition:
         budget=StageBudget(600, 2100, reserve_seconds=300),
         allowed_channels=("file",),
         profile_id="Q3-NATIVE-PRODUCT",
-        profile_version="2",
+        profile_version="3",
         steps=(
             DiagnosticStageStep(
                 id="NATIVE-product",

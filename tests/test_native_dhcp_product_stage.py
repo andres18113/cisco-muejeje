@@ -331,8 +331,8 @@ def _run(
         engine.close()
 
 
-def test_production_stage_binds_two_selected_clients_and_profile_revision(tmp_path):
-    """The actual LIVE composition is the two-client candidate under version 2."""
+def test_production_stage_binds_shifted_two_client_policy_and_profile(tmp_path):
+    """The next LIVE composition requests a shifted window under version 3."""
     boundaries = production_boundaries(tmp_path)
     contract = boundaries.native_product_contract("9.0.1.0858", "current-candidate")
     [pool] = [
@@ -342,11 +342,11 @@ def test_production_stage_binds_two_selected_clients_and_profile_revision(tmp_pa
     ]
     definition = stage_definition(STAGE)
     assert (pool.lease_start, pool.lease_end, pool.max_users) == (
-        "192.0.2.100",
-        "192.0.2.101",
+        "192.0.2.151",
+        "192.0.2.152",
         2,
     )
-    assert definition.profile_version == "2"
+    assert definition.profile_version == "3"
     assert definition.dhcp_pool_capacity == 2
 
 

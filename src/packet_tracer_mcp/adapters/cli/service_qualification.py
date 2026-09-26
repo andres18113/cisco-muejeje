@@ -873,7 +873,7 @@ def production_boundaries(governed_root: Path) -> QualificationBoundaries:
         q3_required_build=Q3_PACKET_TRACER_BUILD,
         dhcp_product_contract=dhcp_product_contract,
         native_product_contract=lambda build, run_id: native_dhcp_http_product_contract(
-            build, run_id, selected_count=2
+            build, run_id, selected_count=2, start_offset=150
         ),
         native_product_runtimes=_native_product_runtimes,
         native_product_import_preflight=lambda: ImportIsolationPreflight(governed_root),
