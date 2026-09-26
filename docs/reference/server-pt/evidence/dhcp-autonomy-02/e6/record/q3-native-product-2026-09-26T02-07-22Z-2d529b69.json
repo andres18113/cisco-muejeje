@@ -1,0 +1,1088 @@
+{
+  "schema_version": 1,
+  "record_kind": "server_services_qualification",
+  "run_id": "2026-09-26T02-07-22Z-2d529b69",
+  "stage": "Q3-NATIVE-PRODUCT",
+  "execution_mode": "live",
+  "created_at": "2026-09-26T02:07:22.610272Z",
+  "completed_at": "2026-09-26T02:08:13.919916Z",
+  "authorization": {
+    "authorization_id": "SERVER-PT-DHCP-AUTONOMY-E6-00a29235702144f7b9eb6b6ffa20d84d",
+    "stage": "Q3-NATIVE-PRODUCT",
+    "sha": "7e06fdcfab7b80692246a704777a7b3337df75e4",
+    "targets": [
+      "Q3-DEFAULT-SERVER-01",
+      "Q3-DEFAULT-PC-01",
+      "Q3-DEFAULT-PC-02",
+      "Q3-DEFAULT-ACCESS-SW-01"
+    ],
+    "channel": "file",
+    "build": "9.0.1.0858",
+    "max_operations": 600,
+    "max_seconds": 2100,
+    "profile_id": "Q3-NATIVE-PRODUCT",
+    "profile_version": "1",
+    "tree": "5cddaa84e86230c3efc04254b8cab8ed4c00b1a2",
+    "models": [
+      "Q3-DEFAULT-SERVER-01:Server-PT",
+      "Q3-DEFAULT-PC-01:PC-PT",
+      "Q3-DEFAULT-PC-02:PC-PT",
+      "Q3-DEFAULT-ACCESS-SW-01:IE-2000"
+    ],
+    "links": [
+      "Q3-DEFAULT-ACCESS-SW-01:FastEthernet1/1-Q3-DEFAULT-PC-01:FastEthernet0",
+      "Q3-DEFAULT-ACCESS-SW-01:FastEthernet1/2-Q3-DEFAULT-PC-02:FastEthernet0",
+      "Q3-DEFAULT-ACCESS-SW-01:FastEthernet1/3-Q3-DEFAULT-SERVER-01:FastEthernet0"
+    ],
+    "step_ids": [
+      "NATIVE-product"
+    ],
+    "reserve_operations": 11,
+    "instance_token": "1b4e70c964e1488d88fe8f4cd3b4a31e",
+    "attempt_id": "00a29235702144f7b9eb6b6ffa20d84d",
+    "process_id": 33492,
+    "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe"
+  },
+  "source": {
+    "expected_head": "7e06fdcfab7b80692246a704777a7b3337df75e4",
+    "executed_sha": "7e06fdcfab7b80692246a704777a7b3337df75e4",
+    "executed_tree": "5cddaa84e86230c3efc04254b8cab8ed4c00b1a2",
+    "clean": true,
+    "branch": "feature/server-pt-goal-foundations",
+    "upstream": "cisco/feature/server-pt-goal-foundations",
+    "upstream_head": "a921a688a7f7103db2cff3915172d812a8e26644"
+  },
+  "environment": {
+    "python_executable": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\.venv\\Scripts\\python.exe",
+    "package_file": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\src\\packet_tracer_mcp\\__init__.py",
+    "isolation_state": "ISOLATED",
+    "requested_build": "9.0.1.0858",
+    "observed_build": "9.0.1.0858",
+    "build_reader_id": "AppWindow.getVersion",
+    "build_reader_sha256": "c3a9b240898a89007111c4397eb4cb5464da69551021484d4bc6b7d0fc7f5935",
+    "build_observation": "{\"found\":true,\"backend\":\"packet_tracer\",\"backend_version\":\"9.0.1.0858\",\"extension_version\":\"\",\"runtime_mode\":\"logical-workspace\"}",
+    "build_reason": ""
+  },
+  "transport": {
+    "channel": "file",
+    "fixed_at": "2026-09-26T02:07:22.659522Z",
+    "liveness": "heartbeat_fresh"
+  },
+  "fixtures": [
+    {
+      "name": "Q3-DEFAULT-SERVER-01",
+      "model": "Server-PT",
+      "ipv4": "192.0.2.10",
+      "netmask": "255.255.255.0",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "Q3-DEFAULT-PC-01",
+      "model": "PC-PT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "Q3-DEFAULT-PC-02",
+      "model": "PC-PT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "Q3-DEFAULT-ACCESS-SW-01",
+      "model": "IE-2000",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    }
+  ],
+  "links": [
+    {
+      "device_a": "Q3-DEFAULT-ACCESS-SW-01",
+      "port_a": "FastEthernet1/1",
+      "device_b": "Q3-DEFAULT-PC-01",
+      "port_b": "FastEthernet0"
+    },
+    {
+      "device_a": "Q3-DEFAULT-ACCESS-SW-01",
+      "port_a": "FastEthernet1/2",
+      "device_b": "Q3-DEFAULT-PC-02",
+      "port_b": "FastEthernet0"
+    },
+    {
+      "device_a": "Q3-DEFAULT-ACCESS-SW-01",
+      "port_a": "FastEthernet1/3",
+      "device_b": "Q3-DEFAULT-SERVER-01",
+      "port_b": "FastEthernet0"
+    }
+  ],
+  "budget": {
+    "max_operations": 600,
+    "max_seconds": 2100,
+    "reserve_operations": 11,
+    "reserve_seconds": 300,
+    "planned_minimum_operations": 531,
+    "used_operations": 34,
+    "refused_calls": 0,
+    "elapsed_seconds": 51.25,
+    "local_observation_seconds": 24.171
+  },
+  "experimental_capabilities": [
+    "server.dhcp_native_product_candidate"
+  ],
+  "operations": [
+    {
+      "seq": 1,
+      "phase": "admission",
+      "call": "send_and_wait",
+      "purpose": "read:executable_build",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 0.0,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 2,
+      "phase": "admission",
+      "call": "send_and_wait",
+      "purpose": "read:workspace_baseline",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 1.109,
+      "elapsed_seconds": 0.204,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 3,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:Q3-DEFAULT-SERVER-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 2.984,
+      "elapsed_seconds": 0.094,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 4,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:Q3-DEFAULT-SERVER-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 3.844,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 5,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:Q3-DEFAULT-PC-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 5.656,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 6,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:Q3-DEFAULT-PC-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 7.453,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 7,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:Q3-DEFAULT-PC-02",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 9.203,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 8,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:Q3-DEFAULT-PC-02",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 11.125,
+      "elapsed_seconds": 0.813,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 9,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:Q3-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 12.797,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 10,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:Q3-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 14.516,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 11,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 16.578,
+      "elapsed_seconds": 0.813,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 12,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:1",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 18.188,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 13,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 20.0,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 14,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:2",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 21.672,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 15,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:3",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 23.719,
+      "elapsed_seconds": 0.812,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 16,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:3",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 25.391,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 17,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "read:fixture_identity",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 26.297,
+      "elapsed_seconds": 0.219,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 18,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "native-product:before:policy",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 27.344,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 19,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "native-product:before:clients",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 28.25,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 20,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "native-product:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 29.469,
+      "elapsed_seconds": 0.797,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 21,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "native-product:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 31.109,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 22,
+      "phase": "terminal_observation",
+      "call": "dispatch_and_wait",
+      "purpose": "native-product:final:policy",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 32.766,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 23,
+      "phase": "terminal_observation",
+      "call": "dispatch_and_wait",
+      "purpose": "native-product:final:clients",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 33.781,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 24,
+      "phase": "terminal_observation",
+      "call": "dispatch_and_wait",
+      "purpose": "native-product:final:leases",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 34.094,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 25,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:Q3-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 36.156,
+      "elapsed_seconds": 1.407,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 26,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:Q3-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 38.359,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 27,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:Q3-DEFAULT-PC-02",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 40.063,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 28,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:Q3-DEFAULT-PC-02",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 41.844,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 29,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:Q3-DEFAULT-PC-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 43.703,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 30,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:Q3-DEFAULT-PC-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 45.516,
+      "elapsed_seconds": 0.812,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 31,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:Q3-DEFAULT-SERVER-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 47.266,
+      "elapsed_seconds": 0.812,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 32,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:Q3-DEFAULT-SERVER-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 48.859,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 33,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "read:restoration:1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 49.859,
+      "elapsed_seconds": 0.219,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 34,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "read:restoration:2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 50.078,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    }
+  ],
+  "transitions": [
+    {
+      "step": "admitted",
+      "at": "2026-09-26T02:07:23.976302Z",
+      "outcome": ""
+    },
+    {
+      "step": "fixtures:started",
+      "at": "2026-09-26T02:07:24.833818Z",
+      "outcome": ""
+    },
+    {
+      "step": "fixtures:ready",
+      "at": "2026-09-26T02:07:49.175904Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3_NATIVE_PRODUCT:started",
+      "at": "2026-09-26T02:07:50.005685Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3_NATIVE_PRODUCT:started",
+      "at": "2026-09-26T02:07:51.226768Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3_NATIVE_PRODUCT:concluded",
+      "at": "2026-09-26T02:07:54.708458Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3_NATIVE_PRODUCT_FINAL:started",
+      "at": "2026-09-26T02:07:55.432136Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3_NATIVE_PRODUCT_FINAL:concluded",
+      "at": "2026-09-26T02:07:56.963403Z",
+      "outcome": ""
+    },
+    {
+      "step": "finalization:started",
+      "at": "2026-09-26T02:07:56.965404Z",
+      "outcome": ""
+    },
+    {
+      "step": "finalization:completed",
+      "at": "2026-09-26T02:08:13.916916Z",
+      "outcome": ""
+    }
+  ],
+  "persisted_step": "finalization:completed",
+  "admission_reads": [
+    "isolation:ISOLATED",
+    "repository:7e06fdcfab7b80692246a704777a7b3337df75e4:5cddaa84e86230c3efc04254b8cab8ed4c00b1a2",
+    "build:9.0.1.0858",
+    "workspace:semantic=0,links=0,engine_managed=0"
+  ],
+  "diagnostic_lifecycle": {
+    "process_id": 33492,
+    "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+    "product_version": "9.0.1.0858",
+    "file_version": "9.0.1.0858",
+    "process_incarnation": "2026-09-25T21:06:12.3665883-05:00",
+    "mailbox_entries": [],
+    "error": ""
+  },
+  "diagnostic_lifecycle_postflight": {
+    "process_id": 33492,
+    "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+    "product_version": "9.0.1.0858",
+    "file_version": "9.0.1.0858",
+    "process_incarnation": "2026-09-25T21:06:12.3665883-05:00",
+    "mailbox_entries": [],
+    "error": ""
+  },
+  "workspace_baseline": {
+    "observed": true,
+    "semantic_device_count": 0,
+    "backend_managed_device_count": 0,
+    "link_count": 0,
+    "devices": [],
+    "links": [],
+    "message": "fresh_complete_workspace_inventory"
+  },
+  "refusals": [],
+  "native_default_pool": [],
+  "measurements": [
+    {
+      "experiment_id": "M-NATIVE-PRODUCT",
+      "hypothesis": "The maintained A1-E6 product path verifies the selected client's native DHCP state before its first HTTP request by IP.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "inconclusive",
+      "facts": {
+        "product_summary": {
+          "run_id": "2026-09-26T02-07-22Z-2d529b69-product",
+          "run_label": "SERVER-PT-DHCP-AUTONOMOUS-02 native product",
+          "deployment_id": "qualification/2026-09-26T02-07-22Z-2d529b69",
+          "stage": "configuration_apply",
+          "status": "unknown",
+          "refusal_code": "e5_effect_uncertain",
+          "blocked_reason": "E5 rows in scope left their effect unknown, so no E6 effect was dispatched: cfg/vlan/0576ab546064bf9f",
+          "transport": "file",
+          "packet_tracer_version": "9.0.1.0858",
+          "provenance": {
+            "PC-PT:acquire_dhcp_lease": "documentary_baseline",
+            "PC-PT:client_dns_server": "documentary_baseline",
+            "PC-PT:configure_email_client": "documentary_baseline",
+            "PC-PT:dhcp_lease": "documentary_baseline",
+            "PC-PT:dns_negative_control": "documentary_baseline",
+            "PC-PT:dns_resolution": "documentary_baseline",
+            "PC-PT:email_client_state": "documentary_baseline",
+            "PC-PT:email_end_to_end": "documentary_baseline",
+            "PC-PT:endpoint_dhcp_mode": "documentary_baseline",
+            "PC-PT:http_by_hostname": "documentary_baseline",
+            "PC-PT:http_fetch": "documentary_baseline",
+            "PC-PT:https_fetch": "documentary_baseline",
+            "PC-PT:ntp_sync": "documentary_baseline",
+            "PC-PT:pop3_retrieve": "documentary_baseline",
+            "PC-PT:send_mail_message": "documentary_baseline",
+            "PC-PT:smtp_send": "documentary_baseline",
+            "PC-PT:tftp_retrieve": "documentary_baseline",
+            "Server-PT:dhcp": "documentary_baseline",
+            "Server-PT:dhcp_lease_attributed": "documentary_baseline",
+            "Server-PT:dhcp_native_default_binding": "recorded_run",
+            "Server-PT:dhcp_server_state": "documentary_baseline",
+            "Server-PT:dns": "documentary_baseline",
+            "Server-PT:http": "documentary_baseline",
+            "Server-PT:https": "documentary_baseline",
+            "Server-PT:ntp": "documentary_baseline",
+            "Server-PT:pop3": "documentary_baseline",
+            "Server-PT:smtp": "documentary_baseline",
+            "Server-PT:smtp_delivered": "documentary_baseline",
+            "Server-PT:tftp": "documentary_baseline"
+          },
+          "e5_effect_scope": {
+            "mutated": [
+              "cfg/vlan/0576ab546064bf9f",
+              "cfg/access/6a7c4f8402ce4901",
+              "cfg/access/df1e4b9cfe50758a",
+              "cfg/endpoint-static/220e1aa9ecb87d59",
+              "cfg/endpoint-dhcp/1e3f15d8348bb453"
+            ],
+            "retained": [],
+            "excluded": [
+              "cfg/hostname/0b6392fe23d21001",
+              "cfg/access/5993dea187efc5b8",
+              "cfg/endpoint-dhcp/2b61c11cc2255ec3"
+            ],
+            "conflicts": [],
+            "declarative_only": [
+              "cfg/access/6a7c4f8402ce4901",
+              "cfg/access/df1e4b9cfe50758a",
+              "cfg/endpoint-dhcp/1e3f15d8348bb453",
+              "cfg/vlan/0576ab546064bf9f"
+            ]
+          },
+          "e5_effect_uncertain": true,
+          "services": [
+            {
+              "service_id": "service/q3/q3-dhcp",
+              "service_type": "dhcp",
+              "usability_status": "unknown",
+              "application_status": "unknown",
+              "direct_readback_status": "unknown",
+              "behavioral_status": "unknown",
+              "required": true,
+              "selected_clients": [
+                "endpoint/q3/default/user_pc/001"
+              ],
+              "limitations": []
+            },
+            {
+              "service_id": "service/q3/q3-native-http",
+              "service_type": "http",
+              "usability_status": "unknown",
+              "application_status": "unknown",
+              "direct_readback_status": "unknown",
+              "behavioral_status": "unknown",
+              "required": true,
+              "selected_clients": [
+                "endpoint/q3/default/user_pc/001"
+              ],
+              "limitations": []
+            }
+          ],
+          "clients": [
+            {
+              "client_device_id": "endpoint/q3/default/user_pc/001",
+              "deployed_name": "Q3-DEFAULT-PC-01",
+              "model": "PC-PT",
+              "results": {
+                "service/q3/q3-dhcp": {
+                  "service_id": "service/q3/q3-dhcp",
+                  "service_type": "dhcp",
+                  "status": "partial",
+                  "required": true,
+                  "checks": [
+                    {
+                      "expectation_id": "svc/verify-dhcp-lease/76d7cb6fc8c00c4f",
+                      "kind": "dhcp_lease",
+                      "required": true,
+                      "status": "skipped",
+                      "observation": "unspecified",
+                      "cause": "not_executed",
+                      "claim_level": "",
+                      "fresh_evidence": false,
+                      "failure_code": "none",
+                      "limitations": [
+                        "service_not_applied"
+                      ]
+                    },
+                    {
+                      "expectation_id": "svc/verify-dhcp-attribution/9d42670b5c358ca8",
+                      "kind": "dhcp_lease_attributed",
+                      "required": false,
+                      "status": "skipped",
+                      "observation": "unspecified",
+                      "cause": "not_executed",
+                      "claim_level": "",
+                      "fresh_evidence": false,
+                      "failure_code": "none",
+                      "limitations": [
+                        "service_not_applied"
+                      ]
+                    }
+                  ],
+                  "limitations": [
+                    "service_not_applied"
+                  ]
+                },
+                "service/q3/q3-native-http": {
+                  "service_id": "service/q3/q3-native-http",
+                  "service_type": "http",
+                  "status": "partial",
+                  "required": true,
+                  "checks": [
+                    {
+                      "expectation_id": "svc/verify-http-ip/4988c5041a4e07de",
+                      "kind": "http_fetch",
+                      "required": true,
+                      "status": "skipped",
+                      "observation": "unspecified",
+                      "cause": "not_executed",
+                      "claim_level": "",
+                      "fresh_evidence": false,
+                      "failure_code": "none",
+                      "limitations": [
+                        "service_not_applied"
+                      ]
+                    }
+                  ],
+                  "limitations": [
+                    "service_not_applied"
+                  ]
+                }
+              },
+              "limitations": []
+            }
+          ],
+          "operational_readiness": [],
+          "releases": [],
+          "dirty_state": "unknown",
+          "persisted_stage": "configuration_apply",
+          "record_path": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\qualification_2026-09-26T02-07-22Z-2d529b69\\2026-09-26T02-07-22Z-2d529b69-product.json",
+          "persist_error": "",
+          "limitations": [
+            "e5_effect_uncertain:cfg/vlan/0576ab546064bf9f",
+            "provenance:documentary_baseline"
+          ],
+          "duration_ms": 3484
+        },
+        "product_record_path": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\qualification_2026-09-26T02-07-22Z-2d529b69\\2026-09-26T02-07-22Z-2d529b69-product.json",
+        "lease_expectation_ids": [
+          "svc/verify-dhcp-lease/76d7cb6fc8c00c4f"
+        ],
+        "http_fetch_expectation_ids": [
+          "svc/verify-http-ip/4988c5041a4e07de"
+        ],
+        "baseline": {
+          "device": "Q3-DEFAULT-SERVER-01",
+          "found": true,
+          "process_found": true,
+          "interface": "FastEthernet0",
+          "enabled": false,
+          "enabled_type": "boolean",
+          "pool_count": 1,
+          "pools": [
+            {
+              "name": "serverPool",
+              "network": "0.0.0.0",
+              "mask": "0.0.0.0",
+              "gateway": "0.0.0.0",
+              "dns": "0.0.0.0",
+              "start": "0.0.0.0",
+              "end": "0.0.2.0",
+              "max": 512
+            }
+          ],
+          "truncated": false,
+          "excluded_count": 0,
+          "exclusions": [],
+          "error": ""
+        },
+        "prior_clients": {
+          "Q3-DEFAULT-PC-01": {
+            "client": "Q3-DEFAULT-PC-01",
+            "observed": true,
+            "mode": false,
+            "mac": "000D.BD1A.57E7",
+            "ipv4": "0.0.0.0",
+            "netmask": "0.0.0.0",
+            "lease_time": "",
+            "cause": ""
+          },
+          "Q3-DEFAULT-PC-02": {
+            "client": "Q3-DEFAULT-PC-02",
+            "observed": true,
+            "mode": false,
+            "mac": "0060.703A.591D",
+            "ipv4": "0.0.0.0",
+            "netmask": "0.0.0.0",
+            "lease_time": "",
+            "cause": ""
+          }
+        }
+      },
+      "causes": [
+        "native_product_not_verified:e5_effect_uncertain"
+      ],
+      "limitations": [
+        "private_candidate_capabilities_not_global_product_promotion"
+      ],
+      "reason": "",
+      "outcome_unknown": false
+    },
+    {
+      "experiment_id": "M-NATIVE-PRODUCT-FINAL",
+      "hypothesis": "The final physical DHCP and client state is observed before cleanup.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "supported_in_sample",
+      "facts": {
+        "policy": {
+          "device": "Q3-DEFAULT-SERVER-01",
+          "found": true,
+          "process_found": true,
+          "interface": "FastEthernet0",
+          "enabled": false,
+          "enabled_type": "boolean",
+          "pool_count": 1,
+          "pools": [
+            {
+              "name": "serverPool",
+              "network": "0.0.0.0",
+              "mask": "0.0.0.0",
+              "gateway": "0.0.0.0",
+              "dns": "0.0.0.0",
+              "start": "0.0.0.0",
+              "end": "0.0.2.0",
+              "max": 512
+            }
+          ],
+          "truncated": false,
+          "excluded_count": 0,
+          "exclusions": [],
+          "error": ""
+        },
+        "clients": {
+          "Q3-DEFAULT-PC-01": {
+            "client": "Q3-DEFAULT-PC-01",
+            "observed": true,
+            "mode": false,
+            "mac": "000D.BD1A.57E7",
+            "ipv4": "0.0.0.0",
+            "netmask": "0.0.0.0",
+            "lease_time": "",
+            "cause": ""
+          },
+          "Q3-DEFAULT-PC-02": {
+            "client": "Q3-DEFAULT-PC-02",
+            "observed": true,
+            "mode": false,
+            "mac": "0060.703A.591D",
+            "ipv4": "0.0.0.0",
+            "netmask": "0.0.0.0",
+            "lease_time": "",
+            "cause": ""
+          }
+        },
+        "scans": {
+          "serverPool": {
+            "pool": "serverPool",
+            "observed": true,
+            "cause": "",
+            "capacity": 512,
+            "window": 4,
+            "termination": "throw",
+            "first_null": null,
+            "rows": [],
+            "entries": [
+              {
+                "index": 0,
+                "return_kind": "throw",
+                "error": "invalid vector subscript",
+                "row": null
+              },
+              {
+                "index": 1,
+                "return_kind": "throw",
+                "error": "invalid vector subscript",
+                "row": null
+              },
+              {
+                "index": 2,
+                "return_kind": "throw",
+                "error": "invalid vector subscript",
+                "row": null
+              },
+              {
+                "index": 3,
+                "return_kind": "throw",
+                "error": "invalid vector subscript",
+                "row": null
+              }
+            ]
+          },
+          "Q3_DATA": {
+            "pool": "Q3_DATA",
+            "observed": true,
+            "cause": "pool_absent",
+            "capacity": null,
+            "window": 0,
+            "termination": "pool_absent",
+            "first_null": null,
+            "rows": [],
+            "entries": []
+          }
+        },
+        "complete": true
+      },
+      "causes": [],
+      "limitations": [
+        "terminal_inventory_is_not_product_acceptance"
+      ],
+      "reason": "",
+      "outcome_unknown": false
+    }
+  ],
+  "primary_failure": "native_product_not_verified",
+  "secondary_failures": [],
+  "releases": [
+    {
+      "resource": "device:Q3-DEFAULT-ACCESS-SW-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:Q3-DEFAULT-PC-02",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:Q3-DEFAULT-PC-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:Q3-DEFAULT-SERVER-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "campaign:lock",
+      "kind": "claim",
+      "outcome": "released",
+      "detail": ""
+    }
+  ],
+  "restoration": [
+    {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 1,
+      "link_count": 0,
+      "devices": [
+        {
+          "name": "Power Distribution Device0",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        }
+      ],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    },
+    {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 1,
+      "link_count": 0,
+      "devices": [
+        {
+          "name": "Power Distribution Device0",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        }
+      ],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    }
+  ],
+  "restoration_proven": true,
+  "engine_residue": [],
+  "coordination_residue": [],
+  "dirty_state": "clean",
+  "persist_error": "",
+  "limitations": [
+    "effect_gate_is_local_and_not_an_in_band_receiver_fence",
+    "local_process_observation_bounded_seconds:30.0",
+    "restoration_scope:semantic_devices_and_links",
+    "backend_managed_devices_changed:0->1"
+  ],
+  "outcome": "stopped"
+}

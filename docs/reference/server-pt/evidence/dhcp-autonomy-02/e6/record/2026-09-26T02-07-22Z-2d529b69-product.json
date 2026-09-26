@@ -1,0 +1,869 @@
+{
+  "schema_version": 1,
+  "run_id": "2026-09-26T02-07-22Z-2d529b69-product",
+  "run_label": "SERVER-PT-DHCP-AUTONOMOUS-02 native product",
+  "created_at": "2026-09-26T02:07:51.229798Z",
+  "completed_at": "2026-09-26T02:07:54.703944Z",
+  "source_tree": {
+    "sha": "7e06fdcfab7b80692246a704777a7b3337df75e4",
+    "tree": "5cddaa84e86230c3efc04254b8cab8ed4c00b1a2",
+    "dirty": false
+  },
+  "packet_tracer_version": "9.0.1.0858",
+  "transport": "file",
+  "channel_fixed_at": "2026-09-26T02:07:51.228797Z",
+  "deployment_id": "qualification/2026-09-26T02-07-22Z-2d529b69",
+  "manifest_hash": "1d59119f8e68fc61cc4ecc2c3bca72bab17ade108d22e9cefabd95a696b6f0cc",
+  "physical_topology_hash": "3de4cfc945a0a485a0b87ef556e885e4167bdea01bc86eea0ba85a7436418a9a",
+  "configuration_plan_id": "cfg_compiled/ent_mcpe6q",
+  "configuration_semantic_hash": "12822d9a383b33da908387c250a19626121977462c3f283f77c315d6c233e5c7",
+  "service_semantic_hash": "9a0f0852a3426a0c522b6f4e1886e02ca0d01b1d730fec98da8a4acacab50553",
+  "environment_fingerprint_hash": "77e09d9ebce9ed892c93de90b8b0e37595382d0fbadd61b5240cf19fcc4b97d0",
+  "capability_snapshot": {
+    "packet_tracer_version": "9.0.1.0858",
+    "catalog_hash": "4edf55be77ea01e60a85dd220c45a6a49e778d2e41a9f5707f6938c457314ad6",
+    "provenance_by_key": {
+      "PC-PT:acquire_dhcp_lease": "documentary_baseline",
+      "PC-PT:client_dns_server": "documentary_baseline",
+      "PC-PT:configure_email_client": "documentary_baseline",
+      "PC-PT:dhcp_lease": "documentary_baseline",
+      "PC-PT:dns_negative_control": "documentary_baseline",
+      "PC-PT:dns_resolution": "documentary_baseline",
+      "PC-PT:email_client_state": "documentary_baseline",
+      "PC-PT:email_end_to_end": "documentary_baseline",
+      "PC-PT:endpoint_dhcp_mode": "documentary_baseline",
+      "PC-PT:http_by_hostname": "documentary_baseline",
+      "PC-PT:http_fetch": "documentary_baseline",
+      "PC-PT:https_fetch": "documentary_baseline",
+      "PC-PT:ntp_sync": "documentary_baseline",
+      "PC-PT:pop3_retrieve": "documentary_baseline",
+      "PC-PT:send_mail_message": "documentary_baseline",
+      "PC-PT:smtp_send": "documentary_baseline",
+      "PC-PT:tftp_retrieve": "documentary_baseline",
+      "Server-PT:dhcp": "documentary_baseline",
+      "Server-PT:dhcp_lease_attributed": "documentary_baseline",
+      "Server-PT:dhcp_native_default_binding": "recorded_run",
+      "Server-PT:dhcp_server_state": "documentary_baseline",
+      "Server-PT:dns": "documentary_baseline",
+      "Server-PT:http": "documentary_baseline",
+      "Server-PT:https": "documentary_baseline",
+      "Server-PT:ntp": "documentary_baseline",
+      "Server-PT:pop3": "documentary_baseline",
+      "Server-PT:smtp": "documentary_baseline",
+      "Server-PT:smtp_delivered": "documentary_baseline",
+      "Server-PT:tftp": "documentary_baseline"
+    }
+  },
+  "bound": true,
+  "stages": [
+    {
+      "stage": "configuration_apply",
+      "started_at": "2026-09-26T02:07:54.691024Z",
+      "ended_at": "2026-09-26T02:07:54.691024Z",
+      "outcome": "started",
+      "blocked_reason": ""
+    },
+    {
+      "stage": "configuration_apply",
+      "started_at": "2026-09-26T02:07:54.697922Z",
+      "ended_at": "2026-09-26T02:07:54.697922Z",
+      "outcome": "completed",
+      "blocked_reason": ""
+    },
+    {
+      "stage": "configuration_apply",
+      "started_at": "2026-09-26T02:07:54.703944Z",
+      "ended_at": "2026-09-26T02:07:54.703944Z",
+      "outcome": "unknown",
+      "blocked_reason": "E5 rows in scope left their effect unknown, so no E6 effect was dispatched: cfg/vlan/0576ab546064bf9f"
+    }
+  ],
+  "persisted_stage": "configuration_apply",
+  "status": "unknown",
+  "refusal_code": "e5_effect_uncertain",
+  "blocked_reason": "E5 rows in scope left their effect unknown, so no E6 effect was dispatched: cfg/vlan/0576ab546064bf9f",
+  "admission": {
+    "reads": [
+      {
+        "step": "A2",
+        "subject": "qualification/2026-09-26T02-07-22Z-2d529b69",
+        "outcome": "1d59119f8e68fc61cc4ecc2c3bca72bab17ade108d22e9cefabd95a696b6f0cc"
+      },
+      {
+        "step": "A4",
+        "subject": "import_isolation",
+        "outcome": "ISOLATED"
+      },
+      {
+        "step": "A8",
+        "subject": "environment_fingerprint",
+        "outcome": "77e09d9ebce9ed892c93de90b8b0e37595382d0fbadd61b5240cf19fcc4b97d0"
+      },
+      {
+        "step": "A8",
+        "subject": "runtime_inventory",
+        "outcome": "4"
+      },
+      {
+        "step": "A10",
+        "subject": "Q3-DEFAULT-SERVER-01:FastEthernet0",
+        "outcome": "0.0.0.0"
+      },
+      {
+        "step": "A10",
+        "subject": "Q3-DEFAULT-PC-01:FastEthernet0",
+        "outcome": "0.0.0.0"
+      }
+    ],
+    "refusals": []
+  },
+  "e5_effect_scope": {
+    "mutated": [
+      "cfg/vlan/0576ab546064bf9f",
+      "cfg/access/6a7c4f8402ce4901",
+      "cfg/access/df1e4b9cfe50758a",
+      "cfg/endpoint-static/220e1aa9ecb87d59",
+      "cfg/endpoint-dhcp/1e3f15d8348bb453"
+    ],
+    "retained": [],
+    "excluded": [
+      "cfg/hostname/0b6392fe23d21001",
+      "cfg/access/5993dea187efc5b8",
+      "cfg/endpoint-dhcp/2b61c11cc2255ec3"
+    ],
+    "conflicts": [],
+    "declarative_only": [
+      "cfg/access/6a7c4f8402ce4901",
+      "cfg/access/df1e4b9cfe50758a",
+      "cfg/endpoint-dhcp/1e3f15d8348bb453",
+      "cfg/vlan/0576ab546064bf9f"
+    ]
+  },
+  "e5_effect_uncertain": true,
+  "configuration_result": {
+    "config_plan_id": "cfg_compiled/ent_mcpe6q",
+    "config_semantic_hash": "12822d9a383b33da908387c250a19626121977462c3f283f77c315d6c233e5c7",
+    "source_topology_hash": "3de4cfc945a0a485a0b87ef556e885e4167bdea01bc86eea0ba85a7436418a9a",
+    "runtime_context": {
+      "backend": "packet_tracer",
+      "backend_version": "9.0.1.0858",
+      "capability_snapshot_hash": "4edf55be77ea01e60a85dd220c45a6a49e778d2e41a9f5707f6938c457314ad6",
+      "environment_fingerprint": {
+        "backend": "packet_tracer",
+        "backend_version": "9.0.1.0858",
+        "bridge_transport": "",
+        "extension_version": "",
+        "platform": "",
+        "capability_snapshot_version": "",
+        "runtime_mode": ""
+      }
+    },
+    "status": "failed",
+    "failure_code": "application_failed",
+    "action_results": [
+      {
+        "action_id": "cfg/hostname/0b6392fe23d21001",
+        "status": "skipped",
+        "failure_code": "out_of_scope",
+        "message": "Outside the mutation scope this run was authorized to apply.",
+        "batch_id": "",
+        "operation": "set_value",
+        "disposition": "unknown",
+        "dispatch": "unspecified",
+        "result": "not_applicable",
+        "postcondition": "not_applicable",
+        "transition": "not_applicable",
+        "footprint": "not_applicable",
+        "attempted": null,
+        "residual_change": false,
+        "cause": "",
+        "received_mutation": null
+      },
+      {
+        "action_id": "cfg/vlan/0576ab546064bf9f",
+        "status": "failed",
+        "failure_code": "session_failed",
+        "message": "A qualification runtime never enumerates the workspace.",
+        "batch_id": "",
+        "operation": "ensure_present",
+        "disposition": "unknown",
+        "dispatch": "unspecified",
+        "result": "not_applicable",
+        "postcondition": "not_applicable",
+        "transition": "not_applicable",
+        "footprint": "not_applicable",
+        "attempted": null,
+        "residual_change": false,
+        "cause": "",
+        "received_mutation": null
+      },
+      {
+        "action_id": "cfg/access/5993dea187efc5b8",
+        "status": "skipped",
+        "failure_code": "out_of_scope",
+        "message": "Outside the mutation scope this run was authorized to apply.",
+        "batch_id": "",
+        "operation": "set_value",
+        "disposition": "unknown",
+        "dispatch": "unspecified",
+        "result": "not_applicable",
+        "postcondition": "not_applicable",
+        "transition": "not_applicable",
+        "footprint": "not_applicable",
+        "attempted": null,
+        "residual_change": false,
+        "cause": "",
+        "received_mutation": null
+      },
+      {
+        "action_id": "cfg/access/6a7c4f8402ce4901",
+        "status": "dependency_blocked",
+        "failure_code": "dependency_blocked",
+        "message": "Blocked by: cfg/vlan/0576ab546064bf9f",
+        "batch_id": "",
+        "operation": "set_value",
+        "disposition": "unknown",
+        "dispatch": "unspecified",
+        "result": "not_applicable",
+        "postcondition": "not_applicable",
+        "transition": "not_applicable",
+        "footprint": "not_applicable",
+        "attempted": null,
+        "residual_change": false,
+        "cause": "",
+        "received_mutation": null
+      },
+      {
+        "action_id": "cfg/access/df1e4b9cfe50758a",
+        "status": "dependency_blocked",
+        "failure_code": "dependency_blocked",
+        "message": "Blocked by: cfg/vlan/0576ab546064bf9f",
+        "batch_id": "",
+        "operation": "set_value",
+        "disposition": "unknown",
+        "dispatch": "unspecified",
+        "result": "not_applicable",
+        "postcondition": "not_applicable",
+        "transition": "not_applicable",
+        "footprint": "not_applicable",
+        "attempted": null,
+        "residual_change": false,
+        "cause": "",
+        "received_mutation": null
+      },
+      {
+        "action_id": "cfg/endpoint-static/220e1aa9ecb87d59",
+        "status": "dependency_blocked",
+        "failure_code": "dependency_blocked",
+        "message": "Blocked by: cfg/access/6a7c4f8402ce4901",
+        "batch_id": "",
+        "operation": "set_value",
+        "disposition": "unknown",
+        "dispatch": "unspecified",
+        "result": "not_applicable",
+        "postcondition": "not_applicable",
+        "transition": "not_applicable",
+        "footprint": "not_applicable",
+        "attempted": null,
+        "residual_change": false,
+        "cause": "",
+        "received_mutation": null
+      },
+      {
+        "action_id": "cfg/endpoint-dhcp/1e3f15d8348bb453",
+        "status": "dependency_blocked",
+        "failure_code": "dependency_blocked",
+        "message": "Blocked by: cfg/access/df1e4b9cfe50758a",
+        "batch_id": "",
+        "operation": "set_value",
+        "disposition": "unknown",
+        "dispatch": "unspecified",
+        "result": "not_applicable",
+        "postcondition": "not_applicable",
+        "transition": "not_applicable",
+        "footprint": "not_applicable",
+        "attempted": null,
+        "residual_change": false,
+        "cause": "",
+        "received_mutation": null
+      },
+      {
+        "action_id": "cfg/endpoint-dhcp/2b61c11cc2255ec3",
+        "status": "skipped",
+        "failure_code": "out_of_scope",
+        "message": "Outside the mutation scope this run was authorized to apply.",
+        "batch_id": "",
+        "operation": "set_value",
+        "disposition": "unknown",
+        "dispatch": "unspecified",
+        "result": "not_applicable",
+        "postcondition": "not_applicable",
+        "transition": "not_applicable",
+        "footprint": "not_applicable",
+        "attempted": null,
+        "residual_change": false,
+        "cause": "",
+        "received_mutation": null
+      }
+    ],
+    "mutation_action_ids": [
+      "cfg/vlan/0576ab546064bf9f",
+      "cfg/access/6a7c4f8402ce4901",
+      "cfg/access/df1e4b9cfe50758a",
+      "cfg/endpoint-static/220e1aa9ecb87d59",
+      "cfg/endpoint-dhcp/1e3f15d8348bb453"
+    ],
+    "retained_action_ids": [],
+    "excluded_action_ids": [
+      "cfg/hostname/0b6392fe23d21001",
+      "cfg/access/5993dea187efc5b8",
+      "cfg/endpoint-dhcp/2b61c11cc2255ec3"
+    ],
+    "verification_results": [
+      {
+        "expectation_id": "cfg/verify/b45741a6330c67d0",
+        "action_id": "cfg/hostname/0b6392fe23d21001",
+        "status": "skipped",
+        "evidence_method": "",
+        "fresh_evidence": false,
+        "fields": {},
+        "message": "Outside the mutation scope this run was authorized to apply.",
+        "convergence": null
+      },
+      {
+        "expectation_id": "cfg/verify/91081c6948c65d41",
+        "action_id": "cfg/vlan/0576ab546064bf9f",
+        "status": "dependency_blocked",
+        "evidence_method": "",
+        "fresh_evidence": false,
+        "fields": {},
+        "message": "Blocked by: action_applied:cfg/vlan/0576ab546064bf9f",
+        "convergence": null
+      },
+      {
+        "expectation_id": "cfg/verify/a71f955da487b958",
+        "action_id": "cfg/access/5993dea187efc5b8",
+        "status": "skipped",
+        "evidence_method": "",
+        "fresh_evidence": false,
+        "fields": {},
+        "message": "Outside the mutation scope this run was authorized to apply.",
+        "convergence": null
+      },
+      {
+        "expectation_id": "cfg/verify/7de232439f1615ca",
+        "action_id": "cfg/access/6a7c4f8402ce4901",
+        "status": "dependency_blocked",
+        "evidence_method": "",
+        "fresh_evidence": false,
+        "fields": {},
+        "message": "Blocked by: action_applied:cfg/access/6a7c4f8402ce4901",
+        "convergence": null
+      },
+      {
+        "expectation_id": "cfg/verify/4f04e14a33b80eaf",
+        "action_id": "cfg/access/df1e4b9cfe50758a",
+        "status": "dependency_blocked",
+        "evidence_method": "",
+        "fresh_evidence": false,
+        "fields": {},
+        "message": "Blocked by: action_applied:cfg/access/df1e4b9cfe50758a",
+        "convergence": null
+      },
+      {
+        "expectation_id": "cfg/verify/125e84cd0f25350d",
+        "action_id": "cfg/endpoint-static/220e1aa9ecb87d59",
+        "status": "dependency_blocked",
+        "evidence_method": "",
+        "fresh_evidence": false,
+        "fields": {},
+        "message": "Blocked by: action_applied:cfg/endpoint-static/220e1aa9ecb87d59",
+        "convergence": null
+      },
+      {
+        "expectation_id": "cfg/verify/e083294738806d81",
+        "action_id": "cfg/endpoint-dhcp/1e3f15d8348bb453",
+        "status": "dependency_blocked",
+        "evidence_method": "",
+        "fresh_evidence": false,
+        "fields": {},
+        "message": "Blocked by: action_applied:cfg/endpoint-dhcp/1e3f15d8348bb453",
+        "convergence": null
+      },
+      {
+        "expectation_id": "cfg/verify/3d29573401f24b6f",
+        "action_id": "cfg/endpoint-dhcp/2b61c11cc2255ec3",
+        "status": "skipped",
+        "evidence_method": "",
+        "fresh_evidence": false,
+        "fields": {},
+        "message": "Outside the mutation scope this run was authorized to apply.",
+        "convergence": null
+      }
+    ],
+    "preflight_errors": [],
+    "deployment_id": "qualification/2026-09-26T02-07-22Z-2d529b69",
+    "execution_journal": {
+      "plan_id": "cfg_compiled/ent_mcpe6q",
+      "deployment_id": "qualification/2026-09-26T02-07-22Z-2d529b69",
+      "entries": [
+        {
+          "ordinal": 1,
+          "action_id": "cfg/vlan/0576ab546064bf9f",
+          "operation": "ensure_present",
+          "disposition": "failed",
+          "batch_id": "",
+          "inverse_action_id": "",
+          "inverse_available": false,
+          "compensation_status": "not_available",
+          "message": "A qualification runtime never enumerates the workspace.",
+          "started_at": null,
+          "finished_at": null,
+          "dispatch": "unspecified",
+          "result": "not_applicable",
+          "residual_change": false,
+          "cause": ""
+        },
+        {
+          "ordinal": 2,
+          "action_id": "cfg/access/6a7c4f8402ce4901",
+          "operation": "set_value",
+          "disposition": "blocked",
+          "batch_id": "",
+          "inverse_action_id": "",
+          "inverse_available": false,
+          "compensation_status": "not_available",
+          "message": "Blocked by: cfg/vlan/0576ab546064bf9f",
+          "started_at": null,
+          "finished_at": null,
+          "dispatch": "unspecified",
+          "result": "not_applicable",
+          "residual_change": false,
+          "cause": ""
+        },
+        {
+          "ordinal": 3,
+          "action_id": "cfg/access/df1e4b9cfe50758a",
+          "operation": "set_value",
+          "disposition": "blocked",
+          "batch_id": "",
+          "inverse_action_id": "",
+          "inverse_available": false,
+          "compensation_status": "not_available",
+          "message": "Blocked by: cfg/vlan/0576ab546064bf9f",
+          "started_at": null,
+          "finished_at": null,
+          "dispatch": "unspecified",
+          "result": "not_applicable",
+          "residual_change": false,
+          "cause": ""
+        },
+        {
+          "ordinal": 4,
+          "action_id": "cfg/endpoint-static/220e1aa9ecb87d59",
+          "operation": "set_value",
+          "disposition": "blocked",
+          "batch_id": "",
+          "inverse_action_id": "",
+          "inverse_available": false,
+          "compensation_status": "not_available",
+          "message": "Blocked by: cfg/access/6a7c4f8402ce4901",
+          "started_at": null,
+          "finished_at": null,
+          "dispatch": "unspecified",
+          "result": "not_applicable",
+          "residual_change": false,
+          "cause": ""
+        },
+        {
+          "ordinal": 5,
+          "action_id": "cfg/endpoint-dhcp/1e3f15d8348bb453",
+          "operation": "set_value",
+          "disposition": "blocked",
+          "batch_id": "",
+          "inverse_action_id": "",
+          "inverse_available": false,
+          "compensation_status": "not_available",
+          "message": "Blocked by: cfg/access/df1e4b9cfe50758a",
+          "started_at": null,
+          "finished_at": null,
+          "dispatch": "unspecified",
+          "result": "not_applicable",
+          "residual_change": false,
+          "cause": ""
+        }
+      ],
+      "dirty_state": "clean",
+      "preflight_errors": [],
+      "cleanup_status": "not_attempted",
+      "cleanup_undid_mutations": false,
+      "cleanup_ordinal": -1,
+      "residue_floor": "clean",
+      "transport_unknown": false
+    },
+    "dirty_state": "clean",
+    "evidence_records": [
+      {
+        "id": "evidence/cfg/verify/b45741a6330c67d0",
+        "subject": "sw-acc-q3-default-01",
+        "claim": "hostname",
+        "method": "none",
+        "strength": "none",
+        "source": "",
+        "freshness": "unknown",
+        "backend": "packet_tracer",
+        "backend_version": "9.0.1.0858",
+        "environment_fingerprint": "77e09d9ebce9ed892c93de90b8b0e37595382d0fbadd61b5240cf19fcc4b97d0",
+        "capability_snapshot_hash": "4edf55be77ea01e60a85dd220c45a6a49e778d2e41a9f5707f6938c457314ad6",
+        "probe_fingerprint": "",
+        "observed_value": {},
+        "support_status": "unknown",
+        "verification_status": "unverified",
+        "observation_status": "skipped",
+        "timestamp": "2026-09-26T02:07:54.697922Z",
+        "limitations": [
+          "Legacy result did not identify an evidence method.",
+          "Outside the mutation scope this run was authorized to apply."
+        ],
+        "raw_reference": ""
+      },
+      {
+        "id": "evidence/cfg/verify/91081c6948c65d41",
+        "subject": "sw-acc-q3-default-01",
+        "claim": "vlan",
+        "method": "none",
+        "strength": "none",
+        "source": "",
+        "freshness": "unknown",
+        "backend": "packet_tracer",
+        "backend_version": "9.0.1.0858",
+        "environment_fingerprint": "77e09d9ebce9ed892c93de90b8b0e37595382d0fbadd61b5240cf19fcc4b97d0",
+        "capability_snapshot_hash": "4edf55be77ea01e60a85dd220c45a6a49e778d2e41a9f5707f6938c457314ad6",
+        "probe_fingerprint": "",
+        "observed_value": {},
+        "support_status": "unknown",
+        "verification_status": "unverified",
+        "observation_status": "skipped",
+        "timestamp": "2026-09-26T02:07:54.697922Z",
+        "limitations": [
+          "Blocked by: action_applied:cfg/vlan/0576ab546064bf9f",
+          "Legacy result did not identify an evidence method."
+        ],
+        "raw_reference": ""
+      },
+      {
+        "id": "evidence/cfg/verify/a71f955da487b958",
+        "subject": "sw-acc-q3-default-01",
+        "claim": "access_port",
+        "method": "none",
+        "strength": "none",
+        "source": "",
+        "freshness": "unknown",
+        "backend": "packet_tracer",
+        "backend_version": "9.0.1.0858",
+        "environment_fingerprint": "77e09d9ebce9ed892c93de90b8b0e37595382d0fbadd61b5240cf19fcc4b97d0",
+        "capability_snapshot_hash": "4edf55be77ea01e60a85dd220c45a6a49e778d2e41a9f5707f6938c457314ad6",
+        "probe_fingerprint": "",
+        "observed_value": {},
+        "support_status": "unknown",
+        "verification_status": "unverified",
+        "observation_status": "skipped",
+        "timestamp": "2026-09-26T02:07:54.697922Z",
+        "limitations": [
+          "Legacy result did not identify an evidence method.",
+          "Outside the mutation scope this run was authorized to apply."
+        ],
+        "raw_reference": ""
+      },
+      {
+        "id": "evidence/cfg/verify/7de232439f1615ca",
+        "subject": "sw-acc-q3-default-01",
+        "claim": "access_port",
+        "method": "none",
+        "strength": "none",
+        "source": "",
+        "freshness": "unknown",
+        "backend": "packet_tracer",
+        "backend_version": "9.0.1.0858",
+        "environment_fingerprint": "77e09d9ebce9ed892c93de90b8b0e37595382d0fbadd61b5240cf19fcc4b97d0",
+        "capability_snapshot_hash": "4edf55be77ea01e60a85dd220c45a6a49e778d2e41a9f5707f6938c457314ad6",
+        "probe_fingerprint": "",
+        "observed_value": {},
+        "support_status": "unknown",
+        "verification_status": "unverified",
+        "observation_status": "skipped",
+        "timestamp": "2026-09-26T02:07:54.697922Z",
+        "limitations": [
+          "Blocked by: action_applied:cfg/access/6a7c4f8402ce4901",
+          "Legacy result did not identify an evidence method."
+        ],
+        "raw_reference": ""
+      },
+      {
+        "id": "evidence/cfg/verify/4f04e14a33b80eaf",
+        "subject": "sw-acc-q3-default-01",
+        "claim": "access_port",
+        "method": "none",
+        "strength": "none",
+        "source": "",
+        "freshness": "unknown",
+        "backend": "packet_tracer",
+        "backend_version": "9.0.1.0858",
+        "environment_fingerprint": "77e09d9ebce9ed892c93de90b8b0e37595382d0fbadd61b5240cf19fcc4b97d0",
+        "capability_snapshot_hash": "4edf55be77ea01e60a85dd220c45a6a49e778d2e41a9f5707f6938c457314ad6",
+        "probe_fingerprint": "",
+        "observed_value": {},
+        "support_status": "unknown",
+        "verification_status": "unverified",
+        "observation_status": "skipped",
+        "timestamp": "2026-09-26T02:07:54.697922Z",
+        "limitations": [
+          "Blocked by: action_applied:cfg/access/df1e4b9cfe50758a",
+          "Legacy result did not identify an evidence method."
+        ],
+        "raw_reference": ""
+      },
+      {
+        "id": "evidence/cfg/verify/125e84cd0f25350d",
+        "subject": "endpoint/q3/default/server/001",
+        "claim": "endpoint_addressing",
+        "method": "none",
+        "strength": "none",
+        "source": "",
+        "freshness": "unknown",
+        "backend": "packet_tracer",
+        "backend_version": "9.0.1.0858",
+        "environment_fingerprint": "77e09d9ebce9ed892c93de90b8b0e37595382d0fbadd61b5240cf19fcc4b97d0",
+        "capability_snapshot_hash": "4edf55be77ea01e60a85dd220c45a6a49e778d2e41a9f5707f6938c457314ad6",
+        "probe_fingerprint": "",
+        "observed_value": {},
+        "support_status": "unknown",
+        "verification_status": "unverified",
+        "observation_status": "skipped",
+        "timestamp": "2026-09-26T02:07:54.697922Z",
+        "limitations": [
+          "Blocked by: action_applied:cfg/endpoint-static/220e1aa9ecb87d59",
+          "Legacy result did not identify an evidence method."
+        ],
+        "raw_reference": ""
+      },
+      {
+        "id": "evidence/cfg/verify/e083294738806d81",
+        "subject": "endpoint/q3/default/user_pc/001",
+        "claim": "endpoint_dhcp_mode",
+        "method": "none",
+        "strength": "none",
+        "source": "",
+        "freshness": "unknown",
+        "backend": "packet_tracer",
+        "backend_version": "9.0.1.0858",
+        "environment_fingerprint": "77e09d9ebce9ed892c93de90b8b0e37595382d0fbadd61b5240cf19fcc4b97d0",
+        "capability_snapshot_hash": "4edf55be77ea01e60a85dd220c45a6a49e778d2e41a9f5707f6938c457314ad6",
+        "probe_fingerprint": "",
+        "observed_value": {},
+        "support_status": "unknown",
+        "verification_status": "unverified",
+        "observation_status": "skipped",
+        "timestamp": "2026-09-26T02:07:54.697922Z",
+        "limitations": [
+          "Blocked by: action_applied:cfg/endpoint-dhcp/1e3f15d8348bb453",
+          "Legacy result did not identify an evidence method."
+        ],
+        "raw_reference": ""
+      },
+      {
+        "id": "evidence/cfg/verify/3d29573401f24b6f",
+        "subject": "endpoint/q3/default/user_pc/002",
+        "claim": "endpoint_dhcp_mode",
+        "method": "none",
+        "strength": "none",
+        "source": "",
+        "freshness": "unknown",
+        "backend": "packet_tracer",
+        "backend_version": "9.0.1.0858",
+        "environment_fingerprint": "77e09d9ebce9ed892c93de90b8b0e37595382d0fbadd61b5240cf19fcc4b97d0",
+        "capability_snapshot_hash": "4edf55be77ea01e60a85dd220c45a6a49e778d2e41a9f5707f6938c457314ad6",
+        "probe_fingerprint": "",
+        "observed_value": {},
+        "support_status": "unknown",
+        "verification_status": "unverified",
+        "observation_status": "skipped",
+        "timestamp": "2026-09-26T02:07:54.697922Z",
+        "limitations": [
+          "Legacy result did not identify an evidence method.",
+          "Outside the mutation scope this run was authorized to apply."
+        ],
+        "raw_reference": ""
+      }
+    ],
+    "voice_signal_barrier": null,
+    "duration_ms": 0
+  },
+  "foundational_statuses": {},
+  "service_result": null,
+  "services": [
+    {
+      "service_id": "service/q3/q3-dhcp",
+      "service_type": "dhcp",
+      "usability_status": "unknown",
+      "application_status": "unknown",
+      "direct_readback_status": "unknown",
+      "behavioral_status": "unknown",
+      "required": true,
+      "selected_clients": [
+        "endpoint/q3/default/user_pc/001"
+      ],
+      "limitations": []
+    },
+    {
+      "service_id": "service/q3/q3-native-http",
+      "service_type": "http",
+      "usability_status": "unknown",
+      "application_status": "unknown",
+      "direct_readback_status": "unknown",
+      "behavioral_status": "unknown",
+      "required": true,
+      "selected_clients": [
+        "endpoint/q3/default/user_pc/001"
+      ],
+      "limitations": []
+    }
+  ],
+  "clients": [
+    {
+      "client_device_id": "endpoint/q3/default/user_pc/001",
+      "deployed_name": "Q3-DEFAULT-PC-01",
+      "model": "PC-PT",
+      "results": {
+        "service/q3/q3-dhcp": {
+          "service_id": "service/q3/q3-dhcp",
+          "service_type": "dhcp",
+          "status": "partial",
+          "required": true,
+          "checks": [
+            {
+              "expectation_id": "svc/verify-dhcp-lease/76d7cb6fc8c00c4f",
+              "kind": "dhcp_lease",
+              "required": true,
+              "status": "skipped",
+              "observation": "unspecified",
+              "cause": "not_executed",
+              "claim_level": "",
+              "fresh_evidence": false,
+              "failure_code": "none",
+              "limitations": [
+                "service_not_applied"
+              ]
+            },
+            {
+              "expectation_id": "svc/verify-dhcp-attribution/9d42670b5c358ca8",
+              "kind": "dhcp_lease_attributed",
+              "required": false,
+              "status": "skipped",
+              "observation": "unspecified",
+              "cause": "not_executed",
+              "claim_level": "",
+              "fresh_evidence": false,
+              "failure_code": "none",
+              "limitations": [
+                "service_not_applied"
+              ]
+            }
+          ],
+          "limitations": [
+            "service_not_applied"
+          ]
+        },
+        "service/q3/q3-native-http": {
+          "service_id": "service/q3/q3-native-http",
+          "service_type": "http",
+          "status": "partial",
+          "required": true,
+          "checks": [
+            {
+              "expectation_id": "svc/verify-http-ip/4988c5041a4e07de",
+              "kind": "http_fetch",
+              "required": true,
+              "status": "skipped",
+              "observation": "unspecified",
+              "cause": "not_executed",
+              "claim_level": "",
+              "fresh_evidence": false,
+              "failure_code": "none",
+              "limitations": [
+                "service_not_applied"
+              ]
+            }
+          ],
+          "limitations": [
+            "service_not_applied"
+          ]
+        }
+      },
+      "limitations": []
+    }
+  ],
+  "selected_clients": [
+    "endpoint/q3/default/user_pc/001"
+  ],
+  "selected_service_ids": [
+    "service/q3/q3-dhcp",
+    "service/q3/q3-native-http"
+  ],
+  "selected_action_ids": [
+    "svc/enable-http/605395d27151c9e8",
+    "svc/server-dhcp-pool/9e865b55ae7f0744",
+    "svc/enable-server-dhcp/bc1927b62ada688c",
+    "svc/http-content/fff40ce672bbcb95"
+  ],
+  "shared_content_bindings": [
+    {
+      "source_action_id": "svc/http-content/fff40ce672bbcb95",
+      "selected_action_id": "svc/http-content/fff40ce672bbcb95",
+      "source_service_ids": [
+        "service/q3/q3-native-http"
+      ],
+      "selected_service_ids": [
+        "service/q3/q3-native-http"
+      ],
+      "writer_service_id": "service/q3/q3-native-http",
+      "writer_service_type": "http",
+      "dependency_ids": [
+        "svc/enable-http/605395d27151c9e8"
+      ],
+      "content_source_record": "q1-2026-09-19T23-00-53Z-b17240ad"
+    }
+  ],
+  "releases": [],
+  "operational_readiness": [],
+  "nonces": {},
+  "dhcp_authorities": [
+    {
+      "service_id": "service/q3/q3-dhcp",
+      "server_device_id": "endpoint/q3/default/server/001",
+      "segment_id": "q3-data",
+      "interface": "FastEthernet0",
+      "pool_name": "Q3_DATA",
+      "effective_pool_name": "serverPool",
+      "pool_name_explicit": false,
+      "client_device_ids": [
+        "endpoint/q3/default/user_pc/001"
+      ],
+      "action_ids": [
+        "svc/server-dhcp-pool/9e865b55ae7f0744",
+        "svc/enable-server-dhcp/bc1927b62ada688c"
+      ],
+      "expectation_ids": [
+        "svc/verify-dhcp-lease/76d7cb6fc8c00c4f",
+        "svc/verify-dhcp-attribution/9d42670b5c358ca8",
+        "svc/verify-direct/df14d7544a5017d0"
+      ]
+    }
+  ],
+  "dirty_state": "unknown",
+  "limitations": [
+    "e5_effect_uncertain:cfg/vlan/0576ab546064bf9f",
+    "provenance:documentary_baseline"
+  ],
+  "persist_error": ""
+}
