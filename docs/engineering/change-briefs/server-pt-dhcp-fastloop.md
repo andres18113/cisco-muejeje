@@ -1554,3 +1554,221 @@ all six jobs, with 8163 passed/6 skipped on each Windows Python version and
 did not emit skip reasons. Add `-rs` to the existing Windows and Ubuntu pytest
 commands without changing collection, markers, selection or pass criteria;
 the final exact-SHA CI must retain each skip reason in its job log.
+
+## Grouped native evidence closure, version 20 design delta
+
+**Starting identity and risk.** Clean `feature/server-pt-goal-foundations` at
+`f39c13607d63b43f15f1640781cc9d0298900157` (tree
+`4758684421d579a3c96487a29a8e387517f21353`), equal to its published branch;
+`cisco/main` resolves to `6263344e31ba3b0de6539d652f2cd06fc73a3562`. Risk
+stays **L**: the change alters evidence semantics that authorize dependent
+HTTP effects. Episode 11 remains accepted evidence for its executed source
+`dda07fc`; nothing below relabels, reruns or edits it.
+
+**Problem.** Independent review found three defects in
+`PacketTracerEnterpriseServiceRuntime._verify_native_dhcp_group`, all
+reproduced offline against this checkout before any production edit:
+
+- *R1.* A client already in `failures` was skipped before its current reading
+  entered the duplicate census. With PC1 at `.125` and an exact row, PC2
+  unreadable in sample 1 and readable at `.125` with its own MAC in sample 2,
+  PC1 still VERIFIED after two stable samples and PC2 kept only its earlier
+  UNKNOWN; the same happened with either client failing first and with the
+  selected order reversed. A client with DHCP mode disabled and a static
+  duplicate address in the same sample was skipped the same way.
+- *R2.* `same_ip = [row for row in rows ...]` scanned every row for every
+  client. Counting row `ipAddress` reads through the real evaluator for two
+  samples of N clients over N rows gave 12, 40, 144 and 544 for N = 2, 4, 8
+  and 16: 2N validation reads plus 8, 32, 128 and 512 join comparisons.
+- *R3.* An inactive client read clear and then returned as `unknown` became
+  CONTRADICTED `native_inactive_client_changed`, because the earlier MAC was
+  compared with the empty MAC of an unobserved reading.
+
+**Outcome and scope.** Correct the grouped evaluator only. The generated
+group-scan and inactive-reader JavaScript, the server policy reader, the
+compiler, the application scheduler, the capability catalog, the public
+policy envelope and the MCP signature are unchanged. The evaluator keeps its
+own 16-client/16-row envelope; the public family keeps at most two clients.
+Excluded: router DHCP, a support override, a second runner, renewal,
+acquisition causality, table-end proof and any native capacity claim.
+
+**Requirements and acceptance criteria.**
+
+| ID | Requirement | Acceptance |
+| --- | --- | --- |
+| G1 | Every authoritatively readable selected client enters each sample's identity census with its current reading, whatever its sticky result, mode or policy. A duplicate address among addressed readings, or a duplicate MAC value among all readable readings, is global `native_selected_identity_duplicate`. MACs compare as 48-bit values; an unset or invalid MAC and an unparseable address name no identity. | The review counterexample, both failing-client choices, both selected orders, the same-sample disabled-mode duplicate and an unaddressed client reporting a peer's MAC in any accepted spelling fail every selected lease row CONTRADICTED; immediate and delayed duplicates without local failure stay global; unset MACs, before or after addressing, and a shared unparseable address do not. |
+| G2 | A lease row on one selected client's current address that names the MAC value of another selected client readable in the same sample is global `native_selected_lease_conflict`. A same-address row naming any other MAC or interface stays that client's local `foreign_lease_row`. | Cross-client rows fail every client, with and without a prior local failure; a foreign-party row leaves the positive peer VERIFIED. |
+| G3 | The first local failure stays sticky and is preserved with its sample; later readings and any global failure sample and detail are persisted per client. | Each group row carries `local_failure_cause`, `local_failure_sample`, `global_failure_sample`, `global_failure_detail` and `client_readings_json`, and the stored product record retains them. |
+| G4 | A purely local unobserved or contradicted client never fails an unrelated positive client. | PC2 unreadable throughout, later distinct and exact, or later on a foreign-party row leaves PC1 VERIFIED and its HTTP requested; PC2 stays UNKNOWN and its HTTP is withheld. |
+| G5 | Each fresh scan builds one address index that preserves row order and multiplicity; every client joins through one lookup. | Row address reads stay within two per row per sample (8, 16, 32 and 64 for N = 2 to 16) and total row reads per client are constant; duplicate exact rows and foreign MAC or interface rows keep their outcomes in either row order. |
+| G6 | An inactive reading that is unknown, including an unparseable address or mask, is INCONCLUSIVE `native_inactive_client_unobserved` with its reason; a fresh mode, address or MAC value change is CONTRADICTED `native_inactive_client_changed` with its reason. | Clear then getter error, lost result or invalid reading is UNKNOWN; clear then mode on, address present or a different MAC value is FAILED; a respelled identical MAC stays clear; a device listed twice is refused as malformed before any read; the classifications persist and withhold HTTP. |
+| G7 | Ordinary positive behavior is intact. | The episode 11 archived group samples replayed through the corrected evaluator verify both clients exactly as recorded, and the existing product, node-flow and 2/20/200/1000 tests pass with unchanged assertions. |
+
+**Architecture.** The native reading owner stays
+`PacketTracerEnterpriseServiceRuntime`. Each sample first classifies every
+selected reading, then applies global identity checks over all readable
+clients, then advances the per-client positive state only for clients without
+a sticky failure. The row index is a module-private function beside the
+evaluator. No domain, port or application contract changes: global failures
+are written to every selected lease row, and the existing scheduler already
+withholds each client's HTTP unless its own lease row is VERIFIED.
+
+**Invariants.** Fail closed: every added condition refuses or withholds.
+A row that `f39c136` did not verify can verify only where that refusal was
+itself a false shared or changed verdict forbidden by G4 or G6, and only with
+two exact joins. The two-stable-sample rule, stop rule, bounds, trace owner and
+limitations are unchanged. Cold first HTTP stays without preparatory ping,
+DNS or static client configuration. Historical archives, negative results and
+the 2/20/200/1000 orchestration tests stay as they are; their substituted
+verifier does not exercise this join and is not presented as native scale.
+
+**Test design.** Unit: the real evaluator over scripted bridge answers for
+the group scan and inactive reader (server policy reader reported VERIFIED),
+covering G1-G6 and the counting harness. Integration and system: the Node
+engine A1-E6 product flow, with the same answers substituted at the bridge
+boundary, proving the dependent HTTP decision, the absence of a request and
+the stored record for R1, R3 and the positive and local-only controls.
+Acceptance: G7 replay plus the full suite and exact-SHA CI with skip reasons.
+
+**LIVE decision.** No new LIVE episode is required. The changed code is a
+Python decision over readings that the unchanged scripts already return; it
+changes refusal conditions and records only. Episode 11's positive readings
+exhibit none of the new conditions and replay to the same result. The
+review counterexample depends on a transient getter failure that Packet
+Tracer cannot be made to produce on demand; the other conflict states would
+exercise only this Python decision over reading shapes the unchanged scripts
+already return, which the offline tests cover. A LIVE episode would therefore
+add no discriminating evidence. The delivery reports that episode 11 was
+observed at `dda07fc` and that later commits are verified offline only.
+
+**Review refinements made during implementation.** Independent read-only
+adversarial reviews of the working tree found seven defects in successive
+passes. Each now has a causal regression that failed before its correction.
+Every defect except one intermediate-draft variant noted under the fourth was
+also present at `f39c136`. First, the duplicate-MAC census compared only
+addressed readings, so an unaddressed client reporting PC1's MAC left PC1
+VERIFIED and its HTTP requested. Second, `_MAC_TEXT` admits dotted, colon and
+dash spellings in either case, but the census and row ownership compared raw
+strings, so one MAC spelled two ways named two identities. Third, raw
+comparison also made two addressed clients with unset MACs a "duplicate",
+failing an unrelated positive client for two purely local failures. Fourth,
+the inactive reader treated any non-empty address or mask text, including a
+degraded `undefined`, as an observed address, so a clear-then-degraded reading
+became `native_inactive_client_changed`; the same raw address strings made two
+selected clients' degraded readings one shared address, and an intermediate
+draft of this delivery also let a degraded row address create ownership.
+Fifth, the inactive MAC comparison used spelling, so a respelled but identical
+MAC became `mac_changed`. Sixth, inactive MAC history is kept per device, so
+an input naming one device's two ports would compare one port's MAC with the
+other's; the compiler derives one entry per device, and both the grouped and
+single-client readers now refuse a repeated device as a malformed contract
+before any read. Seventh, the single-client reader still compared the inactive
+MAC by spelling; it now uses the same value comparison as the grouped reader.
+`_mac_identity` now yields the 48-bit value of a valid spelling and nothing
+for an unset or invalid one; the census compares addresses among addressed
+clients and MAC values among all readable clients, and row ownership uses the
+same values. The exact lease join deliberately still compares the spelling, so
+canonical comparison never creates an exact row. `_is_ipv4_text` separates an
+address from a degraded value: an unparseable inactive address or mask is
+`unknown`/`reading_invalid`, and a selected client's unparseable address stays
+its own pre-existing `native_client_outside_policy` failure while naming no
+address for the census, the joins or row ownership. The third, fourth and
+fifth corrections are the only cases where a row that `f39c136` failed can now
+verify. In the first two the positive client has two exact joins and no
+observed shared identity, and G4 forbids failing it for its peers' local
+failures; in the fifth the competing client's MAC value is unchanged, so G6
+forbids calling it a change. A lease row for a selected MAC at an address that
+no selected client reads remains uninterpreted, as before, and stays in the
+trace. The census and row ownership use identities read in the same sample, so
+a row naming an unreadable client's earlier MAC remains the addressed client's
+local `foreign_lease_row`. An eighth pass, limited to sequences that could
+release HTTP despite a shared contradiction, fail an unrelated positive
+client, report an unobservable or unchanged inactive reading as changed, or
+lose record fields, reported no material finding. These Codex passes are
+advisory read-only reviews, not the independent approval this delivery
+requests.
+
+## Grouped native evidence result, version 21
+
+**Changed code.** `_verify_native_dhcp_group` now classifies every selected
+reading per sample, runs the shared identity checks over all readable clients,
+and only then advances per-client state for clients without a sticky failure.
+`_lease_rows_by_address`, `_is_ipv4_text`, `_mac_identity` and
+`_selected_identity_conflict` are module-private helpers beside it.
+`_native_inactive_client_state` returns `(state, mac, reason)` and reports an
+unparseable address or mask as unknown. The single-client state reader, which
+the product route does not use, ignores the reason, compares inactive MAC
+values and refuses a repeated device; its other semantics are unchanged. The
+generated group-scan and inactive-reader JavaScript is byte-identical to
+`f39c136` across one- and two-client plans with and without a value-holding
+sanitizer (eight scripts, joint SHA-256
+`fab33600dd27334e7c4a1d8d79bff0ad6f02a8617a1e5bbd83277499bc9bbcd8`), and
+`src/` is identical between `dda07fc` and `f39c136`.
+
+**Causal regressions and controls.** The 56 new test cases were also run
+against the `f39c136` runtime: 35 failed on their classification, 14 failed
+only because the new record fields were absent, and 7 guards passed on both
+versions. The causal cases, all passing after the correction, are:
+
+| Case | Reviewed result | Corrected result |
+| --- | --- | --- |
+| PC2 unreadable, then on PC1's `.125` (either client failing, either selected order) | failing peer UNKNOWN, positive peer VERIFIED; product sent one HTTP request | both CONTRADICTED `native_selected_identity_duplicate`, both HTTP DEPENDENCY_BLOCKED, no request |
+| Same-sample DHCP-disabled static duplicate | positive peer VERIFIED | both CONTRADICTED duplicate |
+| Row naming PC1's MAC, in any accepted spelling, on PC2's address, with or without an earlier PC2 failure | PC1 VERIFIED, PC2 a local failure | both CONTRADICTED `native_selected_lease_conflict` |
+| Unaddressed PC2 reporting PC1's MAC, any accepted spelling | PC1 VERIFIED, HTTP requested | both CONTRADICTED duplicate, no request |
+| Three clients: PC0 positive, two peers addressed with unset MACs | PC0 CONTRADICTED duplicate | PC0 VERIFIED; peers CONTRADICTED `native_client_outside_policy` |
+| Inactive client clear, then getter error, lost result, invalid MAC or unparseable address or mask | FAILED `native_inactive_client_changed` | UNKNOWN `native_inactive_client_unobserved` with `read_error`, `unobserved:acceptance_unknown` or `reading_invalid`; HTTP withheld |
+| Two selected clients reading the same unparseable address | positive peer CONTRADICTED duplicate | positive peer VERIFIED; degraded clients CONTRADICTED `native_client_outside_policy` |
+| Inactive client clear, then clear with the same MAC in another spelling | FAILED `mac_changed` | VERIFIED |
+| One device listed twice as inactive, both ports clear | FAILED `native_inactive_client_changed` | UNOBSERVABLE `native_group_contract_invalid` (single reader: `native_state_contract_invalid`), no read |
+
+Controls kept their classification before and after: an inactive client
+clear, then mode on, address present or a different MAC value stays FAILED
+changed, now with `dhcp_mode_on`, `address_present` or `mac_changed`; both
+clients positive
+verify both and request both cold HTTP checks; PC2 unreadable throughout, or
+later distinct and exact, or later on a foreign-party row, leaves PC1
+VERIFIED with its request while PC2 stays UNKNOWN and withheld; immediate
+and delayed duplicates without local failure stay global; two unset MACs
+before acquisition create no duplicate; a row at an unparseable address
+naming a peer's MAC is not ownership; a respelled own MAC in the client's
+row stays a local `foreign_lease_row`; duplicate exact rows and foreign MAC
+or interface rows keep their outcomes in either row order. The existing
+immediate-duplicate, getter-failure and late-PC2 product flows are unchanged.
+
+**Durable records.** Each grouped lease row persists `local_failure_cause`,
+`local_failure_sample`, `global_failure_sample`, `global_failure_detail` and
+`client_readings_json`; the product-flow tests assert them from the stored
+record. The episode 11 group samples, read from its immutable archive and
+replayed through the corrected evaluator, verify both clients with the
+archived address, mask, MAC, stable-sample count, sample count and trace
+owner. That replay is later-code verification of archived readings, not a
+new LIVE observation.
+
+**Indexed work.** Counted row-field reads through the real evaluator, two
+samples of N positive clients over N rows (evaluator counts, not LIVE
+capacity or timing):
+
+| N | Row `ipAddress` reads, `f39c136` | Corrected | Row reads per client, `f39c136` | Corrected |
+| --- | --- | --- | --- | --- |
+| 2 | 12 | 8 | 22 | 20 |
+| 4 | 40 | 16 | 26 | 20 |
+| 8 | 144 | 32 | 34 | 20 |
+| 16 | 544 | 64 | 50 | 20 |
+
+The reviewed reads were 2N validation reads plus the 8, 32, 128 and 512 join
+comparisons named in review; the corrected reads are one validation and one
+index read per row per sample. The 2/20/200/1000 orchestration tests are
+unchanged and still substitute the verifier.
+
+**Offline validation.** The native, DHCP-harness and new grouped-evidence
+modules passed 174 tests. The provisional full Windows suite on the final
+content passed 8219 with 6 skips and 3 pytest deprecation warnings; `-rs`
+retained the skip reasons: two tests require symlink privilege, two lack
+ignored historical raw artefacts, and two native-window tests require the
+explicit Windows opt-in. Ruff passed on every touched Python file. The
+quality gate, MkDocs build, `git diff --check` and exact-SHA CI are recorded
+with the delivery commit, which cannot contain its own CI result.
+
+**LIVE.** None performed. Episode 11 remains accepted evidence for `dda07fc`
+only; this delivery's commits are verified offline.

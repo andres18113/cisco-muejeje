@@ -254,10 +254,17 @@ Server-PT `serverPool`/`FastEthernet0`, server and DNS `.10`, gateway `.1`,
 exact singleton exclusions `.1` and `.10`, a contiguous start from `.100`
 through `.151` ending no later than `.152`, and capacity one or two on the
 file channel. A fresh full policy read follows each native setter. The
-required grouped state reader scans the lease table once per sample, reads
-every selected client, and requires two stable samples with unique in-policy
-IP/MAC/interface rows before dependent HTTP. The shared raw trace is stored
-once in the product record. These observations establish usable attributed
+required grouped state reader scans the lease table once per sample, indexes
+it once by address without hiding repeated rows, reads every selected client,
+and requires two stable samples with unique in-policy IP/MAC/interface rows
+before dependent HTTP. A client's own read or policy failure blocks only its
+own HTTP, but its later readings still enter the shared identity checks: a
+duplicate selected address or MAC, a row recording one selected client on
+another's address, lost server/pool ownership or a changed competing client
+blocks every selected client. An unreadable competing client also blocks
+them, as unobserved rather than changed. The shared raw trace is stored once in the product record,
+and each client row keeps its first local failure, any shared failure and its
+own per-sample readings. These observations establish usable attributed
 state, not `dhcpRun` causality, renewal, or table-end proof.
 
 The generic DHCP profile, named pools, explicit acquisition and other builds

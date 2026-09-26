@@ -26,10 +26,16 @@ capability bounds are:
 An exact policy/readback guard follows each native setter before process
 enable. Every selected client requires two stable, fresh DHCP-on address,
 mask and MAC samples joined to its exact IP/MAC/interface row on the effective
-server/pool. The lease table is scanned once per group sample, and the full
-group trace is retained once in the durable product record. A client-local
-read failure blocks that client's dependent HTTP; duplicate selected
-addresses or global server/pool ownership loss block all affected requests.
+server/pool. The lease table is scanned once per group sample and indexed
+once by address with every repeated row kept, and the full group trace is
+retained once in the durable product record. A client-local read or policy
+failure blocks that client's dependent HTTP; the client's later readings
+still enter the shared identity checks. Duplicate selected addresses or
+MACs, a lease row recording one selected client on another's address,
+global server/pool ownership loss, and a changed or unreadable competing
+client block all affected requests; an unreadable competing client is
+recorded as unobserved, not changed. Each client row keeps its first local
+failure, any shared failure and its own per-sample readings.
 The actual plan determines selected and competing clients, so one selected
 PC needs no invented inactive twin.
 
@@ -79,6 +85,8 @@ relabeled as the later code.
 
 ## Offline verification and limits
 
+At the episode-11 delivery (`e450920`):
+
 - Affected public, native, legacy-service and campaign tests: **229 passed**.
 - Full Windows suite: **8163 passed, 6 skipped, 3 warnings**. The six skip
   reasons were retained: two require symlink privilege, two lack ignored
@@ -92,6 +100,29 @@ relabeled as the later code.
   transport before E5. Duplicate client addresses, one-client getter failure,
   unbound public callback and terminal persistence failure have focused
   failure-containment regressions. Static-client DNS/HTTP remains positive.
+
+### Grouped-evidence correction after episode 11
+
+Review of that delivery found that a client's earlier local read failure
+could hide a duplicate identity observed later, that each client rescanned
+every lease row, and that an unreadable competing client was reported as
+changed. The correction changes only the Python decision over the same
+readings: the generated group-scan and inactive-reader JavaScript is
+byte-identical, so episode 11 remains the accepted observation for
+`dda07fc` and the corrected code is verified offline only.
+
+- 56 new evaluator and product-flow cases; 35 of them fail on classification
+  at the reviewed source, including the review counterexample, where the
+  positive client's HTTP request was sent and is now withheld.
+- Episode 11's archived group samples, replayed through the corrected
+  evaluator, reproduce both recorded VERIFIED rows.
+- Counted row-address reads for two samples of 16 clients over 16 rows fell
+  from 544 to 64; these are evaluator counts, not LIVE capacity or timing.
+- Full Windows suite: **8219 passed, 6 skipped**, with the same six skip
+  reasons as above.
+
+No LIVE episode was run for the correction: it changes only decisions and
+records over readings the unchanged scripts already return.
 
 The 2/20/200/1000-client **offline** workload substitutes the backend
 explicitly while exercising actual E6 group derivation, verification,

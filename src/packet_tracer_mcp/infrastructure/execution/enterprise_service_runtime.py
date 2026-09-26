@@ -201,6 +201,91 @@ def _in_address_ranges(address, ranges) -> bool:
     return any(start <= address <= end for start, end in ranges)
 
 
+def _lease_rows_by_address(rows: Sequence[dict]) -> dict[str, list[dict]]:
+    """Index one fresh lease scan by address, keeping every row in scan order.
+
+    A last-wins map would hide a second row for the same address, and that
+    second row is exactly the conflicting evidence a join has to see.
+    """
+    index: dict[str, list[dict]] = {}
+    for row in rows:
+        index.setdefault(row["ipAddress"], []).append(row)
+    return index
+
+
+def _is_ipv4_text(text: str) -> bool:
+    """Return whether a reading names an IPv4 address rather than a degraded value.
+
+    A getter can surface text such as `undefined`; that is an unobservable
+    reading, never an address that could be present or shared.
+    """
+    try:
+        return ip_address(text).version == 4
+    except ValueError:
+        return False
+
+
+def _mac_identity(text: str) -> str | None:
+    """Return the 48-bit value a valid MAC spelling names, or None.
+
+    `_MAC_TEXT` admits dotted, colon and dash spellings in either case, so
+    conflict checks compare this value. An unset or invalid MAC names no
+    identity: it is that client's own policy failure, never a shared one. An
+    exact lease join still compares the spelling itself and never becomes
+    easier to satisfy through this value.
+    """
+    if not _MAC_TEXT.fullmatch(text):
+        return None
+    return re.sub(r"[.:-]", "", text).upper()
+
+
+def _selected_identity_conflict(
+    selected: Sequence[dict],
+    readable: dict[str, dict],
+    assigned: dict[str, dict],
+    joins: dict[str, str],
+) -> tuple[str, str] | None:
+    """Name one sample's shared identity contradiction among selected clients.
+
+    Input is every authoritatively readable selected client, the addressed
+    subset and its join classes; output is `(cause, device names)` or None.
+    Addresses are compared among addressed clients and MAC values among all
+    readable clients, so an unaddressed client reporting a peer's MAC in any
+    accepted spelling is a duplicate while unset MACs name nobody. A duplicate
+    takes precedence over a row that records one selected client's MAC on
+    another selected client's address.
+    """
+    names = {item["expectation_id"]: item["device_name"] for item in selected}
+    candidates = {
+        "ipv4": {identifier: client["ipv4"] for identifier, client in assigned.items()},
+        "mac": {
+            identifier: _mac_identity(client["mac"])
+            for identifier, client in readable.items()
+        },
+    }
+    for values in candidates.values():
+        holders: dict[str, list[str]] = {}
+        for identifier, value in values.items():
+            if value is not None:
+                holders.setdefault(value, []).append(identifier)
+        duplicated = sorted(
+            names[identifier]
+            for group in holders.values()
+            if len(group) > 1
+            for identifier in group
+        )
+        if duplicated:
+            return "native_selected_identity_duplicate", ",".join(duplicated)
+    conflicted = sorted(
+        names[identifier]
+        for identifier, join in joins.items()
+        if join == "selected_conflict"
+    )
+    if conflicted:
+        return "native_selected_lease_conflict", ",".join(conflicted)
+    return None
+
+
 #: The bound on one mailbox scan, newest first. A mailbox holding more mail
 #: than this can prove presence but never absence.
 MAILBOX_SCAN_LIMIT = 100
@@ -2766,6 +2851,8 @@ class PacketTracerEnterpriseServiceRuntime:
                 or not all(isinstance(value, str) and value for value in item.values())
                 for item in inactive
             )
+            # MAC history is kept per device; a device named twice is refused.
+            or len({item["device_name"] for item in inactive}) != len(inactive)
         ):
             return self._observed(
                 expectation,
@@ -2803,14 +2890,16 @@ class PacketTracerEnterpriseServiceRuntime:
                     observed={"samples": sampled},
                 )
             for other in inactive:
-                inactive_state, observed_mac = self._native_inactive_client_state(
-                    other["device_name"], other["interface"]
+                inactive_state, observed_mac, _reason = (
+                    self._native_inactive_client_state(
+                        other["device_name"], other["interface"]
+                    )
                 )
                 prior_mac = inactive_macs.get(other["device_name"])
                 if inactive_state == "contradicted" or (
                     inactive_state == "clear"
                     and prior_mac is not None
-                    and observed_mac != prior_mac
+                    and _mac_identity(observed_mac) != _mac_identity(prior_mac)
                 ):
                     return self._observed(
                         expectation,
@@ -2991,7 +3080,16 @@ class PacketTracerEnterpriseServiceRuntime:
         return self._observe(script, self._mail_timeout)
 
     def _verify_native_dhcp_group(self, expectation):
-        """Verify clients independently from two shared, fresh group scans."""
+        """Verify selected clients from shared, fresh group scans.
+
+        Each client needs two stable exact joins. Its first local failure is
+        sticky for that client only, but every later authoritative reading of
+        it still enters the shared identity checks: a duplicate address or MAC,
+        or a lease row recording one selected client on another's address,
+        fails every selected client, as do server, inactive-client and scan
+        failures. Each row keeps its local failure, any global failure and its
+        own per-sample readings.
+        """
         expected = expectation.expected
         try:
             selected = json.loads(str(expected["native_selected_clients_json"]))
@@ -3004,6 +3102,17 @@ class PacketTracerEnterpriseServiceRuntime:
             or not 1 <= len(selected) <= 16
             or not isinstance(inactive, list)
             or len(inactive) > 16
+            # Inactive MAC history is kept per device, so a device named twice
+            # could only be misread as a change; it is refused before reading.
+            or len(
+                {
+                    item["device_name"]
+                    for item in inactive
+                    if isinstance(item, dict)
+                    and isinstance(item.get("device_name"), str)
+                }
+            )
+            != len(inactive)
             or any(
                 not isinstance(item, dict)
                 or set(item) != {"expectation_id", "device_name", "interface"}
@@ -3057,12 +3166,20 @@ class PacketTracerEnterpriseServiceRuntime:
         saw_address: dict[str, bool] = {
             item["expectation_id"]: False for item in selected
         }
-        failures: dict[str, tuple[ObservationFact, str]] = {}
+        # A client's first local failure is sticky, with the sample it was
+        # observed in. It never removes the client from later global checks.
+        failures: dict[str, tuple[ObservationFact, str, int]] = {}
+        readings: dict[str, list[dict]] = {
+            item["expectation_id"]: [] for item in selected
+        }
         inactive_macs: dict[str, str] = {}
         global_failure: tuple[ObservationFact, str] | None = None
+        global_detail = ""
+        sample = 0
         for sample_index in range(self._dhcp_state_max_samples):
             if sample_index:
                 self._sleep(self._dhcp_state_interval)
+            sample = sample_index + 1
             server = self._verify_dhcp_server_state(
                 expectation.model_copy(
                     update={"expected": {**expected, "enabled": True}}
@@ -3087,19 +3204,31 @@ class PacketTracerEnterpriseServiceRuntime:
                         "native_inactive_shape",
                     )
                     break
-                state, mac = self._native_inactive_client_state(
+                state, mac, reason = self._native_inactive_client_state(
                     other["device_name"], other["interface"]
                 )
                 old_mac = inactive_macs.get(other["device_name"])
-                if state != "clear" or (old_mac is not None and mac != old_mac):
+                # Only a fresh clear reading can show a changed MAC, and only
+                # by a different 48-bit value, not another spelling. An
+                # unknown reading carries no MAC, so it is unobserved even
+                # when an earlier clear MAC is on record.
+                if (
+                    state == "clear"
+                    and old_mac is not None
+                    and _mac_identity(mac) != _mac_identity(old_mac)
+                ):
+                    state, reason = "contradicted", "mac_changed"
+                if state != "clear":
+                    changed = state == "contradicted"
                     global_failure = (
                         ObservationFact.CONTRADICTED
-                        if state == "contradicted" or old_mac is not None
+                        if changed
                         else ObservationFact.INCONCLUSIVE,
                         "native_inactive_client_changed"
-                        if state == "contradicted" or old_mac is not None
+                        if changed
                         else "native_inactive_client_unobserved",
                     )
+                    global_detail = f"{other['device_name']}:{reason}"
                     break
                 inactive_macs[other["device_name"]] = mac
             if global_failure:
@@ -3162,11 +3291,10 @@ class PacketTracerEnterpriseServiceRuntime:
                     "native_group_lease_row_invalid",
                 )
                 break
-            sample_identities: list[tuple[str, str]] = []
+            rows_by_address = _lease_rows_by_address(rows)
+            readable: dict[str, dict] = {}
             for item, client in zip(selected, clients, strict=True):
                 identifier = item["expectation_id"]
-                if identifier in failures:
-                    continue
                 if (
                     not isinstance(client, dict)
                     or client.get("expectation_id") != identifier
@@ -3182,22 +3310,86 @@ class PacketTracerEnterpriseServiceRuntime:
                         for key in ("ipv4", "netmask", "mac")
                     )
                 ):
-                    failures[identifier] = (
-                        ObservationFact.INCONCLUSIVE,
-                        "native_client_identity_unobserved",
+                    readings[identifier].append(
+                        {"sample": sample, "reading": "unreadable"}
                     )
+                    failures.setdefault(
+                        identifier,
+                        (
+                            ObservationFact.INCONCLUSIVE,
+                            "native_client_identity_unobserved",
+                            sample,
+                        ),
+                    )
+                    continue
+                readable[identifier] = client
+            # Every authoritative reading takes part in the shared identity
+            # checks, whatever that client's own sticky result already is. A
+            # degraded address is that client's own policy failure; it names
+            # no address another client could share or a row could record.
+            addressed = {
+                identifier: client
+                for identifier, client in readable.items()
+                if client["ipv4"] not in {"", "0.0.0.0"}
+            }
+            assigned = {
+                identifier: client
+                for identifier, client in addressed.items()
+                if _is_ipv4_text(client["ipv4"])
+            }
+            owners: dict[str, set[str]] = {}
+            for identifier, client in readable.items():
+                mac = _mac_identity(client["mac"])
+                if mac is not None:
+                    owners.setdefault(mac, set()).add(identifier)
+            joins: dict[str, str] = {}
+            for identifier, client in assigned.items():
+                interface = client["interface"]
+                exact = 0
+                join = ""
+                for row in rows_by_address.get(client["ipv4"], ()):
+                    if row["macAddress"] == client["mac"] and row["port"] == interface:
+                        exact += 1
+                    elif owners.get(_mac_identity(row["macAddress"]), set()) - {
+                        identifier
+                    }:
+                        join = "selected_conflict"
+                    elif not join:
+                        join = "foreign"
+                joins[identifier] = join or (
+                    "exact" if exact == 1 else "multiple" if exact else "absent"
+                )
+            for identifier, client in readable.items():
+                reading = {
+                    "sample": sample,
+                    "reading": "assigned"
+                    if identifier in assigned
+                    else "address_invalid"
+                    if identifier in addressed
+                    else "unassigned",
+                    "mode": client["mode"],
+                    "ipv4": client["ipv4"],
+                    "mac": client["mac"],
+                }
+                if identifier in joins:
+                    reading["join"] = joins[identifier]
+                readings[identifier].append(reading)
+            for item in selected:
+                identifier = item["expectation_id"]
+                client = readable.get(identifier)
+                if client is None or identifier in failures:
                     continue
                 if client.get("mode") is not True:
                     failures[identifier] = (
                         ObservationFact.CONTRADICTED,
                         "native_client_mode_disabled",
+                        sample,
                     )
                     continue
-                if client["ipv4"] in {"", "0.0.0.0"}:
+                if identifier not in addressed:
                     stable[identifier] = 0
                     continue
                 saw_address[identifier] = True
-                sample_identities.append((client["ipv4"], client["mac"]))
                 try:
                     address = ip_address(client["ipv4"])
                 except ValueError:
@@ -3214,22 +3406,18 @@ class PacketTracerEnterpriseServiceRuntime:
                     failures[identifier] = (
                         ObservationFact.CONTRADICTED,
                         "native_client_outside_policy",
+                        sample,
                     )
                     continue
-                same_ip = [row for row in rows if row["ipAddress"] == client["ipv4"]]
-                exact = [
-                    row
-                    for row in same_ip
-                    if row["macAddress"] == client["mac"]
-                    and row["port"] == item["interface"]
-                ]
-                if any(row not in exact for row in same_ip):
+                if joins[identifier] == "foreign":
                     failures[identifier] = (
                         ObservationFact.CONTRADICTED,
                         "foreign_lease_row",
+                        sample,
                     )
                     continue
-                if len(exact) != 1:
+                if joins[identifier] != "exact":
+                    # A selected-client conflict is decided globally below.
                     stable[identifier] = 0
                     continue
                 identity = (client["ipv4"], client["netmask"], client["mac"])
@@ -3239,19 +3427,17 @@ class PacketTracerEnterpriseServiceRuntime:
                     else 1
                 )
                 identities[identifier] = identity
-            if len({item[0] for item in sample_identities}) != len(
-                sample_identities
-            ) or len({item[1] for item in sample_identities}) != len(sample_identities):
-                global_failure = (
-                    ObservationFact.CONTRADICTED,
-                    "native_selected_identity_duplicate",
-                )
+            conflict = _selected_identity_conflict(selected, readable, assigned, joins)
+            if conflict is not None:
+                global_failure = (ObservationFact.CONTRADICTED, conflict[0])
+                global_detail = conflict[1]
                 break
             if all(
                 identifier in failures or count >= 2
                 for identifier, count in stable.items()
             ):
                 break
+        global_sample = sample if global_failure else 0
         # The applicator may have blocked an earlier selected expectation
         # before reaching this reader. The triggering row is guaranteed to
         # be returned and persisted; a positional first client is not.
@@ -3260,7 +3446,8 @@ class PacketTracerEnterpriseServiceRuntime:
         results = {}
         for item in selected:
             identifier = item["expectation_id"]
-            failure = global_failure or failures.get(identifier)
+            local = failures.get(identifier)
+            failure = global_failure or (local[:2] if local else None)
             if failure:
                 fact, cause = failure
             elif stable[identifier] >= 2:
@@ -3292,6 +3479,13 @@ class PacketTracerEnterpriseServiceRuntime:
                     "requested_pool_name": str(expected.get("pool_name") or ""),
                     "stable_samples": stable[identifier],
                     "samples": len(history),
+                    "local_failure_cause": local[1] if local else "",
+                    "local_failure_sample": local[2] if local else 0,
+                    "global_failure_sample": global_sample,
+                    "global_failure_detail": global_detail,
+                    "client_readings_json": json.dumps(
+                        readings[identifier], sort_keys=True, separators=(",", ":")
+                    ),
                     "group_trace_json": trace_json if identifier == leader else "",
                     "group_trace_ref": leader,
                 },
@@ -3306,8 +3500,14 @@ class PacketTracerEnterpriseServiceRuntime:
 
     def _native_inactive_client_state(
         self, device_name: str, interface: str
-    ) -> tuple[str, str]:
-        """Read one exact inactive client without changing its DHCP state."""
+    ) -> tuple[str, str, str]:
+        """Read one exact inactive client without changing its DHCP state.
+
+        Returns `(state, mac, reason)`. `state` is `clear`, `contradicted` or
+        `unknown`; `mac` is set only for a fresh readable port; `reason` names
+        why a reading is not clear, so an unobservable read is never reported
+        as a change.
+        """
         script = (
             f"var name={json.dumps(device_name)},want={json.dumps(interface)},"
             "d=ipc.network().getDevice(name),p=null;"
@@ -3327,30 +3527,43 @@ class PacketTracerEnterpriseServiceRuntime:
         )
         observation = self._observe(script, 5.0)
         if observation.kind is not BridgeObservationKind.PAYLOAD:
-            return "unknown", ""
+            return (
+                "unknown",
+                "",
+                "unobserved:" + self._transport_fact(observation).value,
+            )
         payload = observation.payload or {}
         if (
             payload.get("device") != device_name
             or payload.get("interface") != interface
-            or payload.get("found") is not True
-            or payload.get("port_found") is not True
-            or payload.get("mode_type") != "boolean"
+        ):
+            return "unknown", "", "reading_invalid"
+        if payload.get("found") is not True or payload.get("port_found") is not True:
+            return "unknown", "", "subject_not_found"
+        if payload.get("error"):
+            return "unknown", "", "read_error"
+        if (
+            payload.get("mode_type") != "boolean"
             or not isinstance(payload.get("mode"), bool)
             or any(
                 not isinstance(payload.get(key), str)
                 for key in ("ipv4", "netmask", "mac", "error")
             )
-            or payload.get("error")
             or not _MAC_TEXT.fullmatch(payload["mac"])
         ):
-            return "unknown", ""
-        if (
-            payload["mode"] is not False
-            or payload["ipv4"] not in {"", "0.0.0.0"}
-            or payload["netmask"] not in {"", "0.0.0.0"}
-        ):
-            return "contradicted", payload["mac"]
-        return "clear", payload["mac"]
+            return "unknown", "", "reading_invalid"
+        if payload["mode"] is not False:
+            return "contradicted", payload["mac"], "dhcp_mode_on"
+        present = [
+            value
+            for value in (payload["ipv4"], payload["netmask"])
+            if value not in {"", "0.0.0.0"}
+        ]
+        if not all(_is_ipv4_text(value) for value in present):
+            return "unknown", "", "reading_invalid"
+        if present:
+            return "contradicted", payload["mac"], "address_present"
+        return "clear", payload["mac"], ""
 
     def _verify_dhcp_lease_attributed(self, expectation):
         """Bound a positive intended-pool row without inventing scan completion."""
