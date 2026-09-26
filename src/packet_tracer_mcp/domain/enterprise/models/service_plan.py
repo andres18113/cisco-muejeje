@@ -142,6 +142,7 @@ class ServerDhcpPoolRequirement(BaseModel):
     pool_name: str = ""
     start_offset: int = 0
     max_users: int = 0
+    dns_server: str = ""
 
 
 class EmailAccountRequirement(BaseModel):
@@ -418,6 +419,29 @@ class SendMailMessage(BaseServiceAction):
     nonce: str = ""
 
 
+class NativeDhcpClientPort(BaseModel):
+    """One exact client/interface the native one-user gate observes."""
+
+    device_name: str
+    interface: str
+
+
+class NativeDhcpPoolPolicy(BaseModel):
+    """Exact physical policy that must exist before enabling native DHCP."""
+
+    effective_pool_name: str
+    network: str
+    netmask: str
+    gateway: str
+    dns_server: str
+    lease_start: str
+    lease_end: str
+    max_users: int
+    excluded_ranges: list[AddressRange] = Field(default_factory=list)
+    selected_clients: list[NativeDhcpClientPort] = Field(default_factory=list)
+    inactive_clients: list[NativeDhcpClientPort] = Field(default_factory=list)
+
+
 class EnableServerDhcp(BaseServiceAction):
     """Enable DHCP on the exact addressed Server-PT interface."""
 
@@ -425,6 +449,8 @@ class EnableServerDhcp(BaseServiceAction):
         ServiceActionType.ENABLE_SERVER_DHCP
     )
     interface: str
+    effective_pool_name: str = ""
+    native_policy: NativeDhcpPoolPolicy | None = None
 
 
 class ConfigureServerDhcpPool(BaseServiceAction):
@@ -438,6 +464,8 @@ class ConfigureServerDhcpPool(BaseServiceAction):
     )
     interface: str
     pool_name: str
+    effective_pool_name: str = ""
+    pool_name_explicit: bool = False
     segment_id: str
     network: str
     prefix: int

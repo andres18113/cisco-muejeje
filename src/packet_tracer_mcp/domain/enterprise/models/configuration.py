@@ -376,6 +376,11 @@ class SetEndpointDhcp(BaseConfigurationAction):
     netmask: str
     gateway: str
     dns_server: str | None = None
+    #: Nonempty only for the measured native Server-PT authority candidate.
+    native_server_device_name: str = ""
+    native_server_interface: str = ""
+    native_effective_pool_name: str = ""
+    native_inactive_clients: list[tuple[str, str]] = Field(default_factory=list)
 
 
 class ConfigureSerialClock(BaseConfigurationAction):

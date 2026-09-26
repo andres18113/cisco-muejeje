@@ -31,6 +31,8 @@ from ..models.roles import DeviceRole
 from ..models.service_plan import (
     AcquireDhcpLease,
     AddDnsRecord,
+    CapabilityProvenance,
+    ClientOperationCapability,
     ConfigureEmailClient,
     ConfigureNtpService,
     ConfigureServerDhcpPool,
@@ -43,11 +45,14 @@ from ..models.service_plan import (
     EnableTftpService,
     EnsureEmailAccount,
     FoundationalServiceRequirement,
+    NativeDhcpClientPort,
+    NativeDhcpPoolPolicy,
     PublishTftpFile,
     SendMailMessage,
     ServerDhcpPoolRequirement,
     ServiceAction,
     ServiceCapabilityProfile,
+    ServiceCapabilityRecords,
     ServiceCompileResult,
     ServiceCompileSummary,
     ServiceDefinition,
@@ -416,6 +421,7 @@ class ServiceCompiler:
                     configuration,
                     topology,
                     devices,
+                    capabilities,
                     issues,
                 )
             else:
@@ -1105,6 +1111,7 @@ class ServiceCompiler:
         configuration: ConfigurationPlan,
         topology: TopologyPlan,
         devices: dict[str, DevicePlan],
+        capabilities: ServiceCapabilityRecords,
         issues: list[ConfigurationIssue],
     ) -> list[ServiceAction]:
         """Compile one validated same-segment Server-PT DHCP service."""
@@ -1146,6 +1153,56 @@ class ServiceCompiler:
                 _error(
                     ConfigurationIssueCode.DHCP_POOL_INVALID,
                     f"DHCP max_users must be between 1 and {MAX_SERVER_DHCP_USERS}.",
+                    service_id,
+                )
+            )
+            return []
+        native_record = capabilities.get("Server-PT:dhcp_native_default_binding")
+        native_binding = (
+            requirement.verification_mode == "state_only"
+            and not requested.pool_name.strip()
+            and isinstance(native_record, ClientOperationCapability)
+            and native_record.support is CapabilityStatus.SUPPORTED
+            and native_record.provenance is CapabilityProvenance.RECORDED_RUN
+            and bool(native_record.build)
+            and native_record.build == native_record.packet_tracer_version
+            and bool(native_record.executed_sha)
+            and native_record.transport == "file"
+            and bool(native_record.run_id)
+        )
+        if (
+            requirement.verification_mode == "state_only"
+            and requested.pool_name.strip()
+        ):
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.DHCP_POOL_INVALID,
+                    "Native Server-PT binding requires an unnamed pool request.",
+                    service_id,
+                )
+            )
+            return []
+        if native_binding and (
+            requested.pool_name.strip()
+            or requirement.verification_mode != "state_only"
+            or host.model != "Server-PT"
+            or interface != "FastEthernet0"
+            or max_users != 1
+        ):
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.DHCP_POOL_INVALID,
+                    "Native Server-PT binding requires an unnamed one-user "
+                    "state-only DHCP service on FastEthernet0.",
+                    service_id,
+                )
+            )
+            return []
+        if requirement.verification_mode == "state_only" and not native_binding:
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.DHCP_POOL_INVALID,
+                    "State-only DHCP requires an explicit effective-pool binding.",
                     service_id,
                 )
             )
@@ -1213,7 +1270,41 @@ class ServiceCompiler:
             if isinstance(item, SetEndpointStaticAddress)
             and item.segment_id == first.segment_id
         }
-        excluded = sorted({server_address, gateway, *static})
+        dns_server = requested.dns_server.strip() or first.dns_server or ""
+        dns_address = None
+        if dns_server:
+            try:
+                dns_address = ipaddress.ip_address(dns_server)
+            except ValueError:
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.DHCP_POOL_INVALID,
+                        "The requested DHCP DNS server is not a valid IP address.",
+                        service_id,
+                    )
+                )
+                return []
+            if dns_address.version != 4:
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.DHCP_POOL_INVALID,
+                        "The requested DHCP DNS server is not IPv4.",
+                        service_id,
+                    )
+                )
+                return []
+        excluded = sorted(
+            {
+                server_address,
+                gateway,
+                *static,
+                *(
+                    (dns_address,)
+                    if dns_address is not None and dns_address in network
+                    else ()
+                ),
+            }
+        )
         excluded_ranges = self._compact_address_ranges(excluded)
         window = self._lease_window(
             network,
@@ -1231,6 +1322,29 @@ class ServiceCompiler:
             )
             return []
         lease_start, lease_end = window
+        if native_binding and (
+            str(network.network_address) != "192.0.2.0"
+            or network.prefixlen != 24
+            or first.netmask != "255.255.255.0"
+            or str(gateway) != "192.0.2.1"
+            or dns_server != "192.0.2.10"
+            or lease_start != "192.0.2.100"
+            or lease_end != "192.0.2.100"
+            or [item.model_dump(mode="json") for item in excluded_ranges]
+            != [
+                {"start": "192.0.2.1", "end": "192.0.2.1"},
+                {"start": "192.0.2.10", "end": "192.0.2.10"},
+            ]
+        ):
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.DHCP_POOL_INVALID,
+                    "Native Server-PT binding has no measured transition for "
+                    "this derived address policy.",
+                    service_id,
+                )
+            )
+            return []
         pool_name = requested.pool_name.strip() or re.sub(
             r"[^A-Za-z0-9]+", "_", first.segment_id.upper()
         ).strip("_")
@@ -1255,29 +1369,70 @@ class ServiceCompiler:
         enable = EnableServerDhcp(
             id=_stable_id("enable-server-dhcp", service_id, interface),
             phase=ServicePhase.ENABLE,
+            depends_on=[],
             interface=interface,
+            effective_pool_name="serverPool" if native_binding else "",
             **common,
         )
         pool = ConfigureServerDhcpPool(
             id=_stable_id("server-dhcp-pool", service_id, pool_name),
             phase=ServicePhase.CONTENT,
-            depends_on=[enable.id],
+            depends_on=[] if native_binding else [enable.id],
             interface=interface,
             pool_name=pool_name,
+            effective_pool_name="serverPool" if native_binding else "",
+            pool_name_explicit=bool(requested.pool_name.strip()),
             segment_id=first.segment_id,
             network=str(network.network_address),
             prefix=network.prefixlen,
             netmask=str(network.netmask),
             gateway=str(gateway),
-            dns_server=first.dns_server or "",
+            dns_server=dns_server,
             lease_start=lease_start,
             lease_end=lease_end,
             max_users=max_users,
             excluded_ranges=excluded_ranges,
             **common,
         )
-        actions: list[ServiceAction] = [enable, pool]
-        if requirement.verification_mode == "configure_only":
+        if native_binding:
+            enable.depends_on = [pool.id]
+            enable.native_policy = NativeDhcpPoolPolicy(
+                effective_pool_name="serverPool",
+                network=pool.network,
+                netmask=pool.netmask,
+                gateway=pool.gateway,
+                dns_server=pool.dns_server,
+                lease_start=pool.lease_start,
+                lease_end=pool.lease_end,
+                max_users=pool.max_users,
+                excluded_ranges=list(pool.excluded_ranges),
+                selected_clients=[
+                    NativeDhcpClientPort(
+                        device_name=devices[client_id].name,
+                        interface=cast(
+                            SetEndpointDhcp, foundations[client_id]
+                        ).interface,
+                    )
+                    for client_id in client_ids
+                ],
+                inactive_clients=sorted(
+                    [
+                        NativeDhcpClientPort(
+                            device_name=devices[device_id].name,
+                            interface=item.interface,
+                        )
+                        for device_id, item in foundations.items()
+                        if isinstance(item, SetEndpointDhcp)
+                        and item.segment_id == first.segment_id
+                        and device_id not in client_ids
+                    ],
+                    key=lambda item: item.device_name,
+                ),
+            )
+        actions: list[ServiceAction] = (
+            [pool, enable] if native_binding else [enable, pool]
+        )
+        if requirement.verification_mode in {"configure_only", "state_only"}:
             return actions
         for client_id in client_ids:
             client_action = foundations[client_id]
@@ -1730,10 +1885,18 @@ class ServiceCompiler:
                     for item in service_actions
                     if isinstance(item, ConfigureServerDhcpPool)
                 )
+                enable = next(
+                    item
+                    for item in service_actions
+                    if isinstance(item, EnableServerDhcp)
+                )
                 direct.expected.update(
                     {
                         "interface": pool.interface,
                         "pool_name": pool.pool_name,
+                        "effective_pool_name": (
+                            pool.effective_pool_name or pool.pool_name
+                        ),
                         "network": pool.network,
                         "prefix": pool.prefix,
                         "netmask": pool.netmask,
@@ -1786,7 +1949,19 @@ class ServiceCompiler:
                     lease = ServiceVerificationExpectation(
                         id=_stable_id("verify-dhcp-lease", service.id, client_id),
                         service_id=service.id,
-                        action_id=(acquisition.id if acquisition else pool.id),
+                        action_id=(
+                            acquisition.id
+                            if acquisition
+                            else (
+                                next(
+                                    item.id
+                                    for item in service_actions
+                                    if isinstance(item, EnableServerDhcp)
+                                )
+                                if requirement.verification_mode == "state_only"
+                                else pool.id
+                            )
+                        ),
                         kind=ServiceVerificationKind.DHCP_LEASE,
                         evidence_kind=ServiceEvidenceKind.BEHAVIORAL,
                         host_device_id=service.host_device_id,
@@ -1795,17 +1970,38 @@ class ServiceCompiler:
                         client_device_name=client.name,
                         host_model=service.host_model,
                         client_model=client.model,
-                        required=acquisition is not None,
+                        required=acquisition is not None
+                        or requirement.verification_mode == "state_only",
                         expected={
                             "interface": foundation.interface,
                             "server_interface": pool.interface,
                             "network": pool.network,
                             "prefix": pool.prefix,
                             "netmask": pool.netmask,
-                            "configure_only": acquisition is None,
+                            "gateway": pool.gateway,
+                            "dns_server": pool.dns_server,
+                            "configure_only": (
+                                requirement.verification_mode == "configure_only"
+                            ),
                             "server_device_id": service.host_device_id,
                             "server_device_name": service.host_device_name,
                             "pool_name": pool.pool_name,
+                            "effective_pool_name": (
+                                pool.effective_pool_name or pool.pool_name
+                            ),
+                            "state_only": requirement.verification_mode == "state_only",
+                            "native_inactive_clients_json": json.dumps(
+                                [
+                                    item.model_dump(mode="json")
+                                    for item in (
+                                        enable.native_policy.inactive_clients
+                                        if enable.native_policy is not None
+                                        else []
+                                    )
+                                ],
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ),
                             "max_users": pool.max_users,
                             "lease_start": pool.lease_start,
                             "lease_end": pool.lease_end,

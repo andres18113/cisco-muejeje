@@ -76,6 +76,11 @@ from ...domain.enterprise.models.physical_deployment import (
     PhysicalWorkspaceObservation,
     physical_workspace_restoration_matches,
 )
+from ...domain.enterprise.models.service_entry import (
+    ServiceEntryRefusal,
+    ServiceRunStatus,
+    ServiceStage,
+)
 from ...domain.enterprise.models.service_plan import (
     AcquireDhcpLease,
     ConfigureServerDhcpPool,
@@ -159,6 +164,7 @@ from ...domain.enterprise.models.service_qualification import (
     request_refusals,
     stage_definition,
 )
+from ...domain.enterprise.models.service_run_record import SourceTreeIdentity
 from ...domain.enterprise.models.service_runtime import (
     ObservationFact,
     RuntimeServiceVerification,
@@ -260,6 +266,11 @@ from ..ports.service_qualification import (
 )
 from ..ports.service_run_record import RunRecordPersistenceError
 from .apply_configuration import ConfigurationApplicator, ConfigurationRuntime
+from .apply_enterprise_services import (
+    ServiceStageRuntimes,
+    TransportSelection,
+    apply_enterprise_services,
+)
 from .apply_services import ServiceApplicator, ServiceRuntime
 from .deploy_enterprise_topology import (
     PhysicalTopologyRuntime,
@@ -723,6 +734,7 @@ class Q3ProductContract:
     service_plan: ServicePlan
     device_capabilities: dict[str, DeviceCapabilities]
     service_capabilities: ServiceCapabilityRecords
+    intent_json: str = ""
 
 
 @dataclass
@@ -743,6 +755,9 @@ class _Q3ConfigurationRuntime:
 
     def wait_for_voice_access_forwarding(self, expectations):
         return self.inner.wait_for_voice_access_forwarding(expectations)
+
+    def observe_access_forwarding(self, *args, **kwargs):
+        return self.inner.observe_access_forwarding(*args, **kwargs)
 
 
 @dataclass
@@ -916,6 +931,10 @@ class QualificationBoundaries:
     #: keyed by the observed build, with the name of the one intervention the
     #: reviewed record brackets. None of them is a domain constant.
     dhcp_product_contract: Callable[[str, str, int], Q3ProductContract] | None = None
+    native_product_contract: Callable[[str, str], Q3ProductContract] | None = None
+    native_product_import_preflight: Callable[[], Any] | None = None
+    native_product_record_store_factory: Callable[[], Any] | None = None
+    native_product_endpoint_observer: Callable[[LedgeredTransport], Any] | None = None
     native_default_transitions: (
         Callable[[str], tuple[AdmittedNativeDefaultTransition, ...]] | None
     ) = None
@@ -1083,6 +1102,13 @@ _DIAGNOSTIC_BOUNDARIES: dict[QualificationStage, tuple[str, ...]] = {
         for stage in (*Q3_FL_STAGES, *Q3_NATIVE_STAGES)
     },
 }
+_DIAGNOSTIC_BOUNDARIES[QualificationStage.Q3_NATIVE_PRODUCT] = (
+    "native_product_contract",
+    "native_product_import_preflight",
+    "native_product_record_store_factory",
+    "native_product_endpoint_observer",
+    "diagnostic_lifecycle",
+)
 
 
 def _refused(
@@ -1249,7 +1275,38 @@ def _with_campaign_claim(
     moment = boundaries.now()
     run_id = boundaries.new_run_id(moment)
     product_contract: Q3ProductContract | None = None
-    if definition.stage in (*Q3_FL_STAGES, *Q3_NATIVE_STAGES):
+    if definition.stage is QualificationStage.Q3_NATIVE_PRODUCT:
+        if (
+            not boundaries.q3_required_build
+            or request.packet_tracer_build != boundaries.q3_required_build
+            or boundaries.native_product_contract is None
+        ):
+            return _refused(
+                [
+                    refusal(
+                        RefusalKind.NOT_PERMITTED,
+                        RefusalSubject.BUILD,
+                        "Native product has no reviewed exact-build contract.",
+                    )
+                ],
+                claim_release=hold.finalize(),
+            )
+        try:
+            product_contract = boundaries.native_product_contract(
+                request.packet_tracer_build, run_id
+            )
+        except Exception as exc:
+            return _refused(
+                [
+                    refusal(
+                        RefusalKind.MALFORMED,
+                        RefusalSubject.FIXTURE,
+                        f"native_product_contract:{type(exc).__name__}:{_bounded(exc)}",
+                    )
+                ],
+                claim_release=hold.finalize(),
+            )
+    elif definition.stage in (*Q3_FL_STAGES, *Q3_NATIVE_STAGES):
         if (
             not boundaries.q3_required_build
             or request.packet_tracer_build != boundaries.q3_required_build
@@ -1953,6 +2010,8 @@ def _admitted(
             _run_q3_native_stability(execution)
         elif definition.stage is QualificationStage.Q3_NATIVE_SERVE:
             _run_q3_native_serve(execution)
+        elif definition.stage is QualificationStage.Q3_NATIVE_PRODUCT:
+            _run_q3_native_product(execution)
         else:
             _run_q3(execution)
     except KeyboardInterrupt as exc:
@@ -5959,6 +6018,280 @@ def _run_q3_native_serve(execution: _Execution) -> None:
     execution.finish("Q3_NATIVE_SERVE")
     if conclusion is not MeasurementConclusion.SUPPORTED_IN_SAMPLE:
         execution.stop("q3_native_serve_not_supported")
+
+
+def _run_q3_native_product(execution: _Execution) -> None:
+    """Exercise the maintained A1-E6 DHCP/HTTP entry on an owned fixture."""
+    contract = execution.product_contract
+    boundaries = execution.run.boundaries
+    server = "Q3-DEFAULT-SERVER-01"
+    pc1 = "Q3-DEFAULT-PC-01"
+    pc2 = "Q3-DEFAULT-PC-02"
+    pool_actions = (
+        [
+            item
+            for item in contract.service_plan.actions
+            if isinstance(item, ConfigureServerDhcpPool)
+        ]
+        if contract is not None
+        else []
+    )
+    if contract is None or len(pool_actions) != 1 or not contract.intent_json:
+        execution.stop("native_product_contract_incomplete")
+        return
+    pool = pool_actions[0]
+    expected_fixtures = {
+        (item.name, item.model) for item in execution.definition.fixtures
+    }
+    expected_links = {
+        (item.device_a, item.port_a, item.device_b, item.port_b)
+        for item in execution.definition.links
+    }
+    if (
+        {(item.name, item.model) for item in contract.topology.devices}
+        != expected_fixtures
+        or {
+            (item.device_a, item.port_a, item.device_b, item.port_b)
+            for item in contract.topology.links
+        }
+        != expected_links
+        or pool.effective_pool_name != "serverPool"
+        or pool.pool_name_explicit
+        or pool.host_device_name != server
+        or pool.max_users != 1
+    ):
+        execution.stop("native_product_manifest_or_pool_binding_mismatch")
+        return
+
+    def terminal() -> None:
+        ids = ("M-NATIVE-PRODUCT-FINAL",)
+        if not execution.begin_terminal(ids, "Q3_NATIVE_PRODUCT_FINAL"):
+            return
+        with execution.procedure(ids):
+            with execution.ledger.purpose_of("native-product:final:policy"):
+                policy_read = execution.probes.read_dhcp_server_policy(
+                    server, "FastEthernet0"
+                )
+            snapshot = default_pool_snapshot(
+                "native_product_final",
+                policy_read,
+                intended_pool=pool.pool_name,
+                server=server,
+                interface="FastEthernet0",
+            )
+            with execution.ledger.purpose_of("native-product:final:clients"):
+                client_read = execution.probes.read_dhcp_clients(
+                    ((pc1, "FastEthernet0"), (pc2, "FastEthernet0"))
+                )
+            clients = client_readings(
+                client_read.payload if client_read.observed else {}, (pc1, pc2)
+            )
+            with execution.ledger.purpose_of("native-product:final:leases"):
+                lease_read = execution.probes.read_dhcp_lease_calibration(
+                    server,
+                    "FastEthernet0",
+                    (("serverPool", 4), (pool.pool_name, 2)),
+                )
+            lease_payload = lease_read.payload if lease_read.observed else {}
+            scans = (
+                scans_by_pool(lease_payload, ("serverPool", pool.pool_name))
+                if lease_read.observed
+                else unobserved_scans(("serverPool", pool.pool_name), lease_read.cause)
+            )
+            complete = (
+                native_policy_terminal_inventory_complete(
+                    snapshot, server=server, interface="FastEthernet0"
+                )
+                and all(item.observed for item in clients.values())
+                and all(item.observed for item in scans.values())
+            )
+            execution.conclude(
+                "M-NATIVE-PRODUCT-FINAL",
+                Assessment(
+                    MeasurementConclusion.SUPPORTED_IN_SAMPLE
+                    if complete
+                    else MeasurementConclusion.INCONCLUSIVE,
+                    facts={
+                        "policy": dict(snapshot.raw),
+                        "clients": {
+                            name: item.__dict__ for name, item in clients.items()
+                        },
+                        "scans": {
+                            name: item.as_facts() for name, item in scans.items()
+                        },
+                        "complete": complete,
+                    },
+                    causes=[]
+                    if complete
+                    else ["native_product_final_inventory_incomplete"],
+                    limitations=["terminal_inventory_is_not_product_acceptance"],
+                ),
+            )
+        execution.finish("Q3_NATIVE_PRODUCT_FINAL")
+
+    execution.register_terminal(
+        ("M-NATIVE-PRODUCT-FINAL",), "Q3_NATIVE_PRODUCT_FINAL", terminal
+    )
+    if not _diagnostic_start(execution):
+        return
+    ids = ("M-NATIVE-PRODUCT",)
+    if not execution.selected("NATIVE-product") or not execution.begin(
+        ids, "Q3_NATIVE_PRODUCT"
+    ):
+        return
+    with execution.procedure(ids):
+        with execution.ledger.purpose_of("native-product:before:policy"):
+            baseline_read = execution.probes.read_dhcp_server_policy(
+                server, "FastEthernet0"
+            )
+        baseline = default_pool_snapshot(
+            "native_product_before",
+            baseline_read,
+            intended_pool=pool.pool_name,
+            server=server,
+            interface="FastEthernet0",
+        )
+        with execution.ledger.purpose_of("native-product:before:clients"):
+            prior_read = execution.probes.read_dhcp_clients(
+                ((pc1, "FastEthernet0"), (pc2, "FastEthernet0"))
+            )
+        prior_clients = client_readings(
+            prior_read.payload if prior_read.observed else {}, (pc1, pc2)
+        )
+        if not native_policy_probe_baseline_admitted(
+            baseline,
+            server=server,
+            interface="FastEthernet0",
+            expected_row=Q3_OBSERVED_NATIVE_DEFAULT_POOL,
+            expected_exclusions=(),
+        ) or any(
+            not item.observed
+            or item.mode is not False
+            or item.ipv4 not in {"", "0.0.0.0"}
+            or item.netmask not in {"", "0.0.0.0"}
+            or not is_dotted_mac(item.mac)
+            for item in prior_clients.values()
+        ):
+            execution.conclude(
+                "M-NATIVE-PRODUCT",
+                Assessment(
+                    MeasurementConclusion.INCONCLUSIVE,
+                    facts={
+                        "baseline": dict(baseline.raw),
+                        "clients": {
+                            name: item.__dict__ for name, item in prior_clients.items()
+                        },
+                    },
+                    causes=["native_product_baseline_not_admitted"],
+                ),
+            )
+            execution.stop("native_product_baseline_not_admitted")
+            return
+        if not execution.run.transition("experiment:Q3_NATIVE_PRODUCT:started"):
+            execution.stop("persistence:native_product_not_announced")
+            return
+
+        class ExactManifest:
+            def latest_by_deployment_id(self, identifier: str):
+                return (
+                    contract.manifest
+                    if identifier == contract.manifest.deployment_id
+                    else None
+                )
+
+        configuration_runtime, service_runtime = _d_dhcp_runtimes(execution, contract)
+        with execution.ledger.effect_of("native-product:apply-enterprise-services"):
+            product = apply_enterprise_services(
+                contract.intent_json,
+                deployment_id=contract.manifest.deployment_id,
+                packet_tracer_version=execution.record.environment.observed_build,
+                import_preflight=boundaries.native_product_import_preflight(),
+                manifest_store=ExactManifest(),
+                runtimes=ServiceStageRuntimes(
+                    configuration=configuration_runtime,
+                    services=service_runtime,
+                ),
+                record_store=boundaries.native_product_record_store_factory(),
+                environment_fingerprint=contract.manifest.environment_fingerprint,
+                transport_selection=TransportSelection(
+                    channel=execution.channel,
+                    fixed_at=boundaries.now(),
+                ),
+                endpoint_observer=boundaries.native_product_endpoint_observer(
+                    execution.bound
+                ),
+                capability_catalog=lambda build: (
+                    contract.service_capabilities
+                    if build == execution.record.environment.observed_build
+                    else {}
+                ),
+                source_tree=SourceTreeIdentity(
+                    sha=execution.record.source.executed_sha,
+                    tree=execution.record.source.executed_tree,
+                    dirty=execution.record.source.clean is not True,
+                ),
+                run_label="SERVER-PT-DHCP-AUTONOMOUS-02 native product",
+                run_id=execution.record.run_id + "-product",
+            )
+        by_id = (
+            {
+                item.expectation_id: item
+                for item in product.service_result.verification_results
+            }
+            if product.service_result is not None
+            else {}
+        )
+        lease_ids = [
+            item.id
+            for item in contract.service_plan.verification_expectations
+            if item.kind is ServiceVerificationKind.DHCP_LEASE
+        ]
+        fetch_ids = [
+            item.id
+            for item in contract.service_plan.verification_expectations
+            if item.kind is ServiceVerificationKind.HTTP_FETCH
+        ]
+        accepted = (
+            product.refusal_code is ServiceEntryRefusal.NONE
+            and product.status is ServiceRunStatus.VERIFIED
+            and product.stage is ServiceStage.COMPLETED
+            and product.persisted_stage is ServiceStage.COMPLETED
+            and bool(product.record_path)
+            and not product.persist_error
+            and len(lease_ids) == len(fetch_ids) == 1
+            and all(
+                by_id.get(identifier) is not None
+                and by_id[identifier].status is ActionExecutionStatus.VERIFIED
+                for identifier in (*lease_ids, *fetch_ids)
+            )
+        )
+        execution.conclude(
+            "M-NATIVE-PRODUCT",
+            Assessment(
+                MeasurementConclusion.SUPPORTED_IN_SAMPLE
+                if accepted
+                else MeasurementConclusion.INCONCLUSIVE,
+                facts={
+                    "product_summary": product.compact_summary(),
+                    "product_record_path": product.record_path,
+                    "lease_expectation_ids": lease_ids,
+                    "http_fetch_expectation_ids": fetch_ids,
+                    "baseline": dict(baseline.raw),
+                    "prior_clients": {
+                        name: item.__dict__ for name, item in prior_clients.items()
+                    },
+                },
+                causes=[]
+                if accepted
+                else [f"native_product_not_verified:{product.refusal_code.value}"],
+                limitations=[
+                    "private_candidate_capabilities_not_global_product_promotion"
+                ],
+            ),
+        )
+    execution.finish("Q3_NATIVE_PRODUCT")
+    if not accepted:
+        execution.stop("native_product_not_verified")
 
 
 # -- Q3-FL: the versioned DHCP qualification profile ------------------------------

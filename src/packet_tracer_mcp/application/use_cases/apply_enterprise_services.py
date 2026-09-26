@@ -681,6 +681,8 @@ def _dhcp_authorities(plan: ServicePlan) -> list[DhcpServiceAuthorityRecord]:
                 segment_id=service.segment_id,
                 interface=pool.interface,
                 pool_name=pool.pool_name,
+                effective_pool_name=pool.effective_pool_name or pool.pool_name,
+                pool_name_explicit=pool.pool_name_explicit,
                 client_device_ids=list(service.client_device_ids),
                 action_ids=[item.id for item in actions_by_service[service.id]],
                 expectation_ids=[
@@ -886,12 +888,8 @@ def _drift_conflicts(
         if observation.interface != action.interface or bool(current) != bool(mask):
             unreadable.append(f"{action.id}:incoherent_address_pair")
             continue
-        native_unassigned = (
-            isinstance(action, SetEndpointStaticAddress)
-            and current == "0.0.0.0"
-            and mask == "0.0.0.0"
-        )
-        if isinstance(action, SetEndpointDhcp) and current:
+        native_unassigned = current == "0.0.0.0" and mask == "0.0.0.0"
+        if isinstance(action, SetEndpointDhcp) and current and not native_unassigned:
             conflicts.append(f"{action.id}:{current}:dhcp_mode_requested")
         elif current and not native_unassigned and current != action.ipv4:
             conflicts.append(f"{action.id}:{current}!={action.ipv4}")

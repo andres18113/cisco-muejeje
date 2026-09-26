@@ -84,6 +84,7 @@ class QualificationStage(StrEnum):
     Q3_NATIVE_POLICY = "Q3-NATIVE-POLICY"
     Q3_NATIVE_STABILITY = "Q3-NATIVE-STABILITY"
     Q3_NATIVE_SERVE = "Q3-NATIVE-SERVE"
+    Q3_NATIVE_PRODUCT = "Q3-NATIVE-PRODUCT"
 
 
 class ExecutionMode(StrEnum):
@@ -420,6 +421,7 @@ STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.Q3_NATIVE_POLICY: (160, 900),
     QualificationStage.Q3_NATIVE_STABILITY: (180, 1050),
     QualificationStage.Q3_NATIVE_SERVE: (260, 1800),
+    QualificationStage.Q3_NATIVE_PRODUCT: (600, 2100),
 }
 
 Q0_PC = "__MCP_E6Q_PC1"
@@ -1577,6 +1579,7 @@ Q3_NATIVE_STAGES = (
     QualificationStage.Q3_NATIVE_POLICY,
     QualificationStage.Q3_NATIVE_STABILITY,
     QualificationStage.Q3_NATIVE_SERVE,
+    QualificationStage.Q3_NATIVE_PRODUCT,
 )
 
 #: Exact episode-1 physical values, not a formula for a second build or pool.
@@ -1849,6 +1852,94 @@ def _q3_native_serve() -> StageDefinition:
     )
 
 
+def _q3_native_product() -> StageDefinition:
+    """Run the real one-client DHCP and cold HTTP product entry on an owned lab."""
+    fixtures = (
+        FixtureDevice("Q3-DEFAULT-SERVER-01", "Server-PT", Q3_SERVER_IPV4, Q3_NETMASK),
+        FixtureDevice("Q3-DEFAULT-PC-01", "PC-PT"),
+        FixtureDevice("Q3-DEFAULT-PC-02", "PC-PT"),
+        FixtureDevice("Q3-DEFAULT-ACCESS-SW-01", "IE-2000"),
+    )
+    return StageDefinition(
+        stage=QualificationStage.Q3_NATIVE_PRODUCT,
+        executable=True,
+        purpose=(
+            "Apply the compiled native Server-PT DHCP state and one cold "
+            "dependent HTTP request through the governed product entry."
+        ),
+        fixtures=fixtures,
+        links=(
+            FixtureLink(
+                "Q3-DEFAULT-ACCESS-SW-01",
+                "FastEthernet1/1",
+                "Q3-DEFAULT-PC-01",
+                "FastEthernet0",
+            ),
+            FixtureLink(
+                "Q3-DEFAULT-ACCESS-SW-01",
+                "FastEthernet1/2",
+                "Q3-DEFAULT-PC-02",
+                "FastEthernet0",
+            ),
+            FixtureLink(
+                "Q3-DEFAULT-ACCESS-SW-01",
+                "FastEthernet1/3",
+                "Q3-DEFAULT-SERVER-01",
+                "FastEthernet0",
+            ),
+        ),
+        setup=(
+            PlannedStep("read:executable_build", 1),
+            PlannedStep("read:workspace_baseline", 1),
+            *(PlannedStep(f"create:{item.name}", 2) for item in fixtures),
+            PlannedStep("create:link:1", 2),
+            PlannedStep("create:link:2", 2),
+            PlannedStep("create:link:3", 2),
+            PlannedStep("read:fixture_identity", 1),
+        ),
+        experiments=(
+            ExperimentSpec(
+                id="M-NATIVE-PRODUCT",
+                hypothesis=(
+                    "The maintained A1-E6 product path verifies the selected "
+                    "client's native DHCP state before its first HTTP request by IP."
+                ),
+                required=True,
+                procedure="Q3_NATIVE_PRODUCT",
+                planned_operations=500,
+                capabilities=("server.dhcp_native_product_candidate",),
+            ),
+            ExperimentSpec(
+                id="M-NATIVE-PRODUCT-FINAL",
+                hypothesis="The final physical DHCP and client state is observed before cleanup.",
+                required=True,
+                procedure="Q3_NATIVE_PRODUCT_FINAL",
+                planned_operations=3,
+                terminal_observation=True,
+            ),
+        ),
+        reserve=(
+            *(PlannedStep(f"remove:{item.name}", 2) for item in fixtures),
+            PlannedStep("read:restoration:1", 1),
+            PlannedStep("read:restoration:2", 1),
+            PlannedStep("release:run_bag", 1),
+        ),
+        budget=StageBudget(600, 2100, reserve_seconds=300),
+        allowed_channels=("file",),
+        profile_id="Q3-NATIVE-PRODUCT",
+        profile_version="1",
+        steps=(
+            DiagnosticStageStep(
+                id="NATIVE-product",
+                experiment_id="M-NATIVE-PRODUCT",
+                effect="request",
+                also_experiments=("M-NATIVE-PRODUCT-FINAL",),
+            ),
+        ),
+        dhcp_pool_capacity=1,
+    )
+
+
 STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.Q0: _q0(),
     QualificationStage.Q1: _q1(),
@@ -1867,6 +1958,7 @@ STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.Q3_NATIVE_POLICY: _q3_native_policy(),
     QualificationStage.Q3_NATIVE_STABILITY: _q3_native_stability(),
     QualificationStage.Q3_NATIVE_SERVE: _q3_native_serve(),
+    QualificationStage.Q3_NATIVE_PRODUCT: _q3_native_product(),
 }
 
 

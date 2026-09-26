@@ -80,6 +80,8 @@ class ServiceRequirement(BaseModel):
     email_clients: list[EmailClientRequirement] = Field(default_factory=list)
     email_pairs: list[EmailPairRequirement] = Field(default_factory=list)
     #: `configure_only` configures and reads back; `effectful` also sends.
-    verification_mode: Literal["effectful", "configure_only"] = "effectful"
+    verification_mode: Literal["effectful", "configure_only", "state_only"] = (
+        "effectful"
+    )
     dhcp_pool: ServerDhcpPoolRequirement | None = None
     metadata: dict[str, str] = Field(default_factory=dict)

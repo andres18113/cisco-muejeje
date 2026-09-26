@@ -76,6 +76,8 @@ class DhcpServiceAuthorityRecord(BaseModel):
     segment_id: str
     interface: str
     pool_name: str
+    effective_pool_name: str = ""
+    pool_name_explicit: bool = False
     client_device_ids: list[str] = Field(default_factory=list)
     action_ids: list[str] = Field(default_factory=list)
     expectation_ids: list[str] = Field(default_factory=list)

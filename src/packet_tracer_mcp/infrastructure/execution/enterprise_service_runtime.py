@@ -806,6 +806,8 @@ class PacketTracerEnterpriseServiceRuntime:
         self._mail_timeout = mail_timeout_seconds
         self._secret_resolver = secret_resolver
         self._interval = convergence_interval_seconds
+        self._dhcp_state_interval = 10.0
+        self._dhcp_state_max_samples = 13
         self._clock = clock
         self._sleep = sleeper
         self._web_schedule = (
@@ -1318,6 +1320,7 @@ class PacketTracerEnterpriseServiceRuntime:
                     _SKIP_PRECONDITION_UNOBSERVED,
                     _SKIP_DHCP_ENABLE_INVALID,
                     _SKIP_DHCP_ENABLE_GETTER_ERROR,
+                    _SKIP_POOL_CONFLICT,
                 }
             )
         if isinstance(action, ConfigureServerDhcpPool):
@@ -1689,6 +1692,10 @@ class PacketTracerEnterpriseServiceRuntime:
         reader: str,
     ) -> list[str]:
         """Bracket the exact interface's documented DHCP enable flag."""
+        if action.native_policy is not None:
+            return PacketTracerEnterpriseServiceRuntime._native_enable_lines(
+                row, action, reader
+            )
         interface = json.dumps(action.interface)
         return [
             row,
@@ -1713,6 +1720,10 @@ class PacketTracerEnterpriseServiceRuntime:
         reader: str,
     ) -> list[str]:
         """Ensure one named pool without deleting or overwriting conflicts."""
+        if action.effective_pool_name:
+            return PacketTracerEnterpriseServiceRuntime._native_pool_policy_lines(
+                row, action, reader
+            )
         interface = json.dumps(action.interface)
         pool_name = json.dumps(action.pool_name)
         wanted_ranges = [
@@ -1792,6 +1803,224 @@ class PacketTracerEnterpriseServiceRuntime:
             "if(r.post_read){r.ok=__ok(JSON.parse(qv));}"
             "if(r.pre_read&&r.post_read){r.changed=pv!==qv;}",
             "}}results.push(r);",
+        ]
+
+    @staticmethod
+    def _native_enable_lines(
+        row: str,
+        action: EnableServerDhcp,
+        reader: str,
+    ) -> list[str]:
+        """Enable only the exact stored policy with selected client admission."""
+        policy = action.native_policy
+        if policy is None:
+            raise ValueError("native policy missing")
+        exclusions = [[item.start, item.end] for item in policy.excluded_ranges]
+        candidate = (
+            action.host_model == "Server-PT"
+            and action.interface == "FastEthernet0"
+            and action.effective_pool_name == policy.effective_pool_name == "serverPool"
+            and policy.network == "192.0.2.0"
+            and policy.netmask == "255.255.255.0"
+            and policy.gateway == "192.0.2.1"
+            and policy.dns_server == "192.0.2.10"
+            and policy.lease_start == policy.lease_end == "192.0.2.100"
+            and policy.max_users == 1
+            and exclusions == [["192.0.2.1", "192.0.2.1"], ["192.0.2.10", "192.0.2.10"]]
+            and len(policy.selected_clients) == 1
+            and len(policy.inactive_clients) <= 1
+        )
+        if not candidate:
+            return [
+                row,
+                f'r.skip_reason="{_SKIP_FAMILY_NOT_IMPLEMENTED}";results.push(r);',
+            ]
+        wanted = {
+            "name": "serverPool",
+            "network": policy.network,
+            "mask": policy.netmask,
+            "gateway": policy.gateway,
+            "dns": policy.dns_server,
+            "start": policy.lease_start,
+            "end": policy.lease_end,
+            "max": policy.max_users,
+            "exclusions": exclusions,
+            "enabled": False,
+            "pool_count": 1,
+        }
+        after = {**wanted, "enabled": True}
+        selected = [
+            [item.device_name, item.interface] for item in policy.selected_clients
+        ]
+        inactive = [
+            [item.device_name, item.interface] for item in policy.inactive_clients
+        ]
+        return [
+            row,
+            'var m=d.getProcess("DhcpServerMain"),p=null,pv=null,qv=null;',
+            f"var __if={json.dumps(action.interface)},__want={json.dumps(wanted)},"
+            f"__after={json.dumps(after)},__selected={json.dumps(selected)},"
+            f"__inactive={json.dumps(inactive)};",
+            "function __same(a,b){for(var k in b){if(JSON.stringify(a[k])!=="
+            "JSON.stringify(b[k])){return false;}}return true;}"
+            "function __state(){var n=p.getPoolCount();"
+            "if(typeof n!=='number'||!isFinite(n)||Math.floor(n)!==n||n!==1){"
+            "throw new Error('native_pool_count');}"
+            "var q=p.getPool('serverPool');if(!q){throw new Error('native_pool_absent');}"
+            "var x=p.getExcludedAddressCount();"
+            "if(typeof x!=='number'||!isFinite(x)||Math.floor(x)!==x||x!==2){"
+            "throw new Error('native_exclusion_count');}"
+            "var xs=[];for(var i=0;i<x;i++){var e=p.getExcludedAddressAt(i);"
+            "if(!e){throw new Error('native_exclusion_row');}"
+            "xs.push([String(e.first),String(e.second)]);}xs.sort();"
+            "var enabled=p.isEnable();if(typeof enabled!=='boolean'){"
+            "throw new Error('native_enable_type');}"
+            "return {name:String(q.getDhcpPoolName()),"
+            "network:String(q.getNetworkAddress()),mask:String(q.getSubnetMask()),"
+            "gateway:String(q.getDefaultRouter()),dns:String(q.getDnsServerIp()),"
+            "start:String(q.getStartIp()),end:String(q.getEndIp()),"
+            "max:q.getMaxUsers(),exclusions:xs,enabled:enabled,pool_count:n};}"
+            "function __port(name,iface){var dev=ipc.network().getDevice(name);"
+            "if(!dev){return null;}var n=dev.getPortCount();"
+            "if(typeof n!=='number'||n<0||n>32){return null;}"
+            "for(var i=0;i<n;i++){var p=dev.getPortAt(i);"
+            "if(p&&String(p.getName())===iface){return p;}}return null;}"
+            "function __clients(){for(var i=0;i<__selected.length;i++){"
+            "var p=__port(__selected[i][0],__selected[i][1]);"
+            "if(!p||p.isDhcpClientOn()!==true){return false;}"
+            "var ip=String(p.getIpAddress()),mask=String(p.getSubnetMask());"
+            "if((ip!==''&&ip!=='0.0.0.0')||"
+            "(mask!==''&&mask!=='0.0.0.0')){return false;}}"
+            "for(var j=0;j<__inactive.length;j++){"
+            "var q=__port(__inactive[j][0],__inactive[j][1]);"
+            "if(!q||q.isDhcpClientOn()!==false){return false;}"
+            "var a=String(q.getIpAddress()),m=String(q.getSubnetMask());"
+            "if((a!==''&&a!=='0.0.0.0')||"
+            "(m!==''&&m!=='0.0.0.0')){return false;}}return true;}"
+            "try{p=m&&m.getDhcpServerProcessByPortName(__if);}catch(e){p=null;}"
+            f'if(!p){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}else{{',
+            "try{pv=__state();r.pre_read=true;r.pre=__dg(JSON.stringify(pv));}"
+            "catch(e){}",
+            f'if(!r.pre_read){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}'
+            "else if(__same(pv,__after)){"
+            f'r.skip_reason="{_SKIP_ALREADY_SATISFIED}";}}'
+            "else if(!__same(pv,__want)||!__clients()){"
+            f'r.skip_reason="{_SKIP_POOL_CONFLICT}";}}else{{',
+            "try{r.attempted=true;p.setEnable(true);}"
+            f"catch(e){{r.call_error={reader}(e);}}}}"
+            "try{qv=__state();r.post_read=true;r.post=__dg(JSON.stringify(qv));}"
+            "catch(e){}"
+            "if(r.post_read){r.ok=__same(qv,__after);}"
+            "if(r.pre_read&&r.post_read){r.changed=JSON.stringify(pv)!==JSON.stringify(qv);}",
+            "}results.push(r);",
+        ]
+
+    @staticmethod
+    def _native_pool_policy_lines(
+        row: str,
+        action: ConfigureServerDhcpPool,
+        reader: str,
+    ) -> list[str]:
+        """Apply only the exact one-user transition measured in episodes 1-5."""
+        exclusions = [[item.start, item.end] for item in action.excluded_ranges]
+        candidate = (
+            action.host_model == "Server-PT"
+            and action.interface == "FastEthernet0"
+            and action.effective_pool_name == "serverPool"
+            and action.pool_name != "serverPool"
+            and action.network == "192.0.2.0"
+            and action.netmask == "255.255.255.0"
+            and action.gateway == "192.0.2.1"
+            and action.dns_server == "192.0.2.10"
+            and action.lease_start == action.lease_end == "192.0.2.100"
+            and action.max_users == 1
+            and exclusions
+            == [
+                ["192.0.2.1", "192.0.2.1"],
+                ["192.0.2.10", "192.0.2.10"],
+            ]
+        )
+        if not candidate:
+            return [
+                row,
+                f'r.skip_reason="{_SKIP_FAMILY_NOT_IMPLEMENTED}";results.push(r);',
+            ]
+        base = {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.0",
+            "end": "192.0.3.255",
+            "max": 512,
+            "exclusions": [],
+            "enabled": False,
+            "pool_count": 1,
+        }
+        after_start = {**base, "start": "192.0.2.100", "end": "192.0.2.255", "max": 156}
+        after_size = {**after_start, "end": "192.0.2.100", "max": 1}
+        after_gateway = {**after_size, "gateway": "192.0.2.1"}
+        after_dns = {**after_gateway, "dns": "192.0.2.10"}
+        after_first_exclusion = {
+            **after_dns,
+            "exclusions": [["192.0.2.1", "192.0.2.1"]],
+        }
+        wanted = {**after_first_exclusion, "exclusions": exclusions}
+        return [
+            row,
+            'var m=d.getProcess("DhcpServerMain"),p=null,pv=null,qv=null;',
+            f"var __if={json.dumps(action.interface)},__base={json.dumps(base)},"
+            f"__start={json.dumps(after_start)},__size={json.dumps(after_size)},"
+            f"__gateway={json.dumps(after_gateway)},__dns={json.dumps(after_dns)},"
+            f"__first={json.dumps(after_first_exclusion)},__want={json.dumps(wanted)};",
+            "function __state(){var n=p.getPoolCount();"
+            "if(typeof n!=='number'||!isFinite(n)||Math.floor(n)!==n||n!==1){"
+            "throw new Error('native_pool_count');}"
+            "var q=p.getPool('serverPool');if(!q){throw new Error('native_pool_absent');}"
+            "var x=p.getExcludedAddressCount();"
+            "if(typeof x!=='number'||!isFinite(x)||Math.floor(x)!==x||"
+            "x<0||x>2){throw new Error('native_exclusion_count');}"
+            "var xs=[];for(var i=0;i<x;i++){var e=p.getExcludedAddressAt(i);"
+            "if(!e){throw new Error('native_exclusion_row');}"
+            "xs.push([String(e.first),String(e.second)]);}xs.sort();"
+            "var enabled=p.isEnable();if(typeof enabled!=='boolean'){"
+            "throw new Error('native_enable_type');}"
+            "return {name:String(q.getDhcpPoolName()),"
+            "network:String(q.getNetworkAddress()),mask:String(q.getSubnetMask()),"
+            "gateway:String(q.getDefaultRouter()),dns:String(q.getDnsServerIp()),"
+            "start:String(q.getStartIp()),end:String(q.getEndIp()),"
+            "max:q.getMaxUsers(),exclusions:xs,enabled:enabled,pool_count:n};}"
+            "function __same(a,b){for(var k in b){if(JSON.stringify(a[k])!=="
+            "JSON.stringify(b[k])){return false;}}return true;}"
+            f"try{{p=m&&m.getDhcpServerProcessByPortName(__if);}}catch(e){{p=null;}}"
+            f'if(!p){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}else{{',
+            "try{pv=__state();r.pre_read=true;r.pre=__dg(JSON.stringify(pv));}"
+            "catch(e){}",
+            f'if(!r.pre_read){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}'
+            "else if(__same(pv,__want)){"
+            f'r.skip_reason="{_SKIP_ALREADY_SATISFIED}";}}'
+            "else if(!__same(pv,__base)){"
+            f'r.skip_reason="{_SKIP_POOL_CONFLICT}";}}else{{',
+            "try{r.attempted=true;var q=p.getPool('serverPool');"
+            "q.setStartIp(__want.start);"
+            "if(!__same(__state(),__start)){throw new Error('native_start_drift');}"
+            "q.setMaxUsers(__want.max);"
+            "if(!__same(__state(),__size)){throw new Error('native_size_drift');}"
+            "q.setDefaultRouter(__want.gateway);"
+            "if(!__same(__state(),__gateway)){throw new Error('native_gateway_drift');}"
+            "q.setDnsServerIp(__want.dns);"
+            "if(!__same(__state(),__dns)){throw new Error('native_dns_drift');}"
+            "p.addExcludedAddress(__want.exclusions[0][0],__want.exclusions[0][1]);"
+            "if(!__same(__state(),__first)){throw new Error('native_first_exclusion_drift');}"
+            "p.addExcludedAddress(__want.exclusions[1][0],__want.exclusions[1][1]);"
+            "if(!__same(__state(),__want)){throw new Error('native_final_drift');}"
+            f"}}catch(e){{r.call_error={reader}(e);}}}}"
+            "try{qv=__state();r.post_read=true;r.post=__dg(JSON.stringify(qv));}"
+            "catch(e){}"
+            "if(r.post_read){r.ok=__same(qv,__want);}"
+            "if(r.pre_read&&r.post_read){r.changed=JSON.stringify(pv)!==JSON.stringify(qv);}",
+            "}results.push(r);",
         ]
 
     @staticmethod
@@ -1982,6 +2211,13 @@ class PacketTracerEnterpriseServiceRuntime:
         host = json.dumps(expectation.host_device_name)
         interface = json.dumps(str(expected.get("interface") or ""))
         pool_name = json.dumps(str(expected.get("pool_name") or ""))
+        effective_name = str(
+            expected.get("effective_pool_name") or expected.get("pool_name") or ""
+        )
+        physical_name = json.dumps(effective_name)
+        native_binding = effective_name == "serverPool" and (
+            effective_name != expected.get("pool_name")
+        )
         exclusion_limit_js = json.dumps(DHCP_EXCLUSION_SCAN_LIMIT)
         reader = "__ec" if self._sanitizer.holds_values else "__er"
         helper = (
@@ -1993,7 +2229,9 @@ class PacketTracerEnterpriseServiceRuntime:
             helper + f"try{{var d=ipc.network().getDevice({host});"
             'var m=d&&d.getProcess("DhcpServerMain");'
             f"var p=m&&m.getDhcpServerProcessByPortName({interface});"
-            f"var q=p&&p.getPool({pool_name});var xs=[];"
+            f"var q=p&&p.getPool({physical_name});"
+            f"var logical=p&&p.getPool({pool_name});"
+            "var pool_count=p?p.getPoolCount():null;var xs=[];"
             "if(p){var n=p.getExcludedAddressCount();"
             "if(typeof n!=='number'||!isFinite(n)||n<0||Math.floor(n)!==n||n>"
             + exclusion_limit_js
@@ -2005,13 +2243,14 @@ class PacketTracerEnterpriseServiceRuntime:
             "ev_valid=typeof eraw==='boolean';if(ev_valid){ev=eraw;}}"
             "var out={found:!!d,process_found:!!p,pool_found:!!q,"
             f"interface:{interface},pool_name:q?String(q.getDhcpPoolName()):'',"
+            "pool_count:pool_count,logical_pool_present:!!logical,"
             "enabled:ev,enabled_valid:ev_valid,network:q?String(q.getNetworkAddress()):'',"
             "mask:q?String(q.getSubnetMask()):'',gateway:q?String(q.getDefaultRouter()):'',"
             "dns:q?String(q.getDnsServerIp()):'',start:q?String(q.getStartIp()):'',"
             "end:q?String(q.getEndIp()):'',max:q?q.getMaxUsers():null,exclusions:xs,error:''};"
             "reportResult(JSON.stringify(out));}catch(e){reportResult(JSON.stringify({"
             f"found:false,process_found:false,pool_found:false,interface:{interface},"
-            f"pool_name:'',enabled:null,enabled_valid:false,network:'',mask:'',gateway:'',dns:'',start:'',end:'',max:null,exclusions:[],error:{reader}(e)}}));}}"
+            f"pool_name:'',pool_count:null,logical_pool_present:false,enabled:null,enabled_valid:false,network:'',mask:'',gateway:'',dns:'',start:'',end:'',max:null,exclusions:[],error:{reader}(e)}}));}}"
         )
         observation = self._observe(script, 5.0)
         if observation.kind is not BridgeObservationKind.PAYLOAD:
@@ -2041,6 +2280,14 @@ class PacketTracerEnterpriseServiceRuntime:
             shape
             or not isinstance(payload.get("enabled_valid"), bool)
             or not isinstance(payload.get("exclusions"), list)
+            or (
+                native_binding
+                and (
+                    isinstance(payload.get("pool_count"), bool)
+                    or not isinstance(payload.get("pool_count"), int)
+                    or not isinstance(payload.get("logical_pool_present"), bool)
+                )
+            )
         ):
             return self._observed(
                 expectation,
@@ -2196,7 +2443,7 @@ class PacketTracerEnterpriseServiceRuntime:
         matches = (
             payload["enabled"] is expected_enabled
             and payload["interface"] == expected.get("interface")
-            and payload["pool_name"] == expected.get("pool_name")
+            and payload["pool_name"] == effective_name
             and payload["network"] == expected.get("network")
             and payload["mask"] == expected.get("netmask")
             and payload["gateway"] == expected.get("gateway")
@@ -2206,6 +2453,15 @@ class PacketTracerEnterpriseServiceRuntime:
             and payload["max"] == expected.get("max_users")
             and all(item in ranges for item in wanted_ranges)
             and not exclusion_conflict
+            and (
+                not native_binding
+                or (
+                    payload["pool_count"] == 1
+                    and payload["logical_pool_present"] is False
+                    and len(ranges) == len(wanted_ranges)
+                    and all(item in wanted_ranges for item in ranges)
+                )
+            )
         )
         return self._observed(
             expectation,
@@ -2224,6 +2480,9 @@ class PacketTracerEnterpriseServiceRuntime:
             observed={
                 "interface": payload["interface"],
                 "pool_name": payload["pool_name"],
+                "requested_pool_name": str(expected.get("pool_name") or ""),
+                "effective_pool_name": effective_name,
+                "physical_pool_count": payload.get("pool_count") or 0,
                 "excluded_range_count": len(ranges),
                 "expected_enabled": expected_enabled,
                 "observed_enabled": payload["enabled"],
@@ -2233,6 +2492,8 @@ class PacketTracerEnterpriseServiceRuntime:
 
     def _verify_dhcp_lease(self, expectation):
         """Read mode/address/lease-time without attributing acquisition."""
+        if expectation.expected.get("state_only") is True:
+            return self._verify_native_dhcp_usable_state(expectation)
         if expectation.expected.get("configure_only") is True:
             return RuntimeServiceVerification(
                 expectation_id=expectation.id,
@@ -2440,6 +2701,236 @@ class PacketTracerEnterpriseServiceRuntime:
             limitations=("lease_time_causality_unqualified",),
         )
 
+    def _verify_native_dhcp_usable_state(self, expectation):
+        """Join fresh client, complete native policy and exact lease row twice."""
+        expected = expectation.expected
+        try:
+            inactive = json.loads(
+                str(expected.get("native_inactive_clients_json") or "")
+            )
+        except json.JSONDecodeError:
+            inactive = None
+        if (
+            expected.get("effective_pool_name") != "serverPool"
+            or expected.get("max_users") != 1
+            or expected.get("configure_only") is True
+            or not isinstance(inactive, list)
+            or len(inactive) != 1
+            or not isinstance(inactive[0], dict)
+            or set(inactive[0]) != {"device_name", "interface"}
+            or not all(
+                isinstance(value, str) and value for value in inactive[0].values()
+            )
+        ):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="native_dhcp_usable_state",
+                cause="native_state_contract_invalid",
+            )
+        client_expectation = expectation.model_copy(
+            update={"expected": {**expected, "state_only": False}}
+        )
+        server_expectation = expectation.model_copy(
+            update={"expected": {**expected, "enabled": True}}
+        )
+        prior: tuple[str, str, str] | None = None
+        consecutive = 0
+        assigned_unattributed = False
+        saw_incomplete = False
+        sampled = 0
+        inactive_mac: str | None = None
+        for index in range(self._dhcp_state_max_samples):
+            if index:
+                self._sleep(self._dhcp_state_interval)
+            sampled += 1
+            server = self._verify_dhcp_server_state(server_expectation)
+            if server.status is not ActionExecutionStatus.VERIFIED:
+                return self._observed(
+                    expectation,
+                    observation=(
+                        ObservationFact.CONTRADICTED
+                        if server.observation is ObservationFact.CONTRADICTED
+                        else ObservationFact.INCONCLUSIVE
+                    ),
+                    method="native_dhcp_usable_state",
+                    cause=f"native_server_policy:{server.cause or server.observation.value}",
+                    observed={"samples": sampled},
+                )
+            inactive_state, observed_mac = self._native_inactive_client_state(
+                inactive[0]["device_name"], inactive[0]["interface"]
+            )
+            if inactive_state == "contradicted" or (
+                inactive_state == "clear"
+                and inactive_mac is not None
+                and observed_mac != inactive_mac
+            ):
+                return self._observed(
+                    expectation,
+                    observation=ObservationFact.CONTRADICTED,
+                    method="native_dhcp_usable_state",
+                    cause="native_inactive_client_changed",
+                    observed={"samples": sampled},
+                )
+            if inactive_state != "clear":
+                return self._observed(
+                    expectation,
+                    observation=ObservationFact.INCONCLUSIVE,
+                    method="native_dhcp_usable_state",
+                    cause="native_inactive_client_unobserved",
+                    observed={"samples": sampled},
+                )
+            inactive_mac = observed_mac
+            client = self._verify_dhcp_lease(client_expectation)
+            if client.observation is ObservationFact.CONTRADICTED:
+                return self._observed(
+                    expectation,
+                    observation=ObservationFact.CONTRADICTED,
+                    method="native_dhcp_usable_state",
+                    cause=f"native_client_state:{client.cause}",
+                    observed={"samples": sampled},
+                )
+            if client.observation in {
+                ObservationFact.MALFORMED,
+                ObservationFact.ENGINE_ERROR,
+                ObservationFact.NOT_OBSERVED,
+                ObservationFact.ACCEPTANCE_UNKNOWN,
+            }:
+                saw_incomplete = True
+                consecutive = 0
+                continue
+            current = client.observed
+            if current.get("ipv4") in {"", "0.0.0.0"}:
+                consecutive = 0
+                continue
+            if (
+                client.claim_level != "fresh_address_within_intended_allocation"
+                or current.get("dhcp_mode") is not True
+                or not all(
+                    isinstance(current.get(field), str)
+                    for field in ("ipv4", "netmask", "mac")
+                )
+            ):
+                return self._observed(
+                    expectation,
+                    observation=ObservationFact.INCONCLUSIVE,
+                    method="native_dhcp_usable_state",
+                    cause="native_client_state_unattributable",
+                    observed={"samples": sampled},
+                )
+            identity = (
+                str(current["ipv4"]),
+                str(current["netmask"]),
+                str(current["mac"]),
+            )
+            attributed = self._verify_dhcp_lease_attributed(expectation)
+            if attributed.observation is ObservationFact.CONTRADICTED:
+                return self._observed(
+                    expectation,
+                    observation=ObservationFact.CONTRADICTED,
+                    method="native_dhcp_usable_state",
+                    cause=f"native_pool_row:{attributed.cause}",
+                    observed={"samples": sampled},
+                )
+            joined = (
+                attributed.status is ActionExecutionStatus.VERIFIED
+                and attributed.observed.get("ipv4") == identity[0]
+                and attributed.observed.get("netmask") == identity[1]
+                and attributed.observed.get("mac") == identity[2]
+                and attributed.observed.get("matching_row_observed") is True
+            )
+            if not joined:
+                assigned_unattributed = True
+                consecutive = 0
+                continue
+            consecutive = consecutive + 1 if prior == identity else 1
+            prior = identity
+            if consecutive >= 2:
+                return self._observed(
+                    expectation,
+                    observation=ObservationFact.OBSERVED,
+                    method="native_dhcp_usable_state",
+                    claim_level="attributed_to_effective_server_pool",
+                    observed={
+                        "client_ipv4": identity[0],
+                        "client_netmask": identity[1],
+                        "client_mac": identity[2],
+                        "effective_pool_name": "serverPool",
+                        "requested_pool_name": str(expected.get("pool_name") or ""),
+                        "inactive_client_name": inactive[0]["device_name"],
+                        "inactive_client_mac": inactive_mac or "",
+                        "stable_samples": consecutive,
+                        "samples": sampled,
+                    },
+                    limitations=(
+                        "autonomous_state_not_explicit_dhcpRun_causality",
+                        "positive_row_does_not_establish_table_end",
+                    ),
+                )
+        return self._observed(
+            expectation,
+            observation=(
+                ObservationFact.INCONCLUSIVE
+                if assigned_unattributed or saw_incomplete or consecutive
+                else ObservationFact.CONTRADICTED
+            ),
+            method="native_dhcp_usable_state",
+            cause=(
+                "native_lease_attribution_incomplete"
+                if assigned_unattributed or saw_incomplete or consecutive
+                else "native_client_unassigned_in_window"
+            ),
+            observed={"samples": sampled},
+        )
+
+    def _native_inactive_client_state(
+        self, device_name: str, interface: str
+    ) -> tuple[str, str]:
+        """Read one exact inactive client without changing its DHCP state."""
+        script = (
+            f"var name={json.dumps(device_name)},want={json.dumps(interface)},"
+            "d=ipc.network().getDevice(name),p=null;"
+            "try{if(d){var n=d.getPortCount();"
+            "if(typeof n==='number'&&n>=0&&n<=32){"
+            "for(var i=0;i<n;i++){var q=d.getPortAt(i);"
+            "if(q&&String(q.getName())===want){p=q;break;}}}}"
+            "var mode=p?p.isDhcpClientOn():null;"
+            "reportResult(JSON.stringify({device:name,interface:want,found:!!d,"
+            "port_found:!!p,mode:mode,mode_type:typeof mode,"
+            "ipv4:p?String(p.getIpAddress()):'',"
+            "netmask:p?String(p.getSubnetMask()):'',"
+            "mac:p?String(p.getMacAddress()):'',error:''}));}"
+            "catch(e){reportResult(JSON.stringify({device:name,interface:want,"
+            "found:!!d,port_found:!!p,mode:null,mode_type:'error',"
+            "ipv4:'',netmask:'',mac:'',error:'read_error'}));}"
+        )
+        observation = self._observe(script, 5.0)
+        if observation.kind is not BridgeObservationKind.PAYLOAD:
+            return "unknown", ""
+        payload = observation.payload or {}
+        if (
+            payload.get("device") != device_name
+            or payload.get("interface") != interface
+            or payload.get("found") is not True
+            or payload.get("port_found") is not True
+            or payload.get("mode_type") != "boolean"
+            or not isinstance(payload.get("mode"), bool)
+            or any(
+                not isinstance(payload.get(key), str)
+                for key in ("ipv4", "netmask", "mac", "error")
+            )
+            or payload.get("error")
+            or not _MAC_TEXT.fullmatch(payload["mac"])
+        ):
+            return "unknown", ""
+        if (
+            payload["mode"] is not False
+            or payload["ipv4"] not in {"", "0.0.0.0"}
+            or payload["netmask"] not in {"", "0.0.0.0"}
+        ):
+            return "contradicted", payload["mac"]
+        return "clear", payload["mac"]
+
     def _verify_dhcp_lease_attributed(self, expectation):
         """Bound a positive intended-pool row without inventing scan completion."""
         expected = expectation.expected
@@ -2449,7 +2940,10 @@ class PacketTracerEnterpriseServiceRuntime:
         server_interface = json.dumps(
             str(expected.get("server_interface") or expected.get("interface") or "")
         )
-        pool_name = json.dumps(str(expected.get("pool_name") or ""))
+        physical_pool_name = str(
+            expected.get("effective_pool_name") or expected.get("pool_name") or ""
+        )
+        pool_name = json.dumps(physical_pool_name)
         declared = expected.get("max_users")
         if isinstance(declared, bool) or not isinstance(declared, int) or declared <= 0:
             return self._observed(
@@ -2576,7 +3070,7 @@ class PacketTracerEnterpriseServiceRuntime:
             and payload["process_found"]
             and payload["pool_found"]
             and payload["interface"] == expected.get("interface")
-            and payload["pool_name"] == expected.get("pool_name")
+            and payload["pool_name"] == physical_pool_name
         ):
             return self._observed(
                 expectation,
@@ -2653,12 +3147,23 @@ class PacketTracerEnterpriseServiceRuntime:
                     cause="lease_row_identity_invalid",
                 )
         same_ip = [row for row in rows if row["ipAddress"] == payload["ipv4"]]
-        exact = [row for row in same_ip if row["macAddress"] == payload["mac"]]
-        conflicts = [row for row in same_ip if row["macAddress"] != payload["mac"]]
+        exact = [
+            row
+            for row in same_ip
+            if row["macAddress"] == payload["mac"]
+            and row["port"] == expected.get("interface")
+        ]
+        conflicts = [
+            row
+            for row in same_ip
+            if row["macAddress"] != payload["mac"]
+            or row["port"] != expected.get("interface")
+        ]
         truncated = declared > bound or termination == "bound"
         observed = {
             "interface": payload["interface"],
             "ipv4": payload["ipv4"],
+            "netmask": payload["netmask"],
             "mac": payload["mac"],
             "rows_scanned": payload["rows_scanned"],
             "scan_limit": bound,

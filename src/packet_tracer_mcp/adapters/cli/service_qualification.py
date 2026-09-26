@@ -47,6 +47,7 @@ from ...application.use_cases.compile_services import compile_enterprise_service
 from ...application.use_cases.compose_enterprise_reference import (
     compose_enterprise_reference,
 )
+from ...application.use_cases.plan_enterprise_hardware import capability_catalog_for
 from ...application.use_cases.qualify_server_services import (
     CampaignQualificationAuthority,
     IsolationObservation,
@@ -76,7 +77,10 @@ from ...domain.enterprise.models.deployment import (
 )
 from ...domain.enterprise.models.intent import EnterpriseIntent
 from ...domain.enterprise.models.service_plan import (
+    CapabilityProvenance,
+    ClientOperationCapability,
     ServiceActionType,
+    ServiceCapabilityRecords,
     ServiceType,
     ServiceVerificationKind,
 )
@@ -97,6 +101,7 @@ from ...domain.enterprise.models.service_qualification import (
     ExecutionMode,
     QualificationAuthorization,
     QualificationRequest,
+    QualificationStage,
     RefusalKind,
     RefusalSubject,
     RepositoryIdentity,
@@ -115,6 +120,9 @@ from ...infrastructure.catalog.dhcp_native_default_transitions import (
 )
 from ...infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
+)
+from ...infrastructure.catalog.measured_port_inventories import (
+    backend_verified_port_inventory,
 )
 from ...infrastructure.catalog.service_capabilities import (
     packet_tracer_service_capabilities,
@@ -159,6 +167,9 @@ from ...infrastructure.persistence.server_pt_commissioning_store import (
 )
 from ...infrastructure.persistence.service_qualification_store import (
     QualificationRecordStore,
+)
+from ...infrastructure.persistence.service_run_record_store import (
+    ServiceRunRecordStore,
 )
 from .server_pt_campaign_archive import archive_or_stop, ledger_admit, ledger_result
 
@@ -289,19 +300,115 @@ def _q3_service_capabilities(build: str):
     return records
 
 
+def _native_candidate_capabilities(build: str):
+    """Private exact-build product hypothesis; explicit acquisition stays UNKNOWN."""
+    if build != Q3_PACKET_TRACER_BUILD:
+        raise ValueError("native DHCP candidate is not bound to this build")
+    records = dict(packet_tracer_service_capabilities(build))
+    native_key = "Server-PT:dhcp_native_default_binding"
+    records[native_key] = ClientOperationCapability(
+        key=native_key,
+        model="Server-PT",
+        operation="dhcp_native_default_binding",
+        support=CapabilityStatus.SUPPORTED,
+        provenance=CapabilityProvenance.RECORDED_RUN,
+        source="SERVER-PT-DHCP-AUTONOMOUS-02/e5 physical serverPool attribution",
+        packet_tracer_version=build,
+        build=build,
+        executed_sha="04f5337eef67f0c850e057537ce80757e3aa73b1",
+        transport="file",
+        run_id="2026-09-26T00-30-30Z-f961bd3d",
+    )
+    key = f"Server-PT:{ServiceType.DHCP.value}"
+    profile = records[key]
+    records[key] = profile.model_copy(
+        update={
+            "application_support": CapabilityStatus.SUPPORTED,
+            "direct_readback_support": CapabilityStatus.SUPPORTED,
+            "behavioral_verification_support": CapabilityStatus.SUPPORTED,
+            "action_application_support": {
+                ServiceActionType.ENABLE_SERVER_DHCP.value: CapabilityStatus.SUPPORTED,
+                ServiceActionType.CONFIGURE_SERVER_DHCP_POOL.value: (
+                    CapabilityStatus.SUPPORTED
+                ),
+            },
+            "source": "experimental candidate from dhcp-autonomy-02/e1-e5; product unqualified",
+        }
+    )
+    for model, operation in (
+        ("PC-PT", ServiceVerificationKind.ENDPOINT_DHCP_MODE.value),
+        ("PC-PT", ServiceVerificationKind.DHCP_LEASE.value),
+        ("Server-PT", ServiceVerificationKind.DHCP_SERVER_STATE.value),
+        ("Server-PT", ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED.value),
+    ):
+        operation_key = f"{model}:{operation}"
+        records[operation_key] = records[operation_key].model_copy(
+            update={
+                "support": CapabilityStatus.SUPPORTED,
+                "source": "experimental state reader candidate; not product LIVE evidence",
+            }
+        )
+    return records
+
+
 def q3_product_contract(build: str, run_id: str) -> Q3ProductContract:
     """Compose real E4/E5/E6 plans and bind them to the exact Q3 names/ports."""
     return dhcp_product_contract(build, run_id, 1)
 
 
-def dhcp_product_contract(build: str, run_id: str, max_users: int) -> Q3ProductContract:
+def _native_dhcp_http_intent() -> EnterpriseIntent:
+    """Select one client and a physical native binding without a named request."""
+    payload = _q3_intent(1).model_dump(mode="json")
+    services = payload["sites"][0]["services"]
+    dhcp = services[0]
+    dhcp["client_device_ids"] = [_Q3_PC1_ID]
+    dhcp["verification_mode"] = "state_only"
+    dhcp["dhcp_pool"].pop("pool_name")
+    dhcp["dhcp_pool"]["dns_server"] = Q3_DNS_IPV4
+    services.append(
+        {
+            "name": "q3-native-http",
+            "service_type": "http",
+            "host_device_id": _Q3_SERVER_ID,
+            "client_device_ids": [_Q3_PC1_ID],
+            "http_content": "MCP-Q3-NATIVE-HTTP-READY",
+        }
+    )
+    return EnterpriseIntent.model_validate(payload)
+
+
+def native_dhcp_http_product_contract(build: str, run_id: str) -> Q3ProductContract:
+    """Compose the exact measured one-client native DHCP plus HTTP candidate."""
+    return dhcp_product_contract(
+        build,
+        run_id,
+        1,
+        intent_override=_native_dhcp_http_intent(),
+        capabilities_override=_native_candidate_capabilities(build),
+        preserve_reference_topology=True,
+    )
+
+
+def dhcp_product_contract(
+    build: str,
+    run_id: str,
+    max_users: int,
+    *,
+    intent_override: EnterpriseIntent | None = None,
+    capabilities_override: ServiceCapabilityRecords | None = None,
+    preserve_reference_topology: bool = False,
+) -> Q3ProductContract:
     """Compose the real plans for the Q3 fixture with a pool of `max_users`."""
     if build != Q3_PACKET_TRACER_BUILD:
         raise ValueError("Q3 has no reviewed native contract for this build.")
     if isinstance(max_users, bool) or not isinstance(max_users, int) or max_users < 1:
         raise ValueError("The intended pool capacity must be a positive integer.")
-    intent = _q3_intent(max_users)
-    catalog = _Q3HardwareCatalog()
+    intent = intent_override or _q3_intent(max_users)
+    catalog = (
+        capability_catalog_for(build)
+        if preserve_reference_topology
+        else _Q3HardwareCatalog()
+    )
     base = compose_enterprise_reference(
         intent,
         packet_tracer_version=build,
@@ -318,24 +425,25 @@ def dhcp_product_contract(build: str, run_id: str, max_users: int) -> Q3ProductC
     devices = {item.id or item.name: item for item in topology.devices}
     if set(devices) != set(_Q3_RUNTIME_NAMES):
         raise ValueError("Q3 composition did not produce the exact semantic fixtures.")
-    for identifier, runtime_name in _Q3_RUNTIME_NAMES.items():
-        devices[identifier].name = runtime_name
-    for link in topology.links:
-        a_id = link.device_a_id or link.device_a
-        b_id = link.device_b_id or link.device_b
-        if _Q3_SWITCH_ID not in {a_id, b_id}:
-            raise ValueError("Q3 composition produced a non-access fixture link.")
-        endpoint_id = b_id if a_id == _Q3_SWITCH_ID else a_id
-        if endpoint_id not in _Q3_SWITCH_PORTS:
-            raise ValueError("Q3 composition produced an unexpected endpoint link.")
-        if a_id == _Q3_SWITCH_ID:
-            link.port_a = _Q3_SWITCH_PORTS[endpoint_id]
-            link.port_b = "FastEthernet0"
-        else:
-            link.port_a = "FastEthernet0"
-            link.port_b = _Q3_SWITCH_PORTS[endpoint_id]
-        link.device_a = _Q3_RUNTIME_NAMES[a_id]
-        link.device_b = _Q3_RUNTIME_NAMES[b_id]
+    if not preserve_reference_topology:
+        for identifier, runtime_name in _Q3_RUNTIME_NAMES.items():
+            devices[identifier].name = runtime_name
+        for link in topology.links:
+            a_id = link.device_a_id or link.device_a
+            b_id = link.device_b_id or link.device_b
+            if _Q3_SWITCH_ID not in {a_id, b_id}:
+                raise ValueError("Q3 composition produced a non-access fixture link.")
+            endpoint_id = b_id if a_id == _Q3_SWITCH_ID else a_id
+            if endpoint_id not in _Q3_SWITCH_PORTS:
+                raise ValueError("Q3 composition produced an unexpected endpoint link.")
+            if a_id == _Q3_SWITCH_ID:
+                link.port_a = _Q3_SWITCH_PORTS[endpoint_id]
+                link.port_b = "FastEthernet0"
+            else:
+                link.port_a = "FastEthernet0"
+                link.port_b = _Q3_SWITCH_PORTS[endpoint_id]
+            link.device_a = _Q3_RUNTIME_NAMES[a_id]
+            link.device_b = _Q3_RUNTIME_NAMES[b_id]
     stamp_topology_hashes(topology)
 
     ports: dict[str, set[str]] = {identifier: set() for identifier in devices}
@@ -359,7 +467,11 @@ def dhcp_product_contract(build: str, run_id: str, max_users: int) -> Q3ProductC
     )
     derived = derive_service_policy(
         intent,
-        base_policy=ConfigurationPolicy(dns_server=Q3_DNS_IPV4),
+        base_policy=(
+            ConfigurationPolicy()
+            if preserve_reference_topology
+            else ConfigurationPolicy(dns_server=Q3_DNS_IPV4)
+        ),
         enterprise=base.enterprise,
         topology=topology,
     )
@@ -393,7 +505,7 @@ def dhcp_product_contract(build: str, run_id: str, max_users: int) -> Q3ProductC
             "Q3 configuration composition failed: "
             + "; ".join(item.message for item in configured.issues)
         )
-    service_capabilities = _q3_service_capabilities(build)
+    service_capabilities = capabilities_override or _q3_service_capabilities(build)
     services = compile_enterprise_services(
         base.enterprise,
         topology,
@@ -413,6 +525,7 @@ def dhcp_product_contract(build: str, run_id: str, max_users: int) -> Q3ProductC
         service_plan=services.plan,
         device_capabilities=typed_device_capabilities,
         service_capabilities=service_capabilities,
+        intent_json=intent.model_dump_json(),
     )
 
 
@@ -433,6 +546,18 @@ def fixture_plans(
         if model is None:
             raise ValueError(f"Fixture model {fixture.model!r} is not catalogued.")
         ports[fixture.name] = {port.full_name for port in model.ports}
+        if (
+            definition.stage is QualificationStage.Q3_NATIVE_PRODUCT
+            and fixture.model == "IE-2000"
+        ):
+            observed = backend_verified_port_inventory(
+                fixture.model, backend_version=Q3_PACKET_TRACER_BUILD
+            )
+            if not observed.backend_verified:
+                raise ValueError(
+                    "Native product switch ports lack exact-build evidence."
+                )
+            ports[fixture.name] = set(observed.bindable_ports)
         devices.append(
             DevicePlan(
                 id=fixture.name,
@@ -653,6 +778,14 @@ def production_boundaries(governed_root: Path) -> QualificationBoundaries:
         q3_product_contract=q3_product_contract,
         q3_required_build=Q3_PACKET_TRACER_BUILD,
         dhcp_product_contract=dhcp_product_contract,
+        native_product_contract=native_dhcp_http_product_contract,
+        native_product_import_preflight=lambda: ImportIsolationPreflight(governed_root),
+        native_product_record_store_factory=lambda: ServiceRunRecordStore(
+            governed_root
+        ),
+        native_product_endpoint_observer=lambda bound: (
+            PacketTracerEndpointAddressObserver(bound.send_and_wait)
+        ),
         native_default_transitions=admitted_native_default_transitions,
         reviewed_native_default_intervention=WHOLE_CONFIGURE_PC_IP,
         forwarding_probe=_forwarding_probe,

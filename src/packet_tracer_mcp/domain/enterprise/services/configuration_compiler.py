@@ -54,6 +54,7 @@ from ..models.link_performance import (
 from ..models.requirements import AddressingPreference, EndpointRequirement
 from ..models.roles import DeviceRole
 from ..models.segments import NetworkSegment, SegmentRole
+from ..models.service_plan import ServiceType
 from ..models.verification import PrerequisiteKind, VerificationPrerequisite
 from .configuration_dependencies import (
     ConfigurationDependencyError,
@@ -371,6 +372,37 @@ class ConfigurationCompiler:
             issues,
         )
         actions.extend(pool_actions)
+        native_client_bindings: dict[
+            str, tuple[str, str, str, tuple[tuple[str, str], ...]]
+        ] = {}
+        for site in enterprise.sites:
+            for service in site.services:
+                requirement = service.dhcp_pool
+                if (
+                    service.service_type is not ServiceType.DHCP
+                    or requirement is None
+                    or service.verification_mode != "state_only"
+                    or requirement.pool_name.strip()
+                ):
+                    continue
+                server = devices.get(service.host_device_id)
+                if server is None:
+                    continue
+                inactive = tuple(
+                    sorted(
+                        (candidate.name, candidate_interface)
+                        for candidate, candidate_segment, candidate_interface, _access in pending_dhcp
+                        if candidate_segment.name == service.segment_id
+                        and _device_key(candidate) not in service.client_device_ids
+                    )
+                )
+                for client_id in service.client_device_ids:
+                    native_client_bindings[client_id] = (
+                        server.name,
+                        requirement.interface.strip(),
+                        "serverPool",
+                        inactive,
+                    )
         delegated_dhcp = set(policy.delegated_dhcp_segment_ids)
         for endpoint, segment, interface, access_dependency in pending_dhcp:
             pool = pool_by_segment.get(segment.name)
@@ -383,6 +415,9 @@ class ConfigurationCompiler:
             dependencies = [] if delegated else [pool.id]
             if access_dependency:
                 dependencies.append(access_dependency)
+            native_binding = native_client_bindings.get(
+                _device_key(endpoint), ("", "", "", ())
+            )
             actions.append(
                 SetEndpointDhcp(
                     id=_action_id("endpoint-dhcp", _device_key(endpoint), segment.name),
@@ -397,6 +432,10 @@ class ConfigurationCompiler:
                     netmask=allocation.netmask,
                     gateway=allocation.gateway,
                     dns_server=policy.dns_server,
+                    native_server_device_name=native_binding[0],
+                    native_server_interface=native_binding[1],
+                    native_effective_pool_name=native_binding[2],
+                    native_inactive_clients=list(native_binding[3]),
                     depends_on=sorted(set(dependencies)),
                     required_capability="endpoint_dhcp",
                 )

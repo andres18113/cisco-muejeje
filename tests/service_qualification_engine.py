@@ -130,6 +130,8 @@ const config = Object.assign({
   dhcp_pool_selection: 'first', default_pool_change_on_enable: null,
   default_pool_drift_reads: 0, default_pool_realigns_on_address: false,
   dhcp_mode_acquires: false, dhcp_failure_address: '',
+  dhcp_retry_on_server_enable: false,
+  pc2_mode_on_server_enable: false,
   dhcp_native_start_behavior: 'change',
   dhcp_native_max_behavior: 'change',
   dhcp_server_initial_enabled: false, dhcp_pool_count_invalid: false,
@@ -218,6 +220,7 @@ const PORTS = {
   'Server-PT': ['FastEthernet0'],
   '2960-24TT': Array.from({length: 24}, (_, i) => 'FastEthernet0/' + (i + 1))
     .concat(['GigabitEthernet0/1', 'GigabitEthernet0/2']),
+  'IE-2000': Array.from({length: 8}, (_, i) => 'FastEthernet1/' + (i + 1)),
 };
 const findDevice = (name) => devices.find((d) => d.name === name) || null;
 const findPort = (device, port) => {
@@ -450,6 +453,17 @@ const dhcpServerProcess = (dev) => {
     setEnable: (value) => {
       dhcpSetterCalls.setEnable++;
       state.enabled = !!value;
+      if (value && config.dhcp_retry_on_server_enable) {
+        for (const client of devices.filter((item) => item.model === 'PC-PT')) {
+          for (const port of client.ports.filter((item) => item.dhcpMode)) {
+            acquire(client, port);
+          }
+        }
+      }
+      if (value && config.pc2_mode_on_server_enable) {
+        const other = devices.filter((item) => item.model === 'PC-PT')[1];
+        if (other && other.ports[0]) { other.ports[0].dhcpMode = true; }
+      }
       // Enabling the process is process-wide. The stub can be told that the
       // native default moves when it happens, because nothing measured says
       // it does not.

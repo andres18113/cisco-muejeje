@@ -17,6 +17,7 @@ import pytest
 from packet_tracer_mcp.domain.enterprise.models.configuration import AddressRange
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
+    decide_mutation,
 )
 from packet_tracer_mcp.domain.enterprise.models.execution import (
     DispatchFact,
@@ -28,6 +29,8 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     AcquireDhcpLease,
     ConfigureServerDhcpPool,
     EnableServerDhcp,
+    NativeDhcpClientPort,
+    NativeDhcpPoolPolicy,
     ServiceEvidenceKind,
     ServicePhase,
     ServiceType,
@@ -100,13 +103,21 @@ const poolObject = (pool) => ({
     before('setDnsServerIp:' + value); pool.dns = String(value); after('setDnsServerIp');
   },
   setStartIp: (value) => {
-    before('setStartIp:' + value); pool.start = String(value); after('setStartIp');
+    before('setStartIp:' + value);
+    if (state.native_start_noop && pool.name === 'serverPool') { return; }
+    pool.start = String(value); after('setStartIp');
+    if (state.native_coupled && pool.name === 'serverPool') {
+      pool.end = '192.0.2.255'; pool.max = 156;
+    }
   },
   setEndIp: (value) => {
     before('setEndIp:' + value); pool.end = String(value); after('setEndIp');
   },
   setMaxUsers: (value) => {
     before('setMaxUsers:' + value); pool.max = Number(value); after('setMaxUsers');
+    if (state.native_coupled && pool.name === 'serverPool' && Number(value) === 1) {
+      pool.end = pool.start;
+    }
   },
   getLeaseAt: (index) => {
     before('getLeaseAt:' + index);
@@ -121,6 +132,9 @@ const poolObject = (pool) => ({
 });
 
 const serverProcess = {
+  getPoolCount: () => {
+    before('getPoolCount'); return Object.keys(state.server.pools).length;
+  },
   isEnable: () => {
     before('isEnable');
     if (state.server.enable_behavior === 'throw') { throw new Error('enable read failed'); }
@@ -212,8 +226,14 @@ const clientDevice = {
   getPortAt: () => portObject(state.client.port),
   getProcess: (name) => name === 'DhcpClient' ? clientProcess : null,
 };
+const inactiveDevice = {
+  getPortCount: () => 1,
+  getPortAt: () => portObject(state.inactive_client.port),
+};
 global.ipc = {network: () => ({getDevice: (name) => (
-  name === state.server.name ? serverDevice : name === state.client.name ? clientDevice : null
+  name === state.server.name ? serverDevice
+    : name === state.client.name ? clientDevice
+    : name === state.inactive_client.name ? inactiveDevice : null
 )})};
 global.__mcpE6Claims = state.claims || {};
 let reported = null;
@@ -297,6 +317,16 @@ class _DhcpEngine:
                 "lease_time": "",
                 "runs": 0,
             },
+            "inactive_client": {
+                "name": "PC2",
+                "port": {
+                    "name": INTERFACE,
+                    "mode": False,
+                    "ip": "",
+                    "mask": "",
+                    "mac": "0011.2233.4466",
+                },
+            },
             "claims": {},
             "throw_before": [],
             "throw_after": [],
@@ -306,6 +336,8 @@ class _DhcpEngine:
             "repeat_lease": False,
             "lease_throw_at": -1,
             "nonfinite_lease_at": -1,
+            "native_coupled": False,
+            "native_start_noop": False,
         }
         for key, value in overrides.items():
             self.state[key] = value
@@ -435,6 +467,224 @@ def _pool():
         excluded_ranges=[AddressRange(start="192.0.2.1", end="192.0.2.2")],
         **_common(),
     )
+
+
+def _native_one_user_pool():
+    """Build the measured physical policy with a derived logical label."""
+    return _pool().model_copy(
+        update={
+            "pool_name": "Q3_DATA",
+            "effective_pool_name": "serverPool",
+            "dns_server": "192.0.2.10",
+            "lease_start": "192.0.2.100",
+            "lease_end": "192.0.2.100",
+            "max_users": 1,
+            "excluded_ranges": [
+                AddressRange(start="192.0.2.1", end="192.0.2.1"),
+                AddressRange(start="192.0.2.10", end="192.0.2.10"),
+            ],
+        }
+    )
+
+
+def _native_one_user_enable():
+    pool = _native_one_user_pool()
+    return _enable().model_copy(
+        update={
+            "effective_pool_name": "serverPool",
+            "native_policy": NativeDhcpPoolPolicy(
+                effective_pool_name="serverPool",
+                network=pool.network,
+                netmask=pool.netmask,
+                gateway=pool.gateway,
+                dns_server=pool.dns_server,
+                lease_start=pool.lease_start,
+                lease_end=pool.lease_end,
+                max_users=pool.max_users,
+                excluded_ranges=list(pool.excluded_ranges),
+                selected_clients=[
+                    NativeDhcpClientPort(device_name=CLIENT, interface=INTERFACE)
+                ],
+            ),
+        }
+    )
+
+
+def test_native_one_user_policy_writes_only_the_physical_pool(engine):
+    """Measured setters reach the singleton serverPool without addPool."""
+    item = engine(native_coupled=True)
+    item.state["server"]["pools"] = {
+        "serverPool": {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.0",
+            "end": "192.0.3.255",
+            "max": 512,
+            "leases": [],
+        }
+    }
+    item.state["server"]["exclusions"] = []
+    item.sync()
+
+    [mutation] = _runtime(item).apply_actions([_native_one_user_pool()])
+
+    assert mutation.attempted is True
+    assert mutation.postcondition is PostconditionFact.SATISFIED
+    assert set(item.state["server"]["pools"]) == {"serverPool"}
+    pool = item.state["server"]["pools"]["serverPool"]
+    assert (pool["start"], pool["end"], pool["max"]) == (
+        "192.0.2.100",
+        "192.0.2.100",
+        1,
+    )
+    assert (pool["gateway"], pool["dns"]) == ("192.0.2.1", "192.0.2.10")
+    assert item.state["server"]["exclusions"] == [
+        {"start": "192.0.2.1", "end": "192.0.2.1"},
+        {"start": "192.0.2.10", "end": "192.0.2.10"},
+    ]
+    assert not any(call.startswith("addPool:") for call in item.log)
+    assert not any(call.startswith("setEndIp:") for call in item.log)
+
+
+def test_native_enable_requires_complete_policy_and_selected_client_mode(engine):
+    """One enabled transition follows full physical policy; drift withholds it."""
+    item = engine(native_coupled=True)
+    item.state["server"]["pools"] = {
+        "serverPool": {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.0",
+            "end": "192.0.3.255",
+            "max": 512,
+            "leases": [],
+        }
+    }
+    item.state["server"]["exclusions"] = []
+    item.sync()
+    _runtime(item).apply_actions([_native_one_user_pool()])
+    policy = json.loads(json.dumps(item.state["server"]["pools"]["serverPool"]))
+
+    [enabled] = _runtime(item).apply_actions([_native_one_user_enable()])
+
+    assert enabled.attempted is True
+    assert enabled.postcondition is PostconditionFact.SATISFIED
+    assert item.state["server"]["enabled"] is True
+    assert item.state["server"]["pools"]["serverPool"] == policy
+
+    changed = engine(native_coupled=True)
+    changed.state["server"]["pools"] = {"serverPool": policy}
+    changed.state["server"]["exclusions"] = list(item.state["server"]["exclusions"])
+    changed.state["server"]["pools"]["serverPool"]["gateway"] = "192.0.2.99"
+    changed.sync()
+    [refused] = _runtime(changed).apply_actions([_native_one_user_enable()])
+    assert refused.attempted is False
+    assert not any(call.startswith("setEnable:") for call in changed.log)
+
+
+def test_native_one_user_reapplication_is_an_exact_noop(engine):
+    """A fully matching disabled policy dispatches no second native setter."""
+    item = engine(native_coupled=True)
+    item.state["server"]["pools"] = {
+        "serverPool": {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.0",
+            "end": "192.0.3.255",
+            "max": 512,
+            "leases": [],
+        }
+    }
+    item.state["server"]["exclusions"] = []
+    item.sync()
+    action = _native_one_user_pool()
+    _runtime(item).apply_actions([action])
+    before = len(item.log)
+
+    [repeat] = _runtime(item).apply_actions([action])
+
+    assert repeat.attempted is False
+    assert decide_mutation(repeat).cause == "skipped:already_satisfied"
+    assert not any(
+        call.startswith(
+            (
+                "setStartIp:",
+                "setMaxUsers:",
+                "setDefaultRouter:",
+                "setDnsServerIp:",
+                "addExcludedAddress:",
+            )
+        )
+        for call in item.log[before:]
+    )
+
+
+def test_native_one_user_refuses_extra_pool_before_any_setter(engine):
+    """A second physical pool cannot be repaired by adding a third."""
+    item = engine(native_coupled=True)
+    item.state["server"]["pools"]["serverPool"] = {
+        "name": "serverPool",
+        "network": "192.0.2.0",
+        "mask": "255.255.255.0",
+        "gateway": "0.0.0.0",
+        "dns": "0.0.0.0",
+        "start": "192.0.2.0",
+        "end": "192.0.3.255",
+        "max": 512,
+        "leases": [],
+    }
+    item.state["server"]["exclusions"] = []
+    item.sync()
+
+    [mutation] = _runtime(item).apply_actions([_native_one_user_pool()])
+
+    assert mutation.attempted is False
+    assert not any(call.startswith("setStartIp:") for call in item.log)
+    assert set(item.state["server"]["pools"]) == {"serverPool", "UNRELATED"}
+
+
+@pytest.mark.parametrize(
+    ("engine_config", "blocked_prefix"),
+    [
+        ({"native_start_noop": True}, "setMaxUsers:"),
+        ({"throw_before": ["setDefaultRouter:192.0.2.1"]}, "setDnsServerIp:"),
+    ],
+)
+def test_native_one_user_stops_later_setters_after_first_bad_transition(
+    engine, engine_config, blocked_prefix
+):
+    """A no-op or throw cannot authorize the next physical setter."""
+    item = engine(native_coupled=True, **engine_config)
+    item.state["server"]["pools"] = {
+        "serverPool": {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.0",
+            "end": "192.0.3.255",
+            "max": 512,
+            "leases": [],
+        }
+    }
+    item.state["server"]["exclusions"] = []
+    item.sync()
+
+    [mutation] = _runtime(item).apply_actions([_native_one_user_pool()])
+
+    assert mutation.attempted is True
+    assert mutation.postcondition is PostconditionFact.UNSATISFIED
+    assert not any(call.startswith(blocked_prefix) for call in item.log)
+    assert not any(call.startswith("addExcludedAddress:") for call in item.log)
 
 
 def _acquire():
@@ -873,6 +1123,184 @@ def _server_expectation():
             ),
         },
     )
+
+
+def _native_state_expectation():
+    expected = {
+        **_lease_expectation(ServiceVerificationKind.DHCP_LEASE).expected,
+        "pool_name": "Q3_DATA",
+        "effective_pool_name": "serverPool",
+        "state_only": True,
+        "native_inactive_clients_json": json.dumps(
+            [{"device_name": "PC2", "interface": INTERFACE}],
+            separators=(",", ":"),
+        ),
+        "gateway": "192.0.2.1",
+        "dns_server": "192.0.2.10",
+        "lease_start": "192.0.2.100",
+        "lease_end": "192.0.2.100",
+        "max_users": 1,
+        "excluded_ranges_json": json.dumps(
+            [
+                {"start": "192.0.2.1", "end": "192.0.2.1"},
+                {"start": "192.0.2.10", "end": "192.0.2.10"},
+            ],
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+    }
+    return _lease_expectation(ServiceVerificationKind.DHCP_LEASE).model_copy(
+        update={"action_id": "enable-dhcp", "expected": expected}
+    )
+
+
+def _prime_native_usable(item: _DhcpEngine) -> None:
+    item.state["server"]["enabled"] = True
+    item.state["server"]["pools"] = {
+        "serverPool": {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "192.0.2.1",
+            "dns": "192.0.2.10",
+            "start": "192.0.2.100",
+            "end": "192.0.2.100",
+            "max": 1,
+            "leases": [
+                {
+                    "ipAddress": "192.0.2.100",
+                    "macAddress": item.state["client"]["port"]["mac"],
+                    "leaseTime": 3600,
+                    "port": INTERFACE,
+                }
+            ],
+        }
+    }
+    item.state["server"]["exclusions"] = [
+        {"start": "192.0.2.1", "end": "192.0.2.1"},
+        {"start": "192.0.2.10", "end": "192.0.2.10"},
+    ]
+    item.state["client"]["port"].update(
+        mode=True, ip="192.0.2.100", mask="255.255.255.0"
+    )
+    item.sync()
+
+
+def test_native_state_only_lease_requires_two_exact_client_and_pool_reads(engine):
+    """A physical matching row, full policy and stable client open the gate."""
+    item = engine()
+    _prime_native_usable(item)
+    runtime = _runtime(item)
+    runtime._dhcp_state_interval = 0.0
+    runtime._dhcp_state_max_samples = 3
+
+    row = runtime.verify(_native_state_expectation())
+
+    assert row.status is ActionExecutionStatus.VERIFIED
+    assert row.claim_level == "attributed_to_effective_server_pool"
+    assert row.observed["client_ipv4"] == "192.0.2.100"
+    assert row.observed["effective_pool_name"] == "serverPool"
+    assert row.observed["stable_samples"] == 2
+    assert item.state["client"]["runs"] == 0
+
+
+def test_native_state_only_lease_refuses_late_inactive_client_mode(engine):
+    """A PC2 mode change after enable cannot open dependent HTTP."""
+    item = engine()
+    _prime_native_usable(item)
+    item.state["inactive_client"]["port"]["mode"] = True
+    item.sync()
+    runtime = _runtime(item)
+    runtime._dhcp_state_interval = 0.0
+    runtime._dhcp_state_max_samples = 3
+
+    row = runtime.verify(_native_state_expectation())
+
+    assert row.status is ActionExecutionStatus.FAILED
+    assert row.cause == "native_inactive_client_changed"
+
+
+@pytest.mark.parametrize("bad_field", ["macAddress", "port", "dns"])
+def test_native_state_only_lease_refuses_wrong_row_or_policy(engine, bad_field):
+    """An address alone never opens HTTP through the state-only route."""
+    item = engine()
+    _prime_native_usable(item)
+    if bad_field == "dns":
+        item.state["server"]["pools"]["serverPool"]["dns"] = "192.0.2.99"
+    else:
+        item.state["server"]["pools"]["serverPool"]["leases"][0][bad_field] = (
+            "0000.0000.0001" if bad_field == "macAddress" else "FastEthernet1"
+        )
+    item.sync()
+    runtime = _runtime(item)
+    runtime._dhcp_state_interval = 0.0
+    runtime._dhcp_state_max_samples = 3
+
+    row = runtime.verify(_native_state_expectation())
+
+    assert row.status is not ActionExecutionStatus.VERIFIED
+    assert item.state["client"]["runs"] == 0
+
+
+def test_native_server_state_reader_requires_single_physical_policy(engine):
+    """Logical label stays separate while the physical singleton is verified."""
+    item = engine(native_coupled=True)
+    item.state["server"]["pools"] = {
+        "serverPool": {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.0",
+            "end": "192.0.3.255",
+            "max": 512,
+            "leases": [],
+        }
+    }
+    item.state["server"]["exclusions"] = []
+    item.sync()
+    _runtime(item).apply_actions([_native_one_user_pool()])
+    _runtime(item).apply_actions([_native_one_user_enable()])
+    expected = {
+        **_server_expectation().expected,
+        "pool_name": "Q3_DATA",
+        "effective_pool_name": "serverPool",
+        "dns_server": "192.0.2.10",
+        "lease_start": "192.0.2.100",
+        "lease_end": "192.0.2.100",
+        "max_users": 1,
+        "excluded_ranges_json": json.dumps(
+            [
+                {"start": "192.0.2.1", "end": "192.0.2.1"},
+                {"start": "192.0.2.10", "end": "192.0.2.10"},
+            ],
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+    }
+    expectation = _server_expectation().model_copy(update={"expected": expected})
+
+    positive = _runtime(item).verify(expectation)
+    assert positive.status is ActionExecutionStatus.VERIFIED
+    assert positive.observed["pool_name"] == "serverPool"
+    assert positive.observed["requested_pool_name"] == "Q3_DATA"
+    assert positive.observed["physical_pool_count"] == 1
+
+    item.state["server"]["pools"]["Q3_DATA"] = {
+        "name": "Q3_DATA",
+        "network": "192.0.2.0",
+        "mask": "255.255.255.0",
+        "gateway": "192.0.2.1",
+        "dns": "192.0.2.10",
+        "start": "192.0.2.100",
+        "end": "192.0.2.100",
+        "max": 1,
+        "leases": [],
+    }
+    item.sync()
+    conflicting = _runtime(item).verify(expectation)
+    assert conflicting.status is ActionExecutionStatus.FAILED
 
 
 def test_server_state_reads_every_stored_field_but_not_lease_cleanliness(engine):

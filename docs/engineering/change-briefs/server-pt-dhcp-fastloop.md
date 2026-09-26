@@ -914,3 +914,117 @@ requiring the exact subject, singleton physical pool, and complete exclusion
 count/list. Earlier disabled-policy stages retain their disabled terminal
 predicate. Terminal support never substitutes for the separate serving
 measurement or proves the policy fields are correct.
+
+## Native serving result and product-path design delta, version 10
+
+Episode 5 ran `Q3-NATIVE-SERVE` from clean commit
+`04f5337eef67f0c850e057537ce80757e3aa73b1` (tree
+`b0a0d2e0e34b4efd7892ee52aff6d033bfc16ecc`), build 9.0.1.0858,
+attempt `66645cff81524e8f93d05295ddcd075f`, instance
+`6d045ac7212f481c91ccd97a6dc621b5`, file channel. The original
+qualification record SHA-256 is
+`83e01280787c46b422c1339c2d6b7e8bce58a44aee6ac67804b3bf1edb775149`;
+the complete 103-entry archive is
+[`dhcp-autonomy-02/e5`](../../reference/server-pt/evidence/dhcp-autonomy-02/e5/README.md).
+The first owned launch was recorded without a retry. The guarded server
+enable and PC1 DHCP-mode effects were followed by two fresh samples 11.140
+seconds apart: PC1 was DHCP-on with `192.0.2.100/24`, stable MAC
+`0004.9AB0.A2B2`, and the exact IP/MAC/`FastEthernet0` row in the one-user
+physical `serverPool`. The separately named logical pool was observed
+absent, the complete requested server policy persisted, and PC2 was
+DHCP-off/unassigned. No explicit `dhcpRun`, ping, DNS or HTTP call was made.
+All required native serving measurements were **SUPPORTED_IN_SAMPLE** for
+this disposable fixture and exact build. The run used 63 operations, proved
+fixture restoration, retired its owned PID via exact save-prompt `No`, and
+left no process/mailbox/claim residue. Episode 5 closed at 63 operations
+and 217.331687 seconds; cumulative use is 226 operations and 1349.41694
+seconds.
+
+**Product strategy.** Compose a new acceptance intent with one explicitly
+selected DHCP and HTTP client (PC1), capacity one, and no explicit pool name.
+The earlier Q3 fixture explicitly named `MCP_E6Q_DHCP`; that request is not
+silently rewritten. Keep a derived logical pool label in the plan and an
+explicit `effective_pool_name="serverPool"` backend binding in the typed
+pool action, verification expectations and durable authority record. The
+binding is admitted only for the measured build, model, interface and
+one-user policy under a reviewed evidence identity. Named-pool plans and
+other builds retain their existing behavior and UNKNOWN support.
+
+The E5 client-mode effect currently precedes E6. For the native candidate,
+it must check the owned disabled Server-PT process and both exact client
+port preconditions inside the same evaluation that can activate mode.
+Product E6 then configures the sole physical native pool while disabled,
+with a complete read after each measured setter transition and a full
+policy verification before process enable. The enable action depends on
+that verified pool; no second named pool is created. A partial, unknown or
+contradictory setter result stops later effects. The product state-based
+DHCP mode compiles no `AcquireDhcpLease` and makes per-client `DHCP_LEASE`
+required: two fresh stable client-mode/address/mask/MAC readings must join
+an exact IP/MAC/port row in the effective pool and the complete requested
+server policy. A positive row does not require table-end proof. Explicit
+`dhcpRun` remains a separate causal action and stays UNKNOWN in the exact
+candidate capability binding.
+
+The existing service scheduler must stage that required lease state before
+PC1 HTTP effects or HTTP verification. It must continue to withhold HTTP
+for missing, foreign, malformed, unstable or unobservable lease evidence.
+The public four-argument MCP product route is the acceptance entrypoint;
+its HTTP check is the cold first request by IP, with no ping/DNS/warm-up or
+static address injection. The one-client LIVE fixture locates the cause.
+The maintained 2/20/200/1000-client offline scale route must keep grouped
+physical-pool reads and per-client outcomes; no native thousand-client
+capacity claim follows from offline tests.
+
+Risk remains L. RED controls will cover exact client selection and PC2
+exclusion, explicit-name refusal, native pool/enable order, in-evaluation
+guards, unknown effects, joined lease state and HTTP dependency, static
+client HTTP positives, and scale. The next LIVE product episode is admitted
+only after focused/affected verification and independent adversarial review,
+with a new clean SHA and finite campaign allocation. Product acceptance,
+restart/renewal and final integrated capability promotion remain separate
+from this already measured diagnostic result.
+
+**Backend authority correction.** The initial candidate placed
+`backend_binding=native_default` in the input-facing DHCP pool requirement.
+That would let a public intent request a backend strategy directly. Remove
+that field. An unnamed `state_only` DHCP request remains only a logical
+requirement; the compiler selects physical `serverPool` exclusively when the
+current exact-build capability snapshot contains the reviewed native-binding
+operation record. This marker has recorded-run provenance and the episode-5
+build/SHA/channel/run identity. The default catalog has no such marker until
+product qualification and reviewed feature-branch registration. An explicit
+different pool name still refuses the native strategy.
+
+The selected E5 client action carries the compiler's exact inactive PC2
+name/interface binding as well as the server binding. Its correlated
+same-evaluation guard checks PC2 DHCP mode off and IP/mask unassigned before
+it can change PC1. A PC2 activation at the dispatch boundary therefore
+reports a refused PC1 effect, and the later E6 enable guard checks both
+clients again. The client action cannot use a missing inactive binding in
+this one-user candidate.
+
+The required state-only lease verification also re-reads the compiled
+inactive PC2 port on each sample after server enable, with DHCP mode off and
+IP/mask unassigned. The E5/E6 pre-effect guards cannot stand in for this
+later observation; a PC2 activation after enable prevents lease VERIFIED
+and therefore withholds the dependent HTTP request.
+
+The native-binding marker authorizes only the measured one-user policy.
+After allocation derivation, the service compiler rejects any different
+network/mask, gateway, DNS, `.100-.100` window or two singleton exclusions
+before E5 begins. E6 runtime retains its own exact pre-effect check; the
+compiler check prevents a selected client's E5 mode from being changed for
+an intent that E6 could never implement.
+
+**Product qualification boundary.** Add `Q3-NATIVE-PRODUCT` as a finite
+experimental stage in the DHCP autonomy campaign. Its owned Server-PT,
+two PCs and IE-2000 links match the composed reference manifest exactly.
+The IE-2000 switch ports use the already recorded exact-build backend
+inventory (`FastEthernet1/x`) for this stage; the declared `0/x` catalog
+is not silently treated as a backend observation. The stage supplies the
+manifest-directed four-device inventory to the maintained A1-E6 product
+entry without enumerating the whole workspace. It records the product run
+and accepts only overall VERIFIED plus required DHCP lease and HTTP fetch
+VERIFIED. An independent terminal reading and fixture restoration still
+occur on a failed product result. The private capability snapshot is
+candidate authority for this episode, not default catalog promotion.

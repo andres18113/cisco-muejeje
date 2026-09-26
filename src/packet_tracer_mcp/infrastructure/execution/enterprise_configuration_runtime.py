@@ -40,6 +40,13 @@ from ...domain.enterprise.models.configuration_runtime import (
     RuntimeVerification,
 )
 from ...domain.enterprise.models.discovery import DeviceInitializationState
+from ...domain.enterprise.models.execution import (
+    DispatchFact,
+    FootprintFact,
+    PostconditionFact,
+    ResultFact,
+    TransitionFact,
+)
 from ...domain.enterprise.models.forwarding import (
     AccessForwardingObservation,
     AccessForwardingRow,
@@ -1472,19 +1479,40 @@ class PacketTracerEnterpriseConfigurationRuntime:
                     )
 
         ordered = sorted(endpoints, key=lambda item: item.id)
-        chunks = [
-            ordered[start : start + MAX_ENDPOINT_CALLS_PER_SEND]
-            for start in range(0, len(ordered), MAX_ENDPOINT_CALLS_PER_SEND)
-        ]
+        chunks: list[list[SetEndpointStaticAddress | SetEndpointDhcp]] = []
+        ordinary: list[SetEndpointStaticAddress | SetEndpointDhcp] = []
+        for action in ordered:
+            guarded = isinstance(action, SetEndpointDhcp) and bool(
+                action.native_effective_pool_name
+            )
+            if guarded:
+                if ordinary:
+                    chunks.append(ordinary)
+                    ordinary = []
+                chunks.append([action])
+            else:
+                ordinary.append(action)
+                if len(ordinary) == MAX_ENDPOINT_CALLS_PER_SEND:
+                    chunks.append(ordinary)
+                    ordinary = []
+        if ordinary:
+            chunks.append(ordinary)
         for index, chunk in enumerate(chunks):
             # Script size is bounded by the call count of one send. A chunk
             # the engine refuses marks only its own actions; the others keep
             # their own outcome, and a lone chunk keeps the historical id.
-            payload = "".join(self._endpoint_call(action) for action in chunk)
-            applied = bool(payload) and self._send(payload)
             batch_id = "endpoints:" + str(int(chunk[0].phase))
             if len(chunks) > 1:
                 batch_id += f":{index}"
+            if (
+                len(chunk) == 1
+                and isinstance(chunk[0], SetEndpointDhcp)
+                and (chunk[0].native_effective_pool_name)
+            ):
+                results[chunk[0].id] = self._guarded_native_mode(chunk[0], batch_id)
+                continue
+            payload = "".join(self._endpoint_call(action) for action in chunk)
+            applied = bool(payload) and self._send(payload)
             for action in chunk:
                 results[action.id] = RuntimeActionMutation(
                     action_id=action.id,
@@ -1547,6 +1575,66 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 + ",".join((name, "true", "null", "null", "null", "null", interface))
                 + ");"
             )
+            if action.native_effective_pool_name:
+                if (
+                    action.native_effective_pool_name != "serverPool"
+                    or not action.native_server_device_name
+                    or not action.native_server_interface
+                    or len(action.native_inactive_clients) != 1
+                ):
+                    return "try{}catch(__e){}"
+                server = json.dumps(action.native_server_device_name)
+                server_interface = json.dumps(action.native_server_interface)
+                inactive = json.dumps(
+                    [list(item) for item in action.native_inactive_clients]
+                )
+                return (
+                    "var __nativeAttempted=false,__nativeError='';"
+                    "var __others=" + inactive + ",__inactiveClear=true;"
+                    "try{var __sd=ipc.network().getDevice("
+                    + server
+                    + ");var __sm=__sd&&__sd.getProcess('DhcpServerMain');"
+                    "var __sp=__sm&&__sm.getDhcpServerProcessByPortName("
+                    + server_interface
+                    + ");var __q=__sp&&__sp.getPool('serverPool');"
+                    "var __cd=ipc.network().getDevice("
+                    + name
+                    + ");var __cp=null;if(__cd){var __n=__cd.getPortCount();"
+                    "if(typeof __n==='number'&&__n>=0&&__n<=32){"
+                    "for(var __i=0;__i<__n;__i++){var __v=__cd.getPortAt(__i);"
+                    "if(__v&&String(__v.getName())==="
+                    + interface
+                    + "){__cp=__v;break;}}}}"
+                    "for(var __j=0;__j<__others.length;__j++){"
+                    "var __od=ipc.network().getDevice(__others[__j][0]),__op=null;"
+                    "if(!__od){__inactiveClear=false;break;}"
+                    "var __count=__od.getPortCount();"
+                    "if(typeof __count!=='number'||__count<0||__count>32){"
+                    "__inactiveClear=false;break;}"
+                    "for(var __k=0;__k<__count;__k++){var __p=__od.getPortAt(__k);"
+                    "if(__p&&String(__p.getName())===__others[__j][1]){"
+                    "__op=__p;break;}}"
+                    "if(!__op||__op.isDhcpClientOn()!==false){"
+                    "__inactiveClear=false;break;}"
+                    "var __otherIp=String(__op.getIpAddress());"
+                    "var __otherMask=String(__op.getSubnetMask());"
+                    "if((__otherIp!==''&&__otherIp!=='0.0.0.0')||"
+                    "(__otherMask!==''&&__otherMask!=='0.0.0.0')){"
+                    "__inactiveClear=false;break;}}"
+                    "if(__inactiveClear&&__sp&&__q&&__cp&&__sp.isEnable()===false&&"
+                    "__sp.getPoolCount()===1&&"
+                    "String(__q.getDhcpPoolName())==='serverPool'&&"
+                    "__sp.getExcludedAddressCount()===0&&"
+                    "__cp.isDhcpClientOn()===false){"
+                    "var __ip=String(__cp.getIpAddress());"
+                    "var __mask=String(__cp.getSubnetMask());"
+                    "if((__ip===''||__ip==='0.0.0.0')&&"
+                    "(__mask===''||__mask==='0.0.0.0')){"
+                    "__nativeAttempted=true;"
+                    + call
+                    + "}}}catch(__e){__nativeError=String(__e&&__e.message?"
+                    "__e.message:__e).substring(0,200);}"
+                )
         else:
             arguments = ",".join(
                 (
@@ -1561,6 +1649,155 @@ class PacketTracerEnterpriseConfigurationRuntime:
             )
             call = "configurePcIp(" + arguments + ");"
         return "try{" + call + "}catch(__e){}"
+
+    def _guarded_native_mode(
+        self, action: SetEndpointDhcp, batch_id: str
+    ) -> RuntimeActionMutation:
+        """Correlate one native DHCP-mode effect with its same-evaluation guard."""
+        if (
+            action.native_effective_pool_name != "serverPool"
+            or not action.native_server_device_name
+            or not action.native_server_interface
+        ):
+            return RuntimeActionMutation(
+                action_id=action.id,
+                applied=False,
+                batch_id=batch_id,
+                dispatch=DispatchFact.NOT_SUBMITTED,
+                result=ResultFact.NOT_APPLICABLE,
+                attempted=None,
+                cause="native_mode_binding_unsupported",
+            )
+        name = json.dumps(action.device_name)
+        interface = json.dumps(action.interface)
+        script = (
+            f"var __cn={name},__ci={interface},__pre=null,__post=null,"
+            "__readError='';"
+            "function __client(){var d=ipc.network().getDevice(__cn);"
+            "if(!d){throw new Error('client_absent');}"
+            "var n=d.getPortCount();if(typeof n!=='number'||n<0||n>32){"
+            "throw new Error('client_port_count');}"
+            "var p=null;for(var i=0;i<n;i++){var q=d.getPortAt(i);"
+            "if(q&&String(q.getName())===__ci){p=q;break;}}"
+            "if(!p){throw new Error('client_port_absent');}"
+            "var mode=p.isDhcpClientOn();if(typeof mode!=='boolean'){"
+            "throw new Error('client_mode_invalid');}"
+            "return {mode:mode,ip:String(p.getIpAddress()),"
+            "mask:String(p.getSubnetMask())};}"
+            "try{__pre=__client();}catch(__e){__readError='pre_read';}"
+            + self._endpoint_call(action)
+            + "try{__post=__client();}catch(__e){__readError='post_read';}"
+            "reportResult(JSON.stringify({device:__cn,interface:__ci,"
+            "pre:__pre,post:__post,attempted:__nativeAttempted,"
+            "call_error:__nativeError,read_error:__readError}));"
+        )
+        try:
+            body = self._send_and_wait(script, self._endpoint_timeout)
+        except Exception:
+            body = None
+        if body is None:
+            return RuntimeActionMutation(
+                action_id=action.id,
+                applied=False,
+                batch_id=batch_id,
+                dispatch=DispatchFact.ACCEPTANCE_UNKNOWN,
+                result=ResultFact.NOT_OBSERVED,
+                postcondition=PostconditionFact.UNOBSERVED,
+                transition=TransitionFact.UNOBSERVED,
+                footprint=FootprintFact.NOT_APPLICABLE,
+                attempted=None,
+                cause="native_mode_result_unobserved",
+            )
+        try:
+            payload = json.loads(body)
+        except (TypeError, ValueError):
+            payload = None
+        if not isinstance(payload, dict) or (
+            payload.get("device") != action.device_name
+            or payload.get("interface") != action.interface
+            or not isinstance(payload.get("attempted"), bool)
+            or not isinstance(payload.get("call_error"), str)
+            or not isinstance(payload.get("read_error"), str)
+        ):
+            return RuntimeActionMutation(
+                action_id=action.id,
+                applied=True,
+                batch_id=batch_id,
+                dispatch=DispatchFact.ACCEPTED,
+                result=ResultFact.CORRELATED,
+                postcondition=PostconditionFact.UNOBSERVED,
+                transition=TransitionFact.UNOBSERVED,
+                footprint=FootprintFact.NOT_APPLICABLE,
+                attempted=None,
+                cause="native_mode_response_malformed",
+            )
+        if payload["attempted"] is False:
+            return RuntimeActionMutation(
+                action_id=action.id,
+                applied=True,
+                batch_id=batch_id,
+                dispatch=DispatchFact.ACCEPTED,
+                result=ResultFact.CORRELATED,
+                postcondition=PostconditionFact.UNOBSERVED,
+                transition=TransitionFact.NOT_APPLICABLE,
+                footprint=FootprintFact.COVERED,
+                attempted=False,
+                cause="native_mode_guard_refused",
+            )
+        pre = payload.get("pre")
+        post = payload.get("post")
+        complete = (
+            isinstance(pre, dict)
+            and isinstance(post, dict)
+            and isinstance(pre.get("mode"), bool)
+            and isinstance(post.get("mode"), bool)
+            and all(
+                isinstance(value.get(field), str)
+                for value in (pre, post)
+                for field in ("ip", "mask")
+            )
+            and not payload["read_error"]
+            and not payload["call_error"]
+            and pre["mode"] is False
+            and pre["ip"] in {"", "0.0.0.0"}
+            and pre["mask"] in {"", "0.0.0.0"}
+        )
+        if not complete:
+            return RuntimeActionMutation(
+                action_id=action.id,
+                applied=True,
+                batch_id=batch_id,
+                dispatch=DispatchFact.ACCEPTED,
+                result=ResultFact.CORRELATED,
+                postcondition=PostconditionFact.UNOBSERVED,
+                transition=TransitionFact.UNOBSERVED,
+                footprint=FootprintFact.COVERED,
+                attempted=True,
+                cause="native_mode_read_or_call_unobserved",
+                call_error=payload["call_error"],
+            )
+        satisfied = (
+            post["mode"] is True
+            and post["ip"] in {"", "0.0.0.0"}
+            and post["mask"] in {"", "0.0.0.0"}
+        )
+        return RuntimeActionMutation(
+            action_id=action.id,
+            applied=True,
+            batch_id=batch_id,
+            dispatch=DispatchFact.ACCEPTED,
+            result=ResultFact.CORRELATED,
+            postcondition=(
+                PostconditionFact.SATISFIED
+                if satisfied
+                else PostconditionFact.UNSATISFIED
+            ),
+            transition=(
+                TransitionFact.CHANGED if pre != post else TransitionFact.UNCHANGED
+            ),
+            footprint=FootprintFact.COVERED,
+            attempted=True,
+        )
 
     def verify(
         self,
