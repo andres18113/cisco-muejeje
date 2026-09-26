@@ -1050,3 +1050,13 @@ the fixture inventory and ordinary diagnostics still reject workspace
 enumeration. The sibling location keeps product JSON outside the
 qualification store's recursive attempt-uniqueness scan. This is a
 new candidate SHA and episode; episode 6 is immutable negative evidence.
+
+**Suite drift correction (S).** Exact-SHA CI run 36211546830 at `27ee68c`
+failed three offline tests on Ubuntu; CI was last green at `a921a68`, and no
+full suite ran on the six commits between. The campaign authority test still
+expected three campaigns, so it now names `SERVER-PT-DHCP-AUTONOMOUS-02` and
+pins its fixed identity against the mandate hash rather than the
+implementation. The namespace inventory flagged episode 1's archived launch
+preflight, whose inert `"src.packet_tracer_mcp" in sys.modules` probe is
+isolation evidence; it gains a reviewed retained-reference entry and the
+archive bytes are unchanged. No runtime, LIVE or product behavior changes.

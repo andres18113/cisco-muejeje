@@ -163,6 +163,10 @@ RETAINED_STRING_REFERENCES: dict[str, str] = {
     "tools/stp_pvst_runtime_qualification.py": (
         "LIVE runner identity guard listing the forbidden names."
     ),
+    "docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/lead/launch_owned_lab.py": (
+        "Immutable LIVE evidence: the owned-lab launch preflight recorded "
+        "whether the retired name was loaded."
+    ),
 }
 
 #: Syntax that builds one string, so a constant inside it is still that string.

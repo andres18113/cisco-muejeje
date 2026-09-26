@@ -26,6 +26,7 @@ from packet_tracer_mcp.application.use_cases.prepare_server_pt_commissioning imp
 from packet_tracer_mcp.application.use_cases.server_pt_campaign import (
     C31_CAMPAIGN,
     CAMPAIGNS,
+    DHCP_AUTONOMY_CAMPAIGN,
     DHCP_FASTLOOP_CAMPAIGN,
     FASTLOOP_CAMPAIGN,
     ExecutionPurpose,
@@ -110,6 +111,7 @@ def test_each_campaign_names_its_purpose_and_fixed_limits():
         C31_CAMPAIGN.campaign_id: C31_CAMPAIGN,
         FASTLOOP_CAMPAIGN.campaign_id: FASTLOOP_CAMPAIGN,
         DHCP_FASTLOOP_CAMPAIGN.campaign_id: DHCP_FASTLOOP_CAMPAIGN,
+        DHCP_AUTONOMY_CAMPAIGN.campaign_id: DHCP_AUTONOMY_CAMPAIGN,
     }
     assert C31_CAMPAIGN.purpose is ExecutionPurpose.DELIVERY
     assert C31_CAMPAIGN.complete_attempt_limit == 2
@@ -119,6 +121,15 @@ def test_each_campaign_names_its_purpose_and_fixed_limits():
     assert FASTLOOP_CAMPAIGN.acceptance_cost_pin is None
     assert FASTLOOP_CAMPAIGN.charter_sha256 == (
         "3ed40bd1e3bfc433f340c995d3e5944b010e3099e8e1e1228953d2304646a793"
+    )
+    # The delegated autonomy mandate: experimental, no attempt quota, and its
+    # section 5 lets retirement force-terminate a revalidated owned process.
+    assert DHCP_AUTONOMY_CAMPAIGN.purpose is ExecutionPurpose.EXPERIMENTAL
+    assert DHCP_AUTONOMY_CAMPAIGN.complete_attempt_limit is None
+    assert DHCP_AUTONOMY_CAMPAIGN.acceptance_cost_pin is None
+    assert DHCP_AUTONOMY_CAMPAIGN.forced_retirement_authorized is True
+    assert DHCP_AUTONOMY_CAMPAIGN.charter_sha256 == (
+        "3bb343ef80d75c0ebf37204c8fbfd57da23eea4e5de57a7227ee1ded2e2d1ea2"
     )
 
 
