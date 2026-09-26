@@ -118,6 +118,18 @@ CONTINUITY_READING_ALLOWANCE = 6
 EPISODES_PER_GROUP = 2
 
 
+def _extension_within(available: float) -> float:
+    """Return the extension one observation may take from what it may spend.
+
+    It is that time less the group's own window and one poll interval of
+    margin, so a converged extension returns inside it.
+    """
+    return max(
+        0.0,
+        available - READINESS_GROUP_DEADLINE_SECONDS - READINESS_GROUP_INTERVAL_SECONDS,
+    )
+
+
 def readiness_limits(plan: AccessReadinessPlan) -> tuple[int, float]:
     """Derive the episode ceiling and total wait one plan may use.
 
@@ -553,21 +565,28 @@ class ServiceAccessReadinessGate:
             if other != key and other not in self._results
         )
 
-    def _extension_allowance(self, key: GroupKey, remaining: float) -> float:
-        """Return what one group may spend on a simulation-time extension.
+    def _available_seconds(
+        self,
+        key: GroupKey,
+        remaining: float,
+        *,
+        first: bool,
+        window: float = READINESS_GROUP_DEADLINE_SECONDS,
+    ) -> float:
+        """Return what one observation of this group may spend.
 
-        It is what the shared budget has left after this group's own window,
-        the first window still owed to every group not yet observed, and one
-        poll interval of margin, so a converged extension returns inside the
-        shared budget and never starves a later group.
+        A group's first observation always keeps its own window, as it did
+        before any reservation existed. Anything beyond that -- an extension,
+        or a narrowed episode after one -- may use only what is not owed to
+        the first window of every other group not yet observed, so it can
+        never take a later group's first window.
         """
-        return max(
-            0.0,
-            remaining
-            - READINESS_GROUP_DEADLINE_SECONDS
-            - self._owed_seconds(key)
-            - READINESS_GROUP_INTERVAL_SECONDS,
-        )
+        reserved = remaining - self._owed_seconds(key)
+        return max(min(remaining, window), reserved) if first else reserved
+
+    def _extension_allowance(self, key: GroupKey, remaining: float) -> float:
+        """Return what a group's first observation may spend on an extension."""
+        return _extension_within(self._available_seconds(key, remaining, first=True))
 
     def _observe(
         self, requirement: AccessReadinessRequirement, *, narrowed: bool = False
@@ -581,6 +600,18 @@ class ServiceAccessReadinessGate:
         remaining, refused = self._admit_group()
         if refused:
             return unobserved_group_result(requirement, cause=refused), None
+        available = self._available_seconds(
+            requirement.key, remaining, first=not narrowed
+        )
+        if available <= 0:
+            # Whatever is left is owed to other groups' first windows.
+            return (
+                unobserved_group_result(
+                    requirement,
+                    cause=f"{CAUSE_BUDGET_EXHAUSTED}:reserved_for_other_groups",
+                ),
+                None,
+            )
         group_started = self._clock()
         switch_name = self._device_names.get(
             requirement.switch_device_id, requirement.switch_device_name
@@ -591,7 +622,7 @@ class ServiceAccessReadinessGate:
         )
         episode = self._episode(requirement.key, narrowed=narrowed)
         result, observation = self._observed(
-            requirement, switch_name, remaining, group_started
+            requirement, switch_name, available, group_started
         )
         return replace(result, episode=episode), observation
 
@@ -599,18 +630,21 @@ class ServiceAccessReadinessGate:
         self,
         requirement: AccessReadinessRequirement,
         switch_name: str,
-        remaining: float,
+        available: float,
         group_started: float,
     ) -> tuple[AccessReadinessGroupResult, AccessForwardingObservation | None]:
-        """Call the observer once and judge what it returned."""
-        owed = self._owed_seconds(requirement.key)
-        allowance = self._extension_allowance(requirement.key, remaining)
+        """Call the observer once and judge what it returned.
+
+        `available` is what this observation may spend; nothing here reaches
+        past it, and a converged extension is timely only inside it.
+        """
+        allowance = _extension_within(available)
         try:
             observation = self._observer.observe_access_forwarding(
                 switch_name,
                 requirement.vlan_id,
                 list(requirement.interfaces),
-                remaining_seconds=remaining,
+                remaining_seconds=available,
                 max_samples=READINESS_GROUP_MAX_SAMPLES,
                 deadline_seconds=READINESS_GROUP_DEADLINE_SECONDS,
                 interval_seconds=READINESS_GROUP_INTERVAL_SECONDS,
@@ -639,9 +673,7 @@ class ServiceAccessReadinessGate:
             and 0 < extension.wall_cap_seconds <= allowance
         )
         window = (
-            remaining - owed
-            if extended
-            else min(remaining, READINESS_GROUP_DEADLINE_SECONDS)
+            available if extended else min(available, READINESS_GROUP_DEADLINE_SECONDS)
         )
         if self._clock() - group_started >= window:
             # The rows remain available, but the product deadline is a closed
@@ -694,6 +726,21 @@ class ServiceAccessReadinessGate:
         remaining, refused = self._admit_group()
         if refused:
             return unobserved_continuity_result(requirement, cause=refused), None
+        available = self._available_seconds(
+            requirement.key,
+            remaining,
+            first=not narrowed,
+            window=CONTINUITY_GROUP_DEADLINE_SECONDS,
+        )
+        if available <= 0:
+            # Whatever is left is owed to other groups' first windows.
+            return (
+                unobserved_continuity_result(
+                    requirement,
+                    cause=f"{CAUSE_BUDGET_EXHAUSTED}:reserved_for_other_groups",
+                ),
+                None,
+            )
         component = requirement.component
         names = self._switch_names(requirement)
         by_switch = component.interfaces_by_switch()
@@ -718,7 +765,7 @@ class ServiceAccessReadinessGate:
         )
         episode = self._episode(requirement.key, narrowed=narrowed)
         result, observation = self._observed_continuity(
-            requirement, names, switches, pairs, remaining, group_started
+            requirement, names, switches, pairs, available, group_started
         )
         return replace(result, episode=episode), observation
 

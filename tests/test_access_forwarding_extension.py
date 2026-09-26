@@ -609,6 +609,128 @@ class _NeverCalled:
         raise AssertionError("not observed in this test")
 
 
+def _authoritative(
+    device_name: str,
+    vlan_id: int,
+    interfaces: Any,
+    states: dict[str, str],
+    bounds: dict[str, Any],
+    **fields: Any,
+) -> AccessForwardingObservation:
+    """One authoritative observation whose last read shows `states`."""
+    rows = tuple(
+        AccessForwardingRow(interface=item, matches=1, state=states[item], role="Desg")
+        for item in interfaces
+    )
+    evidence = AccessForwardingSampleEvidence(
+        elapsed_ms=1_000,
+        rows=rows,
+        executed=True,
+        fresh_output_observed=True,
+        output_complete=True,
+        observed_device_name=device_name,
+        device_identity_provenance="confirmed_unique",
+        vlan_present=True,
+        channel_calls=4,
+        sample_budget_exhausted=False,
+        deadline_reached=False,
+    )
+    return AccessForwardingObservation(
+        switch_name=device_name,
+        vlan_id=vlan_id,
+        requested_interfaces=tuple(interfaces),
+        rows=rows,
+        executed=True,
+        fresh_output_observed=True,
+        output_complete=True,
+        observed_device_name=device_name,
+        device_identity_provenance="confirmed_unique",
+        vlan_present=True,
+        samples=1,
+        sample_history=(evidence,),
+        max_samples=bounds["max_samples"],
+        deadline_seconds=bounds["deadline_seconds"],
+        deadline_scope="group",
+        sample_call_budget=bounds["sample_calls"],
+        channel_calls=4,
+        **fields,
+    )
+
+
+class _PartialThenForwarding:
+    """First a non-converged extension with one client port still listening."""
+
+    def __init__(self, clock: SimulatedClock) -> None:
+        self.clock = clock
+        self.calls: list[tuple[int, tuple[str, ...], float]] = []
+
+    def observe_access_forwarding(self, device_name, vlan_id, interfaces, **bounds):
+        first = not self.calls
+        self.calls.append((vlan_id, tuple(interfaces), bounds["remaining_seconds"]))
+        self.clock.advance(
+            89.0
+            if first
+            else min(bounds["remaining_seconds"], READINESS_GROUP_DEADLINE_SECONDS)
+        )
+        states = {
+            item: "LIS" if first and item == "FastEthernet1/5" else "FWD"
+            for item in interfaces
+        }
+        return _authoritative(
+            device_name,
+            vlan_id,
+            interfaces,
+            states,
+            bounds,
+            deadline_reached=first,
+            deadline_cause="episode_window_ended_without_admissible_sample"
+            if first
+            else "",
+        )
+
+
+def test_a_narrowed_observation_after_an_extension_keeps_a_later_groups_window():
+    """Narrowing after a long first episode cannot take another group's window."""
+    pc3 = "endpoint/hq/default/user_pc/003"
+    server_two = "endpoint/hq/default/server/002"
+    plan = _plan(
+        actions=[
+            _Action("FastEthernet1/1", (PC1,)),
+            _Action("FastEthernet1/3", (SERVER,)),
+            _Action("FastEthernet1/5", (pc3,)),
+            _Action("FastEthernet1/2", (PC2,), vlan=20),
+            _Action("FastEthernet1/4", (server_two,), vlan=20),
+        ],
+        expectations=[
+            _Expectation("http-1", ServiceVerificationKind.HTTP_FETCH, client=PC1),
+            _Expectation("http-3", ServiceVerificationKind.HTTP_FETCH, client=pc3),
+            _Expectation(
+                "http-2",
+                ServiceVerificationKind.HTTP_FETCH,
+                client=PC2,
+                host=server_two,
+            ),
+        ],
+    )
+    clock = SimulatedClock()
+    observer = _PartialThenForwarding(clock)
+    gate = ServiceAccessReadinessGate(
+        plan, observer, clock=clock, device_names={SWITCH: SWITCH_NAME}
+    )
+
+    gate.decide("http-1")
+    gate.decide("http-2")
+
+    vlans = [vlan for vlan, _interfaces, _remaining in observer.calls]
+    assert vlans == [10, 10, 20], observer.calls
+    # The narrowed VLAN 10 episode got only what VLAN 20 was not owed ...
+    assert observer.calls[1][2] == pytest.approx(
+        READINESS_TOTAL_BUDGET_SECONDS - 89.0 - READINESS_GROUP_DEADLINE_SECONDS
+    )
+    # ... so VLAN 20 still had its whole first window.
+    assert observer.calls[2][2] >= READINESS_GROUP_DEADLINE_SECONDS
+
+
 class _LateReporter:
     """Report a converged extension after the window, as told to."""
 

@@ -1252,7 +1252,19 @@ afterwards checks progress, so one read could open after the protocol
 budget was spent; the access inspection now refuses to open a read once
 the last clock reading shows the budget spent, and the waiter closes on
 `simulation_progress_exhausted`. The shared waiter itself is unchanged for
-Trunk and Voice. The offer and the effective cap derive from remaining
+Trunk and Voice. A follow-up review confirmed those three closed and the
+episode 7 path stays eligible, and found one more: after a non-converged
+extension that ends near 89 seconds with a forwarding subset, the existing
+narrowing starts a second observation that could spend another group's
+first window. The reservation now applies to every observation, access and
+continuity: a group's first observation keeps its own window as before,
+and anything beyond it (an extension, a narrowed episode) may use only the
+time not owed to other groups' first windows; a narrowed episode with
+nothing left is refused as `reserved_for_other_groups`. Narrowing windows
+of later groups are not reserved against an extension; their first windows
+are. Under the derived ceilings of two windows per group, plans without an
+extension behave as before, and the injected tight-budget test keeps its
+first-come result. The offer and the effective cap derive from remaining
 time, so the scalable equivalence test treats them as clock facts beside
 `elapsed_ms`; before that, it compared them and failed intermittently.
 With the pre-change sources restored,
