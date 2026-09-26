@@ -1274,3 +1274,37 @@ per read) refuses with the same dimension and cause as LIVE
 after the extension's reads observe forwarding. Touching
 `simulation_time_convergence.py` brought it under Ruff (import order, three
 docstrings and formatting).
+
+## Episode 8 result: native DHCP and dependent HTTP through the product, version 13
+
+Episode 8 ran `Q3-NATIVE-PRODUCT` at `04c06ad` (tree `6c5a644`), attempt
+`331fa0baf0974dfaa59efd69bd0590ac`, file channel, after four independent
+review rounds ended in approval; the archive is
+[`dhcp-autonomy-02/e8`](../../reference/server-pt/evidence/dhcp-autonomy-02/e8/README.md).
+The maintained A1-E6 product path completed with overall status
+`verified` and a completed, sealed product record. The required
+`DHCP_LEASE` check verified PC1 at `192.0.2.100/24` with its exact
+IP/MAC/port row in the effective physical `serverPool`, the logical pool
+label kept apart, and PC2 as the checked inactive client. Access readiness
+saw the same shape as episode 7 (`LIS` at 19.3 s, a deadline-truncated read
+at 32.3 s) and the simulation-time extension then read both ports `FWD` at
+53.6 s. The required `HTTP_FETCH` check verified one cold request from PC1
+to `http://192.0.2.10/` with fresh marker content. No `dhcpRun`, ping, DNS,
+warm-up or client static address was dispatched. The independent terminal
+reading showed PC2 DHCP-off and unassigned, the single pool row, the
+separately named pool absent and the complete requested policy. The run
+used 93 operations and 330.315531 seconds; launch, restoration, retirement
+and sealing were clean. Cumulative use is 431 operations and 2349.124315
+seconds.
+
+**What this establishes.** For the exact build, fixture, one-user policy and
+file channel, the maintained product configures the native pool, verifies an
+autonomous lease attributed to the effective pool, waits for access STP
+forwarding on Packet Tracer's own clock, and serves dependent HTTP to that
+client. It does not establish renewal, explicit `dhcpRun` causality, native
+capacity beyond one user, other builds, the public four-argument entry
+without the private capability snapshot, default catalog promotion or
+independent product acceptance. The simulation-time extension's listening
+budget is qualified for this fixture only; this run spent 1.75 simulated
+seconds between its two clock reads before its one extension read, so it
+does not measure the protocol clock rate.

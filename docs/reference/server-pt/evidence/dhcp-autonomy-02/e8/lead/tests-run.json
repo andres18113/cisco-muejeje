@@ -1,0 +1,8 @@
+[
+  "13 affected product, readiness, acceptance and qualification modules: 293 passed at 04c06adee4ac6a53299fc35556e8f31bac366ae5",
+  "full local suite at 246c06f (the extension before the reservation-only delta): 8130 passed, 6 skipped, 0 failed",
+  "tests/test_access_forwarding_extension.py regressions fail on their pre-fix sources for the intended reasons: episode 7 gate replay (EXECUTION, sample_call_budget_exhausted), window overrun anchor, late and foreign eligibility, spent simulation budget, later-group window and narrowed-episode reservation",
+  "quality_gate.py --base cisco/main --delivery-commit HEAD passed at 04c06adee4ac6a53299fc35556e8f31bac366ae5",
+  "exact-SHA CI green at 93bb643 and 81af939; CI for 04c06ad in progress at opening",
+  "Codex adversarial reviews 2f45f3c..e083979 (3 findings fixed), e083979..246c06f (1 finding fixed), 246c06f..04c06ad (approve: nothing blocks LIVE for the one-group native product fixture)"
+]
