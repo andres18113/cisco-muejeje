@@ -1060,3 +1060,47 @@ implementation. The namespace inventory flagged episode 1's archived launch
 preflight, whose inert `"src.packet_tracer_mcp" in sys.modules` probe is
 isolation evidence; it gains a reviewed retained-reference entry and the
 archive bytes are unchanged. No runtime, LIVE or product behavior changes.
+
+## Pre-episode-7 review corrections, version 11
+
+**Windows long paths (S).** The same CI run failed two more tests on
+Windows only: episode archive paths reach 157 characters, and a temp copy
+under the runner's pytest root overflows MAX_PATH, which Git for Windows
+refuses without `core.longpaths`. The governed-root test clones with that
+setting persisted in the new repository, and the immutable-evidence test
+enables it in its temp repository; the archives stay byte-identical. A
+local run with CI's 69-character basetemp reproduced both failures and now
+passes. Touching the governed-root test brought it under Ruff (import
+order, two docstrings, formatting).
+
+**Independent review before LIVE.** No retained record showed the claimed
+review of `27ee68c`, so a fresh Codex adversarial review covered
+`210e4e9..33f1bbf`. It returned two high findings.
+
+The product record was outside the campaign archive: only the
+qualification record was registered, so deleting or changing the product
+JSON after a VERIFIED run left `verify_index()` passing. This is accepted
+and corrected in the owning finalization block. When the sealed
+qualification record's `M-NATIVE-PRODUCT` facts name a product record, it
+is registered as external source `product-record` before the phase status
+is saved, so the index rehashes it thereafter. A sealing failure makes the
+phase status `stopped` with `product_record_unsealed:<type>`, and the CLI
+no longer exits 0 whenever its phase status is `stopped`, including an
+unverified archive. The offline harness now writes product records to
+production's `data/services/product-qualification` location. Regressions
+prove that tampering or deletion fails the index and that an unsealable
+record fails closed while the measurement itself stays supported.
+
+The second finding is that injected fixture inventory resolves names in
+whichever receiver consumes a command, and a replacement receiver in the
+unfenced interval could hold a same-named device. The code confirms that
+every product dispatch still passes the ledger's per-call live-authority
+guard, but that guard is local: `effect_guard` already declares that no
+dispatcher carries a receiver-verified session token, and every
+diagnostic record since episode 1 carries that limitation. The delta did
+not widen it. An in-band fence would redesign every dispatcher and the
+Script Engine receiver, outside Server-PT DHCP. Episode 7 proceeds under
+the existing declared limitation, with verified exclusivity, one writer,
+the per-dispatch guard, and campaign-unique `Q3-DEFAULT-*` names that a
+foreign document would not resolve. The operator is asked not to open
+Packet Tracer during the episode.

@@ -203,6 +203,8 @@ def _run(
 
         monkeypatch.setattr(qualifier, "apply_enterprise_services", partial_product)
     store = ServerPtCommissioningStore(directory, CAMPAIGN)
+    # Production's ignored sibling of the qualification store.
+    product_directory = directory / "data/services/product-qualification"
 
     class CompleteFails(ServiceRunRecordStore):
         def complete(self, record):
@@ -273,9 +275,9 @@ def _run(
                 ),
                 native_product_import_preflight=IsolationPreflight,
                 native_product_record_store_factory=lambda: (
-                    CompleteFails(directory)
+                    CompleteFails(product_directory)
                     if fail_complete
-                    else ServiceRunRecordStore(directory)
+                    else ServiceRunRecordStore(product_directory)
                 ),
                 native_product_endpoint_observer=lambda bound: (
                     PacketTracerEndpointAddressObserver(bound.send_and_wait)
@@ -422,6 +424,60 @@ def test_owned_stage_runs_one_attributed_dhcp_then_cold_http(
     assert snapshot["links"] == 0
     assert snapshot["live_clients"] == 0
     assert store.load_phase_status(ATTEMPT, "qualification")["restoration_proven"]
+
+
+def test_positive_run_seals_its_product_record_in_the_campaign_archive(
+    tmp_path, capsys, monkeypatch
+):
+    """Changing or deleting the decisive product record fails the archive."""
+    require_node()
+    code, summary, record, _calls, _snapshot, store = _run(
+        tmp_path, capsys, monkeypatch, retry_on_enable=True
+    )
+    assert code == 0, summary
+    measure = next(
+        item for item in record.measurements if item.experiment_id == "M-NATIVE-PRODUCT"
+    )
+    product = Path(measure.facts["product_record_path"])
+    assert product.is_file()
+    assert store.external_source_registered(ATTEMPT, "product-record")
+    assert store.verify_index() == ()
+    original = product.read_bytes()
+    product.write_bytes(original + b" ")
+    assert store.verify_index() == ("archive_bytes_changed",)
+    product.write_bytes(original)
+    assert store.verify_index() == ()
+    product.unlink()
+    assert store.verify_index() != ()
+
+
+def test_unsealable_product_record_fails_closed(tmp_path, capsys, monkeypatch):
+    """A verified product run whose record cannot be sealed is not a success."""
+    require_node()
+    real = ServerPtCommissioningStore.register_external_source
+
+    def refuse_product(self, attempt_id, label, source_path):
+        if label == "product-record":
+            raise ValueError("injected sealing failure")
+        return real(self, attempt_id, label, source_path)
+
+    monkeypatch.setattr(
+        ServerPtCommissioningStore, "register_external_source", refuse_product
+    )
+    code, summary, record, _calls, _snapshot, store = _run(
+        tmp_path, capsys, monkeypatch, retry_on_enable=True
+    )
+    measure = next(
+        item for item in record.measurements if item.experiment_id == "M-NATIVE-PRODUCT"
+    )
+    assert measure.conclusion is MeasurementConclusion.SUPPORTED_IN_SAMPLE
+    assert code != 0
+    status = store.load_phase_status(ATTEMPT, "qualification")
+    assert status["outcome"] == "stopped"
+    findings = summary["campaign"]["archive_findings"]
+    assert "product_record_unsealed:ValueError" in status["archive_findings"]
+    assert "product_record_unsealed:ValueError" in findings
+    assert not store.external_source_registered(ATTEMPT, "product-record")
 
 
 def test_owned_stage_never_promotes_partial_product_run(tmp_path, capsys, monkeypatch):

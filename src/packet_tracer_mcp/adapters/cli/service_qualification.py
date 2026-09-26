@@ -101,6 +101,7 @@ from ...domain.enterprise.models.service_qualification import (
     Q3_SWITCH,
     ExecutionMode,
     QualificationAuthorization,
+    QualificationRecord,
     QualificationRequest,
     QualificationStage,
     RefusalKind,
@@ -707,6 +708,21 @@ def _native_product_runtimes(
     )
 
 
+def _native_product_record_path(record: QualificationRecord | None) -> str:
+    """Return the product record a native product measurement names, or "".
+
+    The path is read from the qualification record itself, so the campaign
+    seals exactly the file that record cites.
+    """
+    if record is None:
+        return ""
+    for item in record.measurements:
+        if item.experiment_id == "M-NATIVE-PRODUCT":
+            path = item.facts.get("product_record_path")
+            return path if isinstance(path, str) else ""
+    return ""
+
+
 def _diagnostic_service_runtime(
     bound: LedgeredTransport, allowance
 ) -> PacketTracerEnterpriseServiceRuntime:
@@ -1218,6 +1234,19 @@ def _campaign_main(
             "campaign_id": campaign.campaign_id,
             **_campaign_status(result, active_seconds=active, ledger_result=recorded),
         }
+        product_path = _native_product_record_path(record)
+        if product_path:
+            # The product record is the decisive E5/E6 evidence; sealing it
+            # before the status is saved makes a failure part of that status.
+            try:
+                store.register_external_source(
+                    attempt, "product-record", Path(product_path)
+                )
+            except (OSError, ValueError) as exc:
+                status["outcome"] = "stopped"
+                status["archive_findings"] = [
+                    f"product_record_unsealed:{type(exc).__name__}"
+                ]
         try:
             store.save_phase_status(attempt, "qualification", status)
             if result is not None and result.record_path:
@@ -1225,7 +1254,10 @@ def _campaign_main(
                     attempt, "qualification-record", Path(result.record_path)
                 )
         except (OSError, ValueError) as exc:
-            status["archive_findings"] = [f"status_unrecorded:{type(exc).__name__}"]
+            status["archive_findings"] = [
+                *status.get("archive_findings", []),
+                f"status_unrecorded:{type(exc).__name__}",
+            ]
         archive_or_stop(store, status)
     summary = result.compact_summary()
     summary["campaign"] = {
@@ -1237,6 +1269,9 @@ def _campaign_main(
         "publication_waived_for_this_attempt_only": True,
     }
     _print(summary)
+    if result.exit_code == 0 and status.get("outcome") == "stopped":
+        # An unsealed or unverified archive never reports phase success.
+        return 1
     return result.exit_code
 
 

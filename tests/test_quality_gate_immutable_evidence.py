@@ -131,6 +131,11 @@ def test_committed_archive_deletion_cannot_remove_its_registration(
     subprocess.run(
         ["git", "config", "user.name", "Archive Test"], cwd=tmp_path, check=True
     )
+    # Archive paths overflow MAX_PATH under a Windows temp root; Git for
+    # Windows needs this setting even where the OS allows long paths.
+    subprocess.run(
+        ["git", "config", "core.longpaths", "true"], cwd=tmp_path, check=True
+    )
     subprocess.run(["git", "add", "--", ARCHIVE.as_posix()], cwd=tmp_path, check=True)
     subprocess.run(
         ["git", "commit", "-qm", "archive baseline"], cwd=tmp_path, check=True

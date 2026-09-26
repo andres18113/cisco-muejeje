@@ -1,31 +1,46 @@
 """The CP-LIVE caller declares the governed tree independently of its package."""
+
 from __future__ import annotations
 
 import hashlib
 import json
 import os
-from pathlib import Path
 import shutil
 import site
 import subprocess
 import sys
+from pathlib import Path
 
 from tests.cp_live_data_integrity import isolated_subprocess_environment
 from tests.subprocess_harness import run_isolated_python, subprocess_failure
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def _run(*command: str | Path, cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [str(item) for item in command], cwd=cwd, check=True,
-        capture_output=True, text=True,
+        [str(item) for item in command],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
     )
 
 
 def _clone_current_source(destination: Path, head: str) -> None:
-    _run("git", "clone", "--quiet", "--no-hardlinks", str(ROOT), str(destination), cwd=ROOT)
+    # Archived evidence paths overflow MAX_PATH under a Windows temp root, and
+    # Git for Windows needs this setting even where the OS allows long paths.
+    _run(
+        "git",
+        "clone",
+        "--quiet",
+        "--no-hardlinks",
+        "--config",
+        "core.longpaths=true",
+        str(ROOT),
+        str(destination),
+        cwd=ROOT,
+    )
     _run("git", "checkout", "--quiet", "--detach", head, cwd=destination)
     # TDD must exercise the candidate working tree before it is committed while
     # both checkout identities remain pinned to the same captured Git SHA.
@@ -75,7 +90,8 @@ def _digest(path: Path) -> tuple[int, str] | None:
 
 
 def test_missing_caller_root_rejects_before_assembly() -> None:
-    source = r'''
+    """Without a declared governed root the entry refuses before assembly."""
+    source = r"""
 import json
 import os
 os.environ.pop("PT_MCP_GOVERNED_ROOT", None)
@@ -93,7 +109,7 @@ except Exception as exc:
     code = None
     escaped = f"{type(exc).__name__}: {exc}"
 print(json.dumps({"code": code, "calls": calls, "escaped": escaped}))
-'''
+"""
     completed = run_isolated_python(source, cwd=ROOT)
 
     assert completed.returncode == 0, subprocess_failure(completed)
@@ -104,6 +120,7 @@ print(json.dumps({"code": code, "calls": calls, "escaped": escaped}))
 def test_real_entry_rejects_checkout_a_with_interpreter_and_package_b_before_wrong_tree_writes(
     tmp_path: Path,
 ) -> None:
+    """Checkout B's interpreter and package cannot write into checkout B."""
     head = _run("git", "rev-parse", "HEAD", cwd=ROOT).stdout.strip()
     checkout_a = tmp_path / "checkout-a"
     checkout_b = tmp_path / "checkout-b"
@@ -128,7 +145,11 @@ def test_real_entry_rejects_checkout_a_with_interpreter_and_package_b_before_wro
     protected_b = (
         checkout_b / "data" / "cp-scale" / "live-canonical-progress.json",
         checkout_b / "data" / "cp-scale" / "live-canonical-checkpoint.json",
-        checkout_b / "docs" / "reference" / "cp-scale" / "live_canonical_checkpoint.json",
+        checkout_b
+        / "docs"
+        / "reference"
+        / "cp-scale"
+        / "live_canonical_checkpoint.json",
     )
     before_b = tuple(_digest(path) for path in protected_b)
     environment = isolated_subprocess_environment(
@@ -140,10 +161,14 @@ def test_real_entry_rejects_checkout_a_with_interpreter_and_package_b_before_wro
             str(python_b),
             str(checkout_a / "tools" / "cp_scale_canonical_live.py"),
             "--execute",
-            "--packet-tracer-version", "9.0.1.0858",
-            "--expected-head", head,
-            "--authorized-live-target", "full-qualification",
-            "--authorized-live-sha", head,
+            "--packet-tracer-version",
+            "9.0.1.0858",
+            "--expected-head",
+            head,
+            "--authorized-live-target",
+            "full-qualification",
+            "--authorized-live-sha",
+            head,
         ],
         cwd=neutral,
         env=environment,
@@ -156,10 +181,17 @@ def test_real_entry_rejects_checkout_a_with_interpreter_and_package_b_before_wro
     assert completed.returncode == 2, completed.stderr or completed.stdout
     assert tuple(_digest(path) for path in protected_b) == before_b
     assert not (checkout_b / "data" / "capabilities").exists()
-    expected_evidence = checkout_a / "data" / "cp-scale" / "live-canonical-progress.json"
+    expected_evidence = (
+        checkout_a / "data" / "cp-scale" / "live-canonical-progress.json"
+    )
     evidence = json.loads(expected_evidence.read_text(encoding="utf-8"))
-    assert Path(evidence["package_file"]).is_relative_to(checkout_b / "src" / "packet_tracer_mcp")
-    assert evidence["import_isolation"]["state"] in {"FOREIGN_INTERPRETER", "FOREIGN_TREE"}
+    assert Path(evidence["package_file"]).is_relative_to(
+        checkout_b / "src" / "packet_tracer_mcp"
+    )
+    assert evidence["import_isolation"]["state"] in {
+        "FOREIGN_INTERPRETER",
+        "FOREIGN_TREE",
+    }
     assert "http_bridge" not in evidence
     assert "capability_prequalification" not in evidence
     assert not (checkout_a / "data" / "capabilities").exists()
