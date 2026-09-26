@@ -1,0 +1,266 @@
+"""One-use, bounded launch of episode 7's disposable Packet Tracer lab.
+
+Differs from episode 6's launch only in when it captures: it waits, within a
+fixed bound, for the extension window and a main-window title that stays the
+same across three reads, then records at once. A refused launch record is
+retried at most twice from a fresh read-only OS observation, each attempt in
+its own file; nothing here contacts Packet Tracer through the bridge.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import time
+from dataclasses import asdict
+from pathlib import Path
+
+import packet_tracer_mcp
+from packet_tracer_mcp.application.use_cases.server_pt_process_evidence import (
+    EXTENSION_LOG_WINDOW_TITLE,
+    incarnation_ticks,
+    packet_tracer_process_role,
+)
+from packet_tracer_mcp.infrastructure.execution.file_bridge import bridge_dir
+from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
+    ImportIsolationPreflight,
+)
+from packet_tracer_mcp.infrastructure.execution.server_pt_process_control import (
+    PowerShellOwnedProcessControl,
+)
+from packet_tracer_mcp.infrastructure.persistence.campaign_coordination import (
+    FileCampaignCoordinator,
+)
+
+ROOT = Path(
+    r"C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP-server-services-goal-foundations"
+)
+MANDATE = ROOT / "docs/reference/server-pt/assignments/ServerPT_DHCP_Delegated_Autonomy_Mandate.md"
+EVIDENCE = Path(__file__).resolve().parent
+EXE = Path(r"C:\Program Files\Cisco Packet Tracer 9.0.1\bin\PacketTracer.exe")
+READY_SECONDS = 60
+STABLE_READS = 3
+RECORD_ATTEMPTS = ("", "b", "c")
+ids = json.loads((EVIDENCE / "ids.json").read_text(encoding="utf-8"))
+attempt = ids["Attempt"]
+control = PowerShellOwnedProcessControl()
+coordinator = FileCampaignCoordinator()
+
+
+def save(name: str, value: object) -> None:
+    with (EVIDENCE / name).open("x", encoding="utf-8") as stream:
+        json.dump(value, stream, sort_keys=True, indent=2)
+        stream.write("\n")
+
+
+def git(*args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=ROOT, check=True, capture_output=True, text=True, timeout=15
+    ).stdout.strip()
+
+
+def mailbox() -> list[str]:
+    path = bridge_dir()
+    if not path.exists():
+        return []
+    return sorted(
+        entry.name
+        for entry in path.iterdir()
+        if entry.is_file() and entry.name != "alive.txt"
+    )
+
+
+def census() -> dict[str, object]:
+    value = control.packet_tracer_processes()
+    return {
+        "error": value.error,
+        "processes": [asdict(item) for item in value.processes],
+        "mailbox_files": mailbox(),
+    }
+
+
+def require_empty(value: dict[str, object]) -> None:
+    if value["error"] or value["processes"] or value["mailbox_files"]:
+        raise RuntimeError("prelaunch_exclusivity_unestablished")
+
+
+def identity_holds(first: dict[str, object]) -> bool:
+    """Re-read the OS: same owned process, sole owned role, empty mailbox."""
+    observed = control.observe(int(first["pid"]))
+    rows = control.packet_tracer_processes()
+    ticks = incarnation_ticks(str(first["process_incarnation"]))
+    launch_identity = {**first, "observed_command_line": first["command_line"]}
+    roles = (
+        [packet_tracer_process_role(launch_identity, ticks, row) for row in rows.processes]
+        if ticks is not None
+        else []
+    )
+    return not (
+        observed.error
+        or not observed.present
+        or observed.process_path != first["process_path"]
+        or observed.process_incarnation != first["process_incarnation"]
+        or observed.command_line != first["command_line"]
+        or rows.error
+        or roles.count("owned") != 1
+        or any(role not in {"owned", "owned_helper"} for role in roles)
+        or mailbox()
+    )
+
+
+isolation = ImportIsolationPreflight(ROOT).ensure_isolated()
+preflight = {
+    "sys_executable": sys.executable,
+    "package_file": packet_tracer_mcp.__file__,
+    "legacy_loaded": "src.packet_tracer_mcp" in sys.modules,
+    "pytest_loaded": "pytest" in sys.modules,
+    "isolation_state": isolation.state.value,
+    "source_sha": git("rev-parse", "HEAD"),
+    "source_tree": git("rev-parse", "HEAD^{tree}"),
+    "source_status": git("status", "--porcelain=v1"),
+    "before_claim": census(),
+}
+save("01-prelaunch.json", preflight)
+if (
+    not isolation.isolated
+    or preflight["source_sha"] != ids["Head"]
+    or preflight["source_tree"] != ids["Tree"]
+    or preflight["source_status"]
+    or not EXE.is_file()
+):
+    raise RuntimeError("prelaunch_source_or_import_identity_unestablished")
+require_empty(preflight["before_claim"])
+
+claim = coordinator.claim_lifecycle(attempt_id=attempt)
+try:
+    checked = census()
+    save("02-exclusive-census.json", {**checked, "claim": claim.compact_summary()})
+    require_empty(checked)
+    if coordinator.verify(claim):
+        raise RuntimeError("prelaunch_claim_lost")
+
+    command = (
+        "$p = Start-Process -FilePath '"
+        + str(EXE).replace("'", "''")
+        + "' -PassThru; $p.Id"
+    )
+    launched = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    pid = int(launched.stdout.strip().splitlines()[-1])
+    save(
+        "03-start-process.json",
+        {"pid": pid, "stdout": launched.stdout, "stderr": launched.stderr},
+    )
+
+    readiness: list[dict[str, object]] = []
+    observed = None
+    titles: list[str] = []
+    deadline = time.monotonic() + READY_SECONDS
+    while time.monotonic() < deadline:
+        candidate = control.observe(pid)
+        windows = control.windows(pid)
+        extension = any(
+            item.visible and item.title == EXTENSION_LOG_WINDOW_TITLE
+            for item in windows.windows
+        )
+        readiness.append(
+            {
+                "offset": round(READY_SECONDS - (deadline - time.monotonic()), 3),
+                "title": candidate.main_window_title,
+                "extension_window": extension,
+                "error": candidate.error or windows.error,
+            }
+        )
+        if (
+            not candidate.error
+            and candidate.present
+            and candidate.process_path == str(EXE)
+            and candidate.process_incarnation
+            and candidate.command_line
+            and candidate.main_window_title
+            and extension
+        ):
+            titles.append(candidate.main_window_title)
+            if len(titles) >= STABLE_READS and len(set(titles[-STABLE_READS:])) == 1:
+                observed = candidate
+                break
+        else:
+            titles.clear()
+        time.sleep(1)
+    save("04-readiness.json", {"reads": readiness, "ready": observed is not None})
+    if observed is None or coordinator.verify(claim):
+        raise RuntimeError("launch_process_identity_unestablished")
+
+    first = {
+        "pid": pid,
+        "process_path": observed.process_path,
+        "process_incarnation": observed.process_incarnation,
+        "command_line": observed.command_line,
+        "main_window_title": observed.main_window_title,
+        "created_by_campaign": True,
+        "workspace_kind": "disposable_declared",
+        "launch_method": "Start-Process",
+    }
+    env = dict(os.environ)
+    env["PT_MCP_GOVERNED_ROOT"] = str(ROOT)
+    recorded = False
+    for suffix in RECORD_ATTEMPTS:
+        if suffix:
+            # A refused record wrote nothing; re-read the title fresh.
+            if not identity_holds(first) or coordinator.verify(claim):
+                raise RuntimeError("fresh_launch_retry_identity_unestablished")
+            reading = control.observe(pid)
+            capture = {**first, "main_window_title": reading.main_window_title}
+        else:
+            capture = first
+        capture_name = f"05{suffix}-launch-capture.json"
+        save(capture_name, capture)
+        record = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "packet_tracer_mcp.adapters.cli.server_pt_commissioning",
+                "--record-launch",
+                "--campaign",
+                "dhcp-autonomy",
+                "--attempt",
+                attempt,
+                "--charter",
+                str(MANDATE),
+                "--launch-evidence",
+                str(EVIDENCE / capture_name),
+            ],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+        save(
+            f"06{suffix}-record-launch.json",
+            {
+                "capture_file": capture_name,
+                "exit_code": record.returncode,
+                "stdout": record.stdout,
+                "stderr": record.stderr,
+            },
+        )
+        if record.returncode == 0:
+            recorded = True
+            break
+        if record.returncode != 2:
+            break
+    if not recorded:
+        raise RuntimeError("campaign_launch_record_refused")
+finally:
+    save(
+        "07-launch-claim-release.json",
+        {"claim": claim.compact_summary(), "findings": list(coordinator.release(claim))},
+    )

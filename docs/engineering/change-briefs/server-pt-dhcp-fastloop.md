@@ -1110,3 +1110,110 @@ the existing declared limitation, with verified exclusivity, one writer,
 the per-dispatch guard, and campaign-unique `Q3-DEFAULT-*` names that a
 foreign document would not resolve. The operator is asked not to open
 Packet Tracer during the episode.
+
+A third review of the status-write correction found that a status JSON
+written without its digest leaves no governed retirement basis for a
+completed run. That is older than this change, fails closed (retirement
+refuses, so the lab is quarantined rather than touched) and needs a
+local-disk fault between two small writes. A recovery path that adopts a
+status without its digest would weaken evidence, so it is a separate
+offline change and is recorded in episode 7's interpretation limit.
+
+## Episode 7 result and access-readiness design delta, version 12
+
+Episode 7 ran `Q3-NATIVE-PRODUCT` at `81af939` (tree `6c9aabb`), attempt
+`bd94e8f5316748819310a0ef0983c995`; the archive is
+[`dhcp-autonomy-02/e7`](../../reference/server-pt/evidence/dhcp-autonomy-02/e7/README.md).
+Both inner runtimes indexed the fixture inventory and the maintained
+product ran E5 and E6. The required `DHCP_LEASE` check for PC1 was
+VERIFIED at claim level `attributed_to_effective_server_pool` with fresh
+evidence, which is the first product-path verification of the native
+`serverPool` lease. HTTP was withheld and never dispatched. The access
+readiness group for the IE-2000, VLAN 10, `Fa1/1` and `Fa1/3` took one
+complete sample showing both ports in STP `LIS`; that sample cost 11
+channel calls and about 19 s, because `show spanning-tree` paginates, and
+the next sample fell after the 30-second wall-clock group window. The
+product withheld the request as designed. Episode 7 used 78 operations and
+342.694246 seconds; restoration, retirement and sealing were clean.
+
+**Cause.** PVST timers run on Packet Tracer's simulation clock. The
+retained measurement behind `simulation_time_convergence.py` is 0.53 to
+0.59 simulated seconds per wall second under load, and the retained
+`show spanning-tree` reports a 15-second forward delay. An access port
+that E5 moves into a VLAN needs up to two forward delays (listening, then
+learning), up to 30 simulated seconds or roughly 55 wall seconds under
+load, before it forwards. The neutral access observer's single 30-second
+wall window, at about 19 seconds per complete sample, cannot watch that
+sequence finish. On a fresh lab the product reaches HTTP soon after E5, so
+this is a product-path defect in the readiness design, not an artifact of
+the qualification stage. Trunk and Voice already met the same fact and use
+the reviewed `BoundedPvstLearningExtension`, which spends one bounded
+window on simulation time. That contract grants only when every pending
+port is already in `LRN`; the neutral access observer was deliberately
+built without it.
+
+**Decision.** Give the neutral access observer one protocol-sized
+extension, measured on Packet Tracer's simulation clock, when its
+wall-clock window ends on transitional STP evidence. The admission rule
+does not change: HTTP still requires one authoritative, timely sample in
+which every requested port forwards.
+
+- *Eligibility.* The caller must grant a nonzero extension allowance; the
+  default of zero keeps every existing caller's behavior. The window must
+  have ended on its own boundary (deadline or sample ceiling), not on
+  forwarding, a stopped channel or a spent episode call budget. The most
+  recent authoritative sample of the window must carry the VLAN instance,
+  resolve every requested port to exactly one row, show only `LIS`, `LRN`
+  or `FWD` with at least one of the first two, and report the qualified
+  15-second forward delay. A later sample that the window's own deadline
+  truncated is incomplete rather than contradictory, so it does not deny
+  eligibility. A later sample that failed for any other reason does.
+  `BLK`, a missing or duplicated row, an absent VLAN or an unattributed
+  identity never earn an extension.
+- *Budget.* When every pending port is `LRN` the target is the existing
+  qualified 20 simulated seconds under the existing 45-second wall cap.
+  When any port is `LIS` the target is 35 simulated seconds (two forward
+  delays and the same 5-second margin) under an 80-second wall cap; 35
+  simulated seconds at the slowest measured rate need 66 wall seconds, and
+  80 keeps the qualified cap's 2.25 ratio. The effective cap is the lesser
+  of that and the caller's allowance. Extension samples draw on the same
+  per-sample and episode call budgets, and each simulation-clock read is a
+  counted call on the same bounded channel.
+- *Conduct.* The extension reuses `SimulationTimeConvergenceWaiter`, so
+  an unreadable, non-realtime, invalid or regressing simulation clock
+  ends it without admission. Each extension sample is one registered,
+  read-only `show spanning-tree`; nothing is reconfigured to make ports
+  converge. A sample completing after the extension's wall boundary is late
+  evidence. Continuation stops as soon as a sample is non-authoritative or
+  shows anything other than `LIS`, `LRN` or `FWD`.
+- *Result.* Every sample keeps its record with a `window` or `extension`
+  phase, and the observation carries the extension's evidence (candidate,
+  target, wall cap, simulation start/end/progress, stop reason and
+  outcome). When the extension converges, the authorizing sample is its
+  last one and the window's closing is not charged against it; otherwise
+  the observation stays closed exactly as before.
+- *Gate.* The readiness gate offers each access group an allowance equal
+  to its remaining shared budget minus the group window and the first
+  windows it still owes every unobserved group, so an extension can never
+  starve a later group that would have been admitted. A result that
+  arrives after the group window is timely only when its observation
+  reports a converged extension within the allowance the gate offered.
+
+Rejected: a longer fixed wall window for every group, which would slow
+every refused plan and change the legacy 4 / 120-second ceilings without
+measuring the protocol clock; a second wall-clock episode for converging
+ports, which at 19 seconds per sample yields one more reading and misses
+listening-to-forwarding; `spanning-tree portfast` in E5, which changes the
+compiled configuration of every plan and is unqualified on this switch;
+and a per-VLAN `show spanning-tree vlan` query, a new registered query that
+would need its own LIVE qualification.
+
+Risk remains L because the product's readiness permission changes. RED
+controls cover the episode 7 shape (an authoritative `LIS` sample followed
+by a deadline-truncated one) reaching `FWD` within the extension; the
+`LRN`-only and `LIS` targets and caps; each ineligible terminal state and
+failure; a zero allowance reproducing today's result; clock failures; a
+late extension sample; call-budget exhaustion; and the gate admitting
+only a converged extension within its offered allowance while reserving
+later groups' first windows. Episode 8 is admitted after focused and
+affected verification and an independent adversarial review.

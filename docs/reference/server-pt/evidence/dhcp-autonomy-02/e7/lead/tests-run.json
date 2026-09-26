@@ -1,0 +1,8 @@
+[
+  "tests/test_native_dhcp_product_stage.py: 10 passed at 81af939fa6ef34120c16e21e54284e9b9504e753, including product-record sealing, unsealable fail-closed and failed status digest write",
+  "18 affected qualification and campaign test modules: 565 passed at 81af939fa6ef34120c16e21e54284e9b9504e753",
+  "suite drift fixes: 106 passed; Windows long-path tests 10 passed, 1 skipped at a CI-length 69-character basetemp",
+  "quality_gate.py --base cisco/main --delivery-commit HEAD passed at 81af939fa6ef34120c16e21e54284e9b9504e753",
+  "exact-SHA CI 36213195289 at 93bb643: quality, docs, Ubuntu 3.11 and 3.13 success; CI 36213568668 at 81af939 in progress at opening",
+  "Codex adversarial reviews 210e4e9..33f1bbf, 33f1bbf..93bb643, 93bb643..81af939: product-record sealing and status-write exit fixed; unfenced receiver interval and partial-status recovery recorded as pre-existing fail-closed limitations"
+]

@@ -1,0 +1,134 @@
+"""Write episode 7's fresh identities and plan from the actual clean checkout."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+from uuid import uuid4
+
+from packet_tracer_mcp.adapters.cli.service_qualification import (
+    native_dhcp_http_product_contract,
+)
+from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
+    stage_definition,
+)
+
+ROOT = Path(
+    r"C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP-server-services-goal-foundations"
+)
+EVIDENCE = Path(__file__).resolve().parent
+
+
+def git(*args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=ROOT, check=True, capture_output=True, text=True, timeout=15
+    ).stdout.strip()
+
+
+def save(name: str, value: object) -> None:
+    with (EVIDENCE / name).open("x", encoding="utf-8") as stream:
+        json.dump(value, stream, sort_keys=True, indent=2)
+        stream.write("\n")
+
+
+if git("status", "--porcelain=v1"):
+    raise SystemExit("checkout is not clean")
+head = git("rev-parse", "HEAD")
+tree = git("rev-parse", "HEAD^{tree}")
+if len(sys.argv) != 3 or sys.argv[1] != head:
+    raise SystemExit("usage: make_plan.py <expected-head> <tests-run-json-file>")
+tests_run = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+definition = stage_definition("Q3-NATIVE-PRODUCT")
+attempt = uuid4().hex
+instance = uuid4().hex
+save(
+    "ids.json",
+    {
+        "Attempt": attempt,
+        "Head": head,
+        "Instance": instance,
+        "Plan": str(EVIDENCE / "episode-plan.json"),
+        "Tree": tree,
+    },
+)
+save(
+    "episode-plan.json",
+    {
+        "allocated_operations": definition.budget.max_operations,
+        "allocated_seconds": 2400.0,
+        "allocation_arithmetic": (
+            "Stage ceiling 600 operations; the authorized maximum must equal it. "
+            "The offline positive composition at this SHA counted 55 operations "
+            "end to end (54 dispatch_and_wait, 1 send): fixture setup and "
+            "verification, 2 baseline reads, product A1-E6 with at most 3 lease "
+            "samples, 3 terminal reads and fixture restoration. Production "
+            "samples lease state at most 13 times at 10 s, so LIVE adds at most "
+            "10 bounded samples for the one selected client; 11 operations stay "
+            "reserved for restoration. The remaining margin is contingency, not "
+            "permission. Stage ceiling 2100 s includes 300 s reserved for "
+            "finalization; 2400 episode seconds add 60 launch, 120 retirement "
+            "and 120 contingency. No in-flight budget increase."
+        ),
+        "attempt_ids": [attempt],
+        "compiled_dns": "192.0.2.10",
+        "compiled_exclusions": [
+            {"end": "192.0.2.1", "start": "192.0.2.1"},
+            {"end": "192.0.2.10", "start": "192.0.2.10"},
+        ],
+        "compiled_gateway": "192.0.2.1",
+        "effective_pool_hypothesis": "serverPool",
+        "instance_token": instance,
+        "intent_name": "MCP-E6Q",
+        "interpretation_limit": (
+            "Private candidate capability snapshot only; a positive one-client "
+            "run does not establish renewal, explicit dhcpRun causality, general "
+            "capacity, global catalog promotion or independent product "
+            "acceptance. Effects remain under the declared unfenced "
+            "receiver interval (brief version 11). A status JSON written "
+            "without its digest would leave no governed retirement basis; "
+            "that pre-existing fail-closed residual quarantines the lab "
+            "rather than retiring it."
+        ),
+        "permitted_effects": [
+            "qualification:Q3-NATIVE-PRODUCT",
+            "create/verify/remove exact disposable four-device, three-link fixture",
+            "maintained product A1-E6 exact manifest actions on owned fixture",
+            "guarded E5 server static and PC1 DHCP mode",
+            "guarded native serverPool start/size/gateway/DNS/two exclusions and enable",
+            "maintained HTTP content setter and one cold PC1 HTTP-by-IP request "
+            "after required DHCP evidence",
+            "owned process retirement",
+        ],
+        "physical_topology_hash": native_dhcp_http_product_contract(
+            "9.0.1.0858", "episode-7-plan"
+        ).topology.physical_identity_hash,
+        "profile_id": definition.profile_id,
+        "profile_version": definition.profile_version,
+        "question": (
+            "With both inner runtimes bound to the owned fixture inventory and "
+            "the product record sealed in the campaign archive, does the "
+            "maintained A1-E6 product path on a fresh owned Server-PT/IE-2000 "
+            "lab apply the exact native one-user policy, verify PC1 autonomous "
+            "DHCP against physical serverPool, and perform one dependent cold "
+            "HTTP fetch by IP without ping, DNS, warm-up, static client "
+            "injection or explicit dhcpRun?"
+        ),
+        "requested_capacity": 1,
+        "requested_pool": "derived Q3_DATA (unnamed input)",
+        "requested_start": "192.0.2.100",
+        "source_sha": head,
+        "source_tree": tree,
+        "stop_rule": (
+            "Stop dependent effects on preflight/identity mismatch, unexpected "
+            "native setter or E5/E6 mutation, incomplete policy/lease/HTTP "
+            "evidence, PC2 activation, budget expiry, record persistence or "
+            "sealing error, or cleanup uncertainty; retain terminal reads and "
+            "retire only the owned lab."
+        ),
+        "targets": list(definition.fixture_names),
+        "tests_run": tests_run,
+    },
+)
+print(json.dumps({"attempt": attempt, "instance": instance, "head": head, "tree": tree}))
