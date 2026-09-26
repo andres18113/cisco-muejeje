@@ -32,14 +32,39 @@ from dataclasses import dataclass
 from ..models.capabilities import CapabilityStatus
 from ..models.evidence import CapabilityReadiness
 from ..models.service_plan import (
+    CapabilityProvenance,
     ClientOperationCapability,
+    ConfigureServerDhcpPool,
+    EnableServerDhcp,
     ServiceAction,
     ServiceCapabilityProfile,
     ServiceDefinition,
     ServiceEvidenceKind,
     ServiceType,
     ServiceVerificationExpectation,
+    ServiceVerificationKind,
 )
+
+_NATIVE_BINDING_KEY = "Server-PT:dhcp_native_default_binding"
+
+
+def _native_binding(records: Mapping[str, object]) -> ClientOperationCapability | None:
+    """Return only an exact recorded native scope, never a generic DHCP grant."""
+    value = records.get(_NATIVE_BINDING_KEY)
+    return (
+        value
+        if isinstance(value, ClientOperationCapability)
+        and value.key == _NATIVE_BINDING_KEY
+        and value.model == "Server-PT"
+        and value.operation == "dhcp_native_default_binding"
+        and value.support is CapabilityStatus.SUPPORTED
+        and value.provenance is CapabilityProvenance.RECORDED_RUN
+        and value.native_policy_scope is not None
+        and value.build == value.packet_tracer_version
+        and value.transport == "file"
+        and bool(value.executed_sha and value.run_id)
+        else None
+    )
 
 
 @dataclass(frozen=True)
@@ -83,6 +108,24 @@ def resolve_action_capability(
 ) -> CapabilityResolution:
     """Resolve applying one action on the model that actually hosts it."""
     key = f"{action.host_model}:{action.action_type.value}"
+    native = _native_binding(records)
+    if native is not None and action.service_type is ServiceType.DHCP:
+        supported = (
+            action.host_model == "Server-PT"
+            and isinstance(action, (ConfigureServerDhcpPool, EnableServerDhcp))
+            and action.effective_pool_name == "serverPool"
+            and (
+                not isinstance(action, ConfigureServerDhcpPool)
+                or not action.pool_name_explicit
+            )
+        )
+        if supported:
+            return CapabilityResolution(
+                key=key,
+                support=CapabilityStatus.SUPPORTED,
+                provenance=native.provenance.value,
+                source=native.source,
+            )
     operation = _operation(records, key)
     if operation is not None:
         return CapabilityResolution(
@@ -114,6 +157,24 @@ def resolve_verification_capability(
     """Resolve observing one expectation on the model that performs it."""
     target_model = expectation.target_model or service.host_model
     key = f"{target_model}:{expectation.kind.value}"
+    native = _native_binding(records)
+    if native is not None and service.service_type is ServiceType.DHCP:
+        supported = expectation.expected.get(
+            "effective_pool_name"
+        ) == "serverPool" and (
+            expectation.kind is ServiceVerificationKind.DHCP_SERVER_STATE
+            or (
+                expectation.kind is ServiceVerificationKind.DHCP_LEASE
+                and expectation.expected.get("state_only") is True
+            )
+        )
+        if supported:
+            return CapabilityResolution(
+                key=key,
+                support=CapabilityStatus.SUPPORTED,
+                provenance=native.provenance.value,
+                source=native.source,
+            )
     profile = profile_for(
         records, model=service.host_model, service_type=service.service_type
     )

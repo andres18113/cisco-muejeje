@@ -12,13 +12,11 @@ because something was read or observed, so every record here names what it is
 and where it came from, and a version with no evidence produces UNKNOWN for
 every dimension rather than the baseline's table under a different label.
 
-Provenance is part of each record. Everything below is `documentary_baseline`:
-Cisco's local `IpcAPI` reference plus the controlled process probes that
-preceded this project's evidence rules. Under RD-8 the first DNS/HTTP product
-slice may use it, and every response that does says so. Nothing here is
-`recorded_run`, and no refactoring promotes it: a promotion needs a committed
-record naming the build, the executed tree SHA, the transport, the target model
-and the run identity.
+Provenance is part of each record. The baseline DNS/HTTP records retain their
+`documentary_baseline` source. The native Server-PT DHCP binding alone is a
+scoped `recorded_run` entry backed by the archived e8-e10 owned-lab episodes.
+Its policy and action/verification resolution remain bounded independently of
+the generic DHCP profile, which stays UNKNOWN.
 """
 
 from __future__ import annotations
@@ -28,10 +26,12 @@ import json
 from collections.abc import Mapping
 
 from ...domain.enterprise.models.capabilities import CapabilityStatus
+from ...domain.enterprise.models.configuration import AddressRange
 from ...domain.enterprise.models.evidence import CapabilityReadiness, ReadinessStatus
 from ...domain.enterprise.models.service_plan import (
     CapabilityProvenance,
     ClientOperationCapability,
+    NativeDhcpPolicyScope,
     ServiceActionType,
     ServiceCapabilityProfile,
     ServiceCapabilityRecords,
@@ -293,8 +293,8 @@ def _dhcp_profiles(version: str) -> list[ServiceCapabilityProfile]:
 
 
 def _dhcp_operations(version: str) -> list[ClientOperationCapability]:
-    """Every DHCP action or reader on its actual model, all UNKNOWN."""
-    return [
+    """Keep acquisition UNKNOWN while recording measured client mode reads."""
+    unknown = [
         _operation(
             model,
             operation.value,
@@ -304,12 +304,64 @@ def _dhcp_operations(version: str) -> list[ClientOperationCapability]:
         )
         for model, operation in (
             (_CLIENT_MODEL, ServiceActionType.ACQUIRE_DHCP_LEASE),
-            (_CLIENT_MODEL, ServiceVerificationKind.ENDPOINT_DHCP_MODE),
             (_CLIENT_MODEL, ServiceVerificationKind.DHCP_LEASE),
             (_SERVER_MODEL, ServiceVerificationKind.DHCP_SERVER_STATE),
             (_SERVER_MODEL, ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED),
         )
     ]
+    return [
+        *unknown,
+        ClientOperationCapability(
+            key="PC-PT:endpoint_dhcp_mode",
+            model="PC-PT",
+            operation=ServiceVerificationKind.ENDPOINT_DHCP_MODE.value,
+            support=CapabilityStatus.SUPPORTED,
+            provenance=CapabilityProvenance.RECORDED_RUN,
+            source="SERVER-PT-DHCP-AUTONOMOUS-02/e8,e9,e10 client mode readback",
+            packet_tracer_version=version,
+            build=version,
+            executed_sha="e8c810192b44d75340ffa6ad81c16473eb060fd2",
+            transport="file",
+            run_id="2026-09-26T13-08-43Z-a18db0b4",
+        ),
+    ]
+
+
+def _native_dhcp_binding(version: str) -> ClientOperationCapability:
+    """Bind the exact-build native strategy to the measured policy family."""
+    return ClientOperationCapability(
+        key="Server-PT:dhcp_native_default_binding",
+        model="Server-PT",
+        operation="dhcp_native_default_binding",
+        support=CapabilityStatus.SUPPORTED,
+        provenance=CapabilityProvenance.RECORDED_RUN,
+        source=(
+            "SERVER-PT-DHCP-AUTONOMOUS-02/e8,e9,e10: native physical pool, "
+            "capacity one/two, two distinct requested allocation starts, "
+            "attributed clients and cold HTTP; exact policy readback required"
+        ),
+        packet_tracer_version=version,
+        build=version,
+        executed_sha="e8c810192b44d75340ffa6ad81c16473eb060fd2",
+        transport="file",
+        run_id="2026-09-26T13-08-43Z-a18db0b4",
+        native_policy_scope=NativeDhcpPolicyScope(
+            network="192.0.2.0",
+            netmask="255.255.255.0",
+            server_address="192.0.2.10",
+            gateway="192.0.2.1",
+            dns_server="192.0.2.10",
+            first_lease="192.0.2.100",
+            latest_start="192.0.2.151",
+            last_lease="192.0.2.152",
+            max_users=2,
+            max_exclusion_ranges=2,
+            excluded_ranges=[
+                AddressRange(start="192.0.2.1", end="192.0.2.1"),
+                AddressRange(start="192.0.2.10", end="192.0.2.10"),
+            ],
+        ),
+    )
 
 
 def _baseline_client_operations(version: str) -> list[ClientOperationCapability]:
@@ -391,6 +443,16 @@ def _unknown_records(version: str) -> list[object]:
         for item in [*_mail_operations(version), *_dhcp_operations(version)]
         if item.key not in known
     )
+    operations.append(
+        ClientOperationCapability(
+            key="Server-PT:dhcp_native_default_binding",
+            model="Server-PT",
+            operation="dhcp_native_default_binding",
+            support=CapabilityStatus.UNKNOWN,
+            source=source,
+            packet_tracer_version=version,
+        )
+    )
     return [*profiles, *operations]
 
 
@@ -460,6 +522,7 @@ def packet_tracer_service_capabilities(
             *_baseline_client_operations(version),
             *_mail_operations(version),
             *_dhcp_operations(version),
+            _native_dhcp_binding(version),
         ]
     else:
         records = _unknown_records(version)

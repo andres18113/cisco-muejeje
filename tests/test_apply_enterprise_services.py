@@ -1043,6 +1043,7 @@ def test_terminal_persistence_failure_preserves_the_observed_runtime_facts(
     assert result.configuration_result is not None
     assert result.service_result is not None
     assert result.persist_error
+    assert result.status is ServiceRunStatus.UNKNOWN
     assert "persist_error:complete" in result.limitations
     durable = ServiceRunRecordStore(tmp_path).load(DEPLOYMENT_ID, result.run_id)
     assert durable.service_result is not None
@@ -1095,16 +1096,17 @@ def test_the_response_and_the_record_agree_and_survive_json(tmp_path: Path):
     assert round_trip["run_id"] == result.run_id
 
 
-def test_documentary_provenance_is_disclosed_in_every_response(tmp_path: Path):
-    """RD-8: usable, and said out loud rather than quietly assumed."""
+def test_capability_provenance_is_disclosed_in_every_response(tmp_path: Path):
+    """RD-8: documentary DNS/HTTP and scoped native evidence stay distinct."""
     harness = _harness(tmp_path)
 
     result = harness.run()
 
     assert "provenance:documentary_baseline" in result.limitations
-    assert set(result.capability_snapshot.provenance_by_key.values()) == {
-        "documentary_baseline"
-    }
+    levels = result.capability_snapshot.provenance_by_key
+    assert levels["Server-PT:dns"] == "documentary_baseline"
+    assert levels["Server-PT:http"] == "documentary_baseline"
+    assert levels["Server-PT:dhcp_native_default_binding"] == "recorded_run"
 
 
 def test_an_unresolved_client_release_stays_visible(tmp_path: Path):

@@ -1439,3 +1439,75 @@ requests. The existing finite 600-operation/2100-second stage ceiling and
 per-episode lifecycle allocation remain upper bounds, with a new plan and
 attempt identity recorded before launch. This is a policy discrimination,
 not a repeat of the positive `.100`-`.101` case.
+
+## Shifted-policy result and public composition design, version 17
+
+Episode 10 executed profile 3 at `e8c810192b44d75340ffa6ad81c16473eb060fd2`
+(tree `81802ac0307688a5acde8e503b169c39b82af857`), attempt
+`4d5e9960ce0a4de291697ce7c667c7d2`, Packet Tracer 9.0.1.0858/file.
+The new request set `start_offset=150`; the native pool read back exactly
+`.151`-`.152`, capacity two, gateway `.1`, DNS `.10` and the two exclusions.
+PC1 received `.151`, PC2 `.152`; both required attributed lease rows and
+both cold HTTP-by-IP checks VERIFIED. Product and two stage measurements
+completed, fixture restoration was proven and owned PID 4956 retired with a
+zero-process, empty-mailbox final census. Qualification used 89 operations
+and 159.469 active seconds; the closed ledger totals 608 operations and
+3074.101403 seconds. The source-linked
+[`episode 10 archive`](../../reference/server-pt/evidence/dhcp-autonomy-02/e10/README.md)
+pins 198 files with manifest SHA-256
+`611e57fd02b2c75fa8660bda11b0d85712a3a6e13fe551f13dda42804aa90150`.
+The qualification and product record SHA-256 digests are respectively
+`77d957b092d7c74e021b01f37e5e88837a1efcdf452f71dac6b24d41a9a9e60e`
+and `909e55d1fdeb8bdc6c3c8763c16464c6fb5995b836221ec41b93930cfa7fe63e`.
+
+**Public authority design.** Register one exact-build native binding in the
+trusted default catalog, with both episode identities and a bounded policy:
+physical Server-PT `FastEthernet0`, `192.0.2.0/24`, server/DNS `.10`, gateway
+`.1`, exact exclusions `.1` and `.10`, a contiguous requested window starting
+from `.100` through `.151` and ending no later than `.152`, and capacity one
+or two with at most two selected PC-PT clients. The two measured start points
+and capacity cases justify this finite family together with per-invocation
+full transition readback; intermediate values are admitted only when their
+exact backend state is verified before enable. Other networks, masks, gateways,
+DNS, exclusions, capacities, models and builds remain UNKNOWN. Keep the
+general DHCP service profile UNKNOWN: the native marker may resolve only
+native-bound E6 actions and state-only verifications. A named pool, generic
+server DHCP, explicit `dhcpRun` and other policies must not inherit support.
+
+RED controls will prove that the default public catalog admits the bounded
+unnamed state-only request and rejects each outside-scope dimension before
+E5; static HTTP and the private diagnostic composition remain positive. The
+registered four-argument MCP handler must reach the same A1-E6 runtime and
+durable record, then a fresh owned-lab episode must exercise it with two
+selected clients and first HTTP-by-IP requests. The public route must expose
+no capability override, strategy selector or alternate DHCP runner. Risk
+remains L; focused, affected, full and exact-commit validation plus separate
+review apply before READY_FOR_REVIEW.
+
+**Registered LIVE route, version 18 design refinement.** The current
+qualification stage's private call passes a candidate capability snapshot
+directly to `apply_enterprise_services`; it cannot establish the registered
+MCP route. For the next profile revision, keep the same owned fixture,
+manifest admission, bounded channel, A1-E6 use case, persistence and
+retirement. Invoke the actual registered four-input
+`pt_apply_enterprise_services` handler inside the governed stage, with the
+already verified fixture manifest and ledgered real runtimes supplied as
+internal composition ports. The tool passes no capability override; the
+default catalog is its only capability source. Capture the typed use-case
+result and compare it with the handler's JSON response and stored product
+record before concluding. Use requested start offset 124 (window `.125`-
+`.126`, capacity two) as an interior point of the bounded public family.
+Run the existing required lease and HTTP checks for both clients, terminal
+inventory, restoration, retirement and archive. A refusal, mismatch, missing
+record or uncertain effect stops the episode; it never falls back to the
+private candidate path. The MCP public signature remains four arguments.
+
+**Pre-LIVE offline validation.** The changed native/public, capability,
+product, campaign and legacy-service group passed 229 tests. The provisional
+full Windows suite passed 8163 with 6 skips and 3 pytest deprecation
+warnings. The skip reasons were retained by a focused `-rs` run: two tests
+require symlink privilege, two lack ignored historical raw artefacts, and
+two native-window tests require the explicit Windows opt-in. All required
+native/public path tests ran on this job. The provisional quality gate and
+MkDocs build passed; exact clean-commit validation and governed LIVE remain
+separate gates.

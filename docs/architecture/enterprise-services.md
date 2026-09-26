@@ -245,13 +245,26 @@ enumeration validates a finite integral count and refuses above the internal
 read preserves uncertainty, and missing subjects, engine errors and malformed
 success payloads remain separate categories.
 
-Every DHCP operation and reader is UNKNOWN/UNMEASURED in the default catalog,
-including the separate mode-reader gate. Required DHCP therefore refuses
-before E5, while optional DHCP is excluded with complete rows and cannot
-reactivate IOS authority or admit a dependent service. Offline Node and
-integration tests exercise candidate paths but promote nothing. Q3 is now an
-executable, file-only qualification stage for build 9.0.1.0858; until a LIVE
-record is interpreted independently it changes no product capability.
+The default catalog now carries one recorded native binding for build
+9.0.1.0858, sourced from the [one-client episode 8](../reference/server-pt/evidence/dhcp-autonomy-02/e8/README.md),
+[capacity-two episode 9](../reference/server-pt/evidence/dhcp-autonomy-02/e9/README.md)
+and [shifted-policy episode 10](../reference/server-pt/evidence/dhcp-autonomy-02/e10/README.md).
+Its scope is an unnamed `state_only` pool request on `192.0.2.0/24`, physical
+Server-PT `serverPool`/`FastEthernet0`, server and DNS `.10`, gateway `.1`,
+exact singleton exclusions `.1` and `.10`, a contiguous start from `.100`
+through `.151` ending no later than `.152`, and capacity one or two on the
+file channel. A fresh full policy read follows each native setter. The
+required grouped state reader scans the lease table once per sample, reads
+every selected client, and requires two stable samples with unique in-policy
+IP/MAC/interface rows before dependent HTTP. The shared raw trace is stored
+once in the product record. These observations establish usable attributed
+state, not `dhcpRun` causality, renewal, or table-end proof.
+
+The generic DHCP profile, named pools, explicit acquisition and other builds
+remain UNKNOWN. Capability resolution grants only native-bound actions and
+state-only checks when the scoped marker is present; an out-of-scope request
+refuses before E5. The public MCP tool has the same four inputs and no
+strategy or support override.
 
 ## Qualification boundary
 
@@ -307,8 +320,9 @@ conservative baseline for `Server-PT`:
 | TFTP file publication | unknown | unknown | unobservable |
 | SMTP/POP3 enable, accounts, clients | unknown | unknown | unknown; supporting mailbox presence only |
 | SMTP send, POP3 retrieval | unknown | unknown | gated by the event fallback |
-| Server-PT DHCP enable/pool | unknown | unknown | Q3 not run |
-| DHCP acquisition/attribution | unknown | unknown | read-back at most UNKNOWN under R-EVT-05 |
+| Scoped native Server-PT DHCP `state_only` | supported within the exact policy above | full physical policy read-back | two stable attributed clients in episodes 9/10; cold dependent HTTP observed |
+| Generic/named Server-PT DHCP | unknown | unknown | unknown |
+| Explicit DHCP acquisition/renewal | unknown | unknown | causal and renewal proof unmeasured |
 
 DNS uses `addARecordToNameServerDb` and `getARecordWithAddress`. The older
 `addIpAddress` path updates a legacy table but did not produce a wire-operational

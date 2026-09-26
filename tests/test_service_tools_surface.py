@@ -35,10 +35,20 @@ from service_product_simulation import (
 from service_product_simulation import (
     run_environment_javascript as _run_environment_javascript,
 )
+from test_apply_enterprise_services import _harness
+from test_service_dhcp_integration import _ModeConfigurationRuntime
 
+from packet_tracer_mcp.adapters.cli.service_qualification import (
+    _native_dhcp_http_intent,
+)
 from packet_tracer_mcp.adapters.mcp import service_tools, tool_registry
 from packet_tracer_mcp.adapters.mcp.public_surface import PublicMcpSurface
 from packet_tracer_mcp.adapters.mcp.tool_registry import register_tools
+from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
+    ServiceInvocationBinding,
+    ServiceStageRuntimes,
+    TransportSelection,
+)
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
 )
@@ -53,6 +63,9 @@ from packet_tracer_mcp.domain.enterprise.models.service_entry import (
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceVerificationKind,
 )
+from packet_tracer_mcp.domain.enterprise.models.service_run_record import (
+    SourceTreeIdentity,
+)
 from packet_tracer_mcp.infrastructure.execution.transport_outcome import (
     BridgeDispatchOutcome,
 )
@@ -64,6 +77,77 @@ from packet_tracer_mcp.infrastructure.persistence.service_run_record_store impor
 )
 
 TOOL_NAME = "pt_apply_enterprise_services"
+
+
+def test_registered_four_input_native_route_uses_default_catalog_and_store(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The public MCP handler reaches A1-E6 and persists scoped DHCP state."""
+    payload = _native_dhcp_http_intent().model_dump(mode="json")
+    harness = _harness(tmp_path, payload)
+    harness.configuration = _ModeConfigurationRuntime(
+        targets=harness.configuration.targets
+    )
+    harness.transport = TransportSelection(channel="file")
+    monkeypatch.setattr(
+        service_tools, "DeploymentManifestStore", lambda: harness.manifest_store
+    )
+    monkeypatch.setattr(
+        service_tools, "ServiceRunRecordStore", lambda *_, **__: harness.record_store
+    )
+    monkeypatch.setattr(
+        service_tools, "ImportIsolationPreflight", lambda _root: harness.preflight
+    )
+    monkeypatch.setattr(
+        service_tools,
+        "compose_service_session",
+        lambda **_: (
+            lambda: ServiceInvocationBinding(
+                runtimes=ServiceStageRuntimes(
+                    configuration=harness.configuration,
+                    services=harness.services,
+                ),
+                record_store=harness.record_store,
+                environment_fingerprint=harness.fingerprint,
+                transport_selection=harness.transport,
+                source_tree=SourceTreeIdentity(sha="offline-public", dirty=True),
+                endpoint_observer=harness.observer,
+            )
+        ),
+    )
+    mcp = FastMCP("native-public-route")
+    service_tools.register_service_tools(
+        mcp,
+        send_and_wait=lambda *_: None,
+        dispatch_and_wait=lambda *_: BridgeDispatchOutcome(
+            dispatch=DispatchFact.NOT_SUBMITTED,
+            result=ResultFact.NOT_APPLICABLE,
+        ),
+        send_payload=lambda *_: False,
+        query_inventory=lambda *_: [],
+        pick_channel=lambda: "file",
+        observe_environment=lambda _: FINGERPRINT,
+    )
+    rendered = asyncio.run(
+        mcp.call_tool(
+            TOOL_NAME,
+            {
+                "intent_json": json.dumps(payload),
+                "deployment_id": harness.deployment_id,
+                "packet_tracer_version": BACKEND_VERSION,
+                "run_label": "offline public native route",
+            },
+        )
+    )
+    result = json.loads(rendered[0][0].text)
+
+    assert result["refusal_code"] == ServiceEntryRefusal.NONE.value
+    assert result["status"] == "verified"
+    stored = ServiceRunRecordStore(tmp_path).load(
+        result["deployment_id"], result["run_id"]
+    )
+    assert stored.status.value == "verified"
+    assert stored.dhcp_authorities[0].effective_pool_name == "serverPool"
 
 
 def _captured_environment_observer(

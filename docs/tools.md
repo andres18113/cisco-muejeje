@@ -135,7 +135,7 @@ Packet Tracer.
 
 | Tool | What it does |
 |------|--------------|
-| `pt_apply_enterprise_services` | Apply governed Server-PT services for selected clients against a deployment `pt_live_deploy` already produced. DNS/HTTP are available on the documentary baseline; mail and DHCP remain capability-gated candidates. |
+| `pt_apply_enterprise_services` | Apply governed Server-PT services for selected clients against a deployment `pt_live_deploy` already produced. DNS/HTTP use the documentary baseline; native DHCP has an exact-build, policy-scoped recorded binding. Mail and generic DHCP remain UNKNOWN. |
 
 ```text
 pt_apply_enterprise_services(
@@ -231,20 +231,27 @@ mailbox presence as supporting evidence only, and no send or retrieval event
 observed -- is described in the
 [E6 architecture](architecture/enterprise-services.md#mail-under-the-event-fallback).
 
-**Server-PT DHCP is accepted in the intent and never executed by the default
-catalog.** A `dhcp` service names the canonical `host_device_id`, `segment_id`
-and selected wired PC-PT clients. Its optional `dhcp_pool` object carries
-`interface`, `pool_name`, `start_offset` and `max_users`; empty/zero values are
-derived from the resolved allocation or refused. `configure_only` configures
-the server candidate but emits no explicit acquisition and reports acquisition
-as NOT_ATTEMPTED.
+**Scoped native Server-PT DHCP.** A `dhcp` service names the canonical
+`host_device_id`, `segment_id` and selected wired PC-PT clients, sets
+`verification_mode` to `state_only`, and leaves `dhcp_pool.pool_name` empty.
+The exact-build 9.0.1.0858 binding uses Server-PT `FastEthernet0` and the
+physical `serverPool` on `192.0.2.0/24`, with server/DNS `192.0.2.10`, gateway
+`192.0.2.1`, and only those two singleton exclusions. The requested
+`start_offset` from 99 through 150 must derive a contiguous lease window
+starting at `.100` through `.151` and ending no later than `.152`;
+`max_users` is one or two and
+at least the selected client count. The file channel is required. These are
+admission limits, not addresses injected into clients: each run reads back
+the requested physical policy and attributes two stable samples per selected
+client to exact IP/MAC/interface rows before dependent HTTP begins. One PC
+requires no inactive second PC; real competing clients are checked.
 
-Every DHCP operation is `unknown`: exact-interface mode read, server enable,
-pool ensure-present, claimed `dhcpRun`, address read-back and intended-pool
-attribution. A required DHCP service is therefore refused before E5; an
-optional one is excluded with complete rows, and dependent services are also
-excluded or refused rather than borrowing an IOS pool. There is no MCP
-override. The candidate contract and its evidence limits are described in the
+Named pools, other networks/builds, masks, gateways, DNS values, exclusions,
+capacities, acquisition modes and channels remain UNKNOWN or outside scope
+and are refused before E5. The public four-input tool has no override. A
+positive native state establishes usable attributed addressing, not explicit
+`dhcpRun` causality, renewal, table-end proof or thousand-client native
+capacity. The measured sample and evidence limits are in the
 [E6 architecture](architecture/enterprise-services.md#server-pt-dhcp-under-the-event-fallback).
 
 ## Live-state inspection

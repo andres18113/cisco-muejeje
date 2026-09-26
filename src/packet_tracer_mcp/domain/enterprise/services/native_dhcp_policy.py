@@ -77,30 +77,39 @@ def native_policy_within_scope(
     *,
     network: str,
     netmask: str,
+    server_address: str,
     gateway: str,
     dns_server: str,
     lease_start: str,
     lease_end: str,
     max_users: int,
-    exclusion_count: int,
+    excluded_ranges: list[tuple[str, str]],
 ) -> bool:
     """Admit only the bounds carried by the recorded capability."""
     if scope is None:
         return False
     try:
         first = ip_address(scope.first_lease)
+        latest = ip_address(scope.latest_start)
         last = ip_address(scope.last_lease)
         start = ip_address(lease_start)
         end = ip_address(lease_end)
     except ValueError:
         return False
     return (
-        all(isinstance(value, IPv4Address) for value in (first, last, start, end))
+        all(
+            isinstance(value, IPv4Address)
+            for value in (first, latest, last, start, end)
+        )
         and network == scope.network
         and netmask == scope.netmask
+        and server_address == scope.server_address
         and gateway == scope.gateway
         and dns_server == scope.dns_server
-        and first <= start <= end <= last
+        and first <= start <= latest <= last
+        and start <= end <= last
         and 1 <= max_users <= scope.max_users <= MAX_NATIVE_CLIENTS
-        and 0 <= exclusion_count <= scope.max_exclusion_ranges <= MAX_NATIVE_EXCLUSIONS
+        and len(excluded_ranges) <= scope.max_exclusion_ranges <= MAX_NATIVE_EXCLUSIONS
+        and excluded_ranges
+        == [(item.start, item.end) for item in scope.excluded_ranges]
     )

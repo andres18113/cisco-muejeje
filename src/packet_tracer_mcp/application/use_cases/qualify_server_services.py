@@ -80,6 +80,7 @@ from ...domain.enterprise.models.service_entry import (
     ServiceEntryRefusal,
     ServiceRunStatus,
     ServiceStage,
+    ServiceStageResult,
 )
 from ...domain.enterprise.models.service_plan import (
     AcquireDhcpLease,
@@ -267,6 +268,7 @@ from ..ports.service_qualification import (
 from ..ports.service_run_record import RunRecordPersistenceError
 from .apply_configuration import ConfigurationApplicator, ConfigurationRuntime
 from .apply_enterprise_services import (
+    ServiceInvocationBinding,
     ServiceStageRuntimes,
     TransportSelection,
     apply_enterprise_services,
@@ -942,6 +944,20 @@ class QualificationBoundaries:
     native_product_import_preflight: Callable[[], Any] | None = None
     native_product_record_store_factory: Callable[[], Any] | None = None
     native_product_endpoint_observer: Callable[[LedgeredTransport], Any] | None = None
+    native_public_product_entry: (
+        Callable[
+            [
+                LedgeredTransport,
+                Callable[[], ServiceInvocationBinding],
+                DeploymentManifest,
+                str,
+                str,
+                str,
+            ],
+            ServiceStageResult,
+        ]
+        | None
+    ) = None
     native_default_transitions: (
         Callable[[str], tuple[AdmittedNativeDefaultTransition, ...]] | None
     ) = None
@@ -1288,6 +1304,11 @@ def _with_campaign_claim(
             not boundaries.q3_required_build
             or request.packet_tracer_build != boundaries.q3_required_build
             or boundaries.native_product_contract is None
+            or (
+                definition.profile_version == "4"
+                and boundaries.execution_mode is ExecutionMode.LIVE
+                and boundaries.native_public_product_entry is None
+            )
         ):
             return _refused(
                 [
@@ -6214,36 +6235,81 @@ def _run_q3_native_product(execution: _Execution) -> None:
             ),
             services=_Q3ServiceRuntime(inner.services, contract.inventory),
         )
+        fresh_public_build = ""
         with execution.ledger.effect_of("native-product:apply-enterprise-services"):
-            product = apply_enterprise_services(
-                contract.intent_json,
-                deployment_id=contract.manifest.deployment_id,
-                packet_tracer_version=execution.record.environment.observed_build,
-                import_preflight=boundaries.native_product_import_preflight(),
-                manifest_store=ExactManifest(),
-                runtimes=product_runtimes,
-                record_store=boundaries.native_product_record_store_factory(),
-                environment_fingerprint=contract.manifest.environment_fingerprint,
-                transport_selection=TransportSelection(
-                    channel=execution.channel,
-                    fixed_at=boundaries.now(),
-                ),
-                endpoint_observer=boundaries.native_product_endpoint_observer(
-                    execution.bound
-                ),
-                capability_catalog=lambda build: (
-                    contract.service_capabilities
-                    if build == execution.record.environment.observed_build
-                    else {}
-                ),
-                source_tree=SourceTreeIdentity(
-                    sha=execution.record.source.executed_sha,
-                    tree=execution.record.source.executed_tree,
-                    dirty=execution.record.source.clean is not True,
-                ),
-                run_label="SERVER-PT-DHCP-AUTONOMOUS-02 native product",
-                run_id=execution.record.run_id + "-product",
-            )
+            if boundaries.native_public_product_entry is not None:
+
+                def public_binding() -> ServiceInvocationBinding:
+                    nonlocal fresh_public_build
+                    reading = boundaries.build_reader(
+                        execution.bound.send_and_wait
+                    ).read()
+                    if (
+                        not reading.available
+                        or reading.version
+                        != execution.record.environment.observed_build
+                    ):
+                        raise ValueError("native_public_build_unobserved_or_mismatched")
+                    fresh_public_build = reading.version
+                    return ServiceInvocationBinding(
+                        runtimes=product_runtimes,
+                        record_store=boundaries.native_product_record_store_factory(),
+                        environment_fingerprint=(
+                            contract.manifest.environment_fingerprint.model_copy(
+                                update={"backend_version": reading.version}
+                            )
+                        ),
+                        transport_selection=TransportSelection(
+                            channel=execution.channel, fixed_at=boundaries.now()
+                        ),
+                        source_tree=SourceTreeIdentity(
+                            sha=execution.record.source.executed_sha,
+                            tree=execution.record.source.executed_tree,
+                            dirty=execution.record.source.clean is not True,
+                        ),
+                        endpoint_observer=boundaries.native_product_endpoint_observer(
+                            execution.bound
+                        ),
+                    )
+
+                product = boundaries.native_public_product_entry(
+                    execution.bound,
+                    public_binding,
+                    contract.manifest,
+                    contract.intent_json,
+                    execution.record.environment.observed_build,
+                    "SERVER-PT-DHCP-AUTONOMOUS-02 public native product",
+                )
+            else:
+                product = apply_enterprise_services(
+                    contract.intent_json,
+                    deployment_id=contract.manifest.deployment_id,
+                    packet_tracer_version=execution.record.environment.observed_build,
+                    import_preflight=boundaries.native_product_import_preflight(),
+                    manifest_store=ExactManifest(),
+                    runtimes=product_runtimes,
+                    record_store=boundaries.native_product_record_store_factory(),
+                    environment_fingerprint=contract.manifest.environment_fingerprint,
+                    transport_selection=TransportSelection(
+                        channel=execution.channel,
+                        fixed_at=boundaries.now(),
+                    ),
+                    endpoint_observer=boundaries.native_product_endpoint_observer(
+                        execution.bound
+                    ),
+                    capability_catalog=lambda build: (
+                        contract.service_capabilities
+                        if build == execution.record.environment.observed_build
+                        else {}
+                    ),
+                    source_tree=SourceTreeIdentity(
+                        sha=execution.record.source.executed_sha,
+                        tree=execution.record.source.executed_tree,
+                        dirty=execution.record.source.clean is not True,
+                    ),
+                    run_label="SERVER-PT-DHCP-AUTONOMOUS-02 native product",
+                    run_id=execution.record.run_id + "-product",
+                )
         by_id = (
             {
                 item.expectation_id: item
@@ -6269,6 +6335,10 @@ def _run_q3_native_product(execution: _Execution) -> None:
             and product.persisted_stage is ServiceStage.COMPLETED
             and bool(product.record_path)
             and not product.persist_error
+            and (
+                boundaries.native_public_product_entry is None
+                or fresh_public_build == execution.record.environment.observed_build
+            )
             and len(lease_ids) == len(fetch_ids) == pool.max_users
             and all(
                 by_id.get(identifier) is not None
@@ -6285,6 +6355,12 @@ def _run_q3_native_product(execution: _Execution) -> None:
                 facts={
                     "product_summary": product.compact_summary(),
                     "product_record_path": product.record_path,
+                    "entry_surface": (
+                        "registered_four_input"
+                        if boundaries.native_public_product_entry is not None
+                        else "private_candidate"
+                    ),
+                    "fresh_public_build": fresh_public_build,
                     "lease_expectation_ids": lease_ids,
                     "http_fetch_expectation_ids": fetch_ids,
                     "baseline": dict(baseline.raw),
@@ -6295,9 +6371,11 @@ def _run_q3_native_product(execution: _Execution) -> None:
                 causes=[]
                 if accepted
                 else [f"native_product_not_verified:{product.refusal_code.value}"],
-                limitations=[
-                    "private_candidate_capabilities_not_global_product_promotion"
-                ],
+                limitations=(
+                    []
+                    if boundaries.native_public_product_entry is not None
+                    else ["private_candidate_capabilities_not_global_product_promotion"]
+                ),
             ),
         )
     execution.finish("Q3_NATIVE_PRODUCT")

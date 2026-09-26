@@ -281,6 +281,7 @@ def test_group_assembly_evaluation_and_persistence_scale_with_fake_backend(
                 "expected": {
                     "state_only": True,
                     "interface": "FastEthernet0",
+                    "effective_pool_name": "serverPool",
                 },
             }
         )

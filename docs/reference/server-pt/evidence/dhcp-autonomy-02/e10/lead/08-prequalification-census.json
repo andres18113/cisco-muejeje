@@ -1,0 +1,21 @@
+{
+  "campaign_lock_present": false,
+  "mailbox_files": [],
+  "process_error": "",
+  "processes": [
+    {
+      "command_line": "\"C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe\" ",
+      "executable_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+      "parent_process_id": 34180,
+      "process_id": 4956,
+      "start_ticks": 639260248906277810
+    },
+    {
+      "command_line": "\"C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe\"  --progress-bar-server",
+      "executable_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+      "parent_process_id": 4956,
+      "process_id": 17696,
+      "start_ticks": 639260248935547060
+    }
+  ]
+}

@@ -23,11 +23,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ...application.ports.service_run_record import (
+    DeploymentManifestPort,
+    ServiceRunRecordPort,
+)
 from ...application.use_cases.apply_enterprise_services import (
+    ServiceInvocationBinding,
     TransportSelection,
     apply_enterprise_services,
 )
 from ...domain.enterprise.models.deployment import EnvironmentFingerprint
+from ...domain.enterprise.models.service_entry import ServiceStageResult
 from ...infrastructure.execution.import_isolation_preflight import (
     ImportIsolationPreflight,
 )
@@ -68,6 +74,10 @@ def register_service_tools(
     pick_channel: Callable[[], str],
     observe_environment: Callable[[str], EnvironmentFingerprint],
     governed_root: Path = GOVERNED_ROOT,
+    manifest_store_factory: Callable[[], DeploymentManifestPort] | None = None,
+    record_store_factory: Callable[[], ServiceRunRecordPort] | None = None,
+    session_factory_override: Callable[[], ServiceInvocationBinding] | None = None,
+    on_result: Callable[[ServiceStageResult], None] | None = None,
 ) -> None:
     """Register `pt_apply_enterprise_services` on the enterprise surface.
 
@@ -89,9 +99,9 @@ def register_service_tools(
         The tool binds a DeploymentManifest produced by pt_live_deploy; it
         deploys no topology and deletes no operator resource. The bounded path
         is one site and segment with a static Server-PT and wired PC-PT clients
-        on one access switch. DNS/HTTP use the documentary baseline. Mail and
-        delegated Server-PT DHCP compile as candidates but remain unavailable
-        under the default UNKNOWN capability records.
+        on one access switch. DNS/HTTP use the documentary baseline. Native
+        Server-PT DHCP has a recorded, exact-build, policy-scoped binding;
+        generic/named-pool DHCP and mail remain UNKNOWN.
 
         Parameters:
         - intent_json: EnterpriseIntent JSON with the requested services; DNS
@@ -106,24 +116,28 @@ def register_service_tools(
         capability provenance and the durable run-record path. Offline results
         never promote a Packet Tracer capability.
         """
-        session_factory = compose_service_session(
+        manifest_factory = manifest_store_factory or DeploymentManifestStore
+        record_factory = record_store_factory or ServiceRunRecordStore
+        session_factory = session_factory_override or compose_service_session(
             send_and_wait=send_and_wait,
             dispatch_and_wait=dispatch_and_wait,
             send_payload=send_payload,
             query_inventory=query_inventory,
             observe_environment=observe_environment,
             select_transport=lambda: picked_transport_selection(pick_channel),
-            record_store_factory=ServiceRunRecordStore,
+            record_store_factory=record_factory,
             observe_source_tree=lambda: observe_source_tree(governed_root),
         )
         result = apply_enterprise_services(
             intent_json,
             deployment_id=deployment_id,
             packet_tracer_version=packet_tracer_version.strip(),
-            manifest_store_factory=DeploymentManifestStore,
+            manifest_store_factory=manifest_factory,
             import_preflight=ImportIsolationPreflight(governed_root),
-            record_store_factory=ServiceRunRecordStore,
+            record_store_factory=record_factory,
             session_factory=session_factory,
             run_label=run_label,
         )
+        if on_result is not None:
+            on_result(result)
         return json.dumps(result.compact_summary(), indent=2, ensure_ascii=False)

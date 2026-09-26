@@ -209,12 +209,15 @@ class NativeDhcpPolicyScope(BaseModel):
 
     network: str
     netmask: str
+    server_address: str
     gateway: str
     dns_server: str
     first_lease: str
+    latest_start: str
     last_lease: str
     max_users: int
     max_exclusion_ranges: int
+    excluded_ranges: list[AddressRange] = Field(default_factory=list)
 
 
 class ClientOperationCapability(BaseModel):

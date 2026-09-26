@@ -254,13 +254,26 @@ def test_tftp_publication_is_still_not_inferred_from_tftp_enable():
 # -- provenance and construction-time consistency --------------------------
 
 
-def test_every_baseline_record_is_documentary_and_says_so():
-    """R-CAP-07: nothing in the baseline table claims a recorded run."""
+def test_only_measured_native_records_have_recorded_run_provenance():
+    """R-CAP-07: the scoped native grant does not relabel other families."""
     records = packet_tracer_service_capabilities(BASELINE_PACKET_TRACER_VERSION)
 
     levels = provenance_by_key(records)
-    assert set(levels.values()) == {CapabilityProvenance.DOCUMENTARY_BASELINE.value}
     assert set(levels) == set(records)
+    recorded = {
+        key
+        for key, level in levels.items()
+        if level == CapabilityProvenance.RECORDED_RUN.value
+    }
+    assert recorded == {
+        "Server-PT:dhcp_native_default_binding",
+        "PC-PT:endpoint_dhcp_mode",
+    }
+    assert all(
+        level == CapabilityProvenance.DOCUMENTARY_BASELINE.value
+        for key, level in levels.items()
+        if key not in recorded
+    )
 
 
 def test_a_duplicate_record_fails_closed_before_it_becomes_a_dictionary():

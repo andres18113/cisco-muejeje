@@ -27,20 +27,26 @@ the reserve, which keeps the owned client's release inside the budget.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hashlib
 import json
 import re
 import sys
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from mcp.server.fastmcp import FastMCP
+
 from ...application.ports.service_qualification import OpenedTransport
-from ...application.use_cases.apply_enterprise_services import ServiceStageRuntimes
+from ...application.use_cases.apply_enterprise_services import (
+    ServiceInvocationBinding,
+    ServiceStageRuntimes,
+)
 from ...application.use_cases.compile_configuration import (
     compile_enterprise_configuration,
 )
@@ -70,13 +76,15 @@ from ...application.use_cases.server_pt_campaign_ledger import (
     phase_record_name,
 )
 from ...domain.enterprise.models.capabilities import CapabilityStatus
-from ...domain.enterprise.models.configuration import ConfigurationPolicy
+from ...domain.enterprise.models.configuration import AddressRange, ConfigurationPolicy
 from ...domain.enterprise.models.configuration_runtime import RuntimeConfigurationTarget
 from ...domain.enterprise.models.deployment import (
+    DeploymentManifest,
     EnvironmentFingerprint,
     build_deployment_manifest,
 )
 from ...domain.enterprise.models.intent import EnterpriseIntent
+from ...domain.enterprise.models.service_entry import ServiceStageResult
 from ...domain.enterprise.models.service_plan import (
     CapabilityProvenance,
     ClientOperationCapability,
@@ -174,6 +182,7 @@ from ...infrastructure.persistence.service_qualification_store import (
 from ...infrastructure.persistence.service_run_record_store import (
     ServiceRunRecordStore,
 )
+from ..mcp import service_tools
 from .server_pt_campaign_archive import archive_or_stop, ledger_admit, ledger_result
 
 #: Service runtime timings for a qualification fetch; see the module docstring.
@@ -328,12 +337,18 @@ def _native_candidate_capabilities(build: str):
         native_policy_scope=NativeDhcpPolicyScope(
             network="192.0.2.0",
             netmask="255.255.255.0",
+            server_address="192.0.2.10",
             gateway="192.0.2.1",
             dns_server="192.0.2.10",
             first_lease="192.0.2.2",
+            latest_start="192.0.2.253",
             last_lease="192.0.2.254",
             max_users=16,
             max_exclusion_ranges=16,
+            excluded_ranges=[
+                AddressRange(start="192.0.2.1", end="192.0.2.1"),
+                AddressRange(start="192.0.2.10", end="192.0.2.10"),
+            ],
         ),
     )
     key = f"Server-PT:{ServiceType.DHCP.value}"
@@ -736,6 +751,132 @@ def _native_product_runtimes(
     )
 
 
+def _native_public_product_entry(governed_root: Path):
+    """Invoke the registered four-input MCP tool on the owned stage channel."""
+
+    def invoke(
+        bound: LedgeredTransport,
+        binding_factory: Callable[[], ServiceInvocationBinding],
+        manifest: DeploymentManifest,
+        intent_json: str,
+        build: str,
+        run_label: str,
+    ) -> ServiceStageResult:
+        class ExactManifest:
+            def latest_by_deployment_id(self, identifier: str):
+                return manifest if identifier == manifest.deployment_id else None
+
+        def unused_inventory(*_args):
+            raise RuntimeError("public_stage_inventory_must_use_verified_binding")
+
+        def unused_environment(*_args):
+            raise RuntimeError("public_stage_environment_must_be_freshly_bound")
+
+        captured: list[ServiceStageResult] = []
+        bindings: list[ServiceInvocationBinding] = []
+
+        def tracked_binding() -> ServiceInvocationBinding:
+            if bindings:
+                raise RuntimeError("registered_public_session_rebound")
+            session = binding_factory()
+            bindings.append(session)
+            return session
+
+        mcp = FastMCP("owned-native-public-product")
+        service_tools.register_service_tools(
+            mcp,
+            send_and_wait=lambda script, timeout, _channel: bound.send_and_wait(
+                script, timeout
+            ),
+            dispatch_and_wait=lambda script, timeout, _channel: bound.dispatch_and_wait(
+                script, timeout
+            ),
+            send_payload=lambda script, _channel: bound.send(script),
+            query_inventory=unused_inventory,
+            pick_channel=lambda: "file",
+            observe_environment=unused_environment,
+            governed_root=governed_root,
+            manifest_store_factory=ExactManifest,
+            record_store_factory=lambda: ServiceRunRecordStore(
+                governed_root / "data/services/product-qualification"
+            ),
+            session_factory_override=tracked_binding,
+            on_result=captured.append,
+        )
+        rendered = asyncio.run(
+            mcp.call_tool(
+                "pt_apply_enterprise_services",
+                {
+                    "intent_json": intent_json,
+                    "deployment_id": manifest.deployment_id,
+                    "packet_tracer_version": build,
+                    "run_label": run_label,
+                },
+            )
+        )
+        if len(captured) != 1 or not rendered or not rendered[0]:
+            raise RuntimeError("registered_public_result_missing")
+        summary = json.loads(rendered[0][0].text)
+        if summary != captured[0].compact_summary():
+            raise RuntimeError("registered_public_result_mismatch")
+        result = captured[0]
+        if result.persist_error and result.stage.value == "completed":
+            if result.status.value != "unknown":
+                raise RuntimeError("registered_public_persistence_status_mismatch")
+        store = ServiceRunRecordStore(
+            governed_root / "data/services/product-qualification"
+        )
+        if result.record_path:
+            expected_path = store.path_for(result.deployment_id, result.run_id)
+            if Path(result.record_path) != expected_path:
+                raise RuntimeError("registered_public_record_identity_mismatch")
+            stored = store.load(result.deployment_id, result.run_id)
+            if stored.persisted_stage is not result.persisted_stage:
+                raise RuntimeError("registered_public_record_content_mismatch")
+            if not result.persist_error:
+                if (
+                    stored.run_id != result.run_id
+                    or stored.run_label != result.run_label
+                    or stored.deployment_id != result.deployment_id
+                    or stored.packet_tracer_version != result.packet_tracer_version
+                    or stored.transport != result.transport
+                    or stored.status is not result.status
+                    or stored.refusal_code is not result.refusal_code
+                    or stored.blocked_reason != result.blocked_reason
+                    or stored.capability_snapshot != result.capability_snapshot
+                    or stored.e5_effect_scope != result.e5_effect_scope
+                    or stored.e5_effect_uncertain != result.e5_effect_uncertain
+                    or stored.configuration_result != result.configuration_result
+                    or stored.foundational_statuses != result.foundational_statuses
+                    or stored.service_result != result.service_result
+                    or stored.clients != result.clients
+                    or stored.services != result.services
+                    or stored.releases != result.releases
+                    or stored.operational_readiness != result.operational_readiness
+                    or stored.dirty_state is not result.dirty_state
+                    or (bindings and stored.source_tree != bindings[0].source_tree)
+                ):
+                    raise RuntimeError("registered_public_record_content_mismatch")
+                if result.status.value == "verified":
+                    authorities = stored.dhcp_authorities
+                    if (
+                        len(bindings) != 1
+                        or len(authorities) != 1
+                        or authorities[0].effective_pool_name != "serverPool"
+                        or authorities[0].pool_name_explicit
+                        or set(authorities[0].client_device_ids)
+                        != set(stored.selected_clients)
+                    ):
+                        raise RuntimeError("registered_public_authority_mismatch")
+        elif result.status.value == "verified" or (
+            result.stage.value == "completed" and not result.persist_error
+        ):
+            raise RuntimeError("registered_public_record_missing")
+        return result
+
+    return invoke
+
+
 def _native_product_record_path(record: QualificationRecord | None) -> str:
     """Return the product record a native product measurement names, or "".
 
@@ -873,7 +1014,7 @@ def production_boundaries(governed_root: Path) -> QualificationBoundaries:
         q3_required_build=Q3_PACKET_TRACER_BUILD,
         dhcp_product_contract=dhcp_product_contract,
         native_product_contract=lambda build, run_id: native_dhcp_http_product_contract(
-            build, run_id, selected_count=2, start_offset=150
+            build, run_id, selected_count=2, start_offset=124
         ),
         native_product_runtimes=_native_product_runtimes,
         native_product_import_preflight=lambda: ImportIsolationPreflight(governed_root),
@@ -883,6 +1024,7 @@ def production_boundaries(governed_root: Path) -> QualificationBoundaries:
         native_product_endpoint_observer=lambda bound: (
             PacketTracerEndpointAddressObserver(bound.send_and_wait)
         ),
+        native_public_product_entry=_native_public_product_entry(governed_root),
         native_default_transitions=admitted_native_default_transitions,
         reviewed_native_default_intervention=WHOLE_CONFIGURE_PC_IP,
         forwarding_probe=_forwarding_probe,

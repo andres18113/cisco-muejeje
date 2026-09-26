@@ -14,6 +14,7 @@ from packet_tracer_mcp.adapters.cli.service_qualification import (
     native_dhcp_http_product_contract,
 )
 from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
+    TransportSelection,
     _dhcp_authorities,
     _drift_conflicts,
     _e5_closure,
@@ -41,6 +42,12 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
 from packet_tracer_mcp.domain.enterprise.models.service_runtime import (
     ObservationFact,
     RuntimeServiceVerification,
+)
+from packet_tracer_mcp.domain.enterprise.services.native_dhcp_policy import (
+    native_policy_within_scope,
+)
+from packet_tracer_mcp.infrastructure.catalog.service_capabilities import (
+    packet_tracer_service_capabilities,
 )
 from packet_tracer_mcp.infrastructure.execution.endpoint_address_observer import (
     PacketTracerEndpointAddressObserver,
@@ -360,6 +367,7 @@ def test_native_single_pc_product_has_no_invented_inactive_client(tmp_path) -> N
     harness.configuration = _ModeConfigurationRuntime(
         targets=harness.configuration.targets
     )
+    harness.transport = TransportSelection(channel="file")
     result = harness.run(
         intent_json=json.dumps(payload),
         capability_catalog=_native_candidate_capabilities,
@@ -401,6 +409,7 @@ def test_native_http_product_entry_persists_binding_and_gates_pc1(tmp_path) -> N
     harness.configuration = _ModeConfigurationRuntime(
         targets=harness.configuration.targets
     )
+    harness.transport = TransportSelection(channel="file")
 
     result = harness.run(
         intent_json=json.dumps(payload),
@@ -442,6 +451,7 @@ def test_native_http_product_withholds_client_request_on_unknown_lease(
     harness.configuration = _ModeConfigurationRuntime(
         targets=harness.configuration.targets
     )
+    harness.transport = TransportSelection(channel="file")
     harness.services.behavior_status = ActionExecutionStatus.UNKNOWN
     harness.services.behavior_observation = ObservationFact.INCONCLUSIVE
 
@@ -696,12 +706,121 @@ def test_required_native_state_is_staged_before_pc1_http_request(
     assert result is not None
 
 
-def test_default_catalog_still_refuses_native_candidate_before_e5(tmp_path) -> None:
-    """Experimental private capability bindings do not promote the catalog."""
+def test_default_catalog_admits_scoped_native_product_without_override(
+    tmp_path,
+) -> None:
+    """The public catalog admits the measured policy through normal A1-E6."""
+    payload = _native_dhcp_http_intent().model_dump(mode="json")
+    harness = _harness(tmp_path, payload)
+    harness.configuration = _ModeConfigurationRuntime(
+        targets=harness.configuration.targets
+    )
+    harness.transport = TransportSelection(channel="file")
+
+    result = harness.run(intent_json=json.dumps(payload))
+
+    assert result.refusal_code is ServiceEntryRefusal.NONE, result.blocked_reason
+    assert result.service_result is not None
+    [authority] = (
+        ServiceRunRecordStore(tmp_path)
+        .load(result.deployment_id, result.run_id)
+        .dhcp_authorities
+    )
+    assert authority.effective_pool_name == "serverPool"
+    assert authority.client_device_ids == ["endpoint/q3/default/user_pc/001"]
+
+
+def test_native_public_binding_rejects_unmeasured_transport_before_e5(tmp_path) -> None:
+    """An HTTP-selected session cannot inherit file-channel native evidence."""
     payload = _native_dhcp_http_intent().model_dump(mode="json")
     harness = _harness(tmp_path, payload)
 
     result = harness.run(intent_json=json.dumps(payload))
 
-    assert result.refusal_code is ServiceEntryRefusal.COMPOSITION_FAILED
+    assert result.refusal_code is ServiceEntryRefusal.SERVICE_PATH_UNSUPPORTED
+    assert "measured file channel" in result.blocked_reason
     assert harness.mutating_calls == []
+
+
+@pytest.mark.parametrize(
+    "outside",
+    [
+        "capacity",
+        "start",
+        "named_pool",
+        "server_address",
+        "gateway",
+        "dns",
+    ],
+)
+def test_default_native_binding_refuses_outside_recorded_scope_before_e5(
+    tmp_path, outside
+) -> None:
+    """The public marker grants only native actions within its exact scope."""
+    payload = _native_dhcp_http_intent().model_dump(mode="json")
+    dhcp = payload["sites"][0]["services"][0]
+    if outside == "capacity":
+        dhcp["dhcp_pool"]["max_users"] = 3
+    elif outside == "start":
+        dhcp["dhcp_pool"]["start_offset"] = 152
+    elif outside == "named_pool":
+        dhcp["verification_mode"] = "configure_only"
+        dhcp["dhcp_pool"]["pool_name"] = "OPERATOR_POOL"
+    elif outside == "server_address":
+        server = next(
+            item
+            for item in payload["sites"][0]["endpoints"]
+            if item["role"] == "server"
+        )
+        server["metadata"]["ipv4"] = "192.0.2.20"
+    elif outside == "gateway":
+        payload["sites"][0]["segments"][0]["gateway"] = "192.0.2.2"
+    elif outside == "dns":
+        dhcp["dhcp_pool"]["dns_server"] = "192.0.2.11"
+    harness = _harness(tmp_path, payload)
+
+    result = harness.run(intent_json=json.dumps(payload))
+
+    assert result.refusal_code is not ServiceEntryRefusal.NONE
+    assert harness.mutating_calls == []
+
+
+def test_foreign_build_has_only_an_unknown_native_marker() -> None:
+    """A different PT build cannot inherit the measured public scope."""
+    record = packet_tracer_service_capabilities("9.0.2.0000")[
+        "Server-PT:dhcp_native_default_binding"
+    ]
+    assert record.support is CapabilityStatus.UNKNOWN
+    assert record.native_policy_scope is None
+
+
+def test_default_native_scope_requires_exact_exclusions() -> None:
+    """An extra static address cannot be hidden inside a measured policy."""
+    scope = packet_tracer_service_capabilities("9.0.1.0858")[
+        "Server-PT:dhcp_native_default_binding"
+    ].native_policy_scope
+    common = dict(
+        network="192.0.2.0",
+        netmask="255.255.255.0",
+        server_address="192.0.2.10",
+        gateway="192.0.2.1",
+        dns_server="192.0.2.10",
+        lease_start="192.0.2.125",
+        lease_end="192.0.2.126",
+        max_users=2,
+    )
+    expected = [("192.0.2.1", "192.0.2.1"), ("192.0.2.10", "192.0.2.10")]
+    assert native_policy_within_scope(scope, excluded_ranges=expected, **common)
+    assert not native_policy_within_scope(
+        scope, excluded_ranges=[*expected, ("192.0.2.20", "192.0.2.20")], **common
+    )
+    assert not native_policy_within_scope(
+        scope,
+        excluded_ranges=expected,
+        **{**common, "network": "198.51.100.0"},
+    )
+    assert not native_policy_within_scope(
+        scope,
+        excluded_ranges=expected,
+        **{**common, "netmask": "255.255.0.0"},
+    )

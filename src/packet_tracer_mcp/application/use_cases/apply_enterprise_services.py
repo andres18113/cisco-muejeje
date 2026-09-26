@@ -169,6 +169,7 @@ MAX_CLIENT_CHECK_ROWS = MAX_REPORTING_CLIENTS * 5
 #: The only channel a secret-bearing script may travel on (R-SEC-01): a POST
 #: body over the authenticated loopback bridge, never a request file on disk.
 SECRET_CHANNEL = "http"
+NATIVE_DHCP_CHANNEL = "file"
 
 
 def _fresh_nonce() -> str:
@@ -1610,6 +1611,21 @@ def apply_enterprise_services(
     run.record.selected_action_ids = [item.id for item in selected_plan.actions]
     run.record.shared_content_bindings = shared_content_bindings
 
+    if (
+        any(
+            isinstance(item, ConfigureServerDhcpPool)
+            and item.effective_pool_name == "serverPool"
+            for item in selected_plan.actions
+        )
+        and transport_selection.channel != NATIVE_DHCP_CHANNEL
+    ):
+        return refuse(
+            "A9",
+            ServiceEntryRefusal.SERVICE_PATH_UNSUPPORTED,
+            "Native Server-PT DHCP requires the measured file channel; "
+            "the selected transport is outside its recorded scope.",
+        )
+
     service_subject_ids = {
         device_id
         for service in eligible
@@ -2142,6 +2158,11 @@ def _finish(
     except RunRecordPersistenceError as exc:
         run.persist_error = str(exc)
         limitations = sorted({*limitations, "persist_error:complete"})
+        # Execution facts remain in their per-action and per-client rows, but
+        # the product delivery is unknown without its terminal durable record.
+        status = ServiceRunStatus.UNKNOWN
+        run.record.status = status
+        run.record.limitations = limitations
 
     return ServiceStageResult(
         run_id=run.run_id,

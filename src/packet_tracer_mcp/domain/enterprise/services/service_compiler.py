@@ -1374,12 +1374,13 @@ class ServiceCompiler:
             native_record.native_policy_scope,
             network=str(network.network_address),
             netmask=first.netmask,
+            server_address=str(server_address),
             gateway=str(gateway),
             dns_server=dns_server,
             lease_start=lease_start,
             lease_end=lease_end,
             max_users=max_users,
-            exclusion_count=len(excluded_ranges),
+            excluded_ranges=[(item.start, item.end) for item in excluded_ranges],
         ):
             issues.append(
                 _error(

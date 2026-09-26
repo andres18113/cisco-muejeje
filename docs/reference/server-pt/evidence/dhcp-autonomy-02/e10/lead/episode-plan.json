@@ -1,0 +1,55 @@
+{
+  "allocated_operations": 600,
+  "allocated_seconds": 2400.0,
+  "allocation_arithmetic": "The stage caps 600 operations and 2100 seconds, including its 11-operation and 300-second finalization reserves. Episode 9 consumed 88 operations for two selected clients. The shifted start probes a different native post-start coupling with the same number of setters and HTTP requests. A 200-operation forecast leaves 400 within the fixed stage ceiling; 2400 episode seconds cover 2100 stage seconds plus 60 launch, 120 retirement, and 120 contingency. No in-flight increase.",
+  "attempt_ids": [
+    "4d5e9960ce0a4de291697ce7c667c7d2"
+  ],
+  "compiled_dns": "192.0.2.10",
+  "compiled_exclusions": [
+    {
+      "end": "192.0.2.1",
+      "start": "192.0.2.1"
+    },
+    {
+      "end": "192.0.2.10",
+      "start": "192.0.2.10"
+    }
+  ],
+  "compiled_gateway": "192.0.2.1",
+  "effective_pool_hypothesis": "serverPool",
+  "instance_token": "dfb9395b842d4099bab53ba77c8d3d6a",
+  "interpretation_limit": "Private shifted-policy candidate, not default public support; explicit dhcpRun causality, renewal, and table-end remain unqualified.",
+  "permitted_effects": [
+    "qualification:Q3-NATIVE-PRODUCT profile 3",
+    "create/verify/remove exact disposable four-device three-link fixture",
+    "maintained product A1-E6 on owned fixture with two selected PC-PT clients",
+    "guarded E5 server static and both client DHCP modes",
+    "guarded native serverPool .151-.152 capacity-two policy and enable",
+    "HTTP content setter and each client's first HTTP-by-IP request without warm-up",
+    "owned process retirement"
+  ],
+  "physical_topology_hash": "3de4cfc945a0a485a0b87ef556e885e4167bdea01bc86eea0ba85a7436418a9a",
+  "profile_id": "Q3-NATIVE-PRODUCT",
+  "profile_version": "3",
+  "question": "Does the maintained owned-lab A1-E6 path configure a shifted capacity-two native serverPool allocation at .151-.152, verify two distinct stable PC leases and physical rows, then serve each client's first HTTP-by-IP request without ping, DNS, static injection, warm-up, PortFast, or clock acceleration?",
+  "requested_capacity": 2,
+  "requested_end": "192.0.2.152",
+  "requested_pool": "derived Q3_DATA (unnamed input)",
+  "requested_start": "192.0.2.151",
+  "source_sha": "e8c810192b44d75340ffa6ad81c16473eb060fd2",
+  "source_tree": "81802ac0307688a5acde8e503b169c39b82af857",
+  "stop_rule": "Stop dependent effects on identity mismatch, unexpected setter, incomplete policy/lease/HTTP evidence, budget expiry, persistence or cleanup uncertainty; retain terminal readings and retire only the owned lab.",
+  "targets": [
+    "Q3-DEFAULT-SERVER-01",
+    "Q3-DEFAULT-PC-01",
+    "Q3-DEFAULT-PC-02",
+    "Q3-DEFAULT-ACCESS-SW-01"
+  ],
+  "tests_run": [
+    "54 focused and campaign tests passed at e8c8101",
+    "clean exact-commit quality gate at e8c8101",
+    "244 affected tests passed on common runtime at 6868020",
+    "independent read-only adversarial review closed two safety findings"
+  ]
+}

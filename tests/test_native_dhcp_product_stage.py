@@ -31,19 +31,29 @@ from packet_tracer_mcp.domain.enterprise.models.configuration import (
     VerificationKind,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    ActionExecutionStatus,
+    ConfigurationApplicationStatus,
     RuntimeActionMutation,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_entry import (
     ServiceRunStatus,
+    ServiceStage,
+    ServiceStageResult,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ConfigureServerDhcpPool,
+    ServiceVerificationKind,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     MeasurementConclusion,
     QualificationRecord,
     RepositoryIdentity,
     stage_definition,
+)
+from packet_tracer_mcp.domain.enterprise.models.service_runtime import (
+    ObservationFact,
+    ServiceApplicationResult,
+    ServiceVerificationResult,
 )
 from packet_tracer_mcp.infrastructure.execution.endpoint_address_observer import (
     PacketTracerEndpointAddressObserver,
@@ -179,6 +189,7 @@ def _run(
     pc2_late=False,
     selected_count=1,
     start_offset=99,
+    public_entry=False,
     inject_partial_product=False,
     fail_complete=False,
 ):
@@ -199,6 +210,12 @@ def _run(
         upstream_head="b" * 40,
     )
     monkeypatch.setattr(service_qualification, "repository_identity", lambda _: source)
+    if public_entry:
+        monkeypatch.setattr(
+            service_qualification.service_tools,
+            "ImportIsolationPreflight",
+            lambda _root: IsolationPreflight(),
+        )
     if inject_partial_product:
         qualifier = import_module(
             "packet_tracer_mcp.application.use_cases.qualify_server_services"
@@ -303,6 +320,13 @@ def _run(
                 native_product_endpoint_observer=lambda bound: (
                     PacketTracerEndpointAddressObserver(bound.send_and_wait)
                 ),
+                native_public_product_entry=(
+                    public_entry
+                    if callable(public_entry)
+                    else service_qualification._native_public_product_entry(directory)
+                    if public_entry
+                    else None
+                ),
             )
 
         code = service_qualification.main(
@@ -331,8 +355,8 @@ def _run(
         engine.close()
 
 
-def test_production_stage_binds_shifted_two_client_policy_and_profile(tmp_path):
-    """The next LIVE composition requests a shifted window under version 3."""
+def test_production_stage_binds_public_interior_policy_and_profile(tmp_path):
+    """The next LIVE composition requests an interior window through MCP."""
     boundaries = production_boundaries(tmp_path)
     contract = boundaries.native_product_contract("9.0.1.0858", "current-candidate")
     [pool] = [
@@ -342,12 +366,13 @@ def test_production_stage_binds_shifted_two_client_policy_and_profile(tmp_path):
     ]
     definition = stage_definition(STAGE)
     assert (pool.lease_start, pool.lease_end, pool.max_users) == (
-        "192.0.2.151",
-        "192.0.2.152",
+        "192.0.2.125",
+        "192.0.2.126",
         2,
     )
-    assert definition.profile_version == "3"
+    assert definition.profile_version == "4"
     assert definition.dhcp_pool_capacity == 2
+    assert boundaries.native_public_product_entry is not None
 
 
 def test_production_product_runtimes_supply_inner_inventory(tmp_path):
@@ -510,6 +535,119 @@ def test_owned_stage_uses_shifted_policy_for_two_clients(tmp_path, capsys, monke
     assert len([script for _kind, script in calls if ".go(" in script]) == 2
 
 
+def test_owned_stage_uses_registered_four_input_tool_with_default_catalog(
+    tmp_path, capsys, monkeypatch
+):
+    """The governed stage invokes the public handler and seals its product."""
+    require_node()
+    code, summary, record, calls, snapshot, store = _run(
+        tmp_path,
+        capsys,
+        monkeypatch,
+        retry_on_enable=True,
+        selected_count=2,
+        start_offset=124,
+        public_entry=True,
+    )
+    assert code == 0, summary
+    measured = {item.experiment_id: item for item in record.measurements}
+    product = measured["M-NATIVE-PRODUCT"]
+    assert product.conclusion is MeasurementConclusion.SUPPORTED_IN_SAMPLE
+    assert product.facts["entry_surface"] == "registered_four_input"
+    assert product.facts["fresh_public_build"] == "9.0.1.0858"
+    assert product.facts["product_record_path"]
+    assert len([script for _kind, script in calls if ".go(" in script]) == 2
+    assert snapshot["devices"] == []
+    assert store.load_phase_status(ATTEMPT, "qualification")["restoration_proven"]
+
+
+def test_public_tool_persistence_failure_stops_stage_and_restores_fixture(
+    tmp_path, capsys, monkeypatch
+):
+    """A public tool result cannot outvote a failed terminal record write."""
+    require_node()
+    code, _summary, record, calls, snapshot, store = _run(
+        tmp_path,
+        capsys,
+        monkeypatch,
+        retry_on_enable=True,
+        selected_count=2,
+        start_offset=124,
+        public_entry=True,
+        fail_complete=True,
+    )
+    assert code != 0
+    measured = {item.experiment_id: item for item in record.measurements}
+    assert measured["M-NATIVE-PRODUCT"].conclusion is MeasurementConclusion.INCONCLUSIVE
+    assert len([script for _kind, script in calls if ".go(" in script]) == 2
+    assert snapshot["devices"] == []
+    assert store.load_phase_status(ATTEMPT, "qualification")["restoration_proven"]
+
+
+def test_public_stage_cannot_accept_callback_without_fresh_binding(
+    tmp_path, capsys, monkeypatch
+):
+    """A claimed public result without A5 build evidence cannot be promoted."""
+    require_node()
+    contract = native_dhcp_http_product_contract(
+        SIM_BUILD, "spoof", selected_count=2, start_offset=124
+    )
+    required = [
+        item
+        for item in contract.service_plan.verification_expectations
+        if item.kind
+        in {
+            ServiceVerificationKind.DHCP_LEASE,
+            ServiceVerificationKind.HTTP_FETCH,
+        }
+    ]
+    fake_path = tmp_path / "fake-public-record.json"
+    fake_path.write_text("{}", encoding="utf-8")
+
+    def unbound_result(_bound, _factory, manifest, _intent, _build, _label):
+        return ServiceStageResult(
+            run_id="unbound-public-claim",
+            deployment_id=manifest.deployment_id,
+            stage=ServiceStage.COMPLETED,
+            persisted_stage=ServiceStage.COMPLETED,
+            status=ServiceRunStatus.VERIFIED,
+            record_path=str(fake_path),
+            service_result=ServiceApplicationResult(
+                service_plan_id=contract.service_plan.id,
+                service_semantic_hash=contract.service_plan.semantic_hash,
+                source_topology_hash=contract.service_plan.source_topology_hash,
+                source_configuration_hash=contract.service_plan.source_configuration_hash,
+                status=ConfigurationApplicationStatus.VERIFIED,
+                verification_results=[
+                    ServiceVerificationResult(
+                        expectation_id=item.id,
+                        service_id=item.service_id,
+                        status=ActionExecutionStatus.VERIFIED,
+                        evidence_kind=item.evidence_kind,
+                        fresh_evidence=True,
+                        observation=ObservationFact.OBSERVED,
+                    )
+                    for item in required
+                ],
+            ),
+        )
+
+    code, _summary, record, _calls, snapshot, _store = _run(
+        tmp_path,
+        capsys,
+        monkeypatch,
+        retry_on_enable=True,
+        selected_count=2,
+        start_offset=124,
+        public_entry=unbound_result,
+    )
+    assert code != 0
+    measured = {item.experiment_id: item for item in record.measurements}
+    assert measured["M-NATIVE-PRODUCT"].conclusion is MeasurementConclusion.INCONCLUSIVE
+    assert measured["M-NATIVE-PRODUCT"].facts["fresh_public_build"] == ""
+    assert snapshot["devices"] == []
+
+
 def test_positive_run_seals_its_product_record_in_the_campaign_archive(
     tmp_path, capsys, monkeypatch
 ):
@@ -623,7 +761,7 @@ def test_owned_stage_requires_completed_product_record(tmp_path, capsys, monkeyp
     assert code != 0
     assert measure.conclusion is MeasurementConclusion.INCONCLUSIVE
     assert any(".go(" in script for _kind, script in calls)
-    assert measure.facts["product_summary"]["status"] == "verified"
+    assert measure.facts["product_summary"]["status"] == "unknown"
 
 
 @pytest.mark.parametrize(

@@ -1,0 +1,131 @@
+"""Copy and hash episode 10 primary bytes after owned retirement and closing."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
+from packet_tracer_mcp.infrastructure.persistence.server_pt_commissioning_store import (
+    ServerPtCommissioningStore,
+)
+
+ROOT = Path(__file__).resolve().parents[3]
+LEAD = Path(__file__).resolve().parent
+TARGET = ROOT / "docs/reference/server-pt/evidence/dhcp-autonomy-02/e10"
+STORE = ROOT / "data/commissioning/SERVER-PT-DHCP-AUTONOMOUS-02"
+RUN = "2026-09-26T13-08-43Z-a18db0b4"
+QUALIFICATION = ROOT / f"data/services/qualification/q3-native-product/q3-native-product-{RUN}.json"
+PRODUCT = ROOT / f"data/services/product-qualification/qualification_{RUN}/{RUN}-product.json"
+ATTEMPT = "4d5e9960ce0a4de291697ce7c667c7d2"
+HEAD = "e8c810192b44d75340ffa6ad81c16473eb060fd2"
+TREE = "81802ac0307688a5acde8e503b169c39b82af857"
+
+
+def git(*args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=ROOT, check=True, capture_output=True, text=True, timeout=15
+    ).stdout.strip()
+
+
+def digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+if TARGET.exists() or git("status", "--porcelain=v1"):
+    raise RuntimeError("archive_target_exists_or_source_dirty")
+if git("rev-parse", "HEAD") != HEAD or git("rev-parse", "HEAD^{tree}") != TREE:
+    raise RuntimeError("archive_source_identity_mismatch")
+store = ServerPtCommissioningStore(ROOT, "SERVER-PT-DHCP-AUTONOMOUS-02")
+if store.verify_index():
+    raise RuntimeError("campaign_index_unverified")
+closing = json.loads((LEAD / "12-close-episode.json").read_text(encoding="utf-8"))
+exit_census = json.loads((LEAD / "11-exit-census.json").read_text(encoding="utf-8"))
+qualification = json.loads(QUALIFICATION.read_text(encoding="utf-8"))
+product = json.loads(PRODUCT.read_text(encoding="utf-8"))
+if (
+    closing.get("episode") != 10
+    or closing.get("operations_used") != 89
+    or closing.get("unsettled_phases")
+    or exit_census.get("process_error")
+    or exit_census.get("processes")
+    or exit_census.get("mailbox_files")
+    or exit_census.get("campaign_lock_present")
+    or qualification.get("source", {}).get("executed_sha") != HEAD
+    or qualification.get("source", {}).get("executed_tree") != TREE
+    or qualification.get("outcome") != "completed"
+    or product.get("source_tree", {}).get("sha") != HEAD
+    or product.get("status") != "verified"
+    or product.get("persisted_stage") != "completed"
+    or product.get("persist_error")
+    or set(product.get("selected_clients", []))
+    != {
+        "endpoint/q3/default/user_pc/001",
+        "endpoint/q3/default/user_pc/002",
+    }
+):
+    raise RuntimeError("archive_primary_records_incoherent")
+if not store.load_process_exit(ATTEMPT):
+    raise RuntimeError("archive_retirement_missing")
+
+TARGET.mkdir(parents=True)
+shutil.copytree(LEAD, TARGET / "lead")
+for script in (TARGET / "lead").glob("*.py"):
+    script.rename(script.with_suffix(".py.txt"))
+shutil.copytree(STORE, TARGET / "store")
+(TARGET / "record").mkdir()
+shutil.copy2(QUALIFICATION, TARGET / "record" / QUALIFICATION.name)
+shutil.copy2(PRODUCT, TARGET / "record" / PRODUCT.name)
+
+readme = f"""# SERVER-PT-DHCP-AUTONOMOUS-02: episode 10
+
+This immutable archive contains the shifted-policy two-selected-client product
+run on Packet Tracer 9.0.1.0858, file channel. Executed source `{HEAD}`
+(tree `{TREE}`), attempt `{ATTEMPT}`, instance
+`dfb9395b842d4099bab53ba77c8d3d6a`, profile `Q3-NATIVE-PRODUCT` version 3.
+
+The requested unnamed state-only DHCP policy bound to physical `serverPool` on
+`192.0.2.0/24`, gateway `192.0.2.1`, DNS/server `192.0.2.10`, capacity two,
+window `.151`-`.152`, with `.1` and `.10` excluded. The maintained A1-E6
+product record is VERIFIED and sealed. PC1 received `192.0.2.151` with MAC
+`00D0.FF28.2034`; PC2 received `192.0.2.152` with MAC `0010.11A4.476E`.
+Each result joined two stable fresh samples and a positive exact IP/MAC/port
+row in `serverPool`; the group trace is retained once on the triggering client
+and referenced by the other. Both first HTTP-by-IP requests to
+`http://192.0.2.10/` returned the expected marker without ping, DNS, warm-up,
+PortFast, clock acceleration, or client static-address injection.
+
+`M-NATIVE-PRODUCT` and `M-NATIVE-PRODUCT-FINAL` are SUPPORTED_IN_SAMPLE for
+this exact source, build, fixture, policy and channel. The qualification used
+89 operations and 159.469 active seconds. The closed campaign ledger charged
+319.202291 seconds for the whole episode; cumulative use is 608 operations
+and 3074.101403 seconds. Fixture restoration was proven. Maintained retirement
+exited owned PID 4956; final census showed zero Packet Tracer processes,
+empty mailbox and no campaign lock. Explicit `dhcpRun` causality, renewal,
+table-end proof, other networks/builds, public default
+catalog registration and independent product acceptance are not claimed.
+
+The qualification record SHA-256 is `{digest(QUALIFICATION)}` and the product
+record SHA-256 is `{digest(PRODUCT)}`. Both originals remain in their indexed
+campaign locations. `store/` is the cumulative campaign snapshot after this
+episode closed. `MANIFEST.sha256` pins README, lead, record and store bytes;
+one-use Python scripts are preserved as `.py.txt` data.
+"""
+(TARGET / "README.md").write_text(readme, encoding="utf-8", newline="\n")
+files = sorted(
+    path for path in TARGET.rglob("*")
+    if path.is_file() and path.name != "MANIFEST.sha256"
+)
+manifest = "".join(
+    f"{digest(path)}  {path.relative_to(TARGET).as_posix()}\n" for path in files
+)
+(TARGET / "MANIFEST.sha256").write_text(manifest, encoding="utf-8", newline="\n")
+for path in files:
+    if f"{digest(path)}  {path.relative_to(TARGET).as_posix()}\n" not in manifest:
+        raise RuntimeError("archive_manifest_verification_failed")
+print(json.dumps({"archive": str(TARGET), "files": len(files),
+                  "manifest_sha256": digest(TARGET / "MANIFEST.sha256"),
+                  "qualification_sha256": digest(QUALIFICATION),
+                  "product_sha256": digest(PRODUCT)}))
