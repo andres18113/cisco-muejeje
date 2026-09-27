@@ -1,0 +1,28 @@
+{
+  "base": "6263344e31ba3b0de6539d652f2cd06fc73a3562",
+  "branch": "feature/server-pt-goal-foundations",
+  "default_catalog": true,
+  "executable": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\.venv\\Scripts\\python.exe",
+  "head": "849e497e4bf18e2201295860fe5879c962f76987",
+  "isolation": "ISOLATED",
+  "legacy_loaded": false,
+  "package": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\src\\packet_tracer_mcp\\__init__.py",
+  "plan_attempt": "caddcfe91bf7456abf0e1061809128d3",
+  "plan_ci": {
+    "conclusion": "success",
+    "head_sha": "849e497e4bf18e2201295860fe5879c962f76987",
+    "jobs": [
+      "docs",
+      "pytest (ubuntu-latest, 3.11)",
+      "pytest (ubuntu-latest, 3.13)",
+      "pytest (windows-latest, 3.11)",
+      "pytest (windows-latest, 3.13)",
+      "quality"
+    ],
+    "run": 36328280632
+  },
+  "pytest_loaded": false,
+  "status": "",
+  "tree": "638a8f43ca07de87bde613b26e9deea36432ef47",
+  "upstream": "849e497e4bf18e2201295860fe5879c962f76987"
+}

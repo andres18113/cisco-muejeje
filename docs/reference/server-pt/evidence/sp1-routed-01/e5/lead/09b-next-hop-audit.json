@@ -1,0 +1,20 @@
+{
+  "build": "9.0.1.0858",
+  "channel": "file",
+  "clients_verified": 6,
+  "compiled_paths": 12,
+  "elapsed_seconds": 727.328,
+  "episode": 5,
+  "hop_proofs": 48,
+  "next_hop_connected_lookups": 48,
+  "operations_used": 423,
+  "product_run": "2026-09-27T15-32-19Z-1644856e",
+  "product_sha256": "530efc5269cc403b4b387aa673d5b5f512a1ab831f8ce30a9036de77650a66a1",
+  "qualification_run": "2026-09-27T15-30-42Z-340ca3c8",
+  "qualification_sha256": "e436cd6c358d015c66a7af205cf08a5bb67db34ef359af6d5b5fe21bc779d7c2",
+  "restoration_proven": true,
+  "routed_groups_admitted": 3,
+  "source_sha": "849e497e4bf18e2201295860fe5879c962f76987",
+  "source_tree": "638a8f43ca07de87bde613b26e9deea36432ef47",
+  "stage": "SP1-ROUTED-W2"
+}

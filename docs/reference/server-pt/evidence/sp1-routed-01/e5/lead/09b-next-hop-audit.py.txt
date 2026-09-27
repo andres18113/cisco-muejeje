@@ -1,0 +1,62 @@
+import hashlib
+import json
+from pathlib import Path
+from packet_tracer_mcp.adapters.cli.sp1_routed_qualification import sp1_routed_product_contract
+from packet_tracer_mcp.application.use_cases.apply_enterprise_services import _path_admission, _paths_by_pair
+from packet_tracer_mcp.domain.enterprise.services.service_access_readiness import SERVICE_REQUEST_KINDS, derive_access_readiness_plan
+
+root = Path.cwd()
+lead = root / 'data/server-pt-sp1/e5/lead'
+summary = json.loads((lead / '09-qualification.stdout').read_text(encoding='utf-8').splitlines()[-1])
+qualification_path = Path(summary['record_path'])
+qualification = json.loads(qualification_path.read_text(encoding='utf-8'))
+product_fact = next(row['facts'] for row in qualification['measurements'] if row['experiment_id'] == 'M-SP1-ROUTED-PRODUCT')
+product_path = Path(product_fact['product_record_path'])
+product = json.loads(product_path.read_text(encoding='utf-8'))
+source = '849e497e4bf18e2201295860fe5879c962f76987'
+tree = '638a8f43ca07de87bde613b26e9deea36432ef47'
+assert summary['outcome'] == 'completed' and summary['restoration_proven'] and summary['operations_used'] <= 3000
+assert qualification['source']['executed_sha'] == source and qualification['source']['executed_tree'] == tree
+assert product['source_tree'] == {'sha': source, 'tree': tree, 'dirty': False}
+assert product['status'] == 'verified' and product_fact['device_catalog'] == 'default' and not product_fact['product_device_catalog_injected']
+selected = tuple(qualification['measurements'][0]['facts']['selected_clients'])
+assert len(selected) == 6 and set(selected) == set(product_fact['client_checks'])
+assert all(all(status == 'verified' for status in checks.values()) for checks in product_fact['client_checks'].values())
+contract = sp1_routed_product_contract(qualification['environment']['observed_build'], qualification['run_id'], selected)
+assert contract.topology.physical_identity_hash == product['physical_topology_hash']
+assert contract.configuration_plan.semantic_hash == product['configuration_semantic_hash']
+assert contract.service_plan.semantic_hash == product['service_semantic_hash']
+unsupported, paths = _path_admission(contract.configuration_plan, contract.service_plan, contract.service_plan.services, links=contract.topology.links)
+assert not unsupported and len(paths) == 12
+plan = derive_access_readiness_plan(configuration_actions=contract.configuration_plan.actions, verification_expectations=contract.service_plan.verification_expectations, request_kinds=SERVICE_REQUEST_KINDS, routed_paths=_paths_by_pair(paths))
+rows = {(row['client_segment_id'], row['host_segment_id']): row for row in product['operational_readiness'] if row.get('kind') == 'routed_forwarding'}
+assert len(plan.routed) == len(rows) == 3
+assert not any(row.get('kind') == 'routed_revocations' for row in product['operational_readiness'])
+
+def interface(facts, name, ipv4):
+    observed = facts['interfaces'][name]
+    assert len(observed) == 1 and observed[0] == {'ipv4': ipv4, 'status': 'up', 'protocol': 'up'}
+
+hops = 0
+next_hop_lookups = 0
+for group in plan.routed:
+    row = rows[(group.client_segment_id, group.host_segment_id)]
+    assert row['status'] == 'admitted' and row['sample']['rounds'] >= 1
+    assert len(row['dependents']) == len(group.dependents) == 8 and all(item['admitted'] for item in row['dependents'])
+    devices = row['sample']['devices']
+    for dependent in group.dependents:
+        for destination, chain in ((dependent.host_ipv4, dependent.forward), (dependent.client_ipv4, dependent.reverse)):
+            for hop in chain:
+                here = devices[hop.device_id]
+                peer = devices[hop.peer_device_id]
+                routes = here['routes'][destination]
+                assert routes and all(item['next_hop'] == hop.next_hop and (not item['interface'] or item['interface'].casefold() == hop.egress_interface.casefold()) for item in routes)
+                resolved = here['routes'][hop.next_hop]
+                assert len(resolved) == 1 and resolved[0]['code'] == 'C' and resolved[0]['interface'].casefold() == hop.egress_interface.casefold()
+                interface(here, hop.egress_interface, hop.egress_ipv4)
+                interface(peer, hop.ingress_interface, hop.ingress_ipv4)
+                hops += 1
+                next_hop_lookups += 1
+result = {'episode': 5, 'stage': 'SP1-ROUTED-W2', 'source_sha': source, 'source_tree': tree, 'build': qualification['environment']['observed_build'], 'channel': summary['channel'], 'clients_verified': len(selected), 'routed_groups_admitted': len(rows), 'compiled_paths': len(paths), 'hop_proofs': hops, 'next_hop_connected_lookups': next_hop_lookups, 'operations_used': summary['operations_used'], 'elapsed_seconds': qualification['budget']['elapsed_seconds'], 'restoration_proven': qualification['restoration_proven'], 'qualification_run': qualification['run_id'], 'product_run': product['run_id'], 'qualification_sha256': hashlib.sha256(qualification_path.read_bytes()).hexdigest(), 'product_sha256': hashlib.sha256(product_path.read_bytes()).hexdigest()}
+(lead / '09b-next-hop-audit.json').write_text(json.dumps(result, sort_keys=True, indent=2) + '\n', encoding='utf-8', newline='\n')
+print(json.dumps(result, sort_keys=True))

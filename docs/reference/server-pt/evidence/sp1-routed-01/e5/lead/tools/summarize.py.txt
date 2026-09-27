@@ -1,0 +1,23 @@
+"""Print the decisive facts of one SP-1 qualification record."""
+
+import json
+import sys
+
+record = json.load(open(sys.argv[1], encoding="utf-8"))
+print("primary", repr(record["primary_failure"]), "ops", record["budget"]["used_operations"],
+      "restored", record["restoration_proven"], "run", record["run_id"], "sha", record["source"]["executed_sha"][:7])
+for item in record["measurements"]:
+    print(item["experiment_id"], item["status"], item["conclusion"], item.get("causes"))
+    facts = item.get("facts") or {}
+    if "client_checks" in facts:
+        print("  catalog", facts["device_catalog"], "injected", facts["product_device_catalog_injected"],
+              "entry", facts["entry_surface"], "build", facts["fresh_public_build"])
+        for client, checks in sorted(facts["client_checks"].items()):
+            print("  ", client, checks)
+        print("  groups", [(g["client_segment_id"], g["status"], len(g["device_ids"])) for g in facts["routed_groups"]],
+              "expected", facts["expected_routed_groups"])
+        print("  product", facts["product_summary"].get("status"), facts["product_record_path"])
+    if "routers" in facts:
+        print("  routers", [(r["device"], r["query"], r.get("executed"), r.get("output_complete"), r.get("channel_calls")) for r in facts["routers"]])
+        for binding in facts.get("client_bindings") or []:
+            print("  ", binding["device"], binding["dns_server"], [(g["process"], g["value"], g["error"]) for g in binding["gateway_reads"]])

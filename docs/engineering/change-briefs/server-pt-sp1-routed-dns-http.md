@@ -439,3 +439,69 @@ fixture deprecation in E95 tests. Provisional quality gate against verified
 MkDocs and `git diff --check` passed. Exact clean-tree delivery validation,
 published exact-SHA CI and the new W2 result are recorded only after they
 actually complete.
+
+### New native W2 measurement and closeout
+
+The closure checkpoint `849e497e4bf18e2201295860fe5879c962f76987`
+(tree `638a8f43ca07de87bde613b26e9deea36432ef47`) was published by
+ordinary fast-forward. Clean delivery quality validation passed; exact-SHA
+CI run [36328280632](https://github.com/andres18113/cisco-muejeje/actions/runs/36328280632)
+completed successfully in quality, docs, and Windows/Linux × Python
+3.11/3.13 pytest. The changed production surface from the historical
+`a04369a` execution is the pure routed rule and application gate/evidence
+projection only; registered IOS operations, parser, generated configuration,
+observer and public tool wiring were byte-identical before the new run.
+
+Campaign `SERVER-PT-SP1-ROUTED-01` episode 5 used one prospective attempt
+`caddcfe91bf7456abf0e1061809128d3`, instance
+`fd729c0cc9cd4ea9a463f01e346e5569`, and the default catalog. Its
+finite episode allocation was 3,000 operations/3,900 seconds; the governed
+stage cap was 3,000 operations/3,600 seconds with 31 operations and 420
+seconds reserved for finalization. The exact-process preflight proved the
+checkout-local interpreter/package, no retired namespace or pytest, clean
+published SHA/tree, empty prelaunch process/mailbox census, and one owned
+primary/helper cohort after hidden launch. The ledger admitted only this
+attempt at the exact source. The one registered W2 dispatch used 423
+operations in 727.328 seconds and completed with product VERIFIED and
+fixture restoration proven. Both `M-SP1-ROUTED-PRODUCT` and
+`M-SP1-ROUTED-FINAL` were `supported_in_sample`.
+
+All six selected HQ/BR1/BR2 clients verified gateway binding, HTTP by
+address first, resolver binding, DNS, the qualified nonexistent-name
+negative, and HTTP by name. The three routed groups admitted over one,
+two and three routers. The **new readiness-time persisted evidence**
+contains 48/48 per-dependent forward/return hop occurrences across four
+distinct next-hop/egress relations: each next-hop lookup
+selects one connected route through the planned egress, and each local/peer
+transit interface is up/up with the planned address. The independent audit
+script is archived as `lead/09b-next-hop-audit.py.txt`, with its result JSON.
+No routed revocation occurred in this healthy native run; R1's bad-then-good
+causal controls are offline product tests. The qualification run is
+`2026-09-27T15-30-42Z-340ca3c8`, SHA-256
+`e436cd6c358d015c66a7af205cf08a5bb67db34ef359af6d5b5fe21bc779d7c2`;
+the product run is `2026-09-27T15-32-19Z-1644856e`, SHA-256
+`530efc5269cc403b4b387aa673d5b5f512a1ab831f8ce30a9036de77650a66a1`.
+
+Maintained retirement exited only owned PID 25056 with basis
+`owned_qualification_restored`; the final census had zero Packet Tracer
+processes, empty mailbox and no campaign lock. Episode 5 closed with no
+unsettled phase and a verified indexed ledger. The new immutable
+`docs/reference/server-pt/evidence/sp1-routed-01/e5/` archive contains 126
+manifest-pinned files, zero missing/extra/hash mismatches, and manifest
+SHA-256 `c939a221c857c5768e89ba49add74714e1d3bf5be39591c302ddeca573d6eecb`.
+The e3/e4 manifests and FM-REF hashes remain unchanged.
+
+| Requirement | Tests and evidence | Result |
+| --- | --- | --- |
+| SP1-C1 | RED and corrected gate sequences; registered-tool bad/good IOS episode, forbidden DNS-call exclusion and reload; permanent, separate-episode, unknown, unrelated, return, decided and convergence controls | PASS offline; no native contradiction claimed |
+| SP1-C2 | Parsed IOS direct/printed/shadow/recursive/ambiguous/missing/loop/return cases; product forward/return request exclusion and reload; new e5 readiness-time direct-neighbor evidence | PASS in corrected evaluator and W2 native sample |
+| SP1-C3 | Shared evidence reference and 200-client revocation test; product reload; 997-client corrected evaluator scale | PASS offline; scale boundaries remain substituted |
+| SP1-C4 | Original W1/W2 later-capture replay with stated timestamp limit; unchanged operation/parser/public wiring; clean delivery gate, full suite, exact-SHA CI, archive and FM-REF integrity; new e5 W2 | PASS within stated source, build and channel scope |
+
+The historical e3/e4 readiness-time next-hop rows remain unavailable and
+cannot be inferred retroactively. Episode 5 supplies a new measurement, not
+a replacement timestamp for either run. Show-route pagination, recursive
+routing and native capacity remain unqualified; the original pre-effect
+LIVE criterion stays historically unmet under the reviewer's approved
+offline-method disposition. The delivery boundary is `READY_FOR_REVIEW`;
+only an independent reviewer can pass SP-1 or activate SP-2.
