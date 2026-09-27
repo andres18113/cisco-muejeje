@@ -273,3 +273,52 @@ separate e2 archive has 72 files and a verified `MANIFEST.sha256` digest
 `0d62078c603719ee4af034046159d0e7710ce4df277f42afc2e7494628cd2bd7`.
 The named-pool, remote relay, simultaneous capacity, and product acceptance
 claims remain `UNKNOWN`.
+
+## Remote relay discriminator design (after episode 2)
+
+The second local observation removes the PC-before-pool ordering confound but
+still finds an exact `serverPool` row. The next diagnostic changes pool
+selection context, not the public catalog: a client on a remote data subnet
+requests through a configured router relay. Packet Tracer's maintained
+readers do not expose the DHCP packet's `giaddr` bytes, so the measurement
+will report relay-associated physical pool selection and keep direct `giaddr`
+observation `UNKNOWN`.
+
+Use a new versioned SP-2 diagnostic stage and a six-device, five-link owned
+fixture: one Server-PT on an HQ servers segment, one PC-PT on a BR1 data
+segment, two 1941 routers, two IE-2000 access switches, and one Ethernet WAN.
+Compose all topology, E5 and E6 actions through the maintained intent and
+compilers. Use explicit disjoint server/client prefixes separated far enough
+that the auto-realigned physical `serverPool` range cannot overlap the
+client pool. The provisional fixture uses HQ `10.72.0.0/29`, BR1
+`10.72.32.0/29`, and an Ethernet WAN. An offline composition at build
+`9.0.1.0858` produced six devices and five links with zero issues: server
+`10.72.0.2`, BR1 client gateway `10.72.32.1`, helper on BR1 1941
+`GigabitEthernet0/1` to `10.72.0.2`, a BR1 forward route via `10.72.64.2`,
+an HQ return route via `10.72.64.1`, and named pool `BR1_DATA` at
+`10.72.32.2`–`.3`. These are candidate compiled values, not LIVE readbacks;
+the exact plan and manifest must be bound to any future episode grant. The
+DHCP service uses `configure_only` so no explicit acquisition is dispatched.
+Keep both segments, site roles and pool policy as engineering fixture
+choices, not recovered Final-Muejeje facts.
+
+Before PC DHCP mode, require a fresh disabled Server-PT/default-pool baseline,
+static server and switching results, exact client-facing `ip helper-address`
+readback, operational forward and return route/interface readiness, and a
+verified named-pool policy written while the DHCP process is disabled.
+Read both physical pools before and after process enable, then activate only
+the one selected PC. Take two spaced client mode/IP/mask/MAC/gateway/DNS and
+indexed named/default lease samples. Exact physical IP/MAC attribution and
+usable gateway/resolver are separate outcomes; unreadable pool ends and
+unobserved `giaddr` never become absence or packet-level proof. Wrong helper,
+missing return route, default-pool service and contradictory identities are
+controlled refusal or negative paths. Retain the full pre-client and terminal
+readbacks and protected cleanup result.
+
+The stage remains private, exact-build/file-channel and single-client. It
+does not promote relay, named pools, multi-site service or public support.
+Its operation/time ceiling and protected finalization allocation will be
+derived from the two access groups, two-router routed gate, E5/E6 calls,
+repeated reads and six-device cleanup, then verified in an offline worst-case
+test before a prospective e3 opening. The generic multi-pool E6 ordering
+correction remains a separate product change with its own regression.
