@@ -17,11 +17,10 @@ only usable in the derivation when both of its ends are compiled, name each
 other, and allow the VLAN, and when both switches create it. An ambiguous or
 missing placement is named, never guessed.
 
-The routed shape is derived but not supported. The planner routes a separate
-server segment through gateway interfaces on an L3 device; no registered E5
-action enables IPv4 routing on that device and no registered observable reads
-its routing table (`show ip route` is registered only filtered by OSPF, EIGRP
-and RIP). `ROUTED_PATH_CONTRACT` names that gap exactly.
+A routed shape is only classified here. Whether it is admissible, and what it
+depends on, is decided by `routed_service_path.derive_routed_path` (SP-1),
+which follows the gateways, legs and compiled route chains.
+`ROUTED_PATH_CONTRACT` names that hand-off.
 """
 
 from __future__ import annotations
@@ -38,10 +37,8 @@ GATEWAY_ACTION_TYPES = frozenset(
     {"configure_svi", "configure_subinterface", "configure_routed_interface"}
 )
 
-#: The exact missing contract that keeps routed paths unsupported.
-ROUTED_PATH_CONTRACT = (
-    "routed_path_unobservable:ipv4_routing_action_and_route_table_reader_unregistered"
-)
+#: The classification reason of a routed shape: its admission is derived.
+ROUTED_PATH_CONTRACT = "routed_path:derive_gateways_legs_and_route_chains"
 
 
 class PathKind(StrEnum):

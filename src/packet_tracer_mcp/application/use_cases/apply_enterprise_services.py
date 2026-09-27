@@ -113,6 +113,12 @@ from ...domain.enterprise.models.service_run_record import (
     generate_run_id,
 )
 from ...domain.enterprise.models.service_runtime import ServiceApplicationResult
+from ...domain.enterprise.services.routed_service_path import (
+    RoutedPath,
+    RoutedPlanIndex,
+    derive_routed_path,
+    endpoint_addresses,
+)
 from ...domain.enterprise.services.service_access_readiness import (
     HTTP_REQUEST_KINDS,
     access_group_key,
@@ -225,6 +231,10 @@ class ServiceInvocationBinding:
     #: and before E1. Only a governing caller composes it; it can refuse the
     #: run before any effect and can never widen what the use case admits.
     effect_admission: Callable[[ServiceEffectClosure], str] | None = None
+    #: Optional exact-build device capability catalog for E4/E5 composition.
+    #: Only a governed qualification composes one, to run candidate evidence;
+    #: the registered MCP tool never does, so it always uses the default.
+    device_capability_catalog: Any = None
 
 
 @dataclass
@@ -743,8 +753,15 @@ def _e5_closure(
     configuration_plan: Any,
     plan: ServicePlan,
     services: Sequence[ServiceDefinition],
+    *,
+    extra_action_ids: Sequence[str] = (),
 ) -> set[str]:
-    """Close the eligible services' foundations over the E5 dependency graph."""
+    """Close the eligible services' foundations over the E5 dependency graph.
+
+    `extra_action_ids` are the gateway, transit, route and trunk actions the
+    admitted routed paths name. They are seeds like the endpoint foundations,
+    so their own dependencies close in the same way and an absent one refuses.
+    """
     devices = {service.host_device_id for service in services}
     devices |= _selected_clients(plan, services)
     requirements_by_device: dict[str, list[Any]] = {}
@@ -766,7 +783,7 @@ def _e5_closure(
     seeds = {
         requirements_by_device[device_id][0].configuration_action_id
         for device_id in devices
-    }
+    } | set(extra_action_ids)
     by_id = {item.id: item for item in configuration_plan.actions}
     missing = sorted(identifier for identifier in seeds if identifier not in by_id)
     if missing:
@@ -1228,6 +1245,7 @@ def apply_enterprise_services(
     now: Callable[[], datetime] | None = None,
     secret_resolver: SecretResolver | None = None,
     message_nonce_factory: Callable[[], str] = _fresh_nonce,
+    device_capability_catalog: Any = None,
 ) -> ServiceStageResult:
     """Apply and verify the requested services against an existing deployment.
 
@@ -1398,6 +1416,8 @@ def apply_enterprise_services(
         inventory_reader = binding.inventory_reader
         secret_resolver = binding.secret_resolver
         effect_admission = binding.effect_admission
+        if binding.device_capability_catalog is not None:
+            device_capability_catalog = binding.device_capability_catalog
     else:
         inventory_reader = None
         effect_admission = None
@@ -1497,7 +1517,12 @@ def apply_enterprise_services(
         deployment_manifest=manifest,
         services=True,
         service_capabilities=capabilities,
+        capability_catalog=device_capability_catalog,
     )
+    if device_capability_catalog is not None:
+        # A governed qualification ran with its own device catalog, which may
+        # carry unverified candidate evidence. The record has to say so.
+        run.limitations.append("device_capability_catalog:injected")
     if composition.service_policy_issues:
         first = next(
             item
@@ -1634,17 +1659,18 @@ def apply_enterprise_services(
             *service.client_device_ids,
         ]
     }
-    unsupported = _unsupported_paths(
+    unsupported, routed_paths = _path_admission(
         configuration_plan,
         service_plan,
         eligible,
+        links=composition.topology.links,
     )
     if unsupported:
         return refuse(
             "A8",
             ServiceEntryRefusal.SERVICE_PATH_UNSUPPORTED,
-            "The selected path is outside the static, same-site, same-segment "
-            "wired contract: " + ", ".join(unsupported),
+            "The selected path is outside the admitted static wired contract: "
+            + ", ".join(unsupported),
         )
 
     # -- A9: credentials, before any user-state mutation (R-SEC-01) -------
@@ -1684,12 +1710,29 @@ def apply_enterprise_services(
     # that A10 can authorize. Computing the pure closure here does not mutate or
     # decide retention; it supplies the complete manifest-bound target universe.
     try:
-        scope = _e5_closure(configuration_plan, service_plan, eligible)
+        scope = _e5_closure(
+            configuration_plan,
+            service_plan,
+            eligible,
+            extra_action_ids=sorted(
+                {item for path in routed_paths.values() for item in path.action_ids}
+            ),
+        )
     except ValueError as exc:
         return refuse(
             "A10",
             ServiceEntryRefusal.SERVICE_PATH_UNSUPPORTED,
             _sanitized(str(exc)),
+        )
+    # The E5 applicator refuses an unsupported capability too, but only after
+    # the stage record has advanced into E1. Deciding it here keeps the same
+    # rule a typed admission refusal with nothing dispatched.
+    lacking = _e5_capability_gaps(configuration_plan, scope, composition.capabilities)
+    if lacking:
+        return refuse(
+            "A10",
+            ServiceEntryRefusal.CAPABILITY_UNKNOWN,
+            _sanitized("E5 capability not supported: " + ", ".join(lacking)),
         )
     actions_by_id = {item.id: item for item in configuration_plan.actions}
     semantic_ids = sorted(
@@ -2475,20 +2518,59 @@ def _unsupported_paths(
     configuration_plan: Any,
     plan: ServicePlan,
     services: Sequence[ServiceDefinition],
+    *,
+    links: Sequence[Any] = (),
 ) -> list[str]:
-    """Name selected paths outside the bounded static wired contract.
+    """Name selected paths outside the admitted static wired contract."""
+    return _path_admission(configuration_plan, plan, services, links=links)[0]
+
+
+def _e5_capability_gaps(
+    configuration_plan: Any,
+    scope: set[str],
+    capabilities: Mapping[str, Any],
+) -> list[str]:
+    """Name every in-scope E5 action whose required capability is not SUPPORTED.
+
+    The same rule the E5 applicator's preflight applies, over the same
+    exact-build profiles, keyed by the planned device model.
+    """
+    models = {item.device_id: item.model for item in configuration_plan.devices}
+    lacking: list[str] = []
+    for action in configuration_plan.actions:
+        required = str(getattr(action, "required_capability", "") or "")
+        if action.id not in scope or not required or required.startswith("endpoint_"):
+            continue
+        model = models.get(action.device_id, "")
+        profile = capabilities.get(model)
+        status = getattr(profile, required, CapabilityStatus.UNKNOWN)
+        if status is not CapabilityStatus.SUPPORTED:
+            lacking.append(f"{action.device_name}:{model}:{required}={status.value}")
+    return sorted(set(lacking))
+
+
+def _path_admission(
+    configuration_plan: Any,
+    plan: ServicePlan,
+    services: Sequence[ServiceDefinition],
+    *,
+    links: Sequence[Any] = (),
+) -> tuple[list[str], dict[tuple[str, str], RoutedPath]]:
+    """Classify every selected dependency; name refusals, return routed paths.
 
     R-NET-01. Each selected client-to-server dependency must be a static (or
     delegated DHCP) endpoint pair of the service's site and segment, each end
     placed by exactly one access switch, joined either on one access switch
     or through compiled trunk links that carry the segment's VLAN between two
     access switches. The trunk path is not assumed from the compilation: the
-    readiness gate proves it before any dependent request. A routed path is
-    refused with the exact contract it lacks: the planner routes it through
-    gateway interfaces on an L3 device, and no registered E5 action enables
-    routing there and no registered observable reads the routing table.
-    Adding a routing feature so a fixture passes would be building the wrong
-    product to satisfy a test.
+    readiness gate proves it before any dependent request.
+
+    SP-1 expands the boundary to routed paths. A client in another segment or
+    site is admitted when `derive_routed_path` follows both L2 legs, both
+    gateways and complete forward and return static-route chains in the
+    compiled plans (E4 links included); otherwise the first precise reason
+    refuses it. The host must still be static and in the service's own site
+    and segment, and routed clients must be static.
     """
     requirements: dict[str, list[Any]] = {}
     for item in plan.foundational_requirements:
@@ -2520,6 +2602,9 @@ def _unsupported_paths(
         return switches
 
     unsupported: list[str] = []
+    routed: dict[tuple[str, str], RoutedPath] = {}
+    index: RoutedPlanIndex | None = None
+    addresses = endpoint_addresses(configuration_plan.actions)
     for service in services:
         placed: set[str] = set()
         segments: dict[str, str] = {}
@@ -2549,7 +2634,10 @@ def _unsupported_paths(
             elif not isinstance(action, SetEndpointStaticAddress):
                 unsupported.append(f"{service.id}:{device_id}:not_static")
                 continue
-            if action.site_id != service.site_id:
+            if (
+                device_id == service.host_device_id
+                and action.site_id != service.site_id
+            ):
                 unsupported.append(f"{service.id}:{device_id}:foreign_site")
             if (
                 device_id == service.host_device_id
@@ -2572,10 +2660,23 @@ def _unsupported_paths(
                 segments=segments,
             )
             if path.kind is PathKind.ROUTED:
-                unsupported.append(f"{service.id}:{client_id}:{path.reason}")
+                client = addresses.get(client_id)
+                host = addresses.get(service.host_device_id)
+                if client is None or host is None:
+                    unsupported.append(
+                        f"{service.id}:{client_id}:routed_client_not_static"
+                    )
+                    continue
+                if index is None:
+                    index = RoutedPlanIndex(configuration_plan.actions, links)
+                derived = derive_routed_path(index, client=client, host=host)
+                if not derived.admitted:
+                    unsupported.append(f"{service.id}:{client_id}:{derived.reason}")
+                    continue
+                routed[(service.id, client_id)] = derived
             elif path.kind is PathKind.UNPLACED:
                 unsupported.append(f"{service.id}:{client_id}:{path.reason}")
-    return sorted(unsupported)
+    return sorted(unsupported), routed
 
 
 #: Fields that name where an action lives rather than what it sets. They are

@@ -137,14 +137,19 @@ def test_every_request_follows_every_group_its_path_names(
 def test_a_routed_server_segment_is_refused_before_any_effect(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """B7: the planner routes it; no registered action or reader can prove it."""
+    """SP-1 A-7: an L3-switch SVI gateway has no compiled routing enable.
+
+    The planner routes this campus's server segment through SVIs on a 3560.
+    SP-1 admits routed paths through router gateways only; this one is refused
+    by its precise reason, still before any effect.
+    """
     plans = compose_campus(campus_payload(30, server_segment_role="servers"))
 
     public, terminal = run_public_campus(tmp_path, monkeypatch, plans)
 
     assert public["status"] == "refused"
     assert public["refusal_code"] == "service_path_unsupported"
-    assert ROUTED_PATH_CONTRACT in public["blocked_reason"]
+    assert "routed_gateway_svi_unsupported:hq-data" in public["blocked_reason"]
     kinds = {kind for _, kind in terminal.log}
     assert not kinds & {"send", "e6_apply", "http_start", "readiness"}
 

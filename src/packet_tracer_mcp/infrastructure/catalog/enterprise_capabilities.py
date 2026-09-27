@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from copy import copy
 import re
+from collections.abc import Mapping, Sequence
+from copy import copy
 
 from ...domain.enterprise.models.capabilities import (
+    CapabilityEvidence,
     CapabilityStatus,
     DeviceCapabilities,
+    EvidenceSource,
 )
 from ...domain.enterprise.models.hardware import (
     CatalogCoverageReport,
@@ -17,20 +20,14 @@ from ...domain.enterprise.models.hardware import (
     PortClass,
     PortDescriptor,
 )
+from ...domain.enterprise.models.link_performance import port_kind_of
 from ...domain.enterprise.services.capability_resolver import (
-    CapabilityResolver,
     CapabilityProvider,
+    CapabilityResolver,
     CatalogDeviceFacts,
 )
-from ...domain.enterprise.models.link_performance import port_kind_of
+from ..persistence.capability_snapshot_store import CapabilitySnapshotStore
 from .aliases import MODEL_ALIASES
-from .devices import ALL_MODELS, DeviceModel, PortSpec
-from .measured_port_inventories import (
-    backend_verified_port_inventory,
-    module_state_token,
-)
-from .measured_capabilities import measured_capability_evidence
-from .modules import ALL_MODULES, get_serial_module
 from .capability_providers import (
     ManualVerificationCapabilityProvider,
     ProbeCapabilityProvider,
@@ -38,16 +35,27 @@ from .capability_providers import (
     StaticVerifiedCapabilityProvider,
     VerifiedCapabilityProvider,
 )
-from ..persistence.capability_snapshot_store import CapabilitySnapshotStore
-
+from .devices import ALL_MODELS, DeviceModel, PortSpec
+from .measured_capabilities import measured_capability_evidence
+from .measured_port_inventories import (
+    backend_verified_port_inventory,
+    module_state_token,
+)
+from .modules import ALL_MODULES, get_serial_module
 
 #: Los tipos de interfaz que el catálogo sabe describir físicamente. Una lectura
 #: real trae además interfaces lógicas (`Vlan1`) o de radio (`Bluetooth`); se
 #: conservan en el registro de evidencia y no se convierten en puertos de
 #: planificación, porque el planificador no tiene nada que hacer con ellas.
-_PHYSICAL_PORT_KINDS = frozenset({
-    "Ethernet", "FastEthernet", "GigabitEthernet", "TenGigabitEthernet", "Serial",
-})
+_PHYSICAL_PORT_KINDS = frozenset(
+    {
+        "Ethernet",
+        "FastEthernet",
+        "GigabitEthernet",
+        "TenGigabitEthernet",
+        "Serial",
+    }
+)
 
 
 def _measured_port_specs(ports: list[str]) -> list[PortSpec]:
@@ -57,7 +65,7 @@ def _measured_port_specs(ports: list[str]) -> list[PortSpec]:
         kind = port_kind_of(name)
         if kind not in _PHYSICAL_PORT_KINDS:
             continue
-        specs.append(PortSpec(speed=kind, slot=name[len(kind):], full_name=name))
+        specs.append(PortSpec(speed=kind, slot=name[len(kind) :], full_name=name))
     return specs
 
 
@@ -69,6 +77,7 @@ _SERIAL_MODULE_SLOT_BY_MODEL = {
     "ISR4321": "0",
     "ISR4331": "0",
 }
+
 
 def _normalization_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.casefold())
@@ -83,12 +92,13 @@ class EnterpriseCapabilityAdapter:
         providers: list[CapabilityProvider] | None = None,
         bound_packet_tracer_version: str | None = None,
     ) -> None:
+        """Bind the resolver, evidence providers and optional exact build."""
         self._resolver = resolver or CapabilityResolver()
         self._providers = providers or []
         self._bound_packet_tracer_version = bound_packet_tracer_version
-        self._resolution_cache: dict[
-            tuple[str, str | None], DeviceCapabilities
-        ] | None = None
+        self._resolution_cache: (
+            dict[tuple[str, str | None], DeviceCapabilities] | None
+        ) = None
         self._normalization_index = self._build_normalization_index()
 
     def execution_snapshot(self) -> EnterpriseCapabilityAdapter:
@@ -107,11 +117,15 @@ class EnterpriseCapabilityAdapter:
         return self._normalization_index.get(_normalization_key(name))
 
     def can_represent(self, model_name: str) -> bool:
+        """Whether the catalogue knows this model name or alias."""
         return self.normalize_model_name(model_name) is not None
 
     def capabilities_for(
-        self, model_name: str, packet_tracer_version: str | None = None,
+        self,
+        model_name: str,
+        packet_tracer_version: str | None = None,
     ) -> DeviceCapabilities | None:
+        """Resolve one model's capabilities from the catalogue and evidence."""
         canonical = self.normalize_model_name(model_name)
         if canonical is None:
             return None
@@ -121,15 +135,13 @@ class EnterpriseCapabilityAdapter:
             else packet_tracer_version
         )
         cache_key = (canonical, effective_version)
-        if (
-            self._resolution_cache is not None
-            and cache_key in self._resolution_cache
-        ):
+        if self._resolution_cache is not None and cache_key in self._resolution_cache:
             return self._resolution_cache[cache_key].model_copy(deep=True)
         model = ALL_MODELS[canonical]
         capabilities = self._resolver.resolve(self._facts_for(model))
         resolved = self._resolve_runtime_evidence(
-            capabilities, packet_tracer_version,
+            capabilities,
+            packet_tracer_version,
         )
         safe_resolved = resolved.model_copy(deep=True)
         if self._resolution_cache is not None:
@@ -138,11 +150,14 @@ class EnterpriseCapabilityAdapter:
         return safe_resolved
 
     def all_capabilities(
-        self, category: str | None = None, packet_tracer_version: str | None = None,
+        self,
+        category: str | None = None,
+        packet_tracer_version: str | None = None,
     ) -> list[DeviceCapabilities]:
         """Carga capacidades compactas y ordenadas; el llamador puede filtrar por categoría."""
         models = (
-            model for model in ALL_MODELS.values()
+            model
+            for model in ALL_MODELS.values()
             if category is None or model.category == category
         )
         capabilities: list[DeviceCapabilities] = []
@@ -182,19 +197,24 @@ class EnterpriseCapabilityAdapter:
             if resolution.backend_verified:
                 return [
                     self._port_descriptor(
-                        model, port, source=f"backend_verified:{backend_version}",
+                        model,
+                        port,
+                        source=f"backend_verified:{backend_version}",
                     )
                     for port in _measured_port_specs(resolution.bindable_ports)
                 ]
         return [self._port_descriptor(model, port) for port in model.ports]
 
-    def coverage_report(self, observed_models: list[str] | None = None) -> CatalogCoverageReport:
+    def coverage_report(
+        self, observed_models: list[str] | None = None
+    ) -> CatalogCoverageReport:
         """Compara nombres observados con el catálogo sin incorporarlos automáticamente."""
         base = sorted(ALL_MODELS)
         capabilities = self.all_capabilities()
         gaps = {
             capability.model: [
-                name for name in ("supports_poe", "layer2", "layer3", "supports_routing")
+                name
+                for name in ("supports_poe", "layer2", "layer3", "supports_routing")
                 if getattr(capability, name).value == "unknown"
             ]
             for capability in capabilities
@@ -203,39 +223,53 @@ class EnterpriseCapabilityAdapter:
         return CatalogCoverageReport(
             known_in_enterprise=base,
             known_in_base_catalog=base,
-            unclassified=sorted(name for name in observed if not self.can_represent(name)),
+            unclassified=sorted(
+                name for name in observed if not self.can_represent(name)
+            ),
             aliases=dict(sorted(MODEL_ALIASES.items())),
             capability_gaps=gaps,
         )
 
     def hardware_candidates(
-        self, category: str, packet_tracer_version: str | None = None,
+        self,
+        category: str,
+        packet_tracer_version: str | None = None,
     ) -> list[HardwareCandidate]:
         """Provee candidatos físicos al dominio sin que éste importe el catálogo PT."""
         candidates: list[HardwareCandidate] = []
         for capability in self.all_capabilities(category, packet_tracer_version):
             module_options = self._serial_module_options(
-                capability.model, packet_tracer_version or "",
+                capability.model,
+                packet_tracer_version or "",
             )
-            candidates.append(HardwareCandidate(
-                model=capability.model,
-                capabilities=capability,
-                # Sin módulos: en este momento ninguno está instalado todavía, y
-                # una medición tomada CON tarjeta no responde por este estado.
-                ports=self.port_descriptors_for(
-                    capability.model,
-                    backend_version=packet_tracer_version or "",
-                ),
-                module_options=module_options,
-                available_module_slots=[
-                    option.slot for option in module_options if option.slot is not None
-                ],
-            ))
+            candidates.append(
+                HardwareCandidate(
+                    model=capability.model,
+                    capabilities=capability,
+                    # Sin módulos: en este momento ninguno está instalado todavía, y
+                    # una medición tomada CON tarjeta no responde por este estado.
+                    ports=self.port_descriptors_for(
+                        capability.model,
+                        backend_version=packet_tracer_version or "",
+                    ),
+                    module_options=module_options,
+                    available_module_slots=[
+                        option.slot
+                        for option in module_options
+                        if option.slot is not None
+                    ],
+                )
+            )
         return candidates
 
-    def identity_for(self, runtime_model: str, packet_tracer_version: str | None = None):
+    def identity_for(
+        self, runtime_model: str, packet_tracer_version: str | None = None
+    ):
         """Resuelve sólo matching exacto/alias ya declarado; no inventa aliases runtime."""
-        from ...domain.enterprise.models.discovery import DeviceIdentity, ModelIdentityStatus
+        from ...domain.enterprise.models.discovery import (
+            DeviceIdentity,
+            ModelIdentityStatus,
+        )
 
         canonical = self.normalize_model_name(runtime_model)
         if canonical is None:
@@ -246,7 +280,9 @@ class EnterpriseCapabilityAdapter:
                 status=ModelIdentityStatus.UNRESOLVED_IDENTITY,
             )
         model = ALL_MODELS[canonical]
-        aliases = [alias for alias, target in MODEL_ALIASES.items() if target == canonical]
+        aliases = [
+            alias for alias, target in MODEL_ALIASES.items() if target == canonical
+        ]
         return DeviceIdentity(
             canonical_id=canonical,
             runtime_id=runtime_model,
@@ -268,11 +304,11 @@ class EnterpriseCapabilityAdapter:
             and packet_tracer_version != self._bound_packet_tracer_version
         ):
             return self._resolver.with_evidence(
-                capabilities, [], packet_tracer_version,
+                capabilities,
+                [],
+                packet_tracer_version,
             )
-        effective_version = (
-            packet_tracer_version or self._bound_packet_tracer_version
-        )
+        effective_version = packet_tracer_version or self._bound_packet_tracer_version
         evidence = [
             item
             for provider in self._providers
@@ -284,16 +320,24 @@ class EnterpriseCapabilityAdapter:
             packet_tracer_version=effective_version,
         )
         return self._resolver.with_evidence(
-            capabilities, evidence, effective_version,
+            capabilities,
+            evidence,
+            effective_version,
         )
 
     def _facts_for(self, model: DeviceModel) -> CatalogDeviceFacts:
-        aliases = tuple(
-            alias for alias, canonical in MODEL_ALIASES.items()
-            if canonical == model.pt_type
-        ) + (model.pt_type, model.display_name)
+        aliases = (
+            *(
+                alias
+                for alias, canonical in MODEL_ALIASES.items()
+                if canonical == model.pt_type
+            ),
+            model.pt_type,
+            model.display_name,
+        )
         compatible_modules = tuple(
-            spec.name for spec in ALL_MODULES.values()
+            spec.name
+            for spec in ALL_MODULES.values()
             if not spec.compatible_with or model.pt_type in spec.compatible_with
         )
         return CatalogDeviceFacts(
@@ -324,7 +368,7 @@ class EnterpriseCapabilityAdapter:
         return str(getattr(speed, "value", speed))
 
     def access_ports_for(self, model: str) -> frozenset[str]:
-        """The access ports this model declares, by the one existing definition.
+        """Return the access ports this model declares, by one definition.
 
         `_port_descriptor` already decides access from `access_port_names` when
         the catalogue states them and from speed otherwise. A second, divergent
@@ -337,12 +381,17 @@ class EnterpriseCapabilityAdapter:
         if resolved.access_port_names or resolved.uplink_port_names:
             return frozenset(resolved.access_port_names)
         return frozenset(
-            port.full_name for port in resolved.ports
+            port.full_name
+            for port in resolved.ports
             if self._speed_value(port.speed) in {"Ethernet", "FastEthernet"}
         )
 
     def _port_descriptor(
-        self, model: DeviceModel, port, *, source: str = "catalog",
+        self,
+        model: DeviceModel,
+        port,
+        *,
+        source: str = "catalog",
     ) -> PortDescriptor:
         speed = self._speed_value(port.speed)
         normalized_speed = {
@@ -363,9 +412,17 @@ class EnterpriseCapabilityAdapter:
                 classes.append(PortClass.UPLINK_CAPABLE)
         elif model.category == "switch" and speed in {"Ethernet", "FastEthernet"}:
             classes.append(PortClass.ACCESS_CAPABLE)
-        elif model.category == "switch" and speed in {"GigabitEthernet", "TenGigabitEthernet"}:
+        elif model.category == "switch" and speed in {
+            "GigabitEthernet",
+            "TenGigabitEthernet",
+        }:
             classes.append(PortClass.UPLINK_CAPABLE)
-        elif model.category == "router" and speed in {"Ethernet", "FastEthernet", "GigabitEthernet", "TenGigabitEthernet"}:
+        elif model.category == "router" and speed in {
+            "Ethernet",
+            "FastEthernet",
+            "GigabitEthernet",
+            "TenGigabitEthernet",
+        }:
             classes.extend([PortClass.WAN, PortClass.UPLINK_CAPABLE])
         return PortDescriptor(
             name=port.full_name,
@@ -377,7 +434,8 @@ class EnterpriseCapabilityAdapter:
 
     @staticmethod
     def _serial_module_options(
-        model: str, backend_version: str = "",
+        model: str,
+        backend_version: str = "",
     ) -> list[ModuleInstallation]:
         module = get_serial_module(model)
         slot = _SERIAL_MODULE_SLOT_BY_MODEL.get(model)
@@ -395,7 +453,9 @@ class EnterpriseCapabilityAdapter:
                 backend_version=backend_version,
                 installed_modules=[module_state_token(module.name, slot)],
             )
-            if not evidence.backend_verified or not evidence.permits(option.provided_ports):
+            if not evidence.backend_verified or not evidence.permits(
+                option.provided_ports
+            ):
                 return []
         return [option]
 
@@ -407,7 +467,61 @@ def packet_tracer_enterprise_capability_adapter(
     verified_store: CapabilitySnapshotStore | None = None,
 ) -> EnterpriseCapabilityAdapter:
     """Build the productive, exact-version capability composition root."""
+    return _productive_adapter(
+        packet_tracer_version,
+        store=store,
+        verified_store=verified_store,
+    )
 
+
+def candidate_capability_adapter(
+    packet_tracer_version: str,
+    candidates: Mapping[str, Sequence[str]],
+    *,
+    label: str,
+    store: CapabilitySnapshotStore | None = None,
+) -> EnterpriseCapabilityAdapter:
+    """Return the productive adapter plus UNVERIFIED candidate evidence.
+
+    Only a governed qualification may compose this, to run a capability the
+    catalogue does not yet support so that the run can measure it. Each
+    candidate is `STATIC_OVERRIDE` evidence with `verified=False`, confidence
+    `candidate` and the qualification's label, so it can never be read back as
+    a measured record, and a measured record of the same capability always
+    outranks it. The registered MCP tool never composes one.
+    """
+    version = packet_tracer_version.strip()
+    evidence = {
+        model: [
+            CapabilityEvidence(
+                capability=capability,
+                status=CapabilityStatus.SUPPORTED,
+                source=EvidenceSource.STATIC_OVERRIDE,
+                source_detail=f"candidate:{label}",
+                packet_tracer_version=version,
+                confidence="candidate",
+                verified=False,
+                notes="Qualification candidate; not measured evidence.",
+            )
+            for capability in capabilities
+        ]
+        for model, capabilities in candidates.items()
+    }
+    return _productive_adapter(
+        version,
+        store=store,
+        verified_store=None,
+        candidate=StaticVerifiedCapabilityProvider(evidence),
+    )
+
+
+def _productive_adapter(
+    packet_tracer_version: str,
+    *,
+    store: CapabilitySnapshotStore | None,
+    verified_store: CapabilitySnapshotStore | None,
+    candidate: CapabilityProvider | None = None,
+) -> EnterpriseCapabilityAdapter:
     version = packet_tracer_version.strip()
     if not version:
         raise ValueError("An exact Packet Tracer version is required.")
@@ -415,6 +529,7 @@ def packet_tracer_enterprise_capability_adapter(
     reviewed = verified_store or snapshots
     return EnterpriseCapabilityAdapter(
         providers=[
+            *([candidate] if candidate is not None else []),
             StaticVerifiedCapabilityProvider(measured_capability_evidence()),
             VerifiedCapabilityProvider(reviewed, version),
             ManualVerificationCapabilityProvider(snapshots, version),
@@ -432,12 +547,13 @@ def _with_semantic_implications(
     packet_tracer_version: str | None,
 ):
     """Apply model-neutral, one-way implications without defeating explicit facts."""
-
     items = list(evidence)
     direct = {item.capability for item in items}
     if "layer3" not in direct:
         source = resolver.winning_evidence(
-            "multilayer_intervlan", items, packet_tracer_version,
+            "multilayer_intervlan",
+            items,
+            packet_tracer_version,
         )
         if (
             source is not None
@@ -445,11 +561,14 @@ def _with_semantic_implications(
             and source.verified
         ):
             detail = source.source_detail or "verified multilayer forwarding"
-            items.append(source.model_copy(update={
-                "capability": "layer3",
-                "source_detail": detail + " => layer3",
-                "notes": (
-                    (source.notes + " ") if source.notes else ""
-                ) + "Inter-VLAN forwarding is a model-neutral positive proof of layer-3 capability.",
-            }))
+            items.append(
+                source.model_copy(
+                    update={
+                        "capability": "layer3",
+                        "source_detail": detail + " => layer3",
+                        "notes": ((source.notes + " ") if source.notes else "")
+                        + "Inter-VLAN forwarding is a model-neutral positive proof of layer-3 capability.",
+                    }
+                )
+            )
     return items
