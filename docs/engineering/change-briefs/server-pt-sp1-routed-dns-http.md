@@ -225,7 +225,7 @@ reproducible offline; documentation needs none.
 ## Current projection
 
 Offline implementation, two exploratory LIVE episodes and the promotion of
-their measurements are complete through `26ee053`. The final LIVE W1/W2 on
+their measurements are complete through `9b05628`. The final LIVE W1/W2 on
 published, CI-green source with the default catalog is pending. Starting SHA
 `890c950`, base `cisco/main` `6263344`.
 
@@ -246,6 +246,8 @@ published, CI-green source with the default catalog is pending. Starting SHA
 | `473db4a`, `0d15b14`, `c299ee9` | from three independent adversarial review passes: exact closure and routed-group coverage, candidate provenance, ledger settlement, and the whole intent bound to the run's canonical intent (a fourth pass approved) |
 | `9ba3bb0`, `8492205` | immutable archives of LIVE e1 and e2 (`docs/reference/server-pt/evidence/sp1-routed-01/`) |
 | `26ee053` | promotions from e2: measured 1941/2911 static routes, `client_gateway` via `HostIpProcess`; resolver and gateway reads become required prerequisites (SP1-04, SP1-02a) |
+| `efa2352` | docs: routed scope in `tools.md`, the tool docstring and the architecture page |
+| `9175fd6`, `8e27fde`, `b6368ab`, `fc57be2`, `9b05628` | SP1-03 at dispatch, from five further review passes (the last approved): a client's later traffic (DNS, negative control, host name) runs only once its selected HTTP-by-address request provably started; the reader records `request_started` only after validating the start and keeps it through later exceptions; no cross-service prerequisite remains |
 
 LIVE (Packet Tracer 9.0.1.0858, file channel, owned disposable lab, each
 episode opened, launched, retired and closed through the campaign ledger):
@@ -263,7 +265,7 @@ Traceability to the maintained tests:
 | SP1-01b | `test_sp1_routed_admission.py`, `test_campus_service_paths.py`, `test_sp1_routed_stage.py` (contract guard) |
 | SP1-01c | existing admission suites, unchanged |
 | SP1-02a/b | `test_sp1_routed_readiness.py`, `test_sp1_routed_readiness_gate.py`, `test_sp1_routed_observer_runtime.py`, `test_sp1_static_route_readback.py`, `test_sp1_request_order.py` (gateway prerequisite) |
-| SP1-03 | `test_sp1_request_order.py`, `test_sp1_routed_public_route.py` |
+| SP1-03 | `test_sp1_request_order.py`, `test_sp1_routed_public_route.py`, `test_sp1_cold_request_gate.py` |
 | SP1-04 | `test_sp1_client_binding_reader.py`, `test_sp1_dns_window.py`, `test_sp1_routed_public_route.py` (wrong resolver caught by the read), `test_apply_enterprise_services.py` |
 | SP1-05 | `test_sp1_failure_boundaries.py`, `test_sp1_routed_stage.py` (receiver replacement, cancellation, withheld route, ledger settlement), `test_sp1_routed_public_route.py` (durable record agreement) |
 | SP1-06 | `test_sp1_routed_scale.py` |
