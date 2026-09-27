@@ -38,6 +38,8 @@ from .hierarchy_planner import iter_zone_plans
 
 @dataclass(frozen=True)
 class HierarchyPolicy:
+    """Access-switch thresholds that decide the site hierarchy mode."""
+
     small_site_max_access_switches: int = 1
     collapsed_core_max_access_switches: int = 2
     max_access_switches_per_distribution: int = 8
@@ -45,6 +47,8 @@ class HierarchyPolicy:
 
 @dataclass(frozen=True)
 class HardwarePlanningPolicy:
+    """Planner-wide choices: resiliency, access homogeneity and hierarchy."""
+
     resiliency: ResiliencyLevel = ResiliencyLevel.BASIC
     homogeneous_access_models: bool = True
     hierarchy: HierarchyPolicy = HierarchyPolicy()
@@ -53,6 +57,9 @@ class HardwarePlanningPolicy:
     #: viabilidad, así que pedir un switch como router no lo cuela. Vacío = sin
     #: preferencia, que es el comportamiento anterior byte a byte.
     preferred_router_model: str = ""
+
+
+_DEFAULT_POLICY = HardwarePlanningPolicy()
 
 
 @dataclass(frozen=True)
@@ -85,7 +92,16 @@ class SwitchCountPlanner:
         required_poe_ports: int,
         required_uplinks: int,
         candidates: list[HardwareCandidate],
+        requires_trunk: bool = False,
     ) -> _SwitchChoice | None:
+        """Choose the homogeneous access model and count for one capacity block.
+
+        Candidates are ranked by PoE evidence, then, when `requires_trunk`
+        says the block will carry trunks (a site with more than one segment),
+        by trunk evidence, then by switch count and spare access ports. An
+        unmeasured trunk never disqualifies a model; it only yields to a
+        measured one, so a block no measured model fits is planned as before.
+        """
         choices: list[_SwitchChoice] = []
         for candidate in candidates:
             access_ports = len(self._ports(candidate, PortClass.ACCESS_CAPABLE))
@@ -110,7 +126,8 @@ class SwitchCountPlanner:
             )
             warning = (
                 f"{candidate.model}: PoE requiere evidencia antes de selección definitiva."
-                if status is DeviceCandidateStatus.NEEDS_VERIFICATION else ""
+                if status is DeviceCandidateStatus.NEEDS_VERIFICATION
+                else ""
             )
             choices.append(_SwitchChoice(candidate, count, status, warning))
         if not choices:
@@ -119,8 +136,12 @@ class SwitchCountPlanner:
             choices,
             key=lambda item: (
                 item.status is DeviceCandidateStatus.NEEDS_VERIFICATION,
+                requires_trunk
+                and item.candidate.capabilities.supports_trunk
+                is not CapabilityStatus.SUPPORTED,
                 item.count,
-                item.count * len(self._ports(item.candidate, PortClass.ACCESS_CAPABLE)) - required_access_ports,
+                item.count * len(self._ports(item.candidate, PortClass.ACCESS_CAPABLE))
+                - required_access_ports,
                 item.candidate.model.casefold(),
             ),
         )
@@ -140,15 +161,26 @@ class ModulePlanner:
         options: list[ModuleInstallation],
         available_slots: int | None = None,
     ) -> list[ModuleInstallation] | None:
-        existing = len([port for port in candidate.ports if PortClass.SERIAL in port.classes])
+        """Return the serial modules to install, [] when none, None when impossible."""
+        existing = len(
+            [port for port in candidate.ports if PortClass.SERIAL in port.classes]
+        )
         if existing >= required_serial_ports:
             return []
         if candidate.capabilities.supports_modules is not CapabilityStatus.SUPPORTED:
             return None
-        compatible = [option for option in options if option.module in candidate.capabilities.compatible_modules]
-        compatible.sort(key=lambda item: (
-            len(item.provided_ports), item.module.casefold(), item.slot or "",
-        ))
+        compatible = [
+            option
+            for option in options
+            if option.module in candidate.capabilities.compatible_modules
+        ]
+        compatible.sort(
+            key=lambda item: (
+                len(item.provided_ports),
+                item.module.casefold(),
+                item.slot or "",
+            )
+        )
         selected: list[ModuleInstallation] = []
         provided = existing
         for option in compatible:
@@ -166,6 +198,7 @@ class HardwareHierarchyPlanner:
 
     @staticmethod
     def choose(access_switches: int, policy: HierarchyPolicy) -> HierarchyMode:
+        """Return the hierarchy mode the access-switch count implies."""
         if access_switches <= policy.small_site_max_access_switches:
             return HierarchyMode.FLAT
         if access_switches <= policy.collapsed_core_max_access_switches:
@@ -181,9 +214,14 @@ class PortAssignmentPlanner:
         block: AccessBlockPlan,
         devices: list[PlannedNetworkDevice],
     ) -> list[str]:
+        """Assign the block's endpoint slices to real ports; return warnings."""
         warnings: list[str] = []
         availability = {
-            device.id: [port.name for port in device.port_descriptors if PortClass.ACCESS_CAPABLE in port.classes]
+            device.id: [
+                port.name
+                for port in device.port_descriptors
+                if PortClass.ACCESS_CAPABLE in port.classes
+            ]
             for device in devices
         }
         used = {device.id: set() for device in devices}
@@ -193,7 +231,8 @@ class PortAssignmentPlanner:
             start = endpoint_slice.start_index
             for device in devices:
                 names = [
-                    name for name in availability[device.id]
+                    name
+                    for name in availability[device.id]
                     if name not in used[device.id]
                 ]
                 if endpoint_slice.requires_poe:
@@ -211,8 +250,12 @@ class PortAssignmentPlanner:
                     continue
                 selected = names[:remaining]
                 self._append_assignment_ranges(
-                    block, device.id, endpoint_slice, start,
-                    selected, availability[device.id],
+                    block,
+                    device.id,
+                    endpoint_slice,
+                    start,
+                    selected,
+                    availability[device.id],
                 )
                 used[device.id].update(selected)
                 if endpoint_slice.requires_poe:
@@ -220,7 +263,9 @@ class PortAssignmentPlanner:
                 remaining -= len(selected)
                 start += len(selected)
             if remaining:
-                warnings.append(f"{endpoint_slice.group_id}: {remaining} endpoint(s) sin puerto asignado.")
+                warnings.append(
+                    f"{endpoint_slice.group_id}: {remaining} endpoint(s) sin puerto asignado."
+                )
         return warnings
 
     @staticmethod
@@ -233,29 +278,27 @@ class PortAssignmentPlanner:
         ordered_ports: list[str],
     ) -> None:
         """Represent only truly contiguous selected ports as one range."""
-
         positions = {name: index for index, name in enumerate(ordered_ports)}
         groups: list[list[str]] = []
         for name in selected:
-            if (
-                not groups
-                or positions[name] != positions[groups[-1][-1]] + 1
-            ):
+            if not groups or positions[name] != positions[groups[-1][-1]] + 1:
                 groups.append([name])
             else:
                 groups[-1].append(name)
         consumed = 0
         for group in groups:
-            block.port_assignments.append(PortAssignmentRange(
-                device_id=device_id,
-                source_group=endpoint_slice.group_id,
-                roles=endpoint_slice.roles,
-                start_index=start + consumed,
-                count=len(group),
-                first_port=group[0],
-                last_port=group[-1],
-                requires_poe=endpoint_slice.requires_poe,
-            ))
+            block.port_assignments.append(
+                PortAssignmentRange(
+                    device_id=device_id,
+                    source_group=endpoint_slice.group_id,
+                    roles=endpoint_slice.roles,
+                    start_index=start + consumed,
+                    count=len(group),
+                    first_port=group[0],
+                    last_port=group[-1],
+                    requires_poe=endpoint_slice.requires_poe,
+                )
+            )
             consumed += len(group)
 
 
@@ -268,22 +311,35 @@ class RedundancyPlanner:
         distribution_devices: list[PlannedNetworkDevice],
         resiliency: ResiliencyLevel,
     ) -> tuple[list[HardwareLinkRequirement], list[str]]:
+        """Link each access switch to its distribution parents."""
         links: list[HardwareLinkRequirement] = []
         warnings: list[str] = []
         requested = 2 if resiliency is not ResiliencyLevel.NONE else 1
         for access in access_devices:
             parents = distribution_devices[:requested]
             if len(parents) < requested:
-                warnings.append(f"{access.id}: redundancia de uplink no satisfecha; faltan distribution devices.")
+                warnings.append(
+                    f"{access.id}: redundancia de uplink no satisfecha; faltan distribution devices."
+                )
             for index, parent in enumerate(parents, start=1):
-                access_ports = [port.name for port in access.port_descriptors if PortClass.UPLINK_CAPABLE in port.classes]
-                links.append(HardwareLinkRequirement(
-                    source_device=access.id,
-                    target_device=parent.id,
-                    link_role=LinkRole.UPLINK,
-                    source_port=access_ports[index - 1] if len(access_ports) >= index else None,
-                    redundancy_group=f"uplink-{access.id}" if requested > 1 else None,
-                ))
+                access_ports = [
+                    port.name
+                    for port in access.port_descriptors
+                    if PortClass.UPLINK_CAPABLE in port.classes
+                ]
+                links.append(
+                    HardwareLinkRequirement(
+                        source_device=access.id,
+                        target_device=parent.id,
+                        link_role=LinkRole.UPLINK,
+                        source_port=access_ports[index - 1]
+                        if len(access_ports) >= index
+                        else None,
+                        redundancy_group=f"uplink-{access.id}"
+                        if requested > 1
+                        else None,
+                    )
+                )
         return links, warnings
 
     @staticmethod
@@ -293,6 +349,7 @@ class RedundancyPlanner:
         role: LinkRole,
         resiliency: ResiliencyLevel,
     ) -> list[HardwareLinkRequirement]:
+        """Link every child to its first parents under the resiliency level."""
         if not children or not parents:
             return []
         parent_count = min(len(parents), 2 if resiliency is ResiliencyLevel.HIGH else 1)
@@ -301,7 +358,9 @@ class RedundancyPlanner:
                 source_device=child.id,
                 target_device=parent.id,
                 link_role=role,
-                redundancy_group=f"{role.value}-{child.id}" if parent_count > 1 else None,
+                redundancy_group=f"{role.value}-{child.id}"
+                if parent_count > 1
+                else None,
             )
             for child in children
             for parent in parents[:parent_count]
@@ -316,8 +375,9 @@ class HardwarePlanner:
         enterprise_plan: EnterprisePlan,
         switch_candidates: list[HardwareCandidate],
         router_candidates: list[HardwareCandidate] | None = None,
-        policy: HardwarePlanningPolicy = HardwarePlanningPolicy(),
+        policy: HardwarePlanningPolicy = _DEFAULT_POLICY,
     ) -> HardwarePlan:
+        """Plan every site's hardware and the WAN links between them."""
         wan_connections, wan_warnings = self._wan_connections(enterprise_plan)
         wan_demand = self._wan_demand(wan_connections)
         site_hardware = [
@@ -341,14 +401,20 @@ class HardwarePlanner:
             for warning in warnings
         )
         status = (
-            HardwarePlanStatus.UNRESOLVED if blocking_wan_warning or not any(
+            HardwarePlanStatus.UNRESOLVED
+            if blocking_wan_warning
+            or not any(
                 device.selected_model or device.provisional_model
-                for site in site_hardware for device in site.devices
+                for site in site_hardware
+                for device in site.devices
             )
-            else HardwarePlanStatus.PARTIALLY_RESOLVED if warnings else HardwarePlanStatus.VALID
+            else HardwarePlanStatus.PARTIALLY_RESOLVED
+            if warnings
+            else HardwarePlanStatus.VALID
         )
         unsupported = [
-            warning for warning in warnings
+            warning
+            for warning in warnings
             if warning.startswith(("No existe candidato", "WAN inválida:"))
             or "sin puerto asignado" in warning
         ]
@@ -377,8 +443,11 @@ class HardwarePlanner:
         count_planner = SwitchCountPlanner()
         for capacity in site.capacity_requirements:
             choice = count_planner.choose(
-                capacity.required_access_ports, capacity.required_poe_ports,
-                capacity.required_uplink_ports, switch_candidates,
+                capacity.required_access_ports,
+                capacity.required_poe_ports,
+                capacity.required_uplink_ports,
+                switch_candidates,
+                requires_trunk=len(site.segments) > 1,
             )
             block = AccessBlockPlan(
                 site_id=site.site_id,
@@ -389,7 +458,9 @@ class HardwarePlanner:
                 required_uplinks=capacity.required_uplink_ports,
             )
             if choice is None:
-                block.warnings.append("No existe candidato con puertos de acceso y uplinks físicos suficientes.")
+                block.warnings.append(
+                    "No existe candidato con puertos de acceso y uplinks físicos suficientes."
+                )
                 warnings.extend(block.warnings)
                 access_blocks.append(block)
                 continue
@@ -405,8 +476,12 @@ class HardwarePlanner:
                     role=DeviceRole.ACCESS_SWITCH,
                     network_layer=NetworkLayer.ACCESS,
                     selection_status=choice.status,
-                    selected_model=choice.candidate.model if choice.status is DeviceCandidateStatus.COMPATIBLE else None,
-                    provisional_model=choice.candidate.model if choice.status is DeviceCandidateStatus.NEEDS_VERIFICATION else None,
+                    selected_model=choice.candidate.model
+                    if choice.status is DeviceCandidateStatus.COMPATIBLE
+                    else None,
+                    provisional_model=choice.candidate.model
+                    if choice.status is DeviceCandidateStatus.NEEDS_VERIFICATION
+                    else None,
                     candidate_models=[choice.candidate.model],
                     required_capabilities=DeviceRequirement(
                         role=DeviceRole.ACCESS_SWITCH,
@@ -414,7 +489,13 @@ class HardwarePlanner:
                         min_uplinks=capacity.required_uplink_ports,
                         poe_ports=1 if capacity.required_poe_ports else 0,
                     ),
-                    port_capacity=len([port for port in choice.candidate.ports if PortClass.ACCESS_CAPABLE in port.classes]),
+                    port_capacity=len(
+                        [
+                            port
+                            for port in choice.candidate.ports
+                            if PortClass.ACCESS_CAPABLE in port.classes
+                        ]
+                    ),
                     poe_capacity=choice.candidate.capabilities.poe_ports,
                     poe_authorized_bindings=list(
                         choice.candidate.capabilities.poe_authorized_bindings
@@ -426,19 +507,28 @@ class HardwarePlanner:
                 devices.append(device)
                 access_devices.append(device)
                 block.switches.append(device.id)
-            block.endpoint_slices = self._slices(zones.get(capacity.zone_id), capacity.pc_phone_pairs)
+            block.endpoint_slices = self._slices(
+                zones.get(capacity.zone_id), capacity.pc_phone_pairs
+            )
             assignment_warnings = PortAssignmentPlanner().assign(block, access_devices)
             block.warnings.extend(assignment_warnings)
             warnings.extend(assignment_warnings)
             access_blocks.append(block)
 
-        access_devices = [device for device in devices if device.role is DeviceRole.ACCESS_SWITCH]
+        access_devices = [
+            device for device in devices if device.role is DeviceRole.ACCESS_SWITCH
+        ]
         mode = HardwareHierarchyPlanner.choose(len(access_devices), policy.hierarchy)
         has_wan_demand = bool(required_serial_ports or required_wan_ethernet_ports)
         reconcile_site_router = internet_required and has_wan_demand
         higher_devices = self._higher_layers(
-            site, mode, len(access_devices), switch_candidates, router_candidates,
-            policy, internet_required and not reconcile_site_router,
+            site,
+            mode,
+            len(access_devices),
+            switch_candidates,
+            router_candidates,
+            policy,
+            internet_required and not reconcile_site_router,
         )
         wan_resolution = self._wan_router_device(
             site,
@@ -455,43 +545,79 @@ class HardwarePlanner:
         devices.extend(higher_devices)
         for device in higher_devices:
             if device.selection_status is not DeviceCandidateStatus.COMPATIBLE:
-                warnings.append(f"{device.id}: selección provisional; falta evidencia de capacidades requeridas.")
-        distributions = [device for device in higher_devices if device.role is DeviceRole.DISTRIBUTION_SWITCH]
+                warnings.append(
+                    f"{device.id}: selección provisional; falta evidencia de capacidades requeridas."
+                )
+        distributions = [
+            device
+            for device in higher_devices
+            if device.role is DeviceRole.DISTRIBUTION_SWITCH
+        ]
         redundancy = RedundancyPlanner()
-        cores = [device for device in higher_devices if device.role is DeviceRole.CORE_SWITCH]
-        edges = [device for device in higher_devices if device.role is DeviceRole.EDGE_ROUTER]
+        cores = [
+            device for device in higher_devices if device.role is DeviceRole.CORE_SWITCH
+        ]
+        edges = [
+            device for device in higher_devices if device.role is DeviceRole.EDGE_ROUTER
+        ]
         if distributions:
             uplinks, redundancy_warnings = redundancy.connect_access(
-                access_devices, distributions, policy.resiliency,
+                access_devices,
+                distributions,
+                policy.resiliency,
             )
         else:
             uplinks = redundancy.connect_layer(
-                access_devices, edges, LinkRole.EDGE_LINK, policy.resiliency,
+                access_devices,
+                edges,
+                LinkRole.EDGE_LINK,
+                policy.resiliency,
             )
             redundancy_warnings = []
         if cores:
-            uplinks.extend(redundancy.connect_layer(
-                distributions, cores, LinkRole.CORE_LINK, policy.resiliency,
-            ))
-            uplinks.extend(redundancy.connect_layer(
-                cores, edges, LinkRole.EDGE_LINK, policy.resiliency,
-            ))
+            uplinks.extend(
+                redundancy.connect_layer(
+                    distributions,
+                    cores,
+                    LinkRole.CORE_LINK,
+                    policy.resiliency,
+                )
+            )
+            uplinks.extend(
+                redundancy.connect_layer(
+                    cores,
+                    edges,
+                    LinkRole.EDGE_LINK,
+                    policy.resiliency,
+                )
+            )
         elif distributions:
             # A single router-on-a-stick gateway terminates one deliberate
             # trunk.  Connecting every distribution directly to that same
             # router would leave all but one link without a valid L2/L3 role.
             # Keep the redundant distribution domain connected with explicit
             # peer trunks and bind one deterministic distribution to the edge.
-            uplinks.extend(redundancy.connect_layer(
-                distributions[:1], edges, LinkRole.EDGE_LINK, policy.resiliency,
-            ))
-            uplinks.extend(redundancy.connect_layer(
-                distributions[1:], distributions[:1],
-                LinkRole.REDUNDANT_LINK, policy.resiliency,
-            ))
+            uplinks.extend(
+                redundancy.connect_layer(
+                    distributions[:1],
+                    edges,
+                    LinkRole.EDGE_LINK,
+                    policy.resiliency,
+                )
+            )
+            uplinks.extend(
+                redundancy.connect_layer(
+                    distributions[1:],
+                    distributions[:1],
+                    LinkRole.REDUNDANT_LINK,
+                    policy.resiliency,
+                )
+            )
         warnings.extend(redundancy_warnings)
         pattern = site.topology.pattern if site.topology else TopologyPattern.STAR
-        layers = site.topology.network_layers if site.topology else [NetworkLayer.ACCESS]
+        layers = (
+            site.topology.network_layers if site.topology else [NetworkLayer.ACCESS]
+        )
         return SiteHardwarePlan(
             site_id=site.site_id,
             topology_pattern=pattern,
@@ -545,11 +671,13 @@ class HardwarePlanner:
                     f"incompatibles: {media_names}."
                 )
                 continue
-            connections.append(_WanConnection(
-                source_site_id=pair[0],
-                target_site_id=pair[1],
-                media=next(iter(media)),
-            ))
+            connections.append(
+                _WanConnection(
+                    source_site_id=pair[0],
+                    target_site_id=pair[1],
+                    media=next(iter(media)),
+                )
+            )
         return connections, sorted(set(warnings))
 
     @staticmethod
@@ -577,11 +705,15 @@ class HardwarePlanner:
         if required_serial_ports == 0 and required_ethernet_ports == 0:
             return _WanRouterResolution()
         combined_ethernet_ports = required_ethernet_ports + int(reconcile_edge_role)
-        viable: list[tuple[HardwareCandidate, list[ModuleInstallation], list[PortDescriptor]]] = []
+        viable: list[
+            tuple[HardwareCandidate, list[ModuleInstallation], list[PortDescriptor]]
+        ] = []
         unknown_module_models: list[str] = []
         unsupported_reasons: list[str] = []
         module_planner = ModulePlanner()
-        for candidate in sorted(router_candidates, key=lambda item: item.model.casefold()):
+        for candidate in sorted(
+            router_candidates, key=lambda item: item.model.casefold()
+        ):
             if candidate.capabilities.category != "router":
                 unsupported_reasons.append(
                     f"{candidate.model} tiene categoría {candidate.capabilities.category}, "
@@ -589,7 +721,8 @@ class HardwarePlanner:
                 )
                 continue
             ethernet_ports = [
-                port for port in candidate.ports
+                port
+                for port in candidate.ports
                 if PortClass.UPLINK_CAPABLE in port.classes
             ]
             if len(ethernet_ports) < combined_ethernet_ports:
@@ -599,14 +732,20 @@ class HardwarePlanner:
                 )
                 continue
             existing_serial_ports = [
-                port for port in candidate.ports
-                if PortClass.SERIAL in port.classes
+                port for port in candidate.ports if PortClass.SERIAL in port.classes
             ]
             needs_module = len(existing_serial_ports) < required_serial_ports
-            if needs_module and candidate.capabilities.supports_modules is CapabilityStatus.UNKNOWN:
+            if (
+                needs_module
+                and candidate.capabilities.supports_modules is CapabilityStatus.UNKNOWN
+            ):
                 unknown_module_models.append(candidate.model)
                 continue
-            if needs_module and candidate.capabilities.supports_modules is CapabilityStatus.UNSUPPORTED:
+            if (
+                needs_module
+                and candidate.capabilities.supports_modules
+                is CapabilityStatus.UNSUPPORTED
+            ):
                 unsupported_reasons.append(
                     f"{candidate.model} tiene supports_modules=UNSUPPORTED y se requiere(n) "
                     f"{required_serial_ports} puerto(s) serial"
@@ -627,11 +766,15 @@ class HardwarePlanner:
             module_ports = [
                 PortDescriptor(
                     name=port,
-                    classes=list(dict.fromkeys([
-                        PortClass.MODULE_PROVIDED,
-                        PortClass.WAN,
-                        *installation.provided_port_classes,
-                    ])),
+                    classes=list(
+                        dict.fromkeys(
+                            [
+                                PortClass.MODULE_PROVIDED,
+                                PortClass.WAN,
+                                *installation.provided_port_classes,
+                            ]
+                        )
+                    ),
                     source="module_plan",
                     slot=installation.slot or "",
                     module=installation.module,
@@ -643,15 +786,19 @@ class HardwarePlanner:
         if not viable:
             if unknown_module_models:
                 models = ", ".join(sorted(unknown_module_models, key=str.casefold))
-                return _WanRouterResolution(warning=(
-                    f"WAN: {site.site_id} queda sin resolver: {models} tiene "
-                    f"supports_modules=UNKNOWN; falta evidencia para instalar "
-                    f"{required_serial_ports} puerto(s) serial."
-                ))
+                return _WanRouterResolution(
+                    warning=(
+                        f"WAN: {site.site_id} queda sin resolver: {models} tiene "
+                        f"supports_modules=UNKNOWN; falta evidencia para instalar "
+                        f"{required_serial_ports} puerto(s) serial."
+                    )
+                )
             reasons = "; ".join(unsupported_reasons) or "no hay candidatos router"
-            return _WanRouterResolution(warning=(
-                f"No existe candidato WAN soportado para {site.site_id}: {reasons}."
-            ))
+            return _WanRouterResolution(
+                warning=(
+                    f"No existe candidato WAN soportado para {site.site_id}: {reasons}."
+                )
+            )
 
         # La preferencia entra aquí y no antes: `viable` ya pasó categoría,
         # puertos y evidencia de módulos, así que preferir sólo reordena lo que
@@ -663,6 +810,7 @@ class HardwarePlanner:
             key=lambda item: (
                 bool(preferred) and item[0].model.casefold() != preferred,
                 len(item[1]),
+                item[0].capabilities.layer3 is not CapabilityStatus.SUPPORTED,
                 len(item[2]) - required_serial_ports - combined_ethernet_ports,
                 item[0].model.casefold(),
             ),
@@ -672,29 +820,32 @@ class HardwarePlanner:
         )
         network_layer = NetworkLayer.EDGE if reconcile_edge_role else NetworkLayer.WAN
         prefix = "r-edge" if reconcile_edge_role else "r-wan"
-        return _WanRouterResolution(device=PlannedNetworkDevice(
-            id=f"{prefix}-{site.site_id}-01",
-            site_id=site.site_id,
-            role=primary_role,
-            additional_roles=(
-                [DeviceRole.WAN_ROUTER] if reconcile_edge_role else []
-            ),
-            network_layer=network_layer,
-            selection_status=DeviceCandidateStatus.COMPATIBLE,
-            selected_model=candidate.model,
-            candidate_models=sorted(
-                (item[0].model for item in viable), key=str.casefold,
-            ),
-            required_capabilities=DeviceRequirement(
+        return _WanRouterResolution(
+            device=PlannedNetworkDevice(
+                id=f"{prefix}-{site.site_id}-01",
+                site_id=site.site_id,
                 role=primary_role,
-                category="router" if reconcile_edge_role else None,
-                min_uplinks=combined_ethernet_ports,
-                requires_modules=bool(module_plan),
-            ),
-            port_capacity=len(port_descriptors),
-            port_descriptors=port_descriptors,
-            module_plan=module_plan,
-        ))
+                additional_roles=(
+                    [DeviceRole.WAN_ROUTER] if reconcile_edge_role else []
+                ),
+                network_layer=network_layer,
+                selection_status=DeviceCandidateStatus.COMPATIBLE,
+                selected_model=candidate.model,
+                candidate_models=sorted(
+                    (item[0].model for item in viable),
+                    key=str.casefold,
+                ),
+                required_capabilities=DeviceRequirement(
+                    role=primary_role,
+                    category="router" if reconcile_edge_role else None,
+                    min_uplinks=combined_ethernet_ports,
+                    requires_modules=bool(module_plan),
+                ),
+                port_capacity=len(port_descriptors),
+                port_descriptors=port_descriptors,
+                module_plan=module_plan,
+            )
+        )
 
     @staticmethod
     def _connect_wan(
@@ -718,17 +869,19 @@ class HardwarePlanner:
             target = routers.get(connection.target_site_id)
             if source is None or target is None:
                 continue
-            sites[connection.source_site_id].links.append(HardwareLinkRequirement(
-                source_device=source.id,
-                target_device=target.id,
-                link_role=LinkRole.WAN_LINK,
-                required_port_class=(
-                    PortClass.SERIAL
-                    if connection.media is LinkMedia.SERIAL
-                    else PortClass.UPLINK_CAPABLE
-                ),
-                media=connection.media,
-            ))
+            sites[connection.source_site_id].links.append(
+                HardwareLinkRequirement(
+                    source_device=source.id,
+                    target_device=target.id,
+                    link_role=LinkRole.WAN_LINK,
+                    required_port_class=(
+                        PortClass.SERIAL
+                        if connection.media is LinkMedia.SERIAL
+                        else PortClass.UPLINK_CAPABLE
+                    ),
+                    media=connection.media,
+                )
+            )
 
     def _higher_layers(
         self,
@@ -743,18 +896,49 @@ class HardwarePlanner:
         devices: list[PlannedNetworkDevice] = []
         distribution_count = 0
         if mode is not HierarchyMode.FLAT:
-            distribution_count = ceil(access_switch_count / policy.hierarchy.max_access_switches_per_distribution)
+            distribution_count = ceil(
+                access_switch_count
+                / policy.hierarchy.max_access_switches_per_distribution
+            )
             distribution_count = max(1, distribution_count)
             if policy.resiliency is not ResiliencyLevel.NONE:
                 distribution_count = max(2, distribution_count)
         core_count = (
-            2 if mode is HierarchyMode.THREE_TIER and policy.resiliency is ResiliencyLevel.HIGH
-            else 1 if mode is HierarchyMode.THREE_TIER else 0
+            2
+            if mode is HierarchyMode.THREE_TIER
+            and policy.resiliency is ResiliencyLevel.HIGH
+            else 1
+            if mode is HierarchyMode.THREE_TIER
+            else 0
         )
-        devices.extend(self._layer_devices(site, DeviceRole.DISTRIBUTION_SWITCH, NetworkLayer.DISTRIBUTION, distribution_count, switch_candidates))
-        devices.extend(self._layer_devices(site, DeviceRole.CORE_SWITCH, NetworkLayer.CORE, core_count, switch_candidates))
+        devices.extend(
+            self._layer_devices(
+                site,
+                DeviceRole.DISTRIBUTION_SWITCH,
+                NetworkLayer.DISTRIBUTION,
+                distribution_count,
+                switch_candidates,
+            )
+        )
+        devices.extend(
+            self._layer_devices(
+                site,
+                DeviceRole.CORE_SWITCH,
+                NetworkLayer.CORE,
+                core_count,
+                switch_candidates,
+            )
+        )
         if internet_required and router_candidates:
-            devices.extend(self._layer_devices(site, DeviceRole.EDGE_ROUTER, NetworkLayer.EDGE, 1, router_candidates))
+            devices.extend(
+                self._layer_devices(
+                    site,
+                    DeviceRole.EDGE_ROUTER,
+                    NetworkLayer.EDGE,
+                    1,
+                    router_candidates,
+                )
+            )
         return devices
 
     @staticmethod
@@ -768,16 +952,29 @@ class HardwarePlanner:
         if not count:
             return []
         selector = DeviceSelector()
-        requirement = DeviceRequirement(role=role, min_uplinks=1, requires_layer3=role is not DeviceRole.EDGE_ROUTER)
-        selection = selector.select(requirement, [candidate.capabilities for candidate in candidates])
+        requirement = DeviceRequirement(
+            role=role, min_uplinks=1, requires_layer3=role is not DeviceRole.EDGE_ROUTER
+        )
+        selection = selector.select(
+            requirement, [candidate.capabilities for candidate in candidates]
+        )
         candidate_map = {candidate.model: candidate for candidate in candidates}
-        model = selection.selected_model or (selection.alternatives[0] if selection.alternatives else None)
+        model = selection.selected_model or (
+            selection.alternatives[0] if selection.alternatives else None
+        )
         chosen = candidate_map.get(model) if model else None
         status = (
-            DeviceCandidateStatus.COMPATIBLE if selection.selected_model
-            else DeviceCandidateStatus.NEEDS_VERIFICATION if model else DeviceCandidateStatus.INCOMPATIBLE
+            DeviceCandidateStatus.COMPATIBLE
+            if selection.selected_model
+            else DeviceCandidateStatus.NEEDS_VERIFICATION
+            if model
+            else DeviceCandidateStatus.INCOMPATIBLE
         )
-        prefix = {DeviceRole.DISTRIBUTION_SWITCH: "sw-dist", DeviceRole.CORE_SWITCH: "sw-core", DeviceRole.EDGE_ROUTER: "r-edge"}[role]
+        prefix = {
+            DeviceRole.DISTRIBUTION_SWITCH: "sw-dist",
+            DeviceRole.CORE_SWITCH: "sw-core",
+            DeviceRole.EDGE_ROUTER: "r-edge",
+        }[role]
         return [
             PlannedNetworkDevice(
                 id=f"{prefix}-{site.site_id}-{index:02d}",
@@ -785,13 +982,27 @@ class HardwarePlanner:
                 role=role,
                 network_layer=layer,
                 selection_status=status,
-                selected_model=model if status is DeviceCandidateStatus.COMPATIBLE else None,
-                provisional_model=model if status is DeviceCandidateStatus.NEEDS_VERIFICATION else None,
+                selected_model=model
+                if status is DeviceCandidateStatus.COMPATIBLE
+                else None,
+                provisional_model=model
+                if status is DeviceCandidateStatus.NEEDS_VERIFICATION
+                else None,
                 candidate_models=selection.alternatives,
                 required_capabilities=requirement,
-                port_capacity=len([port for port in chosen.ports if PortClass.ACCESS_CAPABLE in port.classes]) if chosen else 0,
+                port_capacity=len(
+                    [
+                        port
+                        for port in chosen.ports
+                        if PortClass.ACCESS_CAPABLE in port.classes
+                    ]
+                )
+                if chosen
+                else 0,
                 port_descriptors=chosen.ports if chosen else [],
-                warnings=selection.reasons if status is not DeviceCandidateStatus.COMPATIBLE else [],
+                warnings=selection.reasons
+                if status is not DeviceCandidateStatus.COMPATIBLE
+                else [],
             )
             for index in range(1, count + 1)
         ]
@@ -802,23 +1013,55 @@ class HardwarePlanner:
             return []
         slices = []
         if pair_count:
-            slices.append(EndpointGroupSlice(
-                group_id=f"{zone.zone_id}:pc-phone", roles=[DeviceRole.USER_PC, DeviceRole.IP_PHONE],
-                start_index=1, count=pair_count, requires_poe=True,
-            ))
+            slices.append(
+                EndpointGroupSlice(
+                    group_id=f"{zone.zone_id}:pc-phone",
+                    roles=[DeviceRole.USER_PC, DeviceRole.IP_PHONE],
+                    start_index=1,
+                    count=pair_count,
+                    requires_poe=True,
+                )
+            )
         remaining_pairs = pair_count
         direct_poe: list[EndpointGroupSlice] = []
         direct_other: list[EndpointGroupSlice] = []
         for group in zone.endpoint_groups:
-            pcs = next((item.count for item in group.requirements if item.role is DeviceRole.USER_PC and item.wired and not item.wireless), 0)
-            phones = next((item.count for item in group.requirements if item.role is DeviceRole.IP_PHONE and item.wired and not item.wireless), 0)
+            pcs = next(
+                (
+                    item.count
+                    for item in group.requirements
+                    if item.role is DeviceRole.USER_PC
+                    and item.wired
+                    and not item.wireless
+                ),
+                0,
+            )
+            phones = next(
+                (
+                    item.count
+                    for item in group.requirements
+                    if item.role is DeviceRole.IP_PHONE
+                    and item.wired
+                    and not item.wireless
+                ),
+                0,
+            )
             paired_here = min(pcs, phones, remaining_pairs)
             remaining_pairs -= paired_here
             for requirement in group.requirements:
-                if not requirement.wired or requirement.wireless or requirement.role in {
-                    DeviceRole.ACCESS_SWITCH, DeviceRole.DISTRIBUTION_SWITCH, DeviceRole.CORE_SWITCH,
-                    DeviceRole.WAN_ROUTER, DeviceRole.EDGE_ROUTER, DeviceRole.FIREWALL,
-                }:
+                if (
+                    not requirement.wired
+                    or requirement.wireless
+                    or requirement.role
+                    in {
+                        DeviceRole.ACCESS_SWITCH,
+                        DeviceRole.DISTRIBUTION_SWITCH,
+                        DeviceRole.CORE_SWITCH,
+                        DeviceRole.WAN_ROUTER,
+                        DeviceRole.EDGE_ROUTER,
+                        DeviceRole.FIREWALL,
+                    }
+                ):
                     continue
                 count = requirement.count
                 if requirement.role in {DeviceRole.USER_PC, DeviceRole.IP_PHONE}:
@@ -826,9 +1069,15 @@ class HardwarePlanner:
                 if count <= 0:
                     continue
                 target = direct_poe if requirement.requires_poe else direct_other
-                target.append(EndpointGroupSlice(
-                    group_id=f"{zone.zone_id}:{group.name}:{requirement.role.value}",
-                    roles=[requirement.role], start_index=paired_here + 1 if requirement.role in {DeviceRole.USER_PC, DeviceRole.IP_PHONE} else 1,
-                    count=count, requires_poe=requirement.requires_poe,
-                ))
+                target.append(
+                    EndpointGroupSlice(
+                        group_id=f"{zone.zone_id}:{group.name}:{requirement.role.value}",
+                        roles=[requirement.role],
+                        start_index=paired_here + 1
+                        if requirement.role in {DeviceRole.USER_PC, DeviceRole.IP_PHONE}
+                        else 1,
+                        count=count,
+                        requires_poe=requirement.requires_poe,
+                    )
+                )
         return slices + direct_poe + direct_other
