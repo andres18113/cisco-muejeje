@@ -703,3 +703,37 @@ def test_an_unrecorded_ledger_result_never_reports_success(
     )
     assert code != 0, summary
     assert "ledger_result_unrecorded" in json.dumps(summary["campaign"])
+
+
+@pytest.mark.parametrize(
+    ("service_type", "field", "value"),
+    [
+        ("http", "http_content", "SP1_ROUTED_000000000000"),
+        ("http", "hostname", "www.other.lab.example"),
+        ("dns", "address", "10.64.0.99"),
+    ],
+)
+def test_an_intent_with_another_runs_value_is_refused_before_any_effect(
+    tmp_path, capsys, monkeypatch, service_type, field, value
+):
+    """A self-consistent intent carrying a value this run did not derive."""
+    original = sp1_routed_product_contract
+
+    def altered(build, run_id, clients):
+        contract = original(build, run_id, clients)
+        intent = json.loads(contract.intent_json)
+        for service in intent["sites"][0]["services"]:
+            if service["service_type"] == service_type:
+                service[field] = value
+        return replace(contract, intent_json=json.dumps(intent))
+
+    monkeypatch.setattr(service_qualification, "sp1_routed_product_contract", altered)
+
+    code, summary, record, snapshot, _store, _terminal = _run(
+        tmp_path, capsys, monkeypatch, "SP1-ROUTED-W1"
+    )
+
+    assert code == 1, summary
+    assert record.primary_failure == "sp1_intent_values_differ_from_run"
+    assert LAST["switching"].campus_calls == 0
+    assert snapshot["devices"] == []

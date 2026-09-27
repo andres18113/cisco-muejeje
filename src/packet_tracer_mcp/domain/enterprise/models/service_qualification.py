@@ -18,6 +18,7 @@ silently given more.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -2152,6 +2153,34 @@ def _sp1_routed(stage: QualificationStage, clients: tuple[str, ...]) -> StageDef
             ),
         ),
         selected_clients=clients,
+    )
+
+
+@dataclass(frozen=True)
+class Sp1RunParameters:
+    """What one SP-1 run chooses for itself, derived from its run id."""
+
+    address_space: str
+    marker: str
+    hostname: str
+
+
+def sp1_run_parameters(run_id: str) -> Sp1RunParameters:
+    """Return the run's private address space, page marker and host name.
+
+    Pure, so the composer that writes the intent and the coordinator that
+    checks it derive the same values from the same run id. The address
+    space is one /16 in 10.64.0.0/10, clear of every TEST-NET fixture; the
+    marker and host name carry the run digest.
+    """
+    if not run_id:
+        raise ValueError("An SP-1 run needs its run id.")
+    digest = hashlib.sha256(run_id.encode("utf-8")).hexdigest()
+    second = 64 + int(digest[:2], 16) % 64
+    return Sp1RunParameters(
+        address_space=f"10.{second}.0.0/16",
+        marker=f"SP1_ROUTED_{digest[:12]}",
+        hostname=f"www.sp1-{digest[12:18]}.lab.example",
     )
 
 

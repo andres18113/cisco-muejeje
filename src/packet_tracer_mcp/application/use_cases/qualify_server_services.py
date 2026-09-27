@@ -169,6 +169,7 @@ from ...domain.enterprise.models.service_qualification import (
     refusal,
     repository_refusals,
     request_refusals,
+    sp1_run_parameters,
     stage_definition,
 )
 from ...domain.enterprise.models.service_run_record import SourceTreeIdentity
@@ -6552,6 +6553,51 @@ def _sp1_contract_mismatch(execution: _Execution, contract: Q3ProductContract) -
         ]
     ):
         return "sp1_intent_services_differ_from_stage"
+    # Every run-specific value is bound too: the address space, marker and
+    # host name this coordinator derives from its own run id, and the server
+    # addresses the composed plan assigned. A self-consistent intent with any
+    # other value would verify against the wrong run.
+    parameters = sp1_run_parameters(execution.record.run_id)
+    addresses = {
+        item.device_name: item.ipv4
+        for item in contract.configuration_plan.actions
+        if isinstance(item, SetEndpointStaticAddress)
+    }
+    dns_address = addresses.get(SP1_DNS_SERVER, "")
+    web_address = addresses.get(SP1_WEB_SERVER, "")
+    expected_services = {
+        "dns": {
+            "name": "sp1-dns",
+            "service_type": "dns",
+            "host_device_id": ids.get(SP1_DNS_SERVER),
+            "address": dns_address,
+            "dns_records": [{"hostname": parameters.hostname, "address": web_address}],
+            "client_device_ids": list(wanted_clients),
+        },
+        "http": {
+            "name": "sp1-web",
+            "service_type": "http",
+            "host_device_id": ids.get(SP1_WEB_SERVER),
+            "address": web_address,
+            "hostname": parameters.hostname,
+            "http_content": parameters.marker,
+            "client_device_ids": list(wanted_clients),
+        },
+    }
+    if (
+        not dns_address
+        or not web_address
+        or intent.get("address_space") != parameters.address_space
+        or {
+            service.get("service_type"): {
+                **service,
+                "client_device_ids": sorted(service.get("client_device_ids", [])),
+            }
+            for service in services
+        }
+        != expected_services
+    ):
+        return "sp1_intent_values_differ_from_run"
     if any(
         item.host_device_name not in hosts for item in contract.service_plan.actions
     ):

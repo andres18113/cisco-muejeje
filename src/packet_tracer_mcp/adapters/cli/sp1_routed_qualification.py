@@ -16,9 +16,7 @@ record says so.
 
 from __future__ import annotations
 
-import hashlib
 import json
-from dataclasses import dataclass
 from typing import Any
 
 from ...application.use_cases.compose_enterprise_reference import (
@@ -37,7 +35,11 @@ from ...domain.enterprise.models.intent import EnterpriseIntent
 from ...domain.enterprise.models.service_qualification import (
     SP1_DNS_SERVER,
     SP1_WEB_SERVER,
+    Sp1RunParameters,
+    sp1_run_parameters,
 )
+
+__all__ = ["Sp1RunParameters", "sp1_run_parameters"]
 from ...infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
     candidate_capability_adapter,
@@ -48,32 +50,6 @@ from ...infrastructure.catalog.enterprise_capabilities import (
 SP1_ROUTER_MODELS = ("1941", "2911")
 SP1_STATIC_ROUTE_CAPABILITY = "supports_static_routes"
 SP1_CANDIDATE_LABEL = "SERVER-PT-SP1-ROUTED-01"
-
-
-@dataclass(frozen=True)
-class Sp1RunParameters:
-    """What one SP-1 run chooses for itself, derived from its run id."""
-
-    address_space: str
-    marker: str
-    hostname: str
-
-
-def sp1_run_parameters(run_id: str) -> Sp1RunParameters:
-    """Return the run's private address space, page marker and host name.
-
-    The address space is one /16 in 10.64.0.0/10, so it never overlaps the
-    earlier TEST-NET fixtures; the marker and host name carry the run digest.
-    """
-    if not run_id:
-        raise ValueError("An SP-1 run needs its run id.")
-    digest = hashlib.sha256(run_id.encode("utf-8")).hexdigest()
-    second = 64 + int(digest[:2], 16) % 64
-    return Sp1RunParameters(
-        address_space=f"10.{second}.0.0/16",
-        marker=f"SP1_ROUTED_{digest[:12]}",
-        hostname=f"www.sp1-{digest[12:18]}.lab.example",
-    )
 
 
 def sp1_topology_intent(address_space: str) -> dict[str, Any]:
