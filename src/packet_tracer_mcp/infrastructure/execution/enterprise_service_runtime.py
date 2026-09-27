@@ -4892,6 +4892,11 @@ class PacketTracerEnterpriseServiceRuntime:
                 cause="client_go_false",
                 message="The client did not start the request.",
             )
+        # Every start fact is now validated: the owned client of this exact
+        # device, in the requested mode, returned a native boolean true from
+        # go() consistent with the strict projection. Only this fact, never the
+        # raw `go_result`, tells the applicator the request left (SP1-03).
+        request_inputs["request_started"] = True
         if marker and marker in before:
             return exit_row(
                 observation=ObservationFact.INCONCLUSIVE,

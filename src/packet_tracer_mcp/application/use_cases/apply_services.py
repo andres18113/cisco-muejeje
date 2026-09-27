@@ -177,13 +177,15 @@ def _cold_request_sent(result: ServiceVerificationResult) -> bool:
     """Whether a cold HTTP-by-address row proves its request was dispatched.
 
     Positive evidence only: a VERIFIED fetch necessarily ran, and otherwise
-    the reader's start reading must have recorded `go()` returning true. A
-    row that is blocked, skipped, or UNKNOWN/FAILED without that start fact
-    (`client_go_false`, a lost start answer) proves nothing was sent.
+    the reader must have recorded `request_started`, which it sets only after
+    validating ownership, device, mode and a consistent boolean true from
+    go(). A raw `go_result` is never enough: a malformed start answer can
+    carry one. Blocked, skipped, or UNKNOWN/FAILED rows without that fact
+    (`client_go_false`, a lost or malformed start) prove nothing was sent.
     """
     if result.status is ActionExecutionStatus.VERIFIED:
         return True
-    return (result.observed or {}).get("go_result") is True
+    return (result.observed or {}).get("request_started") is True
 
 
 class ServiceApplicator:

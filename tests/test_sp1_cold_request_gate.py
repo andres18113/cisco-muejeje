@@ -10,6 +10,8 @@ was actually dispatched, and a plan with no such request holds nothing.
 
 from __future__ import annotations
 
+import json
+
 from test_service_application import (
     NO_READINESS,
     FakeServiceRuntime,
@@ -143,6 +145,8 @@ def _http_answer(runtime, *, go_result):
         if expectation.kind is not ServiceVerificationKind.HTTP_FETCH:
             return row
         observed = {} if go_result is None else {"go_result": go_result}
+        if go_result is True:
+            observed["request_started"] = True
         return row.model_copy(
             update={
                 "status": ActionExecutionStatus.UNKNOWN,
@@ -188,3 +192,75 @@ def test_a_cold_request_that_started_but_read_unknown_releases_dns():
     ]
     assert dns
     assert all(row.status is ActionExecutionStatus.VERIFIED for row in dns)
+
+
+def test_a_malformed_start_carrying_go_result_true_holds_the_clients_dns():
+    """Review finding: an unvalidated `go_result: true` is not a sent request."""
+    plan, capabilities = _compiled()
+    runtime = FakeServiceRuntime()
+    original = runtime.verify
+
+    def verify(expectation):
+        row = original(expectation)
+        if expectation.kind is not ServiceVerificationKind.HTTP_FETCH:
+            return row
+        return row.model_copy(
+            update={
+                "status": ActionExecutionStatus.UNOBSERVABLE,
+                "observed": {"go_result": True},
+                "cause": "start_shape:type:started",
+            }
+        )
+
+    runtime.verify = verify
+
+    result = _apply(plan, capabilities, runtime)
+
+    dns = [
+        row
+        for row in result.verification_results
+        if "verify-dns/" in row.expectation_id
+    ]
+    assert dns
+    assert all(row.status is ActionExecutionStatus.DEPENDENCY_BLOCKED for row in dns)
+
+
+# -- the reader records `request_started` only after validating the start --------
+
+
+def _reader_row(start_payload: str, *later: str):
+    from test_service_runtime_observation import _RELEASED, _http, _web
+
+    runtime, _calls = _web([start_payload, *later, _RELEASED])
+    return runtime.verify(_http())
+
+
+def test_the_reader_never_marks_a_malformed_start_as_started():
+    """`go_result: true` beside an invalid `started` is not a started request."""
+    row = _reader_row(
+        json.dumps(
+            {
+                "started": "yes",
+                "content_before": "",
+                "owned": True,
+                "go_result": True,
+                "go_result_type": "boolean",
+            }
+        )
+    )
+
+    assert row.cause.startswith("start_shape:")
+    assert row.observed.get("request_started") is not True
+
+
+def test_the_reader_marks_a_validated_start_even_when_the_page_read_fails():
+    """A request that left stays sent, whatever its page read concluded."""
+    from test_service_runtime_observation import _web_start
+
+    row = _reader_row(
+        _web_start(owner="__MCP_E6_PC"),
+        json.dumps({"found": True, "content": "a different page"}),
+    )
+
+    assert row.status is not ActionExecutionStatus.VERIFIED
+    assert row.observed.get("request_started") is True
