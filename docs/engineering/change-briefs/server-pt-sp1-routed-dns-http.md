@@ -224,8 +224,10 @@ reproducible offline; documentation needs none.
 
 ## Current projection
 
-Offline implementation is complete through `2057070`; LIVE acceptance is
-pending. Starting SHA `890c950`, base `cisco/main` `6263344`.
+Offline implementation, two exploratory LIVE episodes and the promotion of
+their measurements are complete through `26ee053`. The final LIVE W1/W2 on
+published, CI-green source with the default catalog is pending. Starting SHA
+`890c950`, base `cisco/main` `6263344`.
 
 | Commit | What landed |
 | --- | --- |
@@ -240,42 +242,49 @@ pending. Starting SHA `890c950`, base `cisco/main` `6263344`.
 | `9dbd0f2` | SP1-06 scale measurement |
 | `35483ea` | campaign `SERVER-PT-SP1-ROUTED-01` bound to the archived work order |
 | `2057070` | qualification stages `SP1-ROUTED-W1`/`W2`; refusal record `persisted_stage` fix |
+| `ec638b8` | from LIVE e1: routed window per router, 20 s DNS read bound, resolver reader recorded (Q1 M-DNS-3), per-getter binding probe |
+| `473db4a`, `0d15b14`, `c299ee9` | from three independent adversarial review passes: exact closure and routed-group coverage, candidate provenance, ledger settlement, and the whole intent bound to the run's canonical intent (a fourth pass approved) |
+| `9ba3bb0`, `8492205` | immutable archives of LIVE e1 and e2 (`docs/reference/server-pt/evidence/sp1-routed-01/`) |
+| `26ee053` | promotions from e2: measured 1941/2911 static routes, `client_gateway` via `HostIpProcess`; resolver and gateway reads become required prerequisites (SP1-04, SP1-02a) |
 
-Traceability to the maintained tests (the file names planned above were
-renamed to the `test_sp1_*` family):
+LIVE (Packet Tracer 9.0.1.0858, file channel, owned disposable lab, each
+episode opened, launched, retired and closed through the campaign ledger):
+
+| Episode | Source | Result | What it established |
+| --- | --- | --- | --- |
+| e1, `SP1-ROUTED-W2` | `6e5e527`, candidate static routes | product PARTIAL, 367 ops | HQ inter-VLAN and BR1 (one transit hop) verified end to end; route tables complete, unpaged and parsed (`S`, `C`, `L`); BR2 refused only by the 30 s window (one three-router round took 32.4 s); `getProcess('HostIp')` throws on PC-PT; one routed DNS read missed the 5 s bound |
+| e2, `SP1-ROUTED-W2` | `710faca`, candidate static routes | product VERIFIED, 413 ops | all six clients over one, two and three routers: HTTP by address first, fresh resolver read, DNS, qualified negative, HTTP by name; all three routed groups admitted; `HostIpProcess.getDefaultGateway()` returned every planned gateway; two terminal `brief` captures did not converge in six calls |
+
+Traceability to the maintained tests:
 
 | Requirement | Tests |
 | --- | --- |
 | SP1-01a | `test_sp1_routed_paths.py`, `test_sp1_static_routing.py`, `test_sp1_evidence_aware_hardware.py` |
-| SP1-01b | `test_sp1_routed_admission.py`, `test_campus_service_paths.py` |
+| SP1-01b | `test_sp1_routed_admission.py`, `test_campus_service_paths.py`, `test_sp1_routed_stage.py` (contract guard) |
 | SP1-01c | existing admission suites, unchanged |
-| SP1-02a/b | `test_sp1_routed_readiness.py`, `test_sp1_routed_readiness_gate.py`, `test_sp1_routed_observer_runtime.py`, `test_sp1_static_route_readback.py` |
+| SP1-02a/b | `test_sp1_routed_readiness.py`, `test_sp1_routed_readiness_gate.py`, `test_sp1_routed_observer_runtime.py`, `test_sp1_static_route_readback.py`, `test_sp1_request_order.py` (gateway prerequisite) |
 | SP1-03 | `test_sp1_request_order.py`, `test_sp1_routed_public_route.py` |
-| SP1-04 | `test_sp1_client_binding_reader.py`, `test_sp1_routed_public_route.py` |
-| SP1-05 | `test_sp1_failure_boundaries.py`, `test_sp1_routed_stage.py` (receiver replacement, cancellation, withheld route, contract mismatch), `test_sp1_routed_public_route.py` (durable record agreement) |
+| SP1-04 | `test_sp1_client_binding_reader.py`, `test_sp1_dns_window.py`, `test_sp1_routed_public_route.py` (wrong resolver caught by the read), `test_apply_enterprise_services.py` |
+| SP1-05 | `test_sp1_failure_boundaries.py`, `test_sp1_routed_stage.py` (receiver replacement, cancellation, withheld route, ledger settlement), `test_sp1_routed_public_route.py` (durable record agreement) |
 | SP1-06 | `test_sp1_routed_scale.py` |
-| SP1-L | `test_sp1_routed_stage.py` offline; LIVE pending |
+| SP1-L | LIVE e1, e2 (exploratory); final W1/W2 pending |
 
 Offline measurements (simulation, never Packet Tracer capacity): at 997
 clients the routed run completes in about 54 s with a 9.7 MB response, a
 31 MB record and 260 MiB peak; router reads are one episode per segment pair.
-The simulated W2 stage spends 235 product dispatches and 324 stage operations
-against a planned 2548 and a ceiling of 3000 / 3600 s.
+The simulated W2 stage spends 235 product dispatches (324 stage operations);
+LIVE e2 spent 413 against a planned 2568 and a ceiling of 3000 / 3600 s.
 
-Defect found and fixed on the way (causal RED first): a refusal after the
-write-ahead record returned `persisted_stage=admission` while the stored
-record said none, so any governed caller that reloads and compares rejected a
-consistent refusal as tampered (`test_sp1_failure_boundaries.py`).
+Defects found and fixed on the way, each with a causal RED first: a refusal
+after the write-ahead record stored `persisted_stage` none while the response
+said `admission`; a fixed routed window refused a correct three-router path;
+routed DNS reads could miss a 5 s bound; one guard around every binding getter
+hid the resolver when the gateway process threw; and the review findings above.
 
 Open, in order:
 
-1. The client gateway and resolver reads (`CLIENT_GATEWAY`,
-   `CLIENT_DNS_SERVER`) stay advisory until LIVE measures
-   `HostIp.getDefaultGateway` on this build (`DnsClient.getServerIp` is
-   already measured at `0850de3`). SP1-04's "resolver read before the query"
-   becomes a hard dependency only with that record.
-2. `show ip route` shapes for `C`, `L` and `S` rows and the router pager are
-   unmeasured; paged reads fail closed until a LIVE capture qualifies them.
-3. Exploratory LIVE W1/W2 with candidate static-route evidence, then
-   source-backed records, then the final W1/W2 on published CI-green source
-   with the default catalog.
+1. Show-route pagination remains unqualified: every LIVE table fit one page,
+   and paged reads still fail closed.
+2. Final LIVE W1 and W2 through the registered tool with the default catalog,
+   on this branch's published head with exact-SHA CI green, then the
+   evidence package and READY_FOR_REVIEW.

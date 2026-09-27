@@ -39,8 +39,8 @@ qualify anything.
 | D-WEB | executable diagnostic; file channel only on build 9.0.1.0858 | the Q1 fixture, statically addressed | 80 / 900 s | 74 (19 setup + 45 measurement + 10 reserve) | M-DWEB-0..5: the listener and endpoint boundaries, the per-VLAN forwarding state of the exact switch ports, the marked page, one attributed ping, one instrumented fetch, the same boundaries again |
 | Q3-FL-C1 | executable only under campaign `SERVER-PT-DHCP-FASTLOOP-01`; file channel, build 9.0.1.0858 | the Q3 fixture | 440 / 1500 s | 439 (17 setup + 411 measurement + 11 reserve; 362 of it is the gate's two capped forwarding episodes) | M-DHCP-1, 2, 4, 5, 6, 6-CAP, 6-REPEAT, 6-TIME, 1-FINAL on a one-user intended pool (M-DHCP-3 and 6-RENEW omitted with their reasons) |
 | Q3-FL-C2 | as Q3-FL-C1 | the Q3 fixture | 440 / 1500 s | 439 | the same on a two-user intended pool, so one row and a full table differ (6-CAP omitted: it needs a one-user pool) |
-| SP1-ROUTED-W1 | executable only under campaign `SERVER-PT-SP1-ROUTED-01`; file channel, build 9.0.1.0858 | the SP-1 three-site composition: HQ 1941, BR1 2911, BR2 1941 (two Ethernet crossovers), 2960-24TT and two IE-2000 access switches, separate DNS and web Server-PT, six PC-PT | 3000 / 3600 s | 2548 (57 setup + 2460 measurement + 31 reserve) | M-SP1-ROUTED-PRODUCT for the two HQ clients (inter-VLAN, one gateway) and M-SP1-ROUTED-FINAL |
-| SP1-ROUTED-W2 | as SP1-ROUTED-W1 | the same composition | 3000 / 3600 s | 2548 | the same for all six clients, over one and two transit routers |
+| SP1-ROUTED-W1 | executable only under campaign `SERVER-PT-SP1-ROUTED-01`; file channel, build 9.0.1.0858 | the SP-1 three-site composition: HQ 1941, BR1 2911, BR2 1941 (two Ethernet crossovers), 2960-24TT and two IE-2000 access switches, separate DNS and web Server-PT, six PC-PT | 3000 / 3600 s | 2568 (57 setup + 2480 measurement + 31 reserve) | M-SP1-ROUTED-PRODUCT for the two HQ clients (inter-VLAN, one gateway) and M-SP1-ROUTED-FINAL |
+| SP1-ROUTED-W2 | as SP1-ROUTED-W1 | the same composition | 3000 / 3600 s | 2568 | the same for all six clients, over one and two transit routers |
 
 The two `D-` stages are **diagnostics**: each asks an open question and
 measures a boundary or a transition. What they observe confirms no product
@@ -82,10 +82,10 @@ campaigns; the authorized links name each crossover (`.../cross`). Each run
 composes the SP-1 intent through the product with its own address space,
 page marker and host name, refuses a composition that is not its exact
 fixture, and runs the registered `pt_apply_enterprise_services` tool on the
-stage's own channel. While the build's catalog lacks measured static-route
-support on the 1941 and 2911, the run injects named, unverified candidate
-evidence for exactly that capability and its record says so; once measured,
-the run uses the default catalog unchanged. The terminal observation keeps
+stage's own channel. Since SP-1 episode 2 the build's catalog carries measured
+static-route support on the 1941 and 2911, so the run uses the default catalog
+unchanged; for a build without that record it would inject named, unverified
+candidate evidence for exactly that capability, and its record would say so. The terminal observation keeps
 each router's raw `show ip interface brief` and `show ip route` and every
 selected client's configured gateway and resolver.
 

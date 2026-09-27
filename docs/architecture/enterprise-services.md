@@ -344,3 +344,15 @@ routed PC-to-Server scenarios both verified DNS resolution, HTTP by address,
 and composed HTTP by hostname. Cross-segment service compilation therefore
 requires the already compiled E5 L3 actions for both endpoint segments; E6
 references those actions but never recompiles or reapplies them.
+
+SP-1 extends the product route to routed static clients (see the
+[SP-1 brief](../engineering/change-briefs/server-pt-sp1-routed-dns-http.md)).
+E5 compiles Ethernet WAN transit and static routes along the plan's transit
+paths; admission derives each selected client-to-host path (gateways, L2 legs,
+forward and return route chains) and refuses before any effect when one is
+incomplete. Before the first dependent request a routed readiness group reads
+every router of the path fresh and admits only the dependents its tables
+forward; drift after admission revokes later dependents. Each client reads its
+gateway and resolver back (`HostIpProcess`, `DnsClient`) as prerequisites of
+its first request and its DNS queries. SP-1 episode 2 measured this LIVE on
+9.0.1.0858 for six clients over one, two and three routers.

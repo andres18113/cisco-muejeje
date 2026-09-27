@@ -98,8 +98,10 @@ def register_service_tools(
 
         The tool binds a DeploymentManifest produced by pt_live_deploy; it
         deploys no topology and deletes no operator resource. The bounded path
-        is one site and segment with a static Server-PT and wired PC-PT clients
-        on one access switch. DNS/HTTP use the documentary baseline. Native
+        is static Server-PT hosts and wired static PC-PT clients in one segment,
+        or across router-on-a-stick gateways and static routes the compiled
+        plan admits and fresh router readings confirm. DNS/HTTP use the
+        documentary baseline; routed DNS/HTTP was measured by SP-1. Native
         Server-PT DHCP has a recorded, exact-build, policy-scoped binding;
         generic/named-pool DHCP and mail remain UNKNOWN.
 

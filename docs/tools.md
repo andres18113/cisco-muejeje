@@ -151,11 +151,21 @@ does not clean up when it finishes: the only thing it releases is the temporary
 background clients its own verification created, and it reports the outcome of
 every one of those releases, including the ones that did not resolve.
 
-**Supported path.** One site, one segment, a static Server-PT and wired PC-PT
-clients whose required access-port foundations terminate on one access switch.
-The accepted DNS/HTTP baseline uses static clients. S3 also compiles a
+**Supported path.** Static Server-PT hosts and wired, static PC-PT clients,
+either in one segment on one access switch, or across segments and sites when
+the compiled plan gives every selected client-to-host path a router-on-a-stick
+gateway per segment, Ethernet WAN transit and a complete static forward and
+return route chain (`routing_preference: "static"`). Before any request the
+product reads every router of a path fresh (`show ip interface brief`,
+`show ip route`) and admits only the paths those readings forward. Each client
+is then served by address first, its resolver setting is read back before its
+DNS queries, a nonexistent name is qualified only after its own positive, and
+the host name is fetched last. Measured LIVE on 9.0.1.0858 over the file
+channel for an inter-VLAN HQ and branches one and two 1941/2911 routers away
+(SP-1, `docs/reference/server-pt/evidence/sp1-routed-01/`). S3 also compiles a
 same-segment delegated DHCP candidate with a mode-only E5 bootstrap; relay,
-routed, wireless, foreign-site and ungoverned inter-switch paths are refused.
+dynamic routing, SVI gateways, wireless, foreign-site and ungoverned
+inter-switch paths are refused.
 
 **Inputs.**
 
