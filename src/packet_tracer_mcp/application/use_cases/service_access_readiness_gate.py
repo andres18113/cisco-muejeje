@@ -40,6 +40,7 @@ setting that turns the gate off.
 
 from __future__ import annotations
 
+import ipaddress
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import replace
 from typing import Protocol
@@ -341,6 +342,24 @@ class ServiceAccessReadinessGate:
         self._requirements = {item.key: item for item in plan.requirements}
         self._continuity = {item.key: item for item in plan.continuity}
         self._routed = {item.key: item for item in plan.routed}
+        self._dhcp_by_client: dict[str, list] = {}
+        self._dhcp_groups_by_client: dict[str, set[GroupKey]] = {}
+        self._bound_leases: dict[str, str] = {}
+        for group in plan.routed:
+            for item in group.dependents:
+                if item.client_network:
+                    self._dhcp_by_client.setdefault(item.client_device_id, []).append(
+                        item
+                    )
+                    self._dhcp_groups_by_client.setdefault(
+                        item.client_device_id, set()
+                    ).add(group.key)
+        self._unbound = {
+            item.expectation_id: item
+            for group in plan.routed
+            for item in group.dependents
+            if item.client_network and not item.client_ipv4
+        }
         self._routed_observer = routed_observer
         #: The newest AUTHORITATIVE reading of each router, by semantic id.
         self._latest_readings: dict[str, DeviceForwardingReading] = {}
@@ -357,6 +376,65 @@ class ServiceAccessReadinessGate:
     def limits(self) -> tuple[int, float]:
         """Return the group ceiling and total wait this gate enforces."""
         return self._max_groups, self._total_budget_seconds
+
+    def bind_verified_lease(
+        self, client_device_id: str, ipv4: str, netmask: str
+    ) -> None:
+        """Bind one verified DHCP client's address without rebuilding all groups."""
+        candidates = self._dhcp_by_client.get(client_device_id, ())
+        if not candidates:
+            raise ValueError("client has no routed DHCP dependency")
+        try:
+            address = ipaddress.IPv4Address(ipv4)
+            networks = {
+                ipaddress.IPv4Network(item.client_network, strict=True)
+                for item in candidates
+            }
+        except ValueError as exc:
+            raise ValueError("lease address or network is invalid") from exc
+        if any(
+            netmask != str(network.netmask)
+            or address not in network
+            or address in (network.network_address, network.broadcast_address)
+            for network in networks
+        ):
+            raise ValueError("lease is outside its selected routed network")
+        prior = self._bound_leases.get(client_device_id)
+        if prior is not None:
+            if prior != ipv4:
+                raise ValueError("routed lease identity changed within the invocation")
+            return
+        self._bound_leases[client_device_id] = ipv4
+        for item in candidates:
+            self._unbound.pop(item.expectation_id, None)
+        for key in self._dhcp_groups_by_client[client_device_id]:
+            if key not in self._results:
+                continue
+            self._superseded.append(self._results.pop(key))
+            self._revisions[key] = self.revision(key) + 1
+            for item in self._routed[key].dependents:
+                self._verdicts.pop(item.expectation_id, None)
+
+    def requires_lease_binding(self, client_device_id: str) -> bool:
+        """Whether this invocation has a routed DHCP dependent for one client."""
+        return client_device_id in self._dhcp_by_client
+
+    def _bound_routed(self, requirement: RoutedRequirement) -> RoutedRequirement:
+        """Materialize current exact-IP dependents once when a group is read."""
+        if not any(
+            item.client_device_id in self._bound_leases
+            for item in requirement.dependents
+        ):
+            return requirement
+        return replace(
+            requirement,
+            dependents=tuple(
+                replace(item, client_ipv4=self._bound_leases[item.client_device_id])
+                if item.client_network and item.client_device_id in self._bound_leases
+                else item
+                for item in requirement.dependents
+            ),
+        )
 
     def begin_invocation(self) -> None:
         """Claim this gate for one application, and refuse a second.
@@ -378,6 +456,18 @@ class ServiceAccessReadinessGate:
         Returns `None` when the expectation is not gated at all, which is the
         only way a caller proceeds without a verdict.
         """
+        unbound = self._unbound.get(expectation_id)
+        if unbound is not None:
+            return ReadinessDependentResult(
+                expectation_id=expectation_id,
+                service_id=unbound.service_id,
+                kind=str(getattr(unbound.kind, "value", unbound.kind)),
+                client_device_id=unbound.client_device_id,
+                host_device_id=unbound.host_device_id,
+                interfaces=(),
+                admitted=False,
+                cause="dhcp_lease_not_bound",
+            )
         if expectation_id in self._verdicts:
             return self._verdicts[expectation_id]
         if expectation_id in self._revoked:
@@ -480,11 +570,12 @@ class ServiceAccessReadinessGate:
                         continuity, cause="dependent_never_became_admissible"
                     )
                 )
-        for routed in self._plan.routed:
+        for routed in self._routed.values():
             if routed.key not in self._results:
                 recorded.append(
                     unobserved_routed_result(
-                        routed, cause="dependent_never_became_admissible"
+                        self._bound_routed(routed),
+                        cause="dependent_never_became_admissible",
                     )
                 )
         if self._plan.unplaced:
@@ -983,7 +1074,17 @@ class ServiceAccessReadinessGate:
         }
 
     def _routed_group(self, requirement: RoutedRequirement) -> _GroupResult:
-        """Observe one segment pair, and narrow once to what last forwarded."""
+        """Observe one segment pair, excluding clients with no verified lease."""
+        requirement = self._bound_routed(requirement)
+        active = tuple(
+            item
+            for item in requirement.dependents
+            if not item.client_network or item.client_ipv4
+        )
+        if not active:
+            return unobserved_routed_result(requirement, cause="dhcp_lease_not_bound")
+        if len(active) != len(requirement.dependents):
+            requirement = replace(requirement, dependents=active)
         first, observation = self._observe_routed(requirement)
         if first.status == "admitted" or observation is None:
             return first
@@ -1033,7 +1134,7 @@ class ServiceAccessReadinessGate:
         devices = [names[item] for item in requirement.device_ids]
         group_started = self._clock()
         self._observed_groups += 1
-        self.observations.append(("routed_forwarding", 0, tuple(devices)))
+        self.observations.append((requirement.purpose, 0, tuple(devices)))
         episode = self._episode(requirement.key, narrowed=narrowed)
         try:
             observation = self._routed_observer.observe_routed_forwarding(

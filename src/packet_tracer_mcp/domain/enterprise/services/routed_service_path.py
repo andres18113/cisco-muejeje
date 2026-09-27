@@ -113,6 +113,7 @@ class RoutedPath:
     client_device_id: str
     host_device_id: str
     client_ipv4: str = ""
+    client_network: str = ""
     host_ipv4: str = ""
     client_leg: L2Leg | None = None
     host_leg: L2Leg | None = None
@@ -151,13 +152,14 @@ class RoutedPath:
 
 @dataclass(frozen=True)
 class EndpointAddress:
-    """An endpoint's compiled static address, gateway and segment."""
+    """Static address or DHCP segment route target from a compiled E5 action."""
 
     device_id: str
     ipv4: str
     netmask: str
     gateway: str
     segment_id: str
+    network: str = ""
 
 
 class RoutedPlanIndex:
@@ -329,7 +331,16 @@ class RoutedPlanIndex:
         router_count: int,
     ) -> tuple[RouteHop, ...] | str:
         """Follow the compiled routes from `start` to the destination segment."""
-        address = ipaddress.ip_address(destination.ipv4)
+        target_network = (
+            ipaddress.ip_network(destination.network, strict=True)
+            if destination.network
+            else None
+        )
+        address = (
+            target_network.network_address
+            if target_network is not None
+            else ipaddress.ip_address(destination.ipv4)
+        )
         hops: list[RouteHop] = []
         current = start.device_id
         visited: list[str] = []
@@ -339,10 +350,24 @@ class RoutedPlanIndex:
             if len(visited) > router_count:
                 return f"route_chain_unbounded:{destination.segment_id}"
             visited.append(current)
+            candidates = self.routes.get(current, ())
+            if target_network is not None and any(
+                network.subnet_of(target_network)
+                and network.prefixlen > target_network.prefixlen
+                for network, _action in candidates
+            ):
+                return (
+                    "route_shadows_client_network:"
+                    f"{self.names.get(current, current)}:{target_network}"
+                )
             matches = [
                 (network, action)
-                for network, action in self.routes.get(current, ())
-                if address in network
+                for network, action in candidates
+                if (
+                    target_network.subnet_of(network)
+                    if target_network is not None
+                    else address in network
+                )
             ]
             if not matches:
                 return f"route_missing:{self.names.get(current, current)}:{destination.segment_id}"
@@ -426,7 +451,16 @@ def derive_routed_path(
                 f"endpoint_gateway_mismatch:{endpoint.device_id}:"
                 f"{endpoint.gateway or 'unset'}!={gateway.ipv4}"
             )
-        if ipaddress.ip_address(endpoint.ipv4) not in gateway.network:
+        if endpoint.network:
+            try:
+                selected_network = ipaddress.ip_network(endpoint.network, strict=True)
+            except ValueError:
+                return refused(f"endpoint_network_invalid:{endpoint.device_id}")
+            if selected_network != gateway.network:
+                return refused(
+                    f"endpoint_network_differs_from_gateway:{endpoint.device_id}"
+                )
+        elif ipaddress.ip_address(endpoint.ipv4) not in gateway.network:
             return refused(f"endpoint_outside_gateway_network:{endpoint.device_id}")
     client_leg = index.leg(client.device_id, client_gateway)
     if isinstance(client_leg, str):
@@ -463,6 +497,7 @@ def derive_routed_path(
         client_device_id=client.device_id,
         host_device_id=host.device_id,
         client_ipv4=client.ipv4,
+        client_network=client.network,
         host_ipv4=host.ipv4,
         client_leg=client_leg,
         host_leg=host_leg,
@@ -470,6 +505,33 @@ def derive_routed_path(
         reverse=reverse,
         action_ids=frozenset(ids),
     )
+
+
+def dhcp_endpoint_networks(
+    actions: Iterable[object],
+) -> Mapping[str, EndpointAddress]:
+    """Index DHCP clients by their selected segment, never by a guessed IP."""
+    found: dict[str, EndpointAddress] = {}
+    for action in actions:
+        if _kind(action) != "set_endpoint_dhcp":
+            continue
+        try:
+            network = ipaddress.ip_network(
+                f"{action.network}/{action.prefix}", strict=True
+            )
+        except ValueError:
+            continue
+        if not isinstance(network, ipaddress.IPv4Network):
+            continue
+        found[str(action.device_id)] = EndpointAddress(
+            device_id=str(action.device_id),
+            ipv4="",
+            netmask=str(action.netmask),
+            gateway=str(action.gateway),
+            segment_id=str(action.segment_id),
+            network=str(network),
+        )
+    return found
 
 
 def endpoint_addresses(actions: Iterable[object]) -> Mapping[str, EndpointAddress]:

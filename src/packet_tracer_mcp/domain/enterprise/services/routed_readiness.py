@@ -20,6 +20,7 @@ decided from the same round.
 
 from __future__ import annotations
 
+import ipaddress
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
@@ -27,6 +28,7 @@ from ..models.routed_forwarding import (
     DeviceForwardingReading,
     RoutedForwardingObservation,
     RoutedForwardingRound,
+    RouteTableReading,
 )
 from ..models.service_plan import ServiceVerificationKind
 
@@ -81,6 +83,7 @@ class RoutedDependent:
     host_gateway: GatewayInterfaceExpectation
     forward: tuple[HopExpectation, ...] = ()
     reverse: tuple[HopExpectation, ...] = ()
+    client_network: str = ""
 
     @property
     def device_ids(self) -> tuple[str, ...]:
@@ -103,11 +106,12 @@ class RoutedRequirement:
     host_segment_id: str
     device_ids: tuple[str, ...]
     dependents: tuple[RoutedDependent, ...]
+    purpose: str = "routed_forwarding"
 
     @property
     def key(self) -> GroupKey:
         """Return the complete identity one routed observation answers."""
-        return ("routed_forwarding", self.client_segment_id, self.host_segment_id)
+        return (self.purpose, self.client_segment_id, self.host_segment_id)
 
 
 @dataclass(frozen=True)
@@ -138,12 +142,67 @@ def _interface_cause(
     return ""
 
 
+def network_route_coverage_cause(
+    table: RouteTableReading,
+    network: str,
+    *,
+    next_hop: str = "",
+    interface: str,
+    connected: bool = False,
+) -> str:
+    """Prove one observed route decision covers the whole DHCP segment.
+
+    A more specific route within the segment is acceptable only when it
+    preserves the same next hop and egress. The table must already be a
+    complete, attributed router reading at the caller's boundary.
+    """
+    try:
+        target = ipaddress.IPv4Network(network, strict=True)
+        selected = table.longest_match(str(target.network_address))
+        if not selected:
+            return "network_route_missing"
+        overlapping = [
+            (ipaddress.IPv4Network(f"{row.network}/{row.prefix_length}"), row)
+            for row in table.rows
+            if ipaddress.IPv4Network(f"{row.network}/{row.prefix_length}").overlaps(
+                target
+            )
+        ]
+        selected_networks = [
+            ipaddress.IPv4Network(f"{row.network}/{row.prefix_length}")
+            for row in selected
+        ]
+    except ValueError:
+        return "network_route_unreadable"
+    if any(not target.subnet_of(item) for item in selected_networks):
+        return "network_route_partial_coverage"
+
+    def follows(row) -> bool:
+        if connected:
+            return row.connected and row.interface.casefold() == interface.casefold()
+        return row.next_hop == next_hop and (
+            not row.interface or row.interface.casefold() == interface.casefold()
+        )
+
+    if any(not follows(row) for row in selected):
+        return "network_route_selected_path_differs"
+    selected_prefix = selected_networks[0].prefixlen
+    if any(
+        route.prefixlen > selected_prefix and not follows(row)
+        for route, row in overlapping
+    ):
+        return "network_route_shadow"
+    return ""
+
+
 def _direction(
     start: GatewayInterfaceExpectation,
     hops: Sequence[HopExpectation],
     end: GatewayInterfaceExpectation,
     destination: str,
     readings: Mapping[str, DeviceForwardingReading],
+    *,
+    destination_network: str = "",
 ) -> RoutedVerdict:
     """Walk one compiled chain against the readings; the first break decides."""
 
@@ -173,6 +232,19 @@ def _direction(
         table = here.route_table
         assert table is not None  # authoritative implies a parsed table
         rows = table.longest_match(destination)
+        if destination_network:
+            network_cause = network_route_coverage_cause(
+                table,
+                destination_network,
+                next_hop=hop.next_hop,
+                interface=hop.egress_interface,
+            )
+            if network_cause:
+                return RoutedVerdict(
+                    False,
+                    ROUTED_ROUTE,
+                    f"{network_cause}:{here.device_name}:{destination_network}",
+                )
         if not rows:
             return RoutedVerdict(
                 False, ROUTED_ROUTE, f"route_missing:{here.device_name}:{destination}"
@@ -249,6 +321,19 @@ def _direction(
     table = last.route_table
     assert table is not None
     rows = table.longest_match(destination)
+    if destination_network:
+        network_cause = network_route_coverage_cause(
+            table,
+            destination_network,
+            interface=end.interface,
+            connected=True,
+        )
+        if network_cause:
+            return RoutedVerdict(
+                False,
+                ROUTED_ROUTE,
+                f"{network_cause}:{last.device_name}:{destination_network}",
+            )
     delivering = [
         row
         for row in rows
@@ -289,6 +374,11 @@ def routed_verdict(
         dependent.client_gateway,
         dependent.client_ipv4,
         readings,
+        destination_network=(
+            dependent.client_network
+            if dependent.kind is ServiceVerificationKind.DHCP_LEASE
+            else ""
+        ),
     )
     if not reverse.admitted:
         return RoutedVerdict(False, reverse.dimension, "return_" + reverse.cause)
@@ -425,7 +515,19 @@ def routed_round_facts(
     readings = round_readings(round_, names)
     wanted_interfaces: dict[str, set[str]] = {}
     wanted_destinations: dict[str, set[str]] = {}
+    wanted_networks: dict[str, set[str]] = {}
     for dependent in dependents:
+        if (
+            dependent.kind is ServiceVerificationKind.DHCP_LEASE
+            and dependent.client_network
+        ):
+            for hop in dependent.reverse:
+                wanted_networks.setdefault(hop.device_id, set()).add(
+                    dependent.client_network
+                )
+            wanted_networks.setdefault(dependent.client_gateway.device_id, set()).add(
+                dependent.client_network
+            )
         for gateway in (dependent.client_gateway, dependent.host_gateway):
             wanted_interfaces.setdefault(gateway.device_id, set()).add(
                 gateway.interface
@@ -462,6 +564,21 @@ def routed_round_facts(
                     for row in reading.interface(name)
                 ]
                 for name in sorted(wanted_interfaces.get(device_id, ()))
+            },
+            "network_routes": {
+                network: [
+                    {
+                        "code": row.code,
+                        "prefix": f"{row.network}/{row.prefix_length}",
+                        "next_hop": row.next_hop,
+                        "interface": row.interface,
+                    }
+                    for row in (table.rows if table is not None else ())
+                    if ipaddress.IPv4Network(
+                        f"{row.network}/{row.prefix_length}"
+                    ).overlaps(ipaddress.IPv4Network(network))
+                ]
+                for network in sorted(wanted_networks.get(device_id, ()))
             },
             "routes": {
                 destination: [

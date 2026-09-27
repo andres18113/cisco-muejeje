@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from ipaddress import IPv4Address, ip_address
 from time import monotonic
 from typing import Protocol
 
@@ -66,6 +67,7 @@ from ...domain.enterprise.services.configuration_dependencies import (
     ConfigurationDependencyError,
     order_dependency_actions,
 )
+from ...domain.enterprise.services.dhcp_lease_evidence import normalized_mac
 from ...domain.enterprise.services.service_access_readiness import (
     CAUSE_READINESS_NOT_DECLARED,
     HTTP_REQUEST_KINDS,
@@ -89,6 +91,118 @@ from .service_access_readiness_gate import (
 #: default: it means the caller declared nothing, and it BLOCKS every client
 #: request rather than allowing one. See `ServiceApplicator.apply`.
 _ReadinessDecision = ServiceAccessReadinessGate | ReadinessNotRequired
+
+
+def bind_routed_lease_result(
+    readiness: _ReadinessDecision | None,
+    expectation: ServiceVerificationExpectation,
+    result: ServiceVerificationResult,
+) -> ServiceVerificationResult:
+    """Bind only a fresh stable physical-pool lease to routed readiness."""
+    if (
+        not isinstance(readiness, ServiceAccessReadinessGate)
+        or expectation.kind is not ServiceVerificationKind.DHCP_LEASE
+        or not readiness.requires_lease_binding(expectation.client_device_id)
+        or result.status is not ActionExecutionStatus.VERIFIED
+    ):
+        return result
+    observed = result.observed
+    address = observed.get("client_ipv4")
+    mask = observed.get("client_netmask")
+    mac = observed.get("client_mac")
+    samples = observed.get("stable_samples")
+    if (
+        result.observation is not ObservationFact.OBSERVED
+        or result.claim_level != "attributed_to_effective_server_pool"
+        or not result.fresh_evidence
+        or not isinstance(address, str)
+        or not isinstance(mask, str)
+        or not isinstance(mac, str)
+        or not normalized_mac(mac)
+        or isinstance(samples, bool)
+        or not isinstance(samples, int)
+        or samples < 2
+    ):
+        return result.model_copy(
+            update={
+                "status": ActionExecutionStatus.UNKNOWN,
+                "failure_code": ConfigurationFailureCode.OUTCOME_UNKNOWN,
+                "observation": ObservationFact.INCONCLUSIVE,
+                "cause": "routed_lease_identity_unusable",
+            }
+        )
+    expected_pool = expectation.expected.get("effective_pool_name")
+    if not isinstance(expected_pool, str) or not expected_pool:
+        return result.model_copy(
+            update={
+                "status": ActionExecutionStatus.UNKNOWN,
+                "failure_code": ConfigurationFailureCode.OUTCOME_UNKNOWN,
+                "observation": ObservationFact.INCONCLUSIVE,
+                "cause": "routed_lease_expected_pool_unreadable",
+            }
+        )
+    if observed.get("effective_pool_name") != expected_pool:
+        return result.model_copy(
+            update={
+                "status": ActionExecutionStatus.FAILED,
+                "failure_code": ConfigurationFailureCode.BEHAVIORAL_VERIFICATION_FAILED,
+                "observation": ObservationFact.CONTRADICTED,
+                "cause": "routed_lease_physical_pool_mismatch",
+            }
+        )
+    try:
+        lease_address = ip_address(address)
+        first = ip_address(str(expectation.expected["lease_start"]))
+        last = ip_address(str(expectation.expected["lease_end"]))
+        raw_exclusions = json.loads(
+            str(expectation.expected.get("excluded_ranges_json", "[]"))
+        )
+        if not isinstance(raw_exclusions, list):
+            raise ValueError("excluded ranges are not a list")
+        exclusions = [
+            (ip_address(item["start"]), ip_address(item["end"]))
+            for item in raw_exclusions
+            if isinstance(item, dict)
+        ]
+        if len(exclusions) != len(raw_exclusions):
+            raise ValueError("excluded range is not an object")
+        if not all(
+            isinstance(item, IPv4Address) for item in (lease_address, first, last)
+        ):
+            raise ValueError("lease policy is not IPv4")
+    except (ValueError, KeyError, TypeError):
+        return result.model_copy(
+            update={
+                "status": ActionExecutionStatus.UNKNOWN,
+                "failure_code": ConfigurationFailureCode.OUTCOME_UNKNOWN,
+                "observation": ObservationFact.INCONCLUSIVE,
+                "cause": "routed_lease_policy_unreadable",
+            }
+        )
+    if not first <= lease_address <= last or any(
+        start <= lease_address <= end for start, end in exclusions
+    ):
+        return result.model_copy(
+            update={
+                "status": ActionExecutionStatus.FAILED,
+                "failure_code": ConfigurationFailureCode.BEHAVIORAL_VERIFICATION_FAILED,
+                "observation": ObservationFact.CONTRADICTED,
+                "cause": "routed_lease_outside_pool_window",
+            }
+        )
+    try:
+        readiness.bind_verified_lease(expectation.client_device_id, address, mask)
+    except ValueError:
+        return result.model_copy(
+            update={
+                "status": ActionExecutionStatus.FAILED,
+                "failure_code": ConfigurationFailureCode.BEHAVIORAL_VERIFICATION_FAILED,
+                "observation": ObservationFact.CONTRADICTED,
+                "cause": "routed_lease_outside_policy_or_changed",
+            }
+        )
+    return result
+
 
 #: How a verification expectation touches the environment it reads. It decides
 #: what may still run after the action it depends on left its outcome
@@ -1149,7 +1263,9 @@ class ServiceApplicator:
                     row = row.model_copy(
                         update={"limitations": [*row.limitations, recovery]},
                     )
-                results[expectation.id] = row
+                results[expectation.id] = bind_routed_lease_result(
+                    self._readiness, expectation, row
+                )
             except Exception as exc:
                 # A reader that raised observed nothing, so the outcome is
                 # unknown, not failed. FAILED here would be a fresh negative

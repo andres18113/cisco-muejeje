@@ -19,6 +19,7 @@ from ..models.configuration import (
     ConfigurationIssueSeverity,
     ConfigurationPlan,
     ConfigureDhcpPool,
+    ConfigureDhcpRelay,
     ConfigureRoutedInterface,
     ConfigureSubinterface,
     ConfigureSvi,
@@ -274,7 +275,8 @@ class ServiceCompiler:
                     )
                 )
             if (
-                requirement.segment_id
+                service_type is not ServiceType.DHCP
+                and requirement.segment_id
                 and requirement.segment_id != host_foundation.segment_id
             ):
                 issues.append(
@@ -476,7 +478,11 @@ class ServiceCompiler:
                     host_device_name=host.name,
                     host_model=host.model,
                     address=address,
-                    segment_id=host_foundation.segment_id,
+                    segment_id=(
+                        requirement.segment_id
+                        if service_type is ServiceType.DHCP
+                        else host_foundation.segment_id
+                    ),
                     client_device_ids=client_ids,
                     action_ids=[item.id for item in service_actions],
                     protocol=protocol,
@@ -542,6 +548,21 @@ class ServiceCompiler:
                 if item.kind is ServiceVerificationKind.DHCP_LEASE
                 and item.client_device_id
             }
+            dhcp_service_ids = {
+                item.id for item in services if item.service_type is ServiceType.DHCP
+            }
+            binding_by_client: dict[str, list[str]] = defaultdict(list)
+            for item in expectations:
+                if (
+                    item.service_id in dhcp_service_ids
+                    and item.client_device_id
+                    and item.kind
+                    in {
+                        ServiceVerificationKind.CLIENT_GATEWAY,
+                        ServiceVerificationKind.CLIENT_DNS_SERVER,
+                    }
+                ):
+                    binding_by_client[item.client_device_id].append(item.id)
             server_state_by_service = {
                 item.service_id: item.id
                 for item in expectations
@@ -557,21 +578,19 @@ class ServiceCompiler:
                     and action.host_device_id in lease_by_client
                 ):
                     action.verification_dependencies = [
-                        lease_by_client[action.host_device_id]
+                        lease_by_client[action.host_device_id],
+                        *binding_by_client.get(action.host_device_id, []),
                     ]
             for expectation in expectations:
                 if (
-                    expectation.kind
-                    not in {
-                        ServiceVerificationKind.DHCP_LEASE,
-                        ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED,
-                    }
+                    expectation.service_id not in dhcp_service_ids
                     and expectation.client_device_id in lease_by_client
                 ):
                     expectation.depends_on = sorted(
                         {
                             *expectation.depends_on,
                             lease_by_client[expectation.client_device_id],
+                            *binding_by_client.get(expectation.client_device_id, []),
                         }
                     )
             for action in actions:
@@ -1274,11 +1293,11 @@ class ServiceCompiler:
                 )
             )
             return []
+        remote = host_foundation.segment_id != first.segment_id
         if (
-            server_address not in network
+            (not remote and server_address not in network)
             or gateway not in network
             or str(network.netmask) != first.netmask
-            or host_foundation.segment_id != first.segment_id
         ):
             issues.append(
                 _error(
@@ -1288,6 +1307,22 @@ class ServiceCompiler:
                 )
             )
             return []
+        if remote:
+            relays = [
+                item
+                for item in configuration.actions
+                if isinstance(item, ConfigureDhcpRelay)
+                and item.segment_id == first.segment_id
+            ]
+            if len(relays) != 1 or relays[0].server_address != str(server_address):
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.DHCP_RELAY_REQUIRED,
+                        "The remote DHCP segment lacks one exact E5 helper to its server.",
+                        service_id,
+                    )
+                )
+                return []
         static = {
             ipaddress.ip_address(item.ipv4)
             for item in configuration.actions
@@ -1319,9 +1354,9 @@ class ServiceCompiler:
                 return []
         excluded = sorted(
             {
-                server_address,
                 gateway,
                 *static,
+                *((server_address,) if server_address in network else ()),
                 *(
                     (dns_address,)
                     if dns_address is not None and dns_address in network
@@ -1542,29 +1577,19 @@ class ServiceCompiler:
             for item in excluded_ranges
         )
         cursor = lower
-        remaining = max_users
-        first: int | None = None
-        last: int | None = None
         for excluded_start, excluded_end in [*exclusions, (upper + 1, upper + 1)]:
             if excluded_end < cursor:
                 continue
             interval_end = min(upper, excluded_start - 1)
-            if cursor <= interval_end:
-                if first is None:
-                    first = cursor
-                available = interval_end - cursor + 1
-                if available >= remaining:
-                    last = cursor + remaining - 1
-                    remaining = 0
-                    break
-                remaining -= available
-                last = interval_end
+            if cursor + max_users - 1 <= interval_end:
+                return (
+                    str(ipaddress.ip_address(cursor)),
+                    str(ipaddress.ip_address(cursor + max_users - 1)),
+                )
             cursor = max(cursor, excluded_end + 1)
             if cursor > upper:
                 break
-        if remaining or first is None or last is None:
-            return None
-        return str(ipaddress.ip_address(first)), str(ipaddress.ip_address(last))
+        return None
 
     def _actions(
         self,
@@ -2060,6 +2085,48 @@ class ServiceCompiler:
                         },
                     )
                     expectations.append(lease)
+                    expectations.append(
+                        ServiceVerificationExpectation(
+                            id=_stable_id("verify-dhcp-gateway", service.id, client_id),
+                            service_id=service.id,
+                            action_id=lease.action_id,
+                            kind=ServiceVerificationKind.CLIENT_GATEWAY,
+                            evidence_kind=ServiceEvidenceKind.BEHAVIORAL,
+                            host_device_id=service.host_device_id,
+                            host_device_name=service.host_device_name,
+                            client_device_id=client_id,
+                            client_device_name=client.name,
+                            host_model=service.host_model,
+                            client_model=client.model,
+                            depends_on=[lease.id],
+                            expected={
+                                "gateway": pool.gateway,
+                                "interface": foundation.interface,
+                            },
+                            required=lease.required,
+                        )
+                    )
+                    if pool.dns_server:
+                        expectations.append(
+                            ServiceVerificationExpectation(
+                                id=_stable_id(
+                                    "verify-dhcp-resolver", service.id, client_id
+                                ),
+                                service_id=service.id,
+                                action_id=lease.action_id,
+                                kind=ServiceVerificationKind.CLIENT_DNS_SERVER,
+                                evidence_kind=ServiceEvidenceKind.BEHAVIORAL,
+                                host_device_id=service.host_device_id,
+                                host_device_name=service.host_device_name,
+                                client_device_id=client_id,
+                                client_device_name=client.name,
+                                host_model=service.host_model,
+                                client_model=client.model,
+                                depends_on=[lease.id],
+                                expected={"server_address": pool.dns_server},
+                                required=lease.required,
+                            )
+                        )
                     if requirement.verification_mode != "state_only":
                         expectations.append(
                             ServiceVerificationExpectation(

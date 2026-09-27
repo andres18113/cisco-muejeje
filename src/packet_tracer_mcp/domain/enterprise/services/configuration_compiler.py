@@ -27,6 +27,7 @@ from ..models.configuration import (
     ConfigurationPolicy,
     ConfigureAccessPort,
     ConfigureDhcpPool,
+    ConfigureDhcpRelay,
     ConfigureHostname,
     ConfigureRoutedInterface,
     ConfigureSerialClock,
@@ -390,6 +391,10 @@ class ConfigurationCompiler:
             issues,
         )
         actions.extend(endpoint_actions)
+        relay_actions, relay_by_segment = self._relay_actions(
+            policy, endpoint_actions, gateway_actions, gateway_action_by_segment, issues
+        )
+        actions.extend(relay_actions)
         pool_actions, pool_by_segment = self._dhcp_actions(
             devices,
             site_segments,
@@ -443,6 +448,8 @@ class ConfigurationCompiler:
                 continue
             allocation = allocations[segment.name]
             dependencies = [] if delegated else [pool.id]
+            if segment.name in relay_by_segment:
+                dependencies.append(relay_by_segment[segment.name].id)
             if access_dependency:
                 dependencies.append(access_dependency)
             native_binding = native_client_bindings.get(
@@ -1639,6 +1646,82 @@ class ConfigurationCompiler:
                     interfaces.setdefault(device_id, interface)
         return interfaces
 
+    @staticmethod
+    def _relay_actions(
+        policy: ConfigurationPolicy,
+        endpoint_actions: list[ConfigurationAction],
+        gateway_actions: list[ConfigurationAction],
+        gateway_action_by_segment: dict[str, str],
+        issues: list[ConfigurationIssue],
+    ) -> tuple[list[ConfigureDhcpRelay], dict[str, ConfigureDhcpRelay]]:
+        """Place one helper on each selected remote client gateway."""
+        addressed = {
+            action.device_id: action
+            for action in endpoint_actions
+            if isinstance(action, SetEndpointStaticAddress)
+        }
+        gateways = {action.id: action for action in gateway_actions}
+        result: list[ConfigureDhcpRelay] = []
+        by_segment: dict[str, ConfigureDhcpRelay] = {}
+        for segment_id, server_id in sorted(
+            policy.delegated_dhcp_server_device_ids.items()
+        ):
+            server = addressed.get(server_id)
+            if server is None:
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.DHCP_RELAY_REQUIRED,
+                        f"DHCP server {server_id!r} lacks an E5 static address.",
+                        segment_id,
+                    )
+                )
+                continue
+            if server.segment_id == segment_id:
+                continue
+            gateway = gateways.get(gateway_action_by_segment.get(segment_id, ""))
+            if isinstance(gateway, ConfigureRoutedInterface):
+                interface = gateway.interface
+            elif isinstance(gateway, ConfigureSubinterface):
+                interface = f"{gateway.parent_interface}.{gateway.vlan_id}"
+            else:
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.DHCP_RELAY_REQUIRED,
+                        f"Client segment {segment_id!r} lacks a supported router gateway interface.",
+                        segment_id,
+                    )
+                )
+                continue
+            try:
+                server_address = str(ipaddress.IPv4Address(server.ipv4))
+            except ipaddress.AddressValueError:
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.DHCP_RELAY_REQUIRED,
+                        f"DHCP server {server_id!r} lacks a valid IPv4 address.",
+                        segment_id,
+                    )
+                )
+                continue
+            relay = ConfigureDhcpRelay(
+                id=_action_id(
+                    "dhcp-relay", gateway.device_id, interface, server_address
+                ),
+                phase=ConfigurationPhase.L3_ROUTING,
+                device_id=gateway.device_id,
+                device_name=gateway.device_name,
+                site_id=gateway.site_id,
+                interface=interface,
+                segment_id=segment_id,
+                server_address=server_address,
+                gateway_action_id=gateway.id,
+                depends_on=[gateway.id],
+                required_capability="supports_dhcp_relay",
+            )
+            result.append(relay)
+            by_segment[segment_id] = relay
+        return result, by_segment
+
     def _dhcp_actions(
         self,
         devices: dict[str, DevicePlan],
@@ -1845,6 +1928,13 @@ class ConfigurationCompiler:
                     "interface": interface,
                     "ipv4": action.ipv4,
                     "administrative_up": getattr(action, "administrative_up", True),
+                }
+            elif isinstance(action, ConfigureDhcpRelay):
+                kind = VerificationKind.DHCP_RELAY
+                query = "show_ip_interface"
+                expected = {
+                    "interface": action.interface,
+                    "server_address": action.server_address,
                 }
             elif isinstance(action, ConfigureDhcpPool):
                 kind = VerificationKind.DHCP_POOL

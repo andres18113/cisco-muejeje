@@ -19,6 +19,7 @@ from .models.configuration import (
     ConfigurationAction,
     ConfigureAccessPort,
     ConfigureDhcpPool,
+    ConfigureDhcpRelay,
     ConfigureEthernetLinkMode,
     ConfigureHostname,
     ConfigureInterfaceBandwidth,
@@ -369,6 +370,20 @@ PRODUCT_MUTATION_REPLAY_REGISTRY: tuple[MutationReplayPolicy, ...] = (
         _DECLARATIVE,
         "A static route is keyed by prefix, mask and next hop; reasserting it "
         "leaves the same single route.",
+    ),
+    _action_policy(
+        MutationSurface.CONFIGURATION,
+        ConfigureDhcpRelay,
+        _CONFIGURATION_ENTRYPOINT,
+        ReplayClassification.UNKNOWN,
+        _UNMEASURED,
+        (
+            ReplayContainment.CAPABILITY_GATE,
+            ReplayContainment.NO_BLIND_RETRY,
+            ReplayContainment.INDEPENDENT_READBACK,
+        ),
+        "IOS helper-address addition has no qualified replay semantics on this "
+        "Packet Tracer build; one exact-interface readback gates dependent DHCP mode.",
     ),
     _action_policy(
         MutationSurface.CONFIGURATION,

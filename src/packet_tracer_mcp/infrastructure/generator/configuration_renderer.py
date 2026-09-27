@@ -11,6 +11,7 @@ from ...domain.enterprise.models.configuration import (
     ConfigurationPhase,
     ConfigureAccessPort,
     ConfigureDhcpPool,
+    ConfigureDhcpRelay,
     ConfigureEthernetLinkMode,
     ConfigureHostname,
     ConfigureInterfaceBandwidth,
@@ -70,6 +71,7 @@ _RENDERABLE = (
     ConfigureSvi,
     ConfigureSubinterface,
     ConfigureDhcpPool,
+    ConfigureDhcpRelay,
     ConfigureSerialClock,
     ConfigureInterfaceBandwidth,
     ConfigureEthernetLinkMode,
@@ -256,6 +258,16 @@ class PacketTracerIosRenderer:
                 next_hop = ipaddress.ip_address(action.next_hop)
                 lines.append(
                     f"ip route {network.network_address} {network.netmask} {next_hop}"
+                )
+            elif isinstance(action, ConfigureDhcpRelay):
+                interface = validate_ios_interface_name(action.interface)
+                server_address = str(ipaddress.IPv4Address(action.server_address))
+                lines.extend(
+                    [
+                        f"interface {interface}",
+                        f" ip helper-address {server_address}",
+                        " exit",
+                    ]
                 )
             elif isinstance(action, ConfigureDhcpPool):
                 pool_name = safe_ios_identifier(action.pool_name)

@@ -40,8 +40,9 @@ from __future__ import annotations
 
 import secrets as _random
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from ipaddress import ip_network
 from time import monotonic
 from typing import Any
 
@@ -50,6 +51,7 @@ from ...domain.enterprise.models.configuration import (
     ConfigurationIssueCode,
     ConfigurationIssueSeverity,
     ConfigureAccessPort,
+    ConfigureDhcpRelay,
     SetEndpointDhcp,
     SetEndpointStaticAddress,
 )
@@ -117,9 +119,11 @@ from ...domain.enterprise.services.routed_service_path import (
     RoutedPath,
     RoutedPlanIndex,
     derive_routed_path,
+    dhcp_endpoint_networks,
     endpoint_addresses,
 )
 from ...domain.enterprise.services.service_access_readiness import (
+    DHCP_ACQUISITION_KINDS,
     SERVICE_REQUEST_KINDS,
     access_group_key,
     continuity_group_key,
@@ -1930,6 +1934,31 @@ def apply_enterprise_services(
     )
 
 
+def _dhcp_prelease_paths(
+    paths: Mapping[tuple[str, str], RoutedPath],
+    services: Sequence[ServiceDefinition],
+) -> dict[tuple[str, str], RoutedPath]:
+    """Use a labeled network target only for pre-lease route observation.
+
+    The original path keeps `client_ipv4` empty until an attributed lease
+    binds the application gate. A network address here is a route lookup
+    target, never a claimed client address or a static endpoint fallback.
+    """
+    selected = {item.id for item in services if item.service_type is ServiceType.DHCP}
+    result: dict[tuple[str, str], RoutedPath] = {}
+    for (service_id, _client_id), path in paths.items():
+        if service_id not in selected or not path.client_network:
+            continue
+        target = ip_network(path.client_network, strict=True)
+        pair = (path.client_device_id, path.host_device_id)
+        candidate = replace(path, client_ipv4=str(target.network_address))
+        prior = result.get(pair)
+        if prior is not None and prior != candidate:
+            raise ValueError("conflicting DHCP pre-lease routed paths")
+        result[pair] = candidate
+    return result
+
+
 def _execute(
     run: _Run,
     *,
@@ -1970,6 +1999,45 @@ def _execute(
     )
     configuration_runtime = _GatedConfigurationRuntime(runtimes.configuration, run.gate)
     service_runtime = _GatedServiceRuntime(runtimes.services, run.gate)
+    dhcp_lease_ids = {
+        item.client_device_id: item.id
+        for item in selected_plan.verification_expectations
+        if item.kind is ServiceVerificationKind.DHCP_LEASE and item.client_device_id
+    }
+    prelease_gate: ServiceAccessReadinessGate | None = None
+    pre_dhcp_readiness = None
+    if dhcp_lease_ids:
+        prelease_gate = ServiceAccessReadinessGate(
+            derive_access_readiness_plan(
+                configuration_actions=configuration_plan.actions,
+                verification_expectations=selected_plan.verification_expectations,
+                request_kinds=DHCP_ACQUISITION_KINDS,
+                routed_paths=_dhcp_prelease_paths(
+                    routed_paths or {}, selected_plan.services
+                ),
+            ),
+            _access_forwarding_observer(configuration_runtime),
+            clock=monotonic,
+            device_names=deployed_names,
+            continuity_observer=_trunk_continuity_observer(configuration_runtime),
+            routed_observer=_routed_forwarding_observer(configuration_runtime),
+        )
+        prelease_gate.begin_invocation()
+
+        def pre_dhcp_readiness(actions: Sequence[SetEndpointDhcp]) -> dict[str, bool]:
+            """Sample each selected DHCP path before its E5 mode effect."""
+            assert prelease_gate is not None
+            return {
+                action.id: bool(
+                    (
+                        verdict := prelease_gate.decide(
+                            dhcp_lease_ids.get(action.device_id, "")
+                        )
+                    )
+                    and verdict.admitted
+                )
+                for action in actions
+            }
 
     # -- E1: the bounded E5 application -----------------------------------
     run.transition(ServiceStage.CONFIGURATION_APPLY, outcome="started")
@@ -1983,6 +2051,7 @@ def _execute(
             mutation_action_ids=sorted(mutation_scope),
             excluded_action_ids=sorted(excluded),
             retained_action_results=retained_action_results,
+            pre_dhcp_readiness=pre_dhcp_readiness,
         )
     except ServiceEffectHalted as exc:
         return _halted(
@@ -1999,6 +2068,12 @@ def _execute(
             models=models,
         )
     run.record.configuration_result = configuration_result
+    prelease_rows = (
+        [{"phase": "dhcp_prelease", **row} for row in prelease_gate.rows()]
+        if prelease_gate is not None
+        else []
+    )
+    run.record.operational_readiness = prelease_rows
     run.record.e5_effect_scope = E5EffectScope(
         mutated=list(configuration_result.mutation_action_ids),
         retained=list(configuration_result.retained_action_ids),
@@ -2092,7 +2167,10 @@ def _execute(
         # The derived requirement is still reported, as never observed. A run
         # halted before E6 asked no switch anything, and saying which groups it
         # would have asked is a different statement from omitting them.
-        run.record.operational_readiness = readiness_gate.rows()
+        run.record.operational_readiness = [
+            *prelease_rows,
+            *readiness_gate.rows(),
+        ]
         return _halted(
             run,
             detail=run.gate.reason,
@@ -2134,7 +2212,10 @@ def _execute(
     # Written whichever way the stage ended. A halted run still observed
     # whatever readiness it reached, and hiding that would make the record
     # say the question was never asked.
-    run.record.operational_readiness = readiness_gate.rows()
+    run.record.operational_readiness = [
+        *prelease_rows,
+        *readiness_gate.rows(),
+    ]
     run.record.service_result = service_result
     if service_result is not None:
         run.record.dirty_state = service_result.dirty_state
@@ -2617,12 +2698,14 @@ def _path_admission(
         requirements.setdefault(item.device_id, []).append(item)
     actions = {item.id: item for item in configuration_plan.actions}
     topology = PathTopology(configuration_plan.actions)
-    delegated_clients = {
-        client_id: (service.site_id, service.segment_id)
-        for service in services
-        if service.service_type is ServiceType.DHCP
-        for client_id in service.client_device_ids
-    }
+    delegated_claims: dict[str, set[tuple[str, str]]] = {}
+    for service in services:
+        if service.service_type is not ServiceType.DHCP:
+            continue
+        for client_id in service.client_device_ids:
+            delegated_claims.setdefault(client_id, set()).add(
+                (service.segment_id, service.host_device_id)
+            )
 
     def access_switches(action_id: str) -> set[str]:
         switches: set[str] = set()
@@ -2638,6 +2721,8 @@ def _path_admission(
                 continue
             if isinstance(action, ConfigureAccessPort):
                 switches.add(action.device_id)
+            if isinstance(action, ConfigureDhcpRelay):
+                continue
             pending.extend([*action.depends_on, *action.apply_dependencies])
         return switches
 
@@ -2645,6 +2730,11 @@ def _path_admission(
     routed: dict[tuple[str, str], RoutedPath] = {}
     index: RoutedPlanIndex | None = None
     addresses = endpoint_addresses(configuration_plan.actions)
+    dhcp_networks = dhcp_endpoint_networks(configuration_plan.actions)
+    relays: dict[str, list[ConfigureDhcpRelay]] = {}
+    for action in configuration_plan.actions:
+        if isinstance(action, ConfigureDhcpRelay):
+            relays.setdefault(action.segment_id, []).append(action)
     for service in services:
         placed: set[str] = set()
         segments: dict[str, str] = {}
@@ -2667,20 +2757,22 @@ def _path_admission(
                 unsupported.append(f"{service.id}:{device_id}:foundation_missing")
                 continue
             if isinstance(action, SetEndpointDhcp):
-                delegated = delegated_clients.get(device_id)
-                if delegated != (service.site_id, service.segment_id):
-                    unsupported.append(f"{service.id}:{device_id}:dhcp")
+                claims = delegated_claims.get(device_id, set())
+                if len(claims) != 1 or next(iter(claims))[0] != action.segment_id:
+                    unsupported.append(f"{service.id}:{device_id}:dhcp_authority")
                     continue
             elif not isinstance(action, SetEndpointStaticAddress):
                 unsupported.append(f"{service.id}:{device_id}:not_static")
                 continue
             if (
-                device_id == service.host_device_id
+                service.service_type is not ServiceType.DHCP
+                and device_id == service.host_device_id
                 and action.site_id != service.site_id
             ):
                 unsupported.append(f"{service.id}:{device_id}:foreign_site")
             if (
-                device_id == service.host_device_id
+                service.service_type is not ServiceType.DHCP
+                and device_id == service.host_device_id
                 and requirement.segment_id != service.segment_id
             ):
                 unsupported.append(f"{service.id}:{device_id}:host_segment")
@@ -2700,19 +2792,38 @@ def _path_admission(
                 segments=segments,
             )
             if path.kind is PathKind.ROUTED:
-                client = addresses.get(client_id)
+                client = addresses.get(client_id) or dhcp_networks.get(client_id)
                 host = addresses.get(service.host_device_id)
                 if client is None or host is None:
                     unsupported.append(
-                        f"{service.id}:{client_id}:routed_client_not_static"
+                        f"{service.id}:{client_id}:routed_endpoint_unresolved"
                     )
                     continue
+                relay = None
+                if client.network:
+                    candidates = relays.get(client.segment_id, [])
+                    authority = next(iter(delegated_claims[client_id]))[1]
+                    server_address = addresses.get(authority)
+                    if (
+                        len(candidates) != 1
+                        or server_address is None
+                        or candidates[0].server_address != server_address.ipv4
+                    ):
+                        unsupported.append(
+                            f"{service.id}:{client_id}:dhcp_relay_unresolved"
+                        )
+                        continue
+                    relay = candidates[0]
                 if index is None:
                     index = RoutedPlanIndex(configuration_plan.actions, links)
                 derived = derive_routed_path(index, client=client, host=host)
                 if not derived.admitted:
                     unsupported.append(f"{service.id}:{client_id}:{derived.reason}")
                     continue
+                if relay is not None:
+                    derived = replace(
+                        derived, action_ids=derived.action_ids | {relay.id}
+                    )
                 routed[(service.id, client_id)] = derived
             elif path.kind is PathKind.UNPLACED:
                 unsupported.append(f"{service.id}:{client_id}:{path.reason}")
