@@ -118,12 +118,11 @@ def sp1_topology_intent(address_space: str) -> dict[str, Any]:
     }
 
 
-def sp1_device_catalog(build: str) -> EnterpriseCapabilityAdapter | None:
-    """Return candidate device evidence, or None when the default suffices.
+def sp1_device_candidates(build: str) -> dict[str, list[str]]:
+    """Return, per SP-1 router model, the capability the default catalog lacks.
 
-    None means the default catalog of `build` already supports static routes
-    on every SP-1 router model, so the run uses exactly what the registered
-    tool uses. Otherwise the candidate names only that capability, unverified.
+    Empty means the default catalog of `build` already supports static routes
+    on every SP-1 router model.
     """
     default = capability_catalog_for(build)
     missing = [
@@ -133,12 +132,36 @@ def sp1_device_catalog(build: str) -> EnterpriseCapabilityAdapter | None:
         or getattr(capabilities, SP1_STATIC_ROUTE_CAPABILITY)
         is not CapabilityStatus.SUPPORTED
     ]
-    if not missing:
+    return {model: [SP1_STATIC_ROUTE_CAPABILITY] for model in missing}
+
+
+def sp1_device_catalog(build: str) -> EnterpriseCapabilityAdapter | None:
+    """Return candidate device evidence, or None when the default suffices.
+
+    None means the run uses exactly what the registered tool uses. Otherwise
+    the candidate names only the missing capability, unverified.
+    """
+    candidates = sp1_device_candidates(build)
+    if not candidates:
         return None
-    return candidate_capability_adapter(
-        build,
-        {model: [SP1_STATIC_ROUTE_CAPABILITY] for model in missing},
-        label=SP1_CANDIDATE_LABEL,
+    return candidate_capability_adapter(build, candidates, label=SP1_CANDIDATE_LABEL)
+
+
+def sp1_candidate_evidence(build: str) -> tuple[dict[str, Any], ...]:
+    """Return the exact entries `sp1_device_catalog` injects, for the record."""
+    return tuple(
+        {
+            "build": build,
+            "model": model,
+            "capability": capability,
+            "status": "supported",
+            "source": "static_override",
+            "source_detail": f"candidate:{SP1_CANDIDATE_LABEL}",
+            "confidence": "candidate",
+            "verified": False,
+        }
+        for model, capabilities in sorted(sp1_device_candidates(build).items())
+        for capability in capabilities
     )
 
 
@@ -238,4 +261,5 @@ def sp1_routed_product_contract(
         service_capabilities=final.service_capabilities,
         intent_json=json.dumps(intent, sort_keys=True),
         device_capability_catalog=candidate,
+        device_capability_evidence=sp1_candidate_evidence(build) if candidate else (),
     )

@@ -941,6 +941,31 @@ def _stop_status(status: dict[str, object], finding: str, exc: Exception) -> Non
     ]
 
 
+def _ledger_result_settled(
+    store: ServerPtCommissioningStore,
+    episode: int,
+    attempt: str,
+    used_operations: int,
+    outcome: str,
+) -> bool:
+    """Whether the ledger reloads this phase's result with exactly these facts."""
+    try:
+        value = store.ledger_records().get(
+            phase_record_name(episode, attempt, "qualification", "result")
+        )
+    except (OSError, ValueError):
+        return False
+    return bool(
+        value
+        and value.get("kind") == "phase_result"
+        and value.get("episode") == episode
+        and value.get("attempt_id") == attempt
+        and value.get("phase") == "qualification"
+        and value.get("used_operations") == used_operations
+        and value.get("outcome") == outcome
+    )
+
+
 def _qualification_sealed(
     store: ServerPtCommissioningStore, attempt: str, sources: Mapping[str, str]
 ) -> bool:
@@ -1481,6 +1506,20 @@ def _campaign_main(
             "campaign_id": campaign.campaign_id,
             **_campaign_status(result, active_seconds=active, ledger_result=recorded),
         }
+        if result is not None and not _ledger_result_settled(
+            store,
+            args.episode,
+            attempt,
+            record.budget.used_operations if record is not None else 0,
+            result.outcome.value,
+        ):
+            # A phase whose usage the campaign ledger does not hold is not a
+            # settled phase, whatever the stage concluded.
+            status["outcome"] = "stopped"
+            status["archive_findings"] = [
+                *status.get("archive_findings", []),
+                recorded or "ledger_result_unrecorded:not_reloadable",
+            ]
         # Seal both records before the status is written, so a sealing
         # failure is part of that status; the product record is the decisive
         # E5/E6 evidence. Every persistence failure stops the phase.

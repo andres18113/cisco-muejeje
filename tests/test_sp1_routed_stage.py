@@ -13,6 +13,7 @@ planned product cost; they do not prove the LIVE ledger accounting of it.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -173,6 +174,7 @@ def _run(
     *,
     lifecycle=None,
     before_campus_call=None,
+    wrap_entry=None,
 ):
     """Run one SP-1 stage end to end under its campaign, offline."""
     require_node()
@@ -254,6 +256,13 @@ def _run(
         LAST["switching"] = transport
 
         def boundaries(_root):
+            extra = {}
+            if wrap_entry is not None:
+                extra["sp1_public_product_entry"] = wrap_entry(
+                    service_qualification._native_public_product_entry(
+                        tmp_path, dhcp_authority=False
+                    )
+                )
             return simulated_boundaries(
                 tmp_path,
                 transport,
@@ -265,6 +274,7 @@ def _run(
                 native_product_runtimes=product_runtimes,
                 native_product_endpoint_observer=endpoint_observer,
                 **({"diagnostic_lifecycle": lifecycle} if lifecycle else {}),
+                **extra,
             )
 
         code = service_qualification.main(
@@ -526,7 +536,7 @@ def test_a_contract_for_other_clients_is_refused_before_any_effect(
     )
 
     assert code == 1, summary
-    assert record.primary_failure == "sp1_selected_clients_differ_from_stage"
+    assert record.primary_failure == "sp1_intent_services_differ_from_stage"
     assert LAST["switching"].campus_calls == 0
     assert snapshot["devices"] == []
 
@@ -592,3 +602,104 @@ def test_a_cancellation_inside_the_product_stops_and_is_recorded(
     # Owned cleanup still ran: the fixtures are gone and restoration proven.
     assert snapshot["devices"] == []
     assert record.restoration_proven
+
+
+# -- review findings (independent adversarial review of 2057070..6e5e527) --------
+
+
+def test_an_intent_with_an_extra_client_is_refused_before_any_effect(
+    tmp_path, capsys, monkeypatch
+):
+    """The plans match W1, but the intent the tool recomposes adds a client."""
+    original = sp1_routed_product_contract
+
+    def widened(build, run_id, clients):
+        contract = original(build, run_id, clients)
+        intent = json.loads(contract.intent_json)
+        ids = {item.name: item.id for item in contract.topology.devices}
+        for service in intent["sites"][0]["services"]:
+            service["client_device_ids"].append(ids["BR1-DEFAULT-PC-01"])
+        return replace(contract, intent_json=json.dumps(intent))
+
+    monkeypatch.setattr(service_qualification, "sp1_routed_product_contract", widened)
+
+    code, summary, record, snapshot, _store, _terminal = _run(
+        tmp_path, capsys, monkeypatch, "SP1-ROUTED-W1"
+    )
+
+    assert code == 1, summary
+    assert record.primary_failure == "sp1_intent_services_differ_from_stage"
+    assert LAST["switching"].campus_calls == 0
+    assert snapshot["devices"] == []
+
+
+def test_a_verified_run_missing_one_routed_group_is_not_accepted(
+    tmp_path, capsys, monkeypatch
+):
+    """Requests verified, but the BR2 group's admission is not in the result."""
+
+    def drop_br2(entry):
+        def invoke(*args):
+            result = entry(*args)
+            result.operational_readiness = [
+                row
+                for row in result.operational_readiness
+                if row.get("client_segment_id") != "br2-data"
+            ]
+            return result
+
+        return invoke
+
+    code, summary, record, _snapshot, _store, _terminal = _run(
+        tmp_path, capsys, monkeypatch, "SP1-ROUTED-W2", wrap_entry=drop_br2
+    )
+
+    assert code == 1, summary
+    product = _measured(record)["M-SP1-ROUTED-PRODUCT"]
+    assert product.conclusion is MeasurementConclusion.INCONCLUSIVE
+    assert ["br2-data", "hq-servers"] in product.facts["expected_routed_groups"]
+
+
+def test_a_candidate_run_records_the_exact_injected_evidence(
+    tmp_path, capsys, monkeypatch
+):
+    """Every injected entry is named, digested and matched by the product."""
+    code, summary, record, _snapshot, _store, _terminal = _run(
+        tmp_path, capsys, monkeypatch, "SP1-ROUTED-W1"
+    )
+
+    assert code == 0, summary
+    facts = _measured(record)["M-SP1-ROUTED-PRODUCT"].facts
+    assert facts["product_device_catalog_injected"] is True
+    assert [
+        (item["model"], item["capability"], item["verified"])
+        for item in facts["device_candidate_evidence"]
+    ] == [
+        ("1941", "supports_static_routes", False),
+        ("2911", "supports_static_routes", False),
+    ]
+    assert len(facts["device_candidate_evidence_sha256"]) == 64
+
+
+def test_an_unrecorded_ledger_result_never_reports_success(
+    tmp_path, capsys, monkeypatch
+):
+    """A verified stage whose campaign result cannot be written is not a pass."""
+    real = ServerPtCommissioningStore.save_ledger_record
+
+    def failing(self, name, value):
+        if name.endswith("-qualification-result"):
+            raise OSError("injected ledger write failure")
+        return real(self, name, value)
+
+    monkeypatch.setattr(ServerPtCommissioningStore, "save_ledger_record", failing)
+
+    code, summary, record, _snapshot, _store, _terminal = _run(
+        tmp_path, capsys, monkeypatch, "SP1-ROUTED-W1"
+    )
+
+    assert _measured(record)["M-SP1-ROUTED-PRODUCT"].conclusion is (
+        MeasurementConclusion.SUPPORTED_IN_SAMPLE
+    )
+    assert code != 0, summary
+    assert "ledger_result_unrecorded" in json.dumps(summary["campaign"])

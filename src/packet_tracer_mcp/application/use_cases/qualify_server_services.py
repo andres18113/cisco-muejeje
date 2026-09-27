@@ -35,6 +35,8 @@ composition.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
@@ -131,8 +133,10 @@ from ...domain.enterprise.models.service_qualification import (
     READINESS_DEADLINE_SECONDS,
     READINESS_MAX_READS,
     REQUESTED_RENEWAL_CONTRACT_ABSENT,
+    SP1_DNS_SERVER,
     SP1_ROUTED_STAGES,
     SP1_ROUTERS,
+    SP1_WEB_SERVER,
     BudgetRecord,
     DefaultPoolObservation,
     DiagnosticLifecycleObservation,
@@ -748,6 +752,10 @@ class Q3ProductContract:
     #: build lacks measured static-route support sets it, to candidate
     #: evidence the product record then names.
     device_capability_catalog: Any = None
+    #: The exact candidate evidence entries that catalog adds (build, model,
+    #: capability, status, source and label), recorded by the stage so an
+    #: injected override is reviewable; empty with the default catalog.
+    device_capability_evidence: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass
@@ -6514,14 +6522,79 @@ def _sp1_contract_mismatch(execution: _Execution, contract: Q3ProductContract) -
         for item in definition.links
     }:
         return "sp1_links_differ_from_fixture"
-    planned = {
-        item.client_device_name
-        for item in contract.service_plan.verification_expectations
+    clients = set(definition.selected_clients)
+    hosts = {SP1_DNS_SERVER, SP1_WEB_SERVER}
+    ids = {item.name: item.id for item in contract.topology.devices}
+    # The intent is what the registered tool recomposes from, so it is
+    # checked itself, not only the plans composed from it.
+    try:
+        intent = json.loads(contract.intent_json)
+        services = [
+            service
+            for site in intent.get("sites", [])
+            for service in site.get("services", [])
+        ]
+        declared = sorted(
+            (
+                service.get("service_type"),
+                service.get("host_device_id"),
+                tuple(sorted(service.get("client_device_ids", []))),
+            )
+            for service in services
+        )
+    except (TypeError, ValueError, AttributeError):
+        return "sp1_intent_unreadable"
+    wanted_clients = tuple(sorted(ids[name] for name in clients if name in ids))
+    if len(wanted_clients) != len(clients) or declared != sorted(
+        [
+            ("dns", ids.get(SP1_DNS_SERVER), wanted_clients),
+            ("http", ids.get(SP1_WEB_SERVER), wanted_clients),
+        ]
+    ):
+        return "sp1_intent_services_differ_from_stage"
+    if any(
+        item.host_device_name not in hosts for item in contract.service_plan.actions
+    ):
+        return "sp1_service_action_outside_the_hosts"
+    expectations = contract.service_plan.verification_expectations
+    if any(
+        item.host_device_name not in hosts
+        or (item.client_device_name and item.client_device_name not in clients)
+        for item in expectations
+    ):
+        return "sp1_expectation_outside_the_selection"
+    required = sorted(
+        (item.client_device_name, item.kind.value)
+        for item in expectations
         if item.kind in SP1_REQUIRED_CLIENT_KINDS
-    }
-    if planned != set(definition.selected_clients):
+    )
+    if required != sorted(
+        (name, kind.value) for name in clients for kind in SP1_REQUIRED_CLIENT_KINDS
+    ):
         return "sp1_selected_clients_differ_from_stage"
     return ""
+
+
+def _sp1_expected_routed_groups(
+    execution: _Execution, contract: Q3ProductContract
+) -> set[tuple[str, str]]:
+    """Return every (client segment, host segment) pair the selection routes.
+
+    Derived from the composed endpoint addressing: each selected client and
+    each server sit in one segment, and a request between two segments is a
+    routed dependency the product must have admitted by a routed group.
+    """
+    segments = {
+        item.device_name: item.segment_id
+        for item in contract.configuration_plan.actions
+        if isinstance(item, SetEndpointStaticAddress)
+    }
+    return {
+        (segments.get(client, ""), segments.get(host, ""))
+        for client in execution.definition.selected_clients
+        for host in (SP1_DNS_SERVER, SP1_WEB_SERVER)
+        if segments.get(client, "") != segments.get(host, "")
+    }
 
 
 def _sp1_client_checks(
@@ -6686,6 +6759,12 @@ def _run_sp1_routed_product(execution: _Execution) -> None:
             for row in product.operational_readiness
             if row.get("kind") == "routed_forwarding"
         ]
+        routed_keys = [
+            (row.get("client_segment_id"), row.get("host_segment_id")) for row in routed
+        ]
+        expected_groups = _sp1_expected_routed_groups(execution, contract)
+        candidate = contract.device_capability_catalog is not None
+        injected = "device_capability_catalog:injected" in product.limitations
         accepted = (
             product.refusal_code is ServiceEntryRefusal.NONE
             and product.status is ServiceRunStatus.VERIFIED
@@ -6700,10 +6779,13 @@ def _run_sp1_routed_product(execution: _Execution) -> None:
                 for name in clients
                 for kind in SP1_REQUIRED_CLIENT_KINDS
             )
-            and bool(routed)
+            and bool(expected_groups)
+            and len(routed_keys) == len(set(routed_keys))
+            and set(routed_keys) == expected_groups
             and all(row.get("status") == "admitted" for row in routed)
+            and injected == candidate
+            and bool(contract.device_capability_evidence) == candidate
         )
-        candidate = contract.device_capability_catalog is not None
         execution.conclude(
             "M-SP1-ROUTED-PRODUCT",
             Assessment(
@@ -6715,6 +6797,20 @@ def _run_sp1_routed_product(execution: _Execution) -> None:
                     "product_record_path": product.record_path,
                     "entry_surface": "registered_four_input",
                     "device_catalog": "candidate" if candidate else "default",
+                    "device_candidate_evidence": list(
+                        contract.device_capability_evidence
+                    ),
+                    "device_candidate_evidence_sha256": hashlib.sha256(
+                        json.dumps(
+                            list(contract.device_capability_evidence),
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode("utf-8")
+                    ).hexdigest(),
+                    "product_device_catalog_injected": injected,
+                    "expected_routed_groups": sorted(
+                        list(item) for item in expected_groups
+                    ),
                     "fresh_public_build": fresh_public_build,
                     "selected_clients": list(clients),
                     "client_checks": checks,
