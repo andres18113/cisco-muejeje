@@ -514,6 +514,9 @@ class ClientLease:
     #: Set when the one bounded release attempt begins. An interruption that
     #: arrives after it began never starts a second one.
     finalization_started: bool = False
+    #: Set once the start answer is fully validated (SP1-03). It outlives the
+    #: fetch's own row, so an exception after the start cannot erase it.
+    request_started: bool = False
 
 
 @dataclass(frozen=True)
@@ -4696,6 +4699,13 @@ class PacketTracerEnterpriseServiceRuntime:
                     cause=f"exception:{type(error).__name__}",
                     message="The web reader raised before completing its observation.",
                 )
+            if (
+                lease.request_started
+                and row.observed.get("request_started") is not True
+            ):
+                row = row.model_copy(
+                    update={"observed": {**row.observed, "request_started": True}}
+                )
             return self._with_release(row, self._finalize_client(expectation, lease))
         except Exception:
             raise
@@ -4897,6 +4907,7 @@ class PacketTracerEnterpriseServiceRuntime:
         # go() consistent with the strict projection. Only this fact, never the
         # raw `go_result`, tells the applicator the request left (SP1-03).
         request_inputs["request_started"] = True
+        lease.request_started = True
         if marker and marker in before:
             return exit_row(
                 observation=ObservationFact.INCONCLUSIVE,

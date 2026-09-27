@@ -264,3 +264,33 @@ def test_the_reader_marks_a_validated_start_even_when_the_page_read_fails():
 
     assert row.status is not ActionExecutionStatus.VERIFIED
     assert row.observed.get("request_started") is True
+
+
+def test_a_validated_start_survives_an_inspection_that_raises():
+    """Review finding: a post-start exception must not erase that it left."""
+    from test_service_runtime_observation import _RELEASED, _http, _web_start
+
+    from packet_tracer_mcp.infrastructure.execution.enterprise_service_runtime import (
+        PacketTracerEnterpriseServiceRuntime,
+    )
+
+    answers = [_web_start(owner="__MCP_E6_PC")]
+
+    def send_and_wait(script, timeout):
+        if answers:
+            return answers.pop(0)
+        if "var bag=this.__mcpE6HttpClients" in script:
+            raise RuntimeError("inspection transport failed")
+        return _RELEASED
+
+    runtime = PacketTracerEnterpriseServiceRuntime(
+        lambda: [],
+        send_and_wait,
+        http_timeout_seconds=0.0,
+        convergence_interval_seconds=0.0,
+    )
+
+    row = runtime.verify(_http())
+
+    assert row.cause == "exception:RuntimeError"
+    assert row.observed.get("request_started") is True
