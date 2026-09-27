@@ -8059,6 +8059,7 @@ def _q3fl_conclude_dhcp(
                 latest.get(native_pool, LeaseScan(native_pool, False, "scan_absent")),
                 named_pool=Q3_POOL,
                 native_pool=native_pool,
+                native_calibration=native_calibrations.get(native_pool),
                 named_range=intended_range,
                 expected_netmask=netmask,
                 other_pools=tuple(

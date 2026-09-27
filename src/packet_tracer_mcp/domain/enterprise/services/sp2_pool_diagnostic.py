@@ -8,10 +8,12 @@ from ..models.service_qualification import MeasurementConclusion
 from .dhcp_lease_evidence import (
     ROW_EXACT,
     ROW_MAC_ELSEWHERE,
+    ROW_REPRESENTATION,
     ROW_WRONG_MAC,
     TERMINATION_REPEAT,
     AddressRange,
     ClientReading,
+    LeaseCalibration,
     LeaseScan,
     is_dotted_mac,
     normalized_mac,
@@ -31,6 +33,7 @@ def assess_sp2_pool_identity(
     named_range: AddressRange,
     expected_netmask: str,
     other_pools: Sequence[str] = (),
+    native_calibration: LeaseCalibration | None = None,
 ) -> Assessment:
     """Distinguish physical pool rows for every selected client in one sample.
 
@@ -44,6 +47,9 @@ def assess_sp2_pool_identity(
         "native_pool": native_pool,
         "named_scan": named.as_facts(),
         "native_scan": native.as_facts(),
+        "native_calibration": (
+            native_calibration.as_facts() if native_calibration is not None else None
+        ),
         "clients": {},
     }
     contradictions: list[str] = []
@@ -71,6 +77,7 @@ def assess_sp2_pool_identity(
     seen_ip: dict[str, str] = {}
     seen_mac: dict[str, str] = {}
     per_client: dict[str, object] = {}
+    positive_rows = frozenset({ROW_EXACT, ROW_REPRESENTATION})
     for name in selected:
         reading = clients.get(name)
         if reading is None or reading.client != name or not reading.observed:
@@ -105,11 +112,11 @@ def assess_sp2_pool_identity(
             ROW_MAC_ELSEWHERE,
         ):
             contradictions.append(f"{name}:lease_identity_conflict")
-        if named_row == ROW_EXACT and native_row == ROW_EXACT:
+        if named_row in positive_rows and native_row in positive_rows:
             contradictions.append(f"{name}:row_in_both_pools")
-        elif native_row == ROW_EXACT:
+        elif native_row in positive_rows:
             negatives.append(f"{name}:served_by_native_default")
-        elif named_row != ROW_EXACT:
+        elif named_row not in positive_rows:
             unknown.append(f"{name}:named_row_unattributed")
         if (
             reading.mode is not True
@@ -121,7 +128,7 @@ def assess_sp2_pool_identity(
             not named_range.contains(reading.ipv4)
             or reading.netmask != expected_netmask
         ):
-            if named_row == ROW_EXACT:
+            if named_row in positive_rows:
                 contradictions.append(f"{name}:named_row_outside_intended_policy")
             else:
                 unknown.append(f"{name}:address_outside_intended_policy")
@@ -137,6 +144,12 @@ def assess_sp2_pool_identity(
             unknown.append("named_scan_incomplete")
         if not native.clean:
             unknown.append("native_scan_incomplete")
+        if (
+            native_calibration is None
+            or native_calibration.pool != native_pool
+            or not native_calibration.null_ends_rows
+        ):
+            unknown.append("native_absence_uncalibrated")
         if unknown:
             conclusion = MeasurementConclusion.INCONCLUSIVE
             causes = unknown

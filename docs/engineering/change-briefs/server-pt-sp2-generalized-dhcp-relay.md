@@ -168,7 +168,12 @@ operations and 21,600 seconds with 1,000 operations and 600 seconds protected
 for finalization; the diagnostic stage itself is bounded to 440 operations
 and 1,800 seconds. The first measurement must treat normalized-equivalent
 MAC rows in either pool as competing identity, and an uncalibrated null as
-unknown absence. Before any LIVE effect it needs a clean exact source commit
+unknown absence. Its current two-client procedure can report a positive
+named-pool row while still returning `INCONCLUSIVE` for exclusive named
+serving when it has not calibrated the default table's end in the same run.
+That outcome calls for a different controlled native question, not a
+capability promotion or a replay of the same fixture. Before any LIVE effect
+it needs a clean exact source commit
 and tree, episode allocation with protected finalization, owned process and
 mailbox preflight, and an immutable result. Full product acceptance and
 offline 2/20/200/1000 composition metrics remain open.

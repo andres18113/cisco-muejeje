@@ -31,9 +31,11 @@ from packet_tracer_mcp.domain.enterprise.services.dhcp_lease_evidence import (
     TERMINATION_NULL,
     TERMINATION_REPEAT,
     AddressRange,
+    CalibrationState,
     ClientReading,
     LeaseRow,
     LeaseScan,
+    assess_lease_calibration,
     classify_lease_scan,
 )
 from packet_tracer_mcp.domain.enterprise.services.sp2_pool_diagnostic import (
@@ -108,7 +110,33 @@ def _named() -> LeaseScan:
     )
 
 
+def _calibrated_native():
+    """Calibrate the fixture null end with empty and nonfull row states."""
+    return assess_lease_calibration(
+        [
+            CalibrationState("empty", _scan("serverPool")),
+            CalibrationState(
+                "one",
+                _scan(
+                    "serverPool",
+                    LeaseRow(
+                        0,
+                        "192.0.2.100",
+                        "0001.0001.0001",
+                        100.0,
+                        "FastEthernet0",
+                    ),
+                ),
+            ),
+        ],
+        pool="serverPool",
+        capacity=2,
+        fixture_macs=("0001.0001.0001", "0001.0001.0002"),
+    )
+
+
 def _assess(clients=None, named=None, native=None, **kwargs):
+    kwargs.setdefault("native_calibration", _calibrated_native())
     return assess_sp2_pool_identity(
         ("PC-A", "PC-B"),
         clients or _clients(),
@@ -123,11 +151,43 @@ def _assess(clients=None, named=None, native=None, **kwargs):
 
 
 def test_two_exact_named_rows_with_a_complete_empty_default_support_the_sample():
-    """Both clients must have exact named rows and no native rows."""
+    """Calibrated native absence plus two named rows supports this sample."""
     result = _assess()
     assert result.conclusion is MeasurementConclusion.SUPPORTED_IN_SAMPLE
     assert result.facts["clients"]["PC-A"]["named_row"] == "exact_ip_mac_row"
     assert result.facts["clients"]["PC-B"]["native_row"] != "exact_ip_mac_row"
+
+
+def test_uncalibrated_native_absence_cannot_support_named_pool():
+    """A null in four reads alone says nothing about a later default row."""
+    result = _assess(native_calibration=None)
+    assert result.conclusion is MeasurementConclusion.INCONCLUSIVE
+    assert "native_absence_uncalibrated" in result.causes
+
+
+def test_equivalent_mac_text_in_default_pool_is_a_competing_row():
+    """A colon MAC with identical bytes cannot hide behind text inequality."""
+    native = _scan(
+        "serverPool",
+        LeaseRow(0, "192.0.2.100", "00:01:00:01:00:01", 100.0, "FastEthernet0"),
+    )
+    result = _assess(native=native)
+    assert result.conclusion is MeasurementConclusion.CONTRADICTED
+    assert "PC-A:row_in_both_pools" in result.causes
+
+
+def test_equivalent_mac_text_in_named_pool_keeps_positive_attribution():
+    """Physical named identity survives a harmless MAC display change."""
+    named = _scan(
+        "named-a",
+        LeaseRow(0, "192.0.2.100", "00:01:00:01:00:01", 100.0, "FastEthernet0"),
+        _named().rows[1],
+    )
+    result = _assess(named=named)
+    assert result.conclusion is MeasurementConclusion.SUPPORTED_IN_SAMPLE
+    assert result.facts["clients"]["PC-A"]["named_row"] == (
+        "mac_matches_only_after_normalization"
+    )
 
 
 def test_native_default_row_is_a_negative_physical_pool_finding():
@@ -198,11 +258,16 @@ def test_sp2_campaign_and_stage_are_new_and_finitely_bounded():
 
 
 def test_sp2_stage_records_named_pool_service_from_stateful_scripts(run_stage):
-    """Generated scripts, rather than a copied predicate, populate both rows."""
+    """Generated scripts retain named rows while default absence stays unknown."""
     run = run_stage("SP2-NATIVE-POOL", {"dhcp_pool_selection": "intended"})
 
     result = run.measurement("M-SP2-POOL-IDENTITY")
-    assert result.conclusion is MeasurementConclusion.SUPPORTED_IN_SAMPLE
+    assert result.conclusion is MeasurementConclusion.INCONCLUSIVE
+    assert "native_absence_uncalibrated" in result.causes
+    assert all(
+        item["named_row"] == "exact_ip_mac_row"
+        for item in result.facts["clients"].values()
+    )
     assert len(run.snapshot["dhcp_runs"]) == 2
     assert run.record.restoration_proven is True
 
