@@ -1,0 +1,6 @@
+{
+  "lab_state": "Exploratory SP1-ROUTED-W2 at 710faca with named candidate static-route evidence for 1941/2911. The registered tool completed VERIFIED: all six clients (HQ inter-VLAN, BR1 over one transit hop, BR2 over two) verified HTTP by address first, then the fresh resolver read, DNS, the qualified nonexistent-name negative and HTTP by name; all three routed groups admitted, including the three-router group under the per-router window. M-SP1-ROUTED-PRODUCT supported_in_sample. M-SP1-ROUTED-FINAL inconclusive only because two show ip interface brief captures exhausted their 6-call budget; both route tables and all bindings were captured. Measured: getProcess('HostIp') throws on PC-PT while getProcess('HostIpProcess').getDefaultGateway() returned each client's planned gateway; DnsClient.getServerIp returned the planned resolver on all six. Fixture restoration proven.",
+  "operations_used": 413,
+  "qualification_outcome": "completed",
+  "retirement": "Maintained retirement exited owned PID 1488 with basis owned_qualification_restored; final census zero Packet Tracer processes, empty mailbox and no campaign lock."
+}

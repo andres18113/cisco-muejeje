@@ -1,0 +1,120 @@
+"""Copy and hash one closed SP-1 episode's primary bytes into the evidence tree.
+
+Usage: archive.py <episode number> <episode lead directory> <README file>
+
+Refuses a dirty source, an existing target, an open or unclosed episode, a
+non-empty exit census, or a qualification record whose attempt, run or
+product record do not agree with the lead identities. Scripts are kept as
+`.py.txt` data. The originals stay in their indexed campaign locations.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+from packet_tracer_mcp.infrastructure.persistence.server_pt_commissioning_store import (
+    ServerPtCommissioningStore,
+)
+
+ROOT = Path(__file__).resolve().parents[3]
+CAMPAIGN = "SERVER-PT-SP1-ROUTED-01"
+EPISODE = int(sys.argv[1])
+LEAD = Path(sys.argv[2]).resolve()
+README = Path(sys.argv[3]).resolve()
+TOOLS = Path(__file__).resolve().parent
+TARGET = ROOT / f"docs/reference/server-pt/evidence/sp1-routed-01/e{EPISODE}"
+STORE = ROOT / "data/commissioning" / CAMPAIGN
+
+
+def git(*args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=ROOT, check=True, capture_output=True, text=True, timeout=15
+    ).stdout.strip()
+
+
+def digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+if TARGET.exists() or git("status", "--porcelain=v1"):
+    raise RuntimeError("archive_target_exists_or_source_dirty")
+ids = load(LEAD / "ids.json")
+store = ServerPtCommissioningStore(ROOT, CAMPAIGN)
+if store.verify_index():
+    raise RuntimeError("campaign_index_unverified")
+records = store.ledger_records()
+closing = records.get(f"episode-{EPISODE:04d}-closing")
+census = load(LEAD / "11-exit-census.json")
+stdout = (LEAD / "09-qualification.stdout").read_text(encoding="utf-8").strip()
+summary = json.loads(stdout.splitlines()[-1])
+qualification_path = Path(summary["record_path"])
+qualification = load(qualification_path)
+product_measure = next(
+    item
+    for item in qualification["measurements"]
+    if item["experiment_id"] == "M-SP1-ROUTED-PRODUCT"
+)
+product_path = Path(product_measure["facts"]["product_record_path"])
+product = load(product_path)
+if (
+    not closing
+    or census.get("process_error")
+    or census.get("processes")
+    or census.get("mailbox_files")
+    or census.get("campaign_lock_present")
+    or summary.get("campaign", {}).get("attempt_id") != ids["Attempt"]
+    or qualification["source"]["executed_sha"] != ids["Head"]
+    or qualification["source"]["executed_tree"] != ids["Tree"]
+    or qualification["stage"] != ids["Stage"]
+    or product.get("source_tree", {}).get("sha") != ids["Head"]
+    or not store.load_process_exit(ids["Attempt"])
+):
+    raise RuntimeError("archive_primary_records_incoherent")
+
+TARGET.mkdir(parents=True)
+shutil.copytree(LEAD, TARGET / "lead", ignore=shutil.ignore_patterns("__pycache__"))
+(TARGET / "lead" / "tools").mkdir()
+for script in sorted(TOOLS.glob("*.py")):
+    shutil.copy2(script, TARGET / "lead" / "tools" / (script.name + ".txt"))
+shutil.copytree(STORE, TARGET / "store")
+(TARGET / "record").mkdir()
+shutil.copy2(qualification_path, TARGET / "record" / qualification_path.name)
+shutil.copy2(product_path, TARGET / "record" / product_path.name)
+readme = README.read_text(encoding="utf-8").format(
+    head=ids["Head"],
+    tree=ids["Tree"],
+    attempt=ids["Attempt"],
+    instance=ids["Instance"],
+    qualification_sha256=digest(qualification_path),
+    product_sha256=digest(product_path),
+)
+(TARGET / "README.md").write_text(readme, encoding="utf-8", newline="\n")
+files = sorted(
+    path for path in TARGET.rglob("*") if path.is_file() and path.name != "MANIFEST.sha256"
+)
+manifest = "".join(
+    f"{digest(path)}  {path.relative_to(TARGET).as_posix()}\n" for path in files
+)
+(TARGET / "MANIFEST.sha256").write_text(manifest, encoding="utf-8", newline="\n")
+if any(path.suffix == ".py" for path in files):
+    raise RuntimeError("archive_contains_executable_python")
+print(
+    json.dumps(
+        {
+            "archive": str(TARGET),
+            "files": len(files),
+            "manifest_sha256": digest(TARGET / "MANIFEST.sha256"),
+            "qualification_sha256": digest(qualification_path),
+            "product_sha256": digest(product_path),
+        }
+    )
+)
