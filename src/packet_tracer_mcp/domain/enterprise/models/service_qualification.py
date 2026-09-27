@@ -2074,9 +2074,9 @@ _SP1_LINKS = (
 #: IOS, spanning tree, routed windows and HTTP inspections is what the rest of
 #: the plan leaves room for, and the first LIVE episode measures it. The
 #: terminal observation is two registered reads per router, each with its own
-#: call budget, plus one binding read for all selected clients.
+#: twelve-call budget, plus one binding read for all selected clients (73).
 SP1_ROUTED_PRODUCT_OPERATIONS = 2400
-SP1_ROUTED_FINAL_OPERATIONS = 60
+SP1_ROUTED_FINAL_OPERATIONS = 80
 
 
 def _sp1_routed(stage: QualificationStage, clients: tuple[str, ...]) -> StageDefinition:

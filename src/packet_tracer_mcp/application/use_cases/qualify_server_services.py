@@ -6487,7 +6487,9 @@ SP1_BINDING_KINDS = (
 )
 #: Terminal router capture bounds: one call budget per registered read and
 #: one window for the whole capture, taken from the stage's own allowance.
-SP1_CAPTURE_SAMPLE_CALLS = 6
+#: LIVE at 710faca two `show ip interface brief` captures spent six calls
+#: without converging; the readiness readings they mirror get twelve.
+SP1_CAPTURE_SAMPLE_CALLS = 12
 SP1_CAPTURE_DEADLINE_SECONDS = 120.0
 
 

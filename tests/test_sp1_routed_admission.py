@@ -29,6 +29,10 @@ from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
     TransportSelection,
     apply_enterprise_services,
 )
+from packet_tracer_mcp.application.use_cases.plan_enterprise_hardware import (
+    capability_catalog_for,
+)
+from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
 from packet_tracer_mcp.domain.enterprise.models.service_entry import (
     ServiceEntryRefusal,
     ServiceRunStatus,
@@ -50,7 +54,7 @@ STATIC_ROUTE_CANDIDATES = {
 }
 
 
-def _run(tmp_path: Path, payload: dict, *, candidate: bool = False):
+def _run(tmp_path: Path, payload: dict, *, candidate: bool = False, catalog=None):
     plans = compose(payload)
     configuration = RecordingConfigurationRuntime(targets=plans.inventory)
     services = RecordingServiceRuntime(targets=plans.inventory)
@@ -71,7 +75,7 @@ def _run(tmp_path: Path, payload: dict, *, candidate: bool = False):
                 BACKEND_VERSION, STATIC_ROUTE_CANDIDATES, label="sp1-test"
             )
             if candidate
-            else None
+            else catalog
         ),
     )
     return result, plans, configuration, services
@@ -107,11 +111,35 @@ def test_hq_inter_vlan_clients_admit_only_the_hq_gateway_closure(tmp_path: Path)
     assert dispatched == set(result.e5_effect_scope.mutated)
 
 
+class _WithoutStaticRoutes:
+    """The default catalog with the static-route record withdrawn."""
+
+    def __init__(self) -> None:
+        self._inner = capability_catalog_for(BACKEND_VERSION)
+
+    def capabilities_for(self, model, version):
+        found = self._inner.capabilities_for(model, version)
+        if found is None:
+            return None
+        return found.model_copy(
+            update={"supports_static_routes": CapabilityStatus.UNKNOWN}
+        )
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
 def test_multi_site_routes_need_static_route_evidence_before_any_effect(
     tmp_path: Path,
 ):
-    """The default catalog has no measured `supports_static_routes` yet."""
-    result, _plans, configuration, services = _run(tmp_path, _workload())
+    """Without a static-route record the routed run refuses before any effect.
+
+    Named delta (SP-1): the default catalog now carries the record measured
+    in sp1-routed-01/e2, so the property is shown with it withdrawn.
+    """
+    result, _plans, configuration, services = _run(
+        tmp_path, _workload(), catalog=_WithoutStaticRoutes()
+    )
 
     assert result.status is ServiceRunStatus.REFUSED
     assert result.refusal_code is ServiceEntryRefusal.CAPABILITY_UNKNOWN

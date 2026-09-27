@@ -325,8 +325,15 @@ _REFUSALS = frozenset(
 
 #: The event-dependent kinds R-EVT-05's fallback leaves without an observer.
 #: SP-1 client binding readers: process, documented getter, expected field.
+#: The process names are the ones MEASURED on PC-PT: at 6e5e527 and 710faca
+#: `getProcess('HostIp')` threw `invalid string position`, while the
+#: documented suffixed form `HostIpProcess` answered every planned gateway.
 _CLIENT_BINDING_READERS = {
-    ServiceVerificationKind.CLIENT_GATEWAY: ("HostIp", "getDefaultGateway", "gateway"),
+    ServiceVerificationKind.CLIENT_GATEWAY: (
+        "HostIpProcess",
+        "getDefaultGateway",
+        "gateway",
+    ),
     ServiceVerificationKind.CLIENT_DNS_SERVER: (
         "DnsClient",
         "getServerIp",

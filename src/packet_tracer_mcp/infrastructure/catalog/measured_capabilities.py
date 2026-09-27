@@ -50,8 +50,11 @@ class MeasuredCapabilityRecord:
     dimensions: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        """Freeze the dimensions so a shared record cannot be mutated."""
         object.__setattr__(
-            self, "dimensions", MappingProxyType(dict(self.dimensions)),
+            self,
+            "dimensions",
+            MappingProxyType(dict(self.dimensions)),
         )
 
     def as_evidence(self) -> CapabilityEvidence:
@@ -114,7 +117,6 @@ def _unknown(
     dimensions: Mapping[str, str] | None = None,
 ) -> MeasuredCapabilityRecord:
     """Retain an exact observation without widening it into authorization."""
-
     return MeasuredCapabilityRecord(
         model=model,
         capability=capability,
@@ -148,6 +150,16 @@ _POE_CONTROL_ONLY = (
     "and capacity remain unknown."
 )
 
+#: SP-1 LIVE episode 2 (campaign SERVER-PT-SP1-ROUTED-01, run
+#: 2026-09-27T04-14-53Z-7e6f5627, source 710faca): the SHA-256 of the archived
+#: qualification record under docs/reference/server-pt/evidence/sp1-routed-01/e2.
+_SP1_E2 = "aa2d0f77d75d260f27399b21a4f1738df749e4114609fb9d42ecb4198536b90b"
+_STATIC_ROUTES = (
+    "SP-1 episode 2: `ip route` entries applied through the product, each read "
+    "back VERIFIED from a fresh complete `show ip route`, and the routed "
+    "readiness rule admitted forward and return chains across the model before "
+    "clients' HTTP and DNS requests crossed it."
+)
 _IE_2000 = "a90573080383dec861b75c72875d2db1d8c75ed5008eaa6e6f866354e765423a"
 _PT_2911 = "1a6af1dd1aa28b7c3a34e20c3b91e152a50cbf2b4ee31bbae19d7f5fb806e2fc"
 _PT_2950T = "fa5506899b5fb6b4f519656d65f712f0f6e71855274b5c35878f3931c05e8238"
@@ -163,45 +175,103 @@ _PT_3650_POE = "e446646eb7c836beb0346b1b87236e0605dec185c67ea36aaa005d064315de94
 
 
 MEASURED_CAPABILITY_RECORDS: tuple[MeasuredCapabilityRecord, ...] = (
+    _supported(
+        "1941",
+        "supports_static_routes",
+        _SP1_E2,
+        "sp1-routed-w2",
+        "cli_plus_readback",
+        _STATIC_ROUTES,
+        original_source=EvidenceSource.PACKET_TRACER_RUNTIME,
+    ),
+    _supported(
+        "2911",
+        "supports_static_routes",
+        _SP1_E2,
+        "sp1-routed-w2",
+        "cli_plus_readback",
+        _STATIC_ROUTES,
+        original_source=EvidenceSource.PACKET_TRACER_RUNTIME,
+    ),
     _supported("IE-2000", "layer2", _IE_2000, "layer2-probe", "object_state", _LAYER2),
     _supported(
-        "IE-2000", "supports_vlan", _IE_2000, "vlan-probe",
-        "cli_plus_readback", _VLAN, observed_value=999,
+        "IE-2000",
+        "supports_vlan",
+        _IE_2000,
+        "vlan-probe",
+        "cli_plus_readback",
+        _VLAN,
+        observed_value=999,
     ),
-    _supported("2911", "layer3", _PT_2911, "layer3-probe", "cli_plus_readback", _LAYER3),
-    _supported("2950T-24", "layer2", _PT_2950T, "layer2-probe", "object_state", _LAYER2),
     _supported(
-        "2950T-24", "supports_vlan", _PT_2950T, "vlan-probe",
-        "cli_plus_readback", _VLAN, observed_value=999,
+        "2911", "layer3", _PT_2911, "layer3-probe", "cli_plus_readback", _LAYER3
     ),
-    _supported("1941", "layer3", _PT_1941, "layer3-probe", "cli_plus_readback", _LAYER3),
-    _supported("2811", "layer3", _PT_2811, "layer3-probe", "cli_plus_readback", _LAYER3),
     _supported(
-        "2811", "supports_cme", _PT_2811, "cme-call-control",
+        "2950T-24", "layer2", _PT_2950T, "layer2-probe", "object_state", _LAYER2
+    ),
+    _supported(
+        "2950T-24",
+        "supports_vlan",
+        _PT_2950T,
+        "vlan-probe",
+        "cli_plus_readback",
+        _VLAN,
+        observed_value=999,
+    ),
+    _supported(
+        "1941", "layer3", _PT_1941, "layer3-probe", "cli_plus_readback", _LAYER3
+    ),
+    _supported(
+        "2811", "layer3", _PT_2811, "layer3-probe", "cli_plus_readback", _LAYER3
+    ),
+    _supported(
+        "2811",
+        "supports_cme",
+        _PT_2811,
+        "cme-call-control",
         "cli_plus_readback",
         "A controlled telephony-service instance was accepted and its ephone-1 "
         "row read back as UNREGISTERED; registration read-back exists.",
     ),
     _supported(
-        "2811", "supports_dhcp_server", _PT_2811, "dhcp-server-behavior",
+        "2811",
+        "supports_dhcp_server",
+        _PT_2811,
+        "dhcp-server-behavior",
         "simulation_trace",
         "A disposable client obtained fresh IPv4/mask state from the controlled "
         "DHCP pool and was removed successfully.",
     ),
     _supported(
-        "2960-24TT", "layer2", _PT_2960_LOGICAL, "layer2-probe",
-        "object_state", _LAYER2,
+        "2960-24TT",
+        "layer2",
+        _PT_2960_LOGICAL,
+        "layer2-probe",
+        "object_state",
+        _LAYER2,
     ),
     _supported(
-        "2960-24TT", "supports_vlan", _PT_2960_LOGICAL, "vlan-probe",
-        "cli_plus_readback", _VLAN, observed_value=999,
+        "2960-24TT",
+        "supports_vlan",
+        _PT_2960_LOGICAL,
+        "vlan-probe",
+        "cli_plus_readback",
+        _VLAN,
+        observed_value=999,
     ),
     _supported(
-        "2960-24TT", "supports_trunk", _PT_2960_LOGICAL, "trunk-probe",
-        "cli_plus_readback", _TRUNK,
+        "2960-24TT",
+        "supports_trunk",
+        _PT_2960_LOGICAL,
+        "trunk-probe",
+        "cli_plus_readback",
+        _TRUNK,
     ),
     _unknown(
-        "2960-24TT", "supports_poe", _PT_2960_POE, "supports-poe",
+        "2960-24TT",
+        "supports_poe",
+        _PT_2960_POE,
+        "supports-poe",
         "object_state",
         (
             "24 fresh access ports exposed complete administrative/runtime "
@@ -211,43 +281,80 @@ MEASURED_CAPABILITY_RECORDS: tuple[MeasuredCapabilityRecord, ...] = (
         original_source=EvidenceSource.PACKET_TRACER_RUNTIME,
     ),
     _supported(
-        "3560-24PS", "layer2", _PT_3560_LOGICAL, "layer2-probe",
-        "object_state", _LAYER2,
+        "3560-24PS",
+        "layer2",
+        _PT_3560_LOGICAL,
+        "layer2-probe",
+        "object_state",
+        _LAYER2,
     ),
     _supported(
-        "3560-24PS", "supports_vlan", _PT_3560_LOGICAL, "vlan-probe",
-        "cli_plus_readback", _VLAN, observed_value=999,
+        "3560-24PS",
+        "supports_vlan",
+        _PT_3560_LOGICAL,
+        "vlan-probe",
+        "cli_plus_readback",
+        _VLAN,
+        observed_value=999,
     ),
     _supported(
-        "3560-24PS", "supports_trunk", _PT_3560_LOGICAL, "trunk-probe",
-        "cli_plus_readback", _TRUNK,
+        "3560-24PS",
+        "supports_trunk",
+        _PT_3560_LOGICAL,
+        "trunk-probe",
+        "cli_plus_readback",
+        _TRUNK,
     ),
     _supported(
-        "3560-24PS", "multilayer_intervlan", _PT_3560_LAYER3,
-        "multilayer-intervlan-probe", "simulation_trace",
+        "3560-24PS",
+        "multilayer_intervlan",
+        _PT_3560_LAYER3,
+        "multilayer-intervlan-probe",
+        "simulation_trace",
         "Both endpoint-to-SVI paths and inter-VLAN forwarding converged; SVI "
         "configuration, addresses, and up/up state were read back.",
     ),
     _unknown(
-        "3560-24PS", "supports_poe", _PT_3560_POE, "supports-poe",
-        "object_state", _POE_CONTROL_ONLY,
+        "3560-24PS",
+        "supports_poe",
+        _PT_3560_POE,
+        "supports-poe",
+        "object_state",
+        _POE_CONTROL_ONLY,
         original_source=EvidenceSource.PACKET_TRACER_RUNTIME,
     ),
     _supported(
-        "3650-24PS", "layer2", _PT_3650_LOGICAL, "layer2-probe",
-        "object_state", _LAYER2,
+        "3650-24PS",
+        "layer2",
+        _PT_3650_LOGICAL,
+        "layer2-probe",
+        "object_state",
+        _LAYER2,
     ),
     _supported(
-        "3650-24PS", "supports_vlan", _PT_3650_LOGICAL, "vlan-probe",
-        "cli_plus_readback", _VLAN, observed_value=999,
+        "3650-24PS",
+        "supports_vlan",
+        _PT_3650_LOGICAL,
+        "vlan-probe",
+        "cli_plus_readback",
+        _VLAN,
+        observed_value=999,
     ),
     _supported(
-        "3650-24PS", "supports_trunk", _PT_3650_LOGICAL, "trunk-probe",
-        "cli_plus_readback", _TRUNK,
+        "3650-24PS",
+        "supports_trunk",
+        _PT_3650_LOGICAL,
+        "trunk-probe",
+        "cli_plus_readback",
+        _TRUNK,
     ),
     _unknown(
-        "3650-24PS", "supports_poe", _PT_3650_POE, "supports-poe",
-        "object_state", _POE_CONTROL_ONLY,
+        "3650-24PS",
+        "supports_poe",
+        _PT_3650_POE,
+        "supports-poe",
+        "object_state",
+        _POE_CONTROL_ONLY,
         original_source=EvidenceSource.PACKET_TRACER_RUNTIME,
     ),
 )

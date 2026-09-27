@@ -706,11 +706,12 @@ def test_excluded_e5_contradiction_does_not_block_selected_services(
     assert result.status is ServiceRunStatus.VERIFIED
 
 
-def test_the_advisory_client_dns_reader_never_gates_a_service(tmp_path: Path):
-    """R-CAP-06: reported in full and counted nowhere.
+def test_the_client_dns_reader_gates_its_own_client_dns(tmp_path: Path):
+    """SP1-04: the resolver read is required and gates only DNS queries.
 
-    Named delta (SP-1): the reader is now recorded (Q1 M-DNS-3 at 0850de3),
-    so its row may verify; it is still optional and never decides the run.
+    Named deltas (SP-1): recorded by Q1 M-DNS-3 at 0850de3, the reader was
+    first optional; it now is a required prerequisite of the same client's
+    DNS resolutions and of nothing else.
     """
     harness = _harness(tmp_path)
 
@@ -725,7 +726,8 @@ def test_the_advisory_client_dns_reader_never_gates_a_service(tmp_path: Path):
     ]
     assert advisory
     for row in advisory:
-        assert row.required is False
+        assert row.required is True
+        assert row.status is ActionExecutionStatus.VERIFIED
     assert result.status is ServiceRunStatus.VERIFIED
 
 

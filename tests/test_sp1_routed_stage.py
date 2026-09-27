@@ -23,7 +23,10 @@ from cold_http_acceptance_harness import FakeClock
 from routed_product_simulation import RoutedCampusTerminal
 from service_entry_fixture import IsolationPreflight
 
-from packet_tracer_mcp.adapters.cli import service_qualification
+from packet_tracer_mcp.adapters.cli import (
+    service_qualification,
+    sp1_routed_qualification,
+)
 from packet_tracer_mcp.adapters.cli.sp1_routed_qualification import (
     sp1_device_catalog,
     sp1_routed_product_contract,
@@ -352,13 +355,25 @@ def test_every_run_chooses_its_own_addresses_marker_and_host_name():
     assert first.marker != second.marker and first.hostname != second.hostname
 
 
-def test_candidate_evidence_is_named_only_while_the_catalog_lacks_it():
-    """Today the build's catalog does not support static routes on 1941/2911."""
+def test_candidate_evidence_is_named_only_while_the_catalog_lacks_it(monkeypatch):
+    """Named delta (SP-1 e2): the measured records make the default suffice.
+
+    With a record withdrawn the composer falls back to named candidate
+    evidence for exactly that model and capability, and to nothing else.
+    """
+    assert sp1_device_catalog(SIM_BUILD) is None
+    assert sp1_routed_qualification.sp1_device_candidates(SIM_BUILD) == {}
+
+    monkeypatch.setattr(
+        sp1_routed_qualification,
+        "sp1_device_candidates",
+        lambda _build: {"2911": ["supports_static_routes"]},
+    )
     catalog = sp1_device_catalog(SIM_BUILD)
     assert catalog is not None
-    for model in ("1941", "2911"):
-        caps = catalog.capabilities_for(model, SIM_BUILD)
-        assert caps.supports_static_routes.value == "supported"
+    assert catalog.capabilities_for("2911", SIM_BUILD).supports_static_routes.value == (
+        "supported"
+    )
 
 
 # -- the stage -------------------------------------------------------------------
@@ -378,10 +393,11 @@ def test_w2_serves_every_client_across_three_routers(tmp_path, capsys, monkeypat
         record.primary_failure,
     )
     assert product.facts["entry_surface"] == "registered_four_input"
-    assert product.facts["device_catalog"] == "candidate"
-    assert product.limitations == [
-        "candidate_device_evidence_not_global_product_promotion"
-    ]
+    # The measured static-route records (sp1-routed-01/e2) are the default.
+    assert product.facts["device_catalog"] == "default"
+    assert product.facts["device_candidate_evidence"] == []
+    assert product.facts["product_device_catalog_injected"] is False
+    assert product.limitations == []
     checks = product.facts["client_checks"]
     assert set(checks) == set(SP1_HQ_CLIENTS + SP1_BRANCH_CLIENTS)
     for name, kinds in checks.items():
@@ -663,7 +679,19 @@ def test_a_verified_run_missing_one_routed_group_is_not_accepted(
 def test_a_candidate_run_records_the_exact_injected_evidence(
     tmp_path, capsys, monkeypatch
 ):
-    """Every injected entry is named, digested and matched by the product."""
+    """Every injected entry is named, digested and matched by the product.
+
+    The build's catalog now carries the records, so both are withdrawn here
+    to exercise the candidate path the composer keeps for such a build.
+    """
+    monkeypatch.setattr(
+        sp1_routed_qualification,
+        "sp1_device_candidates",
+        lambda _build: {
+            "1941": ["supports_static_routes"],
+            "2911": ["supports_static_routes"],
+        },
+    )
     code, summary, record, _snapshot, _store, _terminal = _run(
         tmp_path, capsys, monkeypatch, "SP1-ROUTED-W1"
     )

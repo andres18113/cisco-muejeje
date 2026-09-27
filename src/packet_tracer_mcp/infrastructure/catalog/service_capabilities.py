@@ -375,9 +375,6 @@ def _baseline_client_operations(version: str) -> list[ClientOperationCapability]
     unknown = (
         # No live evidence for a PC-PT HTTPS fetch; HTTPS ownership is Q1.
         ServiceVerificationKind.HTTPS_FETCH,
-        # SP-1: `HostIp.getDefaultGateway()` is documented only. LIVE at
-        # 6e5e527 `getProcess('HostIp')` threw on PC-PT, so it is unmeasured.
-        ServiceVerificationKind.CLIENT_GATEWAY,
         ServiceVerificationKind.NTP_SYNC,
         ServiceVerificationKind.TFTP_RETRIEVE,
     )
@@ -399,7 +396,32 @@ def _baseline_client_operations(version: str) -> list[ClientOperationCapability]
             for kind in unknown
         ),
         _client_dns_server_record(version),
+        _client_gateway_record(version),
     ]
+
+
+def _client_gateway_record(version: str) -> ClientOperationCapability:
+    """Return the gateway reader, measured by SP-1 episode 2 on this build.
+
+    `getProcess('HostIpProcess').getDefaultGateway()` returned the planned
+    gateway on all six PC-PT clients of three segments, and `HostIp` threw
+    (qualification record SHA-256 aa2d0f77...b90b under
+    `docs/reference/server-pt/evidence/sp1-routed-01/e2/`). The product's
+    CLIENT_GATEWAY row reads that exact process and getter.
+    """
+    return ClientOperationCapability(
+        key=f"{_CLIENT_MODEL}:{ServiceVerificationKind.CLIENT_GATEWAY.value}",
+        model=_CLIENT_MODEL,
+        operation=ServiceVerificationKind.CLIENT_GATEWAY.value,
+        support=CapabilityStatus.SUPPORTED,
+        provenance=CapabilityProvenance.RECORDED_RUN,
+        source="SP-1 e2 HostIpProcess.getDefaultGateway on six routed clients",
+        packet_tracer_version=version,
+        build=version,
+        executed_sha="710faca2aa69cf3556972062af3d53791c46bcd0",
+        transport="file",
+        run_id="2026-09-27T04-14-53Z-7e6f5627",
+    )
 
 
 def _client_dns_server_record(version: str) -> ClientOperationCapability:

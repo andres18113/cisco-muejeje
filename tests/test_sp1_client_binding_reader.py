@@ -1,9 +1,9 @@
 """SP-1 A-6: the client gateway and resolver readers, run as real scripts.
 
 The script is exactly what `PacketTracerEnterpriseServiceRuntime` generates,
-evaluated by Node against a stub `ipc` whose PC exposes the documented
-`HostIp.getDefaultGateway()` and `DnsClient.getServerIp()` (IpcAPI reference
-bundled with Packet Tracer). The getters are documented, not measured, so the
+evaluated by Node against a stub `ipc` that mirrors what PC-PT did LIVE on
+9.0.1.0858: `getProcess('HostIp')` throws, `HostIpProcess.getDefaultGateway()`
+and `DnsClient.getServerIp()` answer (sp1-routed-01/e2; q-batch-0850de3). The
 stub answers both as plain strings and as objects that stringify, and a
 missing process or getter must never read as a pass.
 
@@ -48,7 +48,8 @@ const makeIp = (value) => S.as_object
   ? {toString: () => value, getIpString: () => value}
   : value;
 const processes = {
-  HostIp: () => S.gateway === undefined ? null
+  HostIp: () => { throw new Error('invalid string position'); },
+  HostIpProcess: () => S.gateway === undefined ? null
     : (S.gateway_getter ? {getDefaultGateway: () => makeIp(S.gateway)} : {}),
   DnsClient: () => S.dns === undefined ? null
     : {getServerIp: () => makeIp(S.dns)},
@@ -156,7 +157,9 @@ def test_the_planned_binding_is_read_back(kind, state, as_object):
     assert row.status is ActionExecutionStatus.VERIFIED
     assert row.observation is ObservationFact.OBSERVED and row.fresh_evidence
     expected_process = (
-        "HostIp" if kind is ServiceVerificationKind.CLIENT_GATEWAY else "DnsClient"
+        "HostIpProcess"
+        if kind is ServiceVerificationKind.CLIENT_GATEWAY
+        else "DnsClient"
     )
     assert engine.asked == [expected_process]
 
@@ -177,10 +180,10 @@ def test_another_or_an_unset_resolver_is_fresh_contradiction(value):
 @pytest.mark.parametrize(
     ("state", "cause"),
     [
-        ({}, "process_unavailable:HostIp"),
+        ({}, "process_unavailable:HostIpProcess"),
         (
             {"gateway": "10.40.0.25", "gateway_getter": False},
-            "getter_unavailable:HostIp.getDefaultGateway",
+            "getter_unavailable:HostIpProcess.getDefaultGateway",
         ),
         ({"device": "OTHER", "gateway": "10.40.0.25"}, "client_not_found"),
     ],

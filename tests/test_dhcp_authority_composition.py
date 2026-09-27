@@ -377,8 +377,10 @@ def test_existing_static_dns_http_composition_keeps_its_ids_and_hashes():
     assert composition.configuration.semantic_hash == (
         "4a14fe52bba9d4e53dc1bfa8ba329055556eea6896262a518c442aea2d72e921"
     )
-    # SP-1 (SP1-04): the only change is the DNS negative control's dependency
-    # on the same client's positive (was 844b7665041c...66e8).
+    # SP-1 (SP1-04) named deltas, each proven by a plan diff: the DNS negative
+    # control depends on the same client's positive (844b7665...66e8 ->
+    # 7a8a1e46...30c2); then the client's resolver read is required and each
+    # of its DNS resolutions depends on it (-> 4170ebe9...7a7f).
     assert composition.services.semantic_hash == (
-        "7a8a1e464daa4c90f640d91218daca51bbc81d093d6ae1edebfbbd31e80530c2"
+        "4170ebe9999a2e9d2776f336071a090c79266c6a8fe3ca682818ba3096617a7f"
     )

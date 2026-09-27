@@ -185,10 +185,10 @@ def test_a_host_direct_expectation_still_resolves_the_service_profile():
 def test_a_client_binding_reader_is_never_inferred_from_a_sibling_getter():
     """R-CAP-06: each reader carries only its own evidence.
 
-    Named delta (SP-1): the resolver reader was UNKNOWN until M-DNS-3 recorded
-    it; it now carries that exact run. The gateway reader has no measurement
-    (LIVE at 6e5e527 its process threw) and stays UNKNOWN beside supported
-    DNS siblings on the same client.
+    Named deltas (SP-1): the resolver reader carries Q1 M-DNS-3 at 0850de3
+    and the gateway reader carries SP-1 episode 2 at 710faca, each its own
+    run. A client reader nobody measured (HTTPS fetch) stays UNKNOWN beside
+    supported siblings on the same client.
     """
     records = packet_tracer_service_capabilities(BASELINE_PACKET_TRACER_VERSION)
 
@@ -198,7 +198,14 @@ def test_a_client_binding_reader_is_never_inferred_from_a_sibling_getter():
         ).support
 
     assert support(ServiceVerificationKind.DNS_RESOLUTION) is CapabilityStatus.SUPPORTED
-    assert support(ServiceVerificationKind.CLIENT_GATEWAY) is CapabilityStatus.UNKNOWN
+    assert support(ServiceVerificationKind.HTTPS_FETCH) is CapabilityStatus.UNKNOWN
+    assert support(ServiceVerificationKind.CLIENT_GATEWAY) is CapabilityStatus.SUPPORTED
+    gateway = records["PC-PT:client_gateway"]
+    assert gateway.provenance is CapabilityProvenance.RECORDED_RUN
+    assert (gateway.executed_sha, gateway.run_id) == (
+        "710faca2aa69cf3556972062af3d53791c46bcd0",
+        "2026-09-27T04-14-53Z-7e6f5627",
+    )
     assert (
         support(ServiceVerificationKind.CLIENT_DNS_SERVER) is CapabilityStatus.SUPPORTED
     )
@@ -278,8 +285,9 @@ def test_only_measured_native_records_have_recorded_run_provenance():
     assert recorded == {
         "Server-PT:dhcp_native_default_binding",
         "PC-PT:endpoint_dhcp_mode",
-        # SP-1 named delta: Q1 M-DNS-3 at 0850de3.
+        # SP-1 named deltas: Q1 M-DNS-3 at 0850de3 and SP-1 e2 at 710faca.
         "PC-PT:client_dns_server",
+        "PC-PT:client_gateway",
     }
     assert all(
         level == CapabilityProvenance.DOCUMENTARY_BASELINE.value

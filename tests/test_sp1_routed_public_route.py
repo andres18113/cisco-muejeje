@@ -203,7 +203,11 @@ def test_routes_that_install_within_the_window_are_admitted(
 def test_a_wrong_resolver_fails_dns_but_keeps_the_by_ip_result(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workload
 ):
-    """A timeout-shaped negative is not a verified answer; by IP stands."""
+    """The fresh resolver read fails first; no DNS query is sent; by IP stands.
+
+    Named delta (SP1-04): the resolver read now gates the client's queries,
+    so the wrong binding is caught by the read rather than by a timeout.
+    """
 
     def configure(terminal):
         original = terminal.send
@@ -217,11 +221,16 @@ def test_a_wrong_resolver_fails_dns_but_keeps_the_by_ip_result(
 
         terminal.send = send
 
-    public, _terminal = _run(tmp_path, monkeypatch, workload, configure)
+    public, terminal = _run(tmp_path, monkeypatch, workload, configure)
 
     checks = _checks(public)
     assert checks[("BR1-DEFAULT-PC-01", "http_fetch")]["status"] == "verified"
-    assert checks[("BR1-DEFAULT-PC-01", "dns_resolution")]["status"] == "failed"
+    assert checks[("BR1-DEFAULT-PC-01", "client_dns_server")]["status"] == "failed"
+    assert checks[("BR1-DEFAULT-PC-01", "dns_resolution")]["status"] == (
+        "dependency_blocked"
+    )
+    dns_sent = {client for _t, kind, client, *_ in terminal.requests if kind == "dns"}
+    assert "BR1-DEFAULT-PC-01" not in dns_sent
     assert checks[("BR1-DEFAULT-PC-01", "dns_negative_control")]["status"] == (
         "dependency_blocked"
     )

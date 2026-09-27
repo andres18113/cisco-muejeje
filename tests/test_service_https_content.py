@@ -312,11 +312,13 @@ def test_the_existing_http_only_path_keeps_its_plan_identity():
     assert content.shared_service_ids == [HTTP_SERVICE]
     assert content.service_type is ServiceType.HTTP
     assert not [item for item in plan.actions if isinstance(item, EnableHttpsService)]
-    # SP-1 (SP1-04) changed exactly one thing in this plan: the DNS negative
-    # control now depends on the same client's positive resolution. The old
-    # identity was 844b7665041c...66e8; HTTPS still leaves the plan unchanged.
+    # SP-1 (SP1-04) named deltas, each proven by a plan diff: the DNS negative
+    # control depends on the same client's positive (844b7665...66e8 ->
+    # 7a8a1e46...30c2); then the client's resolver read is required and each
+    # of its DNS resolutions depends on it (-> 4170ebe9...7a7f). HTTPS still
+    # leaves the plan unchanged.
     assert plan.semantic_hash == (
-        "7a8a1e464daa4c90f640d91218daca51bbc81d093d6ae1edebfbbd31e80530c2"
+        "4170ebe9999a2e9d2776f336071a090c79266c6a8fe3ca682818ba3096617a7f"
     )
 
 

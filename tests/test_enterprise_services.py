@@ -161,6 +161,9 @@ def _fixture(services: list[ServiceRequirement] | None = None):
                 ServiceVerificationKind.DNS_NEGATIVE_CONTROL,
                 ServiceVerificationKind.HTTP_FETCH,
                 ServiceVerificationKind.HTTP_BY_HOSTNAME,
+                # Recorded client readers (Q1 M-DNS-3; SP-1 e2).
+                ServiceVerificationKind.CLIENT_DNS_SERVER,
+                ServiceVerificationKind.CLIENT_GATEWAY,
             )
         },
     }

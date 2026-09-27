@@ -134,7 +134,11 @@ def test_a_dns_negative_waits_for_the_same_clients_positive(routed_plan):
 
 
 def test_routed_clients_read_their_gateway_and_local_ones_do_not():
-    """The gateway row exists for a cross-segment client only."""
+    """The gateway row exists for a cross-segment client only.
+
+    Named delta (SP-1 e2): the reader is measured, so the row is required and
+    each client's HTTP-by-address fetch waits for its own gateway read.
+    """
     routed = routed_workload()[1].services
     gateways = [
         item
@@ -150,7 +154,16 @@ def test_routed_clients_read_their_gateway_and_local_ones_do_not():
         "BR2-DEFAULT-PC-01",
         "BR2-DEFAULT-PC-02",
     }
-    assert all(not item.required for item in gateways)
+    assert all(item.required for item in gateways)
+    by_client = {item.client_device_id: item.id for item in gateways}
+    fetches = [
+        item
+        for item in routed.verification_expectations
+        if item.kind is ServiceVerificationKind.HTTP_FETCH
+    ]
+    assert fetches
+    for fetch in fetches:
+        assert fetch.depends_on == [by_client[fetch.client_device_id]]
 
 
 def test_the_product_asks_every_http_by_ip_before_any_dns(tmp_path: Path):

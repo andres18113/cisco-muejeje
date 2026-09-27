@@ -50,25 +50,23 @@ from packet_tracer_mcp.infrastructure.persistence.capability_snapshot_store impo
     CapabilitySnapshotStore,
 )
 
-
 BUILD = MEASURED_BACKEND_VERSION
 
 
 def _delivery_dimensions(
-    *, active: int, tested: int = 24, model: str = "3560-24PS",
+    *,
+    active: int,
+    tested: int = 24,
+    model: str = "3560-24PS",
 ) -> dict[str, str]:
-    access_ports = tuple(
-        f"FastEthernet0/{index}" for index in range(1, 25)
-    )
+    access_ports = tuple(f"FastEthernet0/{index}" for index in range(1, 25))
     tested_bindings = tuple(
         PoEDeliveryTestedBinding(
             switch_port=port,
             comparison_port=port,
             endpoint_model="7960",
             endpoint_port="Switch",
-            candidate_state=(
-                "powered" if index < active else "not_powered"
-            ),
+            candidate_state=("powered" if index < active else "not_powered"),
             comparison_state="not_powered",
             candidate_indicator="test fixture powered",
             comparison_indicator="test fixture dark",
@@ -80,60 +78,75 @@ def _delivery_dimensions(
     active_bindings = tuple(
         binding.authorized_binding for binding in tested_bindings[:active]
     )
-    return encode_poe_delivery_dimensions(PoEDeliveryClaimScope(
-        candidate_model=model,
-        packet_tracer_build=BUILD,
-        access_ports=access_ports,
-        tested_bindings=tested_bindings,
-        active_bindings=active_bindings,
-        simultaneous_active_ports=len(active_bindings),
-        comparison_model="2960-24TT",
-        observation_method="manual_visible_power_state",
-        observer_id="test-reviewer",
-        observed_at="2026-09-04T15:00:00Z",
-        cleanup_status="clean",
-        inventory_restoration="restored",
-    ))
+    return encode_poe_delivery_dimensions(
+        PoEDeliveryClaimScope(
+            candidate_model=model,
+            packet_tracer_build=BUILD,
+            access_ports=access_ports,
+            tested_bindings=tested_bindings,
+            active_bindings=active_bindings,
+            simultaneous_active_ports=len(active_bindings),
+            comparison_model="2960-24TT",
+            observation_method="manual_visible_power_state",
+            observer_id="test-reviewer",
+            observed_at="2026-09-04T15:00:00Z",
+            cleanup_status="clean",
+            inventory_restoration="restored",
+        )
+    )
 
 
 def _one_binding_delivery_dimensions(
-    *, packet_tracer_version: str = BUILD,
+    *,
+    packet_tracer_version: str = BUILD,
 ) -> dict[str, str]:
     binding = PoEAuthorizedBinding("FastEthernet0/1", "7960", "Switch")
-    return encode_poe_delivery_dimensions(PoEDeliveryClaimScope(
-        candidate_model="3560-24PS",
-        packet_tracer_build=packet_tracer_version,
-        access_ports=("FastEthernet0/1",),
-        tested_bindings=(PoEDeliveryTestedBinding(
-            switch_port=binding.switch_port,
-            comparison_port="FastEthernet0/1",
-            endpoint_model=binding.endpoint_model,
-            endpoint_port=binding.endpoint_port,
-            candidate_state="powered",
-            comparison_state="not_powered",
-            candidate_indicator="test fixture powered",
-            comparison_indicator="test fixture dark",
-            candidate_ready=True,
-            comparison_ready=True,
-        ),),
-        active_bindings=(binding,),
-        simultaneous_active_ports=1,
-        comparison_model="2960-24TT",
-        observation_method="manual_visible_power_state",
-        observer_id="reviewer-1",
-        observed_at="2026-09-04T15:00:00Z",
-        cleanup_status="clean",
-        inventory_restoration="restored",
-    ))
+    return encode_poe_delivery_dimensions(
+        PoEDeliveryClaimScope(
+            candidate_model="3560-24PS",
+            packet_tracer_build=packet_tracer_version,
+            access_ports=("FastEthernet0/1",),
+            tested_bindings=(
+                PoEDeliveryTestedBinding(
+                    switch_port=binding.switch_port,
+                    comparison_port="FastEthernet0/1",
+                    endpoint_model=binding.endpoint_model,
+                    endpoint_port=binding.endpoint_port,
+                    candidate_state="powered",
+                    comparison_state="not_powered",
+                    candidate_indicator="test fixture powered",
+                    comparison_indicator="test fixture dark",
+                    candidate_ready=True,
+                    comparison_ready=True,
+                ),
+            ),
+            active_bindings=(binding,),
+            simultaneous_active_ports=1,
+            comparison_model="2960-24TT",
+            observation_method="manual_visible_power_state",
+            observer_id="reviewer-1",
+            observed_at="2026-09-04T15:00:00Z",
+            cleanup_status="clean",
+            inventory_restoration="restored",
+        )
+    )
+
 
 EXPECTED = {
-    "1941": {"layer3": CapabilityStatus.SUPPORTED},
+    # SP-1 named delta: static routes measured LIVE (sp1-routed-01/e2).
+    "1941": {
+        "layer3": CapabilityStatus.SUPPORTED,
+        "supports_static_routes": CapabilityStatus.SUPPORTED,
+    },
     "2811": {
         "layer3": CapabilityStatus.SUPPORTED,
         "supports_cme": CapabilityStatus.SUPPORTED,
         "supports_dhcp_server": CapabilityStatus.SUPPORTED,
     },
-    "2911": {"layer3": CapabilityStatus.SUPPORTED},
+    "2911": {
+        "layer3": CapabilityStatus.SUPPORTED,
+        "supports_static_routes": CapabilityStatus.SUPPORTED,
+    },
     "2950T-24": {
         "layer2": CapabilityStatus.SUPPORTED,
         "supports_vlan": CapabilityStatus.SUPPORTED,
@@ -172,6 +185,7 @@ EXPECTED_RECORD_IDENTITIES = {
 
 
 def test_measured_capability_record_preserves_claim_dimensions(monkeypatch):
+    """A projected record keeps its claim dimensions unchanged."""
     dimensions = _one_binding_delivery_dimensions(packet_tracer_version="PT 10.0")
     record = MeasuredCapabilityRecord(
         model="3560-24PS",
@@ -204,8 +218,10 @@ def test_measured_capability_record_preserves_claim_dimensions(monkeypatch):
 
 
 def test_governed_capabilities_do_not_depend_on_cwd_machine_state(
-    tmp_path, monkeypatch,
+    tmp_path,
+    monkeypatch,
 ):
+    """The governed records resolve the same whatever the working directory holds."""
     monkeypatch.chdir(tmp_path)
     adapter = packet_tracer_enterprise_capability_adapter(BUILD)
 
@@ -221,6 +237,7 @@ def test_governed_capabilities_do_not_depend_on_cwd_machine_state(
 
 
 def test_every_portable_fact_is_exact_build_verified_and_traceable():
+    """Every record is unique, exact-build, verified and names its snapshot."""
     assert MEASURED_CAPABILITY_RECORDS
 
     identities = set()
@@ -244,12 +261,16 @@ def test_every_portable_fact_is_exact_build_verified_and_traceable():
 
 
 def test_absent_facts_and_other_builds_remain_unknown(tmp_path):
+    """A fact nobody measured, or another build, stays UNKNOWN."""
     empty = CapabilitySnapshotStore(tmp_path / "empty")
     exact = packet_tracer_enterprise_capability_adapter(BUILD, store=empty)
     other = packet_tracer_enterprise_capability_adapter("9.0.2.0000", store=empty)
 
     assert exact.capabilities_for("3650-24PS", BUILD).layer3 is CapabilityStatus.UNKNOWN
-    assert exact.capabilities_for("2950T-24", BUILD).supports_poe is CapabilityStatus.UNKNOWN
+    assert (
+        exact.capabilities_for("2950T-24", BUILD).supports_poe
+        is CapabilityStatus.UNKNOWN
+    )
     for model, statuses in EXPECTED.items():
         resolved = other.capabilities_for(model, "9.0.2.0000")
         assert resolved is not None
@@ -258,30 +279,36 @@ def test_absent_facts_and_other_builds_remain_unknown(tmp_path):
 
 
 def test_runtime_negative_without_delivery_test_remains_unknown(tmp_path):
+    """A runtime negative without a delivery test does not become a claim."""
     store = CapabilitySnapshotStore(tmp_path / "runtime")
-    store.save_runtime(CapabilitySnapshot(
-        packet_tracer_version=BUILD,
-        session=ProbeSessionResult(
-            session=ProbeSession(
-                session_id="newer-negative",
-                packet_tracer_version=BUILD,
+    store.save_runtime(
+        CapabilitySnapshot(
+            packet_tracer_version=BUILD,
+            session=ProbeSessionResult(
+                session=ProbeSession(
+                    session_id="newer-negative",
+                    packet_tracer_version=BUILD,
+                ),
+                results=[
+                    CapabilityProbeResult(
+                        probe_id="fresh-supports-poe",
+                        model="3560-24PS",
+                        capability="supports_poe",
+                        status=CapabilityStatus.UNSUPPORTED,
+                        execution_status=ProbeExecutionStatus.VERIFIED,
+                        evidence_source=EvidenceSource.PACKET_TRACER_RUNTIME,
+                        verified=True,
+                        packet_tracer_version=BUILD,
+                        verification_method=CapabilityVerificationMethod.OBJECT_STATE,
+                    )
+                ],
             ),
-            results=[CapabilityProbeResult(
-                probe_id="fresh-supports-poe",
-                model="3560-24PS",
-                capability="supports_poe",
-                status=CapabilityStatus.UNSUPPORTED,
-                execution_status=ProbeExecutionStatus.VERIFIED,
-                evidence_source=EvidenceSource.PACKET_TRACER_RUNTIME,
-                verified=True,
-                packet_tracer_version=BUILD,
-                verification_method=CapabilityVerificationMethod.OBJECT_STATE,
-            )],
-        ),
-    ))
+        )
+    )
 
     resolved = packet_tracer_enterprise_capability_adapter(
-        BUILD, store=store,
+        BUILD,
+        store=store,
     ).capabilities_for("3560-24PS", BUILD)
 
     assert resolved is not None
@@ -290,6 +317,8 @@ def test_runtime_negative_without_delivery_test_remains_unknown(tmp_path):
 
 
 def test_execution_snapshot_reuses_the_first_resolution_when_a_provider_changes():
+    """One execution keeps its first resolution after a provider changes."""
+
     class ChangingProvider:
         def __init__(self) -> None:
             self.requests = 0
@@ -303,17 +332,19 @@ def test_execution_snapshot_reuses_the_first_resolution_when_a_provider_changes(
                 if self.requests == 1
                 else CapabilityStatus.UNSUPPORTED
             )
-            return (CapabilityEvidence(
-                capability="supports_poe",
-                status=status,
-                source=EvidenceSource.MANUAL_VERIFICATION,
-                packet_tracer_version=BUILD,
-                verified=True,
-                observed_value=24 if status is CapabilityStatus.SUPPORTED else 0,
-                dimensions=_delivery_dimensions(
-                    active=24 if status is CapabilityStatus.SUPPORTED else 0,
+            return (
+                CapabilityEvidence(
+                    capability="supports_poe",
+                    status=status,
+                    source=EvidenceSource.MANUAL_VERIFICATION,
+                    packet_tracer_version=BUILD,
+                    verified=True,
+                    observed_value=24 if status is CapabilityStatus.SUPPORTED else 0,
+                    dimensions=_delivery_dimensions(
+                        active=24 if status is CapabilityStatus.SUPPORTED else 0,
+                    ),
                 ),
-            ),)
+            )
 
     provider = ChangingProvider()
     mutable = EnterpriseCapabilityAdapter(
@@ -340,6 +371,8 @@ def test_execution_snapshot_reuses_the_first_resolution_when_a_provider_changes(
 
 
 def test_execution_snapshot_preserves_injected_adapter_semantics():
+    """An injected adapter's own semantics survive the execution snapshot."""
+
     class RestrictiveCatalog(EnterpriseCapabilityAdapter):
         def hardware_candidates(self, category, packet_tracer_version=None):
             return []
@@ -353,6 +386,7 @@ def test_execution_snapshot_preserves_injected_adapter_semantics():
 def test_execution_snapshot_does_not_alias_an_empty_version_to_the_bound_build(
     tmp_path,
 ):
+    """An empty version is never read as the bound build."""
     mutable = packet_tracer_enterprise_capability_adapter(
         BUILD,
         store=CapabilitySnapshotStore(tmp_path / "empty"),
@@ -369,6 +403,7 @@ def test_execution_snapshot_does_not_alias_an_empty_version_to_the_bound_build(
 
 
 def test_execution_result_mutation_cannot_change_a_later_execution(tmp_path):
+    """Mutating one execution's result cannot leak into the next."""
     mutable = packet_tracer_enterprise_capability_adapter(
         BUILD,
         store=CapabilitySnapshotStore(tmp_path / "empty"),
@@ -390,40 +425,52 @@ def test_execution_result_mutation_cannot_change_a_later_execution(tmp_path):
 def test_runtime_multilayer_contradiction_suppresses_static_layer3_implication(
     tmp_path,
 ):
+    """A runtime multilayer contradiction suppresses the static layer-3 implication."""
     store = CapabilitySnapshotStore(tmp_path / "runtime")
-    store.save_runtime(CapabilitySnapshot(
-        packet_tracer_version=BUILD,
-        session=ProbeSessionResult(
-            session=ProbeSession(
-                session_id="newer-multilayer-negative",
-                packet_tracer_version=BUILD,
+    store.save_runtime(
+        CapabilitySnapshot(
+            packet_tracer_version=BUILD,
+            session=ProbeSessionResult(
+                session=ProbeSession(
+                    session_id="newer-multilayer-negative",
+                    packet_tracer_version=BUILD,
+                ),
+                results=[
+                    CapabilityProbeResult(
+                        probe_id="fresh-multilayer-intervlan",
+                        model="3560-24PS",
+                        capability="multilayer_intervlan",
+                        status=CapabilityStatus.UNSUPPORTED,
+                        execution_status=ProbeExecutionStatus.VERIFIED,
+                        evidence_source=EvidenceSource.PACKET_TRACER_RUNTIME,
+                        verified=True,
+                        packet_tracer_version=BUILD,
+                        verification_method=CapabilityVerificationMethod.SIMULATION_TRACE,
+                    )
+                ],
             ),
-            results=[CapabilityProbeResult(
-                probe_id="fresh-multilayer-intervlan",
-                model="3560-24PS",
-                capability="multilayer_intervlan",
-                status=CapabilityStatus.UNSUPPORTED,
-                execution_status=ProbeExecutionStatus.VERIFIED,
-                evidence_source=EvidenceSource.PACKET_TRACER_RUNTIME,
-                verified=True,
-                packet_tracer_version=BUILD,
-                verification_method=CapabilityVerificationMethod.SIMULATION_TRACE,
-            )],
-        ),
-    ))
+        )
+    )
 
     resolved = packet_tracer_enterprise_capability_adapter(
-        BUILD, store=store,
+        BUILD,
+        store=store,
     ).capabilities_for("3560-24PS", BUILD)
 
     assert resolved is not None
-    assert CapabilityResolver.resolve_evidence(
-        "multilayer_intervlan", resolved.evidence, BUILD,
-    ) is CapabilityStatus.UNSUPPORTED
+    assert (
+        CapabilityResolver.resolve_evidence(
+            "multilayer_intervlan",
+            resolved.evidence,
+            BUILD,
+        )
+        is CapabilityStatus.UNSUPPORTED
+    )
     assert resolved.layer3 is CapabilityStatus.UNKNOWN
 
 
 def test_poe_projection_and_conflict_share_the_authoritative_winner():
+    """PoE projection and conflict reporting agree on the same winner."""
     evidence = [
         CapabilityEvidence(
             capability="supports_poe",
@@ -457,6 +504,7 @@ def test_poe_projection_and_conflict_share_the_authoritative_winner():
 
 
 def test_same_authority_malformed_decided_claim_blocks_valid_delivery_scope():
+    """A malformed claim of equal authority blocks the valid delivery scope."""
     legacy = CapabilityEvidence(
         capability="supports_poe",
         status=CapabilityStatus.SUPPORTED,
@@ -487,6 +535,7 @@ def test_same_authority_malformed_decided_claim_blocks_valid_delivery_scope():
 
 
 def test_dynamic_adapter_result_mutation_cannot_change_a_later_execution(tmp_path):
+    """Mutating a dynamic adapter's result cannot leak into the next execution."""
     mutable = packet_tracer_enterprise_capability_adapter(
         BUILD,
         store=CapabilitySnapshotStore(tmp_path / "empty"),

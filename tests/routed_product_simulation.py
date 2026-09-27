@@ -329,10 +329,13 @@ class RoutedCampusTerminal(CampusTerminal):
         if "api:api,value:v" in script:
             device = _json_argument(script, _DEVICE)
             binding = self.bindings.get(device)
-            process = "HostIp" if '"HostIp"' in script else "DnsClient"
+            if '"HostIp"' in script:
+                # Measured on PC-PT 9.0.1.0858 (sp1-routed-01/e1, e2).
+                return "PT_ERROR: invalid string position"
+            gateway = '"HostIpProcess"' in script
             value = ""
             if binding is not None:
-                value = binding["gateway"] if process == "HostIp" else binding["dns"]
+                value = binding["gateway"] if gateway else binding["dns"]
             return json.dumps(
                 {
                     "found": binding is not None,

@@ -2098,6 +2098,25 @@ class ServiceCompiler:
                 if gateway_row is not None:
                     expectations.append(gateway_row)
                 if service.service_type is ServiceType.DNS:
+                    # SP1-04: the client's configured resolver is read back
+                    # fresh and must equal the planned server before any of
+                    # its DNS queries (Q1 M-DNS-3 recorded the reader). A
+                    # read is not a DNS exchange, so it gates the queries and
+                    # proves nothing about resolution itself.
+                    resolver = ServiceVerificationExpectation(
+                        id=_stable_id(
+                            "verify-client-dns-server", service.id, client_id
+                        ),
+                        service_id=service.id,
+                        action_id=terminal.id,
+                        kind=ServiceVerificationKind.CLIENT_DNS_SERVER,
+                        evidence_kind=ServiceEvidenceKind.BEHAVIORAL,
+                        host_device_id=service.host_device_id,
+                        host_device_name=service.host_device_name,
+                        client_device_id=client_id,
+                        client_device_name=client.name,
+                        expected={"server_address": service.address},
+                    )
                     records = [
                         item
                         for item in service_actions
@@ -2108,6 +2127,7 @@ class ServiceCompiler:
                             id=_stable_id(
                                 "verify-dns", service.id, client_id, record.hostname
                             ),
+                            depends_on=[resolver.id],
                             service_id=service.id,
                             action_id=record.id,
                             kind=ServiceVerificationKind.DNS_RESOLUTION,
@@ -2149,28 +2169,7 @@ class ServiceCompiler:
                             expected={"hostname": negative_name, "must_resolve": False},
                         )
                     )
-                    # Advisory only (R-CAP-06). It reads the client's own
-                    # resolver setting back, which is a different claim from
-                    # resolving a name, and it has no evidence at all until
-                    # M-DNS-3 records one. It is compiled so the operator can
-                    # see it was not attempted; it never gates anything.
-                    expectations.append(
-                        ServiceVerificationExpectation(
-                            id=_stable_id(
-                                "verify-client-dns-server", service.id, client_id
-                            ),
-                            service_id=service.id,
-                            action_id=terminal.id,
-                            kind=ServiceVerificationKind.CLIENT_DNS_SERVER,
-                            evidence_kind=ServiceEvidenceKind.BEHAVIORAL,
-                            host_device_id=service.host_device_id,
-                            host_device_name=service.host_device_name,
-                            client_device_id=client_id,
-                            client_device_name=client.name,
-                            required=False,
-                            expected={"server_address": service.address},
-                        )
-                    )
+                    expectations.append(resolver)
                 elif service.service_type in {ServiceType.HTTP, ServiceType.HTTPS}:
                     shared = self._shared_content(service.id, actions)
                     content = shared.content if shared else ""
@@ -2188,6 +2187,7 @@ class ServiceCompiler:
                         host_device_name=service.host_device_name,
                         client_device_id=client_id,
                         client_device_name=client.name,
+                        depends_on=[gateway_row.id] if gateway_row is not None else [],
                         expected={
                             "address": service.address,
                             "marker": content,
@@ -2303,9 +2303,9 @@ class ServiceCompiler:
         """Compile the client's gateway read-back for a routed static client.
 
         A request to a server in another segment leaves the client through its
-        default gateway, so SP-1 reads that setting back. It is advisory until
-        the reader is measured on the build; a same-segment or DHCP client
-        compiles none.
+        default gateway, so SP-1 reads that setting back before the client's
+        first request (SP1-02a); the reader was measured by SP-1 episode 2. A
+        same-segment or DHCP client compiles none.
         """
         if service.service_type not in {ServiceType.HTTP, ServiceType.HTTPS}:
             # One read per client is enough; the HTTP-by-IP request is the
@@ -2327,7 +2327,6 @@ class ServiceCompiler:
             host_device_name=service.host_device_name,
             client_device_id=client_id,
             client_device_name=client.name,
-            required=False,
             expected={
                 "gateway": client_foundation.gateway,
                 "interface": client_foundation.interface,
