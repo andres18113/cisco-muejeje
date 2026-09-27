@@ -30,6 +30,7 @@ from packet_tracer_mcp.application.use_cases.server_pt_campaign import (
     DHCP_FASTLOOP_CAMPAIGN,
     FASTLOOP_CAMPAIGN,
     SP1_ROUTED_CAMPAIGN,
+    SP2_CAMPAIGN,
     ExecutionPurpose,
     source_authority_findings,
 )
@@ -114,6 +115,7 @@ def test_each_campaign_names_its_purpose_and_fixed_limits():
         DHCP_FASTLOOP_CAMPAIGN.campaign_id: DHCP_FASTLOOP_CAMPAIGN,
         DHCP_AUTONOMY_CAMPAIGN.campaign_id: DHCP_AUTONOMY_CAMPAIGN,
         SP1_ROUTED_CAMPAIGN.campaign_id: SP1_ROUTED_CAMPAIGN,
+        SP2_CAMPAIGN.campaign_id: SP2_CAMPAIGN,
     }
     assert C31_CAMPAIGN.purpose is ExecutionPurpose.DELIVERY
     assert C31_CAMPAIGN.complete_attempt_limit == 2
@@ -139,6 +141,12 @@ def test_each_campaign_names_its_purpose_and_fixed_limits():
     assert SP1_ROUTED_CAMPAIGN.forced_retirement_authorized is True
     assert SP1_ROUTED_CAMPAIGN.charter_sha256 == (
         "df2291e7db938c4bd022b49286fb4934b226d7940b7355eaedc2ec78b793440e"
+    )
+    assert SP2_CAMPAIGN.purpose is ExecutionPurpose.EXPERIMENTAL
+    assert SP2_CAMPAIGN.complete_attempt_limit is None
+    assert SP2_CAMPAIGN.forced_retirement_authorized is True
+    assert SP2_CAMPAIGN.charter_sha256 == (
+        "edeb6e45ef047a308b4d9cc6688f86ceb4cd3af44ccfd77297366c94e4889477"
     )
 
 
