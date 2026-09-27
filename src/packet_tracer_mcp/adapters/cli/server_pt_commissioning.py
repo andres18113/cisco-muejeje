@@ -47,10 +47,12 @@ from ...application.use_cases.seal_server_pt_acceptance import (
     seal_server_pt_acceptance,
 )
 from ...application.use_cases.server_pt_campaign import (
+    AUTONOMOUS_CAMPAIGN_IDS,
     C31_CAMPAIGN,
     DHCP_AUTONOMY_CAMPAIGN,
     DHCP_FASTLOOP_CAMPAIGN,
     FASTLOOP_CAMPAIGN,
+    SP1_ROUTED_CAMPAIGN,
     ServerPtCampaign,
     source_authority_findings,
 )
@@ -179,6 +181,7 @@ _CAMPAIGNS = {
     "fastloop": FASTLOOP_CAMPAIGN,
     "dhcp-fastloop": DHCP_FASTLOOP_CAMPAIGN,
     "dhcp-autonomy": DHCP_AUTONOMY_CAMPAIGN,
+    "sp1": SP1_ROUTED_CAMPAIGN,
 }
 #: The charter digest each campaign's LIVE modes require. Read at call time,
 #: per campaign, so the C31 digest remains this module's one charter seam.
@@ -186,6 +189,7 @@ CHARTER_SHA256 = C31_CAMPAIGN.charter_sha256
 FASTLOOP_CHARTER_SHA256 = FASTLOOP_CAMPAIGN.charter_sha256
 DHCP_FASTLOOP_CHARTER_SHA256 = DHCP_FASTLOOP_CAMPAIGN.charter_sha256
 DHCP_AUTONOMY_CHARTER_SHA256 = DHCP_AUTONOMY_CAMPAIGN.charter_sha256
+SP1_ROUTED_CHARTER_SHA256 = SP1_ROUTED_CAMPAIGN.charter_sha256
 #: One episode plan or closing is operator-written JSON; bound what it may be.
 _LEDGER_INPUT_LIMIT = 16 * 1024
 #: The OS helper that observes, closes and terminates one exact PID.
@@ -241,6 +245,8 @@ def _charter_digest(campaign: ServerPtCampaign) -> str:
     """Return the digest this campaign's charter must have."""
     if campaign.campaign_id == DHCP_AUTONOMY_CAMPAIGN.campaign_id:
         return DHCP_AUTONOMY_CHARTER_SHA256
+    if campaign.campaign_id == SP1_ROUTED_CAMPAIGN.campaign_id:
+        return SP1_ROUTED_CHARTER_SHA256
     if campaign.campaign_id == DHCP_FASTLOOP_CAMPAIGN.campaign_id:
         return DHCP_FASTLOOP_CHARTER_SHA256
     return FASTLOOP_CHARTER_SHA256 if campaign.experimental else CHARTER_SHA256
@@ -258,6 +264,7 @@ def _dhcp_campaign_mode_refusal(campaign: ServerPtCampaign, args) -> str:
     if campaign.campaign_id not in {
         DHCP_FASTLOOP_CAMPAIGN.campaign_id,
         DHCP_AUTONOMY_CAMPAIGN.campaign_id,
+        SP1_ROUTED_CAMPAIGN.campaign_id,
     }:
         return ""
     chosen = [
@@ -1342,7 +1349,7 @@ def _record_retirement_attempt(
 
 def _retire(root: Path, attempt_id: str, campaign: ServerPtCampaign) -> int:
     """Hold the shared writer lock while retiring an autonomy laboratory."""
-    if campaign.campaign_id != DHCP_AUTONOMY_CAMPAIGN.campaign_id:
+    if campaign.campaign_id not in AUTONOMOUS_CAMPAIGN_IDS:
         return _retire_claimed(root, attempt_id, campaign)
     coordinator = _RETIREMENT_COORDINATOR()
     try:
@@ -1506,7 +1513,7 @@ def _retire_claimed(
         pid, before, signature=signature, start_ticks=start_ticks
     )
     recovered_close: Mapping[str, object] | None = None
-    if refusal and campaign.campaign_id == DHCP_AUTONOMY_CAMPAIGN.campaign_id:
+    if refusal and campaign.campaign_id in AUTONOMOUS_CAMPAIGN_IDS:
         try:
             previous = store.retirement_attempts(attempt_id)
             document, prior, recovery_findings = recoverable_save_prompt_close(
@@ -1541,7 +1548,7 @@ def _retire_claimed(
                 "mailbox_before_close": mailbox_before,
                 "quarantine": (
                     "owned_lab_open_prompt_unresolved"
-                    if campaign.campaign_id == DHCP_AUTONOMY_CAMPAIGN.campaign_id
+                    if campaign.campaign_id in AUTONOMOUS_CAMPAIGN_IDS
                     and any(
                         window.visible and window.owner_handle
                         for window in before.windows
@@ -1632,12 +1639,12 @@ def _retire_claimed(
     # observed, but an unknown request never authorizes a force.
     first_wait = (
         min(3.0, RETIREMENT_GRACE_SECONDS)
-        if campaign.campaign_id == DHCP_AUTONOMY_CAMPAIGN.campaign_id
+        if campaign.campaign_id in AUTONOMOUS_CAMPAIGN_IDS
         else RETIREMENT_GRACE_SECONDS
     )
     exited = _await_absence(control, pid, first_wait, readings)
     prompt_refusal: tuple[str, ...] = ()
-    if not exited and campaign.campaign_id == DHCP_AUTONOMY_CAMPAIGN.campaign_id:
+    if not exited and campaign.campaign_id in AUTONOMOUS_CAMPAIGN_IDS:
         prompt_record = _answer_owned_save_prompt(
             control,
             pid,

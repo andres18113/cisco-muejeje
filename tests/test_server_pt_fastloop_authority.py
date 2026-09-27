@@ -29,6 +29,7 @@ from packet_tracer_mcp.application.use_cases.server_pt_campaign import (
     DHCP_AUTONOMY_CAMPAIGN,
     DHCP_FASTLOOP_CAMPAIGN,
     FASTLOOP_CAMPAIGN,
+    SP1_ROUTED_CAMPAIGN,
     ExecutionPurpose,
     source_authority_findings,
 )
@@ -112,6 +113,7 @@ def test_each_campaign_names_its_purpose_and_fixed_limits():
         FASTLOOP_CAMPAIGN.campaign_id: FASTLOOP_CAMPAIGN,
         DHCP_FASTLOOP_CAMPAIGN.campaign_id: DHCP_FASTLOOP_CAMPAIGN,
         DHCP_AUTONOMY_CAMPAIGN.campaign_id: DHCP_AUTONOMY_CAMPAIGN,
+        SP1_ROUTED_CAMPAIGN.campaign_id: SP1_ROUTED_CAMPAIGN,
     }
     assert C31_CAMPAIGN.purpose is ExecutionPurpose.DELIVERY
     assert C31_CAMPAIGN.complete_attempt_limit == 2
@@ -130,6 +132,13 @@ def test_each_campaign_names_its_purpose_and_fixed_limits():
     assert DHCP_AUTONOMY_CAMPAIGN.forced_retirement_authorized is True
     assert DHCP_AUTONOMY_CAMPAIGN.charter_sha256 == (
         "3bb343ef80d75c0ebf37204c8fbfd57da23eea4e5de57a7227ee1ded2e2d1ea2"
+    )
+    # SP-1 routed DNS/HTTP: the same delegated shape, bound to its work order.
+    assert SP1_ROUTED_CAMPAIGN.purpose is ExecutionPurpose.EXPERIMENTAL
+    assert SP1_ROUTED_CAMPAIGN.complete_attempt_limit is None
+    assert SP1_ROUTED_CAMPAIGN.forced_retirement_authorized is True
+    assert SP1_ROUTED_CAMPAIGN.charter_sha256 == (
+        "df2291e7db938c4bd022b49286fb4934b226d7940b7355eaedc2ec78b793440e"
     )
 
 

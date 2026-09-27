@@ -86,7 +86,17 @@ DHCP_AUTONOMY_ALLOWANCE = CampaignAllowance(
     protected_operations=1_000,
     protected_seconds=600,
 )
+#: SP-1 grants no numeric ceiling; it requires finite, protected
+#: allocations chosen within operator and platform limits. This is that
+#: campaign-wide planning ceiling, stated once and never enlarged in flight.
+SP1_ROUTED_ALLOWANCE = CampaignAllowance(
+    total_operations=40_000,
+    total_seconds=36_000,
+    protected_operations=1_000,
+    protected_seconds=900,
+)
 _ALLOWANCES = {
+    "SERVER-PT-SP1-ROUTED-01": SP1_ROUTED_ALLOWANCE,
     "SERVER-PT-IOS-FASTLOOP-01": FASTLOOP_ALLOWANCE,
     "SERVER-PT-DHCP-FASTLOOP-01": DHCP_FASTLOOP_ALLOWANCE,
     "SERVER-PT-DHCP-AUTONOMOUS-02": DHCP_AUTONOMY_ALLOWANCE,

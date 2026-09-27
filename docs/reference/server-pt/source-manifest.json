@@ -221,6 +221,13 @@
       "origin": "maintainer Downloads directory, 2026-09-24; adopted by the operator for campaign SERVER-PT-DHCP-FASTLOOP-01"
     },
     {
+      "source_name": "Prompt_SP1_Routed_DNS_HTTP.md",
+      "archive_path": "assignments/Prompt_SP1_Routed_DNS_HTTP.md",
+      "bytes": 17976,
+      "sha256": "df2291e7db938c4bd022b49286fb4934b226d7940b7355eaedc2ec78b793440e",
+      "origin": "maintainer Downloads directory, 2026-09-26; the charter of campaign SERVER-PT-SP1-ROUTED-01"
+    },
+    {
       "source_name": "ADDENDUM-01.sha256",
       "archive_path": "evidence/campaign-diag-0ea-01/ADDENDUM-01.sha256",
       "bytes": 1246,

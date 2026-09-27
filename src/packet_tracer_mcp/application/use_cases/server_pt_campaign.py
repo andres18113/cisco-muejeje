@@ -107,6 +107,26 @@ DHCP_AUTONOMY_CAMPAIGN = ServerPtCampaign(
     acceptance_cost_pin=None,
     forced_retirement_authorized=True,
 )
+#: SP-1 routed DNS/HTTP. Its charter is the work order
+#: `Prompt_SP1_Routed_DNS_HTTP.md` (SERVER-PT-SP1-ROUTED-DNS-HTTP-01), archived
+#: byte-for-byte under `docs/reference/server-pt/assignments/`. It grants
+#: owned-laboratory LIVE and bounded force retirement of the verified owned
+#: process cohort after a failed graceful close, like the DHCP autonomy one.
+SP1_ROUTED_CAMPAIGN = ServerPtCampaign(
+    campaign_id="SERVER-PT-SP1-ROUTED-01",
+    charter_sha256="df2291e7db938c4bd022b49286fb4934b226d7940b7355eaedc2ec78b793440e",
+    purpose=ExecutionPurpose.EXPERIMENTAL,
+    deployment_prefix="server-pt-sp1-routed-",
+    authorization_prefix="SERVER-PT-SP1-ROUTED-",
+    complete_attempt_limit=None,
+    acceptance_cost_pin=None,
+    forced_retirement_authorized=True,
+)
+#: Campaigns whose laboratory is delegated to the implementer: they share the
+#: owned save-prompt handling and bounded retirement of the DHCP autonomy one.
+AUTONOMOUS_CAMPAIGN_IDS = frozenset(
+    {DHCP_AUTONOMY_CAMPAIGN.campaign_id, SP1_ROUTED_CAMPAIGN.campaign_id}
+)
 CAMPAIGNS = {
     item.campaign_id: item
     for item in (
@@ -114,6 +134,7 @@ CAMPAIGNS = {
         FASTLOOP_CAMPAIGN,
         DHCP_FASTLOOP_CAMPAIGN,
         DHCP_AUTONOMY_CAMPAIGN,
+        SP1_ROUTED_CAMPAIGN,
     )
 }
 
