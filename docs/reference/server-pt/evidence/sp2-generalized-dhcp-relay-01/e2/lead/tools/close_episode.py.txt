@@ -1,0 +1,56 @@
+"""Close the SP-2 ledger episode after recorded qualification and retirement."""
+from __future__ import annotations
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+ROOT = Path(r"C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP-server-services-goal-foundations")
+EPISODE = Path(sys.argv[1]).resolve()
+if not EPISODE.is_relative_to(ROOT / "data" / "services" / "sp2-governed"):
+    raise RuntimeError("episode_path_outside_governed_root")
+ids = json.loads((EPISODE / "ids.json").read_text(encoding="utf-8"))
+def exit_code(name):
+    path=EPISODE/name
+    return int(path.read_text(encoding="utf-8").strip()) if path.is_file() else None
+def json_last_line(name):
+    path=EPISODE/name
+    if not path.is_file(): return {}
+    rows=path.read_text(encoding="utf-8").splitlines()
+    try: return json.loads(rows[-1]) if rows else {}
+    except (json.JSONDecodeError,TypeError): return {}
+qualification=json_last_line("09-qualification.stdout")
+retirement=json_last_line("10-retire.stdout")
+census_path=EPISODE/"11-exit-census.json"
+census=json.loads(census_path.read_text(encoding="utf-8")) if census_path.is_file() else {}
+clean=bool(exit_code("10-retire.exit")==0 and census and not census.get("process_error")
+           and not census.get("processes") and not census.get("mailbox_files")
+           and census.get("campaign_lock_present") is False)
+closing={
+    "attempt_id":ids["attempt_id"],
+    "source_sha":ids["head"],
+    "source_tree":ids["tree"],
+    "stage":ids["stage"],
+    "qualification_exit":exit_code("09-qualification.exit"),
+    "qualification_outcome":qualification.get("outcome","unobserved"),
+    "qualification_record_path":qualification.get("record_path",""),
+    "retirement_exit":exit_code("10-retire.exit"),
+    "retirement_outcome":retirement.get("outcome","unobserved"),
+    "cleanup_state":"verified_clean" if clean else "residue_or_unobservable",
+    "exit_census_sha256":hashlib.sha256(census_path.read_bytes()).hexdigest() if census_path.is_file() else "",
+}
+with (EPISODE/"episode-closing.json").open("x",encoding="utf-8") as out:
+    json.dump(closing,out,sort_keys=True,indent=2)
+    out.write("\n")
+env=dict(os.environ)
+env["PT_MCP_GOVERNED_ROOT"]=str(ROOT)
+args=[sys.executable,"-m","packet_tracer_mcp.adapters.cli.server_pt_commissioning",
+      "--close-episode","--campaign","sp2","--charter",ids["charter"],
+      "--episode","2","--episode-closing",str(EPISODE/"episode-closing.json")]
+with (EPISODE/"12-close-episode.stdout").open("x",encoding="utf-8") as stdout:
+    with (EPISODE/"12-close-episode.stderr").open("x",encoding="utf-8") as stderr:
+        result=subprocess.run(args,cwd=ROOT,env=env,stdout=stdout,stderr=stderr,timeout=60)
+with (EPISODE/"12-close-episode.exit").open("x",encoding="utf-8") as out:
+    out.write(str(result.returncode)+"\n")
+raise SystemExit(result.returncode)

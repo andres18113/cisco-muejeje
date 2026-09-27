@@ -1,0 +1,47 @@
+"""Capture exact source, process and mailbox baseline before opening SP-2."""
+from __future__ import annotations
+import json
+import subprocess
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+import packet_tracer_mcp
+from packet_tracer_mcp.infrastructure.execution.server_pt_process_control import PowerShellOwnedProcessControl
+from packet_tracer_mcp.infrastructure.execution.file_bridge import bridge_dir
+from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import ImportIsolationPreflight
+ROOT = Path(r"C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP-server-services-goal-foundations")
+EPISODE = Path(sys.argv[1]).resolve()
+if not EPISODE.is_relative_to(ROOT / "data" / "services" / "sp2-governed"):
+    raise RuntimeError("episode_path_outside_governed_root")
+ids = json.loads((EPISODE / "ids.json").read_text(encoding="utf-8"))
+def git(*args):
+    return subprocess.run(["git",*args],cwd=ROOT,check=True,capture_output=True,text=True,timeout=15).stdout.strip()
+processes = PowerShellOwnedProcessControl().packet_tracer_processes()
+mailbox = bridge_dir()
+entries = sorted(p.name for p in mailbox.iterdir() if p.is_file() and p.name != "alive.txt") if mailbox.exists() else []
+isolation = ImportIsolationPreflight(ROOT).ensure_isolated()
+record = {
+    "observed_at_utc":datetime.now(UTC).isoformat(),
+    "sys_executable":sys.executable,
+    "package_file":str(packet_tracer_mcp.__file__),
+    "isolation_state":isolation.state.value,
+    "pytest_loaded":"pytest" in sys.modules,
+    "retired_loaded":any(name.startswith("src.packet_tracer_mcp") for name in sys.modules),
+    "branch":git("branch","--show-current"),
+    "head":git("rev-parse","HEAD"),
+    "tree":git("rev-parse","HEAD^{tree}"),
+    "status":git("status","--porcelain=v1"),
+    "process_error":processes.error,
+    "process_count":len(processes.processes),
+    "mailbox_entries":entries,
+}
+with (EPISODE / "00-preopen-census.json").open("x",encoding="utf-8") as out:
+    json.dump(record,out,indent=2,sort_keys=True)
+    out.write("\n")
+if (not isolation.isolated or record["pytest_loaded"] or record["retired_loaded"]
+    or record["branch"] != "feature/server-pt-goal-foundations"
+    or record["head"] != ids["head"] or record["tree"] != ids["tree"]
+    or record["status"] or record["process_error"] or record["process_count"]
+    or record["mailbox_entries"]):
+    raise RuntimeError("preopen_baseline_unestablished")
+print(json.dumps({"outcome":"ready","head":record["head"],"tree":record["tree"],"process_count":0,"mailbox_entries":0}))

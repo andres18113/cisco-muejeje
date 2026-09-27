@@ -245,3 +245,31 @@ that product ordering with a failing multi-pool regression and a process-wide
 pool-before-enable barrier after the native startup question is measured.
 This remains a candidate causal correction; neither e1 nor offline tests prove
 native named-pool or relay support.
+
+## Episode 2 native pool result (2026-09-27)
+
+The pool-first profile v2 executed commit
+`865604e168ed068b598c7c141781b7954974a1f4`, tree
+`f5e82dfb0ee8668847444b68027507797934cdb4`, on Packet Tracer
+`9.0.1.0858` through the file channel. The named `MCP_E6Q_DHCP` policy was
+verified while the process was disabled and both PCs were unbound. The process
+was then enabled, and only PC1 entered DHCP mode. Two separated client and
+physical-pool samples found PC1 at `192.0.2.2/24`, MAC `00E0.8FC4.9984`,
+with an exact row in physical `serverPool`. PC2 remained off and unbound.
+The named-pool indexed window threw on every attempted empty read, so its
+absence and table end remain unknown. PC1 reported resolver `192.0.2.10`
+but gateway `0.0.0.0`; this is not a usable intended policy binding.
+`M-SP2-POOL-IDENTITY` is `NEGATIVE_OBSERVED` for physical default serving in
+this fixture. The changed startup order did not prevent that result; this does
+not establish that named-pool serving is impossible under relay or another
+policy.
+
+The stage used 106 bridge operations and completed without a primary or
+secondary failure. Fixture restoration was proven and `dirty_state=clean`.
+The owned PID `2528` and its helper exited; the final process and mailbox
+census was empty with no campaign lock. Episode 2 closed with no open ledger
+phase and 229 campaign operations committed across episodes 1 and 2. The
+separate e2 archive has 72 files and a verified `MANIFEST.sha256` digest
+`0d62078c603719ee4af034046159d0e7710ce4df277f42afc2e7494628cd2bd7`.
+The named-pool, remote relay, simultaneous capacity, and product acceptance
+claims remain `UNKNOWN`.

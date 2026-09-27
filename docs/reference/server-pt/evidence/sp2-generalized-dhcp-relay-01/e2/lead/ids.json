@@ -1,0 +1,13 @@
+{
+  "attempt_id": "664f9b83e2a7f01f9c94732111141b61",
+  "authorization_id": "SERVER-PT-SP2-E2-664f9b83e2a7f01f9c94732111141b61",
+  "build": "9.0.1.0858",
+  "channel": "file",
+  "charter": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\docs\\reference\\server-pt\\assignments\\Prompt_SP2_Generalized_DHCP_Relay.md",
+  "head": "865604e168ed068b598c7c141781b7954974a1f4",
+  "instance_token": "3df713ffb36a19bace1784d9108593a7",
+  "profile_id": "SP2-NATIVE-POOL",
+  "profile_version": "2",
+  "stage": "SP2-NATIVE-POOL",
+  "tree": "f5e82dfb0ee8668847444b68027507797934cdb4"
+}

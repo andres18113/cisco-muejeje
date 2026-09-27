@@ -1,0 +1,5566 @@
+{
+  "schema_version": 1,
+  "record_kind": "server_services_qualification",
+  "run_id": "2026-09-27T20-12-33Z-488ee3aa",
+  "stage": "SP2-NATIVE-POOL",
+  "execution_mode": "live",
+  "created_at": "2026-09-27T20:12:33.592131Z",
+  "completed_at": "2026-09-27T20:14:09.806364Z",
+  "authorization": {
+    "authorization_id": "SERVER-PT-SP2-E2-664f9b83e2a7f01f9c94732111141b61",
+    "stage": "SP2-NATIVE-POOL",
+    "sha": "865604e168ed068b598c7c141781b7954974a1f4",
+    "targets": [
+      "__MCP_E6Q_SRV",
+      "__MCP_E6Q_PC1",
+      "__MCP_E6Q_PC2",
+      "__MCP_E6Q_SW"
+    ],
+    "channel": "file",
+    "build": "9.0.1.0858",
+    "max_operations": 440,
+    "max_seconds": 1800,
+    "profile_id": "SP2-NATIVE-POOL",
+    "profile_version": "2",
+    "tree": "f5e82dfb0ee8668847444b68027507797934cdb4",
+    "models": [
+      "__MCP_E6Q_SRV:Server-PT",
+      "__MCP_E6Q_PC1:PC-PT",
+      "__MCP_E6Q_PC2:PC-PT",
+      "__MCP_E6Q_SW:2960-24TT"
+    ],
+    "links": [
+      "__MCP_E6Q_SRV:FastEthernet0-__MCP_E6Q_SW:FastEthernet0/1",
+      "__MCP_E6Q_PC1:FastEthernet0-__MCP_E6Q_SW:FastEthernet0/2",
+      "__MCP_E6Q_PC2:FastEthernet0-__MCP_E6Q_SW:FastEthernet0/3"
+    ],
+    "step_ids": [
+      "Q3FL-core",
+      "Q3FL-final"
+    ],
+    "reserve_operations": 11,
+    "instance_token": "3df713ffb36a19bace1784d9108593a7",
+    "attempt_id": "664f9b83e2a7f01f9c94732111141b61",
+    "process_id": 2528,
+    "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe"
+  },
+  "source": {
+    "expected_head": "865604e168ed068b598c7c141781b7954974a1f4",
+    "executed_sha": "865604e168ed068b598c7c141781b7954974a1f4",
+    "executed_tree": "f5e82dfb0ee8668847444b68027507797934cdb4",
+    "clean": true,
+    "branch": "feature/server-pt-goal-foundations",
+    "upstream": "cisco/feature/server-pt-goal-foundations",
+    "upstream_head": "865604e168ed068b598c7c141781b7954974a1f4"
+  },
+  "environment": {
+    "python_executable": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\.venv\\Scripts\\python.exe",
+    "package_file": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\src\\packet_tracer_mcp\\__init__.py",
+    "isolation_state": "ISOLATED",
+    "requested_build": "9.0.1.0858",
+    "observed_build": "9.0.1.0858",
+    "build_reader_id": "AppWindow.getVersion",
+    "build_reader_sha256": "c3a9b240898a89007111c4397eb4cb5464da69551021484d4bc6b7d0fc7f5935",
+    "build_observation": "{\"found\":true,\"backend\":\"packet_tracer\",\"backend_version\":\"9.0.1.0858\",\"extension_version\":\"\",\"runtime_mode\":\"logical-workspace\"}",
+    "build_reason": ""
+  },
+  "transport": {
+    "channel": "file",
+    "fixed_at": "2026-09-27T20:12:33.601137Z",
+    "liveness": "heartbeat_fresh"
+  },
+  "fixtures": [
+    {
+      "name": "__MCP_E6Q_SRV",
+      "model": "Server-PT",
+      "ipv4": "192.0.2.10",
+      "netmask": "255.255.255.0",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "__MCP_E6Q_PC1",
+      "model": "PC-PT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "__MCP_E6Q_PC2",
+      "model": "PC-PT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "__MCP_E6Q_SW",
+      "model": "2960-24TT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    }
+  ],
+  "links": [
+    {
+      "device_a": "__MCP_E6Q_SRV",
+      "port_a": "FastEthernet0",
+      "device_b": "__MCP_E6Q_SW",
+      "port_b": "FastEthernet0/1"
+    },
+    {
+      "device_a": "__MCP_E6Q_PC1",
+      "port_a": "FastEthernet0",
+      "device_b": "__MCP_E6Q_SW",
+      "port_b": "FastEthernet0/2"
+    },
+    {
+      "device_a": "__MCP_E6Q_PC2",
+      "port_a": "FastEthernet0",
+      "device_b": "__MCP_E6Q_SW",
+      "port_b": "FastEthernet0/3"
+    }
+  ],
+  "budget": {
+    "max_operations": 440,
+    "max_seconds": 1800,
+    "reserve_operations": 11,
+    "reserve_seconds": 300,
+    "planned_minimum_operations": 409,
+    "used_operations": 106,
+    "refused_calls": 0,
+    "elapsed_seconds": 96.203,
+    "local_observation_seconds": 25.659
+  },
+  "experimental_capabilities": [
+    "client.dhcp_mac_reader",
+    "server.dhcp_default_pool_observation",
+    "server.dhcp_lease_table",
+    "server.dhcp_pool_configuration",
+    "server.dhcp_process_binding",
+    "server.dhcp_process_enable"
+  ],
+  "operations": [
+    {
+      "seq": 1,
+      "phase": "admission",
+      "call": "send_and_wait",
+      "purpose": "read:executable_build",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 0.0,
+      "elapsed_seconds": 1.218,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 2,
+      "phase": "admission",
+      "call": "send_and_wait",
+      "purpose": "read:workspace_baseline",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 1.218,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 3,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_SRV",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 2.828,
+      "elapsed_seconds": 0.406,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 4,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_SRV",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 3.953,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 5,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_PC1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 5.75,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 6,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_PC1",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 7.422,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 7,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_PC2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 9.172,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 8,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_PC2",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 10.968,
+      "elapsed_seconds": 1.11,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 9,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_SW",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 12.812,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 10,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:__MCP_E6Q_SW",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 14.578,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 11,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 16.297,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 12,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:1",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 18.047,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 13,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 19.797,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 14,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:2",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 21.625,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 15,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:3",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 23.312,
+      "elapsed_seconds": 1.11,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 16,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:3",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 25.109,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 17,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "read:fixture_identity",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 26.125,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 18,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:native_default:before_e5",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 27.156,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 19,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:clients:baseline",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 28.172,
+      "elapsed_seconds": 0.296,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 20,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:lease_scan:baseline",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 28.468,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 21,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "q3-fl:product:e5_server_address",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 29.484,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 22,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:product:e5_server_address",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 30.218,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 23,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:native_default:after_server_address",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 30.531,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 24,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:lease_scan:after_server_address",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 30.843,
+      "elapsed_seconds": 0.204,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 25,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 31.047,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 26,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 31.359,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 27,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 31.562,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 28,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 31.875,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 29,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 32.172,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 30,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 32.375,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 31,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 33.687,
+      "elapsed_seconds": 0.703,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 32,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 34.39,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 33,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 34.703,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 34,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 34.906,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 35,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 36.203,
+      "elapsed_seconds": 0.812,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 36,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 37.015,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 37,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 37.218,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 38,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 37.531,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 39,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 38.734,
+      "elapsed_seconds": 0.813,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 40,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 39.547,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 41,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 39.75,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 42,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 39.968,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 43,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 41.265,
+      "elapsed_seconds": 0.703,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 44,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 41.968,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 45,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 42.281,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 46,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 42.484,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 47,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 43.797,
+      "elapsed_seconds": 0.703,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 48,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 44.5,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 49,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 44.812,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 50,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 45.015,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 51,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 46.328,
+      "elapsed_seconds": 0.703,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 52,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 47.031,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 53,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 47.343,
+      "elapsed_seconds": 0.204,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 54,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 47.547,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 55,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 48.75,
+      "elapsed_seconds": 0.812,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 56,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 49.562,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 57,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 49.765,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 58,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 50.062,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 59,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 51.375,
+      "elapsed_seconds": 0.703,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 60,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 8.969,
+      "started_offset_seconds": 52.078,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 61,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 52.39,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 62,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 52.593,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 63,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 53.89,
+      "elapsed_seconds": 0.719,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 64,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 6.438,
+      "started_offset_seconds": 54.609,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 65,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 54.906,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 66,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 55.218,
+      "elapsed_seconds": 0.204,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 67,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 56.422,
+      "elapsed_seconds": 0.812,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 68,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.813,
+      "started_offset_seconds": 57.234,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 69,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 57.437,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 70,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.297,
+      "started_offset_seconds": 57.75,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 71,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:forwarding",
+      "timeout_seconds": 3.094,
+      "started_offset_seconds": 57.953,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 72,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:native_default:before_pool_setup",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 58.25,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 73,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:lease_scan:before_pool_setup",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 58.562,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 74,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp2:product:e6_pool",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 59.531,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 75,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp2:product:e6_pool",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 61.343,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 76,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:native_default:after_pool_setup",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 62.25,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 77,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:lease_scan:after_pool_setup",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 62.562,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 78,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp2:product:e6_enable",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 63.453,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 79,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp2:product:e6_enable",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 65.328,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 80,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:native_default:after_enable_setup",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 66.343,
+      "elapsed_seconds": 0.204,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 81,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:lease_scan:after_enable_setup",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 66.547,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 82,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:clients:before_client_mode:__MCP_E6Q_PC1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 67.547,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 83,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:lease_scan:before_client_mode:__MCP_E6Q_PC1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 68.547,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 84,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "q3-fl:product:e5_client_mode",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 69.593,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 85,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "q3-fl:product:e5_client_mode",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 70.297,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 86,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:clients:after_client_mode:__MCP_E6Q_PC1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 70.609,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 87,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:native_default:after_client_mode:__MCP_E6Q_PC1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 70.812,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 88,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:lease_scan:after_client_mode:__MCP_E6Q_PC1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 71.125,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 89,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:clients:sample:__MCP_E6Q_PC1:1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 73.328,
+      "elapsed_seconds": 1.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 90,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp2:binding:sample:__MCP_E6Q_PC1:1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 74.64,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 91,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:lease_scan:sample:__MCP_E6Q_PC1:1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 74.843,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 92,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:clients:sample:__MCP_E6Q_PC1:2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 77.14,
+      "elapsed_seconds": 1.219,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 93,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp2:binding:sample:__MCP_E6Q_PC1:2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 78.359,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 94,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:lease_scan:sample:__MCP_E6Q_PC1:2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 78.656,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 95,
+      "phase": "terminal_observation",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:native_default:before_cleanup",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 79.578,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 96,
+      "phase": "terminal_observation",
+      "call": "dispatch_and_wait",
+      "purpose": "q3-fl:lease_scan:before_cleanup",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 80.687,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 97,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_SW",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 82.375,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 98,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_SW",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 83.359,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 99,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_PC2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 85.062,
+      "elapsed_seconds": 1.11,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 100,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_PC2",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 86.875,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 101,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_PC1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 88.797,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 102,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_PC1",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 90.422,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 103,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_SRV",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 92.203,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 104,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:__MCP_E6Q_SRV",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 93.984,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 105,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "read:restoration:1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 95.0,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 106,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "read:restoration:2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 95.203,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    }
+  ],
+  "transitions": [
+    {
+      "step": "admitted",
+      "at": "2026-09-27T20:12:35.119567Z",
+      "outcome": ""
+    },
+    {
+      "step": "fixtures:started",
+      "at": "2026-09-27T20:12:35.777976Z",
+      "outcome": ""
+    },
+    {
+      "step": "fixtures:ready",
+      "at": "2026-09-27T20:13:00.026892Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3FL_SERVER:started",
+      "at": "2026-09-27T20:13:00.755424Z",
+      "outcome": ""
+    },
+    {
+      "step": "native_default:before_e5",
+      "at": "2026-09-27T20:13:01.766873Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3FL_SERVER:e5_server_address",
+      "at": "2026-09-27T20:13:02.384436Z",
+      "outcome": ""
+    },
+    {
+      "step": "native_default:after_server_address",
+      "at": "2026-09-27T20:13:04.432493Z",
+      "outcome": ""
+    },
+    {
+      "step": "native_default:before_pool_setup",
+      "at": "2026-09-27T20:13:32.158329Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:SP2_SERVER:e6_pool",
+      "at": "2026-09-27T20:13:32.369534Z",
+      "outcome": ""
+    },
+    {
+      "step": "native_default:after_pool_setup",
+      "at": "2026-09-27T20:13:36.160738Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:SP2_SERVER:e6_enable",
+      "at": "2026-09-27T20:13:36.369157Z",
+      "outcome": ""
+    },
+    {
+      "step": "native_default:after_enable_setup",
+      "at": "2026-09-27T20:13:40.144074Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3FL_SERVER:concluded",
+      "at": "2026-09-27T20:13:40.454379Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3FL_DHCP:started",
+      "at": "2026-09-27T20:13:41.132777Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3FL_SERVER:e5_client_mode",
+      "at": "2026-09-27T20:13:42.457457Z",
+      "outcome": ""
+    },
+    {
+      "step": "native_default:after_client_mode:__MCP_E6Q_PC1",
+      "at": "2026-09-27T20:13:44.714455Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3FL_DHCP:concluded",
+      "at": "2026-09-27T20:13:52.467480Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3FL_FINAL:started",
+      "at": "2026-09-27T20:13:53.158042Z",
+      "outcome": ""
+    },
+    {
+      "step": "native_default:before_cleanup",
+      "at": "2026-09-27T20:13:54.282317Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:Q3FL_FINAL:concluded",
+      "at": "2026-09-27T20:13:54.493911Z",
+      "outcome": ""
+    },
+    {
+      "step": "finalization:started",
+      "at": "2026-09-27T20:13:54.499990Z",
+      "outcome": ""
+    },
+    {
+      "step": "finalization:completed",
+      "at": "2026-09-27T20:14:09.800368Z",
+      "outcome": ""
+    }
+  ],
+  "persisted_step": "finalization:completed",
+  "admission_reads": [
+    "isolation:ISOLATED",
+    "repository:865604e168ed068b598c7c141781b7954974a1f4:f5e82dfb0ee8668847444b68027507797934cdb4",
+    "build:9.0.1.0858",
+    "workspace:semantic=0,links=0,engine_managed=0"
+  ],
+  "diagnostic_lifecycle": {
+    "process_id": 2528,
+    "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+    "product_version": "9.0.1.0858",
+    "file_version": "9.0.1.0858",
+    "process_incarnation": "2026-09-27T15:11:27.3676341-05:00",
+    "mailbox_entries": [],
+    "error": ""
+  },
+  "diagnostic_lifecycle_postflight": {
+    "process_id": 2528,
+    "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+    "product_version": "9.0.1.0858",
+    "file_version": "9.0.1.0858",
+    "process_incarnation": "2026-09-27T15:11:27.3676341-05:00",
+    "mailbox_entries": [],
+    "error": ""
+  },
+  "workspace_baseline": {
+    "observed": true,
+    "semantic_device_count": 0,
+    "backend_managed_device_count": 0,
+    "link_count": 0,
+    "devices": [],
+    "links": [],
+    "message": "fresh_complete_workspace_inventory"
+  },
+  "refusals": [],
+  "native_default_pool": [
+    {
+      "label": "before_e5",
+      "purpose": "q3-fl:native_default:before_e5",
+      "operation_seq": 18,
+      "observed": true,
+      "cause": "",
+      "pools": [
+        {
+          "name": "serverPool",
+          "network": "0.0.0.0",
+          "mask": "0.0.0.0",
+          "gateway": "0.0.0.0",
+          "dns": "0.0.0.0",
+          "start": "0.0.0.0",
+          "end": "0.0.2.0",
+          "max": 512
+        }
+      ],
+      "intended_pool_present": false,
+      "raw": {
+        "device": "__MCP_E6Q_SRV",
+        "found": true,
+        "process_found": true,
+        "interface": "FastEthernet0",
+        "enabled": false,
+        "enabled_type": "boolean",
+        "pool_count": 1,
+        "pools": [
+          {
+            "name": "serverPool",
+            "network": "0.0.0.0",
+            "mask": "0.0.0.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "0.0.0.0",
+            "end": "0.0.2.0",
+            "max": 512
+          }
+        ],
+        "truncated": false,
+        "error": ""
+      },
+      "differences": []
+    },
+    {
+      "label": "after_server_address",
+      "purpose": "q3-fl:native_default:after_server_address",
+      "operation_seq": 23,
+      "observed": true,
+      "cause": "",
+      "pools": [
+        {
+          "name": "serverPool",
+          "network": "192.0.2.0",
+          "mask": "255.255.255.0",
+          "gateway": "0.0.0.0",
+          "dns": "0.0.0.0",
+          "start": "192.0.2.0",
+          "end": "192.0.3.255",
+          "max": 512
+        }
+      ],
+      "intended_pool_present": false,
+      "raw": {
+        "device": "__MCP_E6Q_SRV",
+        "found": true,
+        "process_found": true,
+        "interface": "FastEthernet0",
+        "enabled": false,
+        "enabled_type": "boolean",
+        "pool_count": 1,
+        "pools": [
+          {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.0",
+            "end": "192.0.3.255",
+            "max": 512
+          }
+        ],
+        "truncated": false,
+        "error": ""
+      },
+      "differences": [
+        "default_pool_changed:serverPool.end",
+        "default_pool_changed:serverPool.mask",
+        "default_pool_changed:serverPool.network",
+        "default_pool_changed:serverPool.start"
+      ]
+    },
+    {
+      "label": "before_pool_setup",
+      "purpose": "q3-fl:native_default:before_pool_setup",
+      "operation_seq": 72,
+      "observed": true,
+      "cause": "",
+      "pools": [
+        {
+          "name": "serverPool",
+          "network": "192.0.2.0",
+          "mask": "255.255.255.0",
+          "gateway": "0.0.0.0",
+          "dns": "0.0.0.0",
+          "start": "192.0.2.0",
+          "end": "192.0.3.255",
+          "max": 512
+        }
+      ],
+      "intended_pool_present": false,
+      "raw": {
+        "device": "__MCP_E6Q_SRV",
+        "found": true,
+        "process_found": true,
+        "interface": "FastEthernet0",
+        "enabled": false,
+        "enabled_type": "boolean",
+        "pool_count": 1,
+        "pools": [
+          {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.0",
+            "end": "192.0.3.255",
+            "max": 512
+          }
+        ],
+        "truncated": false,
+        "error": ""
+      },
+      "differences": [
+        "default_pool_changed:serverPool.end",
+        "default_pool_changed:serverPool.mask",
+        "default_pool_changed:serverPool.network",
+        "default_pool_changed:serverPool.start"
+      ]
+    },
+    {
+      "label": "after_pool_setup",
+      "purpose": "q3-fl:native_default:after_pool_setup",
+      "operation_seq": 76,
+      "observed": true,
+      "cause": "",
+      "pools": [
+        {
+          "name": "serverPool",
+          "network": "192.0.2.0",
+          "mask": "255.255.255.0",
+          "gateway": "0.0.0.0",
+          "dns": "0.0.0.0",
+          "start": "192.0.2.0",
+          "end": "192.0.3.255",
+          "max": 512
+        }
+      ],
+      "intended_pool_present": true,
+      "raw": {
+        "device": "__MCP_E6Q_SRV",
+        "found": true,
+        "process_found": true,
+        "interface": "FastEthernet0",
+        "enabled": false,
+        "enabled_type": "boolean",
+        "pool_count": 2,
+        "pools": [
+          {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.0",
+            "end": "192.0.3.255",
+            "max": 512
+          },
+          {
+            "name": "MCP_E6Q_DHCP",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "192.0.2.1",
+            "dns": "192.0.2.10",
+            "start": "192.0.2.100",
+            "end": "192.0.2.101",
+            "max": 2
+          }
+        ],
+        "truncated": false,
+        "error": ""
+      },
+      "differences": [
+        "default_pool_changed:serverPool.end",
+        "default_pool_changed:serverPool.mask",
+        "default_pool_changed:serverPool.network",
+        "default_pool_changed:serverPool.start"
+      ]
+    },
+    {
+      "label": "after_enable_setup",
+      "purpose": "q3-fl:native_default:after_enable_setup",
+      "operation_seq": 80,
+      "observed": true,
+      "cause": "",
+      "pools": [
+        {
+          "name": "serverPool",
+          "network": "192.0.2.0",
+          "mask": "255.255.255.0",
+          "gateway": "0.0.0.0",
+          "dns": "0.0.0.0",
+          "start": "192.0.2.0",
+          "end": "192.0.3.255",
+          "max": 512
+        }
+      ],
+      "intended_pool_present": true,
+      "raw": {
+        "device": "__MCP_E6Q_SRV",
+        "found": true,
+        "process_found": true,
+        "interface": "FastEthernet0",
+        "enabled": true,
+        "enabled_type": "boolean",
+        "pool_count": 2,
+        "pools": [
+          {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.0",
+            "end": "192.0.3.255",
+            "max": 512
+          },
+          {
+            "name": "MCP_E6Q_DHCP",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "192.0.2.1",
+            "dns": "192.0.2.10",
+            "start": "192.0.2.100",
+            "end": "192.0.2.101",
+            "max": 2
+          }
+        ],
+        "truncated": false,
+        "error": ""
+      },
+      "differences": [
+        "default_pool_changed:serverPool.end",
+        "default_pool_changed:serverPool.mask",
+        "default_pool_changed:serverPool.network",
+        "default_pool_changed:serverPool.start"
+      ]
+    },
+    {
+      "label": "after_client_mode:__MCP_E6Q_PC1",
+      "purpose": "q3-fl:native_default:after_client_mode:__MCP_E6Q_PC1",
+      "operation_seq": 87,
+      "observed": true,
+      "cause": "",
+      "pools": [
+        {
+          "name": "serverPool",
+          "network": "192.0.2.0",
+          "mask": "255.255.255.0",
+          "gateway": "0.0.0.0",
+          "dns": "0.0.0.0",
+          "start": "192.0.2.0",
+          "end": "192.0.3.255",
+          "max": 512
+        }
+      ],
+      "intended_pool_present": true,
+      "raw": {
+        "device": "__MCP_E6Q_SRV",
+        "found": true,
+        "process_found": true,
+        "interface": "FastEthernet0",
+        "enabled": true,
+        "enabled_type": "boolean",
+        "pool_count": 2,
+        "pools": [
+          {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.0",
+            "end": "192.0.3.255",
+            "max": 512
+          },
+          {
+            "name": "MCP_E6Q_DHCP",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "192.0.2.1",
+            "dns": "192.0.2.10",
+            "start": "192.0.2.100",
+            "end": "192.0.2.101",
+            "max": 2
+          }
+        ],
+        "truncated": false,
+        "error": ""
+      },
+      "differences": [
+        "default_pool_changed:serverPool.end",
+        "default_pool_changed:serverPool.mask",
+        "default_pool_changed:serverPool.network",
+        "default_pool_changed:serverPool.start"
+      ]
+    },
+    {
+      "label": "before_cleanup",
+      "purpose": "q3-fl:native_default:before_cleanup",
+      "operation_seq": 95,
+      "observed": true,
+      "cause": "",
+      "pools": [
+        {
+          "name": "serverPool",
+          "network": "192.0.2.0",
+          "mask": "255.255.255.0",
+          "gateway": "0.0.0.0",
+          "dns": "0.0.0.0",
+          "start": "192.0.2.0",
+          "end": "192.0.3.255",
+          "max": 512
+        }
+      ],
+      "intended_pool_present": true,
+      "raw": {
+        "device": "__MCP_E6Q_SRV",
+        "found": true,
+        "process_found": true,
+        "interface": "FastEthernet0",
+        "enabled": true,
+        "enabled_type": "boolean",
+        "pool_count": 2,
+        "pools": [
+          {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "0.0.0.0",
+            "dns": "0.0.0.0",
+            "start": "192.0.2.0",
+            "end": "192.0.3.255",
+            "max": 512
+          },
+          {
+            "name": "MCP_E6Q_DHCP",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "192.0.2.1",
+            "dns": "192.0.2.10",
+            "start": "192.0.2.100",
+            "end": "192.0.2.101",
+            "max": 2
+          }
+        ],
+        "truncated": false,
+        "error": ""
+      },
+      "differences": [
+        "default_pool_changed:serverPool.end",
+        "default_pool_changed:serverPool.mask",
+        "default_pool_changed:serverPool.network",
+        "default_pool_changed:serverPool.start"
+      ]
+    }
+  ],
+  "measurements": [
+    {
+      "experiment_id": "M-DHCP-1",
+      "hypothesis": "The exact Server-PT interface binds a DHCP process, the native default moves only by the reviewed realignment and then stays put, and the ensure-present pool path stores the 2-user intended pool.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "supported_in_sample",
+      "facts": {
+        "baseline_admission": {
+          "admitted": true,
+          "kind": "observed_native_default",
+          "causes": []
+        },
+        "e5_server_address": {
+          "plan_id": "cfg_compiled/ent_mcpe6q/d-dhcp-static",
+          "action_results": [
+            {
+              "action_id": "cfg/endpoint-static/220e1aa9ecb87d59",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Endpoint batch accepted by Packet Tracer.",
+              "batch_id": "endpoints:60",
+              "operation": "set_value",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            }
+          ],
+          "verification_results": [
+            {
+              "expectation_id": "cfg/verify/125e84cd0f25350d",
+              "action_id": "cfg/endpoint-static/220e1aa9ecb87d59",
+              "status": "partial",
+              "evidence_method": "structured_endpoint_getters",
+              "fresh_evidence": true,
+              "fields": {
+                "ipv4": "verified",
+                "netmask": "verified",
+                "gateway": "unobservable",
+                "dns": "unobservable"
+              },
+              "message": "",
+              "convergence": {
+                "attempts": 1,
+                "elapsed_ms": 1046,
+                "final_status": "partial",
+                "last_observable_state": "{\"address_channel\":true,\"failure_reason\":\"\",\"found\":true,\"fresh_evidence\":true,\"interface\":\"FastEthernet0\",\"ipv4\":\"192.0.2.10\",\"netmask\":\"255.255.255.0\",\"port_found\":true}",
+                "details": {
+                  "kind": "endpoint_addressing",
+                  "device_name": "__MCP_E6Q_SRV",
+                  "interface": "FastEthernet0",
+                  "sample_rounds": 1,
+                  "transitions": [
+                    {
+                      "sample_round": 1,
+                      "device_found": true,
+                      "port_found": true,
+                      "address_channel": true,
+                      "interface": "FastEthernet0",
+                      "ipv4": "192.0.2.10",
+                      "netmask": "255.255.255.0",
+                      "fresh_evidence": true,
+                      "failure_reason": ""
+                    }
+                  ],
+                  "last_observation": {
+                    "device_found": true,
+                    "port_found": true,
+                    "address_channel": true,
+                    "interface": "FastEthernet0",
+                    "ipv4": "192.0.2.10",
+                    "netmask": "255.255.255.0",
+                    "fresh_evidence": true,
+                    "failure_reason": ""
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "forwarding": {
+          "verdicts": {
+            "__MCP_E6Q_PC1": {
+              "expectation_id": "svc/verify-dhcp-lease/76d7cb6fc8c00c4f",
+              "service_id": "service/q3/q3-dhcp",
+              "kind": "dhcp_lease",
+              "client_device_id": "endpoint/q3/default/user_pc/001",
+              "host_device_id": "endpoint/q3/default/server/001",
+              "interfaces": [
+                "FastEthernet0/2",
+                "FastEthernet0/1"
+              ],
+              "admitted": true,
+              "cause": ""
+            },
+            "__MCP_E6Q_PC2": {
+              "expectation_id": "svc/verify-dhcp-lease/1f22872d5f0abdae",
+              "service_id": "service/q3/q3-dhcp",
+              "kind": "dhcp_lease",
+              "client_device_id": "endpoint/q3/default/user_pc/002",
+              "host_device_id": "endpoint/q3/default/server/001",
+              "interfaces": [
+                "FastEthernet0/3",
+                "FastEthernet0/1"
+              ],
+              "admitted": true,
+              "cause": ""
+            }
+          },
+          "groups": [
+            {
+              "switch_device_id": "sw-acc-q3-default-01",
+              "switch_device_name": "__MCP_E6Q_SW",
+              "vlan_id": 1,
+              "requested_interfaces": [
+                "FastEthernet0/1",
+                "FastEthernet0/2",
+                "FastEthernet0/3"
+              ],
+              "status": "admitted",
+              "dimension": "NONE",
+              "causes": [],
+              "sample": {
+                "switch": "__MCP_E6Q_SW",
+                "vlan_id": 1,
+                "requested_interfaces": [
+                  "FastEthernet0/1",
+                  "FastEthernet0/2",
+                  "FastEthernet0/3"
+                ],
+                "rows": [
+                  {
+                    "interface": "FastEthernet0/1",
+                    "matches": 1,
+                    "state": "FWD",
+                    "role": "Desg"
+                  },
+                  {
+                    "interface": "FastEthernet0/2",
+                    "matches": 1,
+                    "state": "FWD",
+                    "role": "Desg"
+                  },
+                  {
+                    "interface": "FastEthernet0/3",
+                    "matches": 1,
+                    "state": "FWD",
+                    "role": "Desg"
+                  }
+                ],
+                "executed": true,
+                "fresh_output_observed": true,
+                "output_complete": true,
+                "observed_device_name": "__MCP_E6Q_SW",
+                "device_identity_provenance": "confirmed_unique",
+                "vlan_present": true,
+                "samples": 11,
+                "sample_history": [
+                  {
+                    "elapsed_ms": 1640,
+                    "rows": [
+                      {
+                        "interface": "FastEthernet0/1",
+                        "matches": 1,
+                        "state": "LIS",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/2",
+                        "matches": 1,
+                        "state": "LIS",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/3",
+                        "matches": 1,
+                        "state": "LIS",
+                        "role": "Desg"
+                      }
+                    ],
+                    "executed": true,
+                    "fresh_output_observed": true,
+                    "output_complete": true,
+                    "observed_device_name": "__MCP_E6Q_SW",
+                    "device_identity_provenance": "confirmed_unique",
+                    "vlan_present": true,
+                    "channel_calls": 6,
+                    "sample_budget_exhausted": false,
+                    "deadline_reached": false,
+                    "phase": "window"
+                  },
+                  {
+                    "elapsed_ms": 4155,
+                    "rows": [
+                      {
+                        "interface": "FastEthernet0/1",
+                        "matches": 1,
+                        "state": "LIS",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/2",
+                        "matches": 1,
+                        "state": "LIS",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/3",
+                        "matches": 1,
+                        "state": "LIS",
+                        "role": "Desg"
+                      }
+                    ],
+                    "executed": true,
+                    "fresh_output_observed": true,
+                    "output_complete": true,
+                    "observed_device_name": "__MCP_E6Q_SW",
+                    "device_identity_provenance": "confirmed_unique",
+                    "vlan_present": true,
+                    "channel_calls": 4,
+                    "sample_budget_exhausted": false,
+                    "deadline_reached": false,
+                    "phase": "window"
+                  },
+                  {
+                    "elapsed_ms": 6687,
+                    "rows": [
+                      {
+                        "interface": "FastEthernet0/1",
+                        "matches": 1,
+                        "state": "LIS",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/2",
+                        "matches": 1,
+                        "state": "LIS",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/3",
+                        "matches": 1,
+                        "state": "LIS",
+                        "role": "Desg"
+                      }
+                    ],
+                    "executed": true,
+                    "fresh_output_observed": true,
+                    "output_complete": true,
+                    "observed_device_name": "__MCP_E6Q_SW",
+                    "device_identity_provenance": "confirmed_unique",
+                    "vlan_present": true,
+                    "channel_calls": 4,
+                    "sample_budget_exhausted": false,
+                    "deadline_reached": false,
+                    "phase": "window"
+                  },
+                  {
+                    "elapsed_ms": 9217,
+                    "rows": [
+                      {
+                        "interface": "FastEthernet0/1",
+                        "matches": 1,
+                        "state": "LIS",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/2",
+                        "matches": 1,
+                        "state": "LIS",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/3",
+                        "matches": 1,
+                        "state": "LIS",
+                        "role": "Desg"
+                      }
+                    ],
+                    "executed": true,
+                    "fresh_output_observed": true,
+                    "output_complete": true,
+                    "observed_device_name": "__MCP_E6Q_SW",
+                    "device_identity_provenance": "confirmed_unique",
+                    "vlan_present": true,
+                    "channel_calls": 4,
+                    "sample_budget_exhausted": false,
+                    "deadline_reached": false,
+                    "phase": "window"
+                  },
+                  {
+                    "elapsed_ms": 11750,
+                    "rows": [
+                      {
+                        "interface": "FastEthernet0/1",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/2",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/3",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      }
+                    ],
+                    "executed": true,
+                    "fresh_output_observed": true,
+                    "output_complete": true,
+                    "observed_device_name": "__MCP_E6Q_SW",
+                    "device_identity_provenance": "confirmed_unique",
+                    "vlan_present": true,
+                    "channel_calls": 4,
+                    "sample_budget_exhausted": false,
+                    "deadline_reached": false,
+                    "phase": "window"
+                  },
+                  {
+                    "elapsed_ms": 14280,
+                    "rows": [
+                      {
+                        "interface": "FastEthernet0/1",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/2",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/3",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      }
+                    ],
+                    "executed": true,
+                    "fresh_output_observed": true,
+                    "output_complete": true,
+                    "observed_device_name": "__MCP_E6Q_SW",
+                    "device_identity_provenance": "confirmed_unique",
+                    "vlan_present": true,
+                    "channel_calls": 4,
+                    "sample_budget_exhausted": false,
+                    "deadline_reached": false,
+                    "phase": "window"
+                  },
+                  {
+                    "elapsed_ms": 16703,
+                    "rows": [
+                      {
+                        "interface": "FastEthernet0/1",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/2",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/3",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      }
+                    ],
+                    "executed": true,
+                    "fresh_output_observed": true,
+                    "output_complete": true,
+                    "observed_device_name": "__MCP_E6Q_SW",
+                    "device_identity_provenance": "confirmed_unique",
+                    "vlan_present": true,
+                    "channel_calls": 4,
+                    "sample_budget_exhausted": false,
+                    "deadline_reached": false,
+                    "phase": "window"
+                  },
+                  {
+                    "elapsed_ms": 19328,
+                    "rows": [
+                      {
+                        "interface": "FastEthernet0/1",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/2",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/3",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      }
+                    ],
+                    "executed": true,
+                    "fresh_output_observed": true,
+                    "output_complete": true,
+                    "observed_device_name": "__MCP_E6Q_SW",
+                    "device_identity_provenance": "confirmed_unique",
+                    "vlan_present": true,
+                    "channel_calls": 4,
+                    "sample_budget_exhausted": false,
+                    "deadline_reached": false,
+                    "phase": "window"
+                  },
+                  {
+                    "elapsed_ms": 21842,
+                    "rows": [
+                      {
+                        "interface": "FastEthernet0/1",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/2",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/3",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      }
+                    ],
+                    "executed": true,
+                    "fresh_output_observed": true,
+                    "output_complete": true,
+                    "observed_device_name": "__MCP_E6Q_SW",
+                    "device_identity_provenance": "confirmed_unique",
+                    "vlan_present": true,
+                    "channel_calls": 4,
+                    "sample_budget_exhausted": false,
+                    "deadline_reached": false,
+                    "phase": "window"
+                  },
+                  {
+                    "elapsed_ms": 24375,
+                    "rows": [
+                      {
+                        "interface": "FastEthernet0/1",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/2",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/3",
+                        "matches": 1,
+                        "state": "LRN",
+                        "role": "Desg"
+                      }
+                    ],
+                    "executed": true,
+                    "fresh_output_observed": true,
+                    "output_complete": true,
+                    "observed_device_name": "__MCP_E6Q_SW",
+                    "device_identity_provenance": "confirmed_unique",
+                    "vlan_present": true,
+                    "channel_calls": 4,
+                    "sample_budget_exhausted": false,
+                    "deadline_reached": false,
+                    "phase": "window"
+                  },
+                  {
+                    "elapsed_ms": 26905,
+                    "rows": [
+                      {
+                        "interface": "FastEthernet0/1",
+                        "matches": 1,
+                        "state": "FWD",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/2",
+                        "matches": 1,
+                        "state": "FWD",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/3",
+                        "matches": 1,
+                        "state": "FWD",
+                        "role": "Desg"
+                      }
+                    ],
+                    "executed": true,
+                    "fresh_output_observed": true,
+                    "output_complete": true,
+                    "observed_device_name": "__MCP_E6Q_SW",
+                    "device_identity_provenance": "confirmed_unique",
+                    "vlan_present": true,
+                    "channel_calls": 4,
+                    "sample_budget_exhausted": false,
+                    "deadline_reached": false,
+                    "phase": "window"
+                  }
+                ],
+                "extension": {
+                  "candidate": false,
+                  "target_ms": null,
+                  "wall_cap_seconds": 0.0,
+                  "allowance_seconds": 0.0,
+                  "clock": "none",
+                  "authorized": false,
+                  "simulation_start_ms": null,
+                  "simulation_end_ms": null,
+                  "simulation_progress_ms": 0.0,
+                  "clock_samples": 0,
+                  "samples": 0,
+                  "stop_reason": "not_authorized",
+                  "outcome": "",
+                  "failure_reason": "",
+                  "converged": false
+                },
+                "max_samples": 31,
+                "deadline_seconds": 30.0,
+                "elapsed_ms": 27203,
+                "deadline_reached": false,
+                "sample_call_budget": 16,
+                "channel_calls": 47,
+                "sample_budget_exhausted": false,
+                "sample_after_deadline": false,
+                "episode_budget_exhausted": false,
+                "episode_end_reason": "all_requested_interfaces_observed_forwarding",
+                "auxiliary_budget_exhausted": false,
+                "auxiliary_read_after_deadline": false,
+                "deadline_scope": "group",
+                "deadline_cause": "",
+                "simulation_time": "sim_time:115587;frames:0",
+                "failure_reason": "",
+                "lights": [],
+                "admitted": true,
+                "dimension": "NONE",
+                "forwarding_interfaces": [
+                  "FastEthernet0/1",
+                  "FastEthernet0/2",
+                  "FastEthernet0/3"
+                ],
+                "causes": [],
+                "light_status_is_auxiliary": true
+              },
+              "dependents": [
+                {
+                  "expectation_id": "svc/verify-dhcp-lease/76d7cb6fc8c00c4f",
+                  "service_id": "service/q3/q3-dhcp",
+                  "kind": "dhcp_lease",
+                  "client_device_id": "endpoint/q3/default/user_pc/001",
+                  "host_device_id": "endpoint/q3/default/server/001",
+                  "interfaces": [
+                    "FastEthernet0/2",
+                    "FastEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-dhcp-lease/1f22872d5f0abdae",
+                  "service_id": "service/q3/q3-dhcp",
+                  "kind": "dhcp_lease",
+                  "client_device_id": "endpoint/q3/default/user_pc/002",
+                  "host_device_id": "endpoint/q3/default/server/001",
+                  "interfaces": [
+                    "FastEthernet0/3",
+                    "FastEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                }
+              ],
+              "episode": {
+                "ordinal": 1,
+                "revision": 0,
+                "narrowed": false
+              }
+            }
+          ],
+          "unplaced": []
+        },
+        "e6_server": {
+          "pool": {
+            "plan_id": "services_compiled/ent_mcpe6q/d-dhcp-pool-disabled",
+            "status": "partial",
+            "preflight_errors": [],
+            "action_results": [
+              {
+                "action_id": "svc/server-dhcp-pool/7576378f64ed6675",
+                "status": "applied",
+                "failure_code": "none",
+                "message": "The post-read showed the intended state.",
+                "batch_id": "__MCP_E6Q_SRV:30",
+                "operation": "ensure_present",
+                "disposition": "unknown",
+                "dispatch": "accepted",
+                "result": "correlated",
+                "postcondition": "satisfied",
+                "transition": "changed",
+                "footprint": "partial",
+                "attempted": true,
+                "residual_change": false,
+                "cause": "footprint_partial:dhcp_pool_lease_state",
+                "received_mutation": {
+                  "action_id": "svc/server-dhcp-pool/7576378f64ed6675",
+                  "applied": true,
+                  "operation": "ensure_present",
+                  "disposition": "unknown",
+                  "message": "The post-read showed the intended state.",
+                  "failure_code": "none",
+                  "batch_id": "__MCP_E6Q_SRV:30",
+                  "dispatch": "accepted",
+                  "result": "correlated",
+                  "postcondition": "satisfied",
+                  "transition": "changed",
+                  "footprint": "partial",
+                  "attempted": true,
+                  "cause": "footprint_partial:dhcp_pool_lease_state",
+                  "call_error": ""
+                }
+              }
+            ],
+            "verification_results": [
+              {
+                "expectation_id": "svc/verify-direct/df14d7544a5017d0",
+                "status": "verified",
+                "evidence_kind": "direct_state",
+                "evidence_method": "dhcp_server_configuration_readback",
+                "fresh_evidence": true,
+                "observed": {
+                  "interface": "FastEthernet0",
+                  "pool_name": "MCP_E6Q_DHCP",
+                  "requested_pool_name": "MCP_E6Q_DHCP",
+                  "effective_pool_name": "MCP_E6Q_DHCP",
+                  "physical_pool_count": 2,
+                  "excluded_range_count": 2,
+                  "expected_enabled": false,
+                  "observed_enabled": false,
+                  "native_policy_json": ""
+                },
+                "trace": [],
+                "message": "",
+                "observation": "observed",
+                "cause": "",
+                "claim_level": "stored_dhcp_configuration",
+                "limitations": [
+                  "lease_allocation_state_unobserved"
+                ],
+                "service_id": "service/q3/q3-dhcp",
+                "failure_code": "none"
+              }
+            ]
+          },
+          "enable": {
+            "plan_id": "services_compiled/ent_mcpe6q/d-dhcp-enable",
+            "status": "partial",
+            "preflight_errors": [],
+            "action_results": [
+              {
+                "action_id": "svc/enable-server-dhcp/bc1927b62ada688c",
+                "status": "applied",
+                "failure_code": "none",
+                "message": "The post-read showed the intended state.",
+                "batch_id": "__MCP_E6Q_SRV:20",
+                "operation": "set_value",
+                "disposition": "changed",
+                "dispatch": "accepted",
+                "result": "correlated",
+                "postcondition": "satisfied",
+                "transition": "changed",
+                "footprint": "covered",
+                "attempted": true,
+                "residual_change": false,
+                "cause": "",
+                "received_mutation": {
+                  "action_id": "svc/enable-server-dhcp/bc1927b62ada688c",
+                  "applied": true,
+                  "operation": "set_value",
+                  "disposition": "unknown",
+                  "message": "The post-read showed the intended state.",
+                  "failure_code": "none",
+                  "batch_id": "__MCP_E6Q_SRV:20",
+                  "dispatch": "accepted",
+                  "result": "correlated",
+                  "postcondition": "satisfied",
+                  "transition": "changed",
+                  "footprint": "covered",
+                  "attempted": true,
+                  "cause": "",
+                  "call_error": ""
+                }
+              }
+            ],
+            "verification_results": [
+              {
+                "expectation_id": "svc/verify-direct/df14d7544a5017d0",
+                "status": "verified",
+                "evidence_kind": "direct_state",
+                "evidence_method": "dhcp_server_configuration_readback",
+                "fresh_evidence": true,
+                "observed": {
+                  "interface": "FastEthernet0",
+                  "pool_name": "MCP_E6Q_DHCP",
+                  "requested_pool_name": "MCP_E6Q_DHCP",
+                  "effective_pool_name": "MCP_E6Q_DHCP",
+                  "physical_pool_count": 2,
+                  "excluded_range_count": 2,
+                  "expected_enabled": true,
+                  "observed_enabled": true,
+                  "native_policy_json": ""
+                },
+                "trace": [],
+                "message": "",
+                "observation": "observed",
+                "cause": "",
+                "claim_level": "stored_dhcp_configuration",
+                "limitations": [
+                  "lease_allocation_state_unobserved"
+                ],
+                "service_id": "service/q3/q3-dhcp",
+                "failure_code": "none"
+              }
+            ]
+          }
+        },
+        "native_default": {
+          "snapshots": [
+            {
+              "label": "before_e5",
+              "purpose": "q3-fl:native_default:before_e5",
+              "operation_seq": 18,
+              "observed": true,
+              "cause": "",
+              "pools": [
+                {
+                  "name": "serverPool",
+                  "network": "0.0.0.0",
+                  "mask": "0.0.0.0",
+                  "gateway": "0.0.0.0",
+                  "dns": "0.0.0.0",
+                  "start": "0.0.0.0",
+                  "end": "0.0.2.0",
+                  "max": 512
+                }
+              ],
+              "intended_pool_present": false,
+              "raw": {
+                "device": "__MCP_E6Q_SRV",
+                "found": true,
+                "process_found": true,
+                "interface": "FastEthernet0",
+                "enabled": false,
+                "enabled_type": "boolean",
+                "pool_count": 1,
+                "pools": [
+                  {
+                    "name": "serverPool",
+                    "network": "0.0.0.0",
+                    "mask": "0.0.0.0",
+                    "gateway": "0.0.0.0",
+                    "dns": "0.0.0.0",
+                    "start": "0.0.0.0",
+                    "end": "0.0.2.0",
+                    "max": 512
+                  }
+                ],
+                "truncated": false,
+                "error": ""
+              },
+              "differences": []
+            },
+            {
+              "label": "after_server_address",
+              "purpose": "q3-fl:native_default:after_server_address",
+              "operation_seq": 23,
+              "observed": true,
+              "cause": "",
+              "pools": [
+                {
+                  "name": "serverPool",
+                  "network": "192.0.2.0",
+                  "mask": "255.255.255.0",
+                  "gateway": "0.0.0.0",
+                  "dns": "0.0.0.0",
+                  "start": "192.0.2.0",
+                  "end": "192.0.3.255",
+                  "max": 512
+                }
+              ],
+              "intended_pool_present": false,
+              "raw": {
+                "device": "__MCP_E6Q_SRV",
+                "found": true,
+                "process_found": true,
+                "interface": "FastEthernet0",
+                "enabled": false,
+                "enabled_type": "boolean",
+                "pool_count": 1,
+                "pools": [
+                  {
+                    "name": "serverPool",
+                    "network": "192.0.2.0",
+                    "mask": "255.255.255.0",
+                    "gateway": "0.0.0.0",
+                    "dns": "0.0.0.0",
+                    "start": "192.0.2.0",
+                    "end": "192.0.3.255",
+                    "max": 512
+                  }
+                ],
+                "truncated": false,
+                "error": ""
+              },
+              "differences": [
+                "default_pool_changed:serverPool.end",
+                "default_pool_changed:serverPool.mask",
+                "default_pool_changed:serverPool.network",
+                "default_pool_changed:serverPool.start"
+              ]
+            },
+            {
+              "label": "before_pool_setup",
+              "purpose": "q3-fl:native_default:before_pool_setup",
+              "operation_seq": 72,
+              "observed": true,
+              "cause": "",
+              "pools": [
+                {
+                  "name": "serverPool",
+                  "network": "192.0.2.0",
+                  "mask": "255.255.255.0",
+                  "gateway": "0.0.0.0",
+                  "dns": "0.0.0.0",
+                  "start": "192.0.2.0",
+                  "end": "192.0.3.255",
+                  "max": 512
+                }
+              ],
+              "intended_pool_present": false,
+              "raw": {
+                "device": "__MCP_E6Q_SRV",
+                "found": true,
+                "process_found": true,
+                "interface": "FastEthernet0",
+                "enabled": false,
+                "enabled_type": "boolean",
+                "pool_count": 1,
+                "pools": [
+                  {
+                    "name": "serverPool",
+                    "network": "192.0.2.0",
+                    "mask": "255.255.255.0",
+                    "gateway": "0.0.0.0",
+                    "dns": "0.0.0.0",
+                    "start": "192.0.2.0",
+                    "end": "192.0.3.255",
+                    "max": 512
+                  }
+                ],
+                "truncated": false,
+                "error": ""
+              },
+              "differences": [
+                "default_pool_changed:serverPool.end",
+                "default_pool_changed:serverPool.mask",
+                "default_pool_changed:serverPool.network",
+                "default_pool_changed:serverPool.start"
+              ]
+            },
+            {
+              "label": "after_pool_setup",
+              "purpose": "q3-fl:native_default:after_pool_setup",
+              "operation_seq": 76,
+              "observed": true,
+              "cause": "",
+              "pools": [
+                {
+                  "name": "serverPool",
+                  "network": "192.0.2.0",
+                  "mask": "255.255.255.0",
+                  "gateway": "0.0.0.0",
+                  "dns": "0.0.0.0",
+                  "start": "192.0.2.0",
+                  "end": "192.0.3.255",
+                  "max": 512
+                }
+              ],
+              "intended_pool_present": true,
+              "raw": {
+                "device": "__MCP_E6Q_SRV",
+                "found": true,
+                "process_found": true,
+                "interface": "FastEthernet0",
+                "enabled": false,
+                "enabled_type": "boolean",
+                "pool_count": 2,
+                "pools": [
+                  {
+                    "name": "serverPool",
+                    "network": "192.0.2.0",
+                    "mask": "255.255.255.0",
+                    "gateway": "0.0.0.0",
+                    "dns": "0.0.0.0",
+                    "start": "192.0.2.0",
+                    "end": "192.0.3.255",
+                    "max": 512
+                  },
+                  {
+                    "name": "MCP_E6Q_DHCP",
+                    "network": "192.0.2.0",
+                    "mask": "255.255.255.0",
+                    "gateway": "192.0.2.1",
+                    "dns": "192.0.2.10",
+                    "start": "192.0.2.100",
+                    "end": "192.0.2.101",
+                    "max": 2
+                  }
+                ],
+                "truncated": false,
+                "error": ""
+              },
+              "differences": [
+                "default_pool_changed:serverPool.end",
+                "default_pool_changed:serverPool.mask",
+                "default_pool_changed:serverPool.network",
+                "default_pool_changed:serverPool.start"
+              ]
+            },
+            {
+              "label": "after_enable_setup",
+              "purpose": "q3-fl:native_default:after_enable_setup",
+              "operation_seq": 80,
+              "observed": true,
+              "cause": "",
+              "pools": [
+                {
+                  "name": "serverPool",
+                  "network": "192.0.2.0",
+                  "mask": "255.255.255.0",
+                  "gateway": "0.0.0.0",
+                  "dns": "0.0.0.0",
+                  "start": "192.0.2.0",
+                  "end": "192.0.3.255",
+                  "max": 512
+                }
+              ],
+              "intended_pool_present": true,
+              "raw": {
+                "device": "__MCP_E6Q_SRV",
+                "found": true,
+                "process_found": true,
+                "interface": "FastEthernet0",
+                "enabled": true,
+                "enabled_type": "boolean",
+                "pool_count": 2,
+                "pools": [
+                  {
+                    "name": "serverPool",
+                    "network": "192.0.2.0",
+                    "mask": "255.255.255.0",
+                    "gateway": "0.0.0.0",
+                    "dns": "0.0.0.0",
+                    "start": "192.0.2.0",
+                    "end": "192.0.3.255",
+                    "max": 512
+                  },
+                  {
+                    "name": "MCP_E6Q_DHCP",
+                    "network": "192.0.2.0",
+                    "mask": "255.255.255.0",
+                    "gateway": "192.0.2.1",
+                    "dns": "192.0.2.10",
+                    "start": "192.0.2.100",
+                    "end": "192.0.2.101",
+                    "max": 2
+                  }
+                ],
+                "truncated": false,
+                "error": ""
+              },
+              "differences": [
+                "default_pool_changed:serverPool.end",
+                "default_pool_changed:serverPool.mask",
+                "default_pool_changed:serverPool.network",
+                "default_pool_changed:serverPool.start"
+              ]
+            }
+          ],
+          "differences": [
+            "default_pool_changed:serverPool.end",
+            "default_pool_changed:serverPool.mask",
+            "default_pool_changed:serverPool.network",
+            "default_pool_changed:serverPool.start"
+          ]
+        },
+        "native_default_sequence": {
+          "policy": "q3-fl-native-default/v1",
+          "permits_continuation": true,
+          "causes": [],
+          "limitations": [
+            "admission_compares_measured_values_and_extrapolates_nothing",
+            "an_admitted_native_default_transition_authorizes_no_allocation"
+          ],
+          "authorizes_allocation": false,
+          "intervals": [
+            {
+              "before": "before_e5",
+              "after": "after_server_address",
+              "intervention": "whole_configure_pc_ip_call",
+              "classification": "admitted_realignment",
+              "changed_fields": [
+                "serverPool.end",
+                "serverPool.mask",
+                "serverPool.network",
+                "serverPool.start"
+              ],
+              "assessment_causes": [],
+              "matched_evidence": "SERVER-PT-DIAG-0EA-01:D-DHCP:v3:attempt-2:d-dhcp-2026-09-21T20-01-43Z-dffd6c3b",
+              "decision": "permitted",
+              "cause": ""
+            },
+            {
+              "before": "after_server_address",
+              "after": "before_pool_setup",
+              "intervention": "sp2:forwarding_readiness",
+              "classification": "unchanged",
+              "changed_fields": [],
+              "assessment_causes": [],
+              "matched_evidence": "",
+              "decision": "permitted",
+              "cause": ""
+            },
+            {
+              "before": "before_pool_setup",
+              "after": "after_pool_setup",
+              "intervention": "sp2:e6_pool",
+              "classification": "unchanged",
+              "changed_fields": [],
+              "assessment_causes": [],
+              "matched_evidence": "",
+              "decision": "permitted",
+              "cause": ""
+            },
+            {
+              "before": "after_pool_setup",
+              "after": "after_enable_setup",
+              "intervention": "sp2:e6_enable",
+              "classification": "unchanged",
+              "changed_fields": [],
+              "assessment_causes": [],
+              "matched_evidence": "",
+              "decision": "permitted",
+              "cause": ""
+            }
+          ]
+        },
+        "projection_rewrites": [
+          "access_vlan_rebound:__MCP_E6Q_SW:FastEthernet0/1:10->1:runner_owned_fixture",
+          "access_vlan_rebound:__MCP_E6Q_SW:FastEthernet0/2:10->1:runner_owned_fixture",
+          "access_vlan_rebound:__MCP_E6Q_SW:FastEthernet0/3:10->1:runner_owned_fixture",
+          "dependency_removed:svc/enable-server-dhcp/bc1927b62ada688c:of:svc/server-dhcp-pool/7576378f64ed6675",
+          "expectation_field:svc/verify-direct/df14d7544a5017d0:enabled=True->False",
+          "foundation_removed:cfg/endpoint-dhcp/1e3f15d8348bb453:kind:endpoint_dhcp_mode:device:__MCP_E6Q_PC1",
+          "foundation_removed:cfg/endpoint-dhcp/2b61c11cc2255ec3:kind:endpoint_dhcp_mode:device:__MCP_E6Q_PC2",
+          "projection_identity:services_compiled/ent_mcpe6q/d-dhcp-pool-disabled:source:services_compiled/ent_mcpe6q:semantic_hash_retained:910923f2470b754caa77749a3ae954911a34ca40fa2c335ac6220de7a03e395f",
+          "expectation_rebound:svc/verify-direct/df14d7544a5017d0:svc/server-dhcp-pool/7576378f64ed6675->svc/enable-server-dhcp/bc1927b62ada688c",
+          "prerequisite_rebound:svc/verify-direct/df14d7544a5017d0:action_applied:svc/server-dhcp-pool/7576378f64ed6675->svc/enable-server-dhcp/bc1927b62ada688c",
+          "foundation_removed:cfg/endpoint-dhcp/1e3f15d8348bb453:kind:endpoint_dhcp_mode:device:__MCP_E6Q_PC1",
+          "foundation_removed:cfg/endpoint-dhcp/2b61c11cc2255ec3:kind:endpoint_dhcp_mode:device:__MCP_E6Q_PC2",
+          "projection_identity:services_compiled/ent_mcpe6q/d-dhcp-enable:source:services_compiled/ent_mcpe6q:semantic_hash_retained:910923f2470b754caa77749a3ae954911a34ca40fa2c335ac6220de7a03e395f"
+        ],
+        "coexistence": {
+          "stated": true,
+          "reading": "after_enable_setup",
+          "native_pool": "serverPool",
+          "intended_pool": "MCP_E6Q_DHCP",
+          "shares_subnet": true,
+          "ranges_overlap": true,
+          "overlapping_addresses": [
+            "192.0.2.100",
+            "192.0.2.101"
+          ],
+          "causes": [
+            "intended_range_is_inside_the_native_default"
+          ],
+          "limitations": [
+            "stored_pool_coexistence_is_not_proof_the_intended_pool_serves_a_client"
+          ]
+        },
+        "scans": [
+          {
+            "label": "baseline",
+            "pools": {
+              "MCP_E6Q_DHCP": {
+                "pool": "MCP_E6Q_DHCP",
+                "observed": true,
+                "cause": "pool_absent",
+                "capacity": null,
+                "window": 0,
+                "termination": "pool_absent",
+                "first_null": null,
+                "rows": [],
+                "entries": []
+              },
+              "serverPool": {
+                "pool": "serverPool",
+                "observed": true,
+                "cause": "",
+                "capacity": 512,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "label": "after_server_address",
+            "pools": {
+              "MCP_E6Q_DHCP": {
+                "pool": "MCP_E6Q_DHCP",
+                "observed": true,
+                "cause": "pool_absent",
+                "capacity": null,
+                "window": 0,
+                "termination": "pool_absent",
+                "first_null": null,
+                "rows": [],
+                "entries": []
+              },
+              "serverPool": {
+                "pool": "serverPool",
+                "observed": true,
+                "cause": "",
+                "capacity": 512,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "label": "before_pool_setup",
+            "pools": {
+              "MCP_E6Q_DHCP": {
+                "pool": "MCP_E6Q_DHCP",
+                "observed": true,
+                "cause": "pool_absent",
+                "capacity": null,
+                "window": 0,
+                "termination": "pool_absent",
+                "first_null": null,
+                "rows": [],
+                "entries": []
+              },
+              "serverPool": {
+                "pool": "serverPool",
+                "observed": true,
+                "cause": "",
+                "capacity": 512,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "label": "after_pool_setup",
+            "pools": {
+              "MCP_E6Q_DHCP": {
+                "pool": "MCP_E6Q_DHCP",
+                "observed": true,
+                "cause": "",
+                "capacity": 2,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              },
+              "serverPool": {
+                "pool": "serverPool",
+                "observed": true,
+                "cause": "",
+                "capacity": 512,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "label": "after_enable_setup",
+            "pools": {
+              "MCP_E6Q_DHCP": {
+                "pool": "MCP_E6Q_DHCP",
+                "observed": true,
+                "cause": "",
+                "capacity": 2,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              },
+              "serverPool": {
+                "pool": "serverPool",
+                "observed": true,
+                "cause": "",
+                "capacity": 512,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "causes": [],
+      "limitations": [
+        "no_explicit_setter_targeted_the_native_default",
+        "enabling_the_process_is_process_wide",
+        "stored_pool_configuration_is_not_service"
+      ],
+      "reason": "",
+      "outcome_unknown": false
+    },
+    {
+      "experiment_id": "M-DHCP-2",
+      "hypothesis": "An explicit getLeaseAt index window keeps each index, return type, raw row, exception and repetition, and discriminates the empty, one-row and full states it was calibrated on.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "inconclusive",
+      "facts": {
+        "intended": {
+          "pool": "MCP_E6Q_DHCP",
+          "capacity": 2,
+          "conclusion": "inconclusive",
+          "null_ends_rows": false,
+          "kinds": [],
+          "causes": [
+            "after_pool_setup:scan_not_clean:throw",
+            "after_enable_setup:scan_not_clean:throw",
+            "before_client_mode:__MCP_E6Q_PC1:scan_not_clean:throw",
+            "after_client_mode:__MCP_E6Q_PC1:scan_not_clean:throw",
+            "sample:__MCP_E6Q_PC1:1:scan_not_clean:throw",
+            "sample:__MCP_E6Q_PC1:2:scan_not_clean:throw",
+            "no_empty_state_observed",
+            "no_non_empty_state_observed"
+          ],
+          "limitations": [
+            "calibration_holds_for_this_run_pool_and_build_only:getLeaseAt_documents_no_end_condition",
+            "a_capacity_is_not_a_lease_count"
+          ],
+          "states": [
+            {
+              "label": "after_pool_setup",
+              "termination": "throw",
+              "first_null": null,
+              "rows": 0,
+              "window": 4,
+              "observed": true
+            },
+            {
+              "label": "after_enable_setup",
+              "termination": "throw",
+              "first_null": null,
+              "rows": 0,
+              "window": 4,
+              "observed": true
+            },
+            {
+              "label": "before_client_mode:__MCP_E6Q_PC1",
+              "termination": "throw",
+              "first_null": null,
+              "rows": 0,
+              "window": 4,
+              "observed": true
+            },
+            {
+              "label": "after_client_mode:__MCP_E6Q_PC1",
+              "termination": "throw",
+              "first_null": null,
+              "rows": 0,
+              "window": 4,
+              "observed": true
+            },
+            {
+              "label": "sample:__MCP_E6Q_PC1:1",
+              "termination": "throw",
+              "first_null": null,
+              "rows": 0,
+              "window": 4,
+              "observed": true
+            },
+            {
+              "label": "sample:__MCP_E6Q_PC1:2",
+              "termination": "throw",
+              "first_null": null,
+              "rows": 0,
+              "window": 4,
+              "observed": true
+            }
+          ]
+        },
+        "native": {
+          "serverPool": {
+            "pool": "serverPool",
+            "capacity": 512,
+            "conclusion": "inconclusive",
+            "null_ends_rows": false,
+            "kinds": [],
+            "causes": [
+              "baseline:scan_not_clean:throw",
+              "after_server_address:scan_not_clean:throw",
+              "before_pool_setup:scan_not_clean:throw",
+              "after_pool_setup:scan_not_clean:throw",
+              "after_enable_setup:scan_not_clean:throw",
+              "before_client_mode:__MCP_E6Q_PC1:scan_not_clean:throw",
+              "after_client_mode:__MCP_E6Q_PC1:scan_not_clean:throw",
+              "sample:__MCP_E6Q_PC1:1:scan_not_clean:throw",
+              "sample:__MCP_E6Q_PC1:2:scan_not_clean:throw",
+              "no_empty_state_observed",
+              "no_non_empty_state_observed"
+            ],
+            "limitations": [
+              "calibration_holds_for_this_run_pool_and_build_only:getLeaseAt_documents_no_end_condition",
+              "a_capacity_is_not_a_lease_count"
+            ],
+            "states": [
+              {
+                "label": "baseline",
+                "termination": "throw",
+                "first_null": null,
+                "rows": 0,
+                "window": 4,
+                "observed": true
+              },
+              {
+                "label": "after_server_address",
+                "termination": "throw",
+                "first_null": null,
+                "rows": 0,
+                "window": 4,
+                "observed": true
+              },
+              {
+                "label": "before_pool_setup",
+                "termination": "throw",
+                "first_null": null,
+                "rows": 0,
+                "window": 4,
+                "observed": true
+              },
+              {
+                "label": "after_pool_setup",
+                "termination": "throw",
+                "first_null": null,
+                "rows": 0,
+                "window": 4,
+                "observed": true
+              },
+              {
+                "label": "after_enable_setup",
+                "termination": "throw",
+                "first_null": null,
+                "rows": 0,
+                "window": 4,
+                "observed": true
+              },
+              {
+                "label": "before_client_mode:__MCP_E6Q_PC1",
+                "termination": "throw",
+                "first_null": null,
+                "rows": 0,
+                "window": 4,
+                "observed": true
+              },
+              {
+                "label": "after_client_mode:__MCP_E6Q_PC1",
+                "termination": "throw",
+                "first_null": null,
+                "rows": 0,
+                "window": 4,
+                "observed": true
+              },
+              {
+                "label": "sample:__MCP_E6Q_PC1:1",
+                "termination": "throw",
+                "first_null": null,
+                "rows": 1,
+                "window": 4,
+                "observed": true
+              },
+              {
+                "label": "sample:__MCP_E6Q_PC1:2",
+                "termination": "throw",
+                "first_null": null,
+                "rows": 1,
+                "window": 4,
+                "observed": true
+              }
+            ]
+          }
+        },
+        "scans": [
+          {
+            "label": "baseline",
+            "pools": {
+              "MCP_E6Q_DHCP": {
+                "pool": "MCP_E6Q_DHCP",
+                "observed": true,
+                "cause": "pool_absent",
+                "capacity": null,
+                "window": 0,
+                "termination": "pool_absent",
+                "first_null": null,
+                "rows": [],
+                "entries": []
+              },
+              "serverPool": {
+                "pool": "serverPool",
+                "observed": true,
+                "cause": "",
+                "capacity": 512,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "label": "after_server_address",
+            "pools": {
+              "MCP_E6Q_DHCP": {
+                "pool": "MCP_E6Q_DHCP",
+                "observed": true,
+                "cause": "pool_absent",
+                "capacity": null,
+                "window": 0,
+                "termination": "pool_absent",
+                "first_null": null,
+                "rows": [],
+                "entries": []
+              },
+              "serverPool": {
+                "pool": "serverPool",
+                "observed": true,
+                "cause": "",
+                "capacity": 512,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "label": "before_pool_setup",
+            "pools": {
+              "MCP_E6Q_DHCP": {
+                "pool": "MCP_E6Q_DHCP",
+                "observed": true,
+                "cause": "pool_absent",
+                "capacity": null,
+                "window": 0,
+                "termination": "pool_absent",
+                "first_null": null,
+                "rows": [],
+                "entries": []
+              },
+              "serverPool": {
+                "pool": "serverPool",
+                "observed": true,
+                "cause": "",
+                "capacity": 512,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "label": "after_pool_setup",
+            "pools": {
+              "MCP_E6Q_DHCP": {
+                "pool": "MCP_E6Q_DHCP",
+                "observed": true,
+                "cause": "",
+                "capacity": 2,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              },
+              "serverPool": {
+                "pool": "serverPool",
+                "observed": true,
+                "cause": "",
+                "capacity": 512,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "label": "after_enable_setup",
+            "pools": {
+              "MCP_E6Q_DHCP": {
+                "pool": "MCP_E6Q_DHCP",
+                "observed": true,
+                "cause": "",
+                "capacity": 2,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              },
+              "serverPool": {
+                "pool": "serverPool",
+                "observed": true,
+                "cause": "",
+                "capacity": 512,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "label": "before_client_mode:__MCP_E6Q_PC1",
+            "pools": {
+              "MCP_E6Q_DHCP": {
+                "pool": "MCP_E6Q_DHCP",
+                "observed": true,
+                "cause": "",
+                "capacity": 2,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              },
+              "serverPool": {
+                "pool": "serverPool",
+                "observed": true,
+                "cause": "",
+                "capacity": 512,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "label": "after_client_mode:__MCP_E6Q_PC1",
+            "pools": {
+              "MCP_E6Q_DHCP": {
+                "pool": "MCP_E6Q_DHCP",
+                "observed": true,
+                "cause": "",
+                "capacity": 2,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              },
+              "serverPool": {
+                "pool": "serverPool",
+                "observed": true,
+                "cause": "",
+                "capacity": 512,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "label": "sample:__MCP_E6Q_PC1:1",
+            "pools": {
+              "MCP_E6Q_DHCP": {
+                "pool": "MCP_E6Q_DHCP",
+                "observed": true,
+                "cause": "",
+                "capacity": 2,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              },
+              "serverPool": {
+                "pool": "serverPool",
+                "observed": true,
+                "cause": "",
+                "capacity": 512,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [
+                  {
+                    "index": 0,
+                    "ip": "192.0.2.2",
+                    "mac": "00E0.8FC4.9984",
+                    "lease_time": 86400000.0,
+                    "port": "FastEthernet0"
+                  }
+                ],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "object",
+                    "error": "",
+                    "row": {
+                      "ipAddress_type": "string",
+                      "ipAddress": "192.0.2.2",
+                      "macAddress_type": "string",
+                      "macAddress": "00E0.8FC4.9984",
+                      "leaseTime_type": "number",
+                      "leaseTime": 86400000,
+                      "port_type": "string",
+                      "port": "FastEthernet0"
+                    }
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "label": "sample:__MCP_E6Q_PC1:2",
+            "pools": {
+              "MCP_E6Q_DHCP": {
+                "pool": "MCP_E6Q_DHCP",
+                "observed": true,
+                "cause": "",
+                "capacity": 2,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              },
+              "serverPool": {
+                "pool": "serverPool",
+                "observed": true,
+                "cause": "",
+                "capacity": 512,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [
+                  {
+                    "index": 0,
+                    "ip": "192.0.2.2",
+                    "mac": "00E0.8FC4.9984",
+                    "lease_time": 86400000.0,
+                    "port": "FastEthernet0"
+                  }
+                ],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "object",
+                    "error": "",
+                    "row": {
+                      "ipAddress_type": "string",
+                      "ipAddress": "192.0.2.2",
+                      "macAddress_type": "string",
+                      "macAddress": "00E0.8FC4.9984",
+                      "leaseTime_type": "number",
+                      "leaseTime": 86400000,
+                      "port_type": "string",
+                      "port": "FastEthernet0"
+                    }
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "causes": [
+        "after_pool_setup:scan_not_clean:throw",
+        "after_enable_setup:scan_not_clean:throw",
+        "before_client_mode:__MCP_E6Q_PC1:scan_not_clean:throw",
+        "after_client_mode:__MCP_E6Q_PC1:scan_not_clean:throw",
+        "sample:__MCP_E6Q_PC1:1:scan_not_clean:throw",
+        "sample:__MCP_E6Q_PC1:2:scan_not_clean:throw",
+        "no_empty_state_observed",
+        "no_non_empty_state_observed"
+      ],
+      "limitations": [
+        "calibration_holds_for_this_run_pool_and_build_only:getLeaseAt_documents_no_end_condition",
+        "a_capacity_is_not_a_lease_count"
+      ],
+      "reason": "",
+      "outcome_unknown": false
+    },
+    {
+      "experiment_id": "M-SP2-POOL-IDENTITY",
+      "hypothesis": "Each selected PC's observed address and MAC have an exact row in the named pool and no competing physical serverPool row.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "negative_observed",
+      "facts": {
+        "named_pool": "MCP_E6Q_DHCP",
+        "native_pool": "serverPool",
+        "named_scan": {
+          "pool": "MCP_E6Q_DHCP",
+          "observed": true,
+          "cause": "",
+          "capacity": 2,
+          "window": 4,
+          "termination": "throw",
+          "first_null": null,
+          "rows": [],
+          "entries": [
+            {
+              "index": 0,
+              "return_kind": "throw",
+              "error": "invalid vector subscript",
+              "row": null
+            },
+            {
+              "index": 1,
+              "return_kind": "throw",
+              "error": "invalid vector subscript",
+              "row": null
+            },
+            {
+              "index": 2,
+              "return_kind": "throw",
+              "error": "invalid vector subscript",
+              "row": null
+            },
+            {
+              "index": 3,
+              "return_kind": "throw",
+              "error": "invalid vector subscript",
+              "row": null
+            }
+          ]
+        },
+        "native_scan": {
+          "pool": "serverPool",
+          "observed": true,
+          "cause": "",
+          "capacity": 512,
+          "window": 4,
+          "termination": "throw",
+          "first_null": null,
+          "rows": [
+            {
+              "index": 0,
+              "ip": "192.0.2.2",
+              "mac": "00E0.8FC4.9984",
+              "lease_time": 86400000.0,
+              "port": "FastEthernet0"
+            }
+          ],
+          "entries": [
+            {
+              "index": 0,
+              "return_kind": "object",
+              "error": "",
+              "row": {
+                "ipAddress_type": "string",
+                "ipAddress": "192.0.2.2",
+                "macAddress_type": "string",
+                "macAddress": "00E0.8FC4.9984",
+                "leaseTime_type": "number",
+                "leaseTime": 86400000,
+                "port_type": "string",
+                "port": "FastEthernet0"
+              }
+            },
+            {
+              "index": 1,
+              "return_kind": "throw",
+              "error": "invalid vector subscript",
+              "row": null
+            },
+            {
+              "index": 2,
+              "return_kind": "throw",
+              "error": "invalid vector subscript",
+              "row": null
+            },
+            {
+              "index": 3,
+              "return_kind": "throw",
+              "error": "invalid vector subscript",
+              "row": null
+            }
+          ]
+        },
+        "native_calibration": {
+          "pool": "serverPool",
+          "capacity": 512,
+          "conclusion": "inconclusive",
+          "null_ends_rows": false,
+          "kinds": [],
+          "causes": [
+            "baseline:scan_not_clean:throw",
+            "after_server_address:scan_not_clean:throw",
+            "before_pool_setup:scan_not_clean:throw",
+            "after_pool_setup:scan_not_clean:throw",
+            "after_enable_setup:scan_not_clean:throw",
+            "before_client_mode:__MCP_E6Q_PC1:scan_not_clean:throw",
+            "after_client_mode:__MCP_E6Q_PC1:scan_not_clean:throw",
+            "sample:__MCP_E6Q_PC1:1:scan_not_clean:throw",
+            "sample:__MCP_E6Q_PC1:2:scan_not_clean:throw",
+            "no_empty_state_observed",
+            "no_non_empty_state_observed"
+          ],
+          "limitations": [
+            "calibration_holds_for_this_run_pool_and_build_only:getLeaseAt_documents_no_end_condition",
+            "a_capacity_is_not_a_lease_count"
+          ],
+          "states": [
+            {
+              "label": "baseline",
+              "termination": "throw",
+              "first_null": null,
+              "rows": 0,
+              "window": 4,
+              "observed": true
+            },
+            {
+              "label": "after_server_address",
+              "termination": "throw",
+              "first_null": null,
+              "rows": 0,
+              "window": 4,
+              "observed": true
+            },
+            {
+              "label": "before_pool_setup",
+              "termination": "throw",
+              "first_null": null,
+              "rows": 0,
+              "window": 4,
+              "observed": true
+            },
+            {
+              "label": "after_pool_setup",
+              "termination": "throw",
+              "first_null": null,
+              "rows": 0,
+              "window": 4,
+              "observed": true
+            },
+            {
+              "label": "after_enable_setup",
+              "termination": "throw",
+              "first_null": null,
+              "rows": 0,
+              "window": 4,
+              "observed": true
+            },
+            {
+              "label": "before_client_mode:__MCP_E6Q_PC1",
+              "termination": "throw",
+              "first_null": null,
+              "rows": 0,
+              "window": 4,
+              "observed": true
+            },
+            {
+              "label": "after_client_mode:__MCP_E6Q_PC1",
+              "termination": "throw",
+              "first_null": null,
+              "rows": 0,
+              "window": 4,
+              "observed": true
+            },
+            {
+              "label": "sample:__MCP_E6Q_PC1:1",
+              "termination": "throw",
+              "first_null": null,
+              "rows": 1,
+              "window": 4,
+              "observed": true
+            },
+            {
+              "label": "sample:__MCP_E6Q_PC1:2",
+              "termination": "throw",
+              "first_null": null,
+              "rows": 1,
+              "window": 4,
+              "observed": true
+            }
+          ]
+        },
+        "clients": {
+          "__MCP_E6Q_PC1": {
+            "observed": true,
+            "mode": true,
+            "ipv4": "192.0.2.2",
+            "netmask": "255.255.255.0",
+            "mac": "00E0.8FC4.9984",
+            "named_row": "absent_scan_incomplete",
+            "native_row": "exact_ip_mac_row"
+          },
+          "__MCP_E6Q_PC2": {
+            "observed": true,
+            "mode": false,
+            "ipv4": "0.0.0.0",
+            "netmask": "0.0.0.0",
+            "mac": "000D.BD29.B462",
+            "named_row": "absent_scan_incomplete",
+            "native_row": "absent_scan_incomplete"
+          }
+        },
+        "samples": [
+          {
+            "label": "sample:__MCP_E6Q_PC1:1",
+            "client": {
+              "client": "__MCP_E6Q_PC1",
+              "observed": true,
+              "mode": true,
+              "mac": "00E0.8FC4.9984",
+              "ipv4": "192.0.2.2",
+              "netmask": "255.255.255.0",
+              "lease_time": "1 days 0:0:0",
+              "cause": ""
+            },
+            "binding": {
+              "device": "__MCP_E6Q_PC1",
+              "found": true,
+              "port_found": true,
+              "ipv4": "192.0.2.2",
+              "netmask": "255.255.255.0",
+              "gateway_reads": [
+                {
+                  "process": "HostIp",
+                  "found": false,
+                  "api": false,
+                  "value": "",
+                  "error": "invalid string position"
+                },
+                {
+                  "process": "HostIpProcess",
+                  "found": true,
+                  "api": true,
+                  "value": "0.0.0.0",
+                  "error": ""
+                }
+              ],
+              "dns_api": true,
+              "dns_server": "192.0.2.10",
+              "dns_error": "",
+              "error": ""
+            },
+            "named_scan": {
+              "pool": "MCP_E6Q_DHCP",
+              "observed": true,
+              "cause": "",
+              "capacity": 2,
+              "window": 4,
+              "termination": "throw",
+              "first_null": null,
+              "rows": [],
+              "entries": [
+                {
+                  "index": 0,
+                  "return_kind": "throw",
+                  "error": "invalid vector subscript",
+                  "row": null
+                },
+                {
+                  "index": 1,
+                  "return_kind": "throw",
+                  "error": "invalid vector subscript",
+                  "row": null
+                },
+                {
+                  "index": 2,
+                  "return_kind": "throw",
+                  "error": "invalid vector subscript",
+                  "row": null
+                },
+                {
+                  "index": 3,
+                  "return_kind": "throw",
+                  "error": "invalid vector subscript",
+                  "row": null
+                }
+              ]
+            },
+            "native_scan": {
+              "pool": "serverPool",
+              "observed": true,
+              "cause": "",
+              "capacity": 512,
+              "window": 4,
+              "termination": "throw",
+              "first_null": null,
+              "rows": [
+                {
+                  "index": 0,
+                  "ip": "192.0.2.2",
+                  "mac": "00E0.8FC4.9984",
+                  "lease_time": 86400000.0,
+                  "port": "FastEthernet0"
+                }
+              ],
+              "entries": [
+                {
+                  "index": 0,
+                  "return_kind": "object",
+                  "error": "",
+                  "row": {
+                    "ipAddress_type": "string",
+                    "ipAddress": "192.0.2.2",
+                    "macAddress_type": "string",
+                    "macAddress": "00E0.8FC4.9984",
+                    "leaseTime_type": "number",
+                    "leaseTime": 86400000,
+                    "port_type": "string",
+                    "port": "FastEthernet0"
+                  }
+                },
+                {
+                  "index": 1,
+                  "return_kind": "throw",
+                  "error": "invalid vector subscript",
+                  "row": null
+                },
+                {
+                  "index": 2,
+                  "return_kind": "throw",
+                  "error": "invalid vector subscript",
+                  "row": null
+                },
+                {
+                  "index": 3,
+                  "return_kind": "throw",
+                  "error": "invalid vector subscript",
+                  "row": null
+                }
+              ]
+            }
+          },
+          {
+            "label": "sample:__MCP_E6Q_PC1:2",
+            "client": {
+              "client": "__MCP_E6Q_PC1",
+              "observed": true,
+              "mode": true,
+              "mac": "00E0.8FC4.9984",
+              "ipv4": "192.0.2.2",
+              "netmask": "255.255.255.0",
+              "lease_time": "1 days 0:0:0",
+              "cause": ""
+            },
+            "binding": {
+              "device": "__MCP_E6Q_PC1",
+              "found": true,
+              "port_found": true,
+              "ipv4": "192.0.2.2",
+              "netmask": "255.255.255.0",
+              "gateway_reads": [
+                {
+                  "process": "HostIp",
+                  "found": false,
+                  "api": false,
+                  "value": "",
+                  "error": "invalid string position"
+                },
+                {
+                  "process": "HostIpProcess",
+                  "found": true,
+                  "api": true,
+                  "value": "0.0.0.0",
+                  "error": ""
+                }
+              ],
+              "dns_api": true,
+              "dns_server": "192.0.2.10",
+              "dns_error": "",
+              "error": ""
+            },
+            "named_scan": {
+              "pool": "MCP_E6Q_DHCP",
+              "observed": true,
+              "cause": "",
+              "capacity": 2,
+              "window": 4,
+              "termination": "throw",
+              "first_null": null,
+              "rows": [],
+              "entries": [
+                {
+                  "index": 0,
+                  "return_kind": "throw",
+                  "error": "invalid vector subscript",
+                  "row": null
+                },
+                {
+                  "index": 1,
+                  "return_kind": "throw",
+                  "error": "invalid vector subscript",
+                  "row": null
+                },
+                {
+                  "index": 2,
+                  "return_kind": "throw",
+                  "error": "invalid vector subscript",
+                  "row": null
+                },
+                {
+                  "index": 3,
+                  "return_kind": "throw",
+                  "error": "invalid vector subscript",
+                  "row": null
+                }
+              ]
+            },
+            "native_scan": {
+              "pool": "serverPool",
+              "observed": true,
+              "cause": "",
+              "capacity": 512,
+              "window": 4,
+              "termination": "throw",
+              "first_null": null,
+              "rows": [
+                {
+                  "index": 0,
+                  "ip": "192.0.2.2",
+                  "mac": "00E0.8FC4.9984",
+                  "lease_time": 86400000.0,
+                  "port": "FastEthernet0"
+                }
+              ],
+              "entries": [
+                {
+                  "index": 0,
+                  "return_kind": "object",
+                  "error": "",
+                  "row": {
+                    "ipAddress_type": "string",
+                    "ipAddress": "192.0.2.2",
+                    "macAddress_type": "string",
+                    "macAddress": "00E0.8FC4.9984",
+                    "leaseTime_type": "number",
+                    "leaseTime": 86400000,
+                    "port_type": "string",
+                    "port": "FastEthernet0"
+                  }
+                },
+                {
+                  "index": 1,
+                  "return_kind": "throw",
+                  "error": "invalid vector subscript",
+                  "row": null
+                },
+                {
+                  "index": 2,
+                  "return_kind": "throw",
+                  "error": "invalid vector subscript",
+                  "row": null
+                },
+                {
+                  "index": 3,
+                  "return_kind": "throw",
+                  "error": "invalid vector subscript",
+                  "row": null
+                }
+              ]
+            }
+          }
+        ],
+        "progression": {
+          "__MCP_E6Q_PC1": {
+            "admitted": false,
+            "causes": [
+              "preclient_lease_absence_not_fully_observed",
+              "client_binding_unstable_or_outside_policy",
+              "sample_1:named_row_not_exact",
+              "sample_1:default_scan_incomplete",
+              "competing_default_row",
+              "sample_1:gateway_or_resolver_unusable",
+              "sample_2:named_row_not_exact",
+              "sample_2:default_scan_incomplete",
+              "sample_2:gateway_or_resolver_unusable"
+            ]
+          }
+        },
+        "mode_effects": [
+          {
+            "plan_id": "cfg_compiled/ent_mcpe6q/q3-fl-client-mode",
+            "clients": [
+              "__MCP_E6Q_PC1"
+            ],
+            "action_results": [
+              {
+                "action_id": "cfg/endpoint-dhcp/1e3f15d8348bb453",
+                "status": "applied",
+                "failure_code": "none",
+                "message": "Endpoint batch accepted by Packet Tracer.",
+                "batch_id": "endpoints:60",
+                "operation": "set_value",
+                "disposition": "unknown",
+                "dispatch": "unspecified",
+                "result": "not_applicable",
+                "postcondition": "not_applicable",
+                "transition": "not_applicable",
+                "footprint": "not_applicable",
+                "attempted": null,
+                "residual_change": false,
+                "cause": "",
+                "received_mutation": null
+              }
+            ],
+            "verification_results": [
+              {
+                "expectation_id": "cfg/verify/e083294738806d81",
+                "action_id": "cfg/endpoint-dhcp/1e3f15d8348bb453",
+                "status": "verified",
+                "evidence_method": "structured_endpoint_dhcp_mode",
+                "fresh_evidence": true,
+                "fields": {
+                  "dhcp_mode": "verified"
+                },
+                "message": "",
+                "convergence": {
+                  "attempts": 1,
+                  "elapsed_ms": 0,
+                  "final_status": "verified",
+                  "last_observable_state": "dhcp_mode_enabled",
+                  "details": {
+                    "kind": "endpoint_dhcp_mode",
+                    "device_name": "__MCP_E6Q_PC1",
+                    "interface": "FastEthernet0",
+                    "last_observation": {
+                      "device_found": true,
+                      "port_found": true,
+                      "mode_channel": true,
+                      "interface": "FastEthernet0",
+                      "dhcp_mode": true,
+                      "fresh_evidence": true,
+                      "failure_reason": ""
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "preclient_scans": [
+          {
+            "client": "__MCP_E6Q_PC1",
+            "pools": {
+              "MCP_E6Q_DHCP": {
+                "pool": "MCP_E6Q_DHCP",
+                "observed": true,
+                "cause": "",
+                "capacity": 2,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              },
+              "serverPool": {
+                "pool": "serverPool",
+                "observed": true,
+                "cause": "",
+                "capacity": 512,
+                "window": 4,
+                "termination": "throw",
+                "first_null": null,
+                "rows": [],
+                "entries": [
+                  {
+                    "index": 0,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 1,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 2,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  },
+                  {
+                    "index": 3,
+                    "return_kind": "throw",
+                    "error": "invalid vector subscript",
+                    "row": null
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "causes": [
+        "__MCP_E6Q_PC1:served_by_native_default",
+        "__MCP_E6Q_PC1:preclient_lease_absence_not_fully_observed",
+        "__MCP_E6Q_PC1:client_binding_unstable_or_outside_policy",
+        "__MCP_E6Q_PC1:sample_1:named_row_not_exact",
+        "__MCP_E6Q_PC1:sample_1:default_scan_incomplete",
+        "__MCP_E6Q_PC1:competing_default_row",
+        "__MCP_E6Q_PC1:sample_1:gateway_or_resolver_unusable",
+        "__MCP_E6Q_PC1:sample_2:named_row_not_exact",
+        "__MCP_E6Q_PC1:sample_2:default_scan_incomplete",
+        "__MCP_E6Q_PC1:sample_2:gateway_or_resolver_unusable"
+      ],
+      "limitations": [
+        "physical_pool_rows_only:not_product_service_acceptance",
+        "scan_window_and_termination_are_local_to_this_sample",
+        "no_inference_about_dhcp_run_renewal_or_total_capacity",
+        "preclient_lease_absence_not_fully_observed"
+      ],
+      "reason": "",
+      "outcome_unknown": false
+    },
+    {
+      "experiment_id": "M-DHCP-1-FINAL",
+      "hypothesis": "The pre-cleanup native default and lease tables are retained whatever the sequence did, including after a stop.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "supported_in_sample",
+      "facts": {
+        "native_default": {
+          "snapshots": [
+            {
+              "label": "before_e5",
+              "purpose": "q3-fl:native_default:before_e5",
+              "operation_seq": 18,
+              "observed": true,
+              "cause": "",
+              "pools": [
+                {
+                  "name": "serverPool",
+                  "network": "0.0.0.0",
+                  "mask": "0.0.0.0",
+                  "gateway": "0.0.0.0",
+                  "dns": "0.0.0.0",
+                  "start": "0.0.0.0",
+                  "end": "0.0.2.0",
+                  "max": 512
+                }
+              ],
+              "intended_pool_present": false,
+              "raw": {
+                "device": "__MCP_E6Q_SRV",
+                "found": true,
+                "process_found": true,
+                "interface": "FastEthernet0",
+                "enabled": false,
+                "enabled_type": "boolean",
+                "pool_count": 1,
+                "pools": [
+                  {
+                    "name": "serverPool",
+                    "network": "0.0.0.0",
+                    "mask": "0.0.0.0",
+                    "gateway": "0.0.0.0",
+                    "dns": "0.0.0.0",
+                    "start": "0.0.0.0",
+                    "end": "0.0.2.0",
+                    "max": 512
+                  }
+                ],
+                "truncated": false,
+                "error": ""
+              },
+              "differences": []
+            },
+            {
+              "label": "after_server_address",
+              "purpose": "q3-fl:native_default:after_server_address",
+              "operation_seq": 23,
+              "observed": true,
+              "cause": "",
+              "pools": [
+                {
+                  "name": "serverPool",
+                  "network": "192.0.2.0",
+                  "mask": "255.255.255.0",
+                  "gateway": "0.0.0.0",
+                  "dns": "0.0.0.0",
+                  "start": "192.0.2.0",
+                  "end": "192.0.3.255",
+                  "max": 512
+                }
+              ],
+              "intended_pool_present": false,
+              "raw": {
+                "device": "__MCP_E6Q_SRV",
+                "found": true,
+                "process_found": true,
+                "interface": "FastEthernet0",
+                "enabled": false,
+                "enabled_type": "boolean",
+                "pool_count": 1,
+                "pools": [
+                  {
+                    "name": "serverPool",
+                    "network": "192.0.2.0",
+                    "mask": "255.255.255.0",
+                    "gateway": "0.0.0.0",
+                    "dns": "0.0.0.0",
+                    "start": "192.0.2.0",
+                    "end": "192.0.3.255",
+                    "max": 512
+                  }
+                ],
+                "truncated": false,
+                "error": ""
+              },
+              "differences": [
+                "default_pool_changed:serverPool.end",
+                "default_pool_changed:serverPool.mask",
+                "default_pool_changed:serverPool.network",
+                "default_pool_changed:serverPool.start"
+              ]
+            },
+            {
+              "label": "before_pool_setup",
+              "purpose": "q3-fl:native_default:before_pool_setup",
+              "operation_seq": 72,
+              "observed": true,
+              "cause": "",
+              "pools": [
+                {
+                  "name": "serverPool",
+                  "network": "192.0.2.0",
+                  "mask": "255.255.255.0",
+                  "gateway": "0.0.0.0",
+                  "dns": "0.0.0.0",
+                  "start": "192.0.2.0",
+                  "end": "192.0.3.255",
+                  "max": 512
+                }
+              ],
+              "intended_pool_present": false,
+              "raw": {
+                "device": "__MCP_E6Q_SRV",
+                "found": true,
+                "process_found": true,
+                "interface": "FastEthernet0",
+                "enabled": false,
+                "enabled_type": "boolean",
+                "pool_count": 1,
+                "pools": [
+                  {
+                    "name": "serverPool",
+                    "network": "192.0.2.0",
+                    "mask": "255.255.255.0",
+                    "gateway": "0.0.0.0",
+                    "dns": "0.0.0.0",
+                    "start": "192.0.2.0",
+                    "end": "192.0.3.255",
+                    "max": 512
+                  }
+                ],
+                "truncated": false,
+                "error": ""
+              },
+              "differences": [
+                "default_pool_changed:serverPool.end",
+                "default_pool_changed:serverPool.mask",
+                "default_pool_changed:serverPool.network",
+                "default_pool_changed:serverPool.start"
+              ]
+            },
+            {
+              "label": "after_pool_setup",
+              "purpose": "q3-fl:native_default:after_pool_setup",
+              "operation_seq": 76,
+              "observed": true,
+              "cause": "",
+              "pools": [
+                {
+                  "name": "serverPool",
+                  "network": "192.0.2.0",
+                  "mask": "255.255.255.0",
+                  "gateway": "0.0.0.0",
+                  "dns": "0.0.0.0",
+                  "start": "192.0.2.0",
+                  "end": "192.0.3.255",
+                  "max": 512
+                }
+              ],
+              "intended_pool_present": true,
+              "raw": {
+                "device": "__MCP_E6Q_SRV",
+                "found": true,
+                "process_found": true,
+                "interface": "FastEthernet0",
+                "enabled": false,
+                "enabled_type": "boolean",
+                "pool_count": 2,
+                "pools": [
+                  {
+                    "name": "serverPool",
+                    "network": "192.0.2.0",
+                    "mask": "255.255.255.0",
+                    "gateway": "0.0.0.0",
+                    "dns": "0.0.0.0",
+                    "start": "192.0.2.0",
+                    "end": "192.0.3.255",
+                    "max": 512
+                  },
+                  {
+                    "name": "MCP_E6Q_DHCP",
+                    "network": "192.0.2.0",
+                    "mask": "255.255.255.0",
+                    "gateway": "192.0.2.1",
+                    "dns": "192.0.2.10",
+                    "start": "192.0.2.100",
+                    "end": "192.0.2.101",
+                    "max": 2
+                  }
+                ],
+                "truncated": false,
+                "error": ""
+              },
+              "differences": [
+                "default_pool_changed:serverPool.end",
+                "default_pool_changed:serverPool.mask",
+                "default_pool_changed:serverPool.network",
+                "default_pool_changed:serverPool.start"
+              ]
+            },
+            {
+              "label": "after_enable_setup",
+              "purpose": "q3-fl:native_default:after_enable_setup",
+              "operation_seq": 80,
+              "observed": true,
+              "cause": "",
+              "pools": [
+                {
+                  "name": "serverPool",
+                  "network": "192.0.2.0",
+                  "mask": "255.255.255.0",
+                  "gateway": "0.0.0.0",
+                  "dns": "0.0.0.0",
+                  "start": "192.0.2.0",
+                  "end": "192.0.3.255",
+                  "max": 512
+                }
+              ],
+              "intended_pool_present": true,
+              "raw": {
+                "device": "__MCP_E6Q_SRV",
+                "found": true,
+                "process_found": true,
+                "interface": "FastEthernet0",
+                "enabled": true,
+                "enabled_type": "boolean",
+                "pool_count": 2,
+                "pools": [
+                  {
+                    "name": "serverPool",
+                    "network": "192.0.2.0",
+                    "mask": "255.255.255.0",
+                    "gateway": "0.0.0.0",
+                    "dns": "0.0.0.0",
+                    "start": "192.0.2.0",
+                    "end": "192.0.3.255",
+                    "max": 512
+                  },
+                  {
+                    "name": "MCP_E6Q_DHCP",
+                    "network": "192.0.2.0",
+                    "mask": "255.255.255.0",
+                    "gateway": "192.0.2.1",
+                    "dns": "192.0.2.10",
+                    "start": "192.0.2.100",
+                    "end": "192.0.2.101",
+                    "max": 2
+                  }
+                ],
+                "truncated": false,
+                "error": ""
+              },
+              "differences": [
+                "default_pool_changed:serverPool.end",
+                "default_pool_changed:serverPool.mask",
+                "default_pool_changed:serverPool.network",
+                "default_pool_changed:serverPool.start"
+              ]
+            },
+            {
+              "label": "after_client_mode:__MCP_E6Q_PC1",
+              "purpose": "q3-fl:native_default:after_client_mode:__MCP_E6Q_PC1",
+              "operation_seq": 87,
+              "observed": true,
+              "cause": "",
+              "pools": [
+                {
+                  "name": "serverPool",
+                  "network": "192.0.2.0",
+                  "mask": "255.255.255.0",
+                  "gateway": "0.0.0.0",
+                  "dns": "0.0.0.0",
+                  "start": "192.0.2.0",
+                  "end": "192.0.3.255",
+                  "max": 512
+                }
+              ],
+              "intended_pool_present": true,
+              "raw": {
+                "device": "__MCP_E6Q_SRV",
+                "found": true,
+                "process_found": true,
+                "interface": "FastEthernet0",
+                "enabled": true,
+                "enabled_type": "boolean",
+                "pool_count": 2,
+                "pools": [
+                  {
+                    "name": "serverPool",
+                    "network": "192.0.2.0",
+                    "mask": "255.255.255.0",
+                    "gateway": "0.0.0.0",
+                    "dns": "0.0.0.0",
+                    "start": "192.0.2.0",
+                    "end": "192.0.3.255",
+                    "max": 512
+                  },
+                  {
+                    "name": "MCP_E6Q_DHCP",
+                    "network": "192.0.2.0",
+                    "mask": "255.255.255.0",
+                    "gateway": "192.0.2.1",
+                    "dns": "192.0.2.10",
+                    "start": "192.0.2.100",
+                    "end": "192.0.2.101",
+                    "max": 2
+                  }
+                ],
+                "truncated": false,
+                "error": ""
+              },
+              "differences": [
+                "default_pool_changed:serverPool.end",
+                "default_pool_changed:serverPool.mask",
+                "default_pool_changed:serverPool.network",
+                "default_pool_changed:serverPool.start"
+              ]
+            },
+            {
+              "label": "before_cleanup",
+              "purpose": "q3-fl:native_default:before_cleanup",
+              "operation_seq": 95,
+              "observed": true,
+              "cause": "",
+              "pools": [
+                {
+                  "name": "serverPool",
+                  "network": "192.0.2.0",
+                  "mask": "255.255.255.0",
+                  "gateway": "0.0.0.0",
+                  "dns": "0.0.0.0",
+                  "start": "192.0.2.0",
+                  "end": "192.0.3.255",
+                  "max": 512
+                }
+              ],
+              "intended_pool_present": true,
+              "raw": {
+                "device": "__MCP_E6Q_SRV",
+                "found": true,
+                "process_found": true,
+                "interface": "FastEthernet0",
+                "enabled": true,
+                "enabled_type": "boolean",
+                "pool_count": 2,
+                "pools": [
+                  {
+                    "name": "serverPool",
+                    "network": "192.0.2.0",
+                    "mask": "255.255.255.0",
+                    "gateway": "0.0.0.0",
+                    "dns": "0.0.0.0",
+                    "start": "192.0.2.0",
+                    "end": "192.0.3.255",
+                    "max": 512
+                  },
+                  {
+                    "name": "MCP_E6Q_DHCP",
+                    "network": "192.0.2.0",
+                    "mask": "255.255.255.0",
+                    "gateway": "192.0.2.1",
+                    "dns": "192.0.2.10",
+                    "start": "192.0.2.100",
+                    "end": "192.0.2.101",
+                    "max": 2
+                  }
+                ],
+                "truncated": false,
+                "error": ""
+              },
+              "differences": [
+                "default_pool_changed:serverPool.end",
+                "default_pool_changed:serverPool.mask",
+                "default_pool_changed:serverPool.network",
+                "default_pool_changed:serverPool.start"
+              ]
+            }
+          ],
+          "differences": [
+            "default_pool_changed:serverPool.end",
+            "default_pool_changed:serverPool.mask",
+            "default_pool_changed:serverPool.network",
+            "default_pool_changed:serverPool.start"
+          ]
+        },
+        "native_default_sequence": {
+          "policy": "q3-fl-native-default/v1",
+          "permits_continuation": true,
+          "causes": [],
+          "limitations": [
+            "admission_compares_measured_values_and_extrapolates_nothing",
+            "an_admitted_native_default_transition_authorizes_no_allocation"
+          ],
+          "authorizes_allocation": false,
+          "intervals": [
+            {
+              "before": "before_e5",
+              "after": "after_server_address",
+              "intervention": "whole_configure_pc_ip_call",
+              "classification": "admitted_realignment",
+              "changed_fields": [
+                "serverPool.end",
+                "serverPool.mask",
+                "serverPool.network",
+                "serverPool.start"
+              ],
+              "assessment_causes": [],
+              "matched_evidence": "SERVER-PT-DIAG-0EA-01:D-DHCP:v3:attempt-2:d-dhcp-2026-09-21T20-01-43Z-dffd6c3b",
+              "decision": "permitted",
+              "cause": ""
+            },
+            {
+              "before": "after_server_address",
+              "after": "before_pool_setup",
+              "intervention": "sp2:forwarding_readiness",
+              "classification": "unchanged",
+              "changed_fields": [],
+              "assessment_causes": [],
+              "matched_evidence": "",
+              "decision": "permitted",
+              "cause": ""
+            },
+            {
+              "before": "before_pool_setup",
+              "after": "after_pool_setup",
+              "intervention": "sp2:e6_pool",
+              "classification": "unchanged",
+              "changed_fields": [],
+              "assessment_causes": [],
+              "matched_evidence": "",
+              "decision": "permitted",
+              "cause": ""
+            },
+            {
+              "before": "after_pool_setup",
+              "after": "after_enable_setup",
+              "intervention": "sp2:e6_enable",
+              "classification": "unchanged",
+              "changed_fields": [],
+              "assessment_causes": [],
+              "matched_evidence": "",
+              "decision": "permitted",
+              "cause": ""
+            },
+            {
+              "before": "after_enable_setup",
+              "after": "after_client_mode:__MCP_E6Q_PC1",
+              "intervention": "e5:client_dhcp_mode:configurePcIp_dhcp_flag",
+              "classification": "unchanged",
+              "changed_fields": [],
+              "assessment_causes": [],
+              "matched_evidence": "",
+              "decision": "permitted",
+              "cause": ""
+            },
+            {
+              "before": "after_client_mode:__MCP_E6Q_PC1",
+              "after": "before_cleanup",
+              "intervention": "acquisitions_repeat_and_timing",
+              "classification": "unchanged",
+              "changed_fields": [],
+              "assessment_causes": [],
+              "matched_evidence": "",
+              "decision": "permitted",
+              "cause": ""
+            }
+          ]
+        },
+        "scans": {
+          "MCP_E6Q_DHCP": {
+            "pool": "MCP_E6Q_DHCP",
+            "observed": true,
+            "cause": "",
+            "capacity": 2,
+            "window": 4,
+            "termination": "throw",
+            "first_null": null,
+            "rows": [],
+            "entries": [
+              {
+                "index": 0,
+                "return_kind": "throw",
+                "error": "invalid vector subscript",
+                "row": null
+              },
+              {
+                "index": 1,
+                "return_kind": "throw",
+                "error": "invalid vector subscript",
+                "row": null
+              },
+              {
+                "index": 2,
+                "return_kind": "throw",
+                "error": "invalid vector subscript",
+                "row": null
+              },
+              {
+                "index": 3,
+                "return_kind": "throw",
+                "error": "invalid vector subscript",
+                "row": null
+              }
+            ]
+          },
+          "serverPool": {
+            "pool": "serverPool",
+            "observed": true,
+            "cause": "",
+            "capacity": 512,
+            "window": 4,
+            "termination": "throw",
+            "first_null": null,
+            "rows": [
+              {
+                "index": 0,
+                "ip": "192.0.2.2",
+                "mac": "00E0.8FC4.9984",
+                "lease_time": 86400000.0,
+                "port": "FastEthernet0"
+              }
+            ],
+            "entries": [
+              {
+                "index": 0,
+                "return_kind": "object",
+                "error": "",
+                "row": {
+                  "ipAddress_type": "string",
+                  "ipAddress": "192.0.2.2",
+                  "macAddress_type": "string",
+                  "macAddress": "00E0.8FC4.9984",
+                  "leaseTime_type": "number",
+                  "leaseTime": 86400000,
+                  "port_type": "string",
+                  "port": "FastEthernet0"
+                }
+              },
+              {
+                "index": 1,
+                "return_kind": "throw",
+                "error": "invalid vector subscript",
+                "row": null
+              },
+              {
+                "index": 2,
+                "return_kind": "throw",
+                "error": "invalid vector subscript",
+                "row": null
+              },
+              {
+                "index": 3,
+                "return_kind": "throw",
+                "error": "invalid vector subscript",
+                "row": null
+              }
+            ]
+          }
+        }
+      },
+      "causes": [],
+      "limitations": [
+        "terminal_reading_is_taken_whatever_the_sequence_did"
+      ],
+      "reason": "",
+      "outcome_unknown": false
+    }
+  ],
+  "primary_failure": "",
+  "secondary_failures": [],
+  "releases": [
+    {
+      "resource": "device:__MCP_E6Q_SW",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:__MCP_E6Q_PC2",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:__MCP_E6Q_PC1",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:__MCP_E6Q_SRV",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "campaign:lock",
+      "kind": "claim",
+      "outcome": "released",
+      "detail": ""
+    }
+  ],
+  "restoration": [
+    {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 1,
+      "link_count": 0,
+      "devices": [
+        {
+          "name": "Power Distribution Device0",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        }
+      ],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    },
+    {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 1,
+      "link_count": 0,
+      "devices": [
+        {
+          "name": "Power Distribution Device0",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        }
+      ],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    }
+  ],
+  "restoration_proven": true,
+  "engine_residue": [],
+  "coordination_residue": [],
+  "dirty_state": "clean",
+  "persist_error": "",
+  "limitations": [
+    "effect_gate_is_local_and_not_an_in_band_receiver_fence",
+    "local_process_observation_bounded_seconds:30.0",
+    "q3fl_private_candidate_capabilities:no_public_catalog_mutation",
+    "q3fl_physical_fixture_owned_by_runner:no_switch_action_applied",
+    "q3fl_native_default_policy:q3-fl-native-default/v1",
+    "q3fl_dhcp_lease_never_promoted_to_verified:r_evt_05_fallback_active",
+    "restoration_scope:semantic_devices_and_links",
+    "backend_managed_devices_changed:0->1"
+  ],
+  "outcome": "completed"
+}

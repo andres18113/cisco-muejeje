@@ -1,0 +1,13 @@
+{
+  "attempt_id": "664f9b83e2a7f01f9c94732111141b61",
+  "cleanup_state": "verified_clean",
+  "exit_census_sha256": "459529dc0157c33519668822bb718f0f6141d525b17b1cf2d8b7d03f3e383f21",
+  "qualification_exit": 0,
+  "qualification_outcome": "completed",
+  "qualification_record_path": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\data\\services\\qualification\\sp2-native-pool\\sp2-native-pool-2026-09-27T20-12-33Z-488ee3aa.json",
+  "retirement_exit": 0,
+  "retirement_outcome": "exited",
+  "source_sha": "865604e168ed068b598c7c141781b7954974a1f4",
+  "source_tree": "f5e82dfb0ee8668847444b68027507797934cdb4",
+  "stage": "SP2-NATIVE-POOL"
+}

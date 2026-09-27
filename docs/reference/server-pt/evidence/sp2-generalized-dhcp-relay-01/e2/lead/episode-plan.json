@@ -1,0 +1,41 @@
+{
+  "allocated_operations": 450,
+  "allocated_seconds": 2100,
+  "allocation_arithmetic": "Stage maximum 440 operations/1800 seconds includes 11-operation/300-second finalization reserve; episode adds 10 operations/300 seconds for launch, retirement and contingency. Campaign separately protects 1000 operations/600 seconds.",
+  "attempt_ids": [
+    "664f9b83e2a7f01f9c94732111141b61"
+  ],
+  "instance_token": "3df713ffb36a19bace1784d9108593a7",
+  "native_support_claim": "none; diagnostic only",
+  "permitted_effects": [
+    "SP2-NATIVE-POOL profile v2 on exactly the owned four-device three-link fixture",
+    "Keep both PC-PT clients unbound while addressing the server and observing forwarding and both physical pool windows",
+    "Configure and read the named pool while the DHCP process is disabled; read serverPool, then enable and read the process before any client mode effect",
+    "Activate only PC1 DHCP mode and capture two spaced typed client, gateway, resolver, MAC and bounded lease-window samples; activate PC2 only after the v2 progression gate",
+    "No explicit dhcpRun; restore exact owned fixtures and retire only the recorded process"
+  ],
+  "profile_id": "SP2-NATIVE-POOL",
+  "profile_version": "2",
+  "question": "Does disabled-process named-pool setup before any PC DHCP mode alter the physical pool holding PC1's fresh observed IP/MAC row, and is a second PC admissible under stable typed attribution?",
+  "selected_clients": [
+    "__MCP_E6Q_PC1",
+    "__MCP_E6Q_PC2 (conditional)"
+  ],
+  "source_sha": "865604e168ed068b598c7c141781b7954974a1f4",
+  "source_tree": "f5e82dfb0ee8668847444b68027507797934cdb4",
+  "stage": "SP2-NATIVE-POOL",
+  "stop_rule": "Stop on wrong source, process, receiver, workspace or physical pool identity; an unknown mutation outcome, unbound or forwarding failure, incomplete progression, budget or persistence failure, or unverified cleanup. No same-state retry or channel fallback.",
+  "targets": [
+    "__MCP_E6Q_SRV",
+    "__MCP_E6Q_PC1",
+    "__MCP_E6Q_PC2",
+    "__MCP_E6Q_SW"
+  ],
+  "tests_run": [
+    "Focused SP2 native pool 21 passed at 865604e168ed068b598c7c141781b7954974a1f4",
+    "Related SP2/Q3 249 passed at 865604e168ed068b598c7c141781b7954974a1f4",
+    "Local full pytest 8452 passed, 6 skipped at 865604e168ed068b598c7c141781b7954974a1f4",
+    "Clean exact-commit quality gate and MkDocs passed at 865604e168ed068b598c7c141781b7954974a1f4",
+    "Exact-SHA CI 36346934652 quality/docs passed; four pytest jobs in progress at episode plan creation"
+  ]
+}

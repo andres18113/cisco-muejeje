@@ -1,0 +1,22 @@
+"""Retire only this episode's recorded disposable Packet Tracer process."""
+from __future__ import annotations
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+ROOT = Path(r"C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP-server-services-goal-foundations")
+EPISODE = Path(sys.argv[1]).resolve()
+if not EPISODE.is_relative_to(ROOT / "data" / "services" / "sp2-governed"):
+    raise RuntimeError("episode_path_outside_governed_root")
+ids = json.loads((EPISODE / "ids.json").read_text(encoding="utf-8"))
+env = dict(os.environ)
+env["PT_MCP_GOVERNED_ROOT"] = str(ROOT)
+args = [sys.executable, "-m", "packet_tracer_mcp.adapters.cli.server_pt_commissioning",
+        "--retire", "--campaign", "sp2", "--attempt", ids["attempt_id"],
+        "--charter", ids["charter"]]
+with (EPISODE / "10-retire.stdout").open("x", encoding="utf-8") as stdout:
+    with (EPISODE / "10-retire.stderr").open("x", encoding="utf-8") as stderr:
+        result = subprocess.run(args, cwd=ROOT, env=env, stdout=stdout, stderr=stderr, timeout=360)
+(EPISODE / "10-retire.exit").write_text(str(result.returncode)+"\n", encoding="utf-8")
+raise SystemExit(result.returncode)
