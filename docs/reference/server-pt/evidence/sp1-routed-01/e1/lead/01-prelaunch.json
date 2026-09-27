@@ -1,0 +1,15 @@
+{
+  "before_claim": {
+    "error": "",
+    "mailbox_files": [],
+    "processes": []
+  },
+  "isolation_state": "ISOLATED",
+  "legacy_loaded": false,
+  "package_file": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\src\\packet_tracer_mcp\\__init__.py",
+  "pytest_loaded": false,
+  "source_sha": "6e5e5277881d331106bad17f88048ba2b82b157c",
+  "source_status": "",
+  "source_tree": "4353b3a493f1ae5aafe99159eda8fc7dcb3800de",
+  "sys_executable": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\.venv\\Scripts\\python.exe"
+}

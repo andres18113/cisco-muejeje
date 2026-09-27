@@ -1,0 +1,6 @@
+{
+  "lab_state": "Exploratory SP1-ROUTED-W2 at 6e5e527 with named candidate static-route evidence. The registered tool admitted all three routed groups' paths and configured the whole closure; E5 read-back including static routes passed. HQ-PC-01, BR1-PC-01 and BR1-PC-02 verified HTTP by address, DNS, the qualified nonexistent-name negative and HTTP by name; HQ-PC-02 verified HTTP by address, its DNS window was incomplete at the deadline (unknown), so its negative and hostname rows were dependency-blocked. The BR2 routed group was refused at its 30 s deadline: one round of three routers took 32.4 s and the HQ read timed out, while the captured tables show the full static chain installed and unpaged. Product PARTIAL; M-SP1-ROUTED-PRODUCT inconclusive, M-SP1-ROUTED-FINAL supported. Gateway/resolver rows were not attempted (capability unknown); the terminal binding probe found getProcess('HostIp') throwing 'invalid string position' on PC-PT. Fixture restoration proven.",
+  "operations_used": 367,
+  "qualification_outcome": "stopped",
+  "retirement": "Maintained retirement exited owned PID 51420 with basis owned_qualification_restored; final census zero Packet Tracer processes, empty mailbox and no campaign lock."
+}
