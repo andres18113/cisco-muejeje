@@ -1,0 +1,6 @@
+{
+  "capture_file": "05-launch-capture.json",
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "{\"attempt_id\": \"4b7e43a17477420fbcb3ef14e1552d1b\", \"blank_document_proven\": true, \"launch_sha256\": \"fb17376d086ac798572932aeb05ab9b1d332cc780feae094f83d3602ad9f4400\", \"outcome\": \"owned\", \"phase\": \"launch\", \"process_id\": 30016}\n"
+}

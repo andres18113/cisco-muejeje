@@ -177,3 +177,37 @@ it needs a clean exact source commit
 and tree, episode allocation with protected finalization, owned process and
 mailbox preflight, and an immutable result. Full product acceptance and
 offline 2/20/200/1000 composition metrics remain open.
+
+## Episode 1 native pool result (2026-09-27)
+
+The first owned `SP2-NATIVE-POOL` episode executed commit
+`a8b6274158b4346c6ccaba69ec8267730a015724`, tree
+`a80a5d953cd05830ac3b09fd3a239159162b73ce`, on Packet Tracer
+`9.0.1.0858` through the file channel. `M-SP2-POOL-IDENTITY` is
+`NEGATIVE_OBSERVED`: both selected PC-PT clients had fresh native addresses
+`192.0.2.2` and `.3` with exact IP/MAC lease rows in physical `serverPool`.
+The named-pool rows were absent from an incomplete scan; the observation does
+not establish why the native default won or that named serving is impossible
+under another topology or startup policy. The configured named policy and
+setter results are not lease attribution. No named-pool support entry is
+promoted from this episode.
+
+The stage finalized after 123 bridge operations and the campaign ledger
+closed at 413.5273 seconds, with no unsettled phase. Fixture restoration was
+proven; the qualification record separately reports `dirty_state=unknown`.
+Maintained retirement exited only owned PID `30016`, and the fresh final
+census found no Packet Tracer process, mailbox file or campaign lock. The
+immutable e1 archive has 53 files and a verified `MANIFEST.sha256` digest
+`70ddebdb578793ea252226584ceab87ec731d2697bf581e67089837e33a49a71`.
+
+The next native question must change one causal condition: determine whether
+the stock default competes with an independently configured named pool, or
+whether relay `giaddr` selects the matching remote pool despite this local
+negative. Use a new prospective episode and fixture/operation bound, with
+readback of every physical pool and actual client identity; do not replay e1
+unchanged. The 36-simultaneous-client target and remote relay/service
+acceptance remain unmeasured. Offline full pytest on the executed commit
+passed 8,444 with 6 skipped. Exact-SHA CI run `36340608026` passed quality,
+docs, both Ubuntu jobs and Windows Python 3.13; Windows Python 3.11 is being
+rerun after a timed simulated SP-1 fault test reported `group_deadline_reached`
+instead of its expected down-interface cause on its first attempt.
