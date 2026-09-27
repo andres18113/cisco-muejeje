@@ -1,0 +1,139 @@
+"""Freeze one SP-1 episode's identities and finite plan before any PT contact.
+
+Usage: prepare.py <episode lead directory> <stage> <exploratory|final>
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+from uuid import uuid4
+
+from packet_tracer_mcp.adapters.cli.sp1_routed_qualification import (
+    sp1_device_catalog,
+    sp1_routed_product_contract,
+)
+from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
+    SP1_ROUTED_STAGES,
+    stage_definition,
+)
+
+ROOT = Path(__file__).resolve().parents[3]
+LEAD = Path(sys.argv[1]).resolve()
+STAGE = sys.argv[2]
+KIND = sys.argv[3]
+BUILD = "9.0.1.0858"
+
+
+def git(*args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=ROOT, check=True, capture_output=True, text=True, timeout=15
+    ).stdout.strip()
+
+
+def save(name: str, payload: object) -> None:
+    with (LEAD / name).open("x", encoding="utf-8") as stream:
+        json.dump(payload, stream, sort_keys=True, indent=2)
+        stream.write("\n")
+
+
+if KIND not in {"exploratory", "final"}:
+    raise RuntimeError("episode_kind_unknown")
+if git("status", "--porcelain=v1"):
+    raise RuntimeError("episode_source_dirty")
+if git("branch", "--show-current") != "feature/server-pt-goal-foundations":
+    raise RuntimeError("episode_wrong_branch")
+definition = stage_definition(STAGE)
+if definition is None or definition.stage not in SP1_ROUTED_STAGES:
+    raise RuntimeError("episode_stage_not_sp1")
+candidate = sp1_device_catalog(BUILD) is not None
+if KIND == "final" and candidate:
+    raise RuntimeError("final_episode_requires_the_default_catalog")
+head = git("rev-parse", "HEAD")
+tree = git("rev-parse", "HEAD^{tree}")
+# The plan's composition only proves the stage composes at this source; the
+# run composes its own contract from its own run id.
+contract = sp1_routed_product_contract(BUILD, "episode-plan", definition.selected_clients)
+LEAD.mkdir(parents=True, exist_ok=False)
+attempt = uuid4().hex
+instance = uuid4().hex
+save(
+    "ids.json",
+    {
+        "Attempt": attempt,
+        "Head": head,
+        "Instance": instance,
+        "Plan": str(LEAD / "episode-plan.json"),
+        "Stage": STAGE,
+        "Tree": tree,
+    },
+)
+seconds = float(definition.budget.max_seconds) + 300.0
+save(
+    "episode-plan.json",
+    {
+        "allocated_operations": definition.budget.max_operations,
+        "allocated_seconds": seconds,
+        "allocation_arithmetic": (
+            f"The stage caps {definition.budget.max_operations} operations and "
+            f"{definition.budget.max_seconds} seconds, including its "
+            f"{definition.reserve_operations}-operation and "
+            f"{definition.budget.reserve_seconds}-second finalization reserves. "
+            "The offline W2 stage spent 324 operations; LIVE convergence polling "
+            f"is what the rest covers. {seconds:.0f} episode seconds cover the "
+            "stage plus 60 launch, 120 retirement and 120 contingency. No "
+            "in-flight increase."
+        ),
+        "attempt_ids": [attempt],
+        "device_catalog": "candidate" if candidate else "default",
+        "episode_kind": KIND,
+        "instance_token": instance,
+        "interpretation_limit": (
+            "Candidate static-route evidence for 1941/2911 is injected and named; "
+            "a positive result qualifies the owned composition on this build and "
+            "channel only, never default public support."
+            if candidate
+            else "Default catalog on the registered route; the result covers this "
+            "exact composition, build and channel only."
+        ),
+        "permitted_effects": [
+            f"qualification:{STAGE} profile {definition.profile_version}",
+            "create/verify/remove the exact disposable 14-device 13-link fixture",
+            "registered pt_apply_enterprise_services on the owned fixture",
+            "E5 endpoint addressing, access and trunk ports, router subinterfaces, "
+            "transit interfaces and static routes of the admitted closure",
+            "E6 DNS records and HTTP page on the two HQ servers",
+            "each selected client's first HTTP-by-IP request, then DNS, a "
+            "nonexistent-name control and HTTP by name",
+            "read-only router tables and client bindings",
+            "owned process retirement",
+        ],
+        "physical_topology_hash": contract.topology.physical_identity_hash,
+        "profile_id": definition.profile_id,
+        "profile_version": definition.profile_version,
+        "question": (
+            "Does the maintained product, through the registered four-input tool, "
+            "admit the routed paths of the SP-1 composition, verify their "
+            "forwarding prerequisites from fresh router readings, and serve each "
+            f"selected client of {STAGE} first by address, then by DNS and by host "
+            "name, with a qualified nonexistent-name negative?"
+        ),
+        "selected_clients": list(definition.selected_clients),
+        "source_sha": head,
+        "source_tree": tree,
+        "stop_rule": (
+            "Stop dependent effects on identity or receiver mismatch, refusal, "
+            "unobservable or contradicted routed readiness, an unverified client, "
+            "budget expiry, persistence or cleanup uncertainty; keep the terminal "
+            "readings, never repeat an ambiguous mutation, retire only the owned lab."
+        ),
+        "targets": list(definition.fixture_names),
+        "tests_run": [
+            "focused SP-1 and qualification tests at " + head[:7],
+            "clean quality gate at " + head[:7],
+        ],
+    },
+)
+print(json.dumps({"attempt": attempt, "instance": instance, "head": head, "tree": tree}))

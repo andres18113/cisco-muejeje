@@ -1,0 +1,4612 @@
+{
+  "schema_version": 1,
+  "record_kind": "server_services_qualification",
+  "run_id": "2026-09-27T08-53-46Z-8692ab1a",
+  "stage": "SP1-ROUTED-W1",
+  "execution_mode": "live",
+  "created_at": "2026-09-27T08:53:46.869347Z",
+  "completed_at": "2026-09-27T08:59:56.116712Z",
+  "authorization": {
+    "authorization_id": "SERVER-PT-SP1-ROUTED-E3-d3f60b0a25944284a56a01fef9f7a4b6",
+    "stage": "SP1-ROUTED-W1",
+    "sha": "a04369a88298d452ce5a9043e160d2c14fe83ca5",
+    "targets": [
+      "HQ-EDGE-RTR-01",
+      "BR1-EDGE-RTR-01",
+      "BR2-EDGE-RTR-01",
+      "HQ-DEFAULT-ACCESS-SW-01",
+      "BR1-DEFAULT-ACCESS-SW-01",
+      "BR2-DEFAULT-ACCESS-SW-01",
+      "HQ-DEFAULT-DNS-01",
+      "HQ-DEFAULT-WEB-01",
+      "HQ-DEFAULT-PC-01",
+      "HQ-DEFAULT-PC-02",
+      "BR1-DEFAULT-PC-01",
+      "BR1-DEFAULT-PC-02",
+      "BR2-DEFAULT-PC-01",
+      "BR2-DEFAULT-PC-02"
+    ],
+    "channel": "file",
+    "build": "9.0.1.0858",
+    "max_operations": 3000,
+    "max_seconds": 3600,
+    "profile_id": "SP1-ROUTED-W1",
+    "profile_version": "1",
+    "tree": "d41ecc27d4fa92b846f43d06df37421c76fdca1a",
+    "models": [
+      "HQ-EDGE-RTR-01:1941",
+      "BR1-EDGE-RTR-01:2911",
+      "BR2-EDGE-RTR-01:1941",
+      "HQ-DEFAULT-ACCESS-SW-01:2960-24TT",
+      "BR1-DEFAULT-ACCESS-SW-01:IE-2000",
+      "BR2-DEFAULT-ACCESS-SW-01:IE-2000",
+      "HQ-DEFAULT-DNS-01:Server-PT",
+      "HQ-DEFAULT-WEB-01:Server-PT",
+      "HQ-DEFAULT-PC-01:PC-PT",
+      "HQ-DEFAULT-PC-02:PC-PT",
+      "BR1-DEFAULT-PC-01:PC-PT",
+      "BR1-DEFAULT-PC-02:PC-PT",
+      "BR2-DEFAULT-PC-01:PC-PT",
+      "BR2-DEFAULT-PC-02:PC-PT"
+    ],
+    "links": [
+      "HQ-DEFAULT-ACCESS-SW-01:GigabitEthernet0/1-HQ-EDGE-RTR-01:GigabitEthernet0/1",
+      "BR1-DEFAULT-ACCESS-SW-01:GigabitEthernet1/1-BR1-EDGE-RTR-01:GigabitEthernet0/2",
+      "BR2-DEFAULT-ACCESS-SW-01:GigabitEthernet1/1-BR2-EDGE-RTR-01:GigabitEthernet0/1",
+      "BR1-EDGE-RTR-01:GigabitEthernet0/1-HQ-EDGE-RTR-01:GigabitEthernet0/0/cross",
+      "BR1-EDGE-RTR-01:GigabitEthernet0/0-BR2-EDGE-RTR-01:GigabitEthernet0/0/cross",
+      "HQ-DEFAULT-ACCESS-SW-01:FastEthernet0/1-HQ-DEFAULT-PC-01:FastEthernet0",
+      "HQ-DEFAULT-ACCESS-SW-01:FastEthernet0/10-HQ-DEFAULT-PC-02:FastEthernet0",
+      "HQ-DEFAULT-ACCESS-SW-01:FastEthernet0/11-HQ-DEFAULT-DNS-01:FastEthernet0",
+      "HQ-DEFAULT-ACCESS-SW-01:FastEthernet0/12-HQ-DEFAULT-WEB-01:FastEthernet0",
+      "BR1-DEFAULT-ACCESS-SW-01:FastEthernet1/1-BR1-DEFAULT-PC-01:FastEthernet0",
+      "BR1-DEFAULT-ACCESS-SW-01:FastEthernet1/2-BR1-DEFAULT-PC-02:FastEthernet0",
+      "BR2-DEFAULT-ACCESS-SW-01:FastEthernet1/1-BR2-DEFAULT-PC-01:FastEthernet0",
+      "BR2-DEFAULT-ACCESS-SW-01:FastEthernet1/2-BR2-DEFAULT-PC-02:FastEthernet0"
+    ],
+    "step_ids": [
+      "SP1-product"
+    ],
+    "reserve_operations": 31,
+    "instance_token": "e91cb675a32c4c049cdffc60e5325dbf",
+    "attempt_id": "d3f60b0a25944284a56a01fef9f7a4b6",
+    "process_id": 59376,
+    "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe"
+  },
+  "source": {
+    "expected_head": "a04369a88298d452ce5a9043e160d2c14fe83ca5",
+    "executed_sha": "a04369a88298d452ce5a9043e160d2c14fe83ca5",
+    "executed_tree": "d41ecc27d4fa92b846f43d06df37421c76fdca1a",
+    "clean": true,
+    "branch": "feature/server-pt-goal-foundations",
+    "upstream": "cisco/feature/server-pt-goal-foundations",
+    "upstream_head": "a04369a88298d452ce5a9043e160d2c14fe83ca5"
+  },
+  "environment": {
+    "python_executable": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\.venv\\Scripts\\python.exe",
+    "package_file": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\src\\packet_tracer_mcp\\__init__.py",
+    "isolation_state": "ISOLATED",
+    "requested_build": "9.0.1.0858",
+    "observed_build": "9.0.1.0858",
+    "build_reader_id": "AppWindow.getVersion",
+    "build_reader_sha256": "c3a9b240898a89007111c4397eb4cb5464da69551021484d4bc6b7d0fc7f5935",
+    "build_observation": "{\"found\":true,\"backend\":\"packet_tracer\",\"backend_version\":\"9.0.1.0858\",\"extension_version\":\"\",\"runtime_mode\":\"logical-workspace\"}",
+    "build_reason": ""
+  },
+  "transport": {
+    "channel": "file",
+    "fixed_at": "2026-09-27T08:53:47.136428Z",
+    "liveness": "heartbeat_fresh"
+  },
+  "fixtures": [
+    {
+      "name": "HQ-EDGE-RTR-01",
+      "model": "1941",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "BR1-EDGE-RTR-01",
+      "model": "2911",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "BR2-EDGE-RTR-01",
+      "model": "1941",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "HQ-DEFAULT-ACCESS-SW-01",
+      "model": "2960-24TT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "BR1-DEFAULT-ACCESS-SW-01",
+      "model": "IE-2000",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "BR2-DEFAULT-ACCESS-SW-01",
+      "model": "IE-2000",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "HQ-DEFAULT-DNS-01",
+      "model": "Server-PT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "HQ-DEFAULT-WEB-01",
+      "model": "Server-PT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "HQ-DEFAULT-PC-01",
+      "model": "PC-PT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "HQ-DEFAULT-PC-02",
+      "model": "PC-PT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "BR1-DEFAULT-PC-01",
+      "model": "PC-PT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "BR1-DEFAULT-PC-02",
+      "model": "PC-PT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "BR2-DEFAULT-PC-01",
+      "model": "PC-PT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "BR2-DEFAULT-PC-02",
+      "model": "PC-PT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    }
+  ],
+  "links": [
+    {
+      "device_a": "HQ-DEFAULT-ACCESS-SW-01",
+      "port_a": "GigabitEthernet0/1",
+      "device_b": "HQ-EDGE-RTR-01",
+      "port_b": "GigabitEthernet0/1"
+    },
+    {
+      "device_a": "BR1-DEFAULT-ACCESS-SW-01",
+      "port_a": "GigabitEthernet1/1",
+      "device_b": "BR1-EDGE-RTR-01",
+      "port_b": "GigabitEthernet0/2"
+    },
+    {
+      "device_a": "BR2-DEFAULT-ACCESS-SW-01",
+      "port_a": "GigabitEthernet1/1",
+      "device_b": "BR2-EDGE-RTR-01",
+      "port_b": "GigabitEthernet0/1"
+    },
+    {
+      "device_a": "BR1-EDGE-RTR-01",
+      "port_a": "GigabitEthernet0/1",
+      "device_b": "HQ-EDGE-RTR-01",
+      "port_b": "GigabitEthernet0/0"
+    },
+    {
+      "device_a": "BR1-EDGE-RTR-01",
+      "port_a": "GigabitEthernet0/0",
+      "device_b": "BR2-EDGE-RTR-01",
+      "port_b": "GigabitEthernet0/0"
+    },
+    {
+      "device_a": "HQ-DEFAULT-ACCESS-SW-01",
+      "port_a": "FastEthernet0/1",
+      "device_b": "HQ-DEFAULT-PC-01",
+      "port_b": "FastEthernet0"
+    },
+    {
+      "device_a": "HQ-DEFAULT-ACCESS-SW-01",
+      "port_a": "FastEthernet0/10",
+      "device_b": "HQ-DEFAULT-PC-02",
+      "port_b": "FastEthernet0"
+    },
+    {
+      "device_a": "HQ-DEFAULT-ACCESS-SW-01",
+      "port_a": "FastEthernet0/11",
+      "device_b": "HQ-DEFAULT-DNS-01",
+      "port_b": "FastEthernet0"
+    },
+    {
+      "device_a": "HQ-DEFAULT-ACCESS-SW-01",
+      "port_a": "FastEthernet0/12",
+      "device_b": "HQ-DEFAULT-WEB-01",
+      "port_b": "FastEthernet0"
+    },
+    {
+      "device_a": "BR1-DEFAULT-ACCESS-SW-01",
+      "port_a": "FastEthernet1/1",
+      "device_b": "BR1-DEFAULT-PC-01",
+      "port_b": "FastEthernet0"
+    },
+    {
+      "device_a": "BR1-DEFAULT-ACCESS-SW-01",
+      "port_a": "FastEthernet1/2",
+      "device_b": "BR1-DEFAULT-PC-02",
+      "port_b": "FastEthernet0"
+    },
+    {
+      "device_a": "BR2-DEFAULT-ACCESS-SW-01",
+      "port_a": "FastEthernet1/1",
+      "device_b": "BR2-DEFAULT-PC-01",
+      "port_b": "FastEthernet0"
+    },
+    {
+      "device_a": "BR2-DEFAULT-ACCESS-SW-01",
+      "port_a": "FastEthernet1/2",
+      "device_b": "BR2-DEFAULT-PC-02",
+      "port_b": "FastEthernet0"
+    }
+  ],
+  "budget": {
+    "max_operations": 3000,
+    "max_seconds": 3600,
+    "reserve_operations": 31,
+    "reserve_seconds": 420,
+    "planned_minimum_operations": 2568,
+    "used_operations": 228,
+    "refused_calls": 0,
+    "elapsed_seconds": 368.984,
+    "local_observation_seconds": 160.503
+  },
+  "experimental_capabilities": [
+    "sp1.routed_dns_http_product"
+  ],
+  "operations": [
+    {
+      "seq": 1,
+      "phase": "admission",
+      "call": "send_and_wait",
+      "purpose": "read:executable_build",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 0.0,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 2,
+      "phase": "admission",
+      "call": "send_and_wait",
+      "purpose": "read:workspace_baseline",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 0.922,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 3,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-EDGE-RTR-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 2.812,
+      "elapsed_seconds": 1.516,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 4,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-EDGE-RTR-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 5.094,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 5,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR1-EDGE-RTR-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 7.094,
+      "elapsed_seconds": 0.812,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 6,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR1-EDGE-RTR-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 8.781,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 7,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR2-EDGE-RTR-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 10.516,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 8,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR2-EDGE-RTR-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 12.328,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 9,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 14.047,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 10,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 15.812,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 11,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR1-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 17.656,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 12,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR1-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 19.312,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 13,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR2-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 21.078,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 14,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR2-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 22.891,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 15,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-DEFAULT-DNS-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 24.766,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 16,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-DEFAULT-DNS-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 26.5,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 17,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-DEFAULT-WEB-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 28.219,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 18,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-DEFAULT-WEB-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 29.891,
+      "elapsed_seconds": 1.031,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 19,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-DEFAULT-PC-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 31.766,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 20,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-DEFAULT-PC-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 33.469,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 21,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-DEFAULT-PC-02",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 35.219,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 22,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-DEFAULT-PC-02",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 37.062,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 23,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR1-DEFAULT-PC-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 38.734,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 24,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR1-DEFAULT-PC-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 40.516,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 25,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR1-DEFAULT-PC-02",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 42.359,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 26,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR1-DEFAULT-PC-02",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 44.125,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 27,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR2-DEFAULT-PC-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 45.797,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 28,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR2-DEFAULT-PC-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 47.719,
+      "elapsed_seconds": 0.797,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 29,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR2-DEFAULT-PC-02",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 49.359,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 30,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR2-DEFAULT-PC-02",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 51.125,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 31,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 52.891,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 32,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:1",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 54.641,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 33,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 56.437,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 34,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:2",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 58.141,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 35,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:3",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 59.906,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 36,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:3",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 61.734,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 37,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:4",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 63.5,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 38,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:4",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 65.203,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 39,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:5",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 66.969,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 40,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:5",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 68.719,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 41,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:6",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 70.437,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 42,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:6",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 72.266,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 43,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:7",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 73.969,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 44,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:7",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 75.734,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 45,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:8",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 77.516,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 46,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:8",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 79.281,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 47,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:9",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 81.047,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 48,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:9",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 82.734,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 49,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:10",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 84.547,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 50,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:10",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 86.328,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 51,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:11",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 88.016,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 52,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:11",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 89.766,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 53,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:12",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 91.531,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 54,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:12",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 93.297,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 55,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:13",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 95.094,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 56,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:13",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 96.828,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 57,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "read:fixture_identity",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 97.75,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 58,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 99.781,
+      "elapsed_seconds": 1.516,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 59,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 102.219,
+      "elapsed_seconds": 0.812,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 60,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 103.781,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 61,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 105.578,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 62,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 107.406,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 63,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 109.203,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 64,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 110.969,
+      "elapsed_seconds": 0.015,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 65,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 111.828,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 66,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 112.703,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 67,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 114.594,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 68,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 115.516,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 69,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 116.297,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 70,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 118.125,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 71,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 119.906,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 72,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 121.672,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 73,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 123.359,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 74,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 125.187,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 75,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 127.156,
+      "elapsed_seconds": 0.703,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 76,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 128.812,
+      "elapsed_seconds": 0.797,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 77,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 130.609,
+      "elapsed_seconds": 0.797,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 78,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 132.297,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 79,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 134.281,
+      "elapsed_seconds": 0.61,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 80,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 135.734,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 81,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 137.547,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 82,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 139.344,
+      "elapsed_seconds": 0.812,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 83,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 141.219,
+      "elapsed_seconds": 0.703,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 84,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 142.75,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 85,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 144.672,
+      "elapsed_seconds": 0.812,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 86,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 146.344,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 87,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 148.312,
+      "elapsed_seconds": 0.704,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 88,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 149.797,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 89,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 151.547,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 90,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 153.359,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 91,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 155.094,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 92,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 156.828,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 93,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 6.0,
+      "started_offset_seconds": 158.562,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 94,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 6.0,
+      "started_offset_seconds": 160.406,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 95,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 6.0,
+      "started_offset_seconds": 162.109,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 96,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 6.0,
+      "started_offset_seconds": 163.859,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 97,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 165.578,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 98,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 167.437,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 99,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 169.25,
+      "elapsed_seconds": 0.812,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 100,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 170.922,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 101,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 172.641,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 102,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 174.406,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 103,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 176.172,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 104,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 177.891,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 105,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 179.734,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 106,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 181.5,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 107,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 183.234,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 108,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 185.062,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 109,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 186.828,
+      "elapsed_seconds": 0.813,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 110,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 188.437,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 111,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 190.281,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 112,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 191.969,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 113,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 193.891,
+      "elapsed_seconds": 0.812,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 114,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 195.562,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 115,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 197.25,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 116,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 199.125,
+      "elapsed_seconds": 0.812,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 117,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 200.75,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 118,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 202.625,
+      "elapsed_seconds": 0.812,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 119,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 204.25,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 120,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 206.109,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 121,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 207.812,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 122,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 209.594,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 123,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 211.375,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 124,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 213.109,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 125,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 214.828,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 126,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 216.672,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 127,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 218.375,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 128,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 220.062,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 129,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 221.906,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 130,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 223.656,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 131,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 225.391,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 132,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 227.266,
+      "elapsed_seconds": 0.812,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 133,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 228.922,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 134,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 230.672,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 135,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 232.359,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 136,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 234.187,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 137,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 235.922,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 138,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 237.734,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 139,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 239.516,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 140,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 241.297,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 141,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 243.078,
+      "elapsed_seconds": 0.813,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 142,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 244.703,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 143,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 246.531,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 144,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 248.25,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 145,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 250.109,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 146,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 251.875,
+      "elapsed_seconds": 0.812,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 147,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 253.531,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 148,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 255.312,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 149,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 257.109,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 150,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 258.844,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 151,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 268.547,
+      "elapsed_seconds": 0.406,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 152,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 277.75,
+      "elapsed_seconds": 0.5,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 153,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 279.047,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 154,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 280.937,
+      "elapsed_seconds": 0.797,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 155,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 282.594,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 156,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 284.328,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 157,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 294.141,
+      "elapsed_seconds": 0.406,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 158,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 295.375,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 159,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 297.094,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 160,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 298.812,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 161,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 300.594,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 162,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 302.359,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 163,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 304.094,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 164,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 305.937,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 165,
+      "phase": "experiment",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:apply-enterprise-services",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 307.641,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 166,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 309.437,
+      "elapsed_seconds": 0.907,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 167,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 310.344,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 168,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 310.547,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 169,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 310.859,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 170,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 311.062,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 171,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 311.359,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 172,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 311.562,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 173,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 311.875,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 174,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 312.078,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 175,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 312.391,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 176,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 312.594,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 177,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 312.797,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 178,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 313.109,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 179,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 313.312,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 180,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 313.625,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 181,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 313.828,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 182,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 314.125,
+      "elapsed_seconds": 0.219,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 183,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 314.344,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 184,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 314.641,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 185,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 314.844,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 186,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 315.156,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 187,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 315.359,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 188,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 315.656,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 189,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 315.859,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 190,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 316.172,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 191,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 316.375,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 192,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 316.687,
+      "elapsed_seconds": 0.204,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 193,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 316.891,
+      "elapsed_seconds": 0.296,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 194,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 317.187,
+      "elapsed_seconds": 0.204,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 195,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 317.391,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 196,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 317.594,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 197,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp1:final:routers",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 317.906,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 198,
+      "phase": "terminal_observation",
+      "call": "dispatch_and_wait",
+      "purpose": "sp1:final:clients",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 318.109,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 199,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR2-DEFAULT-PC-02",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 320.078,
+      "elapsed_seconds": 0.094,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 200,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR2-DEFAULT-PC-02",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 320.953,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 201,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR2-DEFAULT-PC-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 322.703,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 202,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR2-DEFAULT-PC-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 324.422,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 203,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR1-DEFAULT-PC-02",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 326.281,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 204,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR1-DEFAULT-PC-02",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 328.047,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 205,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR1-DEFAULT-PC-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 329.719,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 206,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR1-DEFAULT-PC-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 331.594,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 207,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-DEFAULT-PC-02",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 333.281,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 208,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-DEFAULT-PC-02",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 335.016,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 209,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-DEFAULT-PC-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 336.875,
+      "elapsed_seconds": 0.812,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 210,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-DEFAULT-PC-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 338.484,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 211,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-DEFAULT-WEB-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 340.281,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 212,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-DEFAULT-WEB-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 342.125,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 213,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-DEFAULT-DNS-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 343.875,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 214,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-DEFAULT-DNS-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 345.625,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 215,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR2-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 347.375,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 216,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR2-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 349.062,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 217,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR1-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 350.906,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 218,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR1-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 352.594,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 219,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 354.266,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 220,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 356.125,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 221,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR2-EDGE-RTR-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 357.875,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 222,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR2-EDGE-RTR-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 359.578,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 223,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR1-EDGE-RTR-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 361.406,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 224,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR1-EDGE-RTR-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 363.156,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 225,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-EDGE-RTR-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 364.953,
+      "elapsed_seconds": 0.922,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 226,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-EDGE-RTR-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 366.625,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 227,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "read:restoration:1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 367.641,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 228,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "read:restoration:2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 367.844,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    }
+  ],
+  "transitions": [
+    {
+      "step": "admitted",
+      "at": "2026-09-27T08:53:48.249601Z",
+      "outcome": ""
+    },
+    {
+      "step": "fixtures:started",
+      "at": "2026-09-27T08:53:49.059551Z",
+      "outcome": ""
+    },
+    {
+      "step": "fixtures:ready",
+      "at": "2026-09-27T08:55:25.179401Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:SP1_ROUTED_PRODUCT:started",
+      "at": "2026-09-27T08:55:26.015608Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:SP1_ROUTED_PRODUCT:started",
+      "at": "2026-09-27T08:55:26.020627Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:SP1_ROUTED_PRODUCT:concluded",
+      "at": "2026-09-27T08:58:55.735956Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:SP1_ROUTED_FINAL:started",
+      "at": "2026-09-27T08:58:56.561249Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:SP1_ROUTED_FINAL:concluded",
+      "at": "2026-09-27T08:59:05.553107Z",
+      "outcome": ""
+    },
+    {
+      "step": "finalization:started",
+      "at": "2026-09-27T08:59:05.562666Z",
+      "outcome": ""
+    },
+    {
+      "step": "finalization:completed",
+      "at": "2026-09-27T08:59:56.108675Z",
+      "outcome": ""
+    }
+  ],
+  "persisted_step": "finalization:completed",
+  "admission_reads": [
+    "isolation:ISOLATED",
+    "repository:a04369a88298d452ce5a9043e160d2c14fe83ca5:d41ecc27d4fa92b846f43d06df37421c76fdca1a",
+    "build:9.0.1.0858",
+    "workspace:semantic=0,links=0,engine_managed=0"
+  ],
+  "diagnostic_lifecycle": {
+    "process_id": 59376,
+    "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+    "product_version": "9.0.1.0858",
+    "file_version": "9.0.1.0858",
+    "process_incarnation": "2026-09-27T03:53:23.1759573-05:00",
+    "mailbox_entries": [],
+    "error": ""
+  },
+  "diagnostic_lifecycle_postflight": {
+    "process_id": 59376,
+    "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+    "product_version": "9.0.1.0858",
+    "file_version": "9.0.1.0858",
+    "process_incarnation": "2026-09-27T03:53:23.1759573-05:00",
+    "mailbox_entries": [],
+    "error": ""
+  },
+  "workspace_baseline": {
+    "observed": true,
+    "semantic_device_count": 0,
+    "backend_managed_device_count": 0,
+    "link_count": 0,
+    "devices": [],
+    "links": [],
+    "message": "fresh_complete_workspace_inventory"
+  },
+  "refusals": [],
+  "native_default_pool": [],
+  "measurements": [
+    {
+      "experiment_id": "M-SP1-ROUTED-PRODUCT",
+      "hypothesis": "The maintained product admits the routed paths, verifies their forwarding prerequisites, and serves each selected client by address, by DNS and by host name.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "supported_in_sample",
+      "facts": {
+        "product_summary": {
+          "run_id": "2026-09-27T08-55-26Z-8bd8296d",
+          "run_label": "SERVER-PT-SP1-ROUTED-01 SP1-ROUTED-W1",
+          "deployment_id": "qualification/2026-09-27T08-53-46Z-8692ab1a",
+          "stage": "completed",
+          "status": "verified",
+          "refusal_code": "none",
+          "blocked_reason": "",
+          "transport": "file",
+          "packet_tracer_version": "9.0.1.0858",
+          "provenance": {
+            "PC-PT:acquire_dhcp_lease": "documentary_baseline",
+            "PC-PT:client_dns_server": "recorded_run",
+            "PC-PT:client_gateway": "recorded_run",
+            "PC-PT:configure_email_client": "documentary_baseline",
+            "PC-PT:dhcp_lease": "documentary_baseline",
+            "PC-PT:dns_negative_control": "documentary_baseline",
+            "PC-PT:dns_resolution": "documentary_baseline",
+            "PC-PT:email_client_state": "documentary_baseline",
+            "PC-PT:email_end_to_end": "documentary_baseline",
+            "PC-PT:endpoint_dhcp_mode": "recorded_run",
+            "PC-PT:http_by_hostname": "documentary_baseline",
+            "PC-PT:http_fetch": "documentary_baseline",
+            "PC-PT:https_fetch": "documentary_baseline",
+            "PC-PT:ntp_sync": "documentary_baseline",
+            "PC-PT:pop3_retrieve": "documentary_baseline",
+            "PC-PT:send_mail_message": "documentary_baseline",
+            "PC-PT:smtp_send": "documentary_baseline",
+            "PC-PT:tftp_retrieve": "documentary_baseline",
+            "Server-PT:dhcp": "documentary_baseline",
+            "Server-PT:dhcp_lease_attributed": "documentary_baseline",
+            "Server-PT:dhcp_native_default_binding": "recorded_run",
+            "Server-PT:dhcp_server_state": "documentary_baseline",
+            "Server-PT:dns": "documentary_baseline",
+            "Server-PT:http": "documentary_baseline",
+            "Server-PT:https": "documentary_baseline",
+            "Server-PT:ntp": "documentary_baseline",
+            "Server-PT:pop3": "documentary_baseline",
+            "Server-PT:smtp": "documentary_baseline",
+            "Server-PT:smtp_delivered": "documentary_baseline",
+            "Server-PT:tftp": "documentary_baseline"
+          },
+          "e5_effect_scope": {
+            "mutated": [
+              "cfg/vlan/386c3184adf58b69",
+              "cfg/vlan/dded0d73efa5b4c8",
+              "cfg/access/4170efb7f032abf3",
+              "cfg/access/72a601ccfeb34549",
+              "cfg/access/aa952e8dab7d2ab2",
+              "cfg/access/e1ff50ceb6d224b8",
+              "cfg/trunk/e8ab514e099537cd",
+              "cfg/subinterface/5a5011ba1c5e8dfb",
+              "cfg/subinterface/d8739f0433b8629e",
+              "cfg/endpoint-static/e1c11492415badcc",
+              "cfg/endpoint-static/36f1bf9ec2ebcf44",
+              "cfg/endpoint-static/997b8041c5c0b8bd",
+              "cfg/endpoint-static/89a1f224967b40c7"
+            ],
+            "retained": [],
+            "excluded": [
+              "cfg/hostname/57e1b5e4b37e3bae",
+              "cfg/hostname/bbef1c23abaa57a9",
+              "cfg/hostname/ad56d6944d00264a",
+              "cfg/hostname/4e8073b542dcd103",
+              "cfg/hostname/73fe9f646d12c110",
+              "cfg/hostname/2d6e648a55005ba7",
+              "cfg/vlan/e2ca05f59053c41b",
+              "cfg/vlan/4974a152e542708c",
+              "cfg/access/2709f1f9d333aff7",
+              "cfg/access/a965e8af3770d42d",
+              "cfg/gateway-access/2ad60930cda84829",
+              "cfg/access/95a53abd54640627",
+              "cfg/access/e0efa9f48efe8efb",
+              "cfg/gateway-access/60aa7c04943bdcd2",
+              "cfg/routed/04651d2d200d6287",
+              "cfg/transit-l3/0bcac34d8f226cab",
+              "cfg/transit-l3/e78274d01e23a8e2",
+              "cfg/routed/3b0a770fa8462b3d",
+              "cfg/transit-l3/bffaa09e4749c05e",
+              "cfg/transit-l3/8cb72c4135ba8904",
+              "cfg/static-route/cd0b5b562823eb3f",
+              "cfg/static-route/dc53794fb617a618",
+              "cfg/static-route/f9a76e71b70a07a2",
+              "cfg/static-route/2efbd7ca9fde948f",
+              "cfg/static-route/7c95fae67831fffa",
+              "cfg/static-route/91d390b99a2991d6",
+              "cfg/static-route/46fadd33d4bcc8ab",
+              "cfg/static-route/e5a217bb6822216b",
+              "cfg/endpoint-static/4c78e19a0907f392",
+              "cfg/endpoint-static/15ee75b9e6ba9b29",
+              "cfg/endpoint-static/61ed37b0109f09db",
+              "cfg/endpoint-static/052761ecad45a35a"
+            ],
+            "conflicts": [],
+            "declarative_only": [
+              "cfg/access/4170efb7f032abf3",
+              "cfg/access/72a601ccfeb34549",
+              "cfg/access/aa952e8dab7d2ab2",
+              "cfg/access/e1ff50ceb6d224b8",
+              "cfg/subinterface/5a5011ba1c5e8dfb",
+              "cfg/subinterface/d8739f0433b8629e",
+              "cfg/trunk/e8ab514e099537cd",
+              "cfg/vlan/386c3184adf58b69",
+              "cfg/vlan/dded0d73efa5b4c8"
+            ]
+          },
+          "e5_effect_uncertain": false,
+          "services": [
+            {
+              "service_id": "service/hq/sp1-dns",
+              "service_type": "dns",
+              "usability_status": "verified",
+              "application_status": "applied",
+              "direct_readback_status": "verified",
+              "behavioral_status": "verified",
+              "required": true,
+              "selected_clients": [
+                "endpoint/hq/default/user_pc/001",
+                "endpoint/hq/default/user_pc/002"
+              ],
+              "limitations": []
+            },
+            {
+              "service_id": "service/hq/sp1-web",
+              "service_type": "http",
+              "usability_status": "verified",
+              "application_status": "applied",
+              "direct_readback_status": "verified",
+              "behavioral_status": "verified",
+              "required": true,
+              "selected_clients": [
+                "endpoint/hq/default/user_pc/001",
+                "endpoint/hq/default/user_pc/002"
+              ],
+              "limitations": []
+            }
+          ],
+          "clients": [
+            {
+              "client_device_id": "endpoint/hq/default/user_pc/001",
+              "deployed_name": "HQ-DEFAULT-PC-01",
+              "model": "PC-PT",
+              "results": {
+                "service/hq/sp1-dns": {
+                  "service_id": "service/hq/sp1-dns",
+                  "service_type": "dns",
+                  "status": "verified",
+                  "required": true,
+                  "checks": [
+                    {
+                      "expectation_id": "svc/verify-client-dns-server/f8ad056b393484e1",
+                      "kind": "client_dns_server",
+                      "required": true,
+                      "status": "verified",
+                      "observation": "observed",
+                      "cause": "",
+                      "claim_level": "client_configuration_readback",
+                      "fresh_evidence": true,
+                      "failure_code": "none",
+                      "limitations": []
+                    },
+                    {
+                      "expectation_id": "svc/verify-dns-negative/7b84600217d6d7ea",
+                      "kind": "dns_negative_control",
+                      "required": true,
+                      "status": "verified",
+                      "observation": "observed",
+                      "cause": "",
+                      "claim_level": "independent_client_observation",
+                      "fresh_evidence": true,
+                      "failure_code": "none",
+                      "limitations": []
+                    },
+                    {
+                      "expectation_id": "svc/verify-dns/6d2ab79b5bae2c59",
+                      "kind": "dns_resolution",
+                      "required": true,
+                      "status": "verified",
+                      "observation": "observed",
+                      "cause": "",
+                      "claim_level": "independent_client_observation",
+                      "fresh_evidence": true,
+                      "failure_code": "none",
+                      "limitations": []
+                    }
+                  ],
+                  "limitations": []
+                },
+                "service/hq/sp1-web": {
+                  "service_id": "service/hq/sp1-web",
+                  "service_type": "http",
+                  "status": "verified",
+                  "required": true,
+                  "checks": [
+                    {
+                      "expectation_id": "svc/verify-client-gateway/66bc7f29b1c4a75b",
+                      "kind": "client_gateway",
+                      "required": true,
+                      "status": "verified",
+                      "observation": "observed",
+                      "cause": "",
+                      "claim_level": "client_configuration_readback",
+                      "fresh_evidence": true,
+                      "failure_code": "none",
+                      "limitations": []
+                    },
+                    {
+                      "expectation_id": "svc/verify-http-ip/3abc0db1b885b514",
+                      "kind": "http_fetch",
+                      "required": true,
+                      "status": "verified",
+                      "observation": "observed",
+                      "cause": "",
+                      "claim_level": "independent_client_observation",
+                      "fresh_evidence": true,
+                      "failure_code": "none",
+                      "limitations": []
+                    },
+                    {
+                      "expectation_id": "svc/verify-http-name/4f83db535e3be0fb",
+                      "kind": "http_by_hostname",
+                      "required": true,
+                      "status": "verified",
+                      "observation": "observed",
+                      "cause": "",
+                      "claim_level": "independent_client_observation",
+                      "fresh_evidence": true,
+                      "failure_code": "none",
+                      "limitations": []
+                    }
+                  ],
+                  "limitations": []
+                }
+              },
+              "limitations": []
+            },
+            {
+              "client_device_id": "endpoint/hq/default/user_pc/002",
+              "deployed_name": "HQ-DEFAULT-PC-02",
+              "model": "PC-PT",
+              "results": {
+                "service/hq/sp1-dns": {
+                  "service_id": "service/hq/sp1-dns",
+                  "service_type": "dns",
+                  "status": "verified",
+                  "required": true,
+                  "checks": [
+                    {
+                      "expectation_id": "svc/verify-client-dns-server/59dc38410bbfb13a",
+                      "kind": "client_dns_server",
+                      "required": true,
+                      "status": "verified",
+                      "observation": "observed",
+                      "cause": "",
+                      "claim_level": "client_configuration_readback",
+                      "fresh_evidence": true,
+                      "failure_code": "none",
+                      "limitations": []
+                    },
+                    {
+                      "expectation_id": "svc/verify-dns-negative/9cd07e1e4f1208fa",
+                      "kind": "dns_negative_control",
+                      "required": true,
+                      "status": "verified",
+                      "observation": "observed",
+                      "cause": "",
+                      "claim_level": "independent_client_observation",
+                      "fresh_evidence": true,
+                      "failure_code": "none",
+                      "limitations": []
+                    },
+                    {
+                      "expectation_id": "svc/verify-dns/6d56a2a3f56e62cf",
+                      "kind": "dns_resolution",
+                      "required": true,
+                      "status": "verified",
+                      "observation": "observed",
+                      "cause": "",
+                      "claim_level": "independent_client_observation",
+                      "fresh_evidence": true,
+                      "failure_code": "none",
+                      "limitations": []
+                    }
+                  ],
+                  "limitations": []
+                },
+                "service/hq/sp1-web": {
+                  "service_id": "service/hq/sp1-web",
+                  "service_type": "http",
+                  "status": "verified",
+                  "required": true,
+                  "checks": [
+                    {
+                      "expectation_id": "svc/verify-client-gateway/dbcbb22120d17785",
+                      "kind": "client_gateway",
+                      "required": true,
+                      "status": "verified",
+                      "observation": "observed",
+                      "cause": "",
+                      "claim_level": "client_configuration_readback",
+                      "fresh_evidence": true,
+                      "failure_code": "none",
+                      "limitations": []
+                    },
+                    {
+                      "expectation_id": "svc/verify-http-ip/51cef7834262dd82",
+                      "kind": "http_fetch",
+                      "required": true,
+                      "status": "verified",
+                      "observation": "observed",
+                      "cause": "",
+                      "claim_level": "independent_client_observation",
+                      "fresh_evidence": true,
+                      "failure_code": "none",
+                      "limitations": []
+                    },
+                    {
+                      "expectation_id": "svc/verify-http-name/3b53abfb3af9cd27",
+                      "kind": "http_by_hostname",
+                      "required": true,
+                      "status": "verified",
+                      "observation": "observed",
+                      "cause": "",
+                      "claim_level": "independent_client_observation",
+                      "fresh_evidence": true,
+                      "failure_code": "none",
+                      "limitations": []
+                    }
+                  ],
+                  "limitations": []
+                }
+              },
+              "limitations": []
+            }
+          ],
+          "operational_readiness": [
+            {
+              "switch_device_id": "sw-acc-hq-default-01",
+              "switch_device_name": "HQ-DEFAULT-ACCESS-SW-01",
+              "vlan_id": 10,
+              "requested_interfaces": [
+                "FastEthernet0/1",
+                "FastEthernet0/10",
+                "GigabitEthernet0/1"
+              ],
+              "status": "admitted",
+              "dimension": "NONE",
+              "causes": [],
+              "sample": {
+                "switch": "HQ-DEFAULT-ACCESS-SW-01",
+                "vlan_id": 10,
+                "requested_interfaces": [
+                  "FastEthernet0/1",
+                  "FastEthernet0/10",
+                  "GigabitEthernet0/1"
+                ],
+                "rows": [
+                  {
+                    "interface": "FastEthernet0/1",
+                    "matches": 1,
+                    "state": "FWD",
+                    "role": "Desg"
+                  },
+                  {
+                    "interface": "FastEthernet0/10",
+                    "matches": 1,
+                    "state": "FWD",
+                    "role": "Desg"
+                  },
+                  {
+                    "interface": "GigabitEthernet0/1",
+                    "matches": 1,
+                    "state": "FWD",
+                    "role": "Desg"
+                  }
+                ],
+                "executed": true,
+                "fresh_output_observed": true,
+                "output_complete": true,
+                "observed_device_name": "HQ-DEFAULT-ACCESS-SW-01",
+                "device_identity_provenance": "confirmed_unique",
+                "vlan_present": true,
+                "samples": 1,
+                "sample_history": [
+                  {
+                    "elapsed_ms": 12406,
+                    "rows": [
+                      {
+                        "interface": "FastEthernet0/1",
+                        "matches": 1,
+                        "state": "FWD",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/10",
+                        "matches": 1,
+                        "state": "FWD",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "GigabitEthernet0/1",
+                        "matches": 1,
+                        "state": "FWD",
+                        "role": "Desg"
+                      }
+                    ],
+                    "executed": true,
+                    "fresh_output_observed": true,
+                    "output_complete": true,
+                    "observed_device_name": "HQ-DEFAULT-ACCESS-SW-01",
+                    "device_identity_provenance": "confirmed_unique",
+                    "vlan_present": true,
+                    "channel_calls": 7,
+                    "sample_budget_exhausted": false,
+                    "deadline_reached": false,
+                    "phase": "window"
+                  }
+                ],
+                "extension": {
+                  "candidate": false,
+                  "target_ms": null,
+                  "wall_cap_seconds": 0.0,
+                  "allowance_seconds": 0.0,
+                  "clock": "none",
+                  "authorized": false,
+                  "simulation_start_ms": null,
+                  "simulation_end_ms": null,
+                  "simulation_progress_ms": 0.0,
+                  "clock_samples": 0,
+                  "samples": 0,
+                  "stop_reason": "not_authorized",
+                  "outcome": "",
+                  "failure_reason": "",
+                  "converged": false
+                },
+                "max_samples": 31,
+                "deadline_seconds": 30.0,
+                "elapsed_ms": 14141,
+                "deadline_reached": false,
+                "sample_call_budget": 16,
+                "channel_calls": 8,
+                "sample_budget_exhausted": false,
+                "sample_after_deadline": false,
+                "episode_budget_exhausted": false,
+                "episode_end_reason": "all_requested_interfaces_observed_forwarding",
+                "auxiliary_budget_exhausted": false,
+                "auxiliary_read_after_deadline": false,
+                "deadline_scope": "group",
+                "deadline_cause": "",
+                "simulation_time": "sim_time:228681;frames:0",
+                "failure_reason": "",
+                "lights": [],
+                "admitted": true,
+                "dimension": "NONE",
+                "forwarding_interfaces": [
+                  "FastEthernet0/1",
+                  "FastEthernet0/10",
+                  "GigabitEthernet0/1"
+                ],
+                "causes": [],
+                "light_status_is_auxiliary": true
+              },
+              "dependents": [
+                {
+                  "expectation_id": "svc/verify-dns-negative/7b84600217d6d7ea",
+                  "service_id": "service/hq/sp1-dns",
+                  "kind": "dns_negative_control",
+                  "client_device_id": "endpoint/hq/default/user_pc/001",
+                  "host_device_id": "endpoint/hq/default/dns_server/001",
+                  "interfaces": [
+                    "FastEthernet0/1",
+                    "GigabitEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-dns-negative/9cd07e1e4f1208fa",
+                  "service_id": "service/hq/sp1-dns",
+                  "kind": "dns_negative_control",
+                  "client_device_id": "endpoint/hq/default/user_pc/002",
+                  "host_device_id": "endpoint/hq/default/dns_server/001",
+                  "interfaces": [
+                    "FastEthernet0/10",
+                    "GigabitEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-dns/6d2ab79b5bae2c59",
+                  "service_id": "service/hq/sp1-dns",
+                  "kind": "dns_resolution",
+                  "client_device_id": "endpoint/hq/default/user_pc/001",
+                  "host_device_id": "endpoint/hq/default/dns_server/001",
+                  "interfaces": [
+                    "FastEthernet0/1",
+                    "GigabitEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-dns/6d56a2a3f56e62cf",
+                  "service_id": "service/hq/sp1-dns",
+                  "kind": "dns_resolution",
+                  "client_device_id": "endpoint/hq/default/user_pc/002",
+                  "host_device_id": "endpoint/hq/default/dns_server/001",
+                  "interfaces": [
+                    "FastEthernet0/10",
+                    "GigabitEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-http-ip/3abc0db1b885b514",
+                  "service_id": "service/hq/sp1-web",
+                  "kind": "http_fetch",
+                  "client_device_id": "endpoint/hq/default/user_pc/001",
+                  "host_device_id": "endpoint/hq/default/web_server/001",
+                  "interfaces": [
+                    "FastEthernet0/1",
+                    "GigabitEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-http-ip/51cef7834262dd82",
+                  "service_id": "service/hq/sp1-web",
+                  "kind": "http_fetch",
+                  "client_device_id": "endpoint/hq/default/user_pc/002",
+                  "host_device_id": "endpoint/hq/default/web_server/001",
+                  "interfaces": [
+                    "FastEthernet0/10",
+                    "GigabitEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-http-name/4f83db535e3be0fb",
+                  "service_id": "service/hq/sp1-web",
+                  "kind": "http_by_hostname",
+                  "client_device_id": "endpoint/hq/default/user_pc/001",
+                  "host_device_id": "endpoint/hq/default/web_server/001",
+                  "interfaces": [
+                    "FastEthernet0/1",
+                    "GigabitEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-http-name/3b53abfb3af9cd27",
+                  "service_id": "service/hq/sp1-web",
+                  "kind": "http_by_hostname",
+                  "client_device_id": "endpoint/hq/default/user_pc/002",
+                  "host_device_id": "endpoint/hq/default/web_server/001",
+                  "interfaces": [
+                    "FastEthernet0/10",
+                    "GigabitEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                }
+              ],
+              "episode": {
+                "ordinal": 1,
+                "revision": 0,
+                "narrowed": false
+              }
+            },
+            {
+              "switch_device_id": "sw-acc-hq-default-01",
+              "switch_device_name": "HQ-DEFAULT-ACCESS-SW-01",
+              "vlan_id": 50,
+              "requested_interfaces": [
+                "FastEthernet0/11",
+                "FastEthernet0/12",
+                "GigabitEthernet0/1"
+              ],
+              "status": "admitted",
+              "dimension": "NONE",
+              "causes": [],
+              "sample": {
+                "switch": "HQ-DEFAULT-ACCESS-SW-01",
+                "vlan_id": 50,
+                "requested_interfaces": [
+                  "FastEthernet0/11",
+                  "FastEthernet0/12",
+                  "GigabitEthernet0/1"
+                ],
+                "rows": [
+                  {
+                    "interface": "FastEthernet0/11",
+                    "matches": 1,
+                    "state": "FWD",
+                    "role": "Desg"
+                  },
+                  {
+                    "interface": "FastEthernet0/12",
+                    "matches": 1,
+                    "state": "FWD",
+                    "role": "Desg"
+                  },
+                  {
+                    "interface": "GigabitEthernet0/1",
+                    "matches": 1,
+                    "state": "FWD",
+                    "role": "Desg"
+                  }
+                ],
+                "executed": true,
+                "fresh_output_observed": true,
+                "output_complete": true,
+                "observed_device_name": "HQ-DEFAULT-ACCESS-SW-01",
+                "device_identity_provenance": "confirmed_unique",
+                "vlan_present": true,
+                "samples": 1,
+                "sample_history": [
+                  {
+                    "elapsed_ms": 12250,
+                    "rows": [
+                      {
+                        "interface": "FastEthernet0/11",
+                        "matches": 1,
+                        "state": "FWD",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "FastEthernet0/12",
+                        "matches": 1,
+                        "state": "FWD",
+                        "role": "Desg"
+                      },
+                      {
+                        "interface": "GigabitEthernet0/1",
+                        "matches": 1,
+                        "state": "FWD",
+                        "role": "Desg"
+                      }
+                    ],
+                    "executed": true,
+                    "fresh_output_observed": true,
+                    "output_complete": true,
+                    "observed_device_name": "HQ-DEFAULT-ACCESS-SW-01",
+                    "device_identity_provenance": "confirmed_unique",
+                    "vlan_present": true,
+                    "channel_calls": 7,
+                    "sample_budget_exhausted": false,
+                    "deadline_reached": false,
+                    "phase": "window"
+                  }
+                ],
+                "extension": {
+                  "candidate": false,
+                  "target_ms": null,
+                  "wall_cap_seconds": 0.0,
+                  "allowance_seconds": 0.0,
+                  "clock": "none",
+                  "authorized": false,
+                  "simulation_start_ms": null,
+                  "simulation_end_ms": null,
+                  "simulation_progress_ms": 0.0,
+                  "clock_samples": 0,
+                  "samples": 0,
+                  "stop_reason": "not_authorized",
+                  "outcome": "",
+                  "failure_reason": "",
+                  "converged": false
+                },
+                "max_samples": 31,
+                "deadline_seconds": 30.0,
+                "elapsed_ms": 14000,
+                "deadline_reached": false,
+                "sample_call_budget": 16,
+                "channel_calls": 8,
+                "sample_budget_exhausted": false,
+                "sample_after_deadline": false,
+                "episode_budget_exhausted": false,
+                "episode_end_reason": "all_requested_interfaces_observed_forwarding",
+                "auxiliary_budget_exhausted": false,
+                "auxiliary_read_after_deadline": false,
+                "deadline_scope": "group",
+                "deadline_cause": "",
+                "simulation_time": "sim_time:242485;frames:0",
+                "failure_reason": "",
+                "lights": [],
+                "admitted": true,
+                "dimension": "NONE",
+                "forwarding_interfaces": [
+                  "FastEthernet0/11",
+                  "FastEthernet0/12",
+                  "GigabitEthernet0/1"
+                ],
+                "causes": [],
+                "light_status_is_auxiliary": true
+              },
+              "dependents": [
+                {
+                  "expectation_id": "svc/verify-dns-negative/7b84600217d6d7ea",
+                  "service_id": "service/hq/sp1-dns",
+                  "kind": "dns_negative_control",
+                  "client_device_id": "endpoint/hq/default/user_pc/001",
+                  "host_device_id": "endpoint/hq/default/dns_server/001",
+                  "interfaces": [
+                    "FastEthernet0/11",
+                    "GigabitEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-dns-negative/9cd07e1e4f1208fa",
+                  "service_id": "service/hq/sp1-dns",
+                  "kind": "dns_negative_control",
+                  "client_device_id": "endpoint/hq/default/user_pc/002",
+                  "host_device_id": "endpoint/hq/default/dns_server/001",
+                  "interfaces": [
+                    "FastEthernet0/11",
+                    "GigabitEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-dns/6d2ab79b5bae2c59",
+                  "service_id": "service/hq/sp1-dns",
+                  "kind": "dns_resolution",
+                  "client_device_id": "endpoint/hq/default/user_pc/001",
+                  "host_device_id": "endpoint/hq/default/dns_server/001",
+                  "interfaces": [
+                    "FastEthernet0/11",
+                    "GigabitEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-dns/6d56a2a3f56e62cf",
+                  "service_id": "service/hq/sp1-dns",
+                  "kind": "dns_resolution",
+                  "client_device_id": "endpoint/hq/default/user_pc/002",
+                  "host_device_id": "endpoint/hq/default/dns_server/001",
+                  "interfaces": [
+                    "FastEthernet0/11",
+                    "GigabitEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-http-ip/3abc0db1b885b514",
+                  "service_id": "service/hq/sp1-web",
+                  "kind": "http_fetch",
+                  "client_device_id": "endpoint/hq/default/user_pc/001",
+                  "host_device_id": "endpoint/hq/default/web_server/001",
+                  "interfaces": [
+                    "FastEthernet0/12",
+                    "GigabitEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-http-ip/51cef7834262dd82",
+                  "service_id": "service/hq/sp1-web",
+                  "kind": "http_fetch",
+                  "client_device_id": "endpoint/hq/default/user_pc/002",
+                  "host_device_id": "endpoint/hq/default/web_server/001",
+                  "interfaces": [
+                    "FastEthernet0/12",
+                    "GigabitEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-http-name/4f83db535e3be0fb",
+                  "service_id": "service/hq/sp1-web",
+                  "kind": "http_by_hostname",
+                  "client_device_id": "endpoint/hq/default/user_pc/001",
+                  "host_device_id": "endpoint/hq/default/web_server/001",
+                  "interfaces": [
+                    "FastEthernet0/12",
+                    "GigabitEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-http-name/3b53abfb3af9cd27",
+                  "service_id": "service/hq/sp1-web",
+                  "kind": "http_by_hostname",
+                  "client_device_id": "endpoint/hq/default/user_pc/002",
+                  "host_device_id": "endpoint/hq/default/web_server/001",
+                  "interfaces": [
+                    "FastEthernet0/12",
+                    "GigabitEthernet0/1"
+                  ],
+                  "admitted": true,
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                }
+              ],
+              "episode": {
+                "ordinal": 1,
+                "revision": 0,
+                "narrowed": false
+              }
+            },
+            {
+              "kind": "routed_forwarding",
+              "client_segment_id": "hq-data",
+              "host_segment_id": "hq-servers",
+              "device_ids": [
+                "r-edge-hq-01"
+              ],
+              "status": "admitted",
+              "dimension": "NONE",
+              "causes": [],
+              "sample": {
+                "rounds": 1,
+                "deciding_round": 0,
+                "episode_end_reason": "required_paths_forwarding",
+                "deadline_seconds": 30.0,
+                "elapsed_ms": 14140,
+                "deadline_reached": false,
+                "channel_calls": 8,
+                "devices": {
+                  "r-edge-hq-01": {
+                    "device_name": "HQ-EDGE-RTR-01",
+                    "authoritative": true,
+                    "failure_reason": "",
+                    "route_rows": 4,
+                    "unparsed_route_lines": 0,
+                    "interfaces": {
+                      "GigabitEthernet0/1.10": [
+                        {
+                          "ipv4": "10.68.0.1",
+                          "status": "up",
+                          "protocol": "up"
+                        }
+                      ],
+                      "GigabitEthernet0/1.50": [
+                        {
+                          "ipv4": "10.68.0.9",
+                          "status": "up",
+                          "protocol": "up"
+                        }
+                      ]
+                    },
+                    "routes": {
+                      "10.68.0.10": [
+                        {
+                          "code": "C",
+                          "prefix": "10.68.0.8/29",
+                          "next_hop": "",
+                          "interface": "GigabitEthernet0/1.50"
+                        }
+                      ],
+                      "10.68.0.11": [
+                        {
+                          "code": "C",
+                          "prefix": "10.68.0.8/29",
+                          "next_hop": "",
+                          "interface": "GigabitEthernet0/1.50"
+                        }
+                      ],
+                      "10.68.0.2": [
+                        {
+                          "code": "C",
+                          "prefix": "10.68.0.0/29",
+                          "next_hop": "",
+                          "interface": "GigabitEthernet0/1.10"
+                        }
+                      ],
+                      "10.68.0.3": [
+                        {
+                          "code": "C",
+                          "prefix": "10.68.0.0/29",
+                          "next_hop": "",
+                          "interface": "GigabitEthernet0/1.10"
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "dependents": [
+                {
+                  "expectation_id": "svc/verify-dns-negative/7b84600217d6d7ea",
+                  "service_id": "service/hq/sp1-dns",
+                  "kind": "dns_negative_control",
+                  "client_device_id": "endpoint/hq/default/user_pc/001",
+                  "host_device_id": "endpoint/hq/default/dns_server/001",
+                  "admitted": true,
+                  "dimension": "NONE",
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-dns-negative/9cd07e1e4f1208fa",
+                  "service_id": "service/hq/sp1-dns",
+                  "kind": "dns_negative_control",
+                  "client_device_id": "endpoint/hq/default/user_pc/002",
+                  "host_device_id": "endpoint/hq/default/dns_server/001",
+                  "admitted": true,
+                  "dimension": "NONE",
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-dns/6d2ab79b5bae2c59",
+                  "service_id": "service/hq/sp1-dns",
+                  "kind": "dns_resolution",
+                  "client_device_id": "endpoint/hq/default/user_pc/001",
+                  "host_device_id": "endpoint/hq/default/dns_server/001",
+                  "admitted": true,
+                  "dimension": "NONE",
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-dns/6d56a2a3f56e62cf",
+                  "service_id": "service/hq/sp1-dns",
+                  "kind": "dns_resolution",
+                  "client_device_id": "endpoint/hq/default/user_pc/002",
+                  "host_device_id": "endpoint/hq/default/dns_server/001",
+                  "admitted": true,
+                  "dimension": "NONE",
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-http-ip/3abc0db1b885b514",
+                  "service_id": "service/hq/sp1-web",
+                  "kind": "http_fetch",
+                  "client_device_id": "endpoint/hq/default/user_pc/001",
+                  "host_device_id": "endpoint/hq/default/web_server/001",
+                  "admitted": true,
+                  "dimension": "NONE",
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-http-ip/51cef7834262dd82",
+                  "service_id": "service/hq/sp1-web",
+                  "kind": "http_fetch",
+                  "client_device_id": "endpoint/hq/default/user_pc/002",
+                  "host_device_id": "endpoint/hq/default/web_server/001",
+                  "admitted": true,
+                  "dimension": "NONE",
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-http-name/4f83db535e3be0fb",
+                  "service_id": "service/hq/sp1-web",
+                  "kind": "http_by_hostname",
+                  "client_device_id": "endpoint/hq/default/user_pc/001",
+                  "host_device_id": "endpoint/hq/default/web_server/001",
+                  "admitted": true,
+                  "dimension": "NONE",
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                },
+                {
+                  "expectation_id": "svc/verify-http-name/3b53abfb3af9cd27",
+                  "service_id": "service/hq/sp1-web",
+                  "kind": "http_by_hostname",
+                  "client_device_id": "endpoint/hq/default/user_pc/002",
+                  "host_device_id": "endpoint/hq/default/web_server/001",
+                  "admitted": true,
+                  "dimension": "NONE",
+                  "cause": "",
+                  "decision": {
+                    "revision": 0
+                  }
+                }
+              ],
+              "episode": {
+                "ordinal": 1,
+                "revision": 0,
+                "narrowed": false
+              }
+            }
+          ],
+          "releases": [
+            {
+              "resource": "svc/verify-http-ip/3abc0db1b885b514",
+              "outcome": "released",
+              "detail": ""
+            },
+            {
+              "resource": "svc/verify-http-ip/51cef7834262dd82",
+              "outcome": "released",
+              "detail": ""
+            },
+            {
+              "resource": "svc/verify-http-name/4f83db535e3be0fb",
+              "outcome": "released",
+              "detail": ""
+            },
+            {
+              "resource": "svc/verify-http-name/3b53abfb3af9cd27",
+              "outcome": "released",
+              "detail": ""
+            }
+          ],
+          "dirty_state": "unknown",
+          "persisted_stage": "completed",
+          "record_path": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\data\\services\\product-qualification\\qualification_2026-09-27T08-53-46Z-8692ab1a\\2026-09-27T08-55-26Z-8bd8296d.json",
+          "persist_error": "",
+          "limitations": [
+            "provenance:documentary_baseline",
+            "residue_unknown:svc/dns-a/324cd0732f8d8ff3:footprint_partial:dns_a_record_table"
+          ],
+          "duration_ms": 209687
+        },
+        "product_record_path": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\data\\services\\product-qualification\\qualification_2026-09-27T08-53-46Z-8692ab1a\\2026-09-27T08-55-26Z-8bd8296d.json",
+        "entry_surface": "registered_four_input",
+        "device_catalog": "default",
+        "device_candidate_evidence": [],
+        "device_candidate_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "product_device_catalog_injected": false,
+        "expected_routed_groups": [
+          [
+            "hq-data",
+            "hq-servers"
+          ]
+        ],
+        "fresh_public_build": "9.0.1.0858",
+        "selected_clients": [
+          "HQ-DEFAULT-PC-01",
+          "HQ-DEFAULT-PC-02"
+        ],
+        "client_checks": {
+          "HQ-DEFAULT-PC-01": {
+            "client_dns_server": "verified",
+            "dns_negative_control": "verified",
+            "dns_resolution": "verified",
+            "client_gateway": "verified",
+            "http_fetch": "verified",
+            "http_by_hostname": "verified"
+          },
+          "HQ-DEFAULT-PC-02": {
+            "client_dns_server": "verified",
+            "dns_negative_control": "verified",
+            "dns_resolution": "verified",
+            "client_gateway": "verified",
+            "http_fetch": "verified",
+            "http_by_hostname": "verified"
+          }
+        },
+        "routed_groups": [
+          {
+            "client_segment_id": "hq-data",
+            "host_segment_id": "hq-servers",
+            "status": "admitted",
+            "device_ids": [
+              "r-edge-hq-01"
+            ]
+          }
+        ]
+      },
+      "causes": [],
+      "limitations": [],
+      "reason": "",
+      "outcome_unknown": false
+    },
+    {
+      "experiment_id": "M-SP1-ROUTED-FINAL",
+      "hypothesis": "The final router tables and client bindings are observed before cleanup.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "supported_in_sample",
+      "facts": {
+        "routers": [
+          {
+            "device": "HQ-EDGE-RTR-01",
+            "query": "show_ip_interface_brief",
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "truncated_by_pager": false,
+            "observed_device_name": "HQ-EDGE-RTR-01",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "channel_calls": 4,
+            "call_budget_exhausted": false,
+            "output": "show ip interface brief\nInterface              IP-Address      OK? Method Status                Protocol \nGigabitEthernet0/0     unassigned      YES unset  up                    down \nGigabitEthernet0/1     unassigned      YES unset  up                    up \nGigabitEthernet0/1.10  10.68.0.1       YES manual up                    up \nGigabitEthernet0/1.50  10.68.0.9       YES manual up                    up \nVlan1                  unassigned      YES unset  up                    down\nRouter>",
+            "output_characters": 496
+          },
+          {
+            "device": "HQ-EDGE-RTR-01",
+            "query": "show_ip_route",
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "truncated_by_pager": false,
+            "observed_device_name": "HQ-EDGE-RTR-01",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "channel_calls": 4,
+            "call_budget_exhausted": false,
+            "output": "show ip route\nCodes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP\n       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area\n       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2\n       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP\n       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area\n       * - candidate default, U - per-user static route, o - ODR\n       P - periodic downloaded static route\n\nGateway of last resort is not set\n\n     10.0.0.0/8 is variably subnetted, 4 subnets, 2 masks\nC       10.68.0.0/29 is directly connected, GigabitEthernet0/1.10\nL       10.68.0.1/32 is directly connected, GigabitEthernet0/1.10\nC       10.68.0.8/29 is directly connected, GigabitEthernet0/1.50\nL       10.68.0.9/32 is directly connected, GigabitEthernet0/1.50\n\nRouter>",
+            "output_characters": 852
+          },
+          {
+            "device": "BR1-EDGE-RTR-01",
+            "query": "show_ip_interface_brief",
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "truncated_by_pager": false,
+            "observed_device_name": "BR1-EDGE-RTR-01",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "channel_calls": 8,
+            "call_budget_exhausted": false,
+            "output": "show ip interface brief\nInterface              IP-Address      OK? Method Status                Protocol \nGigabitEthernet0/0     unassigned      YES unset  administratively down down \nGigabitEthernet0/1     unassigned      YES unset  administratively down down \nGigabitEthernet0/2     unassigned      YES unset  administratively down down \nVlan1                  unassigned      YES unset  administratively down down\nRouter>",
+            "output_characters": 424
+          },
+          {
+            "device": "BR1-EDGE-RTR-01",
+            "query": "show_ip_route",
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "truncated_by_pager": false,
+            "observed_device_name": "BR1-EDGE-RTR-01",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "channel_calls": 4,
+            "call_budget_exhausted": false,
+            "output": "show ip route\nCodes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP\n       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area\n       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2\n       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP\n       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area\n       * - candidate default, U - per-user static route, o - ODR\n       P - periodic downloaded static route\n\nGateway of last resort is not set\n\n\nRouter>",
+            "output_characters": 530
+          },
+          {
+            "device": "BR2-EDGE-RTR-01",
+            "query": "show_ip_interface_brief",
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "truncated_by_pager": false,
+            "observed_device_name": "BR2-EDGE-RTR-01",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "channel_calls": 8,
+            "call_budget_exhausted": false,
+            "output": "show ip interface brief\nInterface              IP-Address      OK? Method Status                Protocol \nGigabitEthernet0/0     unassigned      YES unset  administratively down down \nGigabitEthernet0/1     unassigned      YES unset  administratively down down \nVlan1                  unassigned      YES unset  administratively down down\nRouter>",
+            "output_characters": 346
+          },
+          {
+            "device": "BR2-EDGE-RTR-01",
+            "query": "show_ip_route",
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "truncated_by_pager": false,
+            "observed_device_name": "BR2-EDGE-RTR-01",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "channel_calls": 4,
+            "call_budget_exhausted": false,
+            "output": "show ip route\nCodes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP\n       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area\n       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2\n       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP\n       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area\n       * - candidate default, U - per-user static route, o - ODR\n       P - periodic downloaded static route\n\nGateway of last resort is not set\n\n\nRouter>",
+            "output_characters": 530
+          }
+        ],
+        "router_capture_available": true,
+        "client_bindings": [
+          {
+            "device": "HQ-DEFAULT-PC-01",
+            "found": true,
+            "port_found": true,
+            "ipv4": "10.68.0.2",
+            "netmask": "255.255.255.248",
+            "gateway_reads": [
+              {
+                "process": "HostIp",
+                "found": false,
+                "api": false,
+                "value": "",
+                "error": "invalid string position"
+              },
+              {
+                "process": "HostIpProcess",
+                "found": true,
+                "api": true,
+                "value": "10.68.0.1",
+                "error": ""
+              }
+            ],
+            "dns_api": true,
+            "dns_server": "10.68.0.10",
+            "dns_error": "",
+            "error": ""
+          },
+          {
+            "device": "HQ-DEFAULT-PC-02",
+            "found": true,
+            "port_found": true,
+            "ipv4": "10.68.0.3",
+            "netmask": "255.255.255.248",
+            "gateway_reads": [
+              {
+                "process": "HostIp",
+                "found": false,
+                "api": false,
+                "value": "",
+                "error": "invalid string position"
+              },
+              {
+                "process": "HostIpProcess",
+                "found": true,
+                "api": true,
+                "value": "10.68.0.1",
+                "error": ""
+              }
+            ],
+            "dns_api": true,
+            "dns_server": "10.68.0.10",
+            "dns_error": "",
+            "error": ""
+          }
+        ],
+        "client_binding_read": "observed",
+        "complete": true
+      },
+      "causes": [],
+      "limitations": [
+        "terminal_inventory_is_not_product_acceptance"
+      ],
+      "reason": "",
+      "outcome_unknown": false
+    }
+  ],
+  "primary_failure": "",
+  "secondary_failures": [],
+  "releases": [
+    {
+      "resource": "device:BR2-DEFAULT-PC-02",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:BR2-DEFAULT-PC-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:BR1-DEFAULT-PC-02",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:BR1-DEFAULT-PC-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:HQ-DEFAULT-PC-02",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:HQ-DEFAULT-PC-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:HQ-DEFAULT-WEB-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:HQ-DEFAULT-DNS-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:BR2-DEFAULT-ACCESS-SW-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:BR1-DEFAULT-ACCESS-SW-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:HQ-DEFAULT-ACCESS-SW-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:BR2-EDGE-RTR-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:BR1-EDGE-RTR-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:HQ-EDGE-RTR-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "campaign:lock",
+      "kind": "claim",
+      "outcome": "released",
+      "detail": ""
+    }
+  ],
+  "restoration": [
+    {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 1,
+      "link_count": 0,
+      "devices": [
+        {
+          "name": "Power Distribution Device0",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        }
+      ],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    },
+    {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 1,
+      "link_count": 0,
+      "devices": [
+        {
+          "name": "Power Distribution Device0",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        }
+      ],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    }
+  ],
+  "restoration_proven": true,
+  "engine_residue": [],
+  "coordination_residue": [],
+  "dirty_state": "clean",
+  "persist_error": "",
+  "limitations": [
+    "effect_gate_is_local_and_not_an_in_band_receiver_fence",
+    "local_process_observation_bounded_seconds:30.0",
+    "restoration_scope:semantic_devices_and_links",
+    "backend_managed_devices_changed:0->1"
+  ],
+  "outcome": "completed"
+}
