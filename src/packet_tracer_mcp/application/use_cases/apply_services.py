@@ -173,10 +173,17 @@ class ServiceRuntime(Protocol):
         """Observe one expectation."""
 
 
-#: Verification outcomes that mean the request itself was never dispatched.
-_NOT_SENT_STATUSES = frozenset(
-    {ActionExecutionStatus.DEPENDENCY_BLOCKED, ActionExecutionStatus.SKIPPED}
-)
+def _cold_request_sent(result: ServiceVerificationResult) -> bool:
+    """Whether a cold HTTP-by-address row proves its request was dispatched.
+
+    Positive evidence only: a VERIFIED fetch necessarily ran, and otherwise
+    the reader's start reading must have recorded `go()` returning true. A
+    row that is blocked, skipped, or UNKNOWN/FAILED without that start fact
+    (`client_go_false`, a lost start answer) proves nothing was sent.
+    """
+    if result.status is ActionExecutionStatus.VERIFIED:
+        return True
+    return (result.observed or {}).get("go_result") is True
 
 
 class ServiceApplicator:
@@ -976,16 +983,16 @@ class ServiceApplicator:
                     )
                     satisfied = False
             if satisfied and phases.get(expectation.id) == LATER_TRAFFIC_PHASE:
-                # A cold request that was blocked or skipped was never sent;
-                # the same client's later traffic would then be the first to
-                # cross its path. Hold it, whatever service it belongs to.
+                # A cold request with no proof it was sent may never have
+                # left; the same client's later traffic would then be the
+                # first to cross its path. Hold it, whatever its service.
                 unsent = sorted(
                     identifier
                     for identifier in cold_by_client.get(
                         expectation.client_device_id, []
                     )
                     if identifier not in results
-                    or results[identifier].status in _NOT_SENT_STATUSES
+                    or not _cold_request_sent(results[identifier])
                 )
                 if unsent:
                     satisfied = False

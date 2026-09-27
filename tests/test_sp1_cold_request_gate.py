@@ -132,3 +132,59 @@ def test_a_negative_with_no_positive_is_held_by_the_blocked_cold_request():
     )
     assert negative.status is ActionExecutionStatus.DEPENDENCY_BLOCKED
     assert "cold_request_not_sent" in negative.message
+
+
+def _http_answer(runtime, *, go_result):
+    """Make the runtime's HTTP-by-address read UNKNOWN, with or without a start."""
+    original = runtime.verify
+
+    def verify(expectation):
+        row = original(expectation)
+        if expectation.kind is not ServiceVerificationKind.HTTP_FETCH:
+            return row
+        observed = {} if go_result is None else {"go_result": go_result}
+        return row.model_copy(
+            update={
+                "status": ActionExecutionStatus.UNKNOWN,
+                "observed": observed,
+                "cause": "client_go_false" if go_result is False else "incomplete",
+            }
+        )
+
+    runtime.verify = verify
+
+
+def test_a_cold_request_that_never_started_holds_the_clients_dns():
+    """Review finding: UNKNOWN with `client_go_false` is not a sent request."""
+    plan, capabilities = _compiled()
+    runtime = FakeServiceRuntime()
+    _http_answer(runtime, go_result=False)
+
+    result = _apply(plan, capabilities, runtime)
+
+    dns = [
+        row
+        for row in result.verification_results
+        if "verify-dns/" in row.expectation_id
+    ]
+    assert dns
+    for row in dns:
+        assert row.status is ActionExecutionStatus.DEPENDENCY_BLOCKED
+        assert "cold_request_not_sent" in row.message
+
+
+def test_a_cold_request_that_started_but_read_unknown_releases_dns():
+    """`go()` returned true: the request left, so later traffic may follow."""
+    plan, capabilities = _compiled()
+    runtime = FakeServiceRuntime()
+    _http_answer(runtime, go_result=True)
+
+    result = _apply(plan, capabilities, runtime)
+
+    dns = [
+        row
+        for row in result.verification_results
+        if "verify-dns/" in row.expectation_id
+    ]
+    assert dns
+    assert all(row.status is ActionExecutionStatus.VERIFIED for row in dns)
