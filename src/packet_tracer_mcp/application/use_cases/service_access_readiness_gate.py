@@ -134,6 +134,10 @@ CONTINUITY_READING_ALLOWANCE = 6
 
 
 #: One routed-forwarding episode: rounds over every router of the group.
+#: The window is this much PER ROUTER read: a round reads every router of
+#: the group in turn, and LIVE at 6e5e527 one round over three routers took
+#: 32.4 s (about 11 s per router), so a fixed window refused a correct
+#: three-router path. Per router, a round of any group fits more than twice.
 ROUTED_GROUP_DEADLINE_SECONDS = 30.0
 ROUTED_MAX_ROUNDS = 31
 ROUTED_INTERVAL_SECONDS = 1.0
@@ -157,6 +161,11 @@ def _extension_within(available: float) -> float:
     )
 
 
+def routed_window(requirement: RoutedRequirement) -> float:
+    """Return one routed group's window: the base window per router it reads."""
+    return ROUTED_GROUP_DEADLINE_SECONDS * max(1, len(requirement.device_ids))
+
+
 def readiness_limits(plan: AccessReadinessPlan) -> tuple[int, float]:
     """Derive the episode ceiling and total wait one plan may use.
 
@@ -174,7 +183,7 @@ def readiness_limits(plan: AccessReadinessPlan) -> tuple[int, float]:
             * (
                 len(plan.requirements) * READINESS_GROUP_DEADLINE_SECONDS
                 + len(plan.continuity) * CONTINUITY_GROUP_DEADLINE_SECONDS
-                + len(plan.routed) * ROUTED_GROUP_DEADLINE_SECONDS
+                + sum(routed_window(item) for item in plan.routed)
             ),
         ),
     )
@@ -650,8 +659,8 @@ class ServiceAccessReadinessGate:
                 if other != key and other not in self._results
             )
             + sum(
-                ROUTED_GROUP_DEADLINE_SECONDS
-                for other in self._routed
+                routed_window(requirement)
+                for other, requirement in self._routed.items()
                 if other != key and other not in self._results
             )
         )
@@ -996,7 +1005,7 @@ class ServiceAccessReadinessGate:
             requirement.key,
             remaining,
             first=not narrowed,
-            window=ROUTED_GROUP_DEADLINE_SECONDS,
+            window=routed_window(requirement),
         )
         if available <= 0:
             return (
@@ -1018,7 +1027,7 @@ class ServiceAccessReadinessGate:
                 settled=lambda round_: round_admits_all(requirement, round_, names),
                 remaining_seconds=available,
                 max_rounds=ROUTED_MAX_ROUNDS,
-                deadline_seconds=ROUTED_GROUP_DEADLINE_SECONDS,
+                deadline_seconds=routed_window(requirement),
                 interval_seconds=ROUTED_INTERVAL_SECONDS,
                 sample_calls=READINESS_SAMPLE_CALLS,
                 episode_calls=ROUTED_MAX_ROUNDS
@@ -1048,7 +1057,7 @@ class ServiceAccessReadinessGate:
                 None,
             )
         late = self._clock() - group_started >= min(
-            available, ROUTED_GROUP_DEADLINE_SECONDS
+            available, routed_window(requirement)
         ) and not (observation.rounds and _routed_before_window(observation))
         verdicts = routed_verdicts(requirement, observation, names)
         if late:

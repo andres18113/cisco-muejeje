@@ -147,12 +147,15 @@ def test_a_window_that_ends_unsettled_refuses_with_the_last_cause():
 
 
 def test_a_route_that_appears_only_after_the_window_is_late():
-    """Late rows are kept in the report and authorize nothing."""
+    """Late rows are kept in the report and authorize nothing.
+
+    The three-router window is 3 x 30 s; the healthy round lands at 93 s.
+    """
     clock = _Clock()
     observer = _Observer(
         clock,
         [[_missing_server_route(), _missing_server_route(), healthy()]],
-        step=11.0,
+        step=31.0,
     )
 
     verdict = _gate([requirement(1)], observer).decide("verify-1")
@@ -259,3 +262,18 @@ def test_one_episode_serves_every_client_of_the_group():
 
     assert all(gate.decide(f"verify-{index}").admitted for index in range(1, 51))
     assert observer.calls == [("R1", "R2", "R3")]
+
+
+def test_a_three_router_group_gets_a_window_per_router():
+    """LIVE at 6e5e527: one round over three routers took 32.4 s.
+
+    A fixed 30 s window refused the group while every table was correct. The
+    window scales with the routers read, so two such rounds fit.
+    """
+    clock = _Clock()
+    observer = _Observer(clock, [[_missing_server_route(), healthy()]], step=32.4)
+
+    verdict = _gate([requirement(1)], observer).decide("verify-1")
+
+    assert verdict.admitted, verdict
+    assert len(observer.calls) == 1

@@ -707,7 +707,11 @@ def test_excluded_e5_contradiction_does_not_block_selected_services(
 
 
 def test_the_advisory_client_dns_reader_never_gates_a_service(tmp_path: Path):
-    """R-CAP-06: reported in full, UNKNOWN, and counted nowhere."""
+    """R-CAP-06: reported in full and counted nowhere.
+
+    Named delta (SP-1): the reader is now recorded (Q1 M-DNS-3 at 0850de3),
+    so its row may verify; it is still optional and never decides the run.
+    """
     harness = _harness(tmp_path)
 
     result = harness.run()
@@ -722,7 +726,6 @@ def test_the_advisory_client_dns_reader_never_gates_a_service(tmp_path: Path):
     assert advisory
     for row in advisory:
         assert row.required is False
-        assert row.status is not ActionExecutionStatus.VERIFIED
     assert result.status is ServiceRunStatus.VERIFIED
 
 

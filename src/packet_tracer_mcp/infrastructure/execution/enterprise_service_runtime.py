@@ -837,6 +837,13 @@ _CLIENT_GO_JS = (
 )
 
 
+#: How long one DNS read waits for its `ping <host>` window to end. A routed
+#: ping sends four echoes and may time some out; LIVE at 6e5e527 a routed
+#: HQ client missed the former 5 s bound. The poll stops as soon as the
+#: window is complete, so this bounds only the slow case.
+DNS_READ_TIMEOUT_SECONDS = 20.0
+
+
 class PacketTracerEnterpriseServiceRuntime:
     """Usa procesos documentados de PT; no ofrece JS ni comandos arbitrarios."""
 
@@ -846,7 +853,7 @@ class PacketTracerEnterpriseServiceRuntime:
         send_and_wait: Callable[[str, float], str | None],
         *,
         dispatch_and_wait: Callable[[str, float], BridgeDispatchOutcome] | None = None,
-        dns_timeout_seconds: float = 5.0,
+        dns_timeout_seconds: float = DNS_READ_TIMEOUT_SECONDS,
         http_timeout_seconds: float = 8.0,
         mail_timeout_seconds: float = 8.0,
         convergence_interval_seconds: float = 0.25,

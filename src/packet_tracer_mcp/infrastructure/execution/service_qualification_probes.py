@@ -1407,30 +1407,39 @@ class PacketTracerQualificationProbes:
     def read_client_bindings(self, clients: Sequence[str]) -> ProbeReading:
         """Read each client's port address and configured gateway and resolver.
 
-        The gateway and resolver come from the same typed getters the
-        product's binding verification reads (`HostIp.getDefaultGateway`,
-        `DnsClient.getServerIp`); an absent process or getter is reported as
-        such, never substituted. Read-only: nothing is dispatched to a client.
+        The resolver comes from `DnsClient.getServerIp`, the getter measured
+        at 0850de3. The gateway getter is documented only on the `HostIp`
+        process, whose `getProcess('HostIp')` threw on PC-PT at 6e5e527; the
+        reference makes the `Process` suffix optional, so both documented
+        names are tried. Every getter runs in its own guard and reports its
+        own error, so one failing process never hides another's answer. An
+        absent process or getter is reported, never substituted. Read-only.
         """
         return self._read(
             "client_bindings",
             f"var __n={json.dumps([str(item) for item in clients])},__rows=[];"
+            "var __names=['HostIp','HostIpProcess'];"
             "for(var __i=0;__i<__n.length;__i++){var __name=__n[__i],__d=null,"
-            "__p=null,__ip='',__mask='',__gw='',__dns='',__gwApi=false,"
-            "__dnsApi=false,__error='';try{__d=ipc.network().getDevice(__name);"
+            "__p=null,__ip='',__mask='',__dns='',__dnsApi=false,__dnsError='',"
+            "__error='',__gws=[];try{__d=ipc.network().getDevice(__name);"
             "if(__d){for(var __j=0;__j<__d.getPortCount();__j++){"
             "var __c=__d.getPortAt(__j);if(__c&&String(__c.getName())==="
             "'FastEthernet0'){__p=__c;break;}}if(__p){__ip=String("
             "__p.getIpAddress()).substring(0,64);__mask=String("
-            "__p.getSubnetMask()).substring(0,64);}var __h=__d.getProcess("
-            "'HostIp');__gwApi=!!(__h&&typeof __h.getDefaultGateway==="
-            "'function');if(__gwApi){__gw=String(__h.getDefaultGateway())"
-            ".substring(0,64);}var __k=__d.getProcess('DnsClient');__dnsApi=!!("
-            "__k&&typeof __k.getServerIp==='function');if(__dnsApi){__dns="
-            "String(__k.getServerIp()).substring(0,64);}}}catch(__x){"
-            "__error=__er(__x);}__rows.push({device:__name,found:!!__d,"
-            "port_found:!!__p,ipv4:__ip,netmask:__mask,gateway_api:__gwApi,"
-            "gateway:__gw,dns_api:__dnsApi,dns_server:__dns,error:__error});}"
+            "__p.getSubnetMask()).substring(0,64);}}}catch(__x){"
+            "__error=__er(__x);}if(__d){for(var __g=0;__g<__names.length;__g++){"
+            "var __row={process:__names[__g],found:false,api:false,value:'',"
+            "error:''};try{var __h=__d.getProcess(__names[__g]);__row.found=!!__h;"
+            "__row.api=!!(__h&&typeof __h.getDefaultGateway==='function');"
+            "if(__row.api){__row.value=String(__h.getDefaultGateway())"
+            ".substring(0,64);}}catch(__x){__row.error=__er(__x);}"
+            "__gws.push(__row);}try{var __k=__d.getProcess('DnsClient');"
+            "__dnsApi=!!(__k&&typeof __k.getServerIp==='function');if(__dnsApi){"
+            "__dns=String(__k.getServerIp()).substring(0,64);}}catch(__x){"
+            "__dnsError=__er(__x);}}__rows.push({device:__name,found:!!__d,"
+            "port_found:!!__p,ipv4:__ip,netmask:__mask,gateway_reads:__gws,"
+            "dns_api:__dnsApi,dns_server:__dns,dns_error:__dnsError,"
+            "error:__error});}"
             "reportResult(JSON.stringify({clients:__rows}));",
         )
 

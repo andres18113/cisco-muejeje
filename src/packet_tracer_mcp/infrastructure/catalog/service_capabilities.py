@@ -375,11 +375,8 @@ def _baseline_client_operations(version: str) -> list[ClientOperationCapability]
     unknown = (
         # No live evidence for a PC-PT HTTPS fetch; HTTPS ownership is Q1.
         ServiceVerificationKind.HTTPS_FETCH,
-        # A new reader with no evidence at all. It must not inherit support
-        # from another getter on the same client, and it stays advisory until
-        # M-DNS-3 records it.
-        ServiceVerificationKind.CLIENT_DNS_SERVER,
-        # SP-1: `HostIp.getDefaultGateway()` is documented, not yet measured.
+        # SP-1: `HostIp.getDefaultGateway()` is documented only. LIVE at
+        # 6e5e527 `getProcess('HostIp')` threw on PC-PT, so it is unmeasured.
         ServiceVerificationKind.CLIENT_GATEWAY,
         ServiceVerificationKind.NTP_SYNC,
         ServiceVerificationKind.TFTP_RETRIEVE,
@@ -401,7 +398,32 @@ def _baseline_client_operations(version: str) -> list[ClientOperationCapability]
             )
             for kind in unknown
         ),
+        _client_dns_server_record(version),
     ]
+
+
+def _client_dns_server_record(version: str) -> ClientOperationCapability:
+    """The resolver reader, recorded by Q1 M-DNS-3 on this exact build.
+
+    `DnsClient.getServerIp()` read the configured resolver on one PC-PT and
+    `0.0.0.0` on an unset one (record SHA-256 a0e2f938...b005 under
+    `docs/reference/server-pt/evidence/q-batch-0850de3/q1-file/`). It is the
+    getter the product's CLIENT_DNS_SERVER row reads, and it never inherits
+    support from any other client getter.
+    """
+    return ClientOperationCapability(
+        key=f"{_CLIENT_MODEL}:{ServiceVerificationKind.CLIENT_DNS_SERVER.value}",
+        model=_CLIENT_MODEL,
+        operation=ServiceVerificationKind.CLIENT_DNS_SERVER.value,
+        support=CapabilityStatus.SUPPORTED,
+        provenance=CapabilityProvenance.RECORDED_RUN,
+        source="Q1 M-DNS-3 DnsClient.getServerIp configured and unset readings",
+        packet_tracer_version=version,
+        build=version,
+        executed_sha="0850de3dd94c8ada25c5b493e5638e6b0ce0351d",
+        transport="file",
+        run_id="2026-09-19T00-13-08Z-985c1368",
+    )
 
 
 def _unknown_records(version: str) -> list[object]:

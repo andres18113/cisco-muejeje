@@ -182,23 +182,33 @@ def test_a_host_direct_expectation_still_resolves_the_service_profile():
     assert resolution.support is CapabilityStatus.SUPPORTED
 
 
-def test_the_advisory_client_dns_reader_stays_unknown():
-    """R-CAP-06: it is never inferred from another getter on the same client."""
+def test_a_client_binding_reader_is_never_inferred_from_a_sibling_getter():
+    """R-CAP-06: each reader carries only its own evidence.
+
+    Named delta (SP-1): the resolver reader was UNKNOWN until M-DNS-3 recorded
+    it; it now carries that exact run. The gateway reader has no measurement
+    (LIVE at 6e5e527 its process threw) and stays UNKNOWN beside supported
+    DNS siblings on the same client.
+    """
     records = packet_tracer_service_capabilities(BASELINE_PACKET_TRACER_VERSION)
 
-    advisory = resolve_verification_capability(
-        records,
-        _client_expectation(ServiceVerificationKind.CLIENT_DNS_SERVER),
-        _SERVICE,
-    )
-    sibling = resolve_verification_capability(
-        records,
-        _client_expectation(ServiceVerificationKind.DNS_RESOLUTION),
-        _SERVICE,
-    )
+    def support(kind):
+        return resolve_verification_capability(
+            records, _client_expectation(kind), _SERVICE
+        ).support
 
-    assert sibling.support is CapabilityStatus.SUPPORTED
-    assert advisory.support is CapabilityStatus.UNKNOWN
+    assert support(ServiceVerificationKind.DNS_RESOLUTION) is CapabilityStatus.SUPPORTED
+    assert support(ServiceVerificationKind.CLIENT_GATEWAY) is CapabilityStatus.UNKNOWN
+    assert (
+        support(ServiceVerificationKind.CLIENT_DNS_SERVER) is CapabilityStatus.SUPPORTED
+    )
+    resolver = records["PC-PT:client_dns_server"]
+    assert resolver.provenance is CapabilityProvenance.RECORDED_RUN
+    assert (resolver.executed_sha, resolver.run_id, resolver.transport) == (
+        "0850de3dd94c8ada25c5b493e5638e6b0ce0351d",
+        "2026-09-19T00-13-08Z-985c1368",
+        "file",
+    )
 
 
 def test_an_action_on_a_model_with_no_record_is_unknown():
@@ -268,6 +278,8 @@ def test_only_measured_native_records_have_recorded_run_provenance():
     assert recorded == {
         "Server-PT:dhcp_native_default_binding",
         "PC-PT:endpoint_dhcp_mode",
+        # SP-1 named delta: Q1 M-DNS-3 at 0850de3.
+        "PC-PT:client_dns_server",
     }
     assert all(
         level == CapabilityProvenance.DOCUMENTARY_BASELINE.value
