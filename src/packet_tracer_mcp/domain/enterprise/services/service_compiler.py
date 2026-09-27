@@ -2307,6 +2307,10 @@ class ServiceCompiler:
         the reader is measured on the build; a same-segment or DHCP client
         compiles none.
         """
+        if service.service_type not in {ServiceType.HTTP, ServiceType.HTTPS}:
+            # One read per client is enough; the HTTP-by-IP request is the
+            # one that needs the gateway first.
+            return None
         if not isinstance(client_foundation, SetEndpointStaticAddress):
             return None
         if host_foundation is None or getattr(host_foundation, "segment_id", "") == (

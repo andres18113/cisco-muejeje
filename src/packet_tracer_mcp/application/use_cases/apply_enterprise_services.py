@@ -167,11 +167,12 @@ _MISSING_RESULT_MESSAGE = "Runtime returned no mutation result."
 # never presents a larger intent as a workload the runtime path can support.
 MAX_INTENT_JSON_BYTES = 1 << 20
 # Offline scale acceptance exercises 1000 clients. The fixed response budget
-# remains five checks per client: DHCP-only uses two, while a combined
+# is six checks per client (SP-1 adds the routed client's gateway read to the
+# five DNS/HTTP rows; re-measured in test_sp1_routed_scale). DHCP-only uses two, while a combined
 # DNS/HTTP/DHCP seven-row workload is refused explicitly rather than sampled.
 # These are response-composition budgets, not Packet Tracer capacity claims.
 MAX_REPORTING_CLIENTS = 1000
-MAX_CLIENT_CHECK_ROWS = MAX_REPORTING_CLIENTS * 5
+MAX_CLIENT_CHECK_ROWS = MAX_REPORTING_CLIENTS * 6
 #: The only channel a secret-bearing script may travel on (R-SEC-01): a POST
 #: body over the authenticated loopback bridge, never a request file on disk.
 SECRET_CHANNEL = "http"

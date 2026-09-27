@@ -149,7 +149,9 @@ def test_reporting_budget_is_the_measured_1000_by_5_boundary():
     _clients, _service, too_many_clients, _result = _reporting_fixture(
         MAX_REPORTING_CLIENTS + 1
     )
-    assert MAX_CLIENT_CHECK_ROWS == MAX_REPORTING_CLIENTS * _CHECKS_PER_CLIENT
+    # SP-1 raised the per-client budget from five to six rows for the routed
+    # client's gateway read, re-measured in test_sp1_routed_scale.
+    assert MAX_CLIENT_CHECK_ROWS == MAX_REPORTING_CLIENTS * (_CHECKS_PER_CLIENT + 1)
     assert not _reporting_budget_exceeded(admitted)
     assert _reporting_budget_exceeded(too_many_clients)
 
