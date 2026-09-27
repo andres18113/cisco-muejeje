@@ -2758,6 +2758,9 @@ def _path_admission(
                 continue
             if isinstance(action, SetEndpointDhcp):
                 claims = delegated_claims.get(device_id, set())
+                if not claims:
+                    unsupported.append(f"{service.id}:{device_id}:dhcp")
+                    continue
                 if len(claims) != 1 or next(iter(claims))[0] != action.segment_id:
                     unsupported.append(f"{service.id}:{device_id}:dhcp_authority")
                     continue
