@@ -331,6 +331,31 @@ Touching the legacy resolver also brought that file under the current Ruff
 gate: seven existing lint findings and its local formatting were corrected;
 the intended semantic change is the relay capability projection alone.
 
+For e3, project the real E5 plan to all compiled network, switch, relay,
+route and server-address actions while omitting only the selected PC's DHCP
+mode action and its expectation. Refuse a retained dependency on the omitted
+action and give the projection its own semantic hash. The mode effect is a
+later separate projection, admitted only after attributed helper and
+forward/return readiness. Keep the remote stage unregistered until its
+procedure, worst-case work budget, terminal reads and offline refusal tests
+are complete.
+The projection also removes a device row with no retained action, recomputes
+each retained device's required capabilities, and refuses a readback that
+still depends on the deferred mode action or expectation.
+
+The composed pre-lease path has two access groups, no continuity group and
+one routed group. Existing gate ceilings permit at most two episodes per
+group: `2 × 2 × 181 = 724` access calls and
+`1 × 2 × 31 × 2 × 12 = 1,488` routed calls, or 2,212 before effects and
+physical samples. A prospective single-client stage may reserve 3,000
+operations for its product procedure, 80 for terminal observation, 25 for
+fixture setup and 15 for cleanup within a 3,200-operation ceiling and a
+3,600-second clock with 420 seconds reserved for finalization. The remaining
+788 product operations cover the 19 E5 actions, two E6 actions, bounded
+pre-client and two separated post-client reads, and local observation
+overheads. These are offline design bounds, not an episode allocation;
+prove the worst case with the registered procedure before enabling the stage.
+
 Before PC DHCP mode, require a fresh disabled Server-PT/default-pool baseline,
 static server and switching results, exact client-facing `ip helper-address`
 readback, operational forward and return route/interface readiness, and a

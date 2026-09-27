@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from enum import Enum, StrEnum
 
 from ..models.configuration import (
+    ConfigurationAction,
     ConfigurationPlan,
     ConfigureAccessPort,
     SetEndpointDhcp,
@@ -335,6 +336,85 @@ class ProjectionRewrite:
     def as_text(self) -> str:
         """Return the compact single-line form a record stores."""
         return f"{self.kind}:{self.target}" + (f":{self.detail}" if self.detail else "")
+
+
+def sp2_preclient_configuration_plan(
+    plan: ConfigurationPlan,
+) -> tuple[ConfigurationPlan, tuple[ProjectionRewrite, ...]]:
+    """Retain compiled routed foundations while withholding the one PC mode.
+
+    The omitted action and expectation remain in the source plan. No retained
+    action may depend on them, and the projection receives its own hash.
+    """
+    omitted = [item for item in plan.actions if isinstance(item, SetEndpointDhcp)]
+    if len(omitted) != 1:
+        raise ValueError("SP-2 relay requires exactly one selected DHCP mode action.")
+    actions = [
+        item.model_copy(deep=True) for item in plan.actions if item.id != omitted[0].id
+    ]
+    action_ids = {item.id for item in actions}
+    if any(
+        set(item.depends_on + item.apply_dependencies) - action_ids for item in actions
+    ):
+        raise ValueError("SP-2 relay preclient plan has a missing dependency.")
+    expectations = [
+        item.model_copy(deep=True)
+        for item in plan.verification_expectations
+        if item.action_id in action_ids
+    ]
+    expectation_ids = {item.id for item in expectations}
+    for expectation in expectations:
+        for prerequisite in expectation.verification_prerequisites:
+            if (
+                prerequisite.kind
+                in {PrerequisiteKind.ACTION_APPLIED, PrerequisiteKind.ACTION_VERIFIED}
+                and prerequisite.reference_id not in action_ids
+            ) or (
+                prerequisite.kind is PrerequisiteKind.VERIFICATION_VERIFIED
+                and prerequisite.reference_id not in expectation_ids
+            ):
+                raise ValueError(
+                    "SP-2 relay preclient readback prerequisite is missing."
+                )
+    by_device: dict[str, list[ConfigurationAction]] = {}
+    for action in actions:
+        by_device.setdefault(action.device_id, []).append(action)
+    source_device_ids = {item.device_id for item in plan.devices}
+    if (
+        len(source_device_ids) != len(plan.devices)
+        or set(by_device) - source_device_ids
+    ):
+        raise ValueError("SP-2 relay preclient device row is missing.")
+    devices = [
+        item.model_copy(
+            update={
+                "action_ids": [action.id for action in by_device[item.device_id]],
+                "required_capabilities": sorted(
+                    {
+                        action.required_capability
+                        for action in by_device[item.device_id]
+                        if action.required_capability
+                    }
+                ),
+            },
+            deep=True,
+        )
+        for item in plan.devices
+        if by_device.get(item.device_id)
+    ]
+    projected = plan.model_copy(
+        update={
+            "id": f"{plan.id}/sp2-preclient",
+            "actions": actions,
+            "devices": devices,
+            "verification_expectations": expectations,
+        },
+        deep=True,
+    )
+    projected.semantic_hash = configuration_plan_semantic_hash(projected)
+    return projected, (
+        ProjectionRewrite("action_omitted", omitted[0].id, "client_mode_deferred"),
+    )
 
 
 #: The identities the diagnostic projections carry beside the source plan's.
