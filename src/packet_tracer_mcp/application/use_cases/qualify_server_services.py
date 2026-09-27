@@ -4947,7 +4947,7 @@ def _d_dhcp_enable(
     executed_ids: frozenset[str],
     context: ConfigurationRuntimeContext,
 ) -> None:
-    """Enable the process and verify the transition the projection rebinds."""
+    """Enable the process after verified pool setup and read back the transition."""
     plan, rewrites = d_dhcp_enable_only_plan(
         contract.service_plan, executed_configuration_action_ids=executed_ids
     )

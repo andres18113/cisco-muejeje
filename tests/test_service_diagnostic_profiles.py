@@ -252,8 +252,8 @@ def test_the_static_only_projection_configures_the_server_and_no_client(contract
     )
 
 
-def test_the_compiled_pool_action_really_does_depend_on_the_enable_action(contract):
-    """The seam is a fact about the compiled plan, not an assumption."""
+def test_the_compiled_enable_really_waits_for_the_pool_action(contract):
+    """The process starts after the pool in the compiled plan."""
     enable = next(
         item
         for item in contract.service_plan.actions
@@ -264,8 +264,10 @@ def test_the_compiled_pool_action_really_does_depend_on_the_enable_action(contra
         for item in contract.service_plan.actions
         if isinstance(item, ConfigureServerDhcpPool)
     )
-    assert enable.id in pool.depends_on
-    assert enable.id in pool.apply_dependencies
+    assert pool.id in enable.depends_on
+    assert pool.id in enable.apply_dependencies
+    assert enable.id not in pool.depends_on
+    assert enable.id not in pool.apply_dependencies
 
 
 def _server_e5_action_ids(contract):
@@ -275,10 +277,9 @@ def _server_e5_action_ids(contract):
 
 
 def test_the_pool_only_projection_records_every_rewrite_it_makes(contract):
-    """Removing the enable edge is not enough, and each change is named.
+    """The disabled pool projection records each assertion it changes.
 
-    Three assertions the compiled plan forces: the pool action depends on the
-    enable action, the plan's foundational requirements include two client
+    The compiled plan's foundational requirements include two client
     DHCP-mode actions a server-only E5 never executes, and the direct
     server-state expectation was written for `enabled=True`.
     """
@@ -286,21 +287,15 @@ def test_the_pool_only_projection_records_every_rewrite_it_makes(contract):
     projected, rewrites = d_dhcp_pool_only_plan(
         contract.service_plan, executed_configuration_action_ids=executed
     )
-    enable = next(
-        item
-        for item in contract.service_plan.actions
-        if isinstance(item, EnableServerDhcp)
-    )
     kinds = {item.kind for item in rewrites}
     assert kinds == {
-        "dependency_removed",
         "foundation_removed",
         "expectation_field",
+        "expectation_rebound",
+        "prerequisite_rebound",
         "projection_identity",
     }
-    assert [item.target for item in rewrites if item.kind == "dependency_removed"] == [
-        enable.id
-    ]
+    assert not [item for item in rewrites if item.kind == "dependency_removed"]
     assert [item.action_type.value for item in projected.actions] == [
         "configure_server_dhcp_pool"
     ]
@@ -317,6 +312,7 @@ def test_the_pool_only_projection_records_every_rewrite_it_makes(contract):
     assert surviving and surviving <= executed
     (expectation,) = projected.verification_expectations
     assert expectation.kind is ServiceVerificationKind.DHCP_SERVER_STATE
+    assert expectation.action_id == projected.actions[0].id
     assert expectation.expected["enabled"] is False
     # Every other pool field is the compiler's own, unchanged.
     source = next(
@@ -335,7 +331,7 @@ def test_the_pool_only_projection_records_every_rewrite_it_makes(contract):
     profile = d_dhcp_profile(build=Q3_PACKET_TRACER_BUILD, channels=CHANNELS)
     assert profile.step("D2-a").blocked_by == (POOL_BEFORE_ENABLE,)
     seam = next(item for item in profile.seams if item.id == POOL_BEFORE_ENABLE)
-    assert "depends_on" in seam.contract
+    assert "EnableServerDhcp.depends_on" in seam.contract
 
 
 def test_the_enable_only_projection_rebinds_the_read_back_to_the_enable(contract):
@@ -346,15 +342,24 @@ def test_the_enable_only_projection_rebinds_the_read_back_to_the_enable(contract
     )
     (action,) = projected.actions
     assert action.action_type.value == "enable_server_dhcp"
+    assert action.depends_on == []
+    assert action.apply_dependencies == []
+    pool = next(
+        item
+        for item in contract.service_plan.actions
+        if isinstance(item, ConfigureServerDhcpPool)
+    )
+    assert [item.target for item in rewrites if item.kind == "dependency_removed"] == [
+        pool.id
+    ]
     (expectation,) = projected.verification_expectations
     assert expectation.kind is ServiceVerificationKind.DHCP_SERVER_STATE
     assert expectation.action_id == action.id
     assert expectation.expected["enabled"] is True
-    rebound = [item for item in rewrites if item.kind == "expectation_rebound"]
-    assert len(rebound) == 1 and rebound[0].target == expectation.id
+    assert not [item for item in rewrites if item.kind == "expectation_rebound"]
     profile = d_dhcp_profile(build=Q3_PACKET_TRACER_BUILD, channels=CHANNELS)
     assert profile.step("D3-a").operations == 2
-    assert "expectation_rebound" in profile.step("D3-a").retains
+    assert "dependency_removed" in profile.step("D3-a").retains
     assert "enabled_boolean" in profile.step("D3-b").retains
 
 

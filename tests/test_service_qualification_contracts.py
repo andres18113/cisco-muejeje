@@ -323,8 +323,8 @@ def test_q3_private_product_contract_uses_real_composition_and_exact_fixture():
         item.device_name for item in endpoints if isinstance(item, SetEndpointDhcp)
     } == {"__MCP_E6Q_PC1", "__MCP_E6Q_PC2"}
     assert [type(item) for item in contract.service_plan.actions] == [
-        EnableServerDhcp,
         ConfigureServerDhcpPool,
+        EnableServerDhcp,
         AcquireDhcpLease,
         AcquireDhcpLease,
     ]
@@ -348,6 +348,13 @@ def test_q3_private_product_contract_uses_real_composition_and_exact_fixture():
         "192.0.2.100",
         1,
     )
+    enable = next(
+        item
+        for item in contract.service_plan.actions
+        if isinstance(item, EnableServerDhcp)
+    )
+    assert enable.depends_on == [pool.id]
+    assert enable.apply_dependencies == [pool.id]
     assert [item.service_type for item in contract.service_plan.services] == [
         ServiceType.DHCP
     ]

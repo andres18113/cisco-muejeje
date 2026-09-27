@@ -1016,7 +1016,7 @@ def _d_dhcp() -> StageDefinition:
                 ),
                 required=True,
                 procedure="D_DHCP_ENABLE",
-                # One enable dispatch, the rebound server-state read-back and
+                # One enable dispatch, its server-state read-back and
                 # one native reading.
                 planned_operations=3,
                 operational_prerequisites=(

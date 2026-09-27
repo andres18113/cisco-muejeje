@@ -5,10 +5,12 @@ from __future__ import annotations
 import copy
 from ipaddress import ip_address, ip_network
 
+import pytest
 from sp1_routed_fixture import compose, topology_payload
 
 from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
     _path_admission,
+    _plan_for,
 )
 from packet_tracer_mcp.infrastructure.generator.configuration_renderer import (
     PacketTracerIosRenderer,
@@ -118,6 +120,85 @@ def test_remote_segments_compile_distinct_server_policies_without_ios_substituti
     assert all(
         server_address not in ip_network(f"{item.network}/{item.prefix}")
         for item in pools
+    )
+
+
+def test_shared_server_configures_every_pool_before_enabling_dhcp():
+    """One process cannot start between policies for two client segments."""
+    payload, ids = _remote_dhcp_payload()
+    plans = compose(payload)
+    assert plans.services is not None
+    actions = plans.services.actions
+    pools = [
+        item
+        for item in actions
+        if item.action_type.value == "configure_server_dhcp_pool"
+        and item.host_device_id == ids["HQ-DEFAULT-DNS-01"]
+    ]
+    enables = [
+        item
+        for item in actions
+        if item.action_type.value == "enable_server_dhcp"
+        and item.host_device_id == ids["HQ-DEFAULT-DNS-01"]
+    ]
+    assert len(pools) == len(enables) == 2
+    pool_ids = {item.id for item in pools}
+    enable_ids = {item.id for item in enables}
+    by_id = {item.id: item for item in actions}
+
+    def prerequisites(action_id):
+        found = set()
+        pending = list(by_id[action_id].depends_on)
+        while pending:
+            identifier = pending.pop()
+            if identifier in found:
+                continue
+            found.add(identifier)
+            pending.extend(by_id[identifier].depends_on)
+        return found
+
+    assert all(not enable_ids.intersection(item.depends_on) for item in pools)
+    assert all(pool_ids.issubset(prerequisites(item.id)) for item in enables)
+    assert sum(len(item.depends_on) for item in enables) < len(pools) * len(enables)
+    assert all(item.apply_dependencies == item.depends_on for item in enables)
+    assert max(actions.index(item) for item in pools) < min(
+        actions.index(item) for item in enables
+    )
+
+
+@pytest.mark.parametrize("admitted_segment", ["hq-data", "br1-data"])
+def test_optional_pool_exclusion_keeps_the_admitted_dhcp_process_order(
+    admitted_segment,
+):
+    """A9 can drop one optional segment without stranding the other."""
+    payload, _ids = _remote_dhcp_payload()
+    optional_site = 1 if admitted_segment == "hq-data" else 0
+    payload["sites"][optional_site]["services"][0]["required"] = False
+    plans = compose(payload)
+    assert plans.services is not None
+    admitted = [
+        item for item in plans.services.services if item.segment_id == admitted_segment
+    ]
+
+    selected = _plan_for(plans.services, admitted, {})
+
+    assert {item.service_id for item in selected.actions} == {admitted[0].id}
+    action_ids = {item.id for item in selected.actions}
+    assert all(set(item.depends_on) <= action_ids for item in selected.actions)
+    assert all(set(item.apply_dependencies) <= action_ids for item in selected.actions)
+
+
+def test_same_host_dhcp_service_dependency_refuses_before_effects():
+    """A completed-service dependency conflicts with pool-before-enable."""
+    payload, _ids = _remote_dhcp_payload()
+    payload["sites"][1]["services"][0]["depends_on"] = ["hq-dhcp"]
+
+    plans = compose(payload)
+
+    assert plans.services is None
+    assert any(
+        "same-host DHCP service dependency" in issue
+        for issue in plans.composition.issues
     )
 
 

@@ -8,6 +8,7 @@ import json
 import re
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from itertools import pairwise
 from typing import cast
 
 from ...models.plans import DevicePlan, TopologyPlan
@@ -150,6 +151,39 @@ def _stable_id(kind: str, *parts: object) -> str:
 
 def _token(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.casefold()).strip("-") or "service"
+
+
+def bind_dhcp_process_start(actions: list[ServiceAction]) -> None:
+    """Bind same-host pools before enable with linear dependency growth.
+
+    Mutates only the pool and enable dependency lists. A narrowed plan can call
+    this again after removing omitted-pool edges; every surviving pool then
+    precedes the shared process start.
+    """
+    pools_by_host: dict[str, list[ConfigureServerDhcpPool]] = defaultdict(list)
+    for action in actions:
+        if isinstance(action, ConfigureServerDhcpPool):
+            pools_by_host[action.host_device_id].append(action)
+    final_pool_by_host: dict[str, str] = {}
+    for host_id, pools in pools_by_host.items():
+        ordered_pools = sorted(pools, key=lambda item: item.id)
+        for previous, current in pairwise(ordered_pools):
+            current.depends_on = sorted(set(current.depends_on) | {previous.id})
+            current.apply_dependencies = sorted(
+                set(current.apply_dependencies) | {previous.id}
+            )
+        final_pool_by_host[host_id] = ordered_pools[-1].id
+    for action in actions:
+        if isinstance(action, EnableServerDhcp):
+            final_pool = final_pool_by_host.get(action.host_device_id)
+            if final_pool is None:
+                raise ConfigurationDependencyError(
+                    "DHCP enable has no pool on its host.", [action.id]
+                )
+            action.depends_on = sorted(set(action.depends_on) | {final_pool})
+            action.apply_dependencies = sorted(
+                set(action.apply_dependencies) | {final_pool}
+            )
 
 
 class ServiceCompiler:
@@ -518,10 +552,25 @@ class ServiceCompiler:
                         )
                     )
                     continue
+                if (
+                    service.service_type is ServiceType.DHCP
+                    and dependency.service_type is ServiceType.DHCP
+                    and service.host_device_id == dependency.host_device_id
+                ):
+                    issues.append(
+                        _error(
+                            ConfigurationIssueCode.DEPENDENCY_CYCLE,
+                            "A same-host DHCP service dependency cannot complete "
+                            "before the shared process has every pool.",
+                            service.id,
+                        )
+                    )
+                    continue
                 first.depends_on.append(dependency.action_ids[-1])
             first.depends_on = sorted(set(first.depends_on))
 
         try:
+            bind_dhcp_process_start(actions)
             actions = order_dependency_actions(actions)
         except ConfigurationDependencyError as exc:
             code = (
@@ -1457,7 +1506,7 @@ class ServiceCompiler:
         pool = ConfigureServerDhcpPool(
             id=_stable_id("server-dhcp-pool", service_id, pool_name),
             phase=ServicePhase.CONTENT,
-            depends_on=[] if native_binding else [enable.id],
+            depends_on=[],
             interface=interface,
             pool_name=pool_name,
             effective_pool_name="serverPool" if native_binding else "",
@@ -1474,8 +1523,8 @@ class ServiceCompiler:
             excluded_ranges=excluded_ranges,
             **common,
         )
+        enable.depends_on = [pool.id]
         if native_binding:
-            enable.depends_on = [pool.id]
             enable.native_policy = NativeDhcpPoolPolicy(
                 effective_pool_name="serverPool",
                 network=pool.network,
@@ -1507,9 +1556,7 @@ class ServiceCompiler:
                     key=lambda item: item.device_name,
                 ),
             )
-        actions: list[ServiceAction] = (
-            [pool, enable] if native_binding else [enable, pool]
-        )
+        actions: list[ServiceAction] = [pool, enable]
         if requirement.verification_mode in {"configure_only", "state_only"}:
             return actions
         for client_id in client_ids:

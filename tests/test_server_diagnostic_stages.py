@@ -107,8 +107,8 @@ def test_d_dhcp_verifies_the_disabled_pool_before_the_single_enable(stage):
     assert enable["verification"]["observed"]["observed_enabled"] is True
     # Every rewrite the projection made is named, in both stages.
     kinds = {item.split(":")[0] for item in pool["rewrites"]}
-    assert {"dependency_removed", "foundation_removed", "expectation_field"} <= kinds
-    assert any(item.startswith("expectation_rebound") for item in enable["rewrites"])
+    assert {"foundation_removed", "expectation_field", "expectation_rebound"} <= kinds
+    assert any(item.startswith("dependency_removed") for item in enable["rewrites"])
 
 
 def test_d_dhcp_attributes_an_interval_to_its_whole_intervention(stage):

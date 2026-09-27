@@ -350,22 +350,19 @@ def d_dhcp_pool_only_plan(
 ) -> tuple[ServicePlan, tuple[ProjectionRewrite, ...]]:
     """Project E6 to the pool action alone, configured while still disabled.
 
-    Three rewrites are needed, not one, and each is returned explicitly:
+    The projection keeps its source plan identity and records each rewrite:
 
-    1. the compiler makes the pool action depend on the enable action in both
-       lists, so a plan that keeps only the pool would carry a dependency on
-       an action nobody runs;
+    1. a legacy plan may make the pool depend on enable, so any removed edge
+       is explicit; the current compiler already places pool before enable;
     2. the compiled plan's foundational requirements include the two client
        `endpoint_dhcp_mode` actions. The executed E5 of this diagnostic is the
        server's static address alone, so those foundations can never become
        VERIFIED and the applicator would refuse before dispatching anything.
        Only foundations whose configuration action the executed plan actually
        contains survive;
-    3. the direct DHCP server-state expectation the compiler wrote expects
-       `enabled=True`, which is exactly what this stage must not assume. Its
-       expectation is rewritten to `enabled=False` and keeps every other pool
-       field, so the disabled stage verifies the configuration it wrote rather
-       than the transition the next stage makes.
+    3. the direct DHCP server-state expectation now follows process enable and
+       expects `enabled=True`. It is rebound to the retained pool action and
+       rewritten to `enabled=False`, while every other pool field is kept.
 
     Nothing here calls a setter, and no expectation is invented: the fields
     are the compiler's own, with one boolean stated as the stage means it.
@@ -405,6 +402,7 @@ def d_dhcp_pool_only_plan(
         executed=executed,
         projection_id=D_DHCP_POOL_PROJECTION,
         expected_enabled=False,
+        rebind_to=actions[0].id if actions else "",
     )
     return projected, tuple(rewrites) + more
 
@@ -416,15 +414,41 @@ def d_dhcp_enable_only_plan(
 ) -> tuple[ServicePlan, tuple[ProjectionRewrite, ...]]:
     """Project E6 to the enable action alone and verify the transition to true.
 
-    The compiler attaches the DHCP server-state read-back to the pool action,
-    so an enable-only projection would carry no product verification at all.
-    The expectation is therefore rebound to the enable action with
-    `enabled=True`: the same reader, the same fields, asserting exactly the
-    transition this stage makes. The rebinding is returned as the rewrite it
-    is; it is never presented as what the compiler wrote.
+    The pool was applied in the preceding diagnostic stage, so this projection
+    removes its action dependency and records that rewrite. The current
+    compiler attaches the DHCP server-state read-back to the enable action,
+    so this projection retains that reader and its `enabled=True` assertion.
+    Legacy source plans that attached it to the pool still record a rebinding.
     """
-    actions = [item for item in plan.actions if isinstance(item, EnableServerDhcp)]
-    return _projected_service_plan(
+    pool_ids = {
+        item.id for item in plan.actions if isinstance(item, ConfigureServerDhcpPool)
+    }
+    actions = []
+    rewrites: list[ProjectionRewrite] = []
+    for item in plan.actions:
+        if not isinstance(item, EnableServerDhcp):
+            continue
+        removed = pool_ids & (set(item.depends_on) | set(item.apply_dependencies))
+        rewrites.extend(
+            ProjectionRewrite("dependency_removed", value, f"of:{item.id}")
+            for value in sorted(removed)
+        )
+        actions.append(
+            item.model_copy(
+                update={
+                    "depends_on": [
+                        value for value in item.depends_on if value not in pool_ids
+                    ],
+                    "apply_dependencies": [
+                        value
+                        for value in item.apply_dependencies
+                        if value not in pool_ids
+                    ],
+                },
+                deep=True,
+            )
+        )
+    projected, more = _projected_service_plan(
         plan,
         actions,
         executed=frozenset(executed_configuration_action_ids),
@@ -432,6 +456,7 @@ def d_dhcp_enable_only_plan(
         expected_enabled=True,
         rebind_to=actions[0].id if actions else "",
     )
+    return projected, tuple(rewrites) + more
 
 
 def _projected_prerequisites(
@@ -766,20 +791,20 @@ POOL_BEFORE_ENABLE = "pool-configured-before-enable"
 _D_DHCP_SEAMS = (
     DiagnosticSeam(
         id=POOL_BEFORE_ENABLE,
-        contract="ServicePlan.ConfigureServerDhcpPool.depends_on/apply_dependencies",
+        contract="ServicePlan.EnableServerDhcp.depends_on/apply_dependencies",
         current=(
-            "the compiled Q3 plan makes the pool action depend on the enable "
-            "action in both lists, so the pool cannot be configured while the "
-            "process stays disabled"
+            "the compiled Q3 plan orders the pool before process enable; "
+            "the diagnostic still separates those effects and verifies the "
+            "disabled pool state before activation"
         ),
         required=(
             "configure only the intended pool with the process still disabled, "
             "so a default transition can be attributed to the pool write alone"
         ),
         minimal_extension=(
-            "`d_dhcp_pool_only_plan` drops the enable action and returns the "
-            "exact dependency ids it removed; the setters are the product's, "
-            "never copied, and the step stays blocked until this is approved"
+            "the pool-only and enable-only projections return every removed "
+            "dependency and retain the product setters; the diagnostic step "
+            "stays blocked until its own seam is approved"
         ),
     ),
 )
@@ -874,17 +899,16 @@ _D_DHCP_STEPS = (
         id="D3-a",
         effect=DiagnosticEffect.ACTIVATE,
         targets=(f"{Q3_SERVER}:EnableServerDhcp",),
-        # Two operations: the enable dispatch and the DHCP server-state
-        # read-back the projection rebinds to it. The compiler attaches that
-        # read-back to the pool action, so an enable-only projection that
-        # dropped it would activate a process and verify nothing.
+        # Two operations: the enable dispatch and its DHCP server-state
+        # read-back. The projection records removal of the already applied
+        # pool dependency, then retains the compiled enabled-state read.
         purpose="d-dhcp:e6:enable_only",
         retains=(
             "dispatch",
             "result",
             "postcondition",
             "read_back",
-            "expectation_rebound",
+            "dependency_removed",
         ),
         operations=2,
         separately_authorized=True,

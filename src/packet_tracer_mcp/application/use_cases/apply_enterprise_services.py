@@ -99,6 +99,7 @@ from ...domain.enterprise.models.service_entry import (
 from ...domain.enterprise.models.service_plan import (
     ClientOperationCapability,
     ConfigureServerDhcpPool,
+    EnableServerDhcp,
     ServiceCapabilityRecords,
     ServiceDefinition,
     ServicePlan,
@@ -134,6 +135,9 @@ from ...domain.enterprise.services.service_capability_resolution import (
     provenance_by_key,
     resolve_action_capability,
     resolve_verification_capability,
+)
+from ...domain.enterprise.services.service_compiler import (
+    bind_dhcp_process_start,
 )
 from ...domain.enterprise.services.service_path_closure import (
     PathKind,
@@ -2542,6 +2546,30 @@ def _plan_for(
         if action.service_id in keep:
             actions.append(action)
     action_ids = {action.id for action in actions}
+    for index, action in enumerate(actions):
+        if not isinstance(action, (ConfigureServerDhcpPool, EnableServerDhcp)):
+            continue
+        omitted_pools = {
+            identifier
+            for identifier in {*action.depends_on, *action.apply_dependencies}
+            if identifier not in action_ids
+            and isinstance(source_actions.get(identifier), ConfigureServerDhcpPool)
+            and source_actions[identifier].host_device_id == action.host_device_id
+        }
+        actions[index] = action.model_copy(
+            update={
+                "depends_on": [
+                    value for value in action.depends_on if value not in omitted_pools
+                ],
+                "apply_dependencies": [
+                    value
+                    for value in action.apply_dependencies
+                    if value not in omitted_pools
+                ],
+            },
+            deep=True,
+        )
+    bind_dhcp_process_start(actions)
     devices = {item.host_device_id for item in services} | {
         client_id for item in services for client_id in item.client_device_ids
     }

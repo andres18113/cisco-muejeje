@@ -302,6 +302,16 @@ DHCP service uses `configure_only` so no explicit acquisition is dispatched.
 Keep both segments, site roles and pool policy as engineering fixture
 choices, not recovered Final-Muejeje facts.
 
+The offline composition is reproducible from global address space
+`10.72.0.0/16`, explicit HQ/BR1 site blocks `10.72.0.0/19` and
+`10.72.32.0/19`, and explicit servers/data segments `10.72.0.0/29` and
+`10.72.32.0/29` with `.1` gateways. HQ has one static `dns_server` role;
+BR1 has one DHCP-mode `user_pc`. Its DHCP service selects the HQ server and
+BR1 PC, `BR1_DATA`, `max_users=2`, `start_offset=1`, DNS `10.72.0.2`, and
+`configure_only`. A fresh offline recomposition produced six devices, five
+links, 19 E5 actions, two E6 actions, and zero issues. These constructed
+values still need an exact hash-bound contract and stage before e3.
+
 Before PC DHCP mode, require a fresh disabled Server-PT/default-pool baseline,
 static server and switching results, exact client-facing `ip helper-address`
 readback, operational forward and return route/interface readiness, and a
@@ -322,3 +332,35 @@ derived from the two access groups, two-router routed gate, E5/E6 calls,
 repeated reads and six-device cleanup, then verified in an offline worst-case
 test before a prospective e3 opening. The generic multi-pool E6 ordering
 correction remains a separate product change with its own regression.
+
+## Generic E6 process ordering correction (2026-09-27)
+
+The real two-segment composition demonstrated that a generic named pool
+depended on `EnableServerDhcp`. A new regression failed on that edge before
+the correction. The compiler now gives each pool no enable prerequisite and
+chains the pools on each Server-PT in stable order. Each enable retains its
+own-pool dependency and waits for the last pool in that host's chain. The
+dependency sorter and applicator use the resulting `depends_on` and
+`apply_dependencies` closure, with linear edge count. Other hosts remain
+separate.
+
+Review exposed two boundary cases in that graph. A9 can exclude an optional
+DHCP service after E6 compilation. Its projection must discard only the
+compiler's pool barrier edges to omitted physical pools, then reconnect the
+same host's surviving pools before enable; explicit dependencies still refuse
+when their required service is absent. A same-host DHCP service cannot depend
+on completion of another same-host DHCP service: the latter's process enable
+must wait for every pool, so that request is a typed dependency-cycle refusal
+before any effect. Focused real-composition regressions cover both cases.
+
+The private D-DHCP pool-only projection now rebinds its direct server-state
+readback from enable to the retained pool action, with an explicit rewrite.
+Its later enable-only projection records the removal of pool dependencies
+that the preceding diagnostic stage already applied. This preserves disabled
+pool readback and a verified enable transition in staged diagnostics. The
+current diagnostic seam description reflects the compiler's new source
+order; historical evidence remains unchanged.
+
+This fixes compiled action ordering only. Episode 2 already tested pool-first
+startup and still observed a physical `serverPool` lease. Named-pool service,
+relay selection, simultaneous capacity, and public admission remain unknown.
