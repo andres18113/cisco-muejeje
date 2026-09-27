@@ -201,6 +201,7 @@ const unregisterCalls = [];
 const clients = {};
 const dhcpRuns = [];
 const backgroundAcquisitions = [];
+const dhcpTimeline = [];
 const staticAddresses = [];
 const ipToInt = (value) => String(value).split('.').reduce(
   (total, part) => (total * 256) + Number(part), 0);
@@ -466,6 +467,7 @@ const dhcpServerProcess = (dev) => {
     isEnable: () => state.enabled,
     setEnable: (value) => {
       dhcpSetterCalls.setEnable++;
+      dhcpTimeline.push({effect: 'setEnable', value: !!value});
       state.enabled = !!value;
       if (value && config.dhcp_retry_on_server_enable) {
         for (const client of devices.filter((item) => item.model === 'PC-PT')) {
@@ -513,6 +515,8 @@ const dhcpServerProcess = (dev) => {
     },
     addPool: (name) => {
       dhcpSetterCalls.addPool++;
+      dhcpTimeline.push({effect: 'addPool', pool: String(name)});
+      if (config.dhcp_add_pool_throws) { throw new Error('pool setup failed'); }
       state.pools[String(name)] = {name: String(name), network: '', mask: '',
         gateway: '', dns: '', start: '', end: '', max: 0, leases: []};
     },
@@ -936,7 +940,10 @@ global.configurePcIp = (name, dhcp, ip, mask, gateway, dns, iface) => {
   const port = findPort(String(name), String(iface || 'FastEthernet0'));
   if (!port) { return false; }
   const dev = findDevice(String(name));
-  if (dhcp) { dhcpSetterCalls.configurePcIpDhcp++; }
+  if (dhcp) {
+    dhcpSetterCalls.configurePcIpDhcp++;
+    dhcpTimeline.push({effect: 'clientMode', device: String(name)});
+  }
   port.dhcpMode = !!dhcp;
   if (ip && mask) {
     port.ip = String(ip); port.mask = String(mask);
@@ -1036,6 +1043,7 @@ const snapshot = () => {
     dhcp_servers: dhcpServers,
     dhcp_runs: dhcpRuns.slice(),
     background_acquisitions: backgroundAcquisitions.slice(),
+    dhcp_timeline: dhcpTimeline.slice(),
     static_addresses: staticAddresses.slice(),
     dhcp_setter_calls: Object.assign({}, dhcpSetterCalls),
     terminal_commands: terminalCommands.slice(),

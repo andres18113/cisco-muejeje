@@ -1611,11 +1611,12 @@ SP2_STAGES = (QualificationStage.SP2_NATIVE_POOL,)
 
 
 def _sp2_native_pool() -> StageDefinition:
-    """Discriminate named and native-default physical serving in an owned lab.
+    """Discriminate pool serving after disabled pool-first setup in an owned lab.
 
-    The first hypothesis uses the existing bounded two-client Q3-FL probe
-    sequence; its additional assessment requires physical lease identities.
-    It is not generalized capacity or relay acceptance.
+    Version 2 keeps the owned fixture and bounded readers but observes a
+    disabled-process pool setup before putting one PC into DHCP mode. A second
+    PC is conditional on the first client's stable physical attribution.
+    This does not turn the diagnostic into product capacity or relay evidence.
     """
     base = _q3_fastloop(QualificationStage.SP2_NATIVE_POOL, 2)
     identity = ExperimentSpec(
@@ -1627,23 +1628,40 @@ def _sp2_native_pool() -> StageDefinition:
         required=True,
         procedure="Q3FL_DHCP",
         planned_operations=0,
-        operational_prerequisites=base.experiment("M-DHCP-6").operational_prerequisites,
+        operational_prerequisites=tuple(
+            item
+            for item in base.experiment("M-DHCP-6").operational_prerequisites
+            if item is not DiagnosticPrecondition.CLIENT_DHCP_MODE
+        ),
         capabilities=("server.dhcp_lease_table", "client.dhcp_mac_reader"),
     )
     core = replace(
         base.steps[0],
-        also_experiments=(*base.steps[0].also_experiments, identity.id),
+        also_experiments=("M-DHCP-2", identity.id),
+    )
+    table = replace(
+        base.experiment("M-DHCP-2"),
+        operational_prerequisites=tuple(
+            item
+            for item in base.experiment("M-DHCP-2").operational_prerequisites
+            if item is not DiagnosticPrecondition.CLIENT_DHCP_MODE
+        ),
     )
     return replace(
         base,
         purpose=(
-            "Measure whether two owned clients are physically served by the "
-            "configured named pool or by native serverPool."
+            "Measure the first owned client's physical serving pool after "
+            "pool-first startup, and a second only after stable attribution."
         ),
-        experiments=(*base.experiments[:-1], identity, base.experiments[-1]),
+        experiments=(
+            base.experiment("M-DHCP-1"),
+            table,
+            identity,
+            base.experiment("M-DHCP-1-FINAL"),
+        ),
         profile_id="SP2-NATIVE-POOL",
-        profile_version="1",
-        steps=(core, *base.steps[1:]),
+        profile_version="2",
+        steps=(core, base.steps[-1]),
     )
 
 

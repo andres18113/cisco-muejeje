@@ -90,9 +90,10 @@ def run_stage(tmp_path):
         directory.mkdir()
         engine = NodeEngine(directory, **{**BASE, **(config or {})})
         engines.append(engine)
-        transport = NodeEngineTransport(engine)
-        boundaries = simulated_boundaries(directory, transport, **overrides)
         steps = overrides.pop("steps", None)
+        lose = overrides.pop("lose", None)
+        transport = NodeEngineTransport(engine, lose=lose)
+        boundaries = simulated_boundaries(directory, transport, **overrides)
         request = _request(request_args(stage) + authorization_args(stage, steps=steps))
         definition = stage_definition(stage)
         result = qualify_server_services(

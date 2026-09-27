@@ -211,3 +211,37 @@ passed 8,444 with 6 skipped. Exact-SHA CI run `36340608026` passed quality,
 docs, both Ubuntu jobs and Windows Python 3.13; Windows Python 3.11 is being
 rerun after a timed simulated SP-1 fault test reported `group_deadline_reached`
 instead of its expected down-interface cause on its first attempt.
+
+## Episode 2 design delta (2026-09-27)
+
+Episode 1 enabled both PCs' DHCP modes before writing the named pool. This is
+an observed ordering confound, not an established cause of default serving.
+Episode 2 changes that one causal condition on the same owned four-device
+fixture: keep both PCs unbound while applying static server addressing and
+observing forwarding; read the disabled physical `serverPool` baseline; write
+and verify the named pool while the process is disabled; read both physical
+pool configurations and bounded indexed lease windows; enable and read the
+DHCP process; then enable PC1 only. Record its DHCP mode, IPv4, mask, gateway,
+resolver, MAC and both physical lease windows in two separated samples. Enable
+PC2 only if PC1 has two stable, usable binding samples, an exact named-pool
+IP/MAC row in both, and a complete bounded default-pool window with no
+observed competing row or identity conflict. This is a bounded probe-expansion
+gate; an uncalibrated default-pool absence still withholds exclusive named-pool
+support. Otherwise stop the client expansion
+and retain the negative or unknown finding. No explicit `dhcpRun` is needed
+for this startup-order probe. An unreadable binding or table end stays
+unknown. A throwing or incomplete pre-client lease window may still permit
+PC1 as an investigative sample, but it blocks PC2 and caps any apparent
+positive at `INCONCLUSIVE`; a physical default row remains a negative finding
+without a proven causal acquisition. Use a new versioned profile,
+clean source commit/tree, prospective bounded episode, owned process and
+mailbox preflight, protected cleanup and immutable archive.
+
+Separately, code review found that generic E6 compiles `EnableServerDhcp`
+before its named `ConfigureServerDhcpPool`. For multiple pools, changing each
+service's local edge alone would still allow one process enable before all
+pools are ready, because the dependency sort favors the enable phase. Correct
+that product ordering with a failing multi-pool regression and a process-wide
+pool-before-enable barrier after the native startup question is measured.
+This remains a candidate causal correction; neither e1 nor offline tests prove
+native named-pool or relay support.

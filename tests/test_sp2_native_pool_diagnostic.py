@@ -38,8 +38,13 @@ from packet_tracer_mcp.domain.enterprise.services.dhcp_lease_evidence import (
     assess_lease_calibration,
     classify_lease_scan,
 )
+from packet_tracer_mcp.domain.enterprise.services.service_qualification_evidence import (
+    Assessment,
+)
 from packet_tracer_mcp.domain.enterprise.services.sp2_pool_diagnostic import (
     assess_sp2_pool_identity,
+    cap_sp2_pool_identity,
+    sp2_client_progression,
 )
 from tests.service_qualification_engine import (
     SIM_SHA,
@@ -252,14 +257,18 @@ def test_sp2_campaign_and_stage_are_new_and_finitely_bounded():
     definition = stage_definition(QualificationStage.SP2_NATIVE_POOL.value)
     assert definition is not None and definition.executable
     assert definition.profile_id == "SP2-NATIVE-POOL"
+    assert definition.profile_version == "2"
     assert definition.dhcp_pool_capacity == 2
     assert "M-SP2-POOL-IDENTITY" in definition.experiments_of_steps(("Q3FL-core",))
     assert definition.planned_minimum_operations <= definition.budget.max_operations
 
 
 def test_sp2_stage_records_named_pool_service_from_stateful_scripts(run_stage):
-    """Generated scripts retain named rows while default absence stays unknown."""
-    run = run_stage("SP2-NATIVE-POOL", {"dhcp_pool_selection": "intended"})
+    """Autonomous named rows do not turn default absence into support."""
+    run = run_stage(
+        "SP2-NATIVE-POOL",
+        {"dhcp_pool_selection": "intended", "dhcp_mode_acquires": True},
+    )
 
     result = run.measurement("M-SP2-POOL-IDENTITY")
     assert result.conclusion is MeasurementConclusion.INCONCLUSIVE
@@ -268,17 +277,290 @@ def test_sp2_stage_records_named_pool_service_from_stateful_scripts(run_stage):
         item["named_row"] == "exact_ip_mac_row"
         for item in result.facts["clients"].values()
     )
-    assert len(run.snapshot["dhcp_runs"]) == 2
+    assert run.snapshot["dhcp_runs"] == []
+    assert [item["device"] for item in run.snapshot["background_acquisitions"]] == [
+        "__MCP_E6Q_PC1",
+        "__MCP_E6Q_PC2",
+    ]
+    assert [item["effect"] for item in run.snapshot["dhcp_timeline"]] == [
+        "addPool",
+        "setEnable",
+        "clientMode",
+        "clientMode",
+    ]
+    server_scans = {
+        row["label"]: row["pools"] for row in run.measurement("M-DHCP-1").facts["scans"]
+    }
+    assert {"before_pool_setup", "after_pool_setup", "after_enable_setup"} <= set(
+        server_scans
+    )
+    assert server_scans["before_pool_setup"]["serverPool"]["observed"] is True
+    assert server_scans["after_pool_setup"]["MCP_E6Q_DHCP"]["observed"] is True
+    assert [item["label"] for item in result.facts["samples"]] == [
+        "sample:__MCP_E6Q_PC1:1",
+        "sample:__MCP_E6Q_PC1:2",
+        "sample:__MCP_E6Q_PC2:1",
+        "sample:__MCP_E6Q_PC2:2",
+    ]
+    assert result.facts["progression"]["__MCP_E6Q_PC1"]["admitted"] is True
+    assert [row["client"] for row in result.facts["preclient_scans"]] == [
+        "__MCP_E6Q_PC1",
+        "__MCP_E6Q_PC2",
+    ]
+    assert (
+        result.facts["preclient_scans"][1]["first_client_recheck"]["admitted"] is True
+    )
+    assert [row["clients"] for row in result.facts["mode_effects"]] == [
+        ["__MCP_E6Q_PC1"],
+        ["__MCP_E6Q_PC2"],
+    ]
+    assert {item.experiment_id for item in run.record.measurements} == {
+        "M-DHCP-1",
+        "M-DHCP-2",
+        "M-SP2-POOL-IDENTITY",
+        "M-DHCP-1-FINAL",
+    }
+    assert run.record.budget.used_operations <= 440
+    assert run.result.outcome.value == "completed"
     assert run.record.restoration_proven is True
 
 
 def test_sp2_stage_reports_native_pool_service_as_negative(run_stage):
     """The same two-client fixture records a competing native-pool result."""
-    run = run_stage("SP2-NATIVE-POOL", {"dhcp_pool_selection": "default"})
+    run = run_stage(
+        "SP2-NATIVE-POOL",
+        {"dhcp_pool_selection": "default", "dhcp_mode_acquires": True},
+    )
 
     result = run.measurement("M-SP2-POOL-IDENTITY")
     assert result.conclusion is MeasurementConclusion.NEGATIVE_OBSERVED
     assert any("served_by_native_default" in cause for cause in result.causes)
+    assert result.facts["progression"]["__MCP_E6Q_PC1"]["admitted"] is False
+    assert run.result.outcome.value == "completed"
+
+
+def test_sp2_pool_setup_precedes_one_client_and_stops_on_default_row(run_stage):
+    """The second native question isolates startup order before client mode."""
+    run = run_stage(
+        "SP2-NATIVE-POOL",
+        {"dhcp_pool_selection": "default", "dhcp_mode_acquires": True},
+    )
+
+    timeline = run.snapshot["dhcp_timeline"]
+    assert [item["effect"] for item in timeline] == [
+        "addPool",
+        "setEnable",
+        "clientMode",
+    ], (run.record.primary_failure, run.record.measurements)
+    assert timeline[-1]["device"] == "__MCP_E6Q_PC1"
+    assert run.snapshot["dhcp_runs"] == []
+    assert [item["device"] for item in run.snapshot["background_acquisitions"]] == [
+        "__MCP_E6Q_PC1"
+    ]
+    result = run.measurement("M-SP2-POOL-IDENTITY")
+    assert result.conclusion is MeasurementConclusion.NEGATIVE_OBSERVED
+    assert any("served_by_native_default" in cause for cause in result.causes)
+
+
+def test_sp2_progression_requires_stable_named_identity_and_usable_binding():
+    """An incomplete default table does not erase a competing observed row."""
+    first = ClientReading(
+        "pc1", True, True, "0001.C75E.D477", "192.0.2.100", "255.255.255.0"
+    )
+    second = ClientReading(
+        "pc1", True, True, "00:01:c7:5e:d4:77", "192.0.2.100", "255.255.255.0"
+    )
+    named = _scan(
+        "named", LeaseRow(0, "192.0.2.100", "0001.C75E.D477", 3600.0, "FastEthernet0")
+    )
+    default = _scan("serverPool")
+    binding = {
+        "device": "pc1",
+        "found": True,
+        "port_found": True,
+        "ipv4": "192.0.2.100",
+        "netmask": "255.255.255.0",
+        "error": "",
+        "dns_api": True,
+        "dns_server": "192.0.2.10",
+        "dns_error": "",
+        "gateway_reads": [
+            {"api": True, "value": "192.0.2.1", "error": ""},
+        ],
+    }
+    permitted, causes = sp2_client_progression(
+        (first, second),
+        (binding, binding),
+        (named, named),
+        (default, default),
+        named_range=AddressRange("192.0.2.100", "192.0.2.101"),
+        expected_mask="255.255.255.0",
+        expected_gateway="192.0.2.1",
+        expected_dns="192.0.2.10",
+    )
+    assert permitted and not causes
+
+    competing = _scan(
+        "serverPool",
+        LeaseRow(0, "192.0.2.100", "0001.C75E.D477", 3600.0, "FastEthernet0"),
+    )
+    permitted, causes = sp2_client_progression(
+        (first, second),
+        (binding, binding),
+        (named, named),
+        (default, competing),
+        named_range=AddressRange("192.0.2.100", "192.0.2.101"),
+        expected_mask="255.255.255.0",
+        expected_gateway="192.0.2.1",
+        expected_dns="192.0.2.10",
+    )
+    assert not permitted and "competing_default_row" in causes
+
+    conflicting_binding = {
+        **binding,
+        "gateway_reads": [
+            {"api": True, "value": "192.0.2.1", "error": ""},
+            {"api": True, "value": "192.0.2.254", "error": ""},
+        ],
+    }
+    permitted, causes = sp2_client_progression(
+        (first, second),
+        (binding, conflicting_binding),
+        (named, named),
+        (default, default),
+        named_range=AddressRange("192.0.2.100", "192.0.2.101"),
+        expected_mask="255.255.255.0",
+        expected_gateway="192.0.2.1",
+        expected_dns="192.0.2.10",
+    )
+    assert not permitted and "sample_2:gateway_or_resolver_unusable" in causes
+
+    incomplete_default = LeaseScan("serverPool", True, termination="throw")
+    permitted, causes = sp2_client_progression(
+        (first, second),
+        (binding, binding),
+        (named, named),
+        (default, incomplete_default),
+        named_range=AddressRange("192.0.2.100", "192.0.2.101"),
+        expected_mask="255.255.255.0",
+        expected_gateway="192.0.2.1",
+        expected_dns="192.0.2.10",
+    )
+    assert not permitted and "sample_2:default_scan_incomplete" in causes
+
+    permitted, causes = sp2_client_progression(
+        (first, second),
+        (binding, binding),
+        (named, named),
+        (default, default),
+        named_range=AddressRange("192.0.2.100", "192.0.2.101"),
+        expected_mask="255.255.255.0",
+        expected_gateway="192.0.2.1",
+        expected_dns="192.0.2.10",
+        preclient_complete=False,
+    )
+    assert not permitted and "preclient_lease_absence_not_fully_observed" in causes
+
+
+def test_sp2_positive_pool_result_requires_both_complete_progressions():
+    """A clean final row cannot erase an earlier failed client sample."""
+    result = cap_sp2_pool_identity(
+        Assessment(MeasurementConclusion.SUPPORTED_IN_SAMPLE),
+        {
+            "pc1": {"admitted": True},
+            "pc2": {
+                "admitted": False,
+                "causes": ["sample_1:gateway_or_resolver_unusable"],
+            },
+        },
+        ("pc1", "pc2"),
+    )
+    assert result.conclusion is MeasurementConclusion.INCONCLUSIVE
+    assert "pc2:sample_1:gateway_or_resolver_unusable" in result.causes
+
+    conflict = cap_sp2_pool_identity(
+        Assessment(MeasurementConclusion.SUPPORTED_IN_SAMPLE),
+        {"pc1": {"admitted": False, "causes": ["competing_default_row"]}},
+        ("pc1",),
+    )
+    assert conflict.conclusion is MeasurementConclusion.CONTRADICTED
+
+    uncertain_baseline = cap_sp2_pool_identity(
+        Assessment(MeasurementConclusion.SUPPORTED_IN_SAMPLE),
+        {"pc1": {"admitted": True}},
+        ("pc1",),
+        preclient_complete=False,
+    )
+    assert uncertain_baseline.conclusion is MeasurementConclusion.INCONCLUSIVE
+    assert "preclient_lease_absence_not_fully_observed" in uncertain_baseline.causes
+
+
+def test_sp2_refuses_client_activation_when_pc2_prebinds_on_server_enable(run_stage):
+    """An autonomous mode change during setup invalidates the controlled probe."""
+    run = run_stage(
+        "SP2-NATIVE-POOL",
+        {"dhcp_mode_acquires": True, "pc2_mode_on_server_enable": True},
+    )
+
+    assert [item["effect"] for item in run.snapshot["dhcp_timeline"]] == [
+        "addPool",
+        "setEnable",
+    ]
+    assert run.record.primary_failure == "sp2_clients_not_unbound_after_enable"
+
+
+def test_sp2_requires_a_physical_default_baseline_before_pool_effect(run_stage):
+    """The discriminator cannot silently replace an absent native pool."""
+    run = run_stage("SP2-NATIVE-POOL", {"dhcp_default_pool": False})
+
+    assert run.snapshot["dhcp_timeline"] == []
+    assert "sp2_native_default_baseline_not_exact" in run.record.primary_failure
+
+
+def test_sp2_pool_effect_failure_blocks_enable_and_client_mode(run_stage):
+    """A failed pool setter never permits a process or client mode effect."""
+    run = run_stage("SP2-NATIVE-POOL", {"dhcp_add_pool_throws": True})
+
+    assert [item["effect"] for item in run.snapshot["dhcp_timeline"]] == ["addPool"]
+    assert run.record.primary_failure
+
+
+def test_sp2_incomplete_preclient_scan_withholds_second_client(run_stage):
+    """A throwing table end allows one probe but cannot unlock expansion."""
+    run = run_stage(
+        "SP2-NATIVE-POOL",
+        {
+            "dhcp_pool_selection": "intended",
+            "dhcp_mode_acquires": True,
+            "dhcp_table_end": "throw",
+        },
+    )
+
+    assert [item["effect"] for item in run.snapshot["dhcp_timeline"]] == [
+        "addPool",
+        "setEnable",
+        "clientMode",
+    ]
+    identity = run.measurement("M-SP2-POOL-IDENTITY")
+    assert identity.conclusion is MeasurementConclusion.INCONCLUSIVE
+    assert (
+        "preclient_lease_absence_not_fully_observed"
+        in identity.facts["progression"]["__MCP_E6Q_PC1"]["causes"]
+    )
+
+
+def test_sp2_lost_pool_response_quarantines_later_effects(run_stage):
+    """A setter may run despite a lost response; no next mutation is admitted."""
+    control = run_stage("SP2-NATIVE-POOL", {"dhcp_mode_acquires": True})
+    pool_call = next(
+        index
+        for index, (_kind, script) in enumerate(control.transport.calls, start=1)
+        if ".addPool(" in script
+    )
+    lost = run_stage("SP2-NATIVE-POOL", {"dhcp_mode_acquires": True}, lose={pool_call})
+
+    assert [item["effect"] for item in lost.snapshot["dhcp_timeline"]] == ["addPool"]
+    assert "outcome_unknown" in lost.record.primary_failure
 
 
 def test_campaign_identity_cannot_borrow_sp1_or_prior_dhcp_authority():

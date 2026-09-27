@@ -8,6 +8,7 @@ from ..models.service_qualification import MeasurementConclusion
 from .dhcp_lease_evidence import (
     ROW_EXACT,
     ROW_MAC_ELSEWHERE,
+    ROW_REPEATED,
     ROW_REPRESENTATION,
     ROW_WRONG_MAC,
     TERMINATION_REPEAT,
@@ -20,6 +21,144 @@ from .dhcp_lease_evidence import (
     row_status,
 )
 from .service_qualification_evidence import Assessment
+
+
+def cap_sp2_pool_identity(
+    assessment: Assessment,
+    progression: Mapping[str, Mapping[str, object]],
+    selected: Sequence[str],
+    *,
+    preclient_complete: bool = True,
+) -> Assessment:
+    """Preserve earlier sample failures when the latest physical row is good."""
+    failed = [
+        name
+        for name in selected
+        if progression.get(name, {}).get("admitted") is not True
+    ]
+    for name, decision in progression.items():
+        if decision.get("admitted") is True:
+            continue
+        causes = decision.get("causes")
+        if isinstance(causes, list | tuple):
+            assessment.causes.extend(
+                f"{name}:{cause}" for cause in causes if isinstance(cause, str)
+            )
+    if assessment.conclusion is MeasurementConclusion.SUPPORTED_IN_SAMPLE and failed:
+        conflict = any(
+            cause == "competing_default_row"
+            or cause.endswith("default_identity_conflict")
+            for name in failed
+            for cause in progression.get(name, {}).get("causes", ())
+            if isinstance(cause, str)
+        )
+        assessment.conclusion = (
+            MeasurementConclusion.CONTRADICTED
+            if conflict
+            else MeasurementConclusion.INCONCLUSIVE
+        )
+        assessment.causes.extend(
+            f"two_sample_progression_unmet:{name}" for name in failed
+        )
+    if not preclient_complete:
+        assessment.limitations.append("preclient_lease_absence_not_fully_observed")
+        if assessment.conclusion is MeasurementConclusion.SUPPORTED_IN_SAMPLE:
+            assessment.conclusion = MeasurementConclusion.INCONCLUSIVE
+            assessment.causes.append("preclient_lease_absence_not_fully_observed")
+    return assessment
+
+
+def sp2_client_progression(
+    readings: Sequence[ClientReading],
+    bindings: Sequence[Mapping[str, object]],
+    named_scans: Sequence[LeaseScan],
+    native_scans: Sequence[LeaseScan],
+    *,
+    named_range: AddressRange,
+    expected_mask: str,
+    expected_gateway: str,
+    expected_dns: str,
+    preclient_complete: bool = True,
+) -> tuple[bool, tuple[str, ...]]:
+    """Admit a second probe client only after two stable first-client samples.
+
+    This is a sampling gate, not exclusive named-pool support. A complete
+    bounded default window can admit another investigative client even when
+    its null end has not been calibrated across empty and nonempty states.
+    """
+    if any(
+        len(items) != 2 for items in (readings, bindings, named_scans, native_scans)
+    ):
+        return False, ("two_samples_required",)
+    first, second = readings
+    causes: list[str] = []
+    if not preclient_complete:
+        causes.append("preclient_lease_absence_not_fully_observed")
+    mac = normalized_mac(first.mac)
+    if (
+        not first.observed
+        or not second.observed
+        or first.client != second.client
+        or first.mode is not True
+        or second.mode is not True
+        or not mac
+        or normalized_mac(second.mac) != mac
+        or first.ipv4 != second.ipv4
+        or first.netmask != second.netmask
+        or not named_range.contains(first.ipv4)
+        or first.netmask != expected_mask
+    ):
+        causes.append("client_binding_unstable_or_outside_policy")
+    positive = frozenset((ROW_EXACT, ROW_REPRESENTATION))
+    conflicts = frozenset((ROW_WRONG_MAC, ROW_MAC_ELSEWHERE, ROW_REPEATED))
+    for index, (binding, named, native, reading) in enumerate(
+        zip(bindings, named_scans, native_scans, readings, strict=True), start=1
+    ):
+        if named.pool != named_scans[0].pool or named.pool == "serverPool":
+            causes.append(f"sample_{index}:named_pool_identity_mismatch")
+        if native.pool != "serverPool":
+            causes.append(f"sample_{index}:default_pool_identity_mismatch")
+        if not named.observed or row_status(named, reading, None) not in positive:
+            causes.append(f"sample_{index}:named_row_not_exact")
+        if not native.observed:
+            causes.append(f"sample_{index}:default_scan_unobserved")
+        else:
+            if not native.clean:
+                causes.append(f"sample_{index}:default_scan_incomplete")
+            default_row = row_status(native, reading, None)
+            if default_row in positive:
+                causes.append("competing_default_row")
+            elif default_row in conflicts:
+                causes.append(f"sample_{index}:default_identity_conflict")
+        gateways = binding.get("gateway_reads")
+        observed_gateways = (
+            [
+                item.get("value")
+                for item in gateways
+                if isinstance(item, Mapping)
+                and item.get("api") is True
+                and item.get("error") == ""
+            ]
+            if isinstance(gateways, list)
+            else []
+        )
+        gateway_ok = bool(observed_gateways) and all(
+            value == expected_gateway for value in observed_gateways
+        )
+        if not (
+            binding.get("device") == reading.client
+            and binding.get("found") is True
+            and binding.get("port_found") is True
+            and binding.get("error") == ""
+            and binding.get("ipv4") == reading.ipv4
+            and binding.get("netmask") == reading.netmask
+            and gateway_ok
+            and binding.get("dns_api") is True
+            and binding.get("dns_error") == ""
+            and binding.get("dns_server") == expected_dns
+        ):
+            causes.append(f"sample_{index}:gateway_or_resolver_unusable")
+    return not causes, tuple(dict.fromkeys(causes))
 
 
 def assess_sp2_pool_identity(
