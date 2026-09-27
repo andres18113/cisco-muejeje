@@ -200,6 +200,40 @@ def test_an_exact_row_never_hides_a_same_ip_row_with_another_mac():
     assert result.served_by != ev.SERVED_INTENDED
 
 
+def test_equivalent_mac_text_attributes_the_intended_pool():
+    """A representation change preserves identity without masking competitors."""
+    intended = _with([_row("192.0.2.100", "00:01:02:03:04:01")])
+    result = _attribute(
+        _reading("pc1", MAC_1),
+        _reading("pc1", MAC_1, "192.0.2.100"),
+        intended,
+        _empty(NATIVE, 512, 4),
+    )
+    assert result.intended_row == ev.ROW_REPRESENTATION
+    assert result.served_by == ev.SERVED_INTENDED
+    assert result.contradictions == ()
+
+
+def test_repeated_lease_rows_are_retained_in_the_index():
+    """A repeated row is contradictory evidence, not a reason to drop it."""
+    row = _row("192.0.2.100", MAC_1)
+    scan = _scan(INTENDED, [_entry(0, row), _entry(1, row), _entry(2)], capacity=2)
+    assert scan.termination == ev.TERMINATION_REPEAT
+    assert [item.index for item in scan.rows] == [0, 1]
+    assert [item.index for item in scan.rows_with_ip("192.0.2.100")] == [0, 1]
+    assert (
+        ev.row_status(scan, _reading("pc1", MAC_1, "192.0.2.100"), None)
+        == ev.ROW_REPEATED
+    )
+
+
+def test_invalid_mac_text_cannot_normalize_into_a_valid_identity():
+    """A stray nonhex character cannot be discarded to create a match."""
+    scan = _with([_row("192.0.2.100", MAC_1 + "g")])
+    assert scan.termination == ev.TERMINATION_MALFORMED
+    assert scan.rows == ()
+
+
 def test_the_throw_text_and_every_raw_entry_are_retained():
     """A getter failure is evidence, kept whole, never a quiet end of table."""
     scan = _scan(INTENDED, [_entry(0, error="Invalid index")])

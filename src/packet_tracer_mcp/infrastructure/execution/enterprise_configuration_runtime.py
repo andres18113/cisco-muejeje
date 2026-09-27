@@ -16,6 +16,7 @@ from ...domain.enterprise.models.configuration import (
     ConfigurationAction,
     ConfigureAccessPort,
     ConfigureDhcpPool,
+    ConfigureDhcpRelay,
     ConfigureEthernetLinkMode,
     ConfigureHostname,
     ConfigureInterfaceBandwidth,
@@ -88,6 +89,7 @@ from .ios_terminal import (
     parse_show_interfaces_trunk,
     parse_show_ip_dhcp_pool,
     parse_show_ip_interface_brief,
+    parse_show_ip_interface_helpers,
     parse_show_ip_route,
     parse_show_spanning_tree,
 )
@@ -119,6 +121,7 @@ _IOS_ACTIONS = (
     ConfigureSvi,
     ConfigureSubinterface,
     ConfigureDhcpPool,
+    ConfigureDhcpRelay,
     ConfigureSerialClock,
     ConfigureInterfaceBandwidth,
     ConfigureEthernetLinkMode,
@@ -2340,6 +2343,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 results.append(self._verify_l3(expectation, ios_cache))
             elif expectation.kind is VerificationKind.STATIC_ROUTE:
                 results.append(self._verify_static_route(expectation, ios_cache))
+            elif expectation.kind is VerificationKind.DHCP_RELAY:
+                results.append(self._verify_dhcp_relay(expectation))
             elif expectation.kind is VerificationKind.SERIAL_CONTROLLER:
                 results.append(self._verify_serial_controller(expectation))
             elif expectation.kind is VerificationKind.ENDPOINT_ADDRESSING:
@@ -3407,6 +3412,83 @@ class PacketTracerEnterpriseConfigurationRuntime:
             fields=fields,
             message=message or ("" if converged else "Trunk convergence timed out."),
             convergence=convergence,
+        )
+
+    def _verify_dhcp_relay(
+        self, expectation: VerificationExpectation
+    ) -> RuntimeVerification:
+        """Require one fresh complete exact-interface helper reading."""
+        interface = str(expectation.expected["interface"])
+        server_address = str(expectation.expected["server_address"])
+        unreadable = FieldVerificationStatus.UNOBSERVABLE
+        try:
+            show = self._ios.execute(
+                expectation.device_name,
+                OperationalQueryId.SHOW_IP_INTERFACE,
+                interface=interface,
+            )
+        except Exception:
+            return RuntimeVerification(
+                expectation_id=expectation.id,
+                status=ActionExecutionStatus.UNOBSERVABLE,
+                evidence_method="fresh_show_ip_interface_helper",
+                fields={"interface": unreadable, "server_address": unreadable},
+                message="relay_read_failed",
+            )
+        attributed = (
+            show.executed
+            and show.fresh_output_observed
+            and show.output_complete
+            and show.observed_device_name == expectation.device_name
+            and show.device_identity_provenance
+            == DeviceIdentityProvenance.CONFIRMED_UNIQUE.value
+        )
+        if not attributed:
+            return RuntimeVerification(
+                expectation_id=expectation.id,
+                status=ActionExecutionStatus.UNOBSERVABLE,
+                evidence_method="fresh_show_ip_interface_helper",
+                fresh_evidence=show.fresh_output_observed,
+                fields={"interface": unreadable, "server_address": unreadable},
+                message="relay_read_not_attributed_complete_fresh",
+            )
+        row = parse_show_ip_interface_helpers(show.output)
+        if row is None:
+            return RuntimeVerification(
+                expectation_id=expectation.id,
+                status=ActionExecutionStatus.UNOBSERVABLE,
+                evidence_method="fresh_show_ip_interface_helper",
+                fresh_evidence=True,
+                fields={"interface": unreadable, "server_address": unreadable},
+                message="relay_helper_unreadable",
+            )
+        matching_interface = self._same_interface(row.interface, interface)
+        matching_helper = row.addresses == (server_address,)
+        fields = {
+            "interface": (
+                FieldVerificationStatus.VERIFIED
+                if matching_interface
+                else FieldVerificationStatus.FAILED
+            ),
+            "server_address": (
+                FieldVerificationStatus.VERIFIED
+                if matching_interface and matching_helper
+                else FieldVerificationStatus.FAILED
+            ),
+        }
+        return RuntimeVerification(
+            expectation_id=expectation.id,
+            status=(
+                ActionExecutionStatus.VERIFIED
+                if matching_interface and matching_helper
+                else ActionExecutionStatus.FAILED
+            ),
+            evidence_method="fresh_show_ip_interface_helper",
+            fresh_evidence=True,
+            fields=fields,
+            message=""
+            if matching_interface and matching_helper
+            else "relay_helper_differs",
         )
 
     def _verify_l3(

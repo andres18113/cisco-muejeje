@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from time import monotonic
 from typing import Protocol
 
@@ -13,8 +13,10 @@ from ...domain.enterprise.models.capabilities import (
 )
 from ...domain.enterprise.models.configuration import (
     ConfigurationAction,
+    ConfigurationPhase,
     ConfigurationPlan,
     ConfigureAccessPort,
+    ConfigureDhcpRelay,
     ConfigureRoutedInterface,
     ConfigureSerialClock,
     ConfigureSubinterface,
@@ -116,6 +118,9 @@ class ConfigurationApplicator:
         retained_action_results: Sequence[ActionApplicationResult] = (),
         retained_deferred_voice_action_ids: Collection[str] = (),
         phase_observer: (Callable[[int, tuple[str, ...]], None] | None) = None,
+        pre_dhcp_readiness: (
+            Callable[[Sequence[SetEndpointDhcp]], Mapping[str, bool]] | None
+        ) = None,
     ) -> ConfigurationApplicationResult:
         """Apply one ConfigurationPlan and return its full typed outcome."""
         started = monotonic()
@@ -423,8 +428,40 @@ class ConfigurationApplicator:
                 ),
             )
         self._capability_refusal_results(refusals, results)
+        relay_actions = {
+            item.id: item
+            for item in plan.actions
+            if isinstance(item, ConfigureDhcpRelay)
+        }
+        needed_relays = {
+            dependency
+            for item in plan.actions
+            if isinstance(item, SetEndpointDhcp) and item.id in mutation_ids
+            for dependency in item.depends_on
+            if dependency in relay_actions
+        }
+        relay_readbacks: dict[str, VerificationResult] = {}
+        relay_statuses: dict[str, ActionExecutionStatus] = {}
+        readiness_verdicts: dict[str, bool] = {}
 
         for phase in sorted({action.phase for action in plan.actions}):
+            if phase is ConfigurationPhase.ENDPOINT_ADDRESSING:
+                dhcp_actions = [
+                    item
+                    for item in plan.actions
+                    if isinstance(item, SetEndpointDhcp)
+                    and item.id in mutation_ids
+                    and item.id not in results
+                ]
+                if dhcp_actions and pre_dhcp_readiness is not None:
+                    try:
+                        observed = pre_dhcp_readiness(tuple(dhcp_actions))
+                        readiness_verdicts = {
+                            item.id: observed.get(item.id) is True
+                            for item in dhcp_actions
+                        }
+                    except Exception:
+                        readiness_verdicts = {item.id: False for item in dhcp_actions}
             ready: list[ConfigurationAction] = []
             for action in (item for item in plan.actions if item.phase == phase):
                 if action.id in results:
@@ -435,6 +472,19 @@ class ConfigurationApplicator:
                     if dependency not in results
                     or not satisfies_apply_dependency(results[dependency].status)
                 ]
+                if isinstance(action, SetEndpointDhcp):
+                    requires_readiness = pre_dhcp_readiness is not None or any(
+                        dependency in needed_relays for dependency in action.depends_on
+                    )
+                    if requires_readiness and not readiness_verdicts.get(action.id):
+                        blocked.append("pre_dhcp_readiness_not_admitted")
+                    blocked.extend(
+                        dependency
+                        for dependency in action.depends_on
+                        if dependency in needed_relays
+                        and relay_statuses.get(dependency)
+                        is not ActionExecutionStatus.VERIFIED
+                    )
                 if blocked:
                     results[action.id] = ActionApplicationResult(
                         action_id=action.id,
@@ -444,20 +494,52 @@ class ConfigurationApplicator:
                     )
                     continue
                 ready.append(action)
-            if not ready:
-                continue
-            results.update(
-                self._apply_ready_actions(
-                    ready,
-                    deployed_names,
-                    data_only_action_ids=deferred_voice_ids,
+            if ready:
+                results.update(
+                    self._apply_ready_actions(
+                        ready,
+                        deployed_names,
+                        data_only_action_ids=deferred_voice_ids,
+                    )
                 )
-            )
-            if phase_observer is not None:
-                phase_observer(
-                    int(phase),
-                    tuple(item.id for item in ready),
+                if phase_observer is not None:
+                    phase_observer(
+                        int(phase),
+                        tuple(item.id for item in ready),
+                    )
+            if phase is ConfigurationPhase.L3_ROUTING and needed_relays:
+                relay_expectations = [
+                    item
+                    for item in plan.verification_expectations
+                    if item.kind is VerificationKind.DHCP_RELAY
+                    and item.action_id in needed_relays
+                ]
+                readable = [
+                    item.model_copy(
+                        update={
+                            "device_name": deployed_names.get(
+                                item.device_id, item.device_name
+                            )
+                        }
+                    )
+                    for item in relay_expectations
+                    if item.action_id in results
+                    and satisfies_apply_dependency(results[item.action_id].status)
+                ]
+                relay_readbacks.update(
+                    {item.expectation_id: item for item in self._verify(plan, readable)}
                 )
+                for item in relay_expectations:
+                    row = relay_readbacks.get(item.id)
+                    if row is None:
+                        row = VerificationResult(
+                            expectation_id=item.id,
+                            action_id=item.action_id,
+                            status=ActionExecutionStatus.DEPENDENCY_BLOCKED,
+                            message="Relay action was not established before DHCP mode.",
+                        )
+                        relay_readbacks[item.id] = row
+                    relay_statuses[item.action_id] = row.status
 
         (
             action_results,
@@ -470,6 +552,7 @@ class ConfigurationApplicator:
             deployed_names,
             defer_voice_signal_until_bootstrap=(defer_voice_signal_until_bootstrap),
             excluded_action_ids=excluded_ids,
+            preverified=relay_readbacks,
         )
         status, failure_code = self._overall_status(
             action_results, verification_results
@@ -970,6 +1053,7 @@ class ConfigurationApplicator:
         *,
         defer_voice_signal_until_bootstrap: bool,
         excluded_action_ids: frozenset[str] = frozenset(),
+        preverified: dict[str, VerificationResult] | None = None,
     ) -> tuple[
         list[ActionApplicationResult],
         list[VerificationResult],
@@ -982,8 +1066,14 @@ class ConfigurationApplicator:
             action_statuses: dict[str, ActionExecutionStatus],
         ) -> dict[str, VerificationResult]:
             ready: list[VerificationExpectation] = []
-            settled: dict[str, VerificationResult] = {}
+            settled: dict[str, VerificationResult] = {
+                item.id: preverified[item.id]
+                for item in expectations
+                if preverified is not None and item.id in preverified
+            }
             for item in expectations:
+                if item.id in settled:
+                    continue
                 if item.action_id in excluded_action_ids:
                     # Its action was never applied by this run, so there
                     # is nothing to read back. Reporting it as anything
@@ -1584,12 +1674,12 @@ class ConfigurationApplicator:
             observed = {
                 item.expectation_id: item for item in self._runtime.verify(expectations)
             }
-        except Exception as exc:
+        except Exception:
             observed = {
                 expectation.id: RuntimeVerification(
                     expectation_id=expectation.id,
-                    status=ActionExecutionStatus.FAILED,
-                    message=str(exc),
+                    status=ActionExecutionStatus.UNOBSERVABLE,
+                    message="Verification reader raised before a correlated observation.",
                 )
                 for expectation in expectations
             }

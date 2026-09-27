@@ -36,7 +36,6 @@ _IPV4 = re.compile(
 )
 #: The dotted MAC text Packet Tracer's port getter returns.
 _MAC_TEXT = re.compile(r"[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}")
-_HEX = re.compile(r"[^0-9a-f]")
 
 #: How one scan ended.
 TERMINATION_NULL = "null"
@@ -61,6 +60,7 @@ STATE_OVER_CAPACITY = "over_capacity"
 
 #: How one client stands in one pool.
 ROW_EXACT = "exact_ip_mac_row"
+ROW_REPEATED = "repeated_ip_mac_row"
 ROW_WRONG_MAC = "same_ip_other_mac"
 ROW_MAC_ELSEWHERE = "mac_on_another_address"
 ROW_WITHOUT_PORT_ADDRESS = "mac_row_while_port_reports_no_address"
@@ -166,8 +166,13 @@ def is_dotted_mac(value: object) -> bool:
 
 
 def normalized_mac(value: str) -> str:
-    """Return a MAC's hex digits only, lower case, for a representation check."""
-    return _HEX.sub("", str(value).lower())
+    """Canonicalize a complete dotted, delimited or bare 48-bit MAC."""
+    raw = str(value).lower()
+    if re.fullmatch(r"[0-9a-f]{4}(\.[0-9a-f]{4}){2}", raw):
+        return raw.replace(".", "")
+    if re.fullmatch(r"[0-9a-f]{2}([:-][0-9a-f]{2}){5}", raw):
+        return raw.replace(":", "").replace("-", "")
+    return raw if re.fullmatch(r"[0-9a-f]{12}", raw) else ""
 
 
 def _group(rows: Iterable[LeaseRow], key) -> dict[str, tuple[LeaseRow, ...]]:
@@ -199,7 +204,11 @@ def _row(index: int, value: Any) -> LeaseRow | None:
     lease = value.get("leaseTime")
     if not isinstance(ip, str) or not _IPV4.fullmatch(ip):
         return None
-    if not isinstance(mac, str) or not mac:
+    if not isinstance(mac, str) or not re.fullmatch(
+        r"(?:[0-9a-fA-F]{4}\.){2}[0-9a-fA-F]{4}|"
+        r"[0-9a-fA-F]{2}(?:[:-][0-9a-fA-F]{2}){5}|[0-9a-fA-F]{12}",
+        mac,
+    ):
         return None
     if not isinstance(port, str) or not port:
         return None
@@ -293,10 +302,10 @@ def classify_lease_scan(entry: object, *, pool_name: str) -> LeaseScan:
         if row is None:
             termination = termination or TERMINATION_MALFORMED
             continue
-        if (row.ip, row.mac) in seen:
+        identity = (row.ip, normalized_mac(row.mac))
+        if identity in seen:
             termination = termination or TERMINATION_REPEAT
-            continue
-        seen.add((row.ip, row.mac))
+        seen.add(identity)
         rows.append(row)
     if not termination:
         termination = TERMINATION_NULL if first_null is not None else TERMINATION_WINDOW
@@ -574,14 +583,16 @@ def row_status(
     """Name how one client stands in one pool, by exact text first."""
     if not scan.observed:
         return ROW_UNOBSERVED
-    if not reading.observed or not reading.mac:
+    own = normalized_mac(reading.mac)
+    if not reading.observed or not own:
         return ROW_UNOBSERVED
     same_ip = scan.rows_with_ip(reading.ipv4) if reading.ipv4 else ()
     # A same-IP row for another MAC contradicts the claim, and it takes
     # precedence even when an exact row is also present.
-    own = normalized_mac(reading.mac)
     if any(normalized_mac(row.mac) != own for row in same_ip):
         return ROW_WRONG_MAC
+    if len(same_ip) > 1:
+        return ROW_REPEATED
     if any(row.mac == reading.mac for row in same_ip):
         return ROW_EXACT
     if same_ip:
@@ -602,8 +613,8 @@ def row_status(
 
 def serving_pool(intended_row: str, native_row: str, addressing: str) -> str:
     """Attribute an address only to the pool that holds its exact row."""
-    intended = intended_row == ROW_EXACT
-    native = native_row == ROW_EXACT
+    intended = intended_row in (ROW_EXACT, ROW_REPRESENTATION)
+    native = native_row in (ROW_EXACT, ROW_REPRESENTATION)
     if intended and native:
         return SERVED_BOTH
     if intended:
@@ -687,7 +698,7 @@ def attribute_client(
     contradictions = [
         f"{name}:{status}"
         for name, status in (("intended", intended_row), ("native", native_row))
-        if status in (ROW_WRONG_MAC, ROW_MAC_ELSEWHERE)
+        if status in (ROW_WRONG_MAC, ROW_MAC_ELSEWHERE, ROW_REPEATED)
     ]
     prior_rows = [
         status

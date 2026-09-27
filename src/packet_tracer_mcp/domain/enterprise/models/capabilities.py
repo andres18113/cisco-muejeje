@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 
 from pydantic import BaseModel, Field
 
@@ -11,13 +11,21 @@ from .evidence import CapabilityReadiness
 from .roles import DeviceRole
 
 
-class CapabilityStatus(str, Enum):
+class CapabilityStatus(StrEnum):
+    """Support state retained with the legacy Enum string representation."""
+
+    __str__ = Enum.__str__
+
     SUPPORTED = "supported"
     UNSUPPORTED = "unsupported"
     UNKNOWN = "unknown"
 
 
-class EvidenceSource(str, Enum):
+class EvidenceSource(StrEnum):
+    """Where one capability claim originated."""
+
+    __str__ = Enum.__str__
+
     CATALOG = "catalog"
     STATIC_OVERRIDE = "static_override"
     PACKET_TRACER_RUNTIME = "packet_tracer_runtime"
@@ -87,6 +95,7 @@ class DeviceCapabilities(BaseModel):
     supports_acl: CapabilityStatus = CapabilityStatus.UNKNOWN
     supports_nat: CapabilityStatus = CapabilityStatus.UNKNOWN
     supports_dhcp_server: CapabilityStatus = CapabilityStatus.UNKNOWN
+    supports_dhcp_relay: CapabilityStatus = CapabilityStatus.UNKNOWN
     supports_voice: CapabilityStatus = CapabilityStatus.UNKNOWN
     supports_cme: CapabilityStatus = CapabilityStatus.UNKNOWN
     supports_poe: CapabilityStatus = CapabilityStatus.UNKNOWN
@@ -106,7 +115,12 @@ class DeviceCapabilities(BaseModel):
     @property
     def access_port_count(self) -> int:
         """Puertos ethernet físicos utilizables conocidos por el catálogo."""
-        return self.ethernet_ports + self.fastethernet_ports + self.gigabit_ports + self.ten_gigabit_ports
+        return (
+            self.ethernet_ports
+            + self.fastethernet_ports
+            + self.gigabit_ports
+            + self.ten_gigabit_ports
+        )
 
     @property
     def uplink_port_count(self) -> int:
@@ -127,19 +141,29 @@ class DeviceRequirement(BaseModel):
     preferred_model: str | None = None
 
 
-class DeviceSelectionStatus(str, Enum):
+class DeviceSelectionStatus(StrEnum):
+    """Outcome of selecting a model for one device requirement."""
+
+    __str__ = Enum.__str__
+
     SUPPORTED = "supported"
     PARTIALLY_SUPPORTED = "partially_supported"
     UNSUPPORTED = "unsupported"
 
 
-class DeviceCandidateStatus(str, Enum):
+class DeviceCandidateStatus(StrEnum):
+    """How one candidate satisfies a device requirement."""
+
+    __str__ = Enum.__str__
+
     COMPATIBLE = "compatible"
     NEEDS_VERIFICATION = "needs_verification"
     INCOMPATIBLE = "incompatible"
 
 
 class DeviceCandidate(BaseModel):
+    """One model candidate and the evidence missing for its selection."""
+
     model: str
     status: DeviceCandidateStatus
     missing_evidence: list[str] = Field(default_factory=list)

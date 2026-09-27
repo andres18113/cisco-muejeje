@@ -508,6 +508,14 @@ class InterfaceStatusRow:
 
 
 @dataclass(frozen=True)
+class DhcpRelayHelperRow:
+    """All helper addresses read on one exact IOS interface."""
+
+    interface: str
+    addresses: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class EphoneStatusRow:
     """One ephone registration row from IOS output."""
 
@@ -960,6 +968,28 @@ def parse_show_ip_interface(value: str) -> InterfaceStatusRow | None:
         state.group("admin").strip(),
         state.group("protocol").strip(),
     )
+
+
+def parse_show_ip_interface_helpers(value: str) -> DhcpRelayHelperRow | None:
+    """Parse complete helper lines; absence of a line is unreadable."""
+    interface = parse_show_ip_interface(value)
+    if interface is None:
+        return None
+    lines = re.findall(
+        r"(?im)^\s*Helper address(?:es)? (?:is|are) (?P<value>[^\n]+?)\s*$",
+        normalize_terminal_output(value),
+    )
+    if not lines:
+        return None
+    if len(lines) == 1 and lines[0].strip().casefold() == "not set":
+        return DhcpRelayHelperRow(interface.interface, ())
+    addresses: list[str] = []
+    for line in lines:
+        try:
+            addresses.append(str(ipaddress.IPv4Address(line.strip())))
+        except ipaddress.AddressValueError:
+            return None
+    return DhcpRelayHelperRow(interface.interface, tuple(addresses))
 
 
 def parse_show_ip_interface_brief(value: str) -> list[InterfaceStatusRow]:

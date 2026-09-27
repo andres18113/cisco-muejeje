@@ -22,6 +22,7 @@ from typing import Any
 from ..models.service_plan import ServiceVerificationKind
 from ..models.verification import PrerequisiteKind, order_verification_expectations
 
+DHCP_SETTLEMENT_PHASE = -1
 COLD_REQUEST_PHASE = 0
 LATER_TRAFFIC_PHASE = 1
 
@@ -51,7 +52,9 @@ def request_phases(expectations: Sequence[Any]) -> dict[str, int]:
     phases: dict[str, int] = {}
     for item in order_verification_expectations(expectations):
         phase = (
-            LATER_TRAFFIC_PHASE
+            DHCP_SETTLEMENT_PHASE
+            if item.kind is ServiceVerificationKind.DHCP_LEASE
+            else LATER_TRAFFIC_PHASE
             if item.kind in LATER_TRAFFIC_KINDS
             else COLD_REQUEST_PHASE
         )

@@ -243,7 +243,6 @@ def derive_service_policy(
             or segment_entry is None
             or segment_entry[0] != site_id
             or host is None
-            or host.site_id != site_id
             or host.model.casefold() != "server-pt"
         ):
             issues.append(
@@ -259,16 +258,12 @@ def derive_service_policy(
             )
             continue
         host_segment = _device_segment(host, enterprise)
-        if host_segment != segment_id:
-            observed_segment = host_segment or "an unresolved segment"
+        if not host_segment:
             issues.append(
                 ConfigurationIssue(
                     severity=ConfigurationIssueSeverity.ERROR,
                     code=ConfigurationIssueCode.DHCP_RELAY_REQUIRED,
-                    message=(
-                        f"DHCP server {host.id!r} is on {observed_segment}, not "
-                        f"delegated segment {segment_id!r}."
-                    ),
+                    message=f"DHCP server {host.id!r} has no resolved segment.",
                     subject=subject,
                 )
             )
@@ -285,8 +280,8 @@ def derive_service_policy(
                     severity=ConfigurationIssueSeverity.ERROR,
                     code=ConfigurationIssueCode.DHCP_RELAY_REQUIRED,
                     message=(
-                        "Delegated DHCP clients are missing or outside the server "
-                        "segment: " + ", ".join(foreign_clients)
+                        "Delegated DHCP clients are missing or outside the declared "
+                        "client segment: " + ", ".join(foreign_clients)
                     ),
                     subject=subject,
                 )

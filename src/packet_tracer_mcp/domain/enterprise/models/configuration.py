@@ -40,6 +40,7 @@ class ConfigurationActionType(StrEnum):
     CONFIGURE_SVI = "configure_svi"
     CONFIGURE_SUBINTERFACE = "configure_subinterface"
     CONFIGURE_DHCP_POOL = "configure_dhcp_pool"
+    CONFIGURE_DHCP_RELAY = "configure_dhcp_relay"
     SET_ENDPOINT_STATIC = "set_endpoint_static"
     SET_ENDPOINT_DHCP = "set_endpoint_dhcp"
     CONFIGURE_SERIAL_CLOCK = "configure_serial_clock"
@@ -360,6 +361,18 @@ class AddressRange(BaseModel):
     end: str
 
 
+class ConfigureDhcpRelay(BaseConfigurationAction):
+    """Forward client-segment DHCP broadcasts to one selected Server-PT."""
+
+    action_type: Literal[ConfigurationActionType.CONFIGURE_DHCP_RELAY] = (
+        ConfigurationActionType.CONFIGURE_DHCP_RELAY
+    )
+    interface: str
+    segment_id: str
+    server_address: str
+    gateway_action_id: str
+
+
 class ConfigureDhcpPool(BaseConfigurationAction):
     """Define one IOS DHCP pool on the segment gateway."""
 
@@ -454,6 +467,7 @@ ConfigurationAction = Annotated[
     | ConfigureSvi
     | ConfigureSubinterface
     | ConfigureDhcpPool
+    | ConfigureDhcpRelay
     | SetEndpointStaticAddress
     | SetEndpointDhcp
     | ConfigureSerialClock
@@ -475,6 +489,7 @@ class VerificationKind(StrEnum):
     TRUNK = "trunk"
     L3_INTERFACE = "l3_interface"
     DHCP_POOL = "dhcp_pool"
+    DHCP_RELAY = "dhcp_relay"
     ENDPOINT_ADDRESSING = "endpoint_addressing"
     ENDPOINT_DHCP_MODE = "endpoint_dhcp_mode"
     SERIAL_CONTROLLER = "serial_controller"

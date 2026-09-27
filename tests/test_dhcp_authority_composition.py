@@ -170,14 +170,29 @@ def test_an_explicit_ios_authority_conflicts_with_service_delegation():
     ]
 
 
-def test_a_server_on_another_segment_is_not_silently_used_as_a_relay():
-    """Refuse same-site cross-segment service instead of inventing relay."""
+def test_remote_server_is_selected_as_authority_before_relay_compilation():
+    """The declared client segment selects Server-PT even when the host is remote."""
     composition = _compose(_dhcp_payload(server_segment="servers"))
 
+    assert composition.service_policy_issues == []
+    assert composition.configuration_policy is not None
+    assert composition.configuration_policy.delegated_dhcp_segment_ids == [SEGMENT_ID]
+    assert composition.configuration_policy.delegated_dhcp_server_device_ids == {
+        SEGMENT_ID: SERVER_ID
+    }
+
+
+def test_remote_server_without_a_client_gateway_is_refused_before_e5():
+    """A selected remote authority cannot invent the client's relay interface."""
+    composition = _compose(_dhcp_payload(server_segment="servers"))
+
+    assert composition.service_policy_issues == []
+    assert composition.configuration is None
     assert composition.services is None
-    assert [item.code for item in composition.service_policy_issues] == [
-        ConfigurationIssueCode.DHCP_RELAY_REQUIRED
-    ]
+    assert any(
+        "lacks a supported router gateway interface" in issue
+        for issue in composition.issues
+    )
 
 
 def test_a_wrong_explicit_server_interface_is_refused():

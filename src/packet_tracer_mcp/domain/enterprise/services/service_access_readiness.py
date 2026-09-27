@@ -476,8 +476,9 @@ def derive_access_readiness_plan(
                     )
                 ),
                 dependents=tuple(items),
+                purpose=key[0],
             )
-            for segments, items in routed_groups.values()
+            for key, (segments, items) in routed_groups.items()
         ),
     )
 
@@ -564,7 +565,12 @@ def _routed_keys(
         )
 
     segments = (client_gateway.segment_id, host_gateway.segment_id)
-    routed_key: GroupKey = ("routed_forwarding", *segments)
+    purpose = (
+        "dhcp_relay_forwarding"
+        if kind is ServiceVerificationKind.DHCP_LEASE and path.client_network
+        else "routed_forwarding"
+    )
+    routed_key: GroupKey = (purpose, *segments)
     bucket = routed_groups.setdefault(routed_key, (segments, []))
     bucket[1].append(
         RoutedDependent(
@@ -575,6 +581,7 @@ def _routed_keys(
             host_device_id=path.host_device_id,
             client_ipv4=path.client_ipv4,
             host_ipv4=path.host_ipv4,
+            client_network=path.client_network,
             client_gateway=GatewayInterfaceExpectation(
                 client_gateway.device_id, client_gateway.interface, client_gateway.ipv4
             ),

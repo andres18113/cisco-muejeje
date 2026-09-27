@@ -585,6 +585,7 @@ const acquire = (dev, port) => {
       leaseTime: 3600, port: port.name};
     if (!existing) { pool.leases.push(row); }
     port.ip = address; port.mask = config.dhcp_client_mask_override || pool.mask;
+    port.gateway = pool.gateway; port.dns = pool.dns;
     port.leaseTime = config.dhcp_lease_time;
     emitDhcp(port, 'dhcpSucceed', {deviceName: dev.name, portName: port.name,
       newip: port.ip, newmask: port.mask});
@@ -628,6 +629,9 @@ const processFor = (dev, name) => {
         if (client && client.id) { delete clients[client.id]; }
       },
     };
+  }
+  if (name === 'HostIpProcess' && dev.model !== '2960-24TT') {
+    return {getDefaultGateway: () => (dev.ports[0] && dev.ports[0].gateway) || '0.0.0.0'};
   }
   if (name === 'DnsClient' && dev.model !== '2960-24TT') {
     return {getServerIp: () => (dev.ports[0] && dev.ports[0].dns) || config.unset_dns};
@@ -938,6 +942,7 @@ global.configurePcIp = (name, dhcp, ip, mask, gateway, dns, iface) => {
     port.ip = String(ip); port.mask = String(mask);
     staticAddresses.push({device: String(name), ip: port.ip});
   }
+  if (gateway) { port.gateway = String(gateway); }
   if (dns) { port.dns = String(dns); }
   if (ip && mask && dev && dev.model === 'Server-PT' && config.default_pool_realigns_on_address) {
     const state = dhcpState(dev);
