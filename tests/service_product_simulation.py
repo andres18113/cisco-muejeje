@@ -132,6 +132,8 @@ class SimulatedProductTransport:
         self.send_payloads: list[str] = []
         self.dispatch_payloads: list[str] = []
         self.addresses: dict[str, tuple[str, str]] = {}
+        #: The resolver each client was configured with, as E5 dispatched it.
+        self.resolvers: dict[str, str] = {}
         self.last_dns_command = ""
         self.page_content = "STALE_WEB_PAGE"
         self.events: list[str] = []
@@ -154,6 +156,8 @@ class SimulatedProductTransport:
             values = json.loads("[" + arguments + "]")
             if values[1] is False:
                 self.addresses[str(values[0])] = (str(values[2]), str(values[3]))
+            if len(values) > 5 and values[5]:
+                self.resolvers[str(values[0])] = str(values[5])
         return True
 
     def send_and_wait(self, script: str, timeout: float) -> str:
@@ -401,6 +405,19 @@ class SimulatedProductTransport:
             self.events.append("http_release")
             return json.dumps(
                 {"found": True, "deleted": True, "present": False, "error": ""}
+            )
+        if 'getProcess("DnsClient")' in script and "api:api,value:v" in script:
+            # The typed resolver read (DnsClient.getServerIp, recorded at
+            # 0850de3): answer what E5 configured, or the unset 0.0.0.0.
+            device = self._json_argument(script, r"getDevice\((\"(?:\\.|[^\"\\])*\")\)")
+            self.events.append(f"resolver_read:{device}")
+            return json.dumps(
+                {
+                    "found": True,
+                    "process": True,
+                    "api": True,
+                    "value": self.resolvers.get(device, "0.0.0.0"),
+                }
             )
         if "var bag=this.__mcpE6HttpClients" in script:
             self.events.append("http_inspect")
