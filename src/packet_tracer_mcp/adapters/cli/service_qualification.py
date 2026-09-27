@@ -69,6 +69,7 @@ from ...application.use_cases.qualify_server_services import (
 from ...application.use_cases.server_pt_campaign import (
     DHCP_AUTONOMY_CAMPAIGN,
     DHCP_FASTLOOP_CAMPAIGN,
+    SP1_ROUTED_CAMPAIGN,
     source_authority_findings,
 )
 from ...application.use_cases.server_pt_campaign_ledger import (
@@ -108,6 +109,7 @@ from ...domain.enterprise.models.service_qualification import (
     Q3_SERVER,
     Q3_SERVER_IPV4,
     Q3_SWITCH,
+    SP1_ROUTED_STAGES,
     ExecutionMode,
     QualificationAuthorization,
     QualificationRecord,
@@ -184,6 +186,7 @@ from ...infrastructure.persistence.service_run_record_store import (
 )
 from ..mcp import service_tools
 from .server_pt_campaign_archive import archive_or_stop, ledger_admit, ledger_result
+from .sp1_routed_qualification import sp1_routed_product_contract
 
 #: Service runtime timings for a qualification fetch; see the module docstring.
 HTTP_TIMEOUT_SECONDS = 8.0
@@ -603,6 +606,15 @@ def fixture_plans(
                     "Native product switch ports lack exact-build evidence."
                 )
             ports[fixture.name] = set(observed.bindable_ports)
+        elif definition.stage in SP1_ROUTED_STAGES:
+            # Exact-build port evidence where the build has it; a model
+            # without any (the 2911) keeps its catalogued ports, which are
+            # the ones the product's own designer bound.
+            observed = backend_verified_port_inventory(
+                fixture.model, backend_version=Q3_PACKET_TRACER_BUILD
+            )
+            if observed.backend_verified:
+                ports[fixture.name] = set(observed.bindable_ports)
         devices.append(
             DevicePlan(
                 id=fixture.name,
@@ -628,7 +640,7 @@ def fixture_plans(
                 port_a=link.port_a,
                 device_b=link.device_b,
                 port_b=link.port_b,
-                cable="straight",
+                cable=link.cable,
             )
         )
     return tuple(devices), tuple(links)
@@ -751,8 +763,38 @@ def _native_product_runtimes(
     )
 
 
-def _native_public_product_entry(governed_root: Path):
-    """Invoke the registered four-input MCP tool on the owned stage channel."""
+#: The fields a registered product result and its stored record must agree
+#: on, compared by value after the record is reloaded.
+_PUBLIC_RECORD_FIELDS = (
+    "run_id",
+    "run_label",
+    "deployment_id",
+    "packet_tracer_version",
+    "transport",
+    "status",
+    "refusal_code",
+    "blocked_reason",
+    "capability_snapshot",
+    "e5_effect_scope",
+    "e5_effect_uncertain",
+    "configuration_result",
+    "foundational_statuses",
+    "service_result",
+    "clients",
+    "services",
+    "releases",
+    "operational_readiness",
+    "dirty_state",
+)
+
+
+def _native_public_product_entry(governed_root: Path, *, dhcp_authority: bool = True):
+    """Invoke the registered four-input MCP tool on the owned stage channel.
+
+    `dhcp_authority` states what a verified record must carry: the native
+    stage's one scoped `serverPool` authority for exactly its clients, or,
+    for a stage whose intent has no DHCP service (SP-1), none at all.
+    """
 
     def invoke(
         bound: LedgeredTransport,
@@ -832,32 +874,29 @@ def _native_public_product_entry(governed_root: Path):
                 raise RuntimeError("registered_public_record_identity_mismatch")
             stored = store.load(result.deployment_id, result.run_id)
             if stored.persisted_stage is not result.persisted_stage:
-                raise RuntimeError("registered_public_record_content_mismatch")
+                raise RuntimeError(
+                    "registered_public_record_content_mismatch:persisted_stage:"
+                    f"{stored.persisted_stage}!={result.persisted_stage}"
+                )
             if not result.persist_error:
-                if (
-                    stored.run_id != result.run_id
-                    or stored.run_label != result.run_label
-                    or stored.deployment_id != result.deployment_id
-                    or stored.packet_tracer_version != result.packet_tracer_version
-                    or stored.transport != result.transport
-                    or stored.status is not result.status
-                    or stored.refusal_code is not result.refusal_code
-                    or stored.blocked_reason != result.blocked_reason
-                    or stored.capability_snapshot != result.capability_snapshot
-                    or stored.e5_effect_scope != result.e5_effect_scope
-                    or stored.e5_effect_uncertain != result.e5_effect_uncertain
-                    or stored.configuration_result != result.configuration_result
-                    or stored.foundational_statuses != result.foundational_statuses
-                    or stored.service_result != result.service_result
-                    or stored.clients != result.clients
-                    or stored.services != result.services
-                    or stored.releases != result.releases
-                    or stored.operational_readiness != result.operational_readiness
-                    or stored.dirty_state is not result.dirty_state
-                    or (bindings and stored.source_tree != bindings[0].source_tree)
-                ):
-                    raise RuntimeError("registered_public_record_content_mismatch")
-                if result.status.value == "verified":
+                # Name every field that differs, so a mismatch is diagnosable
+                # from the qualification record alone.
+                mismatched = [
+                    name
+                    for name in _PUBLIC_RECORD_FIELDS
+                    if getattr(stored, name) != getattr(result, name)
+                ]
+                if bindings and stored.source_tree != bindings[0].source_tree:
+                    mismatched.append("source_tree")
+                if mismatched:
+                    raise RuntimeError(
+                        "registered_public_record_content_mismatch:"
+                        + ",".join(mismatched)
+                    )
+                if result.status.value == "verified" and not dhcp_authority:
+                    if len(bindings) != 1 or stored.dhcp_authorities:
+                        raise RuntimeError("registered_public_authority_mismatch")
+                elif result.status.value == "verified":
                     authorities = stored.dhcp_authorities
                     if (
                         len(bindings) != 1
@@ -886,7 +925,7 @@ def _native_product_record_path(record: QualificationRecord | None) -> str:
     if record is None:
         return ""
     for item in record.measurements:
-        if item.experiment_id == "M-NATIVE-PRODUCT":
+        if item.experiment_id in {"M-NATIVE-PRODUCT", "M-SP1-ROUTED-PRODUCT"}:
             path = item.facts.get("product_record_path")
             return path if isinstance(path, str) else ""
     return ""
@@ -1025,6 +1064,10 @@ def production_boundaries(governed_root: Path) -> QualificationBoundaries:
             PacketTracerEndpointAddressObserver(bound.send_and_wait)
         ),
         native_public_product_entry=_native_public_product_entry(governed_root),
+        sp1_product_contract=sp1_routed_product_contract,
+        sp1_public_product_entry=_native_public_product_entry(
+            governed_root, dhcp_authority=False
+        ),
         native_default_transitions=admitted_native_default_transitions,
         reviewed_native_default_intervention=WHOLE_CONFIGURE_PC_IP,
         forwarding_probe=_forwarding_probe,
@@ -1079,7 +1122,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--attempt-id")
     # Each fixed experimental DHCP stage needs its own campaign authority.
     parser.add_argument(
-        "--campaign", choices=("dhcp-fastloop", "dhcp-autonomy"), default=""
+        "--campaign", choices=("dhcp-fastloop", "dhcp-autonomy", "sp1"), default=""
     )
     parser.add_argument("--charter", default="")
     parser.add_argument("--episode", type=int, default=0)
@@ -1202,8 +1245,9 @@ def main(
         if definition is not None and definition.stage in (
             *Q3_FL_STAGES,
             *Q3_NATIVE_STAGES,
+            *SP1_ROUTED_STAGES,
         ):
-            # Experimental DHCP profiles exist only under campaign authority.
+            # Experimental profiles exist only under campaign authority.
             _print({"outcome": "refused", "reason": "stage_requires_its_campaign"})
             return 2
         result = qualify_server_services(
@@ -1232,6 +1276,7 @@ def main(
 #: the campaign identity.
 DHCP_FASTLOOP_CHARTER_SHA256 = DHCP_FASTLOOP_CAMPAIGN.charter_sha256
 DHCP_AUTONOMY_CHARTER_SHA256 = DHCP_AUTONOMY_CAMPAIGN.charter_sha256
+SP1_ROUTED_CHARTER_SHA256 = SP1_ROUTED_CAMPAIGN.charter_sha256
 _CHARTER_LIMIT = 1024 * 1024
 _ATTEMPT_ID = re.compile(r"[0-9a-f]{32}\Z")
 
@@ -1322,6 +1367,10 @@ def _campaign_main(
         campaign = DHCP_AUTONOMY_CAMPAIGN
         stages = Q3_NATIVE_STAGES
         charter_sha256 = DHCP_AUTONOMY_CHARTER_SHA256
+    elif args.campaign == "sp1":
+        campaign = SP1_ROUTED_CAMPAIGN
+        stages = SP1_ROUTED_STAGES
+        charter_sha256 = SP1_ROUTED_CHARTER_SHA256
     else:
         campaign = DHCP_FASTLOOP_CAMPAIGN
         stages = Q3_FL_STAGES

@@ -441,6 +441,9 @@ def _refused(
     run.record.status = ServiceRunStatus.REFUSED
     run.record.admission = run.trace
     run.record.completed_at = run.now()
+    # The record states the stage the response reports: the write-ahead
+    # ADMISSION record when A6 wrote one, otherwise none.
+    run.record.persisted_stage = run.persisted_stage
     # R-ENTRY-06: a refusal after A2 always tries to leave a record. An
     # unbound one still says a run was asked for and refused, which is a
     # fact worth keeping; if the store cannot take it the response says

@@ -360,6 +360,12 @@ MEASURED_ADMIN_OP_MODES = {
 }
 
 
+#: The most raw text one captured read keeps. A full routing table of the
+#: SP-1 fixture is well under this; a longer answer is kept truncated and says
+#: how long it was.
+CAPTURE_TEXT_LIMIT = 16_000
+
+
 class _BoundedTerminalChannel:
     """Carry a per-sample call budget and the remaining deadline into the I/O.
 
@@ -1687,6 +1693,72 @@ class PacketTracerEnterpriseConfigurationRuntime:
             episode_end_reason=end_reason,
             channel_calls=calls,
         )
+
+    def capture_routed_text(
+        self,
+        devices: Sequence[str],
+        *,
+        sample_calls: int,
+        deadline_seconds: float,
+    ) -> tuple[dict[str, Any], ...]:
+        """Run each router's two routed reads once and keep their raw text.
+
+        The reads are the registered `show ip interface brief` and `show ip
+        route` the routed readiness rule parses, so a capture shows exactly
+        the text that rule saw or would have seen. Evidence for a terminal
+        observation, never an admission input: the
+        text is kept as returned, bounded to `CAPTURE_TEXT_LIMIT` characters,
+        with the provenance the executor reported. Every read has its own
+        call budget through the bounded forwarding channel and the whole
+        capture shares one window. A read that could not start is kept, with
+        why, rather than dropped.
+        """
+        if isinstance(sample_calls, bool) or not isinstance(sample_calls, int):
+            raise ValueError("capture sample_calls must be an int")
+        if sample_calls < 1:
+            raise ValueError("capture sample_calls must be positive")
+        deadline = self._clock() + max(0.0, float(deadline_seconds))
+        rows: list[dict[str, Any]] = []
+        queries = (
+            OperationalQueryId.SHOW_IP_INTERFACE_BRIEF,
+            OperationalQueryId.SHOW_IP_ROUTE,
+        )
+        for name in (str(item) for item in devices):
+            for query in queries:
+                if self._forwarding_channel.stopped or self._clock() >= deadline:
+                    rows.append(
+                        {
+                            "device": name,
+                            "query": query.value,
+                            "executed": False,
+                            "failure_reason": self._forwarding_channel.stop_reason
+                            or "deadline",
+                        }
+                    )
+                    continue
+                self._forwarding_channel.open(calls=sample_calls, deadline=deadline)
+                before = self._forwarding_channel.calls
+                result = self._forwarding_ios.execute(name, query)
+                rows.append(
+                    {
+                        "device": name,
+                        "query": query.value,
+                        "executed": result.executed,
+                        "fresh_output_observed": result.fresh_output_observed,
+                        "output_complete": result.output_complete,
+                        "truncated_by_pager": result.truncated_by_pager,
+                        "observed_device_name": result.observed_device_name,
+                        "device_identity_provenance": (
+                            result.device_identity_provenance
+                        ),
+                        "failure_reason": result.failure_reason,
+                        "channel_calls": self._forwarding_channel.calls - before,
+                        "call_budget_exhausted": self._forwarding_channel.exhausted,
+                        "output": result.output[:CAPTURE_TEXT_LIMIT],
+                        "output_characters": len(result.output),
+                    }
+                )
+        return tuple(rows)
 
     def _simulation_time_text(self) -> str:
         """Report the simulation-time reader, when the composition has one.

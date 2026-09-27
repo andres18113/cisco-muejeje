@@ -299,6 +299,7 @@ _SPECS: dict[str, dict[str, tuple[type, ...]]] = {
         "post_mode": _OPTIONAL_BOOL,
     },
     "dhcp_clients": {"clients": _LIST},
+    "client_bindings": {"clients": _LIST},
     "dhcp_table": {
         "found": _BOOL,
         "process_found": _BOOL,
@@ -1400,6 +1401,36 @@ class PacketTracerQualificationProbes:
             "__error=__er(__x);}__rows.push({device:__name,interface:__if,"
             "found:!!__d,port_found:!!__p,mode:__mode,mode_type:__mt,mac:__mac,"
             "ipv4:__ip,netmask:__mask,lease_time:__lease,error:__error});}"
+            "reportResult(JSON.stringify({clients:__rows}));",
+        )
+
+    def read_client_bindings(self, clients: Sequence[str]) -> ProbeReading:
+        """Read each client's port address and configured gateway and resolver.
+
+        The gateway and resolver come from the same typed getters the
+        product's binding verification reads (`HostIp.getDefaultGateway`,
+        `DnsClient.getServerIp`); an absent process or getter is reported as
+        such, never substituted. Read-only: nothing is dispatched to a client.
+        """
+        return self._read(
+            "client_bindings",
+            f"var __n={json.dumps([str(item) for item in clients])},__rows=[];"
+            "for(var __i=0;__i<__n.length;__i++){var __name=__n[__i],__d=null,"
+            "__p=null,__ip='',__mask='',__gw='',__dns='',__gwApi=false,"
+            "__dnsApi=false,__error='';try{__d=ipc.network().getDevice(__name);"
+            "if(__d){for(var __j=0;__j<__d.getPortCount();__j++){"
+            "var __c=__d.getPortAt(__j);if(__c&&String(__c.getName())==="
+            "'FastEthernet0'){__p=__c;break;}}if(__p){__ip=String("
+            "__p.getIpAddress()).substring(0,64);__mask=String("
+            "__p.getSubnetMask()).substring(0,64);}var __h=__d.getProcess("
+            "'HostIp');__gwApi=!!(__h&&typeof __h.getDefaultGateway==="
+            "'function');if(__gwApi){__gw=String(__h.getDefaultGateway())"
+            ".substring(0,64);}var __k=__d.getProcess('DnsClient');__dnsApi=!!("
+            "__k&&typeof __k.getServerIp==='function');if(__dnsApi){__dns="
+            "String(__k.getServerIp()).substring(0,64);}}}catch(__x){"
+            "__error=__er(__x);}__rows.push({device:__name,found:!!__d,"
+            "port_found:!!__p,ipv4:__ip,netmask:__mask,gateway_api:__gwApi,"
+            "gateway:__gw,dns_api:__dnsApi,dns_server:__dns,error:__error});}"
             "reportResult(JSON.stringify({clients:__rows}));",
         )
 

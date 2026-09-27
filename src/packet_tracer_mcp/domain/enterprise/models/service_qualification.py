@@ -85,6 +85,11 @@ class QualificationStage(StrEnum):
     Q3_NATIVE_STABILITY = "Q3-NATIVE-STABILITY"
     Q3_NATIVE_SERVE = "Q3-NATIVE-SERVE"
     Q3_NATIVE_PRODUCT = "Q3-NATIVE-PRODUCT"
+    #: SP-1 routed DNS/HTTP through the maintained product route, campaign
+    #: `SERVER-PT-SP1-ROUTED-01`: W1 selects the HQ clients (inter-VLAN, one
+    #: gateway), W2 every client of the three sites (paths over two routers).
+    SP1_ROUTED_W1 = "SP1-ROUTED-W1"
+    SP1_ROUTED_W2 = "SP1-ROUTED-W2"
 
 
 class ExecutionMode(StrEnum):
@@ -115,6 +120,9 @@ class FixtureLink:
     port_a: str
     device_b: str
     port_b: str
+    #: The cable type the product's own designer chose for this link. Router
+    #: to router Ethernet is a crossover; every earlier stage is straight.
+    cable: str = "straight"
 
 
 @dataclass(frozen=True)
@@ -260,6 +268,10 @@ class StageDefinition:
     #: for every other stage. It is part of the product contract the stage
     #: composes, never a value read from the engine.
     dhcp_pool_capacity: int = 0
+    #: The client fixtures a product-route stage selects for its services, in
+    #: order, and empty for every other stage. Like the pool capacity, it is
+    #: part of the contract the stage composes.
+    selected_clients: tuple[str, ...] = ()
 
     @property
     def fixture_names(self) -> tuple[str, ...]:
@@ -273,9 +285,15 @@ class StageDefinition:
 
     @property
     def link_bindings(self) -> tuple[str, ...]:
-        """Return each link bound to its exact ports, in creation order."""
+        """Return each link bound to its exact ports, in creation order.
+
+        A link whose cable is not the default straight one also binds its
+        cable, so an authorization names a crossover it permits; every
+        straight binding keeps its historical form.
+        """
         return tuple(
             f"{item.device_a}:{item.port_a}-{item.device_b}:{item.port_b}"
+            + ("" if item.cable == "straight" else f"/{item.cable}")
             for item in self.links
         )
 
@@ -405,6 +423,7 @@ class StageDefinition:
 #: spent as `budget.local_observation_seconds`. No operation ceiling moves, no
 #: historical Q budget moves, and both remain proposed limits that no
 #: authorization has ever been granted against.
+SP1_ROUTED_CEILING = (3000, 3600)
 STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.Q0: (20, 300),
     QualificationStage.Q1: (60, 600),
@@ -422,6 +441,9 @@ STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.Q3_NATIVE_STABILITY: (180, 1050),
     QualificationStage.Q3_NATIVE_SERVE: (260, 1800),
     QualificationStage.Q3_NATIVE_PRODUCT: (600, 2100),
+    # SP-1: see `_sp1_routed`. Proposed limits inside the campaign allowance.
+    QualificationStage.SP1_ROUTED_W1: SP1_ROUTED_CEILING,
+    QualificationStage.SP1_ROUTED_W2: SP1_ROUTED_CEILING,
 }
 
 Q0_PC = "__MCP_E6Q_PC1"
@@ -1940,6 +1962,203 @@ def _q3_native_product() -> StageDefinition:
     )
 
 
+#: SP-1 routed DNS/HTTP fixture: the exact E4 composition of the SP-1 intent
+#: (HQ-BR1-BR2 chained over Ethernet, two HQ users and separate DNS and web
+#: servers in their own VLAN, two users per branch, `internet_required` so the
+#: product LAN-attaches its site routers, `routing_preference: static`).
+#: Names, models, ports and cables are what the product's own designer
+#: compiles, and the stage refuses a composed topology that differs from
+#: them. Addresses are not fixture facts: every run composes its own address
+#: space, page marker and host name.
+SP1_ROUTERS = ("HQ-EDGE-RTR-01", "BR1-EDGE-RTR-01", "BR2-EDGE-RTR-01")
+SP1_DNS_SERVER = "HQ-DEFAULT-DNS-01"
+SP1_WEB_SERVER = "HQ-DEFAULT-WEB-01"
+SP1_HQ_CLIENTS = ("HQ-DEFAULT-PC-01", "HQ-DEFAULT-PC-02")
+SP1_BRANCH_CLIENTS = (
+    "BR1-DEFAULT-PC-01",
+    "BR1-DEFAULT-PC-02",
+    "BR2-DEFAULT-PC-01",
+    "BR2-DEFAULT-PC-02",
+)
+_SP1_FIXTURES = (
+    FixtureDevice("HQ-EDGE-RTR-01", "1941"),
+    FixtureDevice("BR1-EDGE-RTR-01", "2911"),
+    FixtureDevice("BR2-EDGE-RTR-01", "1941"),
+    FixtureDevice("HQ-DEFAULT-ACCESS-SW-01", "2960-24TT"),
+    FixtureDevice("BR1-DEFAULT-ACCESS-SW-01", "IE-2000"),
+    FixtureDevice("BR2-DEFAULT-ACCESS-SW-01", "IE-2000"),
+    FixtureDevice(SP1_DNS_SERVER, "Server-PT"),
+    FixtureDevice(SP1_WEB_SERVER, "Server-PT"),
+    *(FixtureDevice(name, "PC-PT") for name in (*SP1_HQ_CLIENTS, *SP1_BRANCH_CLIENTS)),
+)
+_SP1_LINKS = (
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "GigabitEthernet0/1",
+        "HQ-EDGE-RTR-01",
+        "GigabitEthernet0/1",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "GigabitEthernet1/1",
+        "BR1-EDGE-RTR-01",
+        "GigabitEthernet0/2",
+    ),
+    FixtureLink(
+        "BR2-DEFAULT-ACCESS-SW-01",
+        "GigabitEthernet1/1",
+        "BR2-EDGE-RTR-01",
+        "GigabitEthernet0/1",
+    ),
+    FixtureLink(
+        "BR1-EDGE-RTR-01",
+        "GigabitEthernet0/1",
+        "HQ-EDGE-RTR-01",
+        "GigabitEthernet0/0",
+        cable="cross",
+    ),
+    FixtureLink(
+        "BR1-EDGE-RTR-01",
+        "GigabitEthernet0/0",
+        "BR2-EDGE-RTR-01",
+        "GigabitEthernet0/0",
+        cable="cross",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/1",
+        "HQ-DEFAULT-PC-01",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/10",
+        "HQ-DEFAULT-PC-02",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01", "FastEthernet0/11", SP1_DNS_SERVER, "FastEthernet0"
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01", "FastEthernet0/12", SP1_WEB_SERVER, "FastEthernet0"
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/1",
+        "BR1-DEFAULT-PC-01",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/2",
+        "BR1-DEFAULT-PC-02",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "BR2-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/1",
+        "BR2-DEFAULT-PC-01",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "BR2-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/2",
+        "BR2-DEFAULT-PC-02",
+        "FastEthernet0",
+    ),
+)
+#: The planned worst cases of the two SP-1 measurements. The offline W2 run
+#: over the simulated campus counts 235 product dispatches (324 for the whole
+#: stage), with every convergence settled on its first sample; LIVE polling of
+#: IOS, spanning tree, routed windows and HTTP inspections is what the rest of
+#: the plan leaves room for, and the first LIVE episode measures it. The
+#: terminal observation is two registered reads per router, each with its own
+#: call budget, plus one binding read for all selected clients.
+SP1_ROUTED_PRODUCT_OPERATIONS = 2400
+SP1_ROUTED_FINAL_OPERATIONS = 60
+
+
+def _sp1_routed(stage: QualificationStage, clients: tuple[str, ...]) -> StageDefinition:
+    """Run routed DNS and HTTP for `clients` through the maintained product route.
+
+    The fixture is the whole three-site composition in both workloads; only the
+    service selection differs, so W1 exercises one gateway between VLANs and W2
+    adds paths over one and two transit routers. The product measurement is
+    one invocation of the product entry; the terminal observation reads every
+    router's interfaces and routes and every selected client's configured
+    binding, so a failure keeps the state that explains it.
+    """
+    ceiling_operations, ceiling_seconds = SP1_ROUTED_CEILING
+    return StageDefinition(
+        stage=stage,
+        executable=True,
+        purpose=(
+            "Apply the SP-1 routed intent through the product entry and verify "
+            "cold HTTP by address, DNS and HTTP by name for each selected client."
+        ),
+        fixtures=_SP1_FIXTURES,
+        links=_SP1_LINKS,
+        setup=(
+            PlannedStep("read:executable_build", 1),
+            PlannedStep("read:workspace_baseline", 1),
+            *(PlannedStep(f"create:{item.name}", 2) for item in _SP1_FIXTURES),
+            *(
+                PlannedStep(f"create:link:{index}", 2)
+                for index in range(1, len(_SP1_LINKS) + 1)
+            ),
+            PlannedStep("read:fixture_identity", 1),
+        ),
+        experiments=(
+            ExperimentSpec(
+                id="M-SP1-ROUTED-PRODUCT",
+                hypothesis=(
+                    "The maintained product admits the routed paths, verifies "
+                    "their forwarding prerequisites, and serves each selected "
+                    "client by address, by DNS and by host name."
+                ),
+                required=True,
+                procedure="SP1_ROUTED_PRODUCT",
+                planned_operations=SP1_ROUTED_PRODUCT_OPERATIONS,
+                capabilities=("sp1.routed_dns_http_product",),
+            ),
+            ExperimentSpec(
+                id="M-SP1-ROUTED-FINAL",
+                hypothesis=(
+                    "The final router tables and client bindings are observed "
+                    "before cleanup."
+                ),
+                required=True,
+                procedure="SP1_ROUTED_FINAL",
+                planned_operations=SP1_ROUTED_FINAL_OPERATIONS,
+                terminal_observation=True,
+            ),
+        ),
+        reserve=(
+            *(PlannedStep(f"remove:{item.name}", 2) for item in _SP1_FIXTURES),
+            PlannedStep("read:restoration:1", 1),
+            PlannedStep("read:restoration:2", 1),
+            PlannedStep("release:run_bag", 1),
+        ),
+        budget=StageBudget(ceiling_operations, ceiling_seconds, reserve_seconds=420),
+        allowed_channels=("file",),
+        profile_id=stage.value,
+        profile_version="1",
+        steps=(
+            DiagnosticStageStep(
+                id="SP1-product",
+                experiment_id="M-SP1-ROUTED-PRODUCT",
+                effect="request",
+                also_experiments=("M-SP1-ROUTED-FINAL",),
+            ),
+        ),
+        selected_clients=clients,
+    )
+
+
+#: The SP-1 stages; each exists only under campaign `SERVER-PT-SP1-ROUTED-01`.
+SP1_ROUTED_STAGES = (QualificationStage.SP1_ROUTED_W1, QualificationStage.SP1_ROUTED_W2)
+
+
 STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.Q0: _q0(),
     QualificationStage.Q1: _q1(),
@@ -1959,6 +2178,13 @@ STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.Q3_NATIVE_STABILITY: _q3_native_stability(),
     QualificationStage.Q3_NATIVE_SERVE: _q3_native_serve(),
     QualificationStage.Q3_NATIVE_PRODUCT: _q3_native_product(),
+    QualificationStage.SP1_ROUTED_W1: _sp1_routed(
+        QualificationStage.SP1_ROUTED_W1, SP1_HQ_CLIENTS
+    ),
+    QualificationStage.SP1_ROUTED_W2: _sp1_routed(
+        QualificationStage.SP1_ROUTED_W2,
+        (*SP1_HQ_CLIENTS, *SP1_BRANCH_CLIENTS),
+    ),
 }
 
 

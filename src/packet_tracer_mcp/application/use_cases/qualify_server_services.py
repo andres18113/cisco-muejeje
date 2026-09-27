@@ -131,6 +131,8 @@ from ...domain.enterprise.models.service_qualification import (
     READINESS_DEADLINE_SECONDS,
     READINESS_MAX_READS,
     REQUESTED_RENEWAL_CONTRACT_ABSENT,
+    SP1_ROUTED_STAGES,
+    SP1_ROUTERS,
     BudgetRecord,
     DefaultPoolObservation,
     DiagnosticLifecycleObservation,
@@ -279,7 +281,11 @@ from .deploy_enterprise_topology import (
     disposable_workspace_error,
 )
 from .foundational_evidence import derive_service_foundational_statuses
-from .server_pt_campaign import DHCP_AUTONOMY_CAMPAIGN, DHCP_FASTLOOP_CAMPAIGN
+from .server_pt_campaign import (
+    DHCP_AUTONOMY_CAMPAIGN,
+    DHCP_FASTLOOP_CAMPAIGN,
+    SP1_ROUTED_CAMPAIGN,
+)
 from .service_access_readiness_gate import (
     ReadinessNotRequired,
     ServiceAccessReadinessGate,
@@ -737,6 +743,11 @@ class Q3ProductContract:
     device_capabilities: dict[str, DeviceCapabilities]
     service_capabilities: ServiceCapabilityRecords
     intent_json: str = ""
+    #: Device evidence the product must be composed with instead of the
+    #: default catalog, or None for the default. Only an SP-1 contract whose
+    #: build lacks measured static-route support sets it, to candidate
+    #: evidence the product record then names.
+    device_capability_catalog: Any = None
 
 
 @dataclass
@@ -961,6 +972,27 @@ class QualificationBoundaries:
     native_default_transitions: (
         Callable[[str], tuple[AdmittedNativeDefaultTransition, ...]] | None
     ) = None
+    #: SP-1: the routed contract composed for a stage's selected clients, and
+    #: the registered four-input product tool it always runs through. Its
+    #: runtimes, import preflight, record store and endpoint observer are the
+    #: native product ones above; nothing about them is SP-1 specific.
+    sp1_product_contract: (
+        Callable[[str, str, tuple[str, ...]], Q3ProductContract] | None
+    ) = None
+    sp1_public_product_entry: (
+        Callable[
+            [
+                LedgeredTransport,
+                Callable[[], ServiceInvocationBinding],
+                DeploymentManifest,
+                str,
+                str,
+                str,
+            ],
+            ServiceStageResult,
+        ]
+        | None
+    ) = None
     reviewed_native_default_intervention: str = ""
     #: Set only by a validated experimental campaign composition. See
     #: `CampaignQualificationAuthority`.
@@ -1009,6 +1041,10 @@ class CampaignQualificationAuthority:
                 or (
                     definition.stage in Q3_NATIVE_STAGES
                     and self.campaign_id == DHCP_AUTONOMY_CAMPAIGN.campaign_id
+                )
+                or (
+                    definition.stage in SP1_ROUTED_STAGES
+                    and self.campaign_id == SP1_ROUTED_CAMPAIGN.campaign_id
                 )
             )
             and self.episode >= 1
@@ -1133,6 +1169,15 @@ _DIAGNOSTIC_BOUNDARIES[QualificationStage.Q3_NATIVE_PRODUCT] = (
     "native_product_endpoint_observer",
     "diagnostic_lifecycle",
 )
+for _stage in SP1_ROUTED_STAGES:
+    _DIAGNOSTIC_BOUNDARIES[_stage] = (
+        "sp1_product_contract",
+        "sp1_public_product_entry",
+        "native_product_runtimes",
+        "native_product_record_store_factory",
+        "native_product_endpoint_observer",
+        "diagnostic_lifecycle",
+    )
 
 
 def _refused(
@@ -1221,7 +1266,7 @@ def qualify_server_services(
     authority = boundaries.campaign_source_authority
     if (
         boundaries.execution_mode is ExecutionMode.LIVE
-        and definition.stage in (*Q3_FL_STAGES, *Q3_NATIVE_STAGES)
+        and definition.stage in (*Q3_FL_STAGES, *Q3_NATIVE_STAGES, *SP1_ROUTED_STAGES)
         and authority is None
     ):
         return _refused(
@@ -1229,7 +1274,7 @@ def qualify_server_services(
                 refusal(
                     RefusalKind.MISSING,
                     RefusalSubject.AUTHORIZATION,
-                    "This experimental DHCP stage requires its campaign authority.",
+                    "This experimental stage requires its campaign authority.",
                 )
             ]
         )
@@ -1299,7 +1344,38 @@ def _with_campaign_claim(
     moment = boundaries.now()
     run_id = boundaries.new_run_id(moment)
     product_contract: Q3ProductContract | None = None
-    if definition.stage is QualificationStage.Q3_NATIVE_PRODUCT:
+    if definition.stage in SP1_ROUTED_STAGES:
+        if (
+            not boundaries.q3_required_build
+            or request.packet_tracer_build != boundaries.q3_required_build
+            or boundaries.sp1_product_contract is None
+        ):
+            return _refused(
+                [
+                    refusal(
+                        RefusalKind.NOT_PERMITTED,
+                        RefusalSubject.BUILD,
+                        "SP-1 has no reviewed exact-build contract.",
+                    )
+                ],
+                claim_release=hold.finalize(),
+            )
+        try:
+            product_contract = boundaries.sp1_product_contract(
+                request.packet_tracer_build, run_id, definition.selected_clients
+            )
+        except Exception as exc:
+            return _refused(
+                [
+                    refusal(
+                        RefusalKind.MALFORMED,
+                        RefusalSubject.FIXTURE,
+                        f"sp1_product_contract:{type(exc).__name__}:{_bounded(exc)}",
+                    )
+                ],
+                claim_release=hold.finalize(),
+            )
+    elif definition.stage is QualificationStage.Q3_NATIVE_PRODUCT:
         if (
             not boundaries.q3_required_build
             or request.packet_tracer_build != boundaries.q3_required_build
@@ -2041,6 +2117,8 @@ def _admitted(
             _run_q3_native_serve(execution)
         elif definition.stage is QualificationStage.Q3_NATIVE_PRODUCT:
             _run_q3_native_product(execution)
+        elif definition.stage in SP1_ROUTED_STAGES:
+            _run_sp1_routed_product(execution)
         else:
             _run_q3(execution)
     except KeyboardInterrupt as exc:
@@ -6381,6 +6459,288 @@ def _run_q3_native_product(execution: _Execution) -> None:
     execution.finish("Q3_NATIVE_PRODUCT")
     if not accepted:
         execution.stop("native_product_not_verified")
+
+
+# -- SP-1: routed DNS/HTTP through the registered product route ----------------
+
+#: The client checks every selected SP-1 client must verify, in request order.
+SP1_REQUIRED_CLIENT_KINDS = (
+    ServiceVerificationKind.HTTP_FETCH,
+    ServiceVerificationKind.DNS_RESOLUTION,
+    ServiceVerificationKind.DNS_NEGATIVE_CONTROL,
+    ServiceVerificationKind.HTTP_BY_HOSTNAME,
+)
+#: Advisory binding reads SP-1 measures without requiring them yet.
+SP1_BINDING_KINDS = (
+    ServiceVerificationKind.CLIENT_GATEWAY,
+    ServiceVerificationKind.CLIENT_DNS_SERVER,
+)
+#: Terminal router capture bounds: one call budget per registered read and
+#: one window for the whole capture, taken from the stage's own allowance.
+SP1_CAPTURE_SAMPLE_CALLS = 6
+SP1_CAPTURE_DEADLINE_SECONDS = 120.0
+
+
+@dataclass
+class _Sp1ConfigurationRuntime(_Q3ConfigurationRuntime):
+    """The exact-inventory E5 runtime plus the routed and continuity observers.
+
+    The routed and continuity readiness groups find their observers on the
+    runtime the product is given; without them every routed dependent would
+    be refused, so SP-1 forwards both to the inner product runtime.
+    """
+
+    def observe_trunk_continuity(self, *args, **kwargs):
+        return self.inner.observe_trunk_continuity(*args, **kwargs)
+
+    def observe_routed_forwarding(self, *args, **kwargs):
+        return self.inner.observe_routed_forwarding(*args, **kwargs)
+
+
+def _sp1_contract_mismatch(execution: _Execution, contract: Q3ProductContract) -> str:
+    """Name why a composed SP-1 contract is not this stage's exact fixture."""
+    definition = execution.definition
+    if not contract.intent_json:
+        return "sp1_contract_without_intent"
+    if {(item.name, item.model) for item in contract.topology.devices} != {
+        (item.name, item.model) for item in definition.fixtures
+    }:
+        return "sp1_devices_differ_from_fixture"
+    if {
+        (item.device_a, item.port_a, item.device_b, item.port_b, item.cable)
+        for item in contract.topology.links
+    } != {
+        (item.device_a, item.port_a, item.device_b, item.port_b, item.cable)
+        for item in definition.links
+    }:
+        return "sp1_links_differ_from_fixture"
+    planned = {
+        item.client_device_name
+        for item in contract.service_plan.verification_expectations
+        if item.kind in SP1_REQUIRED_CLIENT_KINDS
+    }
+    if planned != set(definition.selected_clients):
+        return "sp1_selected_clients_differ_from_stage"
+    return ""
+
+
+def _sp1_client_checks(
+    contract: Q3ProductContract, by_id: Mapping[str, Any]
+) -> dict[str, dict[str, str]]:
+    """Return each selected client's planned check kinds and their outcomes."""
+    checks: dict[str, dict[str, str]] = {}
+    for item in contract.service_plan.verification_expectations:
+        if item.kind not in (*SP1_REQUIRED_CLIENT_KINDS, *SP1_BINDING_KINDS):
+            continue
+        observed = by_id.get(item.id)
+        checks.setdefault(item.client_device_name, {})[item.kind.value] = (
+            observed.status.value if observed is not None else "absent"
+        )
+    return checks
+
+
+def _run_sp1_routed_product(execution: _Execution) -> None:
+    """Run the SP-1 routed intent through the registered product tool."""
+    contract = execution.product_contract
+    boundaries = execution.run.boundaries
+    definition = execution.definition
+    if contract is None or boundaries.sp1_public_product_entry is None:
+        execution.stop("sp1_product_contract_or_entry_absent")
+        return
+    mismatch = _sp1_contract_mismatch(execution, contract)
+    if mismatch:
+        execution.stop(mismatch)
+        return
+    clients = definition.selected_clients
+
+    def terminal() -> None:
+        ids = ("M-SP1-ROUTED-FINAL",)
+        if not execution.begin_terminal(ids, "SP1_ROUTED_FINAL"):
+            return
+        with execution.procedure(ids):
+            reader = boundaries.native_product_runtimes(
+                execution.bound, contract.inventory
+            ).configuration
+            capture = getattr(reader, "capture_routed_text", None)
+            with execution.ledger.purpose_of("sp1:final:routers"):
+                routers = (
+                    list(
+                        capture(
+                            SP1_ROUTERS,
+                            sample_calls=SP1_CAPTURE_SAMPLE_CALLS,
+                            deadline_seconds=SP1_CAPTURE_DEADLINE_SECONDS,
+                        )
+                    )
+                    if callable(capture)
+                    else []
+                )
+            with execution.ledger.purpose_of("sp1:final:clients"):
+                binding_read = execution.probes.read_client_bindings(clients)
+            bindings = (
+                binding_read.payload.get("clients")
+                if binding_read.observed and isinstance(binding_read.payload, dict)
+                else None
+            )
+            complete = (
+                len(routers) == 2 * len(SP1_ROUTERS)
+                and all(
+                    row.get("executed") and row.get("output_complete")
+                    for row in routers
+                )
+                and isinstance(bindings, list)
+                and len(bindings) == len(clients)
+            )
+            execution.conclude(
+                "M-SP1-ROUTED-FINAL",
+                Assessment(
+                    MeasurementConclusion.SUPPORTED_IN_SAMPLE
+                    if complete
+                    else MeasurementConclusion.INCONCLUSIVE,
+                    facts={
+                        "routers": routers,
+                        "router_capture_available": callable(capture),
+                        "client_bindings": bindings,
+                        "client_binding_read": binding_read.cause
+                        if not binding_read.observed
+                        else "observed",
+                        "complete": complete,
+                    },
+                    causes=[] if complete else ["sp1_final_inventory_incomplete"],
+                    limitations=["terminal_inventory_is_not_product_acceptance"],
+                ),
+            )
+        execution.finish("SP1_ROUTED_FINAL")
+
+    execution.register_terminal(("M-SP1-ROUTED-FINAL",), "SP1_ROUTED_FINAL", terminal)
+    if not _diagnostic_start(execution):
+        return
+    ids = ("M-SP1-ROUTED-PRODUCT",)
+    if not execution.selected("SP1-product") or not execution.begin(
+        ids, "SP1_ROUTED_PRODUCT"
+    ):
+        return
+    with execution.procedure(ids):
+        if not execution.run.transition("experiment:SP1_ROUTED_PRODUCT:started"):
+            execution.stop("persistence:sp1_product_not_announced")
+            return
+        inner = boundaries.native_product_runtimes(execution.bound, contract.inventory)
+        product_runtimes = ServiceStageRuntimes(
+            configuration=_Sp1ConfigurationRuntime(
+                inner.configuration, contract.inventory
+            ),
+            services=_Q3ServiceRuntime(inner.services, contract.inventory),
+        )
+        fresh_public_build = ""
+
+        def public_binding() -> ServiceInvocationBinding:
+            nonlocal fresh_public_build
+            reading = boundaries.build_reader(execution.bound.send_and_wait).read()
+            if (
+                not reading.available
+                or reading.version != execution.record.environment.observed_build
+            ):
+                raise ValueError("sp1_public_build_unobserved_or_mismatched")
+            fresh_public_build = reading.version
+            return ServiceInvocationBinding(
+                runtimes=product_runtimes,
+                record_store=boundaries.native_product_record_store_factory(),
+                environment_fingerprint=(
+                    contract.manifest.environment_fingerprint.model_copy(
+                        update={"backend_version": reading.version}
+                    )
+                ),
+                transport_selection=TransportSelection(
+                    channel=execution.channel, fixed_at=boundaries.now()
+                ),
+                source_tree=SourceTreeIdentity(
+                    sha=execution.record.source.executed_sha,
+                    tree=execution.record.source.executed_tree,
+                    dirty=execution.record.source.clean is not True,
+                ),
+                endpoint_observer=boundaries.native_product_endpoint_observer(
+                    execution.bound
+                ),
+                device_capability_catalog=contract.device_capability_catalog,
+            )
+
+        with execution.ledger.effect_of("sp1:apply-enterprise-services"):
+            product = boundaries.sp1_public_product_entry(
+                execution.bound,
+                public_binding,
+                contract.manifest,
+                contract.intent_json,
+                execution.record.environment.observed_build,
+                f"SERVER-PT-SP1-ROUTED-01 {definition.stage.value}",
+            )
+        by_id = (
+            {
+                item.expectation_id: item
+                for item in product.service_result.verification_results
+            }
+            if product.service_result is not None
+            else {}
+        )
+        checks = _sp1_client_checks(contract, by_id)
+        routed = [
+            row
+            for row in product.operational_readiness
+            if row.get("kind") == "routed_forwarding"
+        ]
+        accepted = (
+            product.refusal_code is ServiceEntryRefusal.NONE
+            and product.status is ServiceRunStatus.VERIFIED
+            and product.stage is ServiceStage.COMPLETED
+            and product.persisted_stage is ServiceStage.COMPLETED
+            and bool(product.record_path)
+            and not product.persist_error
+            and fresh_public_build == execution.record.environment.observed_build
+            and set(checks) == set(clients)
+            and all(
+                checks[name].get(kind.value) == ActionExecutionStatus.VERIFIED.value
+                for name in clients
+                for kind in SP1_REQUIRED_CLIENT_KINDS
+            )
+            and bool(routed)
+            and all(row.get("status") == "admitted" for row in routed)
+        )
+        candidate = contract.device_capability_catalog is not None
+        execution.conclude(
+            "M-SP1-ROUTED-PRODUCT",
+            Assessment(
+                MeasurementConclusion.SUPPORTED_IN_SAMPLE
+                if accepted
+                else MeasurementConclusion.INCONCLUSIVE,
+                facts={
+                    "product_summary": product.compact_summary(),
+                    "product_record_path": product.record_path,
+                    "entry_surface": "registered_four_input",
+                    "device_catalog": "candidate" if candidate else "default",
+                    "fresh_public_build": fresh_public_build,
+                    "selected_clients": list(clients),
+                    "client_checks": checks,
+                    "routed_groups": [
+                        {
+                            "client_segment_id": row.get("client_segment_id"),
+                            "host_segment_id": row.get("host_segment_id"),
+                            "status": row.get("status"),
+                            "device_ids": row.get("device_ids"),
+                        }
+                        for row in routed
+                    ],
+                },
+                causes=[]
+                if accepted
+                else [f"sp1_product_not_verified:{product.refusal_code.value}"],
+                limitations=(
+                    ["candidate_device_evidence_not_global_product_promotion"]
+                    if candidate
+                    else []
+                ),
+            ),
+        )
+    execution.finish("SP1_ROUTED_PRODUCT")
+    if not accepted:
+        execution.stop("sp1_product_not_verified")
 
 
 # -- Q3-FL: the versioned DHCP qualification profile ------------------------------

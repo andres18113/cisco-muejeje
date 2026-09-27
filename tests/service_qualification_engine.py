@@ -220,7 +220,11 @@ const PORTS = {
   'Server-PT': ['FastEthernet0'],
   '2960-24TT': Array.from({length: 24}, (_, i) => 'FastEthernet0/' + (i + 1))
     .concat(['GigabitEthernet0/1', 'GigabitEthernet0/2']),
-  'IE-2000': Array.from({length: 8}, (_, i) => 'FastEthernet1/' + (i + 1)),
+  'IE-2000': Array.from({length: 8}, (_, i) => 'FastEthernet1/' + (i + 1))
+    .concat(['GigabitEthernet1/1', 'GigabitEthernet1/2']),
+  // The SP-1 edge routers: only the Ethernet ports the product binds.
+  '1941': ['GigabitEthernet0/0', 'GigabitEthernet0/1'],
+  '2911': ['GigabitEthernet0/0', 'GigabitEthernet0/1', 'GigabitEthernet0/2'],
 };
 const findDevice = (name) => devices.find((d) => d.name === name) || null;
 const findPort = (device, port) => {
@@ -910,6 +914,7 @@ global.lwAddDevice = (name, type, model, x, y) => {
   devices.push(makeDevice(name, model));
   return name;
 };
+const linkCables = [];
 global.lwAddLink = (d1, p1, d2, p2, cable) => {
   const a = findPort(String(d1), String(p1));
   const b = findPort(String(d2), String(p2));
@@ -920,6 +925,7 @@ global.lwAddLink = (d1, p1, d2, p2, cable) => {
   a.link = link;
   b.link = link;
   links.push(link);
+  linkCables.push([String(d1), String(p1), String(d2), String(p2), String(cable)]);
   return true;
 };
 global.configurePcIp = (name, dhcp, ip, mask, gateway, dns, iface) => {
@@ -1016,6 +1022,7 @@ const snapshot = () => {
           mac: p.mac, dhcp_mode: p.dhcpMode, lease_time: p.leaseTime,
           linked: !!p.link}))})),
     links: links.length,
+    link_cables: linkCables.slice(),
     run_bags: runs,
     registrations: registrations.map((r) => ({device: r.device, event: r.event,
       active: r.active})),
