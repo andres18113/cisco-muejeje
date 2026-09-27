@@ -70,6 +70,7 @@ from ...application.use_cases.server_pt_campaign import (
     DHCP_AUTONOMY_CAMPAIGN,
     DHCP_FASTLOOP_CAMPAIGN,
     SP1_ROUTED_CAMPAIGN,
+    SP2_CAMPAIGN,
     source_authority_findings,
 )
 from ...application.use_cases.server_pt_campaign_ledger import (
@@ -110,6 +111,7 @@ from ...domain.enterprise.models.service_qualification import (
     Q3_SERVER_IPV4,
     Q3_SWITCH,
     SP1_ROUTED_STAGES,
+    SP2_STAGES,
     ExecutionMode,
     QualificationAuthorization,
     QualificationRecord,
@@ -1147,7 +1149,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--attempt-id")
     # Each fixed experimental DHCP stage needs its own campaign authority.
     parser.add_argument(
-        "--campaign", choices=("dhcp-fastloop", "dhcp-autonomy", "sp1"), default=""
+        "--campaign",
+        choices=("dhcp-fastloop", "dhcp-autonomy", "sp1", "sp2"),
+        default="",
     )
     parser.add_argument("--charter", default="")
     parser.add_argument("--episode", type=int, default=0)
@@ -1271,6 +1275,7 @@ def main(
             *Q3_FL_STAGES,
             *Q3_NATIVE_STAGES,
             *SP1_ROUTED_STAGES,
+            *SP2_STAGES,
         ):
             # Experimental profiles exist only under campaign authority.
             _print({"outcome": "refused", "reason": "stage_requires_its_campaign"})
@@ -1302,6 +1307,7 @@ def main(
 DHCP_FASTLOOP_CHARTER_SHA256 = DHCP_FASTLOOP_CAMPAIGN.charter_sha256
 DHCP_AUTONOMY_CHARTER_SHA256 = DHCP_AUTONOMY_CAMPAIGN.charter_sha256
 SP1_ROUTED_CHARTER_SHA256 = SP1_ROUTED_CAMPAIGN.charter_sha256
+SP2_CHARTER_SHA256 = SP2_CAMPAIGN.charter_sha256
 _CHARTER_LIMIT = 1024 * 1024
 _ATTEMPT_ID = re.compile(r"[0-9a-f]{32}\Z")
 
@@ -1396,6 +1402,10 @@ def _campaign_main(
         campaign = SP1_ROUTED_CAMPAIGN
         stages = SP1_ROUTED_STAGES
         charter_sha256 = SP1_ROUTED_CHARTER_SHA256
+    elif args.campaign == "sp2":
+        campaign = SP2_CAMPAIGN
+        stages = SP2_STAGES
+        charter_sha256 = SP2_CHARTER_SHA256
     else:
         campaign = DHCP_FASTLOOP_CAMPAIGN
         stages = Q3_FL_STAGES

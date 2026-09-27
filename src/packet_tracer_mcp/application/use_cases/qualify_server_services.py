@@ -137,6 +137,7 @@ from ...domain.enterprise.models.service_qualification import (
     SP1_ROUTED_STAGES,
     SP1_ROUTERS,
     SP1_WEB_SERVER,
+    SP2_STAGES,
     BudgetRecord,
     DefaultPoolObservation,
     DiagnosticLifecycleObservation,
@@ -265,6 +266,7 @@ from ...domain.enterprise.services.service_qualification_evidence import (
     page_read_admits_second_write,
     page_write_established,
 )
+from ...domain.enterprise.services.sp2_pool_diagnostic import assess_sp2_pool_identity
 from ...domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
 from ..ports.service_qualification import (
     BuildReader,
@@ -291,6 +293,7 @@ from .server_pt_campaign import (
     DHCP_AUTONOMY_CAMPAIGN,
     DHCP_FASTLOOP_CAMPAIGN,
     SP1_ROUTED_CAMPAIGN,
+    SP2_CAMPAIGN,
 )
 from .service_access_readiness_gate import (
     ReadinessNotRequired,
@@ -1056,6 +1059,10 @@ class CampaignQualificationAuthority:
                     definition.stage in SP1_ROUTED_STAGES
                     and self.campaign_id == SP1_ROUTED_CAMPAIGN.campaign_id
                 )
+                or (
+                    definition.stage in SP2_STAGES
+                    and self.campaign_id == SP2_CAMPAIGN.campaign_id
+                )
             )
             and self.episode >= 1
             and self.admission_record
@@ -1171,6 +1178,8 @@ _DIAGNOSTIC_BOUNDARIES: dict[QualificationStage, tuple[str, ...]] = {
         for stage in (*Q3_FL_STAGES, *Q3_NATIVE_STAGES)
     },
 }
+for _stage in SP2_STAGES:
+    _DIAGNOSTIC_BOUNDARIES[_stage] = _DIAGNOSTIC_BOUNDARIES[QualificationStage.Q3_FL_C2]
 _DIAGNOSTIC_BOUNDARIES[QualificationStage.Q3_NATIVE_PRODUCT] = (
     "native_product_contract",
     "native_product_runtimes",
@@ -1276,7 +1285,13 @@ def qualify_server_services(
     authority = boundaries.campaign_source_authority
     if (
         boundaries.execution_mode is ExecutionMode.LIVE
-        and definition.stage in (*Q3_FL_STAGES, *Q3_NATIVE_STAGES, *SP1_ROUTED_STAGES)
+        and definition.stage
+        in (
+            *Q3_FL_STAGES,
+            *Q3_NATIVE_STAGES,
+            *SP1_ROUTED_STAGES,
+            *SP2_STAGES,
+        )
         and authority is None
     ):
         return _refused(
@@ -1421,7 +1436,7 @@ def _with_campaign_claim(
                 ],
                 claim_release=hold.finalize(),
             )
-    elif definition.stage in (*Q3_FL_STAGES, *Q3_NATIVE_STAGES):
+    elif definition.stage in (*Q3_FL_STAGES, *Q3_NATIVE_STAGES, *SP2_STAGES):
         if (
             not boundaries.q3_required_build
             or request.packet_tracer_build != boundaries.q3_required_build
@@ -2113,7 +2128,7 @@ def _admitted(
             _run_d_dhcp(execution)
         elif definition.stage is QualificationStage.D_WEB:
             _run_d_web(execution)
-        elif definition.stage in Q3_FL_STAGES:
+        elif definition.stage in (*Q3_FL_STAGES, *SP2_STAGES):
             _run_q3_fastloop(execution)
         elif definition.stage is QualificationStage.Q3_NATIVE_PROBE:
             _run_q3_native_probe(execution)
@@ -7281,7 +7296,14 @@ def _run_q3_fastloop(execution: _Execution) -> None:
         execution.finish("Q3FL_SERVER")
     ids = tuple(
         item
-        for item in _Q3FL_DHCP_IDS
+        for item in (
+            *_Q3FL_DHCP_IDS,
+            *(
+                ("M-SP2-POOL-IDENTITY",)
+                if execution.definition.stage in SP2_STAGES
+                else ()
+            ),
+        )
         if any(row.experiment_id == item for row in execution.record.measurements)
         and execution.measurement(item).status is MeasurementStatus.NOT_RUN
     )
@@ -8023,6 +8045,26 @@ def _q3fl_conclude_dhcp(
     if "M-DHCP-6" in ids:
         execution.conclude(
             "M-DHCP-6", _q3fl_acquisition_assessment(state, attributions)
+        )
+    if "M-SP2-POOL-IDENTITY" in ids:
+        latest = state.latest_scans()
+        recent_clients = state.client_reads[-1][1] if state.client_reads else {}
+        native_pool = "serverPool"
+        execution.conclude(
+            "M-SP2-POOL-IDENTITY",
+            assess_sp2_pool_identity(
+                tuple(client.name for client in state.clients),
+                recent_clients,
+                latest.get(Q3_POOL, LeaseScan(Q3_POOL, False, "scan_absent")),
+                latest.get(native_pool, LeaseScan(native_pool, False, "scan_absent")),
+                named_pool=Q3_POOL,
+                native_pool=native_pool,
+                named_range=intended_range,
+                expected_netmask=netmask,
+                other_pools=tuple(
+                    name for name in state.native_pools if name != native_pool
+                ),
+            ),
         )
     # A measurement whose procedure was never reached did not run: it is
     # NOT_RUN with the reason, never a RAN row that says nothing happened.

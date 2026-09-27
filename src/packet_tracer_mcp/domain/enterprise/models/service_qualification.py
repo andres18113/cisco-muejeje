@@ -91,6 +91,8 @@ class QualificationStage(StrEnum):
     #: gateway), W2 every client of the three sites (paths over two routers).
     SP1_ROUTED_W1 = "SP1-ROUTED-W1"
     SP1_ROUTED_W2 = "SP1-ROUTED-W2"
+    #: A fresh SP-2 native hypothesis over the owned two-client fixture.
+    SP2_NATIVE_POOL = "SP2-NATIVE-POOL"
 
 
 class ExecutionMode(StrEnum):
@@ -445,6 +447,7 @@ STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     # SP-1: see `_sp1_routed`. Proposed limits inside the campaign allowance.
     QualificationStage.SP1_ROUTED_W1: SP1_ROUTED_CEILING,
     QualificationStage.SP1_ROUTED_W2: SP1_ROUTED_CEILING,
+    QualificationStage.SP2_NATIVE_POOL: (440, 1800),
 }
 
 Q0_PC = "__MCP_E6Q_PC1"
@@ -1604,6 +1607,45 @@ Q3_NATIVE_STAGES = (
     QualificationStage.Q3_NATIVE_SERVE,
     QualificationStage.Q3_NATIVE_PRODUCT,
 )
+SP2_STAGES = (QualificationStage.SP2_NATIVE_POOL,)
+
+
+def _sp2_native_pool() -> StageDefinition:
+    """Discriminate named and native-default physical serving in an owned lab.
+
+    The first hypothesis uses the existing bounded two-client Q3-FL probe
+    sequence; its additional assessment requires physical lease identities.
+    It is not generalized capacity or relay acceptance.
+    """
+    base = _q3_fastloop(QualificationStage.SP2_NATIVE_POOL, 2)
+    identity = ExperimentSpec(
+        id="M-SP2-POOL-IDENTITY",
+        hypothesis=(
+            "Each selected PC's observed address and MAC have an exact row "
+            "in the named pool and no competing physical serverPool row."
+        ),
+        required=True,
+        procedure="Q3FL_DHCP",
+        planned_operations=0,
+        operational_prerequisites=base.experiment("M-DHCP-6").operational_prerequisites,
+        capabilities=("server.dhcp_lease_table", "client.dhcp_mac_reader"),
+    )
+    core = replace(
+        base.steps[0],
+        also_experiments=(*base.steps[0].also_experiments, identity.id),
+    )
+    return replace(
+        base,
+        purpose=(
+            "Measure whether two owned clients are physically served by the "
+            "configured named pool or by native serverPool."
+        ),
+        experiments=(*base.experiments[:-1], identity, base.experiments[-1]),
+        profile_id="SP2-NATIVE-POOL",
+        profile_version="1",
+        steps=(core, *base.steps[1:]),
+    )
+
 
 #: Exact episode-1 physical values, not a formula for a second build or pool.
 #: Record SHA-256 1dcf4d95f2c8d20dc22f67950b86c0bb4c0b4dac3e828d88ae4a2d31494fa9c1.
@@ -2297,6 +2339,7 @@ STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
         QualificationStage.SP1_ROUTED_W2,
         (*SP1_HQ_CLIENTS, *SP1_BRANCH_CLIENTS),
     ),
+    QualificationStage.SP2_NATIVE_POOL: _sp2_native_pool(),
 }
 
 

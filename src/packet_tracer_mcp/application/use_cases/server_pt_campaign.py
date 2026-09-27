@@ -122,10 +122,24 @@ SP1_ROUTED_CAMPAIGN = ServerPtCampaign(
     acceptance_cost_pin=None,
     forced_retirement_authorized=True,
 )
+SP2_CAMPAIGN = ServerPtCampaign(
+    campaign_id="SERVER-PT-SP2-GENERALIZED-DHCP-RELAY-01",
+    charter_sha256="edeb6e45ef047a308b4d9cc6688f86ceb4cd3af44ccfd77297366c94e4889477",
+    purpose=ExecutionPurpose.EXPERIMENTAL,
+    deployment_prefix="server-pt-sp2-",
+    authorization_prefix="SERVER-PT-SP2-",
+    complete_attempt_limit=None,
+    acceptance_cost_pin=None,
+    forced_retirement_authorized=True,
+)
 #: Campaigns whose laboratory is delegated to the implementer: they share the
 #: owned save-prompt handling and bounded retirement of the DHCP autonomy one.
 AUTONOMOUS_CAMPAIGN_IDS = frozenset(
-    {DHCP_AUTONOMY_CAMPAIGN.campaign_id, SP1_ROUTED_CAMPAIGN.campaign_id}
+    {
+        DHCP_AUTONOMY_CAMPAIGN.campaign_id,
+        SP1_ROUTED_CAMPAIGN.campaign_id,
+        SP2_CAMPAIGN.campaign_id,
+    }
 )
 CAMPAIGNS = {
     item.campaign_id: item
@@ -135,6 +149,7 @@ CAMPAIGNS = {
         DHCP_FASTLOOP_CAMPAIGN,
         DHCP_AUTONOMY_CAMPAIGN,
         SP1_ROUTED_CAMPAIGN,
+        SP2_CAMPAIGN,
     )
 }
 

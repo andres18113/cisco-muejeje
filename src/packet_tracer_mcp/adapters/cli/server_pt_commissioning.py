@@ -53,6 +53,7 @@ from ...application.use_cases.server_pt_campaign import (
     DHCP_FASTLOOP_CAMPAIGN,
     FASTLOOP_CAMPAIGN,
     SP1_ROUTED_CAMPAIGN,
+    SP2_CAMPAIGN,
     ServerPtCampaign,
     source_authority_findings,
 )
@@ -182,6 +183,7 @@ _CAMPAIGNS = {
     "dhcp-fastloop": DHCP_FASTLOOP_CAMPAIGN,
     "dhcp-autonomy": DHCP_AUTONOMY_CAMPAIGN,
     "sp1": SP1_ROUTED_CAMPAIGN,
+    "sp2": SP2_CAMPAIGN,
 }
 #: The charter digest each campaign's LIVE modes require. Read at call time,
 #: per campaign, so the C31 digest remains this module's one charter seam.
@@ -190,6 +192,7 @@ FASTLOOP_CHARTER_SHA256 = FASTLOOP_CAMPAIGN.charter_sha256
 DHCP_FASTLOOP_CHARTER_SHA256 = DHCP_FASTLOOP_CAMPAIGN.charter_sha256
 DHCP_AUTONOMY_CHARTER_SHA256 = DHCP_AUTONOMY_CAMPAIGN.charter_sha256
 SP1_ROUTED_CHARTER_SHA256 = SP1_ROUTED_CAMPAIGN.charter_sha256
+SP2_CHARTER_SHA256 = SP2_CAMPAIGN.charter_sha256
 #: One episode plan or closing is operator-written JSON; bound what it may be.
 _LEDGER_INPUT_LIMIT = 16 * 1024
 #: The OS helper that observes, closes and terminates one exact PID.
@@ -247,6 +250,8 @@ def _charter_digest(campaign: ServerPtCampaign) -> str:
         return DHCP_AUTONOMY_CHARTER_SHA256
     if campaign.campaign_id == SP1_ROUTED_CAMPAIGN.campaign_id:
         return SP1_ROUTED_CHARTER_SHA256
+    if campaign.campaign_id == SP2_CAMPAIGN.campaign_id:
+        return SP2_CHARTER_SHA256
     if campaign.campaign_id == DHCP_FASTLOOP_CAMPAIGN.campaign_id:
         return DHCP_FASTLOOP_CHARTER_SHA256
     return FASTLOOP_CHARTER_SHA256 if campaign.experimental else CHARTER_SHA256
@@ -265,6 +270,7 @@ def _dhcp_campaign_mode_refusal(campaign: ServerPtCampaign, args) -> str:
         DHCP_FASTLOOP_CAMPAIGN.campaign_id,
         DHCP_AUTONOMY_CAMPAIGN.campaign_id,
         SP1_ROUTED_CAMPAIGN.campaign_id,
+        SP2_CAMPAIGN.campaign_id,
     }:
         return ""
     chosen = [

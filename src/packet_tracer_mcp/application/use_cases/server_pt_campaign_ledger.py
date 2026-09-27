@@ -95,8 +95,15 @@ SP1_ROUTED_ALLOWANCE = CampaignAllowance(
     protected_operations=1_000,
     protected_seconds=900,
 )
+SP2_ALLOWANCE = CampaignAllowance(
+    total_operations=20_000,
+    total_seconds=21_600,
+    protected_operations=1_000,
+    protected_seconds=600,
+)
 _ALLOWANCES = {
     "SERVER-PT-SP1-ROUTED-01": SP1_ROUTED_ALLOWANCE,
+    "SERVER-PT-SP2-GENERALIZED-DHCP-RELAY-01": SP2_ALLOWANCE,
     "SERVER-PT-IOS-FASTLOOP-01": FASTLOOP_ALLOWANCE,
     "SERVER-PT-DHCP-FASTLOOP-01": DHCP_FASTLOOP_ALLOWANCE,
     "SERVER-PT-DHCP-AUTONOMOUS-02": DHCP_AUTONOMY_ALLOWANCE,
