@@ -120,7 +120,7 @@ from ...domain.enterprise.services.routed_service_path import (
     endpoint_addresses,
 )
 from ...domain.enterprise.services.service_access_readiness import (
-    HTTP_REQUEST_KINDS,
+    SERVICE_REQUEST_KINDS,
     access_group_key,
     continuity_group_key,
     derive_access_readiness_plan,
@@ -324,6 +324,14 @@ class _GatedConfigurationRuntime:
             episode_calls=episode_calls,
             extension_seconds=extension_seconds,
         )
+
+    def observe_routed_forwarding(self, devices: Sequence[str], **bounds: Any) -> Any:
+        """Observe one routed group's routers; a read, so always permitted.
+
+        Raises `AttributeError` when the composed runtime has no such reader,
+        which the readiness gate turns into a named refusal.
+        """
+        return self.inner.observe_routed_forwarding(devices, **bounds)
 
     def observe_trunk_continuity(
         self, switches: Sequence[Any], vlan_id: int, **bounds: Any
@@ -747,6 +755,28 @@ def _trunk_continuity_observer(runtime: object) -> TrunkContinuityObserver | Non
     composed = getattr(runtime, "inner", runtime)
     reader = getattr(composed, "observe_trunk_continuity", None)
     return runtime if callable(reader) else None  # type: ignore[return-value]
+
+
+def _routed_forwarding_observer(runtime: object) -> Any:
+    """Return the composed routed observer, or nothing when there is none.
+
+    The same structural question as the other observers, asked of the runtime
+    inside the mutation-gate wrapper. `None` relaxes nothing: a routed group
+    without an observer refuses its dependents.
+    """
+    composed = getattr(runtime, "inner", runtime)
+    reader = getattr(composed, "observe_routed_forwarding", None)
+    return runtime if callable(reader) else None
+
+
+def _paths_by_pair(
+    routed_paths: Mapping[tuple[str, str], RoutedPath],
+) -> dict[tuple[str, str], RoutedPath]:
+    """Key admitted routed paths by client and host, as readiness asks."""
+    return {
+        (path.client_device_id, path.host_device_id): path
+        for path in routed_paths.values()
+    }
 
 
 def _e5_closure(
@@ -1853,6 +1883,7 @@ def apply_enterprise_services(
             transport=transport_selection.channel,
             source_tree=source_tree,
             limitations=run.limitations,
+            routed_paths=routed_paths,
         )
         try:
             refusal_detail = str(effect_admission(closure) or "")
@@ -1891,6 +1922,7 @@ def apply_enterprise_services(
         transport=transport_selection.channel,
         deployment_id=deployment_id,
         message_nonce_factory=message_nonce_factory,
+        routed_paths=routed_paths,
     )
 
 
@@ -1917,6 +1949,7 @@ def _execute(
     transport: str,
     deployment_id: str,
     message_nonce_factory: Callable[[], str] = _fresh_nonce,
+    routed_paths: Mapping[tuple[str, str], RoutedPath] | None = None,
 ) -> ServiceStageResult:
     """Run the effect stages, in order, behind the mutation gate.
 
@@ -2036,11 +2069,14 @@ def _execute(
         derive_access_readiness_plan(
             configuration_actions=configuration_plan.actions,
             verification_expectations=selected_plan.verification_expectations,
+            request_kinds=SERVICE_REQUEST_KINDS,
+            routed_paths=_paths_by_pair(routed_paths or {}),
         ),
         _access_forwarding_observer(configuration_runtime),
         clock=monotonic,
         device_names=deployed_names,
         continuity_observer=_trunk_continuity_observer(configuration_runtime),
+        routed_observer=_routed_forwarding_observer(configuration_runtime),
     )
 
     # -- E4: the E6 application --------------------------------------------
@@ -2733,11 +2769,12 @@ def _effect_closure(
     transport: str,
     source_tree: SourceTreeIdentity,
     limitations: Sequence[str],
+    routed_paths: Mapping[tuple[str, str], RoutedPath] | None = None,
 ) -> ServiceEffectClosure:
     """Describe what this admitted invocation will do, and on which targets."""
     actions = {item.id: item for item in configuration_plan.actions}
     paths, readiness_groups = _closure_readiness(
-        configuration_plan, selected_plan, deployed_names
+        configuration_plan, selected_plan, deployed_names, routed_paths
     )
     return ServiceEffectClosure(
         deployment_id=deployment_id,
@@ -2800,15 +2837,19 @@ def _closure_readiness(
     configuration_plan: Any,
     selected_plan: ServicePlan,
     deployed_names: Mapping[str, str],
+    routed_paths: Mapping[tuple[str, str], RoutedPath] | None = None,
 ) -> tuple[list[EffectClosurePath], list[EffectClosureReadinessGroup]]:
     """Describe each request's path and the readiness groups it will wait on.
 
     It is the same derivation the readiness gate will run over the same
     compiled plans, rendered on the deployed names the manifest resolved.
     """
+    by_pair = _paths_by_pair(routed_paths or {})
     readiness = derive_access_readiness_plan(
         configuration_actions=configuration_plan.actions,
         verification_expectations=selected_plan.verification_expectations,
+        request_kinds=SERVICE_REQUEST_KINDS,
+        routed_paths=by_pair,
     )
     placements = PathTopology(configuration_plan.actions).placements
     labels: dict[Any, str] = {}
@@ -2866,10 +2907,43 @@ def _closure_readiness(
                 ),
             )
         )
+    for routed in readiness.routed:
+        label = f"routed_forwarding:{routed.client_segment_id}>{routed.host_segment_id}"
+        labels[routed.key] = label
+
+        def named(device_id: str) -> str:
+            return deployed_names.get(device_id, device_id)
+
+        interfaces: set[str] = set()
+        routes: set[str] = set()
+        for dependent in routed.dependents:
+            for gateway in (dependent.client_gateway, dependent.host_gateway):
+                interfaces.add(f"{named(gateway.device_id)}:{gateway.interface}")
+            for destination, hops in (
+                (dependent.host_ipv4, dependent.forward),
+                (dependent.client_ipv4, dependent.reverse),
+            ):
+                for hop in hops:
+                    interfaces.add(f"{named(hop.device_id)}:{hop.egress_interface}")
+                    interfaces.add(
+                        f"{named(hop.peer_device_id)}:{hop.ingress_interface}"
+                    )
+                    routes.add(f"{named(hop.device_id)}:{destination}>{hop.next_hop}")
+        groups.append(
+            EffectClosureReadinessGroup(
+                key=label,
+                kind="routed_forwarding",
+                vlan_id=0,
+                switches=[named(item) for item in routed.device_ids],
+                interfaces=sorted(interfaces),
+                dependents=[item.expectation_id for item in routed.dependents],
+                routes=sorted(routes),
+            )
+        )
     unplaced = {item.expectation_id for item in readiness.unplaced}
     paths: list[EffectClosurePath] = []
     for expectation in selected_plan.verification_expectations:
-        if expectation.kind not in HTTP_REQUEST_KINDS:
+        if expectation.kind not in SERVICE_REQUEST_KINDS:
             continue
         keys = readiness.groups_by_expectation.get(expectation.id, ())
         client = placements.get(expectation.client_device_id or "", [])
@@ -2879,6 +2953,8 @@ def _closure_readiness(
         kind = (
             "unplaced"
             if expectation.id in unplaced or not keys
+            else "routed"
+            if (expectation.client_device_id, expectation.host_device_id) in by_pair
             else "l2_multi_access"
             if len(keys) > 1
             else "local_access"

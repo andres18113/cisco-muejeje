@@ -1032,10 +1032,12 @@ def test_the_forwarding_evidence_round_trips_through_the_public_report(
         "endpoint/hq/default/user_pc/001",
         "endpoint/hq/default/user_pc/002",
     }
+    # SP-1: a DNS query is a request through the same access ports, so it
+    # waits on the same group as the HTTP requests do.
     for item in dependents:
-        assert item["expectation_id"].startswith("svc/verify-http")
+        assert item["expectation_id"].startswith(("svc/verify-http", "svc/verify-dns"))
         assert item["admitted"] is False
-        assert item["kind"] in HTTP_KINDS
+        assert item["kind"] in HTTP_KINDS | {"dns_resolution", "dns_negative_control"}
     # The readiness rows are also in the durable record, not only the response.
     assert result.operational_readiness == rows
 

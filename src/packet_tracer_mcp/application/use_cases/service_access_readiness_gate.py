@@ -45,11 +45,30 @@ from dataclasses import replace
 from typing import Protocol
 
 from ...domain.enterprise.models.forwarding import AccessForwardingObservation
+from ...domain.enterprise.models.routed_forwarding import (
+    DeviceForwardingReading,
+    RoutedForwardingObservation,
+    RoutedForwardingRound,
+)
 from ...domain.enterprise.services.access_forwarding import (
     CAUSE_GROUP_DEADLINE_REACHED,
     access_forwarding_admission,
     access_forwarding_facts,
     forwarding_subset,
+)
+from ...domain.enterprise.services.routed_readiness import (
+    ROUTED_DEADLINE,
+    ROUTED_DRIFT,
+    RoutedGroupResult,
+    RoutedRequirement,
+    RoutedVerdict,
+    admitted_in_last_round,
+    observed_routed_result,
+    revoked_dependents,
+    round_admits_all,
+    routed_facts,
+    routed_verdicts,
+    unobserved_routed_result,
 )
 from ...domain.enterprise.services.service_access_readiness import (
     CAUSE_ANSWER_DOES_NOT_MATCH_REQUEST,
@@ -114,6 +133,14 @@ CONTINUITY_INTERVAL_SECONDS = 1.0
 CONTINUITY_READING_ALLOWANCE = 6
 
 
+#: One routed-forwarding episode: rounds over every router of the group.
+ROUTED_GROUP_DEADLINE_SECONDS = 30.0
+ROUTED_MAX_ROUNDS = 31
+ROUTED_INTERVAL_SECONDS = 1.0
+#: One routed reading is two registered reads (interfaces and routes), each
+#: with the per-reading share continuity uses.
+ROUTED_READING_ALLOWANCE = 2 * CONTINUITY_READING_ALLOWANCE
+
 #: Episodes one group may take: its own, and at most one narrowed episode.
 EPISODES_PER_GROUP = 2
 
@@ -147,6 +174,7 @@ def readiness_limits(plan: AccessReadinessPlan) -> tuple[int, float]:
             * (
                 len(plan.requirements) * READINESS_GROUP_DEADLINE_SECONDS
                 + len(plan.continuity) * CONTINUITY_GROUP_DEADLINE_SECONDS
+                + len(plan.routed) * ROUTED_GROUP_DEADLINE_SECONDS
             ),
         ),
     )
@@ -218,6 +246,24 @@ class TrunkContinuityObserver(Protocol):
         """Read every listed switch per round until `settled` or the window ends."""
 
 
+class RoutedForwardingObserver(Protocol):
+    """The port one bounded routed-forwarding observation needs."""
+
+    def observe_routed_forwarding(
+        self,
+        devices: Sequence[str],
+        *,
+        settled: Callable[[RoutedForwardingRound], bool],
+        remaining_seconds: float,
+        max_rounds: int,
+        deadline_seconds: float,
+        interval_seconds: float,
+        sample_calls: int,
+        episode_calls: int,
+    ) -> RoutedForwardingObservation:
+        """Read every listed router per round until `settled` or the window ends."""
+
+
 class _NarrowedResult:
     """A refused group and the fresh episode about its forwarding subset.
 
@@ -240,7 +286,7 @@ class _NarrowedResult:
         return self.second if expectation_id in self._narrowed else self.first
 
 
-_ObservedResult = AccessReadinessGroupResult | ContinuityGroupResult
+_ObservedResult = AccessReadinessGroupResult | ContinuityGroupResult | RoutedGroupResult
 _GroupResult = _ObservedResult | _NarrowedResult
 
 
@@ -257,6 +303,7 @@ class ServiceAccessReadinessGate:
         total_budget_seconds: float | None = None,
         max_groups: int | None = None,
         continuity_observer: TrunkContinuityObserver | None = None,
+        routed_observer: RoutedForwardingObserver | None = None,
     ) -> None:
         """Bind the gate to one derived plan without observing anything yet."""
         derived_groups, derived_seconds = readiness_limits(plan)
@@ -283,6 +330,12 @@ class ServiceAccessReadinessGate:
         self._verdicts: dict[str, ReadinessDependentResult] = {}
         self._requirements = {item.key: item for item in plan.requirements}
         self._continuity = {item.key: item for item in plan.continuity}
+        self._routed = {item.key: item for item in plan.routed}
+        self._routed_observer = routed_observer
+        #: The newest AUTHORITATIVE reading of each router, by semantic id.
+        self._latest_readings: dict[str, DeviceForwardingReading] = {}
+        #: Admitted dependents a later reading refuted, with the refuting cause.
+        self._revoked: dict[str, str] = {}
         self._unplaced_recorded = False
         self._consumed = False
         self.observations: list[tuple[str, int, tuple[str, ...]]] = []
@@ -314,6 +367,11 @@ class ServiceAccessReadinessGate:
         """
         if expectation_id in self._verdicts:
             return self._verdicts[expectation_id]
+        if expectation_id in self._revoked:
+            revoked = self._revoked_verdict(expectation_id)
+            if revoked is not None:
+                self._verdicts[expectation_id] = revoked
+                return revoked
         keys = self._plan.groups_by_expectation.get(expectation_id)
         if not keys:
             unplaced = [
@@ -354,6 +412,12 @@ class ServiceAccessReadinessGate:
                 # admit it. They stay available to other dependents.
                 break
         combined = _combined(verdicts, self._label)
+        if combined.admitted and expectation_id in self._revoked:
+            # A later routed episode, taken while this dependent's other
+            # groups were being observed, refuted its chain.
+            revoked = self._revoked_verdict(expectation_id)
+            if revoked is not None:
+                combined = revoked
         self._verdicts[expectation_id] = combined
         return combined
 
@@ -403,9 +467,20 @@ class ServiceAccessReadinessGate:
                         continuity, cause="dependent_never_became_admissible"
                     )
                 )
+        for routed in self._plan.routed:
+            if routed.key not in self._results:
+                recorded.append(
+                    unobserved_routed_result(
+                        routed, cause="dependent_never_became_admissible"
+                    )
+                )
         if self._plan.unplaced:
             recorded.append(unplaced_group_result(self._plan.unplaced))
         rows: list[dict[str, object]] = []
+        revocations = [
+            {"expectation_id": key, "cause": cause}
+            for key, cause in sorted(self._revoked.items())
+        ]
         for item in recorded:
             if isinstance(item, _NarrowedResult):
                 rows.append(self._rendered(item.first))
@@ -414,6 +489,8 @@ class ServiceAccessReadinessGate:
                 rows.append(second)
             else:
                 rows.append(self._rendered(item))
+        if revocations:
+            rows.append({"kind": "routed_revocations", "revoked": revocations})
         return rows
 
     def _rendered(self, result: _ObservedResult) -> dict[str, object]:
@@ -430,6 +507,8 @@ class ServiceAccessReadinessGate:
     # -- internals ------------------------------------------------------------
 
     def _label(self, key: GroupKey) -> str:
+        if key in self._routed:
+            return f"routed_forwarding:{key[1]}>{key[2]}"
         if key in self._continuity:
             return f"trunk_continuity:{key[1]}"
         requirement = self._requirements.get(key)
@@ -443,6 +522,8 @@ class ServiceAccessReadinessGate:
         return f"access:{name}:{key[1]}"
 
     def _devices(self, key: GroupKey) -> set[str]:
+        if key in self._routed:
+            return set(self._routed[key].device_ids)
         if key in self._continuity:
             return set(self._continuity[key].component.switch_device_ids)
         requirement = self._requirements.get(key)
@@ -464,6 +545,8 @@ class ServiceAccessReadinessGate:
             result: _GroupResult = self._access_group(self._requirements[key])
         elif key in self._continuity:
             result = self._continuity_group(self._continuity[key])
+        elif key in self._routed:
+            result = self._routed_group(self._routed[key])
         else:
             return None
         self._results[key] = result
@@ -555,14 +638,22 @@ class ServiceAccessReadinessGate:
 
     def _owed_seconds(self, key: GroupKey) -> float:
         """Return the first windows still owed to every other unobserved group."""
-        return sum(
-            READINESS_GROUP_DEADLINE_SECONDS
-            for other in self._requirements
-            if other != key and other not in self._results
-        ) + sum(
-            CONTINUITY_GROUP_DEADLINE_SECONDS
-            for other in self._continuity
-            if other != key and other not in self._results
+        return (
+            sum(
+                READINESS_GROUP_DEADLINE_SECONDS
+                for other in self._requirements
+                if other != key and other not in self._results
+            )
+            + sum(
+                CONTINUITY_GROUP_DEADLINE_SECONDS
+                for other in self._continuity
+                if other != key and other not in self._results
+            )
+            + sum(
+                ROUTED_GROUP_DEADLINE_SECONDS
+                for other in self._routed
+                if other != key and other not in self._results
+            )
         )
 
     def _available_seconds(
@@ -833,6 +924,196 @@ class ServiceAccessReadinessGate:
             ),
             observation,
         )
+
+    # -- routed forwarding ------------------------------------------------
+
+    def _revoked_verdict(self, expectation_id: str) -> ReadinessDependentResult | None:
+        """Return the refusal of a dependent whose admitted chain was refuted."""
+        for key in self._plan.groups_by_expectation.get(expectation_id, ()):
+            requirement = self._routed.get(key)
+            if requirement is None:
+                continue
+            dependent = next(
+                (
+                    item
+                    for item in requirement.dependents
+                    if item.expectation_id == expectation_id
+                ),
+                None,
+            )
+            if dependent is None:
+                continue
+            return ReadinessDependentResult(
+                expectation_id=expectation_id,
+                service_id=dependent.service_id,
+                kind=str(getattr(dependent.kind, "value", dependent.kind)),
+                client_device_id=dependent.client_device_id,
+                host_device_id=dependent.host_device_id,
+                interfaces=(),
+                admitted=False,
+                cause=(
+                    f"{self._label(key)}:{ROUTED_DRIFT}:{self._revoked[expectation_id]}"
+                ),
+            )
+        return None
+
+    def _routed_names(self, requirement: RoutedRequirement) -> dict[str, str]:
+        return {
+            device_id: self._device_names.get(device_id, device_id)
+            for device_id in requirement.device_ids
+        }
+
+    def _routed_group(self, requirement: RoutedRequirement) -> _GroupResult:
+        """Observe one segment pair, and narrow once to what last forwarded."""
+        first, observation = self._observe_routed(requirement)
+        if first.status == "admitted" or observation is None:
+            return first
+        names = self._routed_names(requirement)
+        forwarding = set(admitted_in_last_round(requirement, observation, names))
+        covered = tuple(
+            item for item in requirement.dependents if item.expectation_id in forwarding
+        )
+        if not covered or len(covered) >= len(requirement.dependents):
+            return first
+        second, _ = self._observe_routed(
+            replace(requirement, dependents=covered), narrowed=True
+        )
+        return _NarrowedResult(first, second)
+
+    def _observe_routed(
+        self, requirement: RoutedRequirement, *, narrowed: bool = False
+    ) -> tuple[RoutedGroupResult, RoutedForwardingObservation | None]:
+        """Take one bounded routed episode over one group's routers."""
+        if self._routed_observer is None:
+            return (
+                unobserved_routed_result(requirement, cause=CAUSE_OBSERVER_UNAVAILABLE),
+                None,
+            )
+        remaining, refused = self._admit_group()
+        if refused:
+            return unobserved_routed_result(requirement, cause=refused), None
+        available = self._available_seconds(
+            requirement.key,
+            remaining,
+            first=not narrowed,
+            window=ROUTED_GROUP_DEADLINE_SECONDS,
+        )
+        if available <= 0:
+            return (
+                unobserved_routed_result(
+                    requirement,
+                    cause=f"{CAUSE_BUDGET_EXHAUSTED}:reserved_for_other_groups",
+                ),
+                None,
+            )
+        names = self._routed_names(requirement)
+        devices = [names[item] for item in requirement.device_ids]
+        group_started = self._clock()
+        self._observed_groups += 1
+        self.observations.append(("routed_forwarding", 0, tuple(devices)))
+        episode = self._episode(requirement.key, narrowed=narrowed)
+        try:
+            observation = self._routed_observer.observe_routed_forwarding(
+                devices,
+                settled=lambda round_: round_admits_all(requirement, round_, names),
+                remaining_seconds=available,
+                max_rounds=ROUTED_MAX_ROUNDS,
+                deadline_seconds=ROUTED_GROUP_DEADLINE_SECONDS,
+                interval_seconds=ROUTED_INTERVAL_SECONDS,
+                sample_calls=READINESS_SAMPLE_CALLS,
+                episode_calls=ROUTED_MAX_ROUNDS
+                * len(devices)
+                * ROUTED_READING_ALLOWANCE,
+            )
+        except Exception as exc:
+            return (
+                replace(
+                    unobserved_routed_result(
+                        requirement,
+                        cause=f"{CAUSE_OBSERVATION_FAILED}:{type(exc).__name__}",
+                    ),
+                    episode=episode,
+                ),
+                None,
+            )
+        if tuple(observation.device_names) != tuple(devices):
+            return (
+                replace(
+                    unobserved_routed_result(
+                        requirement,
+                        cause=f"{CAUSE_ANSWER_DOES_NOT_MATCH_REQUEST}:routed",
+                    ),
+                    episode=episode,
+                ),
+                None,
+            )
+        late = self._clock() - group_started >= min(
+            available, ROUTED_GROUP_DEADLINE_SECONDS
+        ) and not (observation.rounds and _routed_before_window(observation))
+        verdicts = routed_verdicts(requirement, observation, names)
+        if late:
+            verdicts = {
+                key: RoutedVerdict(False, ROUTED_DEADLINE, CAUSE_GROUP_DEADLINE_REACHED)
+                for key in verdicts
+            }
+        result = observed_routed_result(
+            requirement,
+            verdicts=verdicts,
+            sample=routed_facts(requirement, observation, names),
+        )
+        self._record_routed_readings(requirement, observation, names)
+        return replace(result, episode=episode), observation
+
+    def _record_routed_readings(
+        self,
+        requirement: RoutedRequirement,
+        observation: RoutedForwardingObservation,
+        names: Mapping[str, str],
+    ) -> None:
+        """Keep the newest authoritative readings and withdraw refuted permits.
+
+        Every other routed group already observed in this invocation is asked
+        again about the routers this episode re-read, for its dependents that
+        have not received a verdict yet. A refutation is sticky.
+        """
+        ids = {name: device_id for device_id, name in names.items()}
+        changed: set[str] = set()
+        for round_ in observation.rounds:
+            for reading in round_.readings:
+                device_id = ids.get(reading.device_name)
+                if device_id is not None and reading.authoritative:
+                    self._latest_readings[device_id] = reading
+                    changed.add(device_id)
+        if not changed:
+            return
+        for key, result in self._results.items():
+            if key == requirement.key or key not in self._routed:
+                continue
+            candidates = (
+                (result.first, result.second)
+                if isinstance(result, _NarrowedResult)
+                else (result,)
+            )
+            for candidate in candidates:
+                if not isinstance(candidate, RoutedGroupResult):
+                    continue
+                pending = {
+                    item.expectation_id
+                    for item in candidate.dependents
+                    if item.expectation_id not in self._verdicts
+                }
+                for expectation_id, cause in revoked_dependents(
+                    candidate, self._latest_readings, changed, pending
+                ).items():
+                    self._revoked.setdefault(expectation_id, cause)
+
+
+def _routed_before_window(observation: RoutedForwardingObservation) -> bool:
+    """Whether the deciding round ended inside the observer's own window."""
+    deciding = observation.rounds[-1]
+    return deciding.complete and not any(
+        item.after_deadline for item in deciding.readings
+    )
 
 
 def _joined_before_window(observation: TrunkContinuityObservation) -> bool:

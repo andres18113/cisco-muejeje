@@ -54,6 +54,12 @@ from ...domain.enterprise.models.forwarding import (
     AccessForwardingRow,
     AccessForwardingSampleEvidence,
 )
+from ...domain.enterprise.models.routed_forwarding import (
+    DeviceForwardingReading,
+    ObservedInterface,
+    RoutedForwardingObservation,
+    RoutedForwardingRound,
+)
 from ...domain.enterprise.services.access_forwarding import (
     CAUSE_AUXILIARY_READ_AFTER_DEADLINE,
     CAUSE_EPISODE_WINDOW_ENDED,
@@ -1556,6 +1562,128 @@ class PacketTracerEnterpriseConfigurationRuntime:
             elapsed_ms=int(max(0.0, self._clock() - started) * 1000),
             deadline_reached=closed,
             deadline_cause="continuity_window_ended" if closed else "",
+            episode_end_reason=end_reason,
+            channel_calls=calls,
+        )
+
+    def observe_routed_forwarding(
+        self,
+        devices: Sequence[str],
+        *,
+        settled: Callable[[RoutedForwardingRound], bool],
+        remaining_seconds: float,
+        max_rounds: int,
+        deadline_seconds: float,
+        interval_seconds: float,
+        sample_calls: int,
+        episode_calls: int | None = None,
+    ) -> RoutedForwardingObservation:
+        """Read every listed router's interfaces and routing table, per round.
+
+        One reading is the registered `show ip interface brief` and the
+        registered `show ip route` of one router, through the same bounded
+        channel as the forwarding and continuity observers: each read has its
+        own call budget, every call is capped by the window, and the episode's
+        calls are bounded together. Rounds stop when `settled` accepts a
+        complete round, the window closes, the round ceiling is reached, or the
+        channel stops granting calls. Nothing is reconfigured. A reading keeps
+        the attribution of both reads; if they disagree, or either is not
+        fresh, complete and attributed, the reading is kept and is not
+        authoritative.
+        """
+        if isinstance(max_rounds, bool) or not isinstance(max_rounds, int):
+            raise ValueError("routed forwarding max_rounds must be an int")
+        if sample_calls < 1:
+            raise ValueError("routed forwarding sample_calls must be positive")
+        if episode_calls is not None and (
+            isinstance(episode_calls, bool)
+            or not isinstance(episode_calls, int)
+            or episode_calls < 1
+        ):
+            raise ValueError("routed forwarding episode_calls must be a positive int")
+        requested = tuple(str(name) for name in devices)
+        window = min(float(deadline_seconds), float(remaining_seconds))
+        started = self._clock()
+        deadline = started + window
+        rounds: list[RoutedForwardingRound] = []
+        calls = 0
+        end_reason = ""
+        while len(rounds) < max_rounds:
+            if self._forwarding_channel.stopped:
+                end_reason = self._forwarding_channel.stop_reason
+                break
+            if self._clock() >= deadline:
+                end_reason = "deadline"
+                break
+            readings: list[DeviceForwardingReading] = []
+            allowance_spent = False
+            for name in requested:
+                if self._forwarding_channel.stopped or self._clock() >= deadline:
+                    break
+                results = []
+                spent_here = 0
+                exhausted = False
+                for query in (
+                    OperationalQueryId.SHOW_IP_INTERFACE_BRIEF,
+                    OperationalQueryId.SHOW_IP_ROUTE,
+                ):
+                    granted = sample_calls
+                    if episode_calls is not None:
+                        left = episode_calls - calls
+                        if left <= 0:
+                            allowance_spent = True
+                            break
+                        granted = min(sample_calls, left)
+                    self._forwarding_channel.open(calls=granted, deadline=deadline)
+                    before = self._forwarding_channel.calls
+                    results.append(self._forwarding_ios.execute(name, query))
+                    spent = self._forwarding_channel.calls - before
+                    calls += spent
+                    spent_here += spent
+                    exhausted = exhausted or self._forwarding_channel.exhausted
+                if len(results) != 2:
+                    break
+                readings.append(
+                    _routed_reading(
+                        name,
+                        results[0],
+                        results[1],
+                        channel_calls=spent_here,
+                        exhausted=exhausted,
+                        after_deadline=self._clock() >= deadline,
+                    )
+                )
+            round_ = RoutedForwardingRound(
+                index=len(rounds),
+                elapsed_ms=int(max(0.0, self._clock() - started) * 1000),
+                readings=tuple(readings),
+                complete=len(readings) == len(requested),
+            )
+            rounds.append(round_)
+            if round_.complete and settled(round_):
+                end_reason = "required_paths_forwarding"
+                break
+            if allowance_spent or (
+                episode_calls is not None and calls >= episode_calls
+            ):
+                end_reason = "episode_call_budget_exhausted"
+                break
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                end_reason = "deadline"
+                break
+            if len(rounds) < max_rounds:
+                self._sleeper(min(float(interval_seconds), remaining))
+        if not end_reason:
+            end_reason = "max_rounds_reached"
+        closed = self._clock() >= deadline
+        return RoutedForwardingObservation(
+            device_names=requested,
+            rounds=tuple(rounds),
+            deadline_seconds=window,
+            elapsed_ms=int(max(0.0, self._clock() - started) * 1000),
+            deadline_reached=closed,
+            deadline_cause="routed_window_ended" if closed else "",
             episode_end_reason=end_reason,
             channel_calls=calls,
         )
@@ -3962,6 +4090,54 @@ class PacketTracerEnterpriseConfigurationRuntime:
     @staticmethod
     def _same_interface(observed: str, expected: str) -> bool:
         return same_interface_name(observed, expected)
+
+
+def _routed_reading(
+    device_name: str,
+    interfaces: IosCommandResult,
+    routes: IosCommandResult,
+    *,
+    channel_calls: int,
+    exhausted: bool,
+    after_deadline: bool,
+) -> DeviceForwardingReading:
+    """Combine one router's two registered reads into one reading."""
+    both = (interfaces, routes)
+    names = {item.observed_device_name for item in both}
+    provenances = {item.device_identity_provenance for item in both}
+    complete = all(item.output_complete for item in both)
+    return DeviceForwardingReading(
+        device_name=device_name,
+        executed=all(item.executed for item in both),
+        fresh_output_observed=all(item.fresh_output_observed for item in both),
+        output_complete=complete,
+        observed_device_name=next(iter(names)) if len(names) == 1 else "",
+        device_identity_provenance=(
+            next(iter(provenances)) if len(provenances) == 1 else "disagreeing"
+        ),
+        route_table=(
+            parse_show_ip_route(routes.output)
+            if routes.executed and routes.output_complete
+            else None
+        ),
+        interfaces=(
+            tuple(
+                ObservedInterface(
+                    name=row.interface,
+                    ipv4=row.ip_address,
+                    status=row.status,
+                    protocol=row.protocol,
+                )
+                for row in parse_show_ip_interface_brief(interfaces.output)
+            )
+            if interfaces.executed and interfaces.output_complete
+            else ()
+        ),
+        channel_calls=channel_calls,
+        call_budget_exhausted=exhausted,
+        after_deadline=after_deadline,
+        failure_reason=interfaces.failure_reason or routes.failure_reason,
+    )
 
 
 def _trunk_port_reading(

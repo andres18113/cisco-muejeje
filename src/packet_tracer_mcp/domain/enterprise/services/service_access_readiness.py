@@ -30,10 +30,17 @@ compiled component joins stays unplaced.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from ..models.service_plan import ServiceVerificationKind
+from .routed_readiness import (
+    GatewayInterfaceExpectation,
+    HopExpectation,
+    RoutedDependent,
+    RoutedRequirement,
+)
+from .routed_service_path import RoutedPath
 from .service_path_closure import L2Component, PathTopology
 
 #: The one configuration action type that places endpoints on a switch access
@@ -173,6 +180,8 @@ class AccessReadinessPlan:
         default_factory=dict
     )
     continuity: tuple[ContinuityRequirement, ...] = ()
+    #: SP-1: one routed-forwarding group per client and server segment pair.
+    routed: tuple[RoutedRequirement, ...] = ()
 
     @property
     def gated_expectation_ids(self) -> tuple[str, ...]:
@@ -191,7 +200,7 @@ class AccessReadinessPlan:
     @property
     def group_count(self) -> int:
         """Return how many distinct groups this plan can ask about."""
-        return len(self.requirements) + len(self.continuity)
+        return len(self.requirements) + len(self.continuity) + len(self.routed)
 
 
 def access_port_placements(
@@ -239,11 +248,22 @@ def access_port_placements(
     return tuple(placements)
 
 
+#: The requests SP-1 gates on readiness: HTTP, plus the DNS queries a
+#: client sends to its resolver across the same kind of path.
+SERVICE_REQUEST_KINDS = HTTP_REQUEST_KINDS | frozenset(
+    {
+        ServiceVerificationKind.DNS_RESOLUTION,
+        ServiceVerificationKind.DNS_NEGATIVE_CONTROL,
+    }
+)
+
+
 def derive_access_readiness_plan(
     *,
     configuration_actions: Iterable[object],
     verification_expectations: Sequence[object],
     request_kinds: frozenset[ServiceVerificationKind] = HTTP_REQUEST_KINDS,
+    routed_paths: Mapping[tuple[str, str], RoutedPath] | None = None,
 ) -> AccessReadinessPlan:
     """Group the request expectations by every group their path needs.
 
@@ -260,8 +280,18 @@ def derive_access_readiness_plan(
     joins them. Grouping is by the semantic device ids the plan assigns; the
     deployed name travels with the group for the query and for the report, and
     is never what a group is keyed on.
+
+    SP-1: a request whose client and server pair has an admitted routed path
+    in `routed_paths` needs, on each leg, the endpoint's access group (with
+    the switch port that faces the gateway when both are on one switch), or
+    that access group, the gateway port's own group and the continuity group
+    of the component between them; and the routed-forwarding group of its
+    segment pair, which proves both route chains.
     """
     actions = list(configuration_actions)
+    routed_paths = routed_paths or {}
+    routed_groups: dict[GroupKey, tuple[tuple[str, str], list[RoutedDependent]]] = {}
+    extra_interfaces: dict[tuple[str, int], set[str]] = {}
     placements = access_port_placements(actions)
     topology: PathTopology | None = None
     by_endpoint: dict[str, list[AccessPortPlacement]] = {}
@@ -303,6 +333,20 @@ def derive_access_readiness_plan(
                 for placement in resolved
             )
         )
+
+        routed = routed_paths.get((client_id, host_id)) if client_id else None
+        if routed is not None and routed.admitted:
+            groups_by_expectation[expectation_id] = _routed_keys(
+                routed,
+                expectation_id=expectation_id,
+                service_id=service_id,
+                kind=kind,
+                join=join,
+                extra_interfaces=extra_interfaces,
+                continuity=continuity,
+                routed_groups=routed_groups,
+            )
+            continue
 
         def dependent(
             on: tuple[str, int] | None = None,
@@ -397,10 +441,17 @@ def derive_access_readiness_plan(
             # ask about it twice.
             interfaces=tuple(
                 dict.fromkeys(
-                    placement.interface
-                    for placement in placements
-                    if (placement.switch_device_id, placement.vlan_id) == key
-                    and placement.interface in interfaces.get(key, set())
+                    [
+                        *(
+                            placement.interface
+                            for placement in placements
+                            if (placement.switch_device_id, placement.vlan_id) == key
+                            and placement.interface in interfaces.get(key, set())
+                        ),
+                        # Gateway-facing ports are trunks or port-only access
+                        # ports, so no endpoint placement lists them.
+                        *sorted(extra_interfaces.get(key, set())),
+                    ]
                 )
             ),
             dependents=tuple(dependents),
@@ -415,7 +466,127 @@ def derive_access_readiness_plan(
             ContinuityRequirement(component=component, dependents=tuple(items))
             for component, items in continuity.values()
         ),
+        routed=tuple(
+            RoutedRequirement(
+                client_segment_id=segments[0],
+                host_segment_id=segments[1],
+                device_ids=tuple(
+                    dict.fromkeys(
+                        device for item in items for device in item.device_ids
+                    )
+                ),
+                dependents=tuple(items),
+            )
+            for segments, items in routed_groups.values()
+        ),
     )
+
+
+def _routed_keys(
+    path: RoutedPath,
+    *,
+    expectation_id: str,
+    service_id: str,
+    kind: object,
+    join: Callable[[tuple[str, int], ReadinessDependent, str], None],
+    extra_interfaces: dict[tuple[str, int], set[str]],
+    continuity: dict[GroupKey, tuple[L2Component, list[ContinuityDependent]]],
+    routed_groups: dict[GroupKey, tuple[tuple[str, str], list[RoutedDependent]]],
+) -> tuple[GroupKey, ...]:
+    """Register one routed request in every group its path needs."""
+    assert path.client_leg is not None and path.host_leg is not None
+    keys: list[GroupKey] = []
+
+    def access(key: tuple[str, int], ports: tuple[str, ...], name: str) -> None:
+        join(
+            key,
+            ReadinessDependent(
+                expectation_id=expectation_id,
+                service_id=service_id,
+                kind=kind,  # type: ignore[arg-type]
+                client_device_id=path.client_device_id,
+                host_device_id=path.host_device_id,
+                interfaces=ports,
+            ),
+            name,
+        )
+        keys.append(key)
+
+    for leg in (path.client_leg, path.host_leg):
+        attachment = leg.attachment
+        endpoint_key = (leg.access.switch_device_id, leg.access.vlan_id)
+        gateway_key = (attachment.switch_device_id, attachment.vlan_id)
+        extra_interfaces.setdefault(gateway_key, set()).add(attachment.switch_interface)
+        if leg.local:
+            access(
+                endpoint_key,
+                (leg.access.interface, attachment.switch_interface),
+                leg.access.switch_device_name,
+            )
+            continue
+        access(endpoint_key, (leg.access.interface,), leg.access.switch_device_name)
+        access(
+            gateway_key,
+            (attachment.switch_interface,),
+            attachment.switch_device_name,
+        )
+        component = leg.component
+        assert component is not None
+        bucket = continuity.setdefault(component.key, (component, []))
+        bucket[1].append(
+            ContinuityDependent(
+                expectation_id=expectation_id,
+                service_id=service_id,
+                kind=kind,  # type: ignore[arg-type]
+                client_device_id=path.client_device_id,
+                host_device_id=path.host_device_id,
+                client_switch_id=leg.access.switch_device_id,
+                host_switch_id=attachment.switch_device_id,
+            )
+        )
+        keys.append(component.key)
+
+    client_gateway = path.client_leg.attachment
+    host_gateway = path.host_leg.attachment
+
+    def hops(chain) -> tuple[HopExpectation, ...]:
+        return tuple(
+            HopExpectation(
+                device_id=hop.device_id,
+                next_hop=hop.next_hop,
+                egress_interface=hop.egress_interface,
+                egress_ipv4=hop.egress_ipv4,
+                peer_device_id=hop.peer_device_id,
+                ingress_interface=hop.ingress_interface,
+                ingress_ipv4=hop.ingress_ipv4,
+            )
+            for hop in chain
+        )
+
+    segments = (client_gateway.segment_id, host_gateway.segment_id)
+    routed_key: GroupKey = ("routed_forwarding", *segments)
+    bucket = routed_groups.setdefault(routed_key, (segments, []))
+    bucket[1].append(
+        RoutedDependent(
+            expectation_id=expectation_id,
+            service_id=service_id,
+            kind=kind,  # type: ignore[arg-type]
+            client_device_id=path.client_device_id,
+            host_device_id=path.host_device_id,
+            client_ipv4=path.client_ipv4,
+            host_ipv4=path.host_ipv4,
+            client_gateway=GatewayInterfaceExpectation(
+                client_gateway.device_id, client_gateway.interface, client_gateway.ipv4
+            ),
+            host_gateway=GatewayInterfaceExpectation(
+                host_gateway.device_id, host_gateway.interface, host_gateway.ipv4
+            ),
+            forward=hops(path.forward),
+            reverse=hops(path.reverse),
+        )
+    )
+    keys.append(routed_key)
+    return tuple(dict.fromkeys(keys))
 
 
 #: What one group's readiness observation concluded. `ADMITTED` is the only

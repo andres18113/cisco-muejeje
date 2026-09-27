@@ -13,6 +13,10 @@ import ipaddress
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
+#: The attribution a registered IOS read carries when it came from exactly
+#: the device asked about (the same value the access observer requires).
+CONFIRMED_UNIQUE_IDENTITY = "confirmed_unique"
+
 #: Route codes that mean "this router delivers to that prefix itself".
 CONNECTED_ROUTE_CODES = frozenset({"C"})
 
@@ -122,37 +126,77 @@ class ObservedInterface:
 
 @dataclass(frozen=True)
 class DeviceForwardingReading:
-    """One device's fresh routing and interface state in one round.
+    """One device's `show ip interface brief` and `show ip route` in one round.
 
-    `attributed` means the answer came from exactly the device asked about.
-    A reading that is not fresh, complete and attributed is not evidence and
-    admits nothing, whatever its rows say.
+    Both registered reads must have executed, returned fresh output walked to
+    the prompt, and been attributed to exactly this device; the table must
+    parse completely with IPv4 routing on. Anything less is kept as observed
+    and is not authoritative, so it can refuse nothing and admit nothing.
     """
 
     device_name: str
-    fresh: bool
-    complete: bool
-    attributed: bool
+    executed: bool = False
+    fresh_output_observed: bool = False
+    output_complete: bool = False
+    observed_device_name: str = ""
+    device_identity_provenance: str = ""
     route_table: RouteTableReading | None = None
     interfaces: tuple[ObservedInterface, ...] = ()
+    channel_calls: int = 0
+    call_budget_exhausted: bool = False
+    after_deadline: bool = False
     failure_reason: str = ""
-    round_index: int = 0
 
     @property
-    def usable(self) -> bool:
-        """Whether this reading may support a decision at all."""
-        return (
-            self.fresh
-            and self.complete
-            and self.attributed
+    def authoritative(self) -> bool:
+        """Whether this reading may speak for its device at all."""
+        return bool(
+            self.executed
+            and self.fresh_output_observed
+            and self.output_complete
+            and not self.call_budget_exhausted
+            and not self.after_deadline
+            and self.observed_device_name == self.device_name
+            and self.device_identity_provenance == CONFIRMED_UNIQUE_IDENTITY
             and self.route_table is not None
             and self.route_table.parse_complete
+            and self.route_table.routing_enabled is True
         )
 
     def interface(self, name: str) -> tuple[ObservedInterface, ...]:
         """Return every row naming this interface (duplicates retained)."""
         wanted = name.casefold()
         return tuple(item for item in self.interfaces if item.name.casefold() == wanted)
+
+
+@dataclass(frozen=True)
+class RoutedForwardingRound:
+    """Every router of one routed group read once, or as many as time allowed."""
+
+    index: int
+    elapsed_ms: int
+    readings: tuple[DeviceForwardingReading, ...]
+    complete: bool
+
+    def reading(self, device_name: str) -> DeviceForwardingReading | None:
+        """Return this round's reading of one device, if it was taken."""
+        return next(
+            (item for item in self.readings if item.device_name == device_name), None
+        )
+
+
+@dataclass(frozen=True)
+class RoutedForwardingObservation:
+    """One bounded routed-forwarding episode over one group's routers."""
+
+    device_names: tuple[str, ...]
+    rounds: tuple[RoutedForwardingRound, ...] = ()
+    deadline_seconds: float = 0.0
+    elapsed_ms: int = 0
+    deadline_reached: bool = False
+    deadline_cause: str = ""
+    episode_end_reason: str = ""
+    channel_calls: int = 0
 
 
 def interfaces_by_name(

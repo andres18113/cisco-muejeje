@@ -195,6 +195,9 @@ class EffectClosureReadinessGroup(BaseModel):
     interfaces: list[str] = Field(default_factory=list)
     dependents: list[str] = Field(default_factory=list)
     links: list[str] = Field(default_factory=list)
+    #: SP-1 routed-forwarding groups: every compiled hop both chains take, as
+    #: `router:network/prefix>next-hop`, so evidence can be checked hop by hop.
+    routes: list[str] = Field(default_factory=list)
 
 
 class EffectClosurePath(BaseModel):

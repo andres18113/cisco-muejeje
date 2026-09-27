@@ -99,8 +99,11 @@ class RouteHop:
     next_hop: str
     egress_action_id: str
     egress_interface: str
+    egress_ipv4: str
     peer_device_id: str
     ingress_action_id: str
+    ingress_interface: str
+    ingress_ipv4: str
 
 
 @dataclass(frozen=True)
@@ -109,6 +112,8 @@ class RoutedPath:
 
     client_device_id: str
     host_device_id: str
+    client_ipv4: str = ""
+    host_ipv4: str = ""
     client_leg: L2Leg | None = None
     host_leg: L2Leg | None = None
     forward: tuple[RouteHop, ...] = ()
@@ -378,8 +383,11 @@ class RoutedPlanIndex:
                     next_hop=str(route.next_hop),
                     egress_action_id=str(egress.id),
                     egress_interface=str(egress.interface),
+                    egress_ipv4=str(egress.ipv4),
                     peer_device_id=str(ingress.device_id),
                     ingress_action_id=str(ingress.id),
+                    ingress_interface=str(ingress.interface),
+                    ingress_ipv4=str(ingress.ipv4),
                 )
             )
             current = str(ingress.device_id)
@@ -454,6 +462,8 @@ def derive_routed_path(
     return RoutedPath(
         client_device_id=client.device_id,
         host_device_id=host.device_id,
+        client_ipv4=client.ipv4,
+        host_ipv4=host.ipv4,
         client_leg=client_leg,
         host_leg=host_leg,
         forward=forward,
