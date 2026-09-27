@@ -75,7 +75,10 @@ from ...domain.enterprise.services.service_capability_resolution import (
     resolve_action_capability,
     resolve_verification_capability,
 )
-from ...domain.enterprise.services.service_request_order import request_phases
+from ...domain.enterprise.services.service_request_order import (
+    LATER_TRAFFIC_PHASE,
+    request_phases,
+)
 from .service_access_readiness_gate import (
     ReadinessNotRequired,
     ServiceAccessReadinessGate,
@@ -168,6 +171,12 @@ class ServiceRuntime(Protocol):
         expectation: ServiceVerificationExpectation,
     ) -> RuntimeServiceVerification:
         """Observe one expectation."""
+
+
+#: Verification outcomes that mean the request itself was never dispatched.
+_NOT_SENT_STATUSES = frozenset(
+    {ActionExecutionStatus.DEPENDENCY_BLOCKED, ActionExecutionStatus.SKIPPED}
+)
 
 
 class ServiceApplicator:
@@ -872,6 +881,15 @@ class ServiceApplicator:
                 [],
             )
         native_group_json: dict[str, str] = {}
+        # SP1-03 at dispatch: a client's cold HTTP-by-address requests, so its
+        # later traffic can be held until each of them was actually sent.
+        cold_by_client: dict[str, list[str]] = {}
+        for item in ordered:
+            if (
+                item.kind is ServiceVerificationKind.HTTP_FETCH
+                and item.client_device_id
+            ):
+                cold_by_client.setdefault(item.client_device_id, []).append(item.id)
         for expectation in ordered:
             if expectation.id in results:
                 continue
@@ -957,6 +975,21 @@ class ServiceApplicator:
                         }
                     )
                     satisfied = False
+            if satisfied and phases.get(expectation.id) == LATER_TRAFFIC_PHASE:
+                # A cold request that was blocked or skipped was never sent;
+                # the same client's later traffic would then be the first to
+                # cross its path. Hold it, whatever service it belongs to.
+                unsent = sorted(
+                    identifier
+                    for identifier in cold_by_client.get(
+                        expectation.client_device_id, []
+                    )
+                    if identifier not in results
+                    or results[identifier].status in _NOT_SENT_STATUSES
+                )
+                if unsent:
+                    satisfied = False
+                    blocked = [f"cold_request_not_sent:{item}" for item in unsent]
             if not satisfied:
                 results[expectation.id] = ServiceVerificationResult(
                     expectation_id=expectation.id,

@@ -164,16 +164,18 @@ def test_routed_clients_read_their_gateway_and_local_ones_do_not():
     assert fetches
     for fetch in fetches:
         assert fetch.depends_on == [by_client[fetch.client_device_id]]
-    # The same gateway read gates the client's DNS, so a failed read can
-    # never let DNS cross the path before the skipped cold request.
+    # DNS carries no cross-service prerequisite on the HTTP service's read:
+    # the applicator holds later traffic until the cold request was sent
+    # (test_sp1_cold_request_gate.py), so an excluded service never dangles.
     resolutions = [
         item
         for item in routed.verification_expectations
         if item.kind is ServiceVerificationKind.DNS_RESOLUTION
     ]
     assert resolutions
+    gateway_ids = set(by_client.values())
     for item in resolutions:
-        assert by_client[item.client_device_id] in item.depends_on
+        assert not gateway_ids & set(item.depends_on)
 
 
 def test_the_product_asks_every_http_by_ip_before_any_dns(tmp_path: Path):
