@@ -2277,6 +2277,23 @@ class ServiceCompiler:
                         },
                     )
                 )
+        # SP1-03: a routed client's gateway read gates its HTTP-by-address
+        # fetch, so it must gate the same client's DNS queries too. Otherwise
+        # a failed read would skip the cold request while DNS still crossed
+        # (and warmed) the path. Every later row of the client already
+        # depends on either the fetch or a resolution.
+        gateways: dict[str, list[str]] = defaultdict(list)
+        for item in expectations:
+            if item.kind is ServiceVerificationKind.CLIENT_GATEWAY:
+                gateways[item.client_device_id].append(item.id)
+        for item in expectations:
+            if (
+                item.kind is ServiceVerificationKind.DNS_RESOLUTION
+                and item.client_device_id in gateways
+            ):
+                item.depends_on = sorted(
+                    {*item.depends_on, *gateways[item.client_device_id]}
+                )
         self._bind_expectation_targets(expectations, services, requirements, devices)
         return sorted(
             expectations,

@@ -278,3 +278,35 @@ def test_the_durable_record_agrees_with_the_public_response(
         if row.get("kind") == "routed_forwarding"
     ]
     assert len(routed) == 3 and {row["status"] for row in routed} == {"admitted"}
+
+
+def test_a_failed_gateway_read_sends_no_traffic_for_that_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workload
+):
+    """SP1-03 (review finding): no DNS may precede a skipped HTTP-by-address.
+
+    The client's gateway read contradicts the plan, so its HTTP-by-address
+    fetch is blocked; its DNS rows share that prerequisite and are blocked
+    too, so nothing warms its path. Other clients are unaffected.
+    """
+
+    def configure(terminal):
+        original = terminal.send
+
+        def send(script):
+            accepted = original(script)
+            binding = terminal.bindings.get("BR1-DEFAULT-PC-02")
+            if binding is not None:
+                binding["gateway"] = "10.255.255.254"
+            return accepted
+
+        terminal.send = send
+
+    public, terminal = _run(tmp_path, monkeypatch, workload, configure)
+
+    checks = _checks(public)
+    assert checks[("BR1-DEFAULT-PC-02", "client_gateway")]["status"] == "failed"
+    for kind in ("http_fetch", "dns_resolution", "http_by_hostname"):
+        assert checks[("BR1-DEFAULT-PC-02", kind)]["status"] == "dependency_blocked"
+    assert not [item for item in terminal.requests if item[2] == "BR1-DEFAULT-PC-02"]
+    assert checks[("BR1-DEFAULT-PC-01", "dns_resolution")]["status"] == "verified"
