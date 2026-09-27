@@ -44,6 +44,7 @@ them in the current brief.
 | `evidence/campaign-diag-0ea-01/` | the additive closeout addendum for campaign `SERVER-PT-DIAG-0EA-01` and its 62-comparison verification, 2026-09-21 | nothing: it extends the campaign chain and replaces no attempt file, manifest or envelope |
 | `assignments/Next_Work_S3_Q3_FASTLOOP_PROPOSAL.md` | the S3/Q3 DHCP qualification work order, Downloads, 2026-09-24, adopted by the operator for campaign `SERVER-PT-DHCP-FASTLOOP-01` | nothing yet: it is the active authority of the [DHCP fast-loop brief](../../engineering/change-briefs/server-pt-dhcp-fastloop.md) |
 | `evidence/dhcp-fl-01/` | LIVE episode 1 of campaign `SERVER-PT-DHCP-FASTLOOP-01`: lead files, campaign store and the `Q3-FL-C1` record, byte for byte with `MANIFEST.sha256`, 2026-09-25 | nothing: LIVE evidence is immutable; the DHCP fast-loop brief states what it permits |
+| `evidence/sp1-routed-01/` | SP-1 LIVE episodes e1-e4 of campaign `SERVER-PT-SP1-ROUTED-01` with their package index, each pinned by `MANIFEST.sha256`, 2026-09-27 | nothing: LIVE evidence is immutable; the SP-1 brief states what it permits |
 | `assignments/Prompt_SP1_Routed_DNS_HTTP.md` | the SP-1 routed DNS/HTTP work order `SERVER-PT-SP1-ROUTED-DNS-HTTP-01` v1.0.0, Downloads, 2026-09-26; the charter of campaign `SERVER-PT-SP1-ROUTED-01` | nothing yet: it is the active authority of the [SP-1 brief](../../engineering/change-briefs/server-pt-sp1-routed-dns-http.md) |
 
 The companion overlay ZIP named by the S1 review was not present, so the

@@ -224,9 +224,11 @@ reproducible offline; documentation needs none.
 
 ## Current projection
 
-Offline implementation, two exploratory LIVE episodes and the promotion of
-their measurements are complete through `9b05628`. The final LIVE W1/W2 on
-published, CI-green source with the default catalog is pending. Starting SHA
+SP-1 is implemented and accepted LIVE on published source: final W1 and W2
+ran at `a04369a` (exact-SHA CI run 36306639618 green) through the registered
+tool with the default catalog, and both VERIFIED. Evidence package:
+`docs/reference/server-pt/evidence/sp1-routed-01/`. Delivery status is
+READY_FOR_REVIEW. Starting SHA
 `890c950`, base `cisco/main` `6263344`.
 
 | Commit | What landed |
@@ -256,6 +258,8 @@ episode opened, launched, retired and closed through the campaign ledger):
 | --- | --- | --- | --- |
 | e1, `SP1-ROUTED-W2` | `6e5e527`, candidate static routes | product PARTIAL, 367 ops | HQ inter-VLAN and BR1 (one transit hop) verified end to end; route tables complete, unpaged and parsed (`S`, `C`, `L`); BR2 refused only by the 30 s window (one three-router round took 32.4 s); `getProcess('HostIp')` throws on PC-PT; one routed DNS read missed the 5 s bound |
 | e2, `SP1-ROUTED-W2` | `710faca`, candidate static routes | product VERIFIED, 413 ops | all six clients over one, two and three routers: HTTP by address first, fresh resolver read, DNS, qualified negative, HTTP by name; all three routed groups admitted; `HostIpProcess.getDefaultGateway()` returned every planned gateway; two terminal `brief` captures did not converge in six calls |
+| e3, `SP1-ROUTED-W1` (final) | `a04369a` published, CI green, default catalog | product VERIFIED, 228 ops | both HQ inter-VLAN clients, every row including the product's own gateway and resolver reads; complete terminal capture |
+| e4, `SP1-ROUTED-W2` (final) | `a04369a` published, CI green, default catalog | product VERIFIED, 423 ops | all six clients over one, two and three routers, every row; the three expected routed groups admitted once each; complete terminal capture |
 
 Traceability to the maintained tests:
 
@@ -269,7 +273,7 @@ Traceability to the maintained tests:
 | SP1-04 | `test_sp1_client_binding_reader.py`, `test_sp1_dns_window.py`, `test_sp1_routed_public_route.py` (wrong resolver caught by the read), `test_apply_enterprise_services.py` |
 | SP1-05 | `test_sp1_failure_boundaries.py`, `test_sp1_routed_stage.py` (receiver replacement, cancellation, withheld route, ledger settlement), `test_sp1_routed_public_route.py` (durable record agreement) |
 | SP1-06 | `test_sp1_routed_scale.py` |
-| SP1-L | LIVE e1, e2 (exploratory); final W1/W2 pending |
+| SP1-L | LIVE e3 (W1) and e4 (W2), final, default catalog; e1 and e2 exploratory. Controlled negatives LIVE: the qualified nonexistent-name control on every client, and e1's BR2 routed refusal before any of its requests (after E5 applied). NOT MET: the pre-effect LIVE refusal this brief lists was not performed; the product's pre-effect refusals (capability unknown, unsupported or incomplete paths, contract mismatch) are covered offline only |
 
 Offline measurements (simulation, never Packet Tracer capacity): at 997
 clients the routed run completes in about 54 s with a 9.7 MB response, a
@@ -283,10 +287,12 @@ said `admission`; a fixed routed window refused a correct three-router path;
 routed DNS reads could miss a 5 s bound; one guard around every binding getter
 hid the resolver when the gateway process threw; and the review findings above.
 
-Open, in order:
+Open:
 
-1. Show-route pagination remains unqualified: every LIVE table fit one page,
+1. SP1-L's own "pre-effect LIVE refusal" criterion is unmet (see the
+   traceability table). The work order itself asks only for useful
+   controlled negatives, which e1-e4 provide; whether to run one more
+   episode for it is a reviewer decision, not silently dropped here.
+2. Show-route pagination remains unqualified: every LIVE table fit one page,
    and paged reads still fail closed.
-2. Final LIVE W1 and W2 through the registered tool with the default catalog,
-   on this branch's published head with exact-SHA CI green, then the
-   evidence package and READY_FOR_REVIEW.
+3. Independent review of the delivery; SP-2..SP-5 are out of scope.
