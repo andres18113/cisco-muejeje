@@ -2184,6 +2184,89 @@ def sp1_run_parameters(run_id: str) -> Sp1RunParameters:
     )
 
 
+def sp1_topology_intent(address_space: str) -> dict[str, Any]:
+    """Return the SP-1 intent without services: three chained sites.
+
+    HQ holds two users and separate DNS and web servers in a servers VLAN;
+    each branch holds two users. `internet_required` makes the product
+    LAN-attach every site router, and static routing is requested explicitly.
+    """
+
+    def users(count: int) -> dict[str, Any]:
+        return {"role": "user_pc", "count": count, "addressing_preference": "static"}
+
+    def server(role: str) -> dict[str, Any]:
+        return {
+            "role": role,
+            "count": 1,
+            "addressing_preference": "static",
+            "segment_role": "servers",
+        }
+
+    return {
+        "name": "SP1-ROUTED",
+        "address_space": address_space,
+        "internet_required": True,
+        "routing_preference": "static",
+        "sites": [
+            {
+                "name": "HQ",
+                "type": "hq",
+                "endpoints": [users(2), server("dns_server"), server("web_server")],
+                "uplinks": [{"target_site_id": "br1", "media": "ethernet"}],
+            },
+            {
+                "name": "BR1",
+                "type": "branch",
+                "endpoints": [users(2)],
+                "uplinks": [{"target_site_id": "br2", "media": "ethernet"}],
+            },
+            {"name": "BR2", "type": "branch", "endpoints": [users(2)]},
+        ],
+    }
+
+
+def sp1_intent(
+    address_space: str,
+    hostname: str,
+    marker: str,
+    *,
+    dns_host_id: str,
+    web_host_id: str,
+    dns_address: str,
+    web_address: str,
+    client_ids: Sequence[str],
+) -> dict[str, Any]:
+    """Return the complete SP-1 intent: the topology plus its two services.
+
+    The one canonical form both the composer writes and the coordinator
+    requires, byte for byte after JSON normalization, so no field of the
+    intent the registered tool recomposes from can differ from the run.
+    """
+    intent = sp1_topology_intent(address_space)
+    clients = list(client_ids)
+    intent["sites"][0]["services"] = [
+        {
+            "name": "sp1-dns",
+            "service_type": "dns",
+            "host_device_id": dns_host_id,
+            "address": dns_address,
+            "dns_records": [{"hostname": hostname, "address": web_address}],
+            "client_device_ids": clients,
+        },
+        {
+            "name": "sp1-web",
+            "service_type": "http",
+            "host_device_id": web_host_id,
+            "address": web_address,
+            "hostname": hostname,
+            "http_content": marker,
+            "client_device_ids": clients,
+        },
+    ]
+    return intent
+
+
 #: The SP-1 stages; each exists only under campaign `SERVER-PT-SP1-ROUTED-01`.
 SP1_ROUTED_STAGES = (QualificationStage.SP1_ROUTED_W1, QualificationStage.SP1_ROUTED_W2)
 

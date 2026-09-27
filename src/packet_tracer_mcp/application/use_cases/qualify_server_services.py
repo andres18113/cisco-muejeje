@@ -169,6 +169,7 @@ from ...domain.enterprise.models.service_qualification import (
     refusal,
     repository_refusals,
     request_refusals,
+    sp1_intent,
     sp1_run_parameters,
     stage_definition,
 )
@@ -6584,6 +6585,29 @@ def _sp1_contract_mismatch(execution: _Execution, contract: Q3ProductContract) -
             "client_device_ids": list(wanted_clients),
         },
     }
+    canonical = sp1_intent(
+        parameters.address_space,
+        parameters.hostname,
+        parameters.marker,
+        dns_host_id=ids.get(SP1_DNS_SERVER, ""),
+        web_host_id=ids.get(SP1_WEB_SERVER, ""),
+        dns_address=dns_address,
+        web_address=web_address,
+        client_ids=wanted_clients,
+    )
+
+    def normalized(value: Any) -> str:
+        for site in value.get("sites", []):
+            for service in site.get("services", []):
+                service["client_device_ids"] = sorted(
+                    service.get("client_device_ids", [])
+                )
+        return json.dumps(value, sort_keys=True)
+
+    if normalized(json.loads(contract.intent_json)) != normalized(canonical):
+        # Uplinks, addressing, routing preference and every site are part of
+        # what the tool recomposes; nothing outside the canonical form runs.
+        return "sp1_intent_values_differ_from_run"
     if (
         not dns_address
         or not web_address

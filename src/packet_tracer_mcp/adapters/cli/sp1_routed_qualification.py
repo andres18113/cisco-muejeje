@@ -36,10 +36,12 @@ from ...domain.enterprise.models.service_qualification import (
     SP1_DNS_SERVER,
     SP1_WEB_SERVER,
     Sp1RunParameters,
+    sp1_intent,
     sp1_run_parameters,
+    sp1_topology_intent,
 )
 
-__all__ = ["Sp1RunParameters", "sp1_run_parameters"]
+__all__ = ["Sp1RunParameters", "sp1_run_parameters", "sp1_topology_intent"]
 from ...infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
     candidate_capability_adapter,
@@ -50,48 +52,6 @@ from ...infrastructure.catalog.enterprise_capabilities import (
 SP1_ROUTER_MODELS = ("1941", "2911")
 SP1_STATIC_ROUTE_CAPABILITY = "supports_static_routes"
 SP1_CANDIDATE_LABEL = "SERVER-PT-SP1-ROUTED-01"
-
-
-def sp1_topology_intent(address_space: str) -> dict[str, Any]:
-    """Return the SP-1 intent without services: three chained sites.
-
-    HQ holds two users and separate DNS and web servers in a servers VLAN;
-    each branch holds two users. `internet_required` makes the product
-    LAN-attach every site router, and static routing is requested explicitly.
-    """
-
-    def users(count: int) -> dict[str, Any]:
-        return {"role": "user_pc", "count": count, "addressing_preference": "static"}
-
-    def server(role: str) -> dict[str, Any]:
-        return {
-            "role": role,
-            "count": 1,
-            "addressing_preference": "static",
-            "segment_role": "servers",
-        }
-
-    return {
-        "name": "SP1-ROUTED",
-        "address_space": address_space,
-        "internet_required": True,
-        "routing_preference": "static",
-        "sites": [
-            {
-                "name": "HQ",
-                "type": "hq",
-                "endpoints": [users(2), server("dns_server"), server("web_server")],
-                "uplinks": [{"target_site_id": "br1", "media": "ethernet"}],
-            },
-            {
-                "name": "BR1",
-                "type": "branch",
-                "endpoints": [users(2)],
-                "uplinks": [{"target_site_id": "br2", "media": "ethernet"}],
-            },
-            {"name": "BR2", "type": "branch", "endpoints": [users(2)]},
-        ],
-    }
 
 
 def sp1_device_candidates(build: str) -> dict[str, list[str]]:
@@ -196,28 +156,16 @@ def sp1_routed_product_contract(
     unknown = [name for name in clients if name not in ids or "-PC-" not in name]
     if unknown or SP1_DNS_SERVER not in addresses or SP1_WEB_SERVER not in addresses:
         raise ValueError("SP-1 clients or servers are not in the composition.")
-    client_ids = [ids[name] for name in clients]
-    web = addresses[SP1_WEB_SERVER]
-    intent = json.loads(json.dumps(base))
-    intent["sites"][0]["services"] = [
-        {
-            "name": "sp1-dns",
-            "service_type": "dns",
-            "host_device_id": ids[SP1_DNS_SERVER],
-            "address": addresses[SP1_DNS_SERVER],
-            "dns_records": [{"hostname": parameters.hostname, "address": web}],
-            "client_device_ids": client_ids,
-        },
-        {
-            "name": "sp1-web",
-            "service_type": "http",
-            "host_device_id": ids[SP1_WEB_SERVER],
-            "address": web,
-            "hostname": parameters.hostname,
-            "http_content": parameters.marker,
-            "client_device_ids": client_ids,
-        },
-    ]
+    intent = sp1_intent(
+        parameters.address_space,
+        parameters.hostname,
+        parameters.marker,
+        dns_host_id=ids[SP1_DNS_SERVER],
+        web_host_id=ids[SP1_WEB_SERVER],
+        dns_address=addresses[SP1_DNS_SERVER],
+        web_address=addresses[SP1_WEB_SERVER],
+        client_ids=[ids[name] for name in clients],
+    )
     final = _composed(
         intent, build, catalog, deployment_manifest=manifest, services=True
     )

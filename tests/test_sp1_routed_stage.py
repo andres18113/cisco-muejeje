@@ -737,3 +737,31 @@ def test_an_intent_with_another_runs_value_is_refused_before_any_effect(
     assert record.primary_failure == "sp1_intent_values_differ_from_run"
     assert LAST["switching"].campus_calls == 0
     assert snapshot["devices"] == []
+
+
+def test_an_intent_with_another_wan_subnet_is_refused_before_any_effect(
+    tmp_path, capsys, monkeypatch
+):
+    """Third review pass: an uplink /30 the run did not derive changes routes."""
+    original = sp1_routed_product_contract
+
+    def rewired(build, run_id, clients):
+        contract = original(build, run_id, clients)
+        intent = json.loads(contract.intent_json)
+        intent["sites"][0]["uplinks"][0].update(
+            network="203.0.113.252/30",
+            source_ipv4="203.0.113.253",
+            target_ipv4="203.0.113.254",
+        )
+        return replace(contract, intent_json=json.dumps(intent))
+
+    monkeypatch.setattr(service_qualification, "sp1_routed_product_contract", rewired)
+
+    code, summary, record, snapshot, _store, _terminal = _run(
+        tmp_path, capsys, monkeypatch, "SP1-ROUTED-W2"
+    )
+
+    assert code == 1, summary
+    assert record.primary_failure == "sp1_intent_values_differ_from_run"
+    assert LAST["switching"].campus_calls == 0
+    assert snapshot["devices"] == []
