@@ -1873,6 +1873,7 @@ class ServiceCompiler:
             service_actions = by_service[service.id]
             if not service_actions:
                 continue
+            host_foundation = foundations.get(service.host_device_id)
             # The server's own state is read after the last action that ran on
             # the server; client configuration and messages come later and are
             # observed by their own rows.
@@ -2086,6 +2087,16 @@ class ServiceCompiler:
             # selected client per service, including the ones that never gate.
             for client_id in service.client_device_ids:
                 client = devices[client_id]
+                gateway_row = self._client_gateway_expectation(
+                    service,
+                    client_id,
+                    client,
+                    foundations.get(client_id),
+                    host_foundation,
+                    terminal,
+                )
+                if gateway_row is not None:
+                    expectations.append(gateway_row)
                 if service.service_type is ServiceType.DNS:
                     records = [
                         item
@@ -2113,9 +2124,20 @@ class ServiceCompiler:
                         dns_resolutions[(client_id, record.hostname)] = item.id
                         expectations.append(item)
                     negative_name = f"missing-{hashlib.sha256(service.id.encode()).hexdigest()[:8]}.example.local"
+                    # SP-1: "could not find host" is also what an unreachable
+                    # resolver prints, so a negative is qualified only after
+                    # this client's own positive answer from the same service.
+                    positives = sorted(
+                        item.id
+                        for item in expectations
+                        if item.kind is ServiceVerificationKind.DNS_RESOLUTION
+                        and item.service_id == service.id
+                        and item.client_device_id == client_id
+                    )
                     expectations.append(
                         ServiceVerificationExpectation(
                             id=_stable_id("verify-dns-negative", service.id, client_id),
+                            depends_on=positives,
                             service_id=service.id,
                             action_id=terminal.id,
                             kind=ServiceVerificationKind.DNS_NEGATIVE_CONTROL,
@@ -2267,6 +2289,45 @@ class ServiceCompiler:
                 item.client_device_id,
                 item.id,
             ),
+        )
+
+    @staticmethod
+    def _client_gateway_expectation(
+        service: ServiceDefinition,
+        client_id: str,
+        client: DevicePlan,
+        client_foundation: object,
+        host_foundation: object,
+        terminal: ServiceAction,
+    ) -> ServiceVerificationExpectation | None:
+        """Compile the client's gateway read-back for a routed static client.
+
+        A request to a server in another segment leaves the client through its
+        default gateway, so SP-1 reads that setting back. It is advisory until
+        the reader is measured on the build; a same-segment or DHCP client
+        compiles none.
+        """
+        if not isinstance(client_foundation, SetEndpointStaticAddress):
+            return None
+        if host_foundation is None or getattr(host_foundation, "segment_id", "") == (
+            client_foundation.segment_id
+        ):
+            return None
+        return ServiceVerificationExpectation(
+            id=_stable_id("verify-client-gateway", service.id, client_id),
+            service_id=service.id,
+            action_id=terminal.id,
+            kind=ServiceVerificationKind.CLIENT_GATEWAY,
+            evidence_kind=ServiceEvidenceKind.BEHAVIORAL,
+            host_device_id=service.host_device_id,
+            host_device_name=service.host_device_name,
+            client_device_id=client_id,
+            client_device_name=client.name,
+            required=False,
+            expected={
+                "gateway": client_foundation.gateway,
+                "interface": client_foundation.interface,
+            },
         )
 
     @staticmethod

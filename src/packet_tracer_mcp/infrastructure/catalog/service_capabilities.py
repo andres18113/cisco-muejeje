@@ -379,6 +379,8 @@ def _baseline_client_operations(version: str) -> list[ClientOperationCapability]
         # from another getter on the same client, and it stays advisory until
         # M-DNS-3 records it.
         ServiceVerificationKind.CLIENT_DNS_SERVER,
+        # SP-1: `HostIp.getDefaultGateway()` is documented, not yet measured.
+        ServiceVerificationKind.CLIENT_GATEWAY,
         ServiceVerificationKind.NTP_SYNC,
         ServiceVerificationKind.TFTP_RETRIEVE,
     )

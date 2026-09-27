@@ -324,6 +324,16 @@ _REFUSALS = frozenset(
 )
 
 #: The event-dependent kinds R-EVT-05's fallback leaves without an observer.
+#: SP-1 client binding readers: process, documented getter, expected field.
+_CLIENT_BINDING_READERS = {
+    ServiceVerificationKind.CLIENT_GATEWAY: ("HostIp", "getDefaultGateway", "gateway"),
+    ServiceVerificationKind.CLIENT_DNS_SERVER: (
+        "DnsClient",
+        "getServerIp",
+        "server_address",
+    ),
+}
+
 _GATED_EVENT_KINDS = frozenset(
     {
         ServiceVerificationKind.SMTP_SEND,
@@ -2228,6 +2238,8 @@ class PacketTracerEnterpriseServiceRuntime:
         if expectation.kind is ServiceVerificationKind.DHCP_LEASE_ATTRIBUTED:
             with _STATEFUL_LOCK:
                 return self._verify_dhcp_lease_attributed(expectation)
+        if expectation.kind in _CLIENT_BINDING_READERS:
+            return self._verify_client_binding(expectation)
         if expectation.evidence_kind is ServiceEvidenceKind.DIRECT_STATE:
             return self._verify_direct(expectation)
         if expectation.kind in {
@@ -4495,6 +4507,111 @@ class PacketTracerEnterpriseServiceRuntime:
                 "DNS resolved expected address."
                 if matched
                 else "Fresh DNS command output contradicted the expectation."
+            ),
+        )
+
+    def _verify_client_binding(self, expectation):
+        """Read one client's configured gateway or resolver back, fresh.
+
+        `HostIp.getDefaultGateway()` and `DnsClient.getServerIp()` are the
+        documented getters (IpcAPI reference bundled with the install). They
+        are only documented until a LIVE record measures them on the build, so
+        a missing process or getter is UNOBSERVABLE, never a pass. A value is
+        compared as a parsed address; any other value, including the unset
+        `0.0.0.0`, is fresh contradicting evidence. The read creates nothing.
+        """
+        process, getter, field = _CLIENT_BINDING_READERS[expectation.kind]
+        method = f"typed_client_getter:{process}.{getter}"
+        claim = "client_configuration_readback"
+        try:
+            expected = str(ip_address(str(expectation.expected.get(field) or "")))
+        except ValueError:
+            return RuntimeServiceVerification(
+                expectation_id=expectation.id,
+                status=ActionExecutionStatus.FAILED,
+                evidence_kind=expectation.evidence_kind,
+                evidence_method=method,
+                fresh_evidence=False,
+                observation=ObservationFact.NOT_ATTEMPTED,
+                cause="invalid_expected_address",
+                claim_level=claim,
+                message="The planned client binding is not an address.",
+            )
+        client = json.dumps(expectation.client_device_name)
+        process_name = json.dumps(process)
+        getter_name = json.dumps(getter)
+        observation = self._observe(
+            f"var d=ipc.network().getDevice({client});"
+            "var p=d&&typeof d.getProcess==='function'?"
+            f"d.getProcess({process_name}):null;"
+            f"var api=!!(p&&typeof p[{getter_name}]==='function');"
+            f"var v=api?String(p[{getter_name}]()):'';"
+            "reportResult(JSON.stringify({found:!!d,process:!!p,api:api,value:v}));",
+            3.0,
+        )
+        if observation.kind is not BridgeObservationKind.PAYLOAD:
+            return self._observed(
+                expectation,
+                observation=self._transport_fact(observation),
+                method=method,
+                claim_level=claim,
+                cause=observation.outcome.detail,
+                message="The client binding read did not deliver an answer.",
+            )
+        payload = observation.payload or {}
+        shape = _typed_payload(
+            payload, {"found": bool, "process": bool, "api": bool, "value": str}
+        )
+        if shape:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method=method,
+                claim_level=claim,
+                cause=f"shape:{shape}",
+                message="The client binding payload is not the typed shape.",
+            )
+        if not payload["found"]:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.SUBJECT_NOT_FOUND,
+                method=method,
+                claim_level=claim,
+                cause="client_not_found",
+                message="The client device was not found.",
+            )
+        if not payload["process"] or not payload["api"]:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.SUBJECT_NOT_FOUND,
+                method=method,
+                claim_level=claim,
+                cause=(
+                    f"process_unavailable:{process}"
+                    if not payload["process"]
+                    else f"getter_unavailable:{process}.{getter}"
+                ),
+                message="The documented getter is not available on this client.",
+            )
+        value = payload["value"].strip()
+        try:
+            observed_value = str(ip_address(value))
+        except ValueError:
+            observed_value = ""
+        matched = observed_value == expected
+        return self._observed(
+            expectation,
+            observation=(
+                ObservationFact.OBSERVED if matched else ObservationFact.CONTRADICTED
+            ),
+            method=method,
+            claim_level=claim,
+            cause="" if matched else f"{field}_differs",
+            observed={field: value},
+            message=(
+                "The client's configured binding matches the plan."
+                if matched
+                else "The client's configured binding differs from the plan."
             ),
         )
 

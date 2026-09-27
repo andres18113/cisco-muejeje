@@ -75,6 +75,7 @@ from ...domain.enterprise.services.service_capability_resolution import (
     resolve_action_capability,
     resolve_verification_capability,
 )
+from ...domain.enterprise.services.service_request_order import request_phases
 from .service_access_readiness_gate import (
     ReadinessNotRequired,
     ServiceAccessReadinessGate,
@@ -101,6 +102,7 @@ VERIFICATION_EFFECT_CLASSES: dict[ServiceVerificationKind, str] = {
     # A direct getter read on the client. It creates nothing and releases
     # nothing, which is why it may still run as a recovery read.
     ServiceVerificationKind.CLIENT_DNS_SERVER: "read_only",
+    ServiceVerificationKind.CLIENT_GATEWAY: "read_only",
     ServiceVerificationKind.NTP_SYNC: "read_only",
     ServiceVerificationKind.TFTP_RETRIEVE: "read_only",
     # S2. Client getters and the server mailbox scan create nothing, so they
@@ -848,7 +850,12 @@ class ServiceApplicator:
             for expectation in plan.verification_expectations
         ]
         try:
-            ordered = order_verification_expectations(dag_expectations)
+            # SP-1: every HTTP-by-IP request, and every read that sends
+            # nothing, runs before the first DNS query or other traffic.
+            phases = request_phases(dag_expectations)
+            ordered = order_verification_expectations(
+                dag_expectations, rank=lambda item: phases[item.id]
+            )
         except Exception as exc:
             return (
                 [

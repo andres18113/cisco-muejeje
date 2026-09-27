@@ -89,6 +89,9 @@ class ServiceVerificationKind(StrEnum):
     HTTPS_FETCH = "https_fetch"
     HTTP_BY_HOSTNAME = "http_by_hostname"
     CLIENT_DNS_SERVER = "client_dns_server"
+    #: SP-1: the client's configured default gateway, read back fresh. A routed
+    #: request depends on it; a same-segment request does not.
+    CLIENT_GATEWAY = "client_gateway"
     NTP_SYNC = "ntp_sync"
     TFTP_RETRIEVE = "tftp_retrieve"
     #: A client's own mail configuration, read back field by field.
