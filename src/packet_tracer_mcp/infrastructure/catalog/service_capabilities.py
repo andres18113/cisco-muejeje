@@ -403,7 +403,7 @@ def _baseline_client_operations(version: str) -> list[ClientOperationCapability]
 
 
 def _client_dns_server_record(version: str) -> ClientOperationCapability:
-    """The resolver reader, recorded by Q1 M-DNS-3 on this exact build.
+    """Return the resolver reader, recorded by Q1 M-DNS-3 on this exact build.
 
     `DnsClient.getServerIp()` read the configured resolver on one PC-PT and
     `0.0.0.0` on an unset one (record SHA-256 a0e2f938...b005 under
