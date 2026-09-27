@@ -16,7 +16,6 @@ from ..models.capabilities import (
 from .poe_claims import decode_poe_authorized_claim, poe_claim_has_delivery_basis
 from .poe_pse_claims import declares_pse_evidence
 
-
 _EVIDENCE_PRIORITY = {
     EvidenceSource.CONTROLLED_PROBE: 6,
     EvidenceSource.PACKET_TRACER_RUNTIME: 6,
@@ -31,8 +30,12 @@ class CapabilityProvider(Protocol):
     """Contrato para fuentes futuras, incluidas runtime y probes controlados."""
 
     def evidence_for(
-        self, model: str, packet_tracer_version: str | None = None,
-    ) -> Iterable[CapabilityEvidence]: ...
+        self,
+        model: str,
+        packet_tracer_version: str | None = None,
+    ) -> Iterable[CapabilityEvidence]:
+        """Return this provider's evidence for one model and build."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,7 @@ class CapabilityResolver:
     """Conserva UNKNOWN cuando el catálogo no aporta evidencia de una capacidad lógica."""
 
     def resolve(self, facts: CatalogDeviceFacts) -> DeviceCapabilities:
+        """Resolve catalog facts to explicit device capabilities."""
         speeds = tuple(speed.casefold() for speed in facts.port_speeds)
         modules_known = bool(facts.compatible_modules)
         return DeviceCapabilities(
@@ -66,7 +70,9 @@ class CapabilityResolver:
             ten_gigabit_ports=speeds.count("tengigabitethernet"),
             serial_ports=speeds.count("serial"),
             supports_modules=(
-                CapabilityStatus.SUPPORTED if modules_known else CapabilityStatus.UNKNOWN
+                CapabilityStatus.SUPPORTED
+                if modules_known
+                else CapabilityStatus.UNKNOWN
             ),
             compatible_modules=sorted(facts.compatible_modules, key=str.casefold),
             source=facts.source,
@@ -82,8 +88,10 @@ class CapabilityResolver:
     ) -> CapabilityEvidence | None:
         """Return the authoritative matching fact without discarding provenance."""
         raw_candidates = [
-            item for item in evidence
-            if item.capability == capability and _evidence_matches_version(item, packet_tracer_version)
+            item
+            for item in evidence
+            if item.capability == capability
+            and _evidence_matches_version(item, packet_tracer_version)
         ]
         if not raw_candidates:
             return None
@@ -100,7 +108,9 @@ class CapabilityResolver:
     ) -> CapabilityStatus:
         """Escoge evidencia por autoridad, sin convertir ausencia de evidencia en False."""
         winner = cls.winning_evidence(
-            capability, evidence, packet_tracer_version,
+            capability,
+            evidence,
+            packet_tracer_version,
         )
         if winner is None:
             return CapabilityStatus.UNKNOWN
@@ -117,25 +127,45 @@ class CapabilityResolver:
         collected = [_cap_claim_to_evidence(item) for item in raw_evidence]
         updates = {"evidence": [*capabilities.evidence, *collected]}
         for capability in (
-            "layer2", "layer3", "supports_modules", "supports_vlan",
-            "supports_trunk", "supports_svi", "supports_routing", "supports_static_routes",
-            "supports_rip", "supports_eigrp", "supports_ospf", "supports_bgp", "supports_stp",
-            "supports_acl", "supports_nat", "supports_dhcp_server", "supports_voice",
-            "supports_cme", "supports_ipv6", "supports_wireless",
+            "layer2",
+            "layer3",
+            "supports_modules",
+            "supports_vlan",
+            "supports_trunk",
+            "supports_svi",
+            "supports_routing",
+            "supports_static_routes",
+            "supports_rip",
+            "supports_eigrp",
+            "supports_ospf",
+            "supports_bgp",
+            "supports_stp",
+            "supports_acl",
+            "supports_nat",
+            "supports_dhcp_server",
+            "supports_dhcp_relay",
+            "supports_voice",
+            "supports_cme",
+            "supports_ipv6",
+            "supports_wireless",
         ):
             status = self.resolve_evidence(capability, collected, packet_tracer_version)
             if status is not CapabilityStatus.UNKNOWN:
                 updates[capability] = status
         winner = self.winning_evidence(
-            "supports_poe", raw_evidence, packet_tracer_version,
+            "supports_poe",
+            raw_evidence,
+            packet_tracer_version,
         )
         if winner is not None:
-            updates.update(_poe_projection(
-                raw_evidence,
-                winner,
-                model=capabilities.model,
-                packet_tracer_version=packet_tracer_version,
-            ))
+            updates.update(
+                _poe_projection(
+                    raw_evidence,
+                    winner,
+                    model=capabilities.model,
+                    packet_tracer_version=packet_tracer_version,
+                )
+            )
         if packet_tracer_version is not None:
             updates["packet_tracer_version"] = packet_tracer_version
         return capabilities.model_copy(update=updates)
@@ -160,17 +190,23 @@ class CapabilityResolver:
             if len(statuses) < 2:
                 continue
             winning_evidence = cls.winning_evidence(
-                capability, entries, packet_tracer_version,
+                capability,
+                entries,
+                packet_tracer_version,
             )
             if winning_evidence is None:
                 continue
-            conflicts.append(CapabilityConflict(
-                model=model,
-                capability=capability,
-                winner=winning_evidence.source,
-                evidence_sources=sorted({item.source for item in entries}, key=lambda item: item.value),
-                message=f"EVIDENCE_CONFLICT: {capability} has contradictory retained evidence.",
-            ))
+            conflicts.append(
+                CapabilityConflict(
+                    model=model,
+                    capability=capability,
+                    winner=winning_evidence.source,
+                    evidence_sources=sorted(
+                        {item.source for item in entries}, key=lambda item: item.value
+                    ),
+                    message=f"EVIDENCE_CONFLICT: {capability} has contradictory retained evidence.",
+                )
+            )
         return conflicts
 
 
@@ -181,29 +217,33 @@ def _evidence_matches_version(
     """La evidencia runtime/probe se reutiliza sólo con versión exacta."""
     if evidence.packet_tracer_version is None:
         return True
-    return packet_tracer_version is not None and evidence.packet_tracer_version == packet_tracer_version
+    return (
+        packet_tracer_version is not None
+        and evidence.packet_tracer_version == packet_tracer_version
+    )
 
 
 def _cap_claim_to_evidence(evidence: CapabilityEvidence) -> CapabilityEvidence:
     """Apply the PoE claim ceiling at the resolver's authority boundary."""
-
     if poe_claim_has_delivery_basis(evidence):
         return evidence
-    return evidence.model_copy(update={
-        "status": CapabilityStatus.UNKNOWN,
-        "observed_value": None,
-        "notes": (
-            f"{evidence.notes} Claim capped at UNKNOWN: no coherent "
-            "powered-device delivery measurement."
-        ).strip(),
-    })
+    return evidence.model_copy(
+        update={
+            "status": CapabilityStatus.UNKNOWN,
+            "observed_value": None,
+            "notes": (
+                f"{evidence.notes} Claim capped at UNKNOWN: no coherent "
+                "powered-device delivery measurement."
+            ).strip(),
+        }
+    )
 
 
 def _is_unusable_self_declared_claim(
     evidence: CapabilityEvidence,
     packet_tracer_version: str | None,
 ) -> bool:
-    """A record that names its own contract and then fails it.
+    """Identify a record that names its own contract and then fails it.
 
     The ceiling below exists because an unreadable decided claim at high
     authority might be hiding a real fact, so a weaker record must not supply
@@ -220,7 +260,8 @@ def _is_unusable_self_declared_claim(
         and decode_poe_authorized_claim(
             evidence,
             expected_packet_tracer_version=packet_tracer_version,
-        ) is None
+        )
+        is None
     )
 
 
@@ -243,30 +284,31 @@ def _winning_poe_evidence(
     malformed decided claim at equal or greater authority is different: it is
     retained as the winner and capped, so a lower record cannot lend it scope.
     """
-
     valid_delivery = [
-        item for item in evidence
+        item
+        for item in evidence
         if decode_poe_authorized_claim(
             item,
             expected_packet_tracer_version=packet_tracer_version,
-        ) is not None
+        )
+        is not None
     ]
     if valid_delivery:
         winner = max(valid_delivery, key=_evidence_rank)
         invalid_decided = [
-            item for item in evidence
+            item
+            for item in evidence
             if item.status is not CapabilityStatus.UNKNOWN
             and not _is_unusable_self_declared_claim(item, packet_tracer_version)
             and decode_poe_authorized_claim(
                 item,
                 expected_packet_tracer_version=packet_tracer_version,
-            ) is None
+            )
+            is None
             and _evidence_rank(item) >= _evidence_rank(winner)
         ]
         if invalid_decided:
-            return _cap_claim_to_evidence(
-                max(invalid_decided, key=_evidence_rank)
-            )
+            return _cap_claim_to_evidence(max(invalid_decided, key=_evidence_rank))
         return winner
     return max(
         (_cap_claim_to_evidence(item) for item in evidence),
@@ -288,7 +330,6 @@ def _poe_projection(
     binding union remain compatibility summaries; productive admission consumes
     ``poe_authorized_scopes`` and requires one scope to cover a whole demand.
     """
-
     unknown = {
         "supports_poe": CapabilityStatus.UNKNOWN,
         "poe_ports": None,
@@ -312,7 +353,8 @@ def _poe_projection(
             item,
             expected_model=model,
             expected_packet_tracer_version=packet_tracer_version,
-        ) is None
+        )
+        is None
         and _evidence_rank(item) >= winner_rank
         for item in evidence
     ):
@@ -343,23 +385,21 @@ def _poe_projection(
     if not supported_scopes:
         return unknown
 
-    authority_scopes = sorted({
-        PoEAuthorizedScope(
-            active_bindings=tuple(sorted(scope.active_bindings)),
-            simultaneous_active_ports=scope.simultaneous_active_ports,
-        )
-        for scope in supported_scopes
-    })
+    authority_scopes = sorted(
+        {
+            PoEAuthorizedScope(
+                active_bindings=tuple(sorted(scope.active_bindings)),
+                simultaneous_active_ports=scope.simultaneous_active_ports,
+            )
+            for scope in supported_scopes
+        }
+    )
 
     return {
         "supports_poe": CapabilityStatus.SUPPORTED,
-        "poe_ports": max(
-            scope.simultaneous_active_ports for scope in supported_scopes
+        "poe_ports": max(scope.simultaneous_active_ports for scope in supported_scopes),
+        "poe_authorized_bindings": sorted(
+            {binding for scope in supported_scopes for binding in scope.active_bindings}
         ),
-        "poe_authorized_bindings": sorted({
-            binding
-            for scope in supported_scopes
-            for binding in scope.active_bindings
-        }),
         "poe_authorized_scopes": authority_scopes,
     }

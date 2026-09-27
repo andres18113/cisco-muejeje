@@ -312,6 +312,25 @@ BR1 PC, `BR1_DATA`, `max_users=2`, `start_offset=1`, DNS `10.72.0.2`, and
 links, 19 E5 actions, two E6 actions, and zero issues. These constructed
 values still need an exact hash-bound contract and stage before e3.
 
+The private contract composes the topology, addressed manifest, and final
+DHCP intent in three passes. Before returning, it checks exact device and
+link counts, models, ports, helper, routes, client mode, pool strategy,
+Server-PT interface, exclusions and native pool policy. Its only device
+capability candidate is `1941.supports_dhcp_relay`, which the default
+catalog still marks `UNKNOWN`; a changed default relay status refuses this
+private contract so its candidate attribution cannot drift. Generic named
+Server-PT DHCP uses the existing
+private E6 candidate records. The contract refuses another build, changed
+topology, or an incomplete E5/E6 result. Candidate support in this contract
+is a diagnostic input, never a public capability record or LIVE outcome.
+The resolver must project `supports_dhcp_relay` from provenance-bearing device
+evidence like other E5 capabilities; a private candidate can then reach the
+typed relay action without modifying the default catalog. Missing evidence
+still resolves to `UNKNOWN` and refuses at the effect boundary.
+Touching the legacy resolver also brought that file under the current Ruff
+gate: seven existing lint findings and its local formatting were corrected;
+the intended semantic change is the relay capability projection alone.
+
 Before PC DHCP mode, require a fresh disabled Server-PT/default-pool baseline,
 static server and switching results, exact client-facing `ip helper-address`
 readback, operational forward and return route/interface readiness, and a

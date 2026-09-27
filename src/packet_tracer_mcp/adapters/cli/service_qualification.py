@@ -78,7 +78,11 @@ from ...application.use_cases.server_pt_campaign_ledger import (
     phase_record_name,
 )
 from ...domain.enterprise.models.capabilities import CapabilityStatus
-from ...domain.enterprise.models.configuration import AddressRange, ConfigurationPolicy
+from ...domain.enterprise.models.configuration import (
+    AddressRange,
+    ConfigurationPolicy,
+    SetEndpointStaticAddress,
+)
 from ...domain.enterprise.models.configuration_runtime import RuntimeConfigurationTarget
 from ...domain.enterprise.models.deployment import (
     DeploymentManifest,
@@ -135,6 +139,7 @@ from ...infrastructure.catalog.dhcp_native_default_transitions import (
 )
 from ...infrastructure.catalog.enterprise_capabilities import (
     EnterpriseCapabilityAdapter,
+    candidate_capability_adapter,
 )
 from ...infrastructure.catalog.measured_port_inventories import (
     backend_verified_port_inventory,
@@ -577,6 +582,346 @@ def dhcp_product_contract(
         service_capabilities=service_capabilities,
         intent_json=intent.model_dump_json(),
     )
+
+
+def _validate_sp2_remote_relay_contract(contract: Q3ProductContract) -> None:
+    """Refuse a changed remote fixture or policy before it can reach a stage."""
+    topology = contract.topology
+    expected_devices = {
+        ("HQ-DEFAULT-DNS-01", "Server-PT"),
+        ("HQ-DEFAULT-ACCESS-SW-01", "IE-2000"),
+        ("HQ-EDGE-RTR-01", "1941"),
+        ("BR1-DEFAULT-PC-01", "PC-PT"),
+        ("BR1-DEFAULT-ACCESS-SW-01", "IE-2000"),
+        ("BR1-EDGE-RTR-01", "1941"),
+    }
+    if (
+        len(topology.devices) != 6
+        or {(item.name, item.model) for item in topology.devices} != expected_devices
+    ):
+        raise ValueError("SP-2 relay contract device fixture changed.")
+    expected_links = {
+        (
+            "BR1-DEFAULT-ACCESS-SW-01",
+            "GigabitEthernet1/1",
+            "BR1-EDGE-RTR-01",
+            "GigabitEthernet0/1",
+            "straight",
+        ),
+        (
+            "HQ-DEFAULT-ACCESS-SW-01",
+            "GigabitEthernet1/1",
+            "HQ-EDGE-RTR-01",
+            "GigabitEthernet0/1",
+            "straight",
+        ),
+        (
+            "BR1-DEFAULT-ACCESS-SW-01",
+            "FastEthernet1/1",
+            "BR1-DEFAULT-PC-01",
+            "FastEthernet0",
+            "straight",
+        ),
+        (
+            "HQ-DEFAULT-ACCESS-SW-01",
+            "FastEthernet1/1",
+            "HQ-DEFAULT-DNS-01",
+            "FastEthernet0",
+            "straight",
+        ),
+        (
+            "BR1-EDGE-RTR-01",
+            "GigabitEthernet0/0",
+            "HQ-EDGE-RTR-01",
+            "GigabitEthernet0/0",
+            "cross",
+        ),
+    }
+    if (
+        len(topology.links) != 5
+        or {
+            (item.device_a, item.port_a, item.device_b, item.port_b, item.cable)
+            for item in topology.links
+        }
+        != expected_links
+    ):
+        raise ValueError("SP-2 relay contract link fixture changed.")
+    if (
+        contract.manifest.physical_topology_hash != topology.physical_topology_hash
+        or contract.configuration_plan.source_topology_hash
+        != topology.physical_topology_hash
+        or contract.service_plan.source_configuration_hash
+        != contract.configuration_plan.semantic_hash
+    ):
+        raise ValueError("SP-2 relay contract source hashes differ.")
+    ports: dict[str, set[str]] = {item.name: set() for item in topology.devices}
+    for link in topology.links:
+        ports[link.device_a].add(link.port_a)
+        ports[link.device_b].add(link.port_b)
+    if len(contract.inventory) != 6 or {
+        (item.device_name, item.model, tuple(item.interfaces))
+        for item in contract.inventory
+    } != {
+        (name, model, tuple(sorted(ports[name]))) for name, model in expected_devices
+    }:
+        raise ValueError("SP-2 relay contract inventory differs from fixture.")
+
+    configuration = contract.configuration_plan.actions
+    if len(configuration) != 19 or len(contract.service_plan.actions) != 2:
+        raise ValueError("SP-2 relay contract action count changed.")
+    static = {
+        (item.device_name, item.ipv4, item.netmask, item.gateway)
+        for item in configuration
+        if item.action_type.value == "set_endpoint_static"
+    }
+    if static != {("HQ-DEFAULT-DNS-01", "10.72.0.2", "255.255.255.248", "10.72.0.1")}:
+        raise ValueError("SP-2 relay contract server address changed.")
+    if {
+        (item.device_name, item.interface, item.ipv4, item.netmask)
+        for item in configuration
+        if item.action_type.value == "configure_routed_interface"
+    } != {
+        ("BR1-EDGE-RTR-01", "GigabitEthernet0/1", "10.72.32.1", "255.255.255.248"),
+        ("BR1-EDGE-RTR-01", "GigabitEthernet0/0", "10.72.64.1", "255.255.255.252"),
+        ("HQ-EDGE-RTR-01", "GigabitEthernet0/1", "10.72.0.1", "255.255.255.248"),
+        ("HQ-EDGE-RTR-01", "GigabitEthernet0/0", "10.72.64.2", "255.255.255.252"),
+    }:
+        raise ValueError("SP-2 relay contract routed interfaces changed.")
+    if {
+        (item.device_name, item.interface, item.segment_id)
+        for item in configuration
+        if item.action_type.value == "set_endpoint_dhcp"
+    } != {("BR1-DEFAULT-PC-01", "FastEthernet0", "br1-data")}:
+        raise ValueError("SP-2 relay contract client mode changed.")
+    if {
+        (item.device_name, item.interface, item.server_address)
+        for item in configuration
+        if item.action_type.value == "configure_dhcp_relay"
+    } != {("BR1-EDGE-RTR-01", "GigabitEthernet0/1", "10.72.0.2")}:
+        raise ValueError("SP-2 relay contract helper changed.")
+    if {
+        (item.device_name, item.network, item.prefix, item.next_hop)
+        for item in configuration
+        if item.action_type.value == "configure_static_route"
+    } != {
+        ("BR1-EDGE-RTR-01", "10.72.0.0", 29, "10.72.64.2"),
+        ("HQ-EDGE-RTR-01", "10.72.32.0", 29, "10.72.64.1"),
+    }:
+        raise ValueError("SP-2 relay contract routes changed.")
+    service_actions = contract.service_plan.actions
+    if [item.action_type.value for item in service_actions] != [
+        "configure_server_dhcp_pool",
+        "enable_server_dhcp",
+    ]:
+        raise ValueError("SP-2 relay contract DHCP action sequence changed.")
+    pool, enable = service_actions
+    if (
+        pool.host_device_name != "HQ-DEFAULT-DNS-01"
+        or pool.interface != "FastEthernet0"
+        or pool.pool_name != "BR1_DATA"
+        or pool.effective_pool_name != ""
+        or pool.pool_name_explicit is not True
+        or pool.network != "10.72.32.0"
+        or pool.prefix != 29
+        or pool.netmask != "255.255.255.248"
+        or pool.gateway != "10.72.32.1"
+        or pool.dns_server != "10.72.0.2"
+        or pool.lease_start != "10.72.32.2"
+        or pool.lease_end != "10.72.32.3"
+        or pool.max_users != 2
+        or [(item.start, item.end) for item in pool.excluded_ranges]
+        != [("10.72.32.1", "10.72.32.1")]
+        or enable.host_device_name != "HQ-DEFAULT-DNS-01"
+        or enable.interface != "FastEthernet0"
+        or enable.effective_pool_name != ""
+        or enable.depends_on != [pool.id]
+        or enable.apply_dependencies != [pool.id]
+        or enable.native_policy is not None
+    ):
+        raise ValueError("SP-2 relay contract native pool policy changed.")
+    names = {item.name: item.id for item in topology.devices}
+    if len(contract.service_plan.services) != 1:
+        raise ValueError("SP-2 relay contract service count changed.")
+    [service] = contract.service_plan.services
+    if (
+        service.service_type is not ServiceType.DHCP
+        or service.host_device_id != names["HQ-DEFAULT-DNS-01"]
+        or service.segment_id != "br1-data"
+        or service.client_device_ids != [names["BR1-DEFAULT-PC-01"]]
+    ):
+        raise ValueError("SP-2 relay contract authority changed.")
+
+
+def sp2_remote_relay_contract(build: str, run_id: str) -> Q3ProductContract:
+    """Compose the exact six-device SP-2 relay discriminator without effects.
+
+    The router relay and named DHCP capabilities are private experimental
+    candidates. The returned manifest and plans are the exact composition a
+    future stage must bind to its episode before any LIVE mutation.
+    """
+    if build != Q3_PACKET_TRACER_BUILD or not run_id:
+        raise ValueError("SP-2 relay has no exact build/run contract.")
+    default_router = capability_catalog_for(build).capabilities_for("1941", build)
+    if (
+        default_router is None
+        or default_router.supports_dhcp_relay is not CapabilityStatus.UNKNOWN
+    ):
+        raise ValueError("SP-2 relay default catalog scope changed.")
+    candidate_label = "SERVER-PT-SP2-GENERALIZED-DHCP-RELAY-01"
+    catalog = candidate_capability_adapter(
+        build, {"1941": ["supports_dhcp_relay"]}, label=candidate_label
+    )
+    payload = {
+        "name": "SP2-RELAY",
+        "address_space": "10.72.0.0/16",
+        "internet_required": True,
+        "routing_preference": "static",
+        "sites": [
+            {
+                "name": "HQ",
+                "type": "hq",
+                "address_block": "10.72.0.0/19",
+                "segments": [
+                    {
+                        "role": "servers",
+                        "hosts": 2,
+                        "subnet": "10.72.0.0/29",
+                        "gateway": "10.72.0.1",
+                    }
+                ],
+                "endpoints": [
+                    {
+                        "role": "dns_server",
+                        "count": 1,
+                        "addressing_preference": "static",
+                        "segment_role": "servers",
+                    }
+                ],
+                "uplinks": [{"target_site_id": "br1", "media": "ethernet"}],
+            },
+            {
+                "name": "BR1",
+                "type": "branch",
+                "address_block": "10.72.32.0/19",
+                "segments": [
+                    {
+                        "role": "data",
+                        "hosts": 3,
+                        "subnet": "10.72.32.0/29",
+                        "gateway": "10.72.32.1",
+                    }
+                ],
+                "endpoints": [
+                    {
+                        "role": "user_pc",
+                        "count": 1,
+                        "addressing_preference": "dhcp",
+                    }
+                ],
+            },
+        ],
+    }
+
+    def composed(intent_payload, **kwargs):
+        result = compose_enterprise_reference(
+            EnterpriseIntent.model_validate(intent_payload),
+            packet_tracer_version=build,
+            capability_catalog=catalog,
+            **kwargs,
+        )
+        if result.issues or result.topology is None:
+            raise ValueError(
+                "SP-2 relay composition failed: " + "; ".join(result.issues)
+            )
+        return result
+
+    topology = composed(payload).topology
+    ports: dict[str, set[str]] = {item.id: set() for item in topology.devices}
+    for link in topology.links:
+        ports[link.device_a_id].add(link.port_a)
+        ports[link.device_b_id].add(link.port_b)
+    inventory = tuple(
+        RuntimeConfigurationTarget(
+            device_name=item.name,
+            model=item.model,
+            interfaces=sorted(ports[item.id]),
+        )
+        for item in topology.devices
+    )
+    manifest = build_deployment_manifest(
+        topology,
+        list(inventory),
+        fingerprint=EnvironmentFingerprint(
+            backend="packet_tracer", backend_version=build
+        ),
+        deployment_id=f"qualification/{run_id}",
+    )
+    addressed = composed(payload, deployment_manifest=manifest)
+    if addressed.configuration is None:
+        raise ValueError("SP-2 relay addressing was not compiled.")
+    addresses = {
+        item.device_name: item.ipv4
+        for item in addressed.configuration.actions
+        if isinstance(item, SetEndpointStaticAddress)
+    }
+    ids = {item.name: item.id for item in topology.devices}
+    server = "HQ-DEFAULT-DNS-01"
+    client = "BR1-DEFAULT-PC-01"
+    if addresses.get(server) != "10.72.0.2" or client not in ids:
+        raise ValueError("SP-2 relay server/client identity differs from fixture.")
+    payload["sites"][1]["services"] = [
+        {
+            "name": "br1-dhcp",
+            "service_type": "dhcp",
+            "host_device_id": ids[server],
+            "segment_id": "br1-data",
+            "client_device_ids": [ids[client]],
+            "verification_mode": "configure_only",
+            "dhcp_pool": {
+                "pool_name": "BR1_DATA",
+                "dns_server": addresses[server],
+                "max_users": 2,
+                "start_offset": 1,
+            },
+        }
+    ]
+    final = composed(
+        payload,
+        deployment_manifest=manifest,
+        services=True,
+        service_capabilities=_q3_service_capabilities(build),
+    )
+    if (
+        final.configuration is None
+        or final.services is None
+        or final.topology.model_dump(mode="json") != topology.model_dump(mode="json")
+    ):
+        raise ValueError("SP-2 relay service composition changed the fixture.")
+    contract = Q3ProductContract(
+        topology=final.topology,
+        manifest=manifest,
+        inventory=inventory,
+        configuration_plan=final.configuration,
+        service_plan=final.services,
+        device_capabilities=final.capabilities,
+        service_capabilities=final.service_capabilities,
+        intent_json=json.dumps(payload, sort_keys=True),
+        device_capability_catalog=catalog,
+        device_capability_evidence=(
+            {
+                "build": build,
+                "model": "1941",
+                "capability": "supports_dhcp_relay",
+                "status": "supported",
+                "source": "static_override",
+                "source_detail": f"candidate:{candidate_label}",
+                "confidence": "candidate",
+                "verified": False,
+            },
+        ),
+    )
+    _validate_sp2_remote_relay_contract(contract)
+    return contract
 
 
 def fixture_plans(
