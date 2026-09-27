@@ -37,6 +37,7 @@ from packet_tracer_mcp.domain.enterprise.services.routed_readiness import (
     routed_verdict,
     routed_verdicts,
 )
+from packet_tracer_mcp.infrastructure.execution.ios_terminal import parse_show_ip_route
 
 
 def test_the_healthy_chain_is_admitted_in_both_directions():
@@ -44,6 +45,134 @@ def test_the_healthy_chain_is_admitted_in_both_directions():
     verdict = routed_verdict(dependent(), healthy())
 
     assert verdict.admitted and verdict.cause == ""
+
+
+@pytest.mark.parametrize(
+    ("connected", "extra", "static", "cause"),
+    [
+        (
+            "C       10.12.0.0/30 is directly connected, GigabitEthernet0/0",
+            "",
+            "S       10.3.0.0/24 [1/0] via 10.12.0.2, GigabitEthernet0/1",
+            "route_output_interface",
+        ),
+        (
+            "C       10.12.0.0/30 is directly connected, GigabitEthernet0/0",
+            "C       10.12.0.2/32 is directly connected, GigabitEthernet0/1",
+            "S       10.3.0.0/24 [1/0] via 10.12.0.2",
+            "next_hop_egress",
+        ),
+        (
+            "C       10.12.0.0/30 is directly connected, GigabitEthernet0/0",
+            "S       10.12.0.2/32 [1/0] via 10.3.0.10",
+            "S       10.3.0.0/24 [1/0] via 10.12.0.2",
+            "next_hop_not_direct",
+        ),
+        (
+            "",
+            "",
+            "S       10.3.0.0/24 [1/0] via 10.12.0.2",
+            "next_hop_unresolved",
+        ),
+        (
+            "C       10.12.0.0/30 is directly connected, GigabitEthernet0/0",
+            "C       10.12.0.0/30 is directly connected, GigabitEthernet0/1",
+            "S       10.3.0.0/24 [1/0] via 10.12.0.2",
+            "next_hop_ambiguous",
+        ),
+        (
+            "C       10.12.0.0/30 is directly connected, GigabitEthernet0/0",
+            "L       10.12.0.2/32 is directly connected, GigabitEthernet0/0",
+            "S       10.3.0.0/24 [1/0] via 10.12.0.2",
+            "next_hop_not_direct",
+        ),
+    ],
+)
+def test_parsed_route_must_prove_effective_forward_egress(
+    connected, extra, static, cause
+):
+    """A literal next hop alone cannot authorize a different resolved egress."""
+    text = "\n".join(
+        (
+            "Gateway of last resort is not set",
+            "C       10.1.0.0/24 is directly connected, GigabitEthernet0/1",
+            connected,
+            extra,
+            static,
+        )
+    )
+    readings = dict(healthy())
+    readings["r1"] = replace(readings["r1"], route_table=parse_show_ip_route(text))
+
+    verdict = routed_verdict(dependent(), readings)
+
+    assert not verdict.admitted
+    assert cause in verdict.cause
+
+
+def test_parsed_return_route_must_prove_direct_next_hop_egress():
+    """The same lookup is required in the reverse direction."""
+    output = "\n".join(
+        (
+            "Gateway of last resort is not set",
+            "C       10.3.0.0/24 is directly connected, GigabitEthernet0/1",
+            "C       10.23.0.0/30 is directly connected, GigabitEthernet0/0",
+            "C       10.23.0.1/32 is directly connected, GigabitEthernet0/9",
+            "S       10.1.0.0/24 [1/0] via 10.23.0.1",
+        )
+    )
+    readings = dict(healthy())
+    readings["r3"] = replace(readings["r3"], route_table=parse_show_ip_route(output))
+
+    verdict = routed_verdict(dependent(), readings)
+
+    assert not verdict.admitted
+    assert verdict.cause == "return_next_hop_egress:R3:10.23.0.1:GigabitEthernet0/9"
+
+
+def test_parsed_matching_printed_egress_admits_both_directions():
+    """An explicit correct egress is supported alongside a via-only route."""
+    forward = "\n".join(
+        (
+            "Gateway of last resort is not set",
+            "C       10.1.0.0/24 is directly connected, GigabitEthernet0/1",
+            "C       10.12.0.0/30 is directly connected, GigabitEthernet0/0",
+            "S       10.3.0.0/24 [1/0] via 10.12.0.2, GigabitEthernet0/0",
+        )
+    )
+    reverse = "\n".join(
+        (
+            "Gateway of last resort is not set",
+            "C       10.3.0.0/24 is directly connected, GigabitEthernet0/1",
+            "C       10.23.0.0/30 is directly connected, GigabitEthernet0/0",
+            "S       10.1.0.0/24 [1/0] via 10.23.0.1, GigabitEthernet0/0",
+        )
+    )
+    readings = dict(healthy())
+    readings["r1"] = replace(readings["r1"], route_table=parse_show_ip_route(forward))
+    readings["r3"] = replace(readings["r3"], route_table=parse_show_ip_route(reverse))
+
+    assert routed_verdict(dependent(), readings).admitted
+
+
+def test_conflicting_equal_prefix_printed_interfaces_refuse():
+    """All installed best rows must agree on the compiled output interface."""
+    output = "\n".join(
+        (
+            "Gateway of last resort is not set",
+            "C       10.1.0.0/24 is directly connected, GigabitEthernet0/1",
+            "C       10.12.0.0/30 is directly connected, GigabitEthernet0/0",
+            "S       10.3.0.0/24 [1/0] via 10.12.0.2, GigabitEthernet0/0",
+            "S       10.3.0.0/24 [1/0] via 10.12.0.2, GigabitEthernet0/9",
+        )
+    )
+    readings = dict(healthy())
+    readings["r1"] = replace(readings["r1"], route_table=parse_show_ip_route(output))
+
+    verdict = routed_verdict(dependent(), readings)
+
+    assert not verdict.admitted
+    assert "route_output_interface:R1" in verdict.cause
 
 
 @pytest.mark.parametrize(

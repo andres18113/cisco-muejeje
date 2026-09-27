@@ -4,9 +4,9 @@ A routed dependency is admitted only when one timely, complete round of
 authoritative readings shows, on every router its compiled chains name:
 
 - each gateway and transit interface it uses up/up with its planned address;
-- towards the server's address, every hop's longest-prefix match carrying only
-  the planned next hop, and the server's gateway router delivering it on the
-  server's gateway interface as a connected network;
+- towards the server's address, every hop's longest-prefix match using only
+  the planned next hop through the planned direct egress, and the server's
+  gateway router delivering on its connected gateway interface;
 - the same back towards the client's address.
 
 A configured route, a successful setter or a link-up flag is not evidence
@@ -191,6 +191,49 @@ def _direction(
                 f"route_next_hop:{here.device_name}:{destination}:"
                 + ",".join(hops_seen),
             )
+        printed = sorted(
+            {
+                row.interface
+                for row in rows
+                if row.interface
+                and row.interface.casefold() != hop.egress_interface.casefold()
+            }
+        )
+        if printed:
+            return RoutedVerdict(
+                False,
+                ROUTED_ROUTE,
+                f"route_output_interface:{here.device_name}:{destination}:"
+                + ",".join(printed),
+            )
+        resolved = table.longest_match(hop.next_hop)
+        if not resolved:
+            return RoutedVerdict(
+                False,
+                ROUTED_ROUTE,
+                f"next_hop_unresolved:{here.device_name}:{hop.next_hop}",
+            )
+        if len(resolved) != 1:
+            return RoutedVerdict(
+                False,
+                ROUTED_ROUTE,
+                f"next_hop_ambiguous:{here.device_name}:{hop.next_hop}:{len(resolved)}",
+            )
+        [neighbor] = resolved
+        if not neighbor.connected:
+            return RoutedVerdict(
+                False,
+                ROUTED_ROUTE,
+                f"next_hop_not_direct:{here.device_name}:{hop.next_hop}:"
+                f"{neighbor.code}/{neighbor.network}/{neighbor.prefix_length}",
+            )
+        if neighbor.interface.casefold() != hop.egress_interface.casefold():
+            return RoutedVerdict(
+                False,
+                ROUTED_ROUTE,
+                f"next_hop_egress:{here.device_name}:{hop.next_hop}:"
+                f"{neighbor.interface}",
+            )
         cause = _interface_cause(here, hop.egress_interface, hop.egress_ipv4)
         if cause:
             return RoutedVerdict(False, ROUTED_INTERFACE, cause)
@@ -255,7 +298,10 @@ def routed_verdict(
 def round_readings(
     round_: RoutedForwardingRound, names: Mapping[str, str]
 ) -> dict[str, DeviceForwardingReading]:
-    """Key one round's readings by semantic device id through the name map."""
+    """Key an exact, uniquely attributed round by semantic device id."""
+    observed = [item.device_name for item in round_.readings]
+    if len(observed) != len(names) or set(observed) != set(names.values()):
+        return {}
     by_name = {item.device_name: item for item in round_.readings}
     return {
         device_id: by_name[name] for device_id, name in names.items() if name in by_name
@@ -347,73 +393,15 @@ def routed_facts(
 
     The deciding round's rows that the dependents' chains used are kept per
     device: the interface rows asked about and the longest-match route rows
-    for each destination, so the decision can be re-derived from the record.
+    for each destination and next hop, so the decision can be re-derived.
     """
     complete = [item for item in observation.rounds if item.complete]
     deciding = complete[-1] if complete else None
-    devices: dict[str, object] = {}
-    if deciding is not None:
-        readings = round_readings(deciding, names)
-        wanted_interfaces: dict[str, set[str]] = {}
-        wanted_destinations: dict[str, set[str]] = {}
-        for dependent in requirement.dependents:
-            for gateway in (dependent.client_gateway, dependent.host_gateway):
-                wanted_interfaces.setdefault(gateway.device_id, set()).add(
-                    gateway.interface
-                )
-            for destination, hops, end in (
-                (dependent.host_ipv4, dependent.forward, dependent.host_gateway),
-                (dependent.client_ipv4, dependent.reverse, dependent.client_gateway),
-            ):
-                for hop in hops:
-                    wanted_interfaces.setdefault(hop.device_id, set()).add(
-                        hop.egress_interface
-                    )
-                    wanted_interfaces.setdefault(hop.peer_device_id, set()).add(
-                        hop.ingress_interface
-                    )
-                    wanted_destinations.setdefault(hop.device_id, set()).add(
-                        destination
-                    )
-                wanted_destinations.setdefault(end.device_id, set()).add(destination)
-        for device_id, reading in sorted(readings.items()):
-            table = reading.route_table
-            devices[device_id] = {
-                "device_name": reading.device_name,
-                "authoritative": reading.authoritative,
-                "failure_reason": reading.failure_reason,
-                "route_rows": len(table.rows) if table is not None else None,
-                "unparsed_route_lines": len(table.unparsed)
-                if table is not None
-                else None,
-                "interfaces": {
-                    name: [
-                        {
-                            "ipv4": row.ipv4,
-                            "status": row.status,
-                            "protocol": row.protocol,
-                        }
-                        for row in reading.interface(name)
-                    ]
-                    for name in sorted(wanted_interfaces.get(device_id, ()))
-                },
-                "routes": {
-                    destination: [
-                        {
-                            "code": row.code,
-                            "prefix": f"{row.network}/{row.prefix_length}",
-                            "next_hop": row.next_hop,
-                            "interface": row.interface,
-                        }
-                        for row in (
-                            table.longest_match(destination)
-                            if table is not None
-                            else ()
-                        )
-                    ]
-                    for destination in sorted(wanted_destinations.get(device_id, ()))
-                },
-            }
+    devices = (
+        routed_round_facts(requirement.dependents, deciding, names)
+        if deciding is not None
+        else {}
+    )
     return {
         "rounds": len(observation.rounds),
         "deciding_round": deciding.index if deciding is not None else None,
@@ -424,6 +412,73 @@ def routed_facts(
         "channel_calls": observation.channel_calls,
         "devices": devices,
     }
+
+
+def routed_round_facts(
+    dependents: Sequence[RoutedDependent],
+    round_: RoutedForwardingRound,
+    names: Mapping[str, str],
+    *,
+    device_ids: set[str] | None = None,
+) -> dict[str, object]:
+    """Keep only shared route and interface facts relevant to these chains."""
+    readings = round_readings(round_, names)
+    wanted_interfaces: dict[str, set[str]] = {}
+    wanted_destinations: dict[str, set[str]] = {}
+    for dependent in dependents:
+        for gateway in (dependent.client_gateway, dependent.host_gateway):
+            wanted_interfaces.setdefault(gateway.device_id, set()).add(
+                gateway.interface
+            )
+        for destination, hops, end in (
+            (dependent.host_ipv4, dependent.forward, dependent.host_gateway),
+            (dependent.client_ipv4, dependent.reverse, dependent.client_gateway),
+        ):
+            for hop in hops:
+                wanted_interfaces.setdefault(hop.device_id, set()).add(
+                    hop.egress_interface
+                )
+                wanted_interfaces.setdefault(hop.peer_device_id, set()).add(
+                    hop.ingress_interface
+                )
+                wanted_destinations.setdefault(hop.device_id, set()).update(
+                    (destination, hop.next_hop)
+                )
+            wanted_destinations.setdefault(end.device_id, set()).add(destination)
+    devices: dict[str, object] = {}
+    for device_id, reading in sorted(readings.items()):
+        if device_ids is not None and device_id not in device_ids:
+            continue
+        table = reading.route_table
+        devices[device_id] = {
+            "device_name": reading.device_name,
+            "authoritative": reading.authoritative,
+            "failure_reason": reading.failure_reason,
+            "route_rows": len(table.rows) if table is not None else None,
+            "unparsed_route_lines": len(table.unparsed) if table is not None else None,
+            "interfaces": {
+                name: [
+                    {"ipv4": row.ipv4, "status": row.status, "protocol": row.protocol}
+                    for row in reading.interface(name)
+                ]
+                for name in sorted(wanted_interfaces.get(device_id, ()))
+            },
+            "routes": {
+                destination: [
+                    {
+                        "code": row.code,
+                        "prefix": f"{row.network}/{row.prefix_length}",
+                        "next_hop": row.next_hop,
+                        "interface": row.interface,
+                    }
+                    for row in (
+                        table.longest_match(destination) if table is not None else ()
+                    )
+                ]
+                for destination in sorted(wanted_destinations.get(device_id, ()))
+            },
+        }
+    return devices
 
 
 @dataclass(frozen=True)
@@ -570,13 +625,22 @@ def revoked_dependents(
     """
     requirement = result.requirement
     admitted = {item.expectation_id for item in result.dependents if item.admitted}
+    eligible = admitted & pending
     revoked: dict[str, str] = {}
+    changed_names = {
+        latest[device_id].device_name for device_id in changed if device_id in latest
+    }
     for dependent in requirement.dependents:
-        if dependent.expectation_id not in admitted & pending:
+        if dependent.expectation_id not in eligible:
             continue
         if not set(dependent.device_ids) & changed:
             continue
         verdict = routed_verdict(dependent, latest)
-        if not verdict.admitted:
+        source_name = verdict.cause.split(":", 2)[1] if ":" in verdict.cause else ""
+        if (
+            not verdict.admitted
+            and verdict.dimension in {ROUTED_ROUTE, ROUTED_INTERFACE}
+            and source_name in changed_names
+        ):
             revoked[dependent.expectation_id] = verdict.cause
     return revoked

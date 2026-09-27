@@ -67,6 +67,7 @@ from ...domain.enterprise.services.routed_readiness import (
     revoked_dependents,
     round_admits_all,
     routed_facts,
+    routed_round_facts,
     routed_verdicts,
     unobserved_routed_result,
 )
@@ -345,6 +346,9 @@ class ServiceAccessReadinessGate:
         self._latest_readings: dict[str, DeviceForwardingReading] = {}
         #: Admitted dependents a later reading refuted, with the refuting cause.
         self._revoked: dict[str, str] = {}
+        #: Shared facts and references for the first contradiction per dependent.
+        self._revocation_evidence: list[dict[str, object]] = []
+        self._revocation_sources: dict[str, dict[str, object]] = {}
         self._unplaced_recorded = False
         self._consumed = False
         self.observations: list[tuple[str, int, tuple[str, ...]]] = []
@@ -487,7 +491,7 @@ class ServiceAccessReadinessGate:
             recorded.append(unplaced_group_result(self._plan.unplaced))
         rows: list[dict[str, object]] = []
         revocations = [
-            {"expectation_id": key, "cause": cause}
+            {"expectation_id": key, "cause": cause, **self._revocation_sources[key]}
             for key, cause in sorted(self._revoked.items())
         ]
         for item in recorded:
@@ -499,7 +503,13 @@ class ServiceAccessReadinessGate:
             else:
                 rows.append(self._rendered(item))
         if revocations:
-            rows.append({"kind": "routed_revocations", "revoked": revocations})
+            rows.append(
+                {
+                    "kind": "routed_revocations",
+                    "revoked": revocations,
+                    "evidence": list(self._revocation_evidence),
+                }
+            )
         return rows
 
     def _rendered(self, result: _ObservedResult) -> dict[str, object]:
@@ -985,12 +995,16 @@ class ServiceAccessReadinessGate:
         if not covered or len(covered) >= len(requirement.dependents):
             return first
         second, _ = self._observe_routed(
-            replace(requirement, dependents=covered), narrowed=True
+            replace(requirement, dependents=covered), narrowed=True, prior=first
         )
         return _NarrowedResult(first, second)
 
     def _observe_routed(
-        self, requirement: RoutedRequirement, *, narrowed: bool = False
+        self,
+        requirement: RoutedRequirement,
+        *,
+        narrowed: bool = False,
+        prior: RoutedGroupResult | None = None,
     ) -> tuple[RoutedGroupResult, RoutedForwardingObservation | None]:
         """Take one bounded routed episode over one group's routers."""
         if self._routed_observer is None:
@@ -1070,7 +1084,7 @@ class ServiceAccessReadinessGate:
             verdicts=verdicts,
             sample=routed_facts(requirement, observation, names),
         )
-        self._record_routed_readings(requirement, observation, names)
+        self._record_routed_readings(requirement, observation, names, episode, prior)
         return replace(result, episode=episode), observation
 
     def _record_routed_readings(
@@ -1078,6 +1092,8 @@ class ServiceAccessReadinessGate:
         requirement: RoutedRequirement,
         observation: RoutedForwardingObservation,
         names: Mapping[str, str],
+        episode: Mapping[str, object],
+        prior: RoutedGroupResult | None,
     ) -> None:
         """Keep the newest authoritative readings and withdraw refuted permits.
 
@@ -1086,35 +1102,79 @@ class ServiceAccessReadinessGate:
         have not received a verdict yet. A refutation is sticky.
         """
         ids = {name: device_id for device_id, name in names.items()}
-        changed: set[str] = set()
         for round_ in observation.rounds:
+            observed_names = [reading.device_name for reading in round_.readings]
+            if (
+                not round_.complete
+                or len(observed_names) != len(names)
+                or set(observed_names) != set(names.values())
+            ):
+                continue
+            changed: set[str] = set()
             for reading in round_.readings:
                 device_id = ids.get(reading.device_name)
                 if device_id is not None and reading.authoritative:
                     self._latest_readings[device_id] = reading
                     changed.add(device_id)
-        if not changed:
-            return
-        for key, result in self._results.items():
-            if key == requirement.key or key not in self._routed:
+            if not changed:
                 continue
-            candidates = (
-                (result.first, result.second)
-                if isinstance(result, _NarrowedResult)
-                else (result,)
-            )
-            for candidate in candidates:
-                if not isinstance(candidate, RoutedGroupResult):
-                    continue
-                pending = {
-                    item.expectation_id
-                    for item in candidate.dependents
-                    if item.expectation_id not in self._verdicts
-                }
-                for expectation_id, cause in revoked_dependents(
-                    candidate, self._latest_readings, changed, pending
-                ).items():
-                    self._revoked.setdefault(expectation_id, cause)
+            earlier: list[tuple[GroupKey, _GroupResult]] = [
+                (key, result)
+                for key, result in self._results.items()
+                if key != requirement.key and key in self._routed
+            ]
+            if prior is not None:
+                earlier.append((requirement.key, prior))
+            for _key, result in earlier:
+                candidates = (
+                    (result.first, result.second)
+                    if isinstance(result, _NarrowedResult)
+                    else (result,)
+                )
+                for candidate in candidates:
+                    if not isinstance(candidate, RoutedGroupResult):
+                        continue
+                    pending = {
+                        item.expectation_id
+                        for item in candidate.dependents
+                        if item.expectation_id not in self._verdicts
+                        and item.expectation_id not in self._revoked
+                    }
+                    refuted = revoked_dependents(
+                        candidate, self._latest_readings, changed, pending
+                    )
+                    if not refuted:
+                        continue
+                    affected = tuple(
+                        item
+                        for item in candidate.requirement.dependents
+                        if item.expectation_id in refuted
+                    )
+                    evidence_ref = len(self._revocation_evidence)
+                    self._revocation_evidence.append(
+                        {
+                            "source_group": list(requirement.key),
+                            "admitted_group": list(candidate.key),
+                            "episode": dict(episode),
+                            "round": round_.index,
+                            "elapsed_ms": round_.elapsed_ms,
+                            "changed_devices": sorted(changed),
+                            "devices": routed_round_facts(
+                                affected, round_, names, device_ids=changed
+                            ),
+                        }
+                    )
+                    for expectation_id, cause in refuted.items():
+                        self._revoked[expectation_id] = cause
+                        self._revocation_sources[expectation_id] = {
+                            "source_group": list(requirement.key),
+                            "admitted_group": list(candidate.key),
+                            "episode": dict(episode),
+                            "round": round_.index,
+                            "router": cause.split(":", 2)[1],
+                            "order": len(self._revoked),
+                            "evidence_ref": evidence_ref,
+                        }
 
 
 def _routed_before_window(observation: RoutedForwardingObservation) -> bool:

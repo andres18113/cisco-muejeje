@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 
+import pytest
 from sp1_routed_readings import (
     NAMES,
     dependent,
@@ -219,6 +220,145 @@ def test_route_drift_after_an_admission_withdraws_the_pending_permits():
     assert "ROUTE_DRIFT_AFTER_ADMISSION:route_missing:R2:10.3.0.10" in revoked.cause
     assert gate.decide("verify-1").admitted  # a decided permit is not rewritten
     assert any(row.get("kind") == "routed_revocations" for row in gate.rows())
+
+
+def test_bad_then_good_rounds_in_one_later_episode_still_revoke_pending():
+    """The first complete contradiction remains after that episode recovers."""
+    clock = _Clock()
+    one, two, _ = _two_groups()
+    observer = _Observer(clock, [[healthy()], [_missing_server_route(), healthy()]])
+    gate = _gate([one, two], observer)
+
+    assert gate.decide("verify-1").admitted
+    assert gate.decide("verify-b").admitted
+    pending = gate.decide("verify-2")
+
+    assert not pending.admitted
+    assert "ROUTE_DRIFT_AFTER_ADMISSION:route_missing:R2:10.3.0.10" in pending.cause
+    assert gate.decide("verify-1").admitted
+    [row] = [row for row in gate.rows() if row.get("kind") == "routed_revocations"]
+    assert row["revoked"][0]["expectation_id"] == "verify-2"
+    assert row["revoked"][0]["source_group"] == list(two.key)
+    assert row["revoked"][0]["episode"]["ordinal"] == 1
+    assert row["revoked"][0]["round"] == 0
+    assert row["evidence"][0]["devices"]["r2"]["routes"]["10.3.0.10"] == []
+
+
+def test_permanent_bad_round_revokes_only_pending_dependents():
+    """A lasting contradiction does not rewrite already used permission."""
+    clock = _Clock()
+    one, two, _ = _two_groups()
+    observer = _Observer(clock, [[healthy()], [_missing_server_route()]])
+    gate = _gate([one, two], observer)
+
+    assert gate.decide("verify-1").admitted
+    assert not gate.decide("verify-b").admitted
+    assert not gate.decide("verify-2").admitted
+    assert gate.decide("verify-1").admitted
+
+
+def test_an_unknown_round_followed_by_healthy_does_not_revoke():
+    """An unreadable route sample cannot claim that a route disappeared."""
+    clock = _Clock()
+    one, two, _ = _two_groups()
+    unknown = dict(_missing_server_route())
+    unknown["r2"] = replace(unknown["r2"], output_complete=False)
+    observer = _Observer(clock, [[healthy()], [unknown, healthy()]])
+    gate = _gate([one, two], observer)
+
+    assert gate.decide("verify-1").admitted
+    assert gate.decide("verify-b").admitted
+    assert gate.decide("verify-2").admitted
+    assert not any(row.get("kind") == "routed_revocations" for row in gate.rows())
+
+
+def test_unrelated_route_drift_does_not_revoke_the_admitted_chain():
+    """A changed prefix off this path leaves its dependent permits intact."""
+    clock = _Clock()
+    one, two, _ = _two_groups()
+    unrelated = with_routes(
+        healthy(),
+        "r2",
+        *healthy()["r2"].route_table.rows,
+        ObservedRoute("S", "192.0.2.0", 24, next_hop="10.12.0.1"),
+    )
+    observer = _Observer(clock, [[healthy()], [unrelated]])
+    gate = _gate([one, two], observer)
+
+    assert gate.decide("verify-1").admitted
+    assert gate.decide("verify-b").admitted
+    assert gate.decide("verify-2").admitted
+
+
+def test_return_only_drift_revokes_with_return_cause():
+    """The reverse chain is just as capable of revoking a pending request."""
+    clock = _Clock()
+    one, two, _ = _two_groups()
+    no_return = with_routes(
+        healthy(),
+        "r2",
+        *(row for row in healthy()["r2"].route_table.rows if row.network != "10.1.0.0"),
+    )
+    observer = _Observer(clock, [[healthy()], [no_return]])
+    gate = _gate([one, two], observer)
+
+    assert gate.decide("verify-1").admitted
+    assert not gate.decide("verify-b").admitted
+    verdict = gate.decide("verify-2")
+    assert not verdict.admitted
+    assert "return_route_missing:R2:10.1.0.12" in verdict.cause
+
+
+@pytest.mark.parametrize("malformation", ["incomplete", "duplicate", "foreign"])
+def test_malformed_bad_round_cannot_revoke(malformation):
+    """Incomplete, duplicated and foreign rounds cannot refute a permit."""
+    clock = _Clock()
+    one, two, _ = _two_groups()
+    observer = _Observer(clock, [[healthy()], [_missing_server_route(), healthy()]])
+    original = observer.observe_routed_forwarding
+
+    def malformed(devices, *, settled, **bounds):
+        observation = original(devices, settled=settled, **bounds)
+        if len(observer.calls) == 2:
+            first, second = observation.rounds
+            if malformation == "incomplete":
+                first = replace(first, complete=False)
+            elif malformation == "duplicate":
+                first = replace(first, readings=(first.readings[0],) * 3)
+            else:
+                first = replace(
+                    first,
+                    readings=(
+                        *first.readings[:2],
+                        replace(first.readings[2], device_name="R9"),
+                    ),
+                )
+            return replace(observation, rounds=(first, second))
+        return observation
+
+    observer.observe_routed_forwarding = malformed
+    gate = _gate([one, two], observer)
+
+    assert gate.decide("verify-1").admitted
+    assert gate.decide("verify-b").admitted
+    assert gate.decide("verify-2").admitted
+
+
+def test_many_pending_clients_reference_one_shared_bad_round():
+    """A group-sized revocation keeps one round projection, not one per client."""
+    clock = _Clock()
+    one = requirement(200, segment="client-a")
+    _, two, _ = _two_groups()
+    observer = _Observer(clock, [[healthy()], [_missing_server_route(), healthy()]])
+    gate = _gate([one, two], observer)
+
+    assert gate.decide("verify-1").admitted
+    assert gate.decide("verify-b").admitted
+    [row] = [item for item in gate.rows() if item.get("kind") == "routed_revocations"]
+
+    assert len(row["revoked"]) == 199
+    assert len(row["evidence"]) == 1
+    assert {item["evidence_ref"] for item in row["revoked"]} == {0}
 
 
 def test_a_local_read_failure_revokes_nothing_but_a_later_contradiction_does():

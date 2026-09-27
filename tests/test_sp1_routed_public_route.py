@@ -172,6 +172,110 @@ def test_a_wrong_next_hop_is_refused_before_the_request(
     assert checks[("HQ-DEFAULT-PC-01", "http_fetch")]["status"] == "verified"
 
 
+@pytest.mark.parametrize(
+    ("router_name", "target_name", "fault", "cause"),
+    [
+        (
+            "BR1-EDGE-RTR-01",
+            "HQ-DEFAULT-WEB-01",
+            "printed_egress",
+            "route_output_interface:BR1-EDGE-RTR-01",
+        ),
+        (
+            "HQ-EDGE-RTR-01",
+            "BR1-DEFAULT-PC-01",
+            "next_hop_shadow",
+            "return_next_hop_egress:HQ-EDGE-RTR-01",
+        ),
+    ],
+)
+def test_effective_egress_fault_refuses_product_request_and_survives_reload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    workload,
+    router_name,
+    target_name,
+    fault,
+    cause,
+):
+    """Parsed IOS egress contradictions stop E6 traffic and remain in the record."""
+    import ipaddress
+
+    from packet_tracer_mcp.infrastructure.persistence.service_run_record_store import (
+        ServiceRunRecordStore,
+    )
+
+    endpoint = workload["first"].endpoint(target_name)
+    network = ipaddress.ip_interface(f"{endpoint.ipv4}/{endpoint.netmask}").network
+    route = next(
+        item
+        for item in workload["plans"].configuration_plan.actions
+        if item.action_type.value == "configure_static_route"
+        and item.device_name == router_name
+        and item.network == str(network.network_address)
+        and item.prefix == network.prefixlen
+    )
+
+    def configure(terminal):
+        original = terminal._route_table
+
+        def route_table(router):
+            text = original(router)
+            if router.name != router_name or not terminal._faults_on():
+                return text
+            printed = f"S       {network} [1/0] via {route.next_hop}"
+            assert printed in text
+            if fault == "printed_egress":
+                return text.replace(printed, printed + ", GigabitEthernet0/9", 1)
+            return text + (
+                f"\nC       {route.next_hop}/32 is directly connected, "
+                "GigabitEthernet0/9"
+            )
+
+        terminal._route_table = route_table
+
+    public, terminal = _run(tmp_path, monkeypatch, workload, configure)
+
+    row = _checks(public)[("BR1-DEFAULT-PC-01", "http_fetch")]
+    assert row["status"] == "dependency_blocked"
+    assert cause in row["cause"]
+    assert not [item for item in terminal.requests if item[2] == "BR1-DEFAULT-PC-01"]
+    assert _checks(public)[("HQ-DEFAULT-PC-01", "http_fetch")]["status"] == ("verified")
+    record = ServiceRunRecordStore(tmp_path / "services").load(
+        public["deployment_id"], public["run_id"]
+    )
+    assert any(
+        cause in str(row.get("causes", ()))
+        for row in record.operational_readiness
+        if row.get("kind") == "routed_forwarding"
+    )
+    router_id = next(
+        device_id
+        for device_id, name in workload["plans"].deployed_names.items()
+        if name == router_name
+    )
+    facts = [
+        row["sample"]["devices"][router_id]
+        for row in record.operational_readiness
+        if row.get("kind") == "routed_forwarding"
+        and router_id in row["sample"]["devices"]
+    ]
+    assert facts
+    if fault == "printed_egress":
+        assert any(
+            item["interface"] == "GigabitEthernet0/9"
+            for fact in facts
+            for item in fact["routes"].get(endpoint.ipv4, ())
+        )
+    else:
+        assert any(
+            item["prefix"] == f"{route.next_hop}/32"
+            and item["interface"] == "GigabitEthernet0/9"
+            for fact in facts
+            for item in fact["routes"].get(route.next_hop, ())
+        )
+
+
 def test_a_down_transit_link_is_refused_by_its_interface(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workload
 ):
@@ -198,6 +302,106 @@ def test_routes_that_install_within_the_window_are_admitted(
     public, _terminal = _run(tmp_path, monkeypatch, workload, configure)
 
     assert _checks(public)[("BR2-DEFAULT-PC-01", "http_fetch")]["status"] == "verified"
+
+
+def test_recovered_route_round_still_blocks_pending_product_dns_and_reloads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workload
+):
+    """A transient authoritative route loss revokes a prior group's pending DNS."""
+    import ipaddress
+
+    from packet_tracer_mcp.infrastructure.persistence.service_run_record_store import (
+        ServiceRunRecordStore,
+    )
+
+    web = workload["first"].endpoint("HQ-DEFAULT-WEB-01")
+    network = ipaddress.ip_interface(f"{web.ipv4}/{web.netmask}").network
+    state = {"bad_read": False}
+
+    def configure(terminal):
+        original = terminal._route_table
+
+        def route_table(router):
+            text = original(router)
+            if (
+                router.name != "BR1-EDGE-RTR-01"
+                or not terminal._faults_on()
+                or state["bad_read"]
+                or not any(
+                    kind == "http" and client == "BR1-DEFAULT-PC-01"
+                    for _time, kind, client, _target, _ok in terminal.requests
+                )
+            ):
+                return text
+            line = next(
+                item
+                for item in text.splitlines()
+                if item.startswith(f"S       {network} ")
+            )
+            state["bad_read"] = True
+            return text.replace(line, "", 1)
+
+        terminal._route_table = route_table
+
+    public, terminal = _run(tmp_path, monkeypatch, workload, configure)
+
+    assert state["bad_read"]
+    checks = _checks(public)
+    assert checks[("BR1-DEFAULT-PC-01", "http_fetch")]["status"] == "verified"
+    assert checks[("BR1-DEFAULT-PC-01", "dns_resolution")]["status"] == (
+        "dependency_blocked"
+    )
+    assert (
+        "ROUTE_DRIFT_AFTER_ADMISSION"
+        in checks[("BR1-DEFAULT-PC-01", "dns_resolution")]["cause"]
+    )
+    assert not [
+        item
+        for item in terminal.requests
+        if item[1] == "dns" and item[2] == "BR1-DEFAULT-PC-01"
+    ]
+    assert any(
+        item[1] == "http" and item[2] == "BR2-DEFAULT-PC-01"
+        for item in terminal.requests
+    )
+    record = ServiceRunRecordStore(tmp_path / "services").load(
+        public["deployment_id"], public["run_id"]
+    )
+    [revocations] = [
+        row
+        for row in record.operational_readiness
+        if row.get("kind") == "routed_revocations"
+    ]
+    affected = next(
+        item
+        for item in revocations["revoked"]
+        if item["admitted_group"] == ["routed_forwarding", "br1-data", "hq-servers"]
+        and item["cause"] == (f"route_missing:BR1-EDGE-RTR-01:{web.ipv4}")
+    )
+    assert affected["router"] == "BR1-EDGE-RTR-01"
+    assert affected["round"] == 0
+    assert affected["order"] >= 1
+    assert affected["source_group"] == ["routed_forwarding", "br2-data", "hq-servers"]
+    evidence = revocations["evidence"][affected["evidence_ref"]]
+    assert evidence["episode"]["ordinal"] == 1
+    assert evidence["source_group"] == affected["source_group"]
+    assert evidence["round"] == affected["round"]
+    router_id = next(
+        device_id
+        for device_id, name in workload["plans"].deployed_names.items()
+        if name == "BR1-EDGE-RTR-01"
+    )
+    assert evidence["devices"][router_id]["routes"][web.ipv4] == []
+    assert evidence["devices"][router_id]["interfaces"]
+    [later] = [
+        row
+        for row in record.operational_readiness
+        if row.get("kind") == "routed_forwarding"
+        and row["client_segment_id"] == "br2-data"
+    ]
+    assert later["status"] == "admitted"
+    assert later["sample"]["rounds"] >= 2
+    assert later["sample"]["deciding_round"] >= 1
 
 
 def test_a_wrong_resolver_fails_dns_but_keeps_the_by_ip_result(

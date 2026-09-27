@@ -145,6 +145,8 @@ def test_multi_site_routes_need_static_route_evidence_before_any_effect(
     assert result.refusal_code is ServiceEntryRefusal.CAPABILITY_UNKNOWN
     assert "supports_static_routes=unknown" in result.blocked_reason
     assert configuration.applied == [] and services.applied == []
+    assert configuration.rendered == [] and configuration.verified == []
+    assert services.verified == []
 
 
 def test_candidate_evidence_admits_the_whole_route_chain(tmp_path: Path):
@@ -198,3 +200,5 @@ def test_without_compiled_routes_a_branch_client_is_refused_by_name(
     assert result.refusal_code is ServiceEntryRefusal.SERVICE_PATH_UNSUPPORTED
     assert "route_missing:BR2-EDGE-RTR-01" in result.blocked_reason
     assert configuration.applied == [] and services.applied == []
+    assert configuration.rendered == [] and configuration.verified == []
+    assert services.verified == []

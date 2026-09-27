@@ -296,3 +296,146 @@ Open:
 2. Show-route pagination remains unqualified: every LIVE table fit one page,
    and paged reads still fail closed.
 3. Independent review of the delivery; SP-2..SP-5 are out of scope.
+
+## SP-1 readiness closure amendment (2026-09-27, risk L)
+
+Work order `SERVER-PT-SP1-READINESS-CLOSURE-01` v1.0.0 starts from clean
+`feature/server-pt-goal-foundations` SHA
+`41bb624671d9a3a3c0177dea1012960ccf1e3727`, tree
+`749204caabc00af237ef33f92cf19201e3c24625`; `cisco/main` is
+`6263344e31ba3b0de6539d652f2cd06fc73a3562`. The checkout's
+`AGENTS.md`, `CLAUDE.md` and engineering standard were read. Independent
+interactive Codex and Claude instruction-loader checks remain pending. The
+FM-REF file and every historical W1/W2 record stay byte-identical. Only this
+amendment and its implementation may change current source and records.
+
+### Requirements and verification pairing
+
+| Id | Requirement and acceptance | Verification |
+| --- | --- | --- |
+| SP1-C1 | Inspect authoritative later rounds in chronological order. A contradictory route or interface observation withdraws only previously admitted, still-pending dependents whose chain it refutes; the withdrawal survives a healthy later round. Unknown, late, malformed, incomplete or foreign data creates no observed contradiction. Initial convergence and decided results remain valid. | Rule and gate unit sequences; product integration with a bad-then-good round in one later episode, actual request exclusion, record reload, and controls for permanent bad, separate episodes, unrelated and return-only drift. |
+| SP1-C2 | A selected destination route must match the planned next hop and any printed output interface. Its next-hop address must have a uniquely consistent direct connected longest-prefix resolution through the planned transit interface; unresolved, ambiguous, recursive, shadowed and looping resolution refuses in forward and return directions. | Parsed-IOS unit tests and product integration for both directions, downstream exclusion and persisted causes; healthy W1/W2-shaped, L2 and independent-client controls. |
+| SP1-C3 | Keep a bounded shared chronological cause for each withdrawal: dependent and source group/episode/round, changed router, relevant route and interface rows, cause and order. Existing run records hold the data after reload without per-client table copies. The normal routed sample also records next-hop resolution rows. | Durable row/reload assertions and scale counters including the actual 997-client maximum. |
+| SP1-C4 | Preserve the public four-input API, registered IOS operations, native W1/W2 source identity and unqualified pagination boundary. | Public-route/system tests, affected suites, replay of archived W1/W2 readings through corrected pure rule if operations and parser remain equivalent; exact-delivery gate, namespace inventory, MkDocs, whitespace, CI and archive integrity. |
+
+### Design and boundaries
+
+The domain rule continues to use the indexed full `RouteTableReading`; it
+checks direct adjacency by a second longest-prefix lookup of the next-hop
+address in the **same** complete table. Every best row must be connected on
+the planned egress interface. A route naming an output interface must name
+that same interface. This deliberately refuses recursive next-hop routes;
+there is no new IOS query, parser extension, generated operation or general
+recursive-routing claim. The planned local and peer interfaces still need
+their independently attributed up/up address readings.
+The [Cisco IOS `ip route` command reference](https://www.cisco.com/c/en/us/td/docs/ios/iproute_pi/command/reference/iri_book/iri_pi1.html)
+states that a next-hop-only route derives its output interface from next-hop
+resolution and may use an unintended interface after a link change. That IOS
+rule informs this direct-neighbor proof; Packet Tracer support is bounded by
+separate observations.
+
+The application gate consumes rounds in order and evaluates previously
+admitted pending dependents immediately after each applicable authoritative
+round update. It latches the first contradiction for each dependent. The
+existing readiness record gains compact shared round facts and references
+from revoked dependents, including the source group and episode. The
+projection records only routes and interfaces used to explain those
+withdrawals, including next-hop resolution, and stays bounded by observed
+rounds and relevant devices. The usual last-round sample remains for the
+current group's decision. No second persistence channel is introduced.
+
+Module tests cover rule inputs and failure causes; integration tests exercise
+the real gate and its observer contract; system tests run the registered
+product entry, recording effect boundary and `ServiceRunRecordStore`; scale
+tests exercise real compilation/evaluation/storage over simulated routers.
+LIVE acceptance remains the immutable final W1/W2 observations from
+`a04369a`/tree `d41ecc27`: 2 and 6 clients respectively. A pure evaluator
+change can be replayed offline against their archived inputs; any changed
+operation, parse scope, observable semantics or public execution requires the
+smallest discriminating SP-1 LIVE measurement before a native claim.
+
+The archived product readiness rows kept destination-route and interface
+selections but **not** the next-hop longest-match rows newly required by
+SP1-C2. The later qualification terminal captures do contain full tables,
+and the corrected rule admits them offline, but those captures cannot be
+substituted for exact readiness-time input. This missing historical input
+prevents the requested exact replay. The smallest discriminating additional
+measurement is one governed W2 run at the corrected, CI-verified source:
+its BR1/BR2 paths exercise the direct-neighbor predicate, while W1's
+single-gateway inter-VLAN path has no transit next hop. It will be a new
+episode, never a retrospective modification of e3/e4. Prospective attempt,
+process, operation/time bounds, finalization reserve and cleanup must be
+frozen in the campaign ledger before Packet Tracer effects.
+
+The original SP1-L table's pre-effect **LIVE** refusal remains historically
+unmet. This closure's reviewer replaces that particular method with product
+composition/admission tests at a recording effect boundary, asserting exact
+zero calls, alongside the native W1/W2 success and each client's qualified
+nonexistent-name negative. Episode 1's post-E5 refusal remains post-E5.
+Pagination is still unqualified and fails closed. Offline scale is not a
+native-capacity claim. Independent approval remains outside this delivery.
+
+### Closure verification snapshot before the new LIVE measurement
+
+Behavioral RED at `41bb624`: the real gate admitted a pending dependent
+after bad-then-good rounds in one later episode; three parsed-IOS table
+counterexamples (printed wrong egress, shadowing connected route and
+recursive next-hop route) were also falsely admitted. All four failed for
+the intended behavior before source correction.
+
+The corrected tests now exercise chronological sticky revocation, permanent
+bad and separate bad/good episodes, unknown-then-good, unrelated and
+return-only drift, incomplete/duplicate/foreign rounds, initial convergence,
+decided results, and a 200-client group referencing one shared contradiction
+projection. Product tests enter through the registered four-input tool with
+parsed IOS: a bad then good BR1 route read during BR2's episode leaves BR1's
+already decided HTTP result intact, blocks its pending DNS call, admits BR2
+on the later round and reloads the cause, source episode/round, router facts
+and order. Forward printed-egress and return next-hop-shadow faults each
+exclude the affected HTTP call, keep an independent HQ client working and
+survive record reload. Existing composition/admission tests now assert zero
+E5/E6 effect and verification calls for unknown static-route capability and
+missing compiled routes, satisfying the reviewer's changed pre-effect method.
+
+Offline scale uses real planning, the corrected rule, parsed IOS and the
+record store with E5/E6 runtimes substituted. Nominal size keys
+`2/20/200/1000` select **3/21/201/997 actual clients**. At 997 clients:
+five routed groups, 15 router reads, four continuity episodes, 9,704,006
+response bytes, 30,798,367 record bytes, 49.16 s and 261.9 MiB peak in the
+local run. These are offline costs, not Packet Tracer capacity.
+
+The archive replay test recomposes W1/W2 from each qualification run's
+identity, matches the archived topology/configuration/service semantic hashes,
+and feeds later complete IOS captures through the current parser and rule:
+W1's one group admits 8/8 dependents; W2's three groups each admit 8/8.
+The old readiness-selected destination routes and interfaces match those
+captures (W1 4/2 selections, W2 24/12), but the old readiness projection
+contains no next-hop selections. This is compatibility evidence across
+timestamps, **not** exact replay of the original readiness input or a new
+native observation. The executed `a04369a` source still matches current HEAD
+in production/test/extension trees before this closure; the candidate diff
+changes only the pure routed rule and application evidence/gate there. No IOS
+operation, parser, generated configuration, observer or public MCP registration
+changes. Original W1/W2 claims remain bound to `a04369a`.
+
+The e3/e4 immutable archive manifests each list 103 files and verify with
+zero missing, extra or mismatched entries; their manifest SHA-256 values are
+`1b6cafee023cd34b7db0d72ed378e5a8e445ccd61e19974c075e9bfcbc17fc1b`
+and `d912800a3ce226c360495e1457bccac680b25af3f7e7ec81eea90058a08ca03c`.
+FM-REF still hashes to
+`090238b17ddfc95b8f2dc1d637f18b462ad19b6ab5c0eec4eaf357ccf0cae37a`.
+The original pre-effect LIVE negative remains unmet and the reviewer-approved
+offline method replaces it. Pagination remains unqualified and fails closed.
+
+Windows local verification before the new LIVE checkpoint: focused SP-1
+routing/IOS/admission/observer tests 80 passed; affected services, Voice,
+CP-SCALE and E95 subset 174 passed; final closure focus 50 passed; scale
+four sizes passed; full suite **8,389 passed, 6 skipped, 3 warnings** in
+989.77 s. The six unchanged skips are two unavailable symlink-privilege
+cases, two absent machine-local/raw Voice evidence cases, and two opt-in
+native-window tests. The three warnings are the existing pytest class-scoped
+fixture deprecation in E95 tests. Provisional quality gate against verified
+`cisco/main`, namespace inventory (zero active legacy imports/references),
+MkDocs and `git diff --check` passed. Exact clean-tree delivery validation,
+published exact-SHA CI and the new W2 result are recorded only after they
+actually complete.
