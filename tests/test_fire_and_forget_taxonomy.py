@@ -70,7 +70,8 @@ def test_the_counts_are_stated_explicitly():
     counts = {subsystem: len(group) for subsystem, group in TAXONOMY.items()}
 
     assert counts == {
-        "Enterprise Configuration": 13,
+        # SP-1 adds the static IPv4 route.
+        "Enterprise Configuration": 14,
         "Control Plane": 7,
         "Security": 8,
         "Voice": 7,
@@ -81,7 +82,7 @@ def test_the_counts_are_stated_explicitly():
         # resto no puede ser la via por la que se queda sin clasificar.
         "Legacy / raw CLI": 1,
     }
-    assert len(_families()) == 56
+    assert len(_families()) == 57
     assert TAXONOMY["Services"]["EnableServerDhcp"] == REPLAY_SAFE
     assert TAXONOMY["Services"]["ConfigureServerDhcpPool"] == UNKNOWN
     assert TAXONOMY["Services"]["AcquireDhcpLease"] == UNKNOWN

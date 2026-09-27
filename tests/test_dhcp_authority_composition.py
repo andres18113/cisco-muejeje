@@ -377,6 +377,8 @@ def test_existing_static_dns_http_composition_keeps_its_ids_and_hashes():
     assert composition.configuration.semantic_hash == (
         "4a14fe52bba9d4e53dc1bfa8ba329055556eea6896262a518c442aea2d72e921"
     )
+    # SP-1 (SP1-04): the only change is the DNS negative control's dependency
+    # on the same client's positive (was 844b7665041c...66e8).
     assert composition.services.semantic_hash == (
-        "844b7665041c93a0c57cd67f7d97551941e68d1ad76da6b2123e0bc55cfb66e8"
+        "7a8a1e464daa4c90f640d91218daca51bbc81d093d6ae1edebfbbd31e80530c2"
     )
