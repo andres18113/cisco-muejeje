@@ -26,3 +26,6 @@ docs/reference/server-pt/source-manifest.json text eol=lf diff
 # POE-2 and POE-3A raw bundles retain exact hashed bytes in every checkout.
 docs/reference/cp-scale/canonical-live-evidence/poe2-*/** -text
 docs/reference/cp-scale/canonical-live-evidence/poe3a-*/** -text
+
+# The Final-Muejeje reference (FM-REF) is incorporated byte-for-byte.
+docs/reference/final-muejeje/Final-Muejeje.md -text
