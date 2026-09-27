@@ -224,4 +224,58 @@ reproducible offline; documentation needs none.
 
 ## Current projection
 
-(Updated as the work lands.)
+Offline implementation is complete through `2057070`; LIVE acceptance is
+pending. Starting SHA `890c950`, base `cisco/main` `6263344`.
+
+| Commit | What landed |
+| --- | --- |
+| `7a3f1d3` | FM-REF 1.0.0 `Final-Muejeje.md`, byte-for-byte (`-text`) |
+| `f6a8542` | this brief |
+| `7bd5011` | A-7: layer-3 evidence ranks gateway routers; trunk evidence ranks multi-segment access switches |
+| `d6b4f38` | A-1/A-2: Ethernet WAN transit /30s, static routes along shortest transit paths (`CONFIGURE_STATIC_ROUTE`, phase `L3_ROUTING`), `ip route` rendering, `show ip route` parser and `STATIC_ROUTE` read-back |
+| `f959b3c` | A-3/A-4: routed path derivation (gateways, L2 legs, forward and return chains) and admission with the routed effect closure |
+| `f444d99` | A-5: routed readiness groups over fresh `show ip interface brief` + `show ip route` readings, sticky revocation on route drift |
+| `3bba610` | A-6: request rank (every HTTP-by-IP before any DNS or hostname request), client gateway/resolver readers, DNS negatives qualified by the same client's positive |
+| `8ffc299` | system tests of the registered tool over a SIMULATED routed campus |
+| `9dbd0f2` | SP1-06 scale measurement |
+| `35483ea` | campaign `SERVER-PT-SP1-ROUTED-01` bound to the archived work order |
+| `2057070` | qualification stages `SP1-ROUTED-W1`/`W2`; refusal record `persisted_stage` fix |
+
+Traceability to the maintained tests (the file names planned above were
+renamed to the `test_sp1_*` family):
+
+| Requirement | Tests |
+| --- | --- |
+| SP1-01a | `test_sp1_routed_paths.py`, `test_sp1_static_routing.py`, `test_sp1_evidence_aware_hardware.py` |
+| SP1-01b | `test_sp1_routed_admission.py`, `test_campus_service_paths.py` |
+| SP1-01c | existing admission suites, unchanged |
+| SP1-02a/b | `test_sp1_routed_readiness.py`, `test_sp1_routed_readiness_gate.py`, `test_sp1_routed_observer_runtime.py`, `test_sp1_static_route_readback.py` |
+| SP1-03 | `test_sp1_request_order.py`, `test_sp1_routed_public_route.py` |
+| SP1-04 | `test_sp1_client_binding_reader.py`, `test_sp1_routed_public_route.py` |
+| SP1-05 | `test_sp1_failure_boundaries.py`, `test_sp1_routed_stage.py` (receiver replacement, cancellation, withheld route, contract mismatch), `test_sp1_routed_public_route.py` (durable record agreement) |
+| SP1-06 | `test_sp1_routed_scale.py` |
+| SP1-L | `test_sp1_routed_stage.py` offline; LIVE pending |
+
+Offline measurements (simulation, never Packet Tracer capacity): at 997
+clients the routed run completes in about 54 s with a 9.7 MB response, a
+31 MB record and 260 MiB peak; router reads are one episode per segment pair.
+The simulated W2 stage spends 235 product dispatches and 324 stage operations
+against a planned 2548 and a ceiling of 3000 / 3600 s.
+
+Defect found and fixed on the way (causal RED first): a refusal after the
+write-ahead record returned `persisted_stage=admission` while the stored
+record said none, so any governed caller that reloads and compares rejected a
+consistent refusal as tampered (`test_sp1_failure_boundaries.py`).
+
+Open, in order:
+
+1. The client gateway and resolver reads (`CLIENT_GATEWAY`,
+   `CLIENT_DNS_SERVER`) stay advisory until LIVE measures
+   `HostIp.getDefaultGateway` on this build (`DnsClient.getServerIp` is
+   already measured at `0850de3`). SP1-04's "resolver read before the query"
+   becomes a hard dependency only with that record.
+2. `show ip route` shapes for `C`, `L` and `S` rows and the router pager are
+   unmeasured; paged reads fail closed until a LIVE capture qualifies them.
+3. Exploratory LIVE W1/W2 with candidate static-route evidence, then
+   source-backed records, then the final W1/W2 on published CI-green source
+   with the default catalog.
