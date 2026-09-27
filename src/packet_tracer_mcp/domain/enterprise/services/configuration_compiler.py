@@ -7,6 +7,7 @@ import ipaddress
 import json
 from collections import defaultdict
 from collections.abc import Callable
+from dataclasses import dataclass
 from enum import Enum, StrEnum
 
 from ....shared.utils import safe_ios_identifier
@@ -29,6 +30,7 @@ from ..models.configuration import (
     ConfigureHostname,
     ConfigureRoutedInterface,
     ConfigureSerialClock,
+    ConfigureStaticRoute,
     ConfigureSubinterface,
     ConfigureSvi,
     ConfigureTrunk,
@@ -69,6 +71,18 @@ _RESERVED_VLANS = {1002, 1003, 1004, 1005}
 #: Categorias cuyo modo de enlace se configura por IOS. Los endpoints quedan
 #: fuera: no se les configura velocidad ni duplex desde aqui.
 _LINK_MODE_CATEGORIES = {"router", "switch"}
+_WAN_LINK_ROLE = "wan_link"
+
+
+@dataclass(frozen=True)
+class _TransitEdge:
+    """One end of a compiled transit link, seen from `local`."""
+
+    peer: str
+    local: ConfigureRoutedInterface
+    remote: ConfigureRoutedInterface
+
+
 _TRUNK_LINK_ROLES = {
     "access_uplink",
     "distribution_uplink",
@@ -291,14 +305,30 @@ class ConfigurationCompiler:
             issues,
         )
         actions.extend(gateway_actions)
-        actions.extend(
-            self._serial_transit_actions(
-                enterprise,
-                devices,
-                links,
-                issues,
-            )
+        transit_actions = self._wan_transit_actions(
+            enterprise,
+            devices,
+            links,
+            issues,
         )
+        actions.extend(transit_actions)
+        if policy.static_routing:
+            actions.extend(
+                self._static_route_actions(
+                    transit_actions,
+                    [
+                        item
+                        for item in gateway_actions
+                        if isinstance(
+                            item,
+                            ConfigureRoutedInterface
+                            | ConfigureSubinterface
+                            | ConfigureSvi,
+                        )
+                    ],
+                    devices,
+                )
+            )
 
         trunk_actions, switch_trunk_vlans = self._trunk_actions(
             topology,
@@ -508,23 +538,41 @@ class ConfigurationCompiler:
         return self._result(plan, actions, topology, issues)
 
     @staticmethod
-    def _serial_transit_actions(
+    def _wan_transit_actions(
         enterprise: EnterprisePlan,
         devices: dict[str, DevicePlan],
         links: list[LinkPlan],
         issues: list[ConfigurationIssue],
     ) -> list[ConfigurationAction]:
-        """Materialize each allocated point-to-point WAN subnet on both ends."""
+        """Materialize each allocated point-to-point WAN subnet on both ends.
+
+        A serial link is recognized by its cable, as it always was. An
+        Ethernet WAN link is the compiled `wan_link` between two routers of
+        different sites; IPAM already allocates its `/30` from the same uplink
+        declaration, and without it no two sites can route. Each site pair
+        and medium has exactly one semantic allocation, so a pair with several
+        links of that medium is refused rather than guessed.
+        """
         if enterprise.addressing is None:
             return []
-        allocations: dict[tuple[str, str], WanTransitAllocation] = {
-            tuple(sorted((item.source_site_id, item.target_site_id))): item
+        media = {LinkMedia.SERIAL.value, LinkMedia.ETHERNET.value}
+        allocations: dict[tuple[tuple[str, str], str], WanTransitAllocation] = {
+            (
+                tuple(sorted((item.source_site_id, item.target_site_id))),
+                item.media.casefold(),
+            ): item
             for item in enterprise.addressing.transit_allocations
-            if item.media.casefold() == LinkMedia.SERIAL.value
+            if item.media.casefold() in media
         }
-        serial_by_pair: dict[tuple[str, str], list[LinkPlan]] = defaultdict(list)
+        wan_by_pair: dict[tuple[tuple[str, str], str], list[LinkPlan]] = defaultdict(
+            list
+        )
         for link in links:
-            if resolve_link_media(link.cable) is not LinkMedia.SERIAL:
+            if resolve_link_media(link.cable) is LinkMedia.SERIAL:
+                medium = LinkMedia.SERIAL.value
+            elif link.link_role == _WAN_LINK_ROLE:
+                medium = LinkMedia.ETHERNET.value
+            else:
                 continue
             endpoint_a = devices.get(link.device_a_id)
             endpoint_b = devices.get(link.device_b_id)
@@ -532,35 +580,42 @@ class ConfigurationCompiler:
                 issues.append(
                     _error(
                         ConfigurationIssueCode.TRANSIT_ALLOCATION_MISSING,
-                        f"Serial link {link.id!r} has unresolved semantic endpoints.",
+                        f"WAN link {link.id!r} has unresolved semantic endpoints.",
                         link.id,
                     )
                 )
                 continue
-            serial_by_pair[
-                tuple(sorted((endpoint_a.site_id, endpoint_b.site_id)))
+            if medium == LinkMedia.ETHERNET.value and not (
+                endpoint_a.category == "router"
+                and endpoint_b.category == "router"
+                and endpoint_a.site_id != endpoint_b.site_id
+            ):
+                continue
+            wan_by_pair[
+                (tuple(sorted((endpoint_a.site_id, endpoint_b.site_id))), medium)
             ].append(link)
 
         emitted: list[ConfigurationAction] = []
-        for pair, pair_links in sorted(serial_by_pair.items()):
+        for (pair, medium), pair_links in sorted(wan_by_pair.items()):
             if len(pair_links) != 1:
                 issues.append(
                     _error(
                         ConfigurationIssueCode.TRANSIT_ALLOCATION_MISSING,
-                        f"Sites {pair[0]!r} and {pair[1]!r} have {len(pair_links)} serial "
-                        "links but only one semantic transit allocation; explicit per-link "
-                        "allocation is required.",
+                        f"Sites {pair[0]!r} and {pair[1]!r} have {len(pair_links)} "
+                        f"{medium} links but only one semantic transit allocation; "
+                        "explicit per-link allocation is required.",
                         "/".join(pair),
                     )
                 )
                 continue
             link = pair_links[0]
-            allocation = allocations.get(pair)
+            allocation = allocations.get((pair, medium))
             if allocation is None:
                 issues.append(
                     _error(
                         ConfigurationIssueCode.TRANSIT_ALLOCATION_MISSING,
-                        f"Serial link {link.id!r} has no deterministic /30 transit allocation.",
+                        f"WAN link {link.id!r} has no deterministic /30 transit "
+                        "allocation.",
                         link.id,
                     )
                 )
@@ -588,6 +643,94 @@ class ConfigurationCompiler:
                         netmask=allocation.netmask,
                         segment_id=allocation.id,
                         required_capability="layer3",
+                    )
+                )
+        return emitted
+
+    @staticmethod
+    def _static_route_actions(
+        transit_actions: list[ConfigurationAction],
+        gateway_actions: list[ConfigurationAction],
+        devices: dict[str, DevicePlan],
+    ) -> list[ConfigurationAction]:
+        """Route every site router to every gateway segment it does not own.
+
+        The transit graph is the pairs of transit interfaces that share one
+        allocation. For each router, a breadth-first walk over that graph
+        (neighbours in device-id order) gives the first hop towards each
+        other router, and one route per remote gateway segment points at that
+        neighbour's transit address. A segment whose gateway is not on the
+        transit graph, or a router the walk cannot reach, gets no route: the
+        plan states the reachability it has and no more, and a routed service
+        path that needs a missing route is refused by name.
+        """
+        ends: dict[str, list[ConfigureRoutedInterface]] = defaultdict(list)
+        for action in transit_actions:
+            if isinstance(action, ConfigureRoutedInterface):
+                ends[action.segment_id].append(action)
+        neighbours: dict[str, list[_TransitEdge]] = defaultdict(list)
+        for pair in ends.values():
+            if len(pair) != 2 or pair[0].device_id == pair[1].device_id:
+                continue
+            left, right = pair
+            neighbours[left.device_id].append(
+                _TransitEdge(right.device_id, left, right)
+            )
+            neighbours[right.device_id].append(
+                _TransitEdge(left.device_id, right, left)
+            )
+        for edges in neighbours.values():
+            edges.sort(key=lambda item: (item.peer, item.local.segment_id))
+
+        owners: dict[str, ConfigurationAction] = {}
+        for action in sorted(gateway_actions, key=lambda item: item.id):
+            owners.setdefault(str(action.segment_id), action)
+
+        emitted: list[ConfigurationAction] = []
+        for router in sorted(neighbours):
+            first_hop: dict[str, _TransitEdge] = {}
+            frontier = [router]
+            seen = {router}
+            while frontier:
+                following: list[str] = []
+                for current in frontier:
+                    for edge in neighbours[current]:
+                        if edge.peer in seen:
+                            continue
+                        seen.add(edge.peer)
+                        first_hop[edge.peer] = (
+                            edge if current == router else first_hop[current]
+                        )
+                        following.append(edge.peer)
+                frontier = following
+            device = devices[router]
+            for segment_id, gateway in sorted(owners.items()):
+                if gateway.device_id == router or gateway.device_id not in first_hop:
+                    continue
+                network = ipaddress.ip_network(
+                    f"{gateway.ipv4}/{gateway.prefix}", strict=False
+                )
+                edge = first_hop[gateway.device_id]
+                emitted.append(
+                    ConfigureStaticRoute(
+                        id=_action_id(
+                            "static-route",
+                            router,
+                            str(network.network_address),
+                            network.prefixlen,
+                        ),
+                        phase=ConfigurationPhase.L3_ROUTING,
+                        device_id=router,
+                        device_name=device.name,
+                        site_id=device.site_id,
+                        network=str(network.network_address),
+                        prefix=network.prefixlen,
+                        netmask=str(network.netmask),
+                        next_hop=edge.remote.ipv4,
+                        egress_interface=edge.local.interface,
+                        destination_segment_id=segment_id,
+                        depends_on=[edge.local.id],
+                        required_capability="supports_static_routes",
                     )
                 )
         return emitted
@@ -1706,6 +1849,14 @@ class ConfigurationCompiler:
             elif isinstance(action, ConfigureDhcpPool):
                 kind = VerificationKind.DHCP_POOL
                 expected = {"network": action.network, "gateway": action.gateway}
+            elif isinstance(action, ConfigureStaticRoute):
+                kind = VerificationKind.STATIC_ROUTE
+                query = "show_ip_route"
+                expected = {
+                    "network": action.network,
+                    "prefix": action.prefix,
+                    "next_hop": action.next_hop,
+                }
             elif isinstance(action, ConfigureSerialClock):
                 kind = VerificationKind.SERIAL_CONTROLLER
                 query = "show_controllers_serial"

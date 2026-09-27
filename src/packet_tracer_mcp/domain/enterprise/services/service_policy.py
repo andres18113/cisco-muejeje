@@ -150,8 +150,16 @@ def derive_service_policy(
     set from the single explicit DNS service address the intent requests. An
     intent that requests no DNS service derives no DNS server and reports no
     issue: there is nothing to configure and nothing to complain about.
+    `static_routing` is set when the intent's `routing_preference` is
+    `static`, so a routed service path has compiled routes to depend on.
     """
     policy = (base_policy or ConfigurationPolicy()).model_copy(deep=True)
+    # Inter-site routing is foundational configuration, so the choice is
+    # taken here with the other intent-derived E5 policy, before E5 compiles.
+    # Only the exact value `static` asks for compiled static routes; any other
+    # preference compiles none and its routed service paths refuse by name.
+    if (intent.routing_preference or "").strip().casefold() == "static":
+        policy.static_routing = True
     issues: list[ConfigurationIssue] = []
     addresses: dict[str, list[str]] = {}
 

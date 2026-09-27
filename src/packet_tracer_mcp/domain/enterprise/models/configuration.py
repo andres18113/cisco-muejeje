@@ -20,6 +20,8 @@ class ConfigurationPhase(IntEnum):
     L2_DEFINITIONS = 20
     L2_INTERFACES = 30
     L3_INTERFACES = 40
+    #: Routes need their egress interface addressed first.
+    L3_ROUTING = 45
     SERVICES = 50
     ENDPOINT_ADDRESSING = 60
     VERIFICATION = 70
@@ -43,6 +45,7 @@ class ConfigurationActionType(StrEnum):
     CONFIGURE_SERIAL_CLOCK = "configure_serial_clock"
     CONFIGURE_INTERFACE_BANDWIDTH = "configure_interface_bandwidth"
     CONFIGURE_ETHERNET_LINK_MODE = "configure_ethernet_link_mode"
+    CONFIGURE_STATIC_ROUTE = "configure_static_route"
 
 
 class ConfigurationIssueSeverity(StrEnum):
@@ -208,6 +211,10 @@ class ConfigurationPolicy(BaseModel):
     delegated_dhcp_server_device_ids: dict[str, str] = Field(default_factory=dict)
     native_vlan_id: int | None = None
     dns_server: str | None = None
+    #: Compile one static IPv4 route per site router and remote gateway
+    #: segment. Derived from the intent's `routing_preference == "static"`;
+    #: off by default, so no existing plan gains a route.
+    static_routing: bool = False
 
     # Alinear el `bandwidth` logico de routing con la capacidad del enlace es
     # una decision de metricas, no un efecto secundario de tener un enlace.
@@ -324,6 +331,28 @@ class ConfigureSubinterface(BaseConfigurationAction):
     encapsulation: str = "dot1Q"
 
 
+class ConfigureStaticRoute(BaseConfigurationAction):
+    """One static IPv4 route to a remote gateway segment.
+
+    `next_hop` is the neighbour's transit address and `egress_interface` the
+    local transit interface the compiler derived it from; the interface is
+    provenance for read-back and readiness, never rendered.
+    """
+
+    action_type: Literal[ConfigurationActionType.CONFIGURE_STATIC_ROUTE] = (
+        ConfigurationActionType.CONFIGURE_STATIC_ROUTE
+    )
+    operation: Literal[OperationSemantics.ENSURE_PRESENT] = (
+        OperationSemantics.ENSURE_PRESENT
+    )
+    network: str
+    prefix: int
+    netmask: str
+    next_hop: str
+    egress_interface: str
+    destination_segment_id: str
+
+
 class AddressRange(BaseModel):
     """One inclusive address range, used for DHCP exclusions."""
 
@@ -429,7 +458,8 @@ ConfigurationAction = Annotated[
     | SetEndpointDhcp
     | ConfigureSerialClock
     | ConfigureInterfaceBandwidth
-    | ConfigureEthernetLinkMode,
+    | ConfigureEthernetLinkMode
+    | ConfigureStaticRoute,
     Field(discriminator="action_type"),
 ]
 
@@ -448,6 +478,7 @@ class VerificationKind(StrEnum):
     ENDPOINT_ADDRESSING = "endpoint_addressing"
     ENDPOINT_DHCP_MODE = "endpoint_dhcp_mode"
     SERIAL_CONTROLLER = "serial_controller"
+    STATIC_ROUTE = "static_route"
 
 
 class VerificationExpectation(BaseModel):

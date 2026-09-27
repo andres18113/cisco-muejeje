@@ -16,6 +16,7 @@ from ...domain.enterprise.models.configuration import (
     ConfigureInterfaceBandwidth,
     ConfigureRoutedInterface,
     ConfigureSerialClock,
+    ConfigureStaticRoute,
     ConfigureSubinterface,
     ConfigureSvi,
     ConfigureTrunk,
@@ -48,6 +49,7 @@ class UnrenderableConfigurationAction(ValueError):
     """
 
     def __init__(self, actions: list[ConfigurationAction]) -> None:
+        """Keep the unrenderable actions and name them in the message."""
         self.actions = list(actions)
         detail = ", ".join(
             f"{type(action).__name__}({action.id})" for action in self.actions
@@ -60,17 +62,26 @@ class UnrenderableConfigurationAction(ValueError):
 # Acciones que este renderer convierte a CLI. La tupla es la definicion
 # operativa de "renderizable".
 _RENDERABLE = (
-    ConfigureHostname, CreateVlan, ConfigureAccessPort, ConfigureTrunk,
+    ConfigureHostname,
+    CreateVlan,
+    ConfigureAccessPort,
+    ConfigureTrunk,
     ConfigureRoutedInterface,
-    ConfigureSvi, ConfigureSubinterface, ConfigureDhcpPool,
-    ConfigureSerialClock, ConfigureInterfaceBandwidth, ConfigureEthernetLinkMode,
+    ConfigureSvi,
+    ConfigureSubinterface,
+    ConfigureDhcpPool,
+    ConfigureSerialClock,
+    ConfigureInterfaceBandwidth,
+    ConfigureEthernetLinkMode,
+    ConfigureStaticRoute,
 )
 
 # Acciones que legitimamente pertenecen a otro renderer. Se enumeran a
 # proposito: delegar es una decision, ignorar es un descuido, y desde fuera se
 # parecen demasiado.
 _DELEGATED = (
-    SetEndpointStaticAddress, SetEndpointDhcp,
+    SetEndpointStaticAddress,
+    SetEndpointDhcp,
 )
 
 
@@ -82,17 +93,22 @@ class RendererCoverage:
     delegated: tuple[type, ...]
 
     def handles(self, action_type: type) -> bool:
+        """Whether the type is rendered here or deliberately delegated."""
         return issubclass(action_type, self.rendered) or issubclass(
-            action_type, self.delegated,
+            action_type,
+            self.delegated,
         )
 
 
 def renderer_coverage() -> RendererCoverage:
+    """Return what this renderer renders and what it delegates."""
     return RendererCoverage(rendered=_RENDERABLE, delegated=_DELEGATED)
 
 
 @dataclass(frozen=True)
 class RenderedConfigurationBatch:
+    """One device's rendered IOS payload for one configuration phase."""
+
     device_name: str
     phase: ConfigurationPhase
     action_ids: list[str]
@@ -109,6 +125,7 @@ class PacketTracerIosRenderer:
         model: str,
         actions: list[ConfigurationAction],
     ) -> list[RenderedConfigurationBatch]:
+        """Render one device's actions into one IOS batch per phase."""
         grouped: dict[ConfigurationPhase, list[ConfigurationAction]] = defaultdict(list)
         unhandled: list[ConfigurationAction] = []
         for action in actions:
@@ -128,13 +145,15 @@ class PacketTracerIosRenderer:
             if not body:
                 continue
             payload = self._wrap(body)
-            batches.append(RenderedConfigurationBatch(
-                device_name=device_name,
-                phase=phase,
-                action_ids=[action.id for action in phase_actions],
-                ios_payload=payload,
-                js_call=build_configure_ios_call(device_name, payload),
-            ))
+            batches.append(
+                RenderedConfigurationBatch(
+                    device_name=device_name,
+                    phase=phase,
+                    action_ids=[action.id for action in phase_actions],
+                    ios_payload=payload,
+                    js_call=build_configure_ios_call(device_name, payload),
+                )
+            )
         return batches
 
     def _render_body(self, model: str, actions: list[ConfigurationAction]) -> list[str]:
@@ -150,7 +169,8 @@ class PacketTracerIosRenderer:
 
         vlans = [
             VLANConfig(vlan_id=action.vlan_id, name=action.name)
-            for action in actions if isinstance(action, CreateVlan)
+            for action in actions
+            if isinstance(action, CreateVlan)
         ]
         access = [
             AccessPortConfig(
@@ -159,7 +179,8 @@ class PacketTracerIosRenderer:
                 vlan_id=action.data_vlan_id,
                 voice_vlan_id=action.voice_vlan_id,
             )
-            for action in actions if isinstance(action, ConfigureAccessPort)
+            for action in actions
+            if isinstance(action, ConfigureAccessPort)
         ]
         trunks = [
             TrunkConfig(
@@ -168,11 +189,17 @@ class PacketTracerIosRenderer:
                 allowed_vlans=action.allowed_vlans,
                 native_vlan=action.native_vlan_id or 1,
             )
-            for action in actions if isinstance(action, ConfigureTrunk)
+            for action in actions
+            if isinstance(action, ConfigureTrunk)
         ]
-        lines.extend(generate_switch_vlan_cli(
-            vlans, access, trunks, supports_encap=switch_supports_encap(model),
-        ))
+        lines.extend(
+            generate_switch_vlan_cli(
+                vlans,
+                access,
+                trunks,
+                supports_encap=switch_supports_encap(model),
+            )
+        )
 
         subinterfaces = [
             SubinterfaceConfig(
@@ -182,13 +209,20 @@ class PacketTracerIosRenderer:
                 ip_cidr=f"{action.ipv4}/{action.prefix}",
                 encapsulation=action.encapsulation,
             )
-            for action in actions if isinstance(action, ConfigureSubinterface)
+            for action in actions
+            if isinstance(action, ConfigureSubinterface)
         ]
         lines.extend(generate_router_subinterface_cli(subinterfaces))
 
         for action in actions:
-            if isinstance(action, (ConfigureSerialClock, ConfigureInterfaceBandwidth,
-                                   ConfigureEthernetLinkMode)):
+            if isinstance(
+                action,
+                (
+                    ConfigureSerialClock,
+                    ConfigureInterfaceBandwidth,
+                    ConfigureEthernetLinkMode,
+                ),
+            ):
                 # El CLI de rendimiento de enlace se construye en un solo sitio;
                 # aqui sólo se despacha y se cierra el bloque de interfaz.
                 rendered = render_link_performance(action)
@@ -197,20 +231,32 @@ class PacketTracerIosRenderer:
             elif isinstance(action, ConfigureRoutedInterface):
                 interface = validate_ios_interface_name(action.interface)
                 address = str(ipaddress.ip_address(action.ipv4))
-                lines.extend([
-                    f"interface {interface}",
-                    f" ip address {address} {action.netmask}",
-                    " no shutdown" if action.administrative_up else " shutdown",
-                    " exit",
-                ])
+                lines.extend(
+                    [
+                        f"interface {interface}",
+                        f" ip address {address} {action.netmask}",
+                        " no shutdown" if action.administrative_up else " shutdown",
+                        " exit",
+                    ]
+                )
             elif isinstance(action, ConfigureSvi):
                 address = str(ipaddress.ip_address(action.ipv4))
-                lines.extend([
-                    f"interface Vlan{action.vlan_id}",
-                    f" ip address {address} {action.netmask}",
-                    " no shutdown" if action.administrative_up else " shutdown",
-                    " exit",
-                ])
+                lines.extend(
+                    [
+                        f"interface Vlan{action.vlan_id}",
+                        f" ip address {address} {action.netmask}",
+                        " no shutdown" if action.administrative_up else " shutdown",
+                        " exit",
+                    ]
+                )
+            elif isinstance(action, ConfigureStaticRoute):
+                network = ipaddress.ip_network(
+                    f"{action.network}/{action.prefix}", strict=True
+                )
+                next_hop = ipaddress.ip_address(action.next_hop)
+                lines.append(
+                    f"ip route {network.network_address} {network.netmask} {next_hop}"
+                )
             elif isinstance(action, ConfigureDhcpPool):
                 pool_name = safe_ios_identifier(action.pool_name)
                 for excluded in action.excluded_ranges:
@@ -220,16 +266,22 @@ class PacketTracerIosRenderer:
                     if end != start:
                         line += f" {end}"
                     lines.append(line)
-                lines.extend([
-                    f"ip dhcp pool {pool_name}",
-                    f" network {action.network} {action.netmask}",
-                    f" default-router {action.gateway}",
-                ])
+                lines.extend(
+                    [
+                        f"ip dhcp pool {pool_name}",
+                        f" network {action.network} {action.netmask}",
+                        f" default-router {action.gateway}",
+                    ]
+                )
                 if action.dns_server:
-                    lines.append(f" dns-server {ipaddress.ip_address(action.dns_server)}")
+                    lines.append(
+                        f" dns-server {ipaddress.ip_address(action.dns_server)}"
+                    )
                 lines.append(" exit")
         return lines
 
     @staticmethod
     def _wrap(lines: list[str]) -> str:
-        return "\n".join(["enable", "configure terminal", *lines, "end", "write memory"])
+        return "\n".join(
+            ["enable", "configure terminal", *lines, "end", "write memory"]
+        )

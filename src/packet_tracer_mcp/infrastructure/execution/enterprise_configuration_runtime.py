@@ -21,6 +21,7 @@ from ...domain.enterprise.models.configuration import (
     ConfigureInterfaceBandwidth,
     ConfigureRoutedInterface,
     ConfigureSerialClock,
+    ConfigureStaticRoute,
     ConfigureSubinterface,
     ConfigureSvi,
     ConfigureTrunk,
@@ -81,6 +82,7 @@ from .ios_terminal import (
     parse_show_interfaces_trunk,
     parse_show_ip_dhcp_pool,
     parse_show_ip_interface_brief,
+    parse_show_ip_route,
     parse_show_spanning_tree,
 )
 from .runtime_inventory import normalize_runtime_inventory
@@ -114,6 +116,7 @@ _IOS_ACTIONS = (
     ConfigureSerialClock,
     ConfigureInterfaceBandwidth,
     ConfigureEthernetLinkMode,
+    ConfigureStaticRoute,
 )
 _ENDPOINT_ACTIONS = (SetEndpointStaticAddress, SetEndpointDhcp)
 #: Endpoint addressing calls per fire-and-forget send. One call renders to
@@ -2135,6 +2138,8 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 results.append(trunk_results[expectation.id])
             elif expectation.kind is VerificationKind.L3_INTERFACE:
                 results.append(self._verify_l3(expectation, ios_cache))
+            elif expectation.kind is VerificationKind.STATIC_ROUTE:
+                results.append(self._verify_static_route(expectation, ios_cache))
             elif expectation.kind is VerificationKind.SERIAL_CONTROLLER:
                 results.append(self._verify_serial_controller(expectation))
             elif expectation.kind is VerificationKind.ENDPOINT_ADDRESSING:
@@ -3304,6 +3309,75 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 if converged
                 else "L3 configuration convergence timed out."
             ),
+            convergence=convergence,
+        )
+
+    def _verify_static_route(
+        self,
+        expectation: VerificationExpectation,
+        cache: dict,
+    ) -> RuntimeVerification:
+        """Read the planned static route back from a fresh routing table.
+
+        VERIFIED needs a fresh, complete (pager walked to the prompt), fully
+        parsed table in which the exact prefix has an `S` row via the planned
+        next hop and no `S` row via any other next hop. A route absent from the
+        table is not installed, whatever the configuration accepted, and a
+        second static next hop for the same prefix contradicts the plan.
+        """
+        network = str(expectation.expected["network"])
+        prefix = int(expectation.expected["prefix"])
+        next_hop = str(expectation.expected["next_hop"])
+
+        def decide(show: IosCommandResult) -> tuple[bool, str]:
+            if not (show.executed and show.fresh_output_observed):
+                return False, show.failure_reason or "route_table_not_fresh"
+            if not show.output_complete:
+                return False, "route_table_incomplete"
+            table = parse_show_ip_route(show.output)
+            if not table.parse_complete:
+                return False, "route_table_unparsed"
+            if table.routing_enabled is False:
+                return False, "ipv4_routing_disabled"
+            static = [row for row in table.exact(network, prefix) if row.code == "S"]
+            hops = sorted({row.next_hop for row in static})
+            if hops == [next_hop]:
+                return True, ""
+            if not hops:
+                return False, "static_route_absent"
+            return False, "static_route_next_hop_differs:" + ",".join(hops)
+
+        show, convergence, converged = self._converged_ios_query(
+            expectation,
+            OperationalQueryId.SHOW_IP_ROUTE,
+            cache,
+            lambda value: decide(value)[0],
+            timeout_seconds=self._l3_timeout,
+        )
+        verified, reason = decide(show)
+        verified = verified and converged
+        complete = bool(show.fresh_output_observed and show.output_complete)
+        return RuntimeVerification(
+            expectation_id=expectation.id,
+            status=(
+                ActionExecutionStatus.VERIFIED
+                if verified
+                else ActionExecutionStatus.FAILED
+                if complete and reason.startswith("static_route")
+                else ActionExecutionStatus.UNOBSERVABLE
+            ),
+            evidence_method="fresh_show_ip_route",
+            fresh_evidence=show.fresh_output_observed,
+            fields={
+                "static_route": (
+                    FieldVerificationStatus.VERIFIED
+                    if verified
+                    else FieldVerificationStatus.FAILED
+                    if complete and reason.startswith("static_route")
+                    else FieldVerificationStatus.UNOBSERVABLE
+                ),
+            },
+            message=reason,
             convergence=convergence,
         )
 

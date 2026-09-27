@@ -13,6 +13,10 @@ from time import monotonic, sleep
 from typing import Any
 
 from ...domain.enterprise.models.discovery import DeviceInitializationResult
+from ...domain.enterprise.models.routed_forwarding import (
+    ObservedRoute,
+    RouteTableReading,
+)
 from .command_dispatch import (
     PAGER_GUARD_JS as _PAGER_GUARD_JS,
 )
@@ -65,6 +69,11 @@ class OperationalQueryId(_NamedStrEnum):
     SHOW_IP_ROUTE_EIGRP = "show_ip_route_eigrp"
     SHOW_IP_PROTOCOLS = "show_ip_protocols"
     SHOW_IP_ROUTE_RIP = "show_ip_route_rip"
+    #: The unfiltered IPv4 routing table: connected, local, static and any
+    #: dynamic rows, read once per device per routed readiness round.
+    #: Its pager is NOT qualified: until a LIVE capture measures how this
+    #: build pages the table, a paged reading is incomplete and fails closed.
+    SHOW_IP_ROUTE = "show_ip_route"
     SHOW_INTERFACES_SWITCHPORT = "show_interfaces_switchport"
     SHOW_TELEPHONY_SERVICE = "show_telephony_service"
 
@@ -252,6 +261,7 @@ _COMMANDS = {
     # Observado en EXEC de usuario durante R2-0; no requiere `enable`.
     OperationalQueryId.SHOW_IP_PROTOCOLS: "show ip protocols",
     OperationalQueryId.SHOW_IP_ROUTE_RIP: "show ip route rip",
+    OperationalQueryId.SHOW_IP_ROUTE: "show ip route",
     OperationalQueryId.SHOW_TELEPHONY_SERVICE: "show telephony-service",
 }
 _INTERFACE_COMMANDS = {
@@ -376,6 +386,7 @@ _PAGER_MARKER = "--More--"
 # adivinarlo seria inventar la forma del comando para esquivar el pager, y
 # PT 9.0.1 rechaza `terminal length 0`. Las cotas duras son las mismas y una
 # captura incompleta conserva su techo fail-closed.
+#
 _PAGINATION_QUALIFIED_QUERIES = frozenset(
     {
         OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
@@ -2155,6 +2166,130 @@ def parse_show_ip_route_rip(value: str) -> list[RipRouteStatusRow]:
             )
         )
     return rows
+
+
+_ROUTE_ADDRESS = r"\d{1,3}(?:\.\d{1,3}){3}"
+_ROUTE_CODE = r"(?P<code>[A-Za-z]{1,2}\*?(?: (?:IA|E1|E2|N1|N2|EX|L1|L2|ia|su))?)"
+_ROUTE_CONNECTED = re.compile(
+    r"^" + _ROUTE_CODE + r"\s+(?P<network>" + _ROUTE_ADDRESS + r")"
+    r"(?:/(?P<length>\d{1,2}))?\s+is directly connected,\s+(?P<interface>\S+)\s*$"
+)
+_ROUTE_VIA = re.compile(
+    r"^" + _ROUTE_CODE + r"\s+(?P<network>" + _ROUTE_ADDRESS + r")"
+    r"(?:/(?P<length>\d{1,2}))?\s+\[(?P<distance>\d+)/(?P<metric>\d+)\]\s+"
+    r"via\s+(?P<next_hop>" + _ROUTE_ADDRESS + r")"
+    r"(?:,\s+\d{1,2}:\d{2}:\d{2})?(?:,\s+(?P<interface>\S+))?\s*$"
+)
+_ROUTE_CONTINUATION = re.compile(
+    r"^\s+\[(?P<distance>\d+)/(?P<metric>\d+)\]\s+via\s+"
+    r"(?P<next_hop>" + _ROUTE_ADDRESS + r")"
+    r"(?:,\s+\d{1,2}:\d{2}:\d{2})?(?:,\s+(?P<interface>\S+))?\s*$"
+)
+_ROUTE_SINGLE_MASK_HEADER = re.compile(
+    r"^\s*"
+    + _ROUTE_ADDRESS
+    + r"/(?P<length>\d{1,2})\s+is subnetted,\s+\d+\s+subnets?\s*$",
+    re.IGNORECASE,
+)
+_ROUTE_VARIABLE_HEADER = re.compile(
+    r"^\s*" + _ROUTE_ADDRESS + r"/\d{1,2}\s+is variably subnetted,.*$",
+    re.IGNORECASE,
+)
+_ROUTE_LIKE = re.compile(r"^(?:[A-Za-z]{1,2}\*?(?: [A-Za-z0-9]{1,2})?)\s+\d")
+_ROUTE_GATEWAY = re.compile(r"^\s*Gateway of last resort is (?P<value>.+?)\s*$")
+_ROUTE_HOST_FORM = re.compile(r"^\s*Default gateway is\b", re.IGNORECASE)
+
+
+def parse_show_ip_route(value: str) -> RouteTableReading:
+    """Parse one unfiltered `show ip route` into a typed routing table.
+
+    The row shapes are IOS's: connected (`C`/`L`/`S` "is directly
+    connected"), via (`[distance/metric] via next-hop`, optional age and
+    interface), equal-cost continuation lines, and classful headers whose
+    single mask a row without `/length` inherits. The routing-disabled host
+    form of an L3 switch (`Default gateway is ...`) is reported as
+    `routing_enabled=False`. Legend, echo and prompt lines are ignored; any
+    other line that looks like a route and does not parse is kept in
+    `unparsed`, which makes the table incomplete rather than silently
+    shorter.
+    """
+    rows: list[ObservedRoute] = []
+    unparsed: list[str] = []
+    gateway = ""
+    routing_enabled: bool | None = None
+    header_seen = False
+    inherited: int | None = None
+    previous: ObservedRoute | None = None
+    for raw in normalize_terminal_output(value).splitlines():
+        line = raw.rstrip()
+        if not line.strip():
+            continue
+        gateway_match = _ROUTE_GATEWAY.fullmatch(line)
+        if gateway_match is not None:
+            gateway = gateway_match.group("value")
+            header_seen = True
+            routing_enabled = True
+            continue
+        if _ROUTE_HOST_FORM.match(line):
+            routing_enabled = False
+            header_seen = True
+            continue
+        header = _ROUTE_SINGLE_MASK_HEADER.fullmatch(line)
+        if header is not None:
+            candidate = int(header.group("length"))
+            inherited = candidate if candidate <= 32 else None
+            previous = None
+            continue
+        if _ROUTE_VARIABLE_HEADER.fullmatch(line):
+            inherited = None
+            previous = None
+            continue
+        continuation = _ROUTE_CONTINUATION.fullmatch(line)
+        if continuation is not None:
+            if previous is None:
+                unparsed.append(line.strip())
+                continue
+            previous = ObservedRoute(
+                code=previous.code,
+                network=previous.network,
+                prefix_length=previous.prefix_length,
+                next_hop=continuation.group("next_hop"),
+                interface=continuation.group("interface") or "",
+                distance=int(continuation.group("distance")),
+                metric=int(continuation.group("metric")),
+            )
+            rows.append(previous)
+            continue
+        match = _ROUTE_CONNECTED.fullmatch(line) or _ROUTE_VIA.fullmatch(line)
+        if match is None:
+            if _ROUTE_LIKE.match(line):
+                unparsed.append(line.strip())
+            previous = None
+            continue
+        length_text = match.group("length")
+        length = int(length_text) if length_text is not None else inherited
+        if length is None or length > 32:
+            unparsed.append(line.strip())
+            previous = None
+            continue
+        groups = match.groupdict()
+        previous = ObservedRoute(
+            code=match.group("code"),
+            network=match.group("network"),
+            prefix_length=length,
+            next_hop=groups.get("next_hop") or "",
+            interface=groups.get("interface") or "",
+            distance=int(groups["distance"]) if groups.get("distance") else None,
+            metric=int(groups["metric"]) if groups.get("metric") else None,
+        )
+        rows.append(previous)
+    return RouteTableReading(
+        rows=tuple(rows),
+        unparsed=tuple(unparsed),
+        gateway_of_last_resort=gateway,
+        routing_enabled=routing_enabled,
+        header_seen=header_seen,
+    )
 
 
 def extract_terminal_command_window(

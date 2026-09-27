@@ -24,6 +24,7 @@ from .models.configuration import (
     ConfigureInterfaceBandwidth,
     ConfigureRoutedInterface,
     ConfigureSerialClock,
+    ConfigureStaticRoute,
     ConfigureSubinterface,
     ConfigureSvi,
     ConfigureTrunk,
@@ -358,6 +359,16 @@ PRODUCT_MUTATION_REPLAY_REGISTRY: tuple[MutationReplayPolicy, ...] = (
         _SHAPE,
         _DECLARATIVE,
         "Subinterface encapsulation and address are keyed assignments.",
+    ),
+    _action_policy(
+        MutationSurface.CONFIGURATION,
+        ConfigureStaticRoute,
+        _CONFIGURATION_ENTRYPOINT,
+        ReplayClassification.REPLAY_SAFE,
+        _SHAPE,
+        _DECLARATIVE,
+        "A static route is keyed by prefix, mask and next hop; reasserting it "
+        "leaves the same single route.",
     ),
     _action_policy(
         MutationSurface.CONFIGURATION,
