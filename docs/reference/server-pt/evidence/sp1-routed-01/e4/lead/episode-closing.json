@@ -1,0 +1,6 @@
+{
+  "lab_state": "Final SP1-ROUTED-W2 at published a04369a (exact-SHA CI run 36306639618 success) through the registered four-input pt_apply_enterprise_services with the DEFAULT catalog, nothing injected. Product VERIFIED: all six clients (HQ inter-VLAN; BR1 over one transit hop; BR2 over two) verified the gateway read (HostIpProcess), HTTP by address first, the resolver read, DNS, the qualified nonexistent-name negative and HTTP by name; all three expected routed groups admitted, the three-router group included. M-SP1-ROUTED-PRODUCT and M-SP1-ROUTED-FINAL supported_in_sample; every router capture complete. Fixture restoration proven.",
+  "operations_used": 423,
+  "qualification_outcome": "completed",
+  "retirement": "Maintained retirement exited the owned process with basis owned_qualification_restored; final census zero Packet Tracer processes, empty mailbox and no campaign lock."
+}

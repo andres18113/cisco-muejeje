@@ -1,0 +1,71 @@
+{
+  "allocated_operations": 3000,
+  "allocated_seconds": 3900.0,
+  "allocation_arithmetic": "The stage caps 3000 operations and 3600 seconds, including its 31-operation and 420-second finalization reserves. The offline W2 stage spent 324 operations; LIVE convergence polling is what the rest covers. 3900 episode seconds cover the stage plus 60 launch, 120 retirement and 120 contingency. No in-flight increase.",
+  "attempt_ids": [
+    "865184ae8e7644f18b7c7ede494de03a"
+  ],
+  "ci": {
+    "conclusion": "success",
+    "head_sha": "a04369a88298d452ce5a9043e160d2c14fe83ca5",
+    "jobs": [
+      "quality",
+      "pytest ubuntu 3.11",
+      "pytest ubuntu 3.13",
+      "pytest windows 3.11",
+      "pytest windows 3.13",
+      "docs"
+    ],
+    "run": 36306639618
+  },
+  "device_catalog": "default",
+  "episode_kind": "final",
+  "instance_token": "1ee5966d68c04681a79a2938a165e9ce",
+  "interpretation_limit": "Default catalog on the registered route; the result covers this exact composition, build and channel only.",
+  "permitted_effects": [
+    "qualification:SP1-ROUTED-W2 profile 1",
+    "create/verify/remove the exact disposable 14-device 13-link fixture",
+    "registered pt_apply_enterprise_services on the owned fixture",
+    "E5 endpoint addressing, access and trunk ports, router subinterfaces, transit interfaces and static routes of the admitted closure",
+    "E6 DNS records and HTTP page on the two HQ servers",
+    "each selected client's first HTTP-by-IP request, then DNS, a nonexistent-name control and HTTP by name",
+    "read-only router tables and client bindings",
+    "owned process retirement"
+  ],
+  "physical_topology_hash": "fb52f64f438b7e39b410781ef20a020f18d14758fc25b582fd7dbb5ecb72eb19",
+  "profile_id": "SP1-ROUTED-W2",
+  "profile_version": "1",
+  "question": "Does the maintained product, through the registered four-input tool, admit the routed paths of the SP-1 composition, verify their forwarding prerequisites from fresh router readings, and serve each selected client of SP1-ROUTED-W2 first by address, then by DNS and by host name, with a qualified nonexistent-name negative?",
+  "selected_clients": [
+    "HQ-DEFAULT-PC-01",
+    "HQ-DEFAULT-PC-02",
+    "BR1-DEFAULT-PC-01",
+    "BR1-DEFAULT-PC-02",
+    "BR2-DEFAULT-PC-01",
+    "BR2-DEFAULT-PC-02"
+  ],
+  "source_sha": "a04369a88298d452ce5a9043e160d2c14fe83ca5",
+  "source_tree": "d41ecc27d4fa92b846f43d06df37421c76fdca1a",
+  "stop_rule": "Stop dependent effects on identity or receiver mismatch, refusal, unobservable or contradicted routed readiness, an unverified client, budget expiry, persistence or cleanup uncertainty; keep the terminal readings, never repeat an ambiguous mutation, retire only the owned lab.",
+  "targets": [
+    "HQ-EDGE-RTR-01",
+    "BR1-EDGE-RTR-01",
+    "BR2-EDGE-RTR-01",
+    "HQ-DEFAULT-ACCESS-SW-01",
+    "BR1-DEFAULT-ACCESS-SW-01",
+    "BR2-DEFAULT-ACCESS-SW-01",
+    "HQ-DEFAULT-DNS-01",
+    "HQ-DEFAULT-WEB-01",
+    "HQ-DEFAULT-PC-01",
+    "HQ-DEFAULT-PC-02",
+    "BR1-DEFAULT-PC-01",
+    "BR1-DEFAULT-PC-02",
+    "BR2-DEFAULT-PC-01",
+    "BR2-DEFAULT-PC-02"
+  ],
+  "tests_run": [
+    "exact-SHA CI run 36306639618 success at a04369a",
+    "clean delivery-mode quality gate at a04369a",
+    "final W1 episode 3 VERIFIED at a04369a"
+  ]
+}

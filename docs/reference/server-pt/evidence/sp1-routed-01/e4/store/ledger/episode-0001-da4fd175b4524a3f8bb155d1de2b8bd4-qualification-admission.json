@@ -1,0 +1,1 @@
+{"admitted_at_utc": "2026-09-27T03:24:55.796505+00:00", "attempt_id": "da4fd175b4524a3f8bb155d1de2b8bd4", "draws_protected": false, "episode": 1, "granted_operations": 3000, "granted_seconds": 3600.0, "kind": "phase_admission", "phase": "qualification", "source_sha": "6e5e5277881d331106bad17f88048ba2b82b157c", "source_tree": "4353b3a493f1ae5aafe99159eda8fc7dcb3800de"}
