@@ -1,0 +1,2678 @@
+{
+  "schema_version": 1,
+  "record_kind": "server_services_qualification",
+  "run_id": "2026-09-28T15-50-55Z-fe214109",
+  "stage": "SP2-REMOTE-RELAY",
+  "execution_mode": "live",
+  "created_at": "2026-09-28T15:50:55.561355Z",
+  "completed_at": "2026-09-28T15:53:38.488894Z",
+  "authorization": {
+    "authorization_id": "SERVER-PT-SP2-E3-37f799295fbf7c1ecee0da9f53bb5055",
+    "stage": "SP2-REMOTE-RELAY",
+    "sha": "9f93721f128f7e9ced2a151ba0a83870efe8872a",
+    "targets": [
+      "HQ-DEFAULT-DNS-01",
+      "HQ-DEFAULT-ACCESS-SW-01",
+      "HQ-EDGE-RTR-01",
+      "BR1-DEFAULT-PC-01",
+      "BR1-DEFAULT-ACCESS-SW-01",
+      "BR1-EDGE-RTR-01"
+    ],
+    "channel": "file",
+    "build": "9.0.1.0858",
+    "max_operations": 3200,
+    "max_seconds": 3600,
+    "profile_id": "SP2-REMOTE-RELAY",
+    "profile_version": "1",
+    "tree": "62582242a459ac18ea30d93b30aaf5c2a5f8057d",
+    "models": [
+      "HQ-DEFAULT-DNS-01:Server-PT",
+      "HQ-DEFAULT-ACCESS-SW-01:IE-2000",
+      "HQ-EDGE-RTR-01:1941",
+      "BR1-DEFAULT-PC-01:PC-PT",
+      "BR1-DEFAULT-ACCESS-SW-01:IE-2000",
+      "BR1-EDGE-RTR-01:1941"
+    ],
+    "links": [
+      "BR1-DEFAULT-ACCESS-SW-01:GigabitEthernet1/1-BR1-EDGE-RTR-01:GigabitEthernet0/1",
+      "HQ-DEFAULT-ACCESS-SW-01:GigabitEthernet1/1-HQ-EDGE-RTR-01:GigabitEthernet0/1",
+      "BR1-DEFAULT-ACCESS-SW-01:FastEthernet1/1-BR1-DEFAULT-PC-01:FastEthernet0",
+      "HQ-DEFAULT-ACCESS-SW-01:FastEthernet1/1-HQ-DEFAULT-DNS-01:FastEthernet0",
+      "BR1-EDGE-RTR-01:GigabitEthernet0/0-HQ-EDGE-RTR-01:GigabitEthernet0/0/cross"
+    ],
+    "step_ids": [
+      "SP2-remote"
+    ],
+    "reserve_operations": 15,
+    "instance_token": "e800b14f9bc7810d40a195ed936dab3d",
+    "attempt_id": "37f799295fbf7c1ecee0da9f53bb5055",
+    "process_id": 49012,
+    "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe"
+  },
+  "source": {
+    "expected_head": "9f93721f128f7e9ced2a151ba0a83870efe8872a",
+    "executed_sha": "9f93721f128f7e9ced2a151ba0a83870efe8872a",
+    "executed_tree": "62582242a459ac18ea30d93b30aaf5c2a5f8057d",
+    "clean": true,
+    "branch": "feature/server-pt-goal-foundations",
+    "upstream": "cisco/feature/server-pt-goal-foundations",
+    "upstream_head": "9f93721f128f7e9ced2a151ba0a83870efe8872a"
+  },
+  "environment": {
+    "python_executable": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\.venv\\Scripts\\python.exe",
+    "package_file": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\src\\packet_tracer_mcp\\__init__.py",
+    "isolation_state": "ISOLATED",
+    "requested_build": "9.0.1.0858",
+    "observed_build": "9.0.1.0858",
+    "build_reader_id": "AppWindow.getVersion",
+    "build_reader_sha256": "c3a9b240898a89007111c4397eb4cb5464da69551021484d4bc6b7d0fc7f5935",
+    "build_observation": "{\"found\":true,\"backend\":\"packet_tracer\",\"backend_version\":\"9.0.1.0858\",\"extension_version\":\"\",\"runtime_mode\":\"logical-workspace\"}",
+    "build_reason": ""
+  },
+  "transport": {
+    "channel": "file",
+    "fixed_at": "2026-09-28T15:50:55.681238Z",
+    "liveness": "heartbeat_fresh"
+  },
+  "fixtures": [
+    {
+      "name": "HQ-DEFAULT-DNS-01",
+      "model": "Server-PT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "HQ-DEFAULT-ACCESS-SW-01",
+      "model": "IE-2000",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "HQ-EDGE-RTR-01",
+      "model": "1941",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "BR1-DEFAULT-PC-01",
+      "model": "PC-PT",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "BR1-DEFAULT-ACCESS-SW-01",
+      "model": "IE-2000",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    },
+    {
+      "name": "BR1-EDGE-RTR-01",
+      "model": "1941",
+      "ipv4": "",
+      "netmask": "",
+      "dns_server": "",
+      "creation": "changed",
+      "owned": true,
+      "detail": "Device creation acknowledged; independent read-back required. | cleanup:removed"
+    }
+  ],
+  "links": [
+    {
+      "device_a": "BR1-DEFAULT-ACCESS-SW-01",
+      "port_a": "GigabitEthernet1/1",
+      "device_b": "BR1-EDGE-RTR-01",
+      "port_b": "GigabitEthernet0/1"
+    },
+    {
+      "device_a": "HQ-DEFAULT-ACCESS-SW-01",
+      "port_a": "GigabitEthernet1/1",
+      "device_b": "HQ-EDGE-RTR-01",
+      "port_b": "GigabitEthernet0/1"
+    },
+    {
+      "device_a": "BR1-DEFAULT-ACCESS-SW-01",
+      "port_a": "FastEthernet1/1",
+      "device_b": "BR1-DEFAULT-PC-01",
+      "port_b": "FastEthernet0"
+    },
+    {
+      "device_a": "HQ-DEFAULT-ACCESS-SW-01",
+      "port_a": "FastEthernet1/1",
+      "device_b": "HQ-DEFAULT-DNS-01",
+      "port_b": "FastEthernet0"
+    },
+    {
+      "device_a": "BR1-EDGE-RTR-01",
+      "port_a": "GigabitEthernet0/0",
+      "device_b": "HQ-EDGE-RTR-01",
+      "port_b": "GigabitEthernet0/0"
+    }
+  ],
+  "budget": {
+    "max_operations": 3200,
+    "max_seconds": 3600,
+    "reserve_operations": 15,
+    "reserve_seconds": 420,
+    "planned_minimum_operations": 3120,
+    "used_operations": 120,
+    "refused_calls": 0,
+    "elapsed_seconds": 162.812,
+    "local_observation_seconds": 70.144
+  },
+  "experimental_capabilities": [
+    "router.dhcp_relay",
+    "server.dhcp_lease_table"
+  ],
+  "operations": [
+    {
+      "seq": 1,
+      "phase": "admission",
+      "call": "send_and_wait",
+      "purpose": "read:executable_build",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 0.0,
+      "elapsed_seconds": 0.515,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 2,
+      "phase": "admission",
+      "call": "send_and_wait",
+      "purpose": "read:workspace_baseline",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 0.515,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 3,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-DEFAULT-DNS-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 2.281,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 4,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-DEFAULT-DNS-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 3.25,
+      "elapsed_seconds": 1.125,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 5,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 5.031,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 6,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 6.859,
+      "elapsed_seconds": 1.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 7,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-EDGE-RTR-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 8.781,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 8,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:HQ-EDGE-RTR-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 10.5,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 9,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR1-DEFAULT-PC-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 12.39,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 10,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR1-DEFAULT-PC-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 14.125,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 11,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR1-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 15.922,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 12,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR1-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 17.672,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 13,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR1-EDGE-RTR-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 19.469,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 14,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:BR1-EDGE-RTR-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 21.219,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 15,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 22.906,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 16,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:1",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 24.75,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 17,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 26.531,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 18,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:2",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 28.328,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 19,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:3",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 30.109,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 20,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:3",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 31.828,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 21,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:4",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 33.594,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 22,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:4",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 35.344,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 23,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:5",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 37.125,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 24,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "create:link:5",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 38.89,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 25,
+      "phase": "setup",
+      "call": "send_and_wait",
+      "purpose": "read:fixture_identity",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 39.89,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 26,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 41.609,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 27,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 42.687,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 28,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 43.406,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 29,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 44.453,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 30,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 45.125,
+      "elapsed_seconds": 0.406,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 31,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 46.265,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 32,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 47.0,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 33,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 48.0,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 34,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 48.703,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 35,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 49.422,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 36,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 50.14,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 37,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 50.859,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 38,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 51.562,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 39,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 52.25,
+      "elapsed_seconds": 0.015,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 40,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 52.953,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 41,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 53.672,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 42,
+      "phase": "experiment",
+      "call": "send",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 0.0,
+      "started_offset_seconds": 54.422,
+      "elapsed_seconds": 0.0,
+      "dispatch": "accepted",
+      "result": "not_applicable",
+      "refused": ""
+    },
+    {
+      "seq": 43,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 55.187,
+      "elapsed_seconds": 1.422,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 44,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 57.359,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 45,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 59.094,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 46,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 60.984,
+      "elapsed_seconds": 0.906,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 47,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 62.594,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 48,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 64.437,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 49,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 6.0,
+      "started_offset_seconds": 66.094,
+      "elapsed_seconds": 1.125,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 50,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 6.0,
+      "started_offset_seconds": 67.906,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 51,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 6.0,
+      "started_offset_seconds": 69.734,
+      "elapsed_seconds": 1.031,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 52,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 6.0,
+      "started_offset_seconds": 71.437,
+      "elapsed_seconds": 1.11,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 53,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 73.25,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 54,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 74.984,
+      "elapsed_seconds": 1.11,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 55,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 76.828,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 56,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 78.515,
+      "elapsed_seconds": 1.016,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 57,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 80.219,
+      "elapsed_seconds": 1.093,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 58,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 81.953,
+      "elapsed_seconds": 1.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 59,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 83.844,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 60,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 85.531,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 61,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 87.328,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 62,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 89.109,
+      "elapsed_seconds": 1.11,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 63,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 90.89,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 64,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 92.562,
+      "elapsed_seconds": 1.11,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 65,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 94.344,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 66,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 96.14,
+      "elapsed_seconds": 1.094,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 67,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 97.922,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 68,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 99.562,
+      "elapsed_seconds": 1.11,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 69,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 101.297,
+      "elapsed_seconds": 1.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 70,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 103.156,
+      "elapsed_seconds": 1.094,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 71,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 104.906,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 72,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 106.672,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 73,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 108.437,
+      "elapsed_seconds": 1.11,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 74,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 110.156,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 75,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 111.922,
+      "elapsed_seconds": 1.125,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 76,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 113.719,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 77,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 115.484,
+      "elapsed_seconds": 1.11,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 78,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 117.297,
+      "elapsed_seconds": 1.015,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 79,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 118.969,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 80,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 120.687,
+      "elapsed_seconds": 1.11,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 81,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 122.422,
+      "elapsed_seconds": 1.218,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 82,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 124.328,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 83,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 125.937,
+      "elapsed_seconds": 1.11,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 84,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 127.687,
+      "elapsed_seconds": 1.219,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 85,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 129.531,
+      "elapsed_seconds": 1.125,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 86,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 131.328,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 87,
+      "phase": "experiment",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:product:e5_preclient",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 133.015,
+      "elapsed_seconds": 1.11,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 88,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 134.828,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 89,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:final:routers",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 135.937,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 90,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 136.14,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 91,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:final:routers",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 136.453,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 92,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 136.656,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 93,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:final:routers",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 136.859,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 94,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 137.156,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 95,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:final:routers",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 137.359,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 96,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 137.672,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 97,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:final:routers",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 137.875,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 98,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 138.172,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 99,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:final:routers",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 138.484,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 100,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 138.687,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 101,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:final:routers",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 138.89,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 102,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:final:routers",
+      "timeout_seconds": 3.0,
+      "started_offset_seconds": 139.203,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 103,
+      "phase": "terminal_observation",
+      "call": "send_and_wait",
+      "purpose": "sp2:remote:final:routers",
+      "timeout_seconds": 5.0,
+      "started_offset_seconds": 139.406,
+      "elapsed_seconds": 0.313,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 104,
+      "phase": "terminal_observation",
+      "call": "dispatch_and_wait",
+      "purpose": "sp2:remote:server:terminal",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 139.719,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 105,
+      "phase": "terminal_observation",
+      "call": "dispatch_and_wait",
+      "purpose": "sp2:remote:client:terminal",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 139.922,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 106,
+      "phase": "terminal_observation",
+      "call": "dispatch_and_wait",
+      "purpose": "sp2:binding:terminal",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 140.219,
+      "elapsed_seconds": 0.312,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 107,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR1-EDGE-RTR-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 141.797,
+      "elapsed_seconds": 0.406,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 108,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR1-EDGE-RTR-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 142.875,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 109,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR1-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 144.609,
+      "elapsed_seconds": 1.219,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 110,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR1-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 146.531,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 111,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR1-DEFAULT-PC-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 148.203,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 112,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:BR1-DEFAULT-PC-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 150.031,
+      "elapsed_seconds": 1.0,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 113,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-EDGE-RTR-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 151.719,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 114,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-EDGE-RTR-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 153.515,
+      "elapsed_seconds": 1.094,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 115,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 155.265,
+      "elapsed_seconds": 1.11,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 116,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-DEFAULT-ACCESS-SW-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 157.062,
+      "elapsed_seconds": 1.11,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 117,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-DEFAULT-DNS-01",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 158.797,
+      "elapsed_seconds": 1.109,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 118,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "remove:HQ-DEFAULT-DNS-01",
+      "timeout_seconds": 15.0,
+      "started_offset_seconds": 160.562,
+      "elapsed_seconds": 1.11,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 119,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "read:restoration:1",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 161.672,
+      "elapsed_seconds": 0.203,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    },
+    {
+      "seq": 120,
+      "phase": "finalization",
+      "call": "send_and_wait",
+      "purpose": "read:restoration:2",
+      "timeout_seconds": 10.0,
+      "started_offset_seconds": 161.875,
+      "elapsed_seconds": 0.297,
+      "dispatch": "accepted",
+      "result": "correlated",
+      "refused": ""
+    }
+  ],
+  "transitions": [
+    {
+      "step": "admitted",
+      "at": "2026-09-28T15:50:56.489670Z",
+      "outcome": ""
+    },
+    {
+      "step": "fixtures:started",
+      "at": "2026-09-28T15:50:57.249484Z",
+      "outcome": ""
+    },
+    {
+      "step": "fixtures:ready",
+      "at": "2026-09-28T15:51:35.875503Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:SP2_REMOTE_PRODUCT:started",
+      "at": "2026-09-28T15:51:36.561620Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:SP2_REMOTE:e5_preclient",
+      "at": "2026-09-28T15:51:36.565621Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:SP2_REMOTE_PRODUCT:concluded",
+      "at": "2026-09-28T15:53:09.805200Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:SP2_REMOTE_FINAL:started",
+      "at": "2026-09-28T15:53:10.503957Z",
+      "outcome": ""
+    },
+    {
+      "step": "experiment:SP2_REMOTE_FINAL:concluded",
+      "at": "2026-09-28T15:53:16.203882Z",
+      "outcome": ""
+    },
+    {
+      "step": "finalization:started",
+      "at": "2026-09-28T15:53:16.207395Z",
+      "outcome": ""
+    },
+    {
+      "step": "finalization:completed",
+      "at": "2026-09-28T15:53:38.485384Z",
+      "outcome": ""
+    }
+  ],
+  "persisted_step": "finalization:completed",
+  "admission_reads": [
+    "isolation:ISOLATED",
+    "repository:9f93721f128f7e9ced2a151ba0a83870efe8872a:62582242a459ac18ea30d93b30aaf5c2a5f8057d",
+    "build:9.0.1.0858",
+    "workspace:semantic=0,links=0,engine_managed=0"
+  ],
+  "diagnostic_lifecycle": {
+    "process_id": 49012,
+    "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+    "product_version": "9.0.1.0858",
+    "file_version": "9.0.1.0858",
+    "process_incarnation": "2026-09-28T10:50:14.7161162-05:00",
+    "mailbox_entries": [],
+    "error": ""
+  },
+  "diagnostic_lifecycle_postflight": {
+    "process_id": 49012,
+    "process_path": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+    "product_version": "9.0.1.0858",
+    "file_version": "9.0.1.0858",
+    "process_incarnation": "2026-09-28T10:50:14.7161162-05:00",
+    "mailbox_entries": [],
+    "error": ""
+  },
+  "workspace_baseline": {
+    "observed": true,
+    "semantic_device_count": 0,
+    "backend_managed_device_count": 0,
+    "link_count": 0,
+    "devices": [],
+    "links": [],
+    "message": "fresh_complete_workspace_inventory"
+  },
+  "refusals": [],
+  "native_default_pool": [],
+  "measurements": [
+    {
+      "experiment_id": "M-SP2-REMOTE-POOL",
+      "hypothesis": "The selected remote PC has two stable usable bindings joined to physical BR1_DATA, with no competing row observed in the bounded serverPool scan, after helper and routed readiness.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "inconclusive",
+      "facts": {
+        "intent_sha256": "f3bde2722df87fc64ca19caa58a1b7cdecd5f69547323d12cc585619d6d7c34b",
+        "topology_sha256": "9d8db364a8260407282796baccb85a56d5d314d241e84179ed2e364b5dee915f",
+        "configuration_sha256": "a58405ecbf3a60f47ead76c5e1b7cb52da1320458c969cf51677a6e672d9491f",
+        "services_sha256": "77c12f340f9263eb9d537d3cf034436a5dbd50d831dfd98ab226aeeb4fca0282",
+        "candidate_device_evidence": [
+          {
+            "build": "9.0.1.0858",
+            "model": "1941",
+            "capability": "supports_dhcp_relay",
+            "status": "supported",
+            "source": "static_override",
+            "source_detail": "candidate:SERVER-PT-SP2-GENERALIZED-DHCP-RELAY-01",
+            "confidence": "candidate",
+            "verified": false
+          }
+        ],
+        "device_capabilities_sha256": "4e75e2a693b4dc17284f9f29256b29014149206e7a1458db62689d015a37f833",
+        "service_capabilities_sha256": "153c17b5226d04e8d474229e5309e6c604347b103a239d135852e84d82e8b0f3",
+        "samples": [],
+        "preclient_projection": {
+          "id": "cfg_compiled/ent_sp2relay/sp2-preclient",
+          "semantic_hash": "6f6fd26eb0445bd81da9360d7008fd8120cc1ed08fc469b4d2739b1a9fe098b6",
+          "rewrites": [
+            "action_omitted:cfg/endpoint-dhcp/dbea15c40a6f44d1:client_mode_deferred"
+          ]
+        },
+        "e5_preclient": {
+          "status": "partial",
+          "preflight_errors": [],
+          "action_results": [
+            {
+              "action_id": "cfg/hostname/57e1b5e4b37e3bae",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Configuration batch accepted by Packet Tracer.",
+              "batch_id": "BR1-EDGE-RTR-01:10",
+              "operation": "set_value",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            },
+            {
+              "action_id": "cfg/hostname/ad56d6944d00264a",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Configuration batch accepted by Packet Tracer.",
+              "batch_id": "HQ-EDGE-RTR-01:10",
+              "operation": "set_value",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            },
+            {
+              "action_id": "cfg/hostname/4e8073b542dcd103",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Configuration batch accepted by Packet Tracer.",
+              "batch_id": "BR1-DEFAULT-ACCESS-SW-01:10",
+              "operation": "set_value",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            },
+            {
+              "action_id": "cfg/hostname/2d6e648a55005ba7",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Configuration batch accepted by Packet Tracer.",
+              "batch_id": "HQ-DEFAULT-ACCESS-SW-01:10",
+              "operation": "set_value",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            },
+            {
+              "action_id": "cfg/vlan/e2ca05f59053c41b",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Configuration batch accepted by Packet Tracer.",
+              "batch_id": "BR1-DEFAULT-ACCESS-SW-01:20",
+              "operation": "ensure_present",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            },
+            {
+              "action_id": "cfg/vlan/386c3184adf58b69",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Configuration batch accepted by Packet Tracer.",
+              "batch_id": "HQ-DEFAULT-ACCESS-SW-01:20",
+              "operation": "ensure_present",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            },
+            {
+              "action_id": "cfg/access/2709f1f9d333aff7",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Configuration batch accepted by Packet Tracer.",
+              "batch_id": "BR1-DEFAULT-ACCESS-SW-01:30",
+              "operation": "set_value",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            },
+            {
+              "action_id": "cfg/gateway-access/2ad60930cda84829",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Configuration batch accepted by Packet Tracer.",
+              "batch_id": "BR1-DEFAULT-ACCESS-SW-01:30",
+              "operation": "set_value",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            },
+            {
+              "action_id": "cfg/access/1a7a286cde827c06",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Configuration batch accepted by Packet Tracer.",
+              "batch_id": "HQ-DEFAULT-ACCESS-SW-01:30",
+              "operation": "set_value",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            },
+            {
+              "action_id": "cfg/gateway-access/7f39ec3a983782cc",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Configuration batch accepted by Packet Tracer.",
+              "batch_id": "HQ-DEFAULT-ACCESS-SW-01:30",
+              "operation": "set_value",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            },
+            {
+              "action_id": "cfg/routed/17019ad8109015c2",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Configuration batch accepted by Packet Tracer.",
+              "batch_id": "BR1-EDGE-RTR-01:40",
+              "operation": "set_value",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            },
+            {
+              "action_id": "cfg/transit-l3/71064feeb4361375",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Configuration batch accepted by Packet Tracer.",
+              "batch_id": "BR1-EDGE-RTR-01:40",
+              "operation": "set_value",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            },
+            {
+              "action_id": "cfg/routed/fc2b0275178a9c35",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Configuration batch accepted by Packet Tracer.",
+              "batch_id": "HQ-EDGE-RTR-01:40",
+              "operation": "set_value",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            },
+            {
+              "action_id": "cfg/transit-l3/67aaec2a0166fd11",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Configuration batch accepted by Packet Tracer.",
+              "batch_id": "HQ-EDGE-RTR-01:40",
+              "operation": "set_value",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            },
+            {
+              "action_id": "cfg/dhcp-relay/39ad1808b63dc4e7",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Configuration batch accepted by Packet Tracer.",
+              "batch_id": "BR1-EDGE-RTR-01:45",
+              "operation": "set_value",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            },
+            {
+              "action_id": "cfg/static-route/aa12161443b43fde",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Configuration batch accepted by Packet Tracer.",
+              "batch_id": "BR1-EDGE-RTR-01:45",
+              "operation": "ensure_present",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            },
+            {
+              "action_id": "cfg/static-route/5a2f2e9f48a812b6",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Configuration batch accepted by Packet Tracer.",
+              "batch_id": "HQ-EDGE-RTR-01:45",
+              "operation": "ensure_present",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            },
+            {
+              "action_id": "cfg/endpoint-static/e1c11492415badcc",
+              "status": "applied",
+              "failure_code": "none",
+              "message": "Endpoint batch accepted by Packet Tracer.",
+              "batch_id": "endpoints:60",
+              "operation": "set_value",
+              "disposition": "unknown",
+              "dispatch": "unspecified",
+              "result": "not_applicable",
+              "postcondition": "not_applicable",
+              "transition": "not_applicable",
+              "footprint": "not_applicable",
+              "attempted": null,
+              "residual_change": false,
+              "cause": "",
+              "received_mutation": null
+            }
+          ],
+          "verification_results": [
+            {
+              "expectation_id": "cfg/verify/05d13c4cb7918842",
+              "action_id": "cfg/hostname/57e1b5e4b37e3bae",
+              "status": "verified",
+              "evidence_method": "packet_tracer_device_hostname_getter",
+              "fresh_evidence": true,
+              "fields": {
+                "hostname": "verified"
+              },
+              "message": "",
+              "convergence": {
+                "attempts": 1,
+                "elapsed_ms": 2187,
+                "final_status": "verified",
+                "last_observable_state": "BR1-EDGE-RTR-01",
+                "details": {}
+              }
+            },
+            {
+              "expectation_id": "cfg/verify/a2fb2fb739462eef",
+              "action_id": "cfg/hostname/ad56d6944d00264a",
+              "status": "verified",
+              "evidence_method": "packet_tracer_device_hostname_getter",
+              "fresh_evidence": true,
+              "fields": {
+                "hostname": "verified"
+              },
+              "message": "",
+              "convergence": {
+                "attempts": 1,
+                "elapsed_ms": 1765,
+                "final_status": "verified",
+                "last_observable_state": "HQ-EDGE-RTR-01",
+                "details": {}
+              }
+            },
+            {
+              "expectation_id": "cfg/verify/397021df5fed456a",
+              "action_id": "cfg/hostname/4e8073b542dcd103",
+              "status": "verified",
+              "evidence_method": "packet_tracer_device_hostname_getter",
+              "fresh_evidence": true,
+              "fields": {
+                "hostname": "verified"
+              },
+              "message": "",
+              "convergence": {
+                "attempts": 1,
+                "elapsed_ms": 1828,
+                "final_status": "verified",
+                "last_observable_state": "BR1-DEFAULT-ACCESS-SW-01",
+                "details": {}
+              }
+            },
+            {
+              "expectation_id": "cfg/verify/78d12ac776ab983e",
+              "action_id": "cfg/hostname/2d6e648a55005ba7",
+              "status": "verified",
+              "evidence_method": "packet_tracer_device_hostname_getter",
+              "fresh_evidence": true,
+              "fields": {
+                "hostname": "verified"
+              },
+              "message": "",
+              "convergence": {
+                "attempts": 1,
+                "elapsed_ms": 1687,
+                "final_status": "verified",
+                "last_observable_state": "HQ-DEFAULT-ACCESS-SW-01",
+                "details": {}
+              }
+            },
+            {
+              "expectation_id": "cfg/verify/96ed23e5a079d0b7",
+              "action_id": "cfg/vlan/e2ca05f59053c41b",
+              "status": "verified",
+              "evidence_method": "vlan_manager_object_state",
+              "fresh_evidence": true,
+              "fields": {
+                "vlan_id": "verified"
+              },
+              "message": "",
+              "convergence": {
+                "attempts": 1,
+                "elapsed_ms": 1812,
+                "final_status": "verified",
+                "last_observable_state": "present",
+                "details": {}
+              }
+            },
+            {
+              "expectation_id": "cfg/verify/0d8b7e7613ad00bd",
+              "action_id": "cfg/vlan/386c3184adf58b69",
+              "status": "verified",
+              "evidence_method": "vlan_manager_object_state",
+              "fresh_evidence": true,
+              "fields": {
+                "vlan_id": "verified"
+              },
+              "message": "",
+              "convergence": {
+                "attempts": 1,
+                "elapsed_ms": 1733,
+                "final_status": "verified",
+                "last_observable_state": "present",
+                "details": {}
+              }
+            },
+            {
+              "expectation_id": "cfg/verify/7704f28465d460cf",
+              "action_id": "cfg/access/2709f1f9d333aff7",
+              "status": "verified",
+              "evidence_method": "switch_port_object_state",
+              "fresh_evidence": true,
+              "fields": {
+                "device_identity": "verified",
+                "interface": "verified",
+                "switchport_mode": "verified",
+                "vlan_id": "verified"
+              },
+              "message": "",
+              "convergence": null
+            },
+            {
+              "expectation_id": "cfg/verify/2e91faa16f85354b",
+              "action_id": "cfg/gateway-access/2ad60930cda84829",
+              "status": "verified",
+              "evidence_method": "switch_port_object_state",
+              "fresh_evidence": true,
+              "fields": {
+                "device_identity": "verified",
+                "interface": "verified",
+                "switchport_mode": "verified",
+                "vlan_id": "verified"
+              },
+              "message": "",
+              "convergence": null
+            },
+            {
+              "expectation_id": "cfg/verify/a33f4dadbd309b8f",
+              "action_id": "cfg/access/1a7a286cde827c06",
+              "status": "verified",
+              "evidence_method": "switch_port_object_state",
+              "fresh_evidence": true,
+              "fields": {
+                "device_identity": "verified",
+                "interface": "verified",
+                "switchport_mode": "verified",
+                "vlan_id": "verified"
+              },
+              "message": "",
+              "convergence": null
+            },
+            {
+              "expectation_id": "cfg/verify/5bce1cd50905c2a7",
+              "action_id": "cfg/gateway-access/7f39ec3a983782cc",
+              "status": "verified",
+              "evidence_method": "switch_port_object_state",
+              "fresh_evidence": true,
+              "fields": {
+                "device_identity": "verified",
+                "interface": "verified",
+                "switchport_mode": "verified",
+                "vlan_id": "verified"
+              },
+              "message": "",
+              "convergence": null
+            },
+            {
+              "expectation_id": "cfg/verify/bac1232b00a41b4e",
+              "action_id": "cfg/routed/17019ad8109015c2",
+              "status": "verified",
+              "evidence_method": "fresh_show_ip_interface_brief",
+              "fresh_evidence": true,
+              "fields": {
+                "interface": "verified",
+                "ipv4": "verified",
+                "administrative_state": "verified"
+              },
+              "message": "",
+              "convergence": {
+                "attempts": 1,
+                "elapsed_ms": 14092,
+                "final_status": "verified",
+                "last_observable_state": "matched",
+                "details": {}
+              }
+            },
+            {
+              "expectation_id": "cfg/verify/4cda8519433bb7f2",
+              "action_id": "cfg/transit-l3/71064feeb4361375",
+              "status": "verified",
+              "evidence_method": "fresh_show_ip_interface_brief",
+              "fresh_evidence": true,
+              "fields": {
+                "interface": "verified",
+                "ipv4": "verified",
+                "administrative_state": "verified"
+              },
+              "message": "",
+              "convergence": {
+                "attempts": 0,
+                "elapsed_ms": 0,
+                "final_status": "verified",
+                "last_observable_state": "cached_current_query",
+                "details": {}
+              }
+            },
+            {
+              "expectation_id": "cfg/verify/1d27bc47305fa757",
+              "action_id": "cfg/routed/fc2b0275178a9c35",
+              "status": "verified",
+              "evidence_method": "fresh_show_ip_interface_brief",
+              "fresh_evidence": true,
+              "fields": {
+                "interface": "verified",
+                "ipv4": "verified",
+                "administrative_state": "verified"
+              },
+              "message": "",
+              "convergence": {
+                "attempts": 1,
+                "elapsed_ms": 14032,
+                "final_status": "verified",
+                "last_observable_state": "matched",
+                "details": {}
+              }
+            },
+            {
+              "expectation_id": "cfg/verify/cd986c23f323f22e",
+              "action_id": "cfg/transit-l3/67aaec2a0166fd11",
+              "status": "verified",
+              "evidence_method": "fresh_show_ip_interface_brief",
+              "fresh_evidence": true,
+              "fields": {
+                "interface": "verified",
+                "ipv4": "verified",
+                "administrative_state": "verified"
+              },
+              "message": "",
+              "convergence": {
+                "attempts": 0,
+                "elapsed_ms": 0,
+                "final_status": "verified",
+                "last_observable_state": "cached_current_query",
+                "details": {}
+              }
+            },
+            {
+              "expectation_id": "cfg/verify/dc18392360ac308e",
+              "action_id": "cfg/dhcp-relay/39ad1808b63dc4e7",
+              "status": "unobservable",
+              "evidence_method": "fresh_show_ip_interface_helper",
+              "fresh_evidence": true,
+              "fields": {
+                "interface": "unobservable",
+                "server_address": "unobservable"
+              },
+              "message": "relay_read_not_attributed_complete_fresh",
+              "convergence": null
+            },
+            {
+              "expectation_id": "cfg/verify/f6cc3429cabe2f1d",
+              "action_id": "cfg/static-route/aa12161443b43fde",
+              "status": "verified",
+              "evidence_method": "fresh_show_ip_route",
+              "fresh_evidence": true,
+              "fields": {
+                "static_route": "verified"
+              },
+              "message": "",
+              "convergence": {
+                "attempts": 1,
+                "elapsed_ms": 7016,
+                "final_status": "verified",
+                "last_observable_state": "matched",
+                "details": {}
+              }
+            },
+            {
+              "expectation_id": "cfg/verify/1ede8ccd1083a942",
+              "action_id": "cfg/static-route/5a2f2e9f48a812b6",
+              "status": "verified",
+              "evidence_method": "fresh_show_ip_route",
+              "fresh_evidence": true,
+              "fields": {
+                "static_route": "verified"
+              },
+              "message": "",
+              "convergence": {
+                "attempts": 1,
+                "elapsed_ms": 7000,
+                "final_status": "verified",
+                "last_observable_state": "matched",
+                "details": {}
+              }
+            },
+            {
+              "expectation_id": "cfg/verify/9f1fd6c59e89bda7",
+              "action_id": "cfg/endpoint-static/e1c11492415badcc",
+              "status": "partial",
+              "evidence_method": "structured_endpoint_getters",
+              "fresh_evidence": true,
+              "fields": {
+                "ipv4": "verified",
+                "netmask": "verified",
+                "gateway": "unobservable",
+                "dns": "unobservable"
+              },
+              "message": "",
+              "convergence": {
+                "attempts": 1,
+                "elapsed_ms": 1796,
+                "final_status": "partial",
+                "last_observable_state": "{\"address_channel\":true,\"failure_reason\":\"\",\"found\":true,\"fresh_evidence\":true,\"interface\":\"FastEthernet0\",\"ipv4\":\"10.72.0.2\",\"netmask\":\"255.255.255.248\",\"port_found\":true}",
+                "details": {
+                  "kind": "endpoint_addressing",
+                  "device_name": "HQ-DEFAULT-DNS-01",
+                  "interface": "FastEthernet0",
+                  "sample_rounds": 1,
+                  "transitions": [
+                    {
+                      "sample_round": 1,
+                      "device_found": true,
+                      "port_found": true,
+                      "address_channel": true,
+                      "interface": "FastEthernet0",
+                      "ipv4": "10.72.0.2",
+                      "netmask": "255.255.255.248",
+                      "fresh_evidence": true,
+                      "failure_reason": ""
+                    }
+                  ],
+                  "last_observation": {
+                    "device_found": true,
+                    "port_found": true,
+                    "address_channel": true,
+                    "interface": "FastEthernet0",
+                    "ipv4": "10.72.0.2",
+                    "netmask": "255.255.255.248",
+                    "fresh_evidence": true,
+                    "failure_reason": ""
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "causes": [
+        "sp2_remote_helper_readback_unverified"
+      ],
+      "limitations": [
+        "private_candidate_not_public_support",
+        "packet_giaddr_not_observed"
+      ],
+      "reason": "",
+      "outcome_unknown": false
+    },
+    {
+      "experiment_id": "M-SP2-REMOTE-FINAL",
+      "hypothesis": "Final router, server pool and client state are retained.",
+      "required": true,
+      "status": "ran",
+      "conclusion": "inconclusive",
+      "facts": {
+        "routers": [
+          {
+            "device": "BR1-EDGE-RTR-01",
+            "query": "show_ip_interface_brief",
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "truncated_by_pager": false,
+            "observed_device_name": "BR1-EDGE-RTR-01",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "channel_calls": 4,
+            "call_budget_exhausted": false,
+            "output": "show ip interface brief\nInterface              IP-Address      OK? Method Status                Protocol \nGigabitEthernet0/0     10.72.64.1      YES manual up                    up \nGigabitEthernet0/1     10.72.32.1      YES manual up                    up \nVlan1                  unassigned      YES unset  up                    down\nBR1-EDGE-RTR-01>",
+            "output_characters": 351
+          },
+          {
+            "device": "BR1-EDGE-RTR-01",
+            "query": "show_ip_route",
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "truncated_by_pager": false,
+            "observed_device_name": "BR1-EDGE-RTR-01",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "channel_calls": 4,
+            "call_budget_exhausted": false,
+            "output": "show ip route\nCodes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP\n       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area\n       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2\n       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP\n       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area\n       * - candidate default, U - per-user static route, o - ODR\n       P - periodic downloaded static route\n\nGateway of last resort is not set\n\n     10.0.0.0/8 is variably subnetted, 5 subnets, 3 masks\nS       10.72.0.0/29 [1/0] via 10.72.64.2\nC       10.72.32.0/29 is directly connected, GigabitEthernet0/1\nL       10.72.32.1/32 is directly connected, GigabitEthernet0/1\nC       10.72.64.0/30 is directly connected, GigabitEthernet0/0\nL       10.72.64.1/32 is directly connected, GigabitEthernet0/0\n\nBR1-EDGE-RTR-01>",
+            "output_characters": 895
+          },
+          {
+            "device": "HQ-EDGE-RTR-01",
+            "query": "show_ip_interface_brief",
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "truncated_by_pager": false,
+            "observed_device_name": "HQ-EDGE-RTR-01",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "channel_calls": 4,
+            "call_budget_exhausted": false,
+            "output": "show ip interface brief\nInterface              IP-Address      OK? Method Status                Protocol \nGigabitEthernet0/0     10.72.64.2      YES manual up                    up \nGigabitEthernet0/1     10.72.0.1       YES manual up                    up \nVlan1                  unassigned      YES unset  up                    down\nHQ-EDGE-RTR-01>",
+            "output_characters": 350
+          },
+          {
+            "device": "HQ-EDGE-RTR-01",
+            "query": "show_ip_route",
+            "executed": true,
+            "fresh_output_observed": true,
+            "output_complete": true,
+            "truncated_by_pager": false,
+            "observed_device_name": "HQ-EDGE-RTR-01",
+            "device_identity_provenance": "confirmed_unique",
+            "failure_reason": "",
+            "channel_calls": 4,
+            "call_budget_exhausted": false,
+            "output": "show ip route\nCodes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP\n       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area\n       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2\n       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP\n       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area\n       * - candidate default, U - per-user static route, o - ODR\n       P - periodic downloaded static route\n\nGateway of last resort is not set\n\n     10.0.0.0/8 is variably subnetted, 5 subnets, 3 masks\nC       10.72.0.0/29 is directly connected, GigabitEthernet0/1\nL       10.72.0.1/32 is directly connected, GigabitEthernet0/1\nS       10.72.32.0/29 [1/0] via 10.72.64.1\nC       10.72.64.0/30 is directly connected, GigabitEthernet0/0\nL       10.72.64.2/32 is directly connected, GigabitEthernet0/0\n\nHQ-EDGE-RTR-01>",
+            "output_characters": 893
+          }
+        ],
+        "server": {
+          "observed": true,
+          "cause": "",
+          "raw": {
+            "device": "HQ-DEFAULT-DNS-01",
+            "found": true,
+            "process_found": true,
+            "interface": "FastEthernet0",
+            "enabled": false,
+            "enabled_type": "boolean",
+            "pool_count": 1,
+            "pools": [
+              {
+                "name": "serverPool",
+                "network": "10.72.0.0",
+                "mask": "255.255.255.248",
+                "gateway": "0.0.0.0",
+                "dns": "0.0.0.0",
+                "start": "10.72.0.0",
+                "end": "10.72.1.255",
+                "max": 512
+              }
+            ],
+            "truncated": false,
+            "error": ""
+          }
+        },
+        "client": {
+          "client": "BR1-DEFAULT-PC-01",
+          "observed": true,
+          "mode": false,
+          "mac": "0090.21E2.599E",
+          "ipv4": "0.0.0.0",
+          "netmask": "0.0.0.0",
+          "lease_time": "",
+          "cause": "",
+          "raw_rows": []
+        },
+        "binding": {
+          "device": "BR1-DEFAULT-PC-01",
+          "found": true,
+          "port_found": true,
+          "ipv4": "0.0.0.0",
+          "netmask": "0.0.0.0",
+          "gateway_reads": [
+            {
+              "process": "HostIp",
+              "found": false,
+              "api": false,
+              "value": "",
+              "error": "invalid string position"
+            },
+            {
+              "process": "HostIpProcess",
+              "found": true,
+              "api": true,
+              "value": "0.0.0.0",
+              "error": ""
+            }
+          ],
+          "dns_api": true,
+          "dns_server": "0.0.0.0",
+          "dns_error": "",
+          "error": ""
+        },
+        "state_complete": false,
+        "complete": false
+      },
+      "causes": [
+        "sp2_remote_terminal_incomplete"
+      ],
+      "limitations": [
+        "terminal_inventory_is_not_product_acceptance"
+      ],
+      "reason": "",
+      "outcome_unknown": false
+    }
+  ],
+  "primary_failure": "sp2_remote_helper_readback_unverified",
+  "secondary_failures": [],
+  "releases": [
+    {
+      "resource": "device:BR1-EDGE-RTR-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:BR1-DEFAULT-ACCESS-SW-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:BR1-DEFAULT-PC-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:HQ-EDGE-RTR-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:HQ-DEFAULT-ACCESS-SW-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "device:HQ-DEFAULT-DNS-01",
+      "kind": "device",
+      "outcome": "removed",
+      "detail": "Exact disposable device cleanup was acknowledged."
+    },
+    {
+      "resource": "campaign:lock",
+      "kind": "claim",
+      "outcome": "released",
+      "detail": ""
+    }
+  ],
+  "restoration": [
+    {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 1,
+      "link_count": 0,
+      "devices": [
+        {
+          "name": "Power Distribution Device0",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        }
+      ],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    },
+    {
+      "observed": true,
+      "semantic_device_count": 0,
+      "backend_managed_device_count": 1,
+      "link_count": 0,
+      "devices": [
+        {
+          "name": "Power Distribution Device0",
+          "model": "Power Distribution Device",
+          "ports": [],
+          "backend_managed": true
+        }
+      ],
+      "links": [],
+      "message": "fresh_complete_workspace_inventory"
+    }
+  ],
+  "restoration_proven": true,
+  "engine_residue": [],
+  "coordination_residue": [],
+  "dirty_state": "clean",
+  "persist_error": "",
+  "limitations": [
+    "effect_gate_is_local_and_not_an_in_band_receiver_fence",
+    "local_process_observation_bounded_seconds:30.0",
+    "restoration_scope:semantic_devices_and_links",
+    "backend_managed_devices_changed:0->1"
+  ],
+  "outcome": "stopped"
+}

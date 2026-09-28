@@ -1,0 +1,59 @@
+{
+  "reads": [
+    {
+      "error": "",
+      "extension_window": false,
+      "offset": 1.063,
+      "title": ""
+    },
+    {
+      "error": "",
+      "extension_window": false,
+      "offset": 3.922,
+      "title": ""
+    },
+    {
+      "error": "",
+      "extension_window": false,
+      "offset": 6.813,
+      "title": ""
+    },
+    {
+      "error": "",
+      "extension_window": false,
+      "offset": 8.813,
+      "title": ""
+    },
+    {
+      "error": "",
+      "extension_window": false,
+      "offset": 10.75,
+      "title": "PacketTracer"
+    },
+    {
+      "error": "",
+      "extension_window": false,
+      "offset": 12.828,
+      "title": "PacketTracer"
+    },
+    {
+      "error": "",
+      "extension_window": true,
+      "offset": 14.906,
+      "title": "Logs - MCP BUILDER"
+    },
+    {
+      "error": "",
+      "extension_window": true,
+      "offset": 16.875,
+      "title": "Logs - MCP BUILDER"
+    },
+    {
+      "error": "",
+      "extension_window": true,
+      "offset": 18.922,
+      "title": "Logs - MCP BUILDER"
+    }
+  ],
+  "ready": true
+}

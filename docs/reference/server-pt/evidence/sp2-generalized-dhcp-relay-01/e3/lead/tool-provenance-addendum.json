@@ -1,0 +1,20 @@
+[
+  {
+    "tool": "retire_owned_lab.py",
+    "sha256_at_first_provenance": "00046b2bde63f5678cc337e42422921a0adf4670d91215a3b5c659da90936e2c",
+    "sha256": "8b006f06937900db66589ecbb49056b8c5607bd914e59e42feea15e2dd178c26",
+    "change": "optional retry suffix so each maintained --retire invocation keeps its own 10{b,c}-retire files (edited after the first retirement refusal, before the recovery run)"
+  },
+  {
+    "tool": "close_episode.py",
+    "sha256_at_first_provenance": "abb0073527ef9853cc11adf8f7ad419b9f28bae17268e8c144b0e874f6378d26",
+    "sha256": "1c2e30c8cbc11dc733b60f0e668ebf3dba2ad1a5dc674af8e473fd1925f218c4",
+    "change": "reads every retirement invocation and the latest census; cleanup_state process_absent_exit_unattributed when absent without a successful retirement (edited before closing)"
+  },
+  {
+    "tool": "archive_episode.py",
+    "sha256_at_first_provenance": "026923deb18356dbe763cd8e46d273e71caea411c642db40ede91d24e954b89f",
+    "sha256": "40428b5ff07dfab06e2f4a89d3587a3881b224a8ad7b29bc62975f6ad5be1fea",
+    "change": "latest census; refuses an empty census without exit record unless the ledger closing states process_absent_exit_unattributed; README states the unattributed exit and primary failure (edited before archiving)"
+  }
+]

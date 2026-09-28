@@ -1,0 +1,31 @@
+{
+  "attempt_id": "37f799295fbf7c1ecee0da9f53bb5055",
+  "cleanup_state": "process_absent_exit_unattributed",
+  "exit_census_sha256": "459529dc0157c33519668822bb718f0f6141d525b17b1cf2d8b7d03f3e383f21",
+  "qualification_exit": 1,
+  "qualification_outcome": "stopped",
+  "qualification_record_path": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\data\\services\\qualification\\sp2-remote-relay\\sp2-remote-relay-2026-09-28T15-50-55Z-fe214109.json",
+  "retirement_attempts": [
+    {
+      "exit": 2,
+      "outcome": "refused",
+      "refusal": [
+        "save_prompt_unanswered_or_unobservable"
+      ],
+      "suffix": ""
+    },
+    {
+      "exit": 2,
+      "outcome": "refused",
+      "refusal": [
+        "process_absent"
+      ],
+      "suffix": "b"
+    }
+  ],
+  "retirement_exit": 2,
+  "retirement_outcome": "refused",
+  "source_sha": "9f93721f128f7e9ced2a151ba0a83870efe8872a",
+  "source_tree": "62582242a459ac18ea30d93b30aaf5c2a5f8057d",
+  "stage": "SP2-REMOTE-RELAY"
+}
