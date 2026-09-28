@@ -628,3 +628,43 @@ gateway went unnoticed. With v2, the delayed lease is observed and supported
 in sample, an exhausted window keeps both samples without support, and a
 dropped gateway stops before client mode. All 40 remote-stage tests pass,
 including the budget, time-cap, cancellation and receiver-loss traces.
+
+## Episode 5 remote relay result (2026-09-28)
+
+Profile v2 executed clean commit `3541ff5b502e0dbf414d477cae9efc9e591b2136`,
+tree `3586174635021e92665ae12735bcf05ec1c676e1`, attempt
+`7612f2f54796e2c20939425cb969d934`, on `9.0.1.0858` through the file channel.
+The local full suite passed 8,519 with 6 skipped at that commit. Exact-SHA CI
+`36451482659` for its parent `81f7821c` succeeded in all six jobs. The stage
+completed in 281 operations without a failure and proved restoration with
+`dirty_state=clean`. The owned exit was observed and the ledger closing is
+`verified_clean`. The campaign has committed 903 operations and 1,923.06
+seconds.
+
+The Server-PT binding read `10.72.0.2/29` with gateway `10.72.0.1` through
+`HostIpProcess`, while `HostIp` threw. After the selected PC's mode effect,
+six passive reads saw `0.0.0.0` and the seventh, about 14 seconds later,
+saw `10.72.32.2`. Both separated samples then read DHCP mode, `10.72.32.2`,
+mask `255.255.255.248`, gateway `10.72.32.1`, resolver `10.72.0.2`, lease
+`1 days 0:0:0` and MAC `0002.4AC9.9676`. Each sample joins an exact IP/MAC row
+at index 0 of physical `BR1_DATA`. Every `serverPool` read threw at index 0.
+The terminal read four complete uniquely attributed router captures, the
+enabled named policy and the usable DHCP-mode binding.
+`M-SP2-REMOTE-POOL` and `M-SP2-REMOTE-FINAL` are `SUPPORTED_IN_SAMPLE`. The
+archive has 122 files and `MANIFEST.sha256` digest
+`736eb8f42ef06f9e2fc55bdb7d90ef33a0aecae6914a527f8a39924de1872e5b`.
+
+The supported claim is narrow: on this build and channel, one remote PC-PT
+behind a 1941 `ip helper-address` held a usable sampled binding from the
+matching physical named pool. Packet `giaddr` bytes, the ends of both tables,
+exclusive serving, renewal, `dhcpRun` causality and capacity remain
+unobserved. The e4 negative was an observation window, not a relay failure.
+
+Together with e1/e2, this defines the next product strategy: segments that
+share the Server-PT's subnet are served by the native `serverPool`, whose
+range the server realigns to its own address; routed segments are served by
+per-segment named pools through an attributed relay. Both are physical pool
+strategies of one Server-PT authority. Acquisition evidence must allow a
+bounded window well beyond two seconds. Public support still requires the
+product route, multiple segments and sites, simultaneous clients and the
+routed service sequence.
