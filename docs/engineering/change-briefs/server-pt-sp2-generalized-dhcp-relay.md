@@ -577,3 +577,54 @@ text. The next governed helper capture is this query's first native page-count
 evidence. Touching the legacy terminal test file brought it under the current
 Ruff gate: its imports and formatting were normalized and its tests gained
 docstrings, with no semantic change beyond the pager guard.
+
+## Episode 4 remote relay result (2026-09-28)
+
+Profile v1 executed clean commit `81f7821cc2ef150283132d01e80689f36ae948d2`,
+tree `25d04fea60d1c5edd601732123aa290b6587f243`, attempt
+`05a97b2af74fc9c078d0fe9c4a4f0898`, on `9.0.1.0858` through the file channel.
+The local full suite passed 8,516 with 6 skipped at that commit. The stage
+completed without a primary failure in 273 operations and proved restoration
+with `dirty_state=clean`. The maintained retirement observed the owned exit,
+the final census was empty, and the ledger closing is `verified_clean`.
+
+The pagination-qualified helper readback verified the BR1 helper natively.
+Access and both routed directions were admitted. The process was read
+disabled, `BR1_DATA` was written and read while disabled, the process was
+enabled and read, and only the selected PC entered DHCP mode. Both separated
+samples, 2 seconds apart after the mode effect, read the PC in DHCP mode at
+`0.0.0.0/0.0.0.0` with gateway and resolver `0.0.0.0`. Every indexed read of
+both physical pools threw at index 0, an empty-table signature whose end is
+still uncalibrated. `M-SP2-REMOTE-POOL` is `INCONCLUSIVE`: no lease was
+observed from either pool within the window. This neither supports nor
+refutes relay serving.
+
+The server's static endpoint row verified address and mask, but its gateway
+and resolver stayed unobservable, because that verifier reads the `HostIp`
+getter that throws on this build. The static writer is the same
+`configurePcIp` path SP-1 used for routed service replies, so a missing server
+return hop is possible but unobserved. Two confounds therefore remain: the
+two fixed 2-second samples may precede a slower relayed exchange, and the
+server's return hop was never read.
+
+### Remote profile v2
+
+Profile v2 changes only these observations. Before the mode effect it reads
+the Server-PT binding through the maintained binding reader and requires the
+planned address, mask and default gateway. Every getter that answers without
+error, including the SP-1-measured `HostIpProcess`, must name that gateway.
+Otherwise it stops with `sp2_remote_server_gateway_unverified` and makes no
+client effect. After the mode effect it reads the selected client passively
+every 2 seconds, for at most 30 reads, until a non-zero, non-link-local
+address appears. The two separated samples and their assessment then follow
+unchanged, so exhausting the window is a retained finding, not a retry.
+Nothing is sent to the client beyond the one mode effect: no `dhcpRun`, ping
+or warm-up. The 30 reads fit inside the unchanged 3,000-operation product
+cap and its time window.
+
+Stateful regressions reproduced e4 before the change: a lease arriving after
+20 later evaluations left v1 with e4's five causes, and a dropped server
+gateway went unnoticed. With v2, the delayed lease is observed and supported
+in sample, an exhausted window keeps both samples without support, and a
+dropped gateway stops before client mode. All 40 remote-stage tests pass,
+including the budget, time-cap, cancellation and receiver-loss traces.

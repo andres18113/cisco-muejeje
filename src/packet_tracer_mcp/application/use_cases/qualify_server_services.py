@@ -140,6 +140,8 @@ from ...domain.enterprise.models.service_qualification import (
     SP1_ROUTED_STAGES,
     SP1_ROUTERS,
     SP1_WEB_SERVER,
+    SP2_REMOTE_ACQUISITION_MAX_POLLS,
+    SP2_REMOTE_ACQUISITION_POLL_SECONDS,
     SP2_STAGES,
     BudgetRecord,
     DefaultPoolObservation,
@@ -7327,6 +7329,42 @@ def _sp2_remote_scan(execution: _Execution, label: str) -> dict[str, LeaseScan]:
     return scans_by_pool(payload, names)
 
 
+def _sp2_remote_server_gateway_cause(
+    binding: Mapping[str, object], planned: SetEndpointStaticAddress | None
+) -> str:
+    """Require the server's planned address and return hop, read not assumed.
+
+    A relayed reply leaves the server toward the relay agent through its
+    default gateway. Only getters that answered without error count, and
+    every one of them must name the planned gateway.
+    """
+    gateways = binding.get("gateway_reads")
+    observed = (
+        [
+            item.get("value")
+            for item in gateways
+            if isinstance(item, Mapping)
+            and item.get("api") is True
+            and item.get("error") == ""
+        ]
+        if isinstance(gateways, list)
+        else []
+    )
+    if (
+        planned is None
+        or binding.get("device") != SP2_REMOTE_SERVER
+        or binding.get("found") is not True
+        or binding.get("port_found") is not True
+        or binding.get("error") != ""
+        or binding.get("ipv4") != planned.ipv4
+        or binding.get("netmask") != planned.netmask
+        or not observed
+        or any(value != planned.gateway for value in observed)
+    ):
+        return "sp2_remote_server_gateway_unverified"
+    return ""
+
+
 def _sp2_remote_client(execution: _Execution, label: str) -> ClientReading:
     """Read one selected PC through the typed client observer."""
     try:
@@ -7598,6 +7636,22 @@ def _sp2_remote_product(
         if scan.observed
     ):
         return stopped("sp2_remote_preexisting_client_lease")
+    planned_server = next(
+        (
+            item
+            for item in contract.configuration_plan.actions
+            if isinstance(item, SetEndpointStaticAddress)
+            and item.device_name == SP2_REMOTE_SERVER
+        ),
+        None,
+    )
+    server_binding = _sp2_read_binding(
+        execution, SP2_REMOTE_SERVER, "server_before_mode"
+    )
+    facts["server_binding"] = dict(server_binding)
+    cause = _sp2_remote_server_gateway_cause(server_binding, planned_server)
+    if cause:
+        return stopped(cause)
     mode_plan = q3_fastloop_client_mode_plan(
         contract.configuration_plan, device_names=(SP2_REMOTE_CLIENT,)
     )
@@ -7626,6 +7680,47 @@ def _sp2_remote_product(
     )
     if cause:
         return stopped(cause)
+    # Passive, bounded wait for the relayed acquisition: client reads only,
+    # no request, ping or dhcpRun. The two separated samples follow either
+    # way, so an address that never appears stays a retained finding.
+    polls: list[dict[str, object]] = []
+    acquired = False
+    for ordinal in range(1, SP2_REMOTE_ACQUISITION_MAX_POLLS + 1):
+        waited = execution.ledger.wait(
+            SP2_REMOTE_ACQUISITION_POLL_SECONDS, boundaries.sleep
+        )
+        if waited < SP2_REMOTE_ACQUISITION_POLL_SECONDS:
+            facts["acquisition"] = {
+                "polls": polls,
+                "acquired": False,
+                "max_polls": SP2_REMOTE_ACQUISITION_MAX_POLLS,
+                "poll_seconds": SP2_REMOTE_ACQUISITION_POLL_SECONDS,
+            }
+            return stopped("sp2_remote_acquisition_interval_unavailable")
+        polled = _sp2_remote_client(execution, f"acquire_{ordinal}")
+        polls.append(
+            {
+                "observed": polled.observed,
+                "mode": polled.mode,
+                "ipv4": polled.ipv4,
+                "netmask": polled.netmask,
+                "cause": polled.cause,
+            }
+        )
+        # A link-local fallback is a failed acquisition, not an address.
+        if (
+            polled.observed
+            and polled.ipv4 not in ("", "0.0.0.0")
+            and not polled.ipv4.startswith("169.254.")
+        ):
+            acquired = True
+            break
+    facts["acquisition"] = {
+        "polls": polls,
+        "acquired": acquired,
+        "max_polls": SP2_REMOTE_ACQUISITION_MAX_POLLS,
+        "poll_seconds": SP2_REMOTE_ACQUISITION_POLL_SECONDS,
+    }
     readings: list[ClientReading] = []
     bindings: list[Mapping[str, object]] = []
     named_scans: list[LeaseScan] = []

@@ -1292,6 +1292,12 @@ Q3_FL_FORWARDING_OPERATIONS = 2 * 181
 #: at a fixed interval, stopping early only when the address changed.
 Q3_FL_SETTLE_READS = 4
 Q3_FL_SETTLE_INTERVAL_SECONDS = 2.0
+#: SP-2 remote profile v2: after the selected PC's mode effect, passive client
+#: reads at this interval until a non-zero address appears or the bound is
+#: reached. SP-2 e4 saw no address in two samples 2 s apart; a relayed
+#: exchange is not assumed to be as fast as the local one e2 observed.
+SP2_REMOTE_ACQUISITION_POLL_SECONDS = 2.0
+SP2_REMOTE_ACQUISITION_MAX_POLLS = 30
 #: Two readings without any request after the server is enabled and before
 #: the first acquisition, to see background activity rather than assume none.
 Q3_FL_BACKGROUND_INTERVAL_SECONDS = 10.0
@@ -2430,7 +2436,9 @@ def _sp2_remote_relay() -> StageDefinition:
         budget=StageBudget(ceiling_operations, ceiling_seconds, reserve_seconds=420),
         allowed_channels=("file",),
         profile_id="SP2-REMOTE-RELAY",
-        profile_version="1",
+        # v2 (after e4): read the server's planned gateway before the mode
+        # effect and wait passively, bounded, for the relayed acquisition.
+        profile_version="2",
         steps=(
             DiagnosticStageStep(
                 id="SP2-remote",

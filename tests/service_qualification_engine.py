@@ -62,6 +62,11 @@ Behaviour switches (`config`) select the engine facts under test:
 - `dhcp_mode_acquires`: activating a client's DHCP mode runs one background
   acquisition when an enabled server exists, which is the confound Q3-FL has
   to observe rather than assume away;
+- `dhcp_mode_acquire_after_evals`: with `dhcp_mode_acquires`, the background
+  acquisition completes only after this many later script evaluations, the
+  slow relayed acquisition SP-2 e4 left unobserved in its two fixed samples;
+- `server_gateway_dropped`: a Server-PT static `configurePcIp` keeps its
+  address and loses its gateway, so a relayed reply has no return hop;
 - `dhcp_failure_address`: the address a failed acquisition leaves on the
   port (for example a link-local one), or empty to leave it unchanged;
 - `dhcp_pool_selection`: also `intended_then_default`, which falls back to
@@ -131,6 +136,7 @@ const config = Object.assign({
   default_pool_change_on_enable: null,
   default_pool_drift_reads: 0, default_pool_realigns_on_address: false,
   dhcp_mode_acquires: false, dhcp_failure_address: '',
+  dhcp_mode_acquire_after_evals: 0, server_gateway_dropped: false,
   dhcp_retry_on_server_enable: false,
   pc2_mode_on_server_enable: false,
   dhcp_native_start_behavior: 'change',
@@ -951,7 +957,9 @@ global.configurePcIp = (name, dhcp, ip, mask, gateway, dns, iface) => {
     port.ip = String(ip); port.mask = String(mask);
     staticAddresses.push({device: String(name), ip: port.ip});
   }
-  if (gateway) { port.gateway = String(gateway); }
+  if (gateway && !(dev && dev.model === 'Server-PT' && config.server_gateway_dropped)) {
+    port.gateway = String(gateway);
+  }
   if (dns) { port.dns = String(dns); }
   if (ip && mask && dev && dev.model === 'Server-PT' && config.default_pool_realigns_on_address) {
     const state = dhcpState(dev);
@@ -966,9 +974,25 @@ global.configurePcIp = (name, dhcp, ip, mask, gateway, dns, iface) => {
   }
   if (dhcp && dev && config.dhcp_mode_acquires) {
     backgroundAcquisitions.push({device: dev.name, port: port.name});
-    acquire(dev, port);
+    if (Number(config.dhcp_mode_acquire_after_evals) > 0) {
+      pendingAcquisitions.push({dev, port, remaining: Number(config.dhcp_mode_acquire_after_evals)});
+    } else {
+      acquire(dev, port);
+    }
   }
   return true;
+};
+// A slow acquisition completes only after N later evaluations; no clock exists
+// here, so observation count stands in for elapsed time.
+const pendingAcquisitions = [];
+const tickAcquisitions = () => {
+  for (const item of pendingAcquisitions.slice()) {
+    item.remaining -= 1;
+    if (item.remaining <= 0) {
+      pendingAcquisitions.splice(pendingAcquisitions.indexOf(item), 1);
+      acquire(item.dev, item.port);
+    }
+  }
 };
 if (config.unregister_available) {
   global._ScriptModule = {unregisterIpcEventByID: (className, uuid, event, obj, cb) => {
@@ -984,6 +1008,7 @@ if (config.unregister_available) {
 }
 
 const evaluate = (script) => {
+  tickAcquisitions();
   let reported = null;
   const report = (value) => { reported = String(value); };
   const receiver = config.receiver === 'global' ? globalThis : {};

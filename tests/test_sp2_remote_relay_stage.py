@@ -54,7 +54,7 @@ def test_remote_stage_binds_the_composed_fixture_and_budget():
     assert QualificationStage.SP2_REMOTE_RELAY in SP2_STAGES
     assert definition is not None and definition.executable
     assert definition.profile_id == "SP2-REMOTE-RELAY"
-    assert definition.profile_version == "1"
+    assert definition.profile_version == "2"
     assert definition.allowed_channels == ("file",)
     assert definition.selected_clients == ("BR1-DEFAULT-PC-01",)
     assert definition.planned_minimum_operations <= definition.budget.max_operations
@@ -1432,3 +1432,61 @@ def test_product_time_cap_preserves_terminal_and_owned_cleanup(tmp_path, monkeyp
     assert run.measurement("M-SP2-REMOTE-FINAL").status.value == "ran"
     assert run.record.restoration_proven
     assert run.record.budget.used_operations == len(run.switching.calls)
+
+
+def test_slow_relayed_acquisition_is_observed_within_the_bounded_window(
+    tmp_path, monkeypatch
+):
+    """RED at 81f7821c: e4 sampled twice at 2 s and saw no address.
+
+    A lease that arrives after the two fixed samples reproduced e4's outcome
+    offline. Profile v2 polls the client passively inside a bounded window
+    before the two separated samples; nothing else is sent to the client.
+    """
+    run = _run_remote(
+        tmp_path, monkeypatch, engine_config={"dhcp_mode_acquire_after_evals": 20}
+    )
+    measurement = run.measurement("M-SP2-REMOTE-POOL")
+    assert measurement.conclusion is MeasurementConclusion.SUPPORTED_IN_SAMPLE, (
+        run.record.primary_failure,
+        measurement.causes,
+    )
+    acquisition = measurement.facts["acquisition"]
+    assert acquisition["acquired"] is True
+    assert 1 < len(acquisition["polls"]) <= acquisition["max_polls"]
+    assert run.snapshot["dhcp_runs"] == []
+    assert run.record.restoration_proven
+
+
+def test_acquisition_window_exhaustion_retains_samples_without_support(
+    tmp_path, monkeypatch
+):
+    """No address inside the window is a retained finding, never a retry."""
+    run = _run_remote(
+        tmp_path, monkeypatch, engine_config={"dhcp_mode_acquire_after_evals": 100000}
+    )
+    measurement = run.measurement("M-SP2-REMOTE-POOL")
+    assert measurement.conclusion is not MeasurementConclusion.SUPPORTED_IN_SAMPLE
+    acquisition = measurement.facts["acquisition"]
+    assert acquisition["acquired"] is False
+    assert len(acquisition["polls"]) == acquisition["max_polls"]
+    assert len(measurement.facts["samples"]) == 2
+    assert [item["effect"] for item in run.snapshot["dhcp_timeline"]].count(
+        "clientMode"
+    ) == 1
+    assert run.snapshot["dhcp_runs"] == []
+    assert run.record.restoration_proven
+
+
+def test_unobserved_server_gateway_stops_before_client_mode(tmp_path, monkeypatch):
+    """A relayed reply needs the server's planned return hop, read not assumed."""
+    run = _run_remote(
+        tmp_path, monkeypatch, engine_config={"server_gateway_dropped": True}
+    )
+    measurement = run.measurement("M-SP2-REMOTE-POOL")
+    assert "sp2_remote_server_gateway_unverified" in measurement.causes
+    assert "clientMode" not in [
+        item["effect"] for item in run.snapshot["dhcp_timeline"]
+    ]
+    assert measurement.facts["server_binding"]["device"] == "HQ-DEFAULT-DNS-01"
+    assert run.record.restoration_proven
