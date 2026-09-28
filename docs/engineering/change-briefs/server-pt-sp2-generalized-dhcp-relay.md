@@ -522,3 +522,58 @@ elapsed 3,001 seconds in the registered 3,600-second stage, the product-only
 time cap recorded `budget:sp2_remote_product:time_budget_exhausted`; the
 terminal still ran and owned restoration was proved. These traces establish
 bounded stops and reserve separation, not native serving or capacity.
+
+## Episode 3 remote relay result (2026-09-28)
+
+`SP2-REMOTE-RELAY` profile v1 executed clean commit
+`9f93721f128f7e9ced2a151ba0a83870efe8872a`, tree
+`62582242a459ac18ea30d93b30aaf5c2a5f8057d`, on Packet Tracer `9.0.1.0858`
+through the file channel, attempt `37f799295fbf7c1ecee0da9f53bb5055`. Before
+opening, the local full suite passed 8,513 with 6 skipped, the clean
+exact-commit delivery gate, namespace, whitespace and MkDocs checks passed,
+and exact-SHA CI `36368695039` succeeded in all six jobs. The episode was
+opened prospectively with 3,210 operations and 4,200 seconds.
+
+The stage stopped with `sp2_remote_helper_readback_unverified` after 120
+bridge operations. All six fixtures, both hostnames, VLANs, access and
+gateway ports, four routed interfaces and both static routes verified. The
+BR1 helper action was applied, but its fresh
+`show ip interface GigabitEthernet0/1` readback was executed and fresh
+without being a complete attributed capture, so it stayed `UNOBSERVABLE`.
+No pool, process-enable or client-mode effect followed. The fixture
+restoration was proven with `dirty_state=clean`. `M-SP2-REMOTE-POOL` and
+`M-SP2-REMOTE-FINAL` are `INCONCLUSIVE`. Relay, named-pool serving and
+capacity remain `UNKNOWN`; this is not a relay negative.
+
+The first maintained retirement posted `WM_CLOSE` and refused to answer the
+owned Exit prompt after its window set changed. The recovery retirement found
+the owned PID already absent, so no owned `process-exit` record exists and the
+exit is not attributed. The final census found no Packet Tracer process,
+mailbox file or campaign lock; the ledger closing states
+`process_absent_exit_unattributed`. The campaign then committed 349
+operations and 1,211.65 seconds. The e3 archive has 95 files and
+`MANIFEST.sha256` digest
+`239877576e9f08d95754f22a458cea18af0870c540622eff109df7a4451b8771`. Future
+retirement recovery should follow a prompt refusal immediately.
+
+### Relay helper pager correction
+
+The record retains no raw helper output, so the failing attribution condition
+was derived from code: a non-qualified query that meets the IOS pager keeps
+its first page as truncated evidence with `output_complete=False` while its
+window remains fresh. Every other IOS read of the same routers verified with
+the same identity rule, and PT 9.0.1 rejects `terminal length 0`. A failing
+regression drove the real `ControlledIosExecutor` and relay verifier through
+an independent paged-terminal stub with synthetic two-page output; the pager
+was never advanced and the helper stayed unobservable. The correction adds a
+separate registered identity, `SHOW_IP_INTERFACE_HELPER`, with the same
+per-interface command. Only the relay readback uses it, and only it is
+pagination-qualified under the unchanged hard page, byte and time bounds.
+First-page `SHOW_IP_INTERFACE` readers for ACLs, the control plane and SVI
+readiness polling keep their current behavior and call counts. An unattributed
+helper read now names executed, fresh, complete, pager, page-count,
+truncation and identity facts in its bounded message without raw terminal
+text. The next governed helper capture is this query's first native page-count
+evidence. Touching the legacy terminal test file brought it under the current
+Ruff gate: its imports and formatting were normalized and its tests gained
+docstrings, with no semantic change beyond the pager guard.

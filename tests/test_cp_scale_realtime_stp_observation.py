@@ -775,6 +775,8 @@ def test_spanning_tree_qualification_did_not_relax_the_others():
     }
     assert members == {
         ("OperationalQueryId", "SHOW_CONTROLLERS_SERIAL"),
+        # SP-2 e3: the relay helper identity only; `SHOW_IP_INTERFACE` stays out.
+        ("OperationalQueryId", "SHOW_IP_INTERFACE_HELPER"),
         ("OperationalQueryId", "SHOW_IP_DHCP_BINDING"),
         ("OperationalQueryId", "SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE"),
         ("OperationalQueryId", "SHOW_INTERFACES_TRUNK"),

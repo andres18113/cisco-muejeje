@@ -49,6 +49,10 @@ class OperationalQueryId(_NamedStrEnum):
     SHOW_EPHONE = "show_ephone"
     SHOW_ACCESS_LISTS = "show_access_lists"
     SHOW_IP_INTERFACE = "show_ip_interface"
+    #: The same per-interface command, read only as the SP-2 relay helper
+    #: readback. It is a separate identity because only this reader walks the
+    #: pager; first-page readers of `SHOW_IP_INTERFACE` keep their behavior.
+    SHOW_IP_INTERFACE_HELPER = "show_ip_interface_helper"
     SHOW_CONTROLLERS_SERIAL = "show_controllers_serial"
     SHOW_INTERFACE = "show_interface"
     SHOW_IP_NAT_TRANSLATIONS = "show_ip_nat_translations"
@@ -266,6 +270,7 @@ _COMMANDS = {
 }
 _INTERFACE_COMMANDS = {
     OperationalQueryId.SHOW_IP_INTERFACE: "show ip interface {interface}",
+    OperationalQueryId.SHOW_IP_INTERFACE_HELPER: "show ip interface {interface}",
     # DCE/DTE y reloj sólo son observables por el controlador de la serial.
     OperationalQueryId.SHOW_CONTROLLERS_SERIAL: "show controllers {interface}",
     OperationalQueryId.SHOW_INTERFACE: "show interfaces {interface}",
@@ -289,6 +294,7 @@ _PRIVILEGED_QUERIES = {
     OperationalQueryId.SHOW_EPHONE,
     OperationalQueryId.SHOW_ACCESS_LISTS,
     OperationalQueryId.SHOW_IP_INTERFACE,
+    OperationalQueryId.SHOW_IP_INTERFACE_HELPER,
     OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
     OperationalQueryId.SHOW_IP_NAT_TRANSLATIONS,
     OperationalQueryId.SHOW_IP_NAT_STATISTICS,
@@ -387,9 +393,22 @@ _PAGER_MARKER = "--More--"
 # PT 9.0.1 rechaza `terminal length 0`. Las cotas duras son las mismas y una
 # captura incompleta conserva su techo fail-closed.
 #
+# `SHOW_IP_INTERFACE_HELPER` enters for SP-2 episode 3 (`9f93721f`, attempt
+# `37f79929`) on PT 9.0.1.0858: the BR1 1941 helper readback of
+# `show ip interface GigabitEthernet0/1` returned executed and fresh but not
+# complete, which is the non-qualified pager outcome, so the relay action
+# stayed unverified and no client effect followed. The command is already
+# scoped to one interface and this build rejects `terminal length 0`. The
+# helper set is only exact when the whole capture closes at a prompt. Only
+# this reader walks the pager; the shared first-page `SHOW_IP_INTERFACE`
+# readers (ACL, control plane, SVI readiness polling) stay unqualified. The
+# e3 record does not retain raw pages, so the next governed capture of this
+# query is its first page-count evidence; the hard bounds are unchanged.
+#
 _PAGINATION_QUALIFIED_QUERIES = frozenset(
     {
         OperationalQueryId.SHOW_CONTROLLERS_SERIAL,
+        OperationalQueryId.SHOW_IP_INTERFACE_HELPER,
         OperationalQueryId.SHOW_IP_DHCP_BINDING,
         OperationalQueryId.SHOW_IP_DHCP_SERVER_STATISTICS_INTERFACE,
         OperationalQueryId.SHOW_INTERFACES_TRUNK,

@@ -63,7 +63,7 @@ class _Ios:
 def _readback(*helpers, fresh=True, complete=True, device="R1"):
     return IosCommandResult(
         device_name="R1",
-        query_id=OperationalQueryId.SHOW_IP_INTERFACE,
+        query_id=OperationalQueryId.SHOW_IP_INTERFACE_HELPER,
         executed=True,
         output=_output(*helpers),
         fresh_output_observed=fresh,
@@ -86,7 +86,7 @@ def _verify(result):
     )
     row = runtime._verify_dhcp_relay(expectation)
     assert runtime._ios.calls == [
-        ("R1", OperationalQueryId.SHOW_IP_INTERFACE, "FastEthernet0/0.10")
+        ("R1", OperationalQueryId.SHOW_IP_INTERFACE_HELPER, "FastEthernet0/0.10")
     ]
     return row
 

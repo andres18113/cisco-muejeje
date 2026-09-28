@@ -3424,7 +3424,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
         try:
             show = self._ios.execute(
                 expectation.device_name,
-                OperationalQueryId.SHOW_IP_INTERFACE,
+                OperationalQueryId.SHOW_IP_INTERFACE_HELPER,
                 interface=interface,
             )
         except Exception:
@@ -3450,7 +3450,19 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 evidence_method="fresh_show_ip_interface_helper",
                 fresh_evidence=show.fresh_output_observed,
                 fields={"interface": unreadable, "server_address": unreadable},
-                message="relay_read_not_attributed_complete_fresh",
+                # Bounded capture facts, so a negative names which condition
+                # failed; no raw terminal text enters the record here.
+                message=(
+                    "relay_read_not_attributed_complete_fresh:"
+                    f"executed={show.executed};"
+                    f"fresh={show.fresh_output_observed};"
+                    f"complete={show.output_complete};"
+                    f"pager={show.pager_continuation};"
+                    f"pages={show.pager_pages_captured};"
+                    f"truncated={show.truncated_by_pager};"
+                    f"identity={show.device_identity_provenance};"
+                    f"device_match={show.observed_device_name == expectation.device_name}"
+                ),
             )
         row = parse_show_ip_interface_helpers(show.output)
         if row is None:
