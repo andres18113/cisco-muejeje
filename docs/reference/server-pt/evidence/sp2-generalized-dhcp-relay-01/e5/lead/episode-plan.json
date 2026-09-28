@@ -1,0 +1,44 @@
+{
+  "allocated_operations": 3210,
+  "allocated_seconds": 4200,
+  "allocation_arithmetic": "Stage maximum 3200 operations/3600 seconds includes the 15-operation/420-second protected owned-cleanup reserve, a 3000-operation product cap and 80 terminal operations; episode adds 10 operations/600 seconds for launch, retirement and contingency. Campaign separately protects 1000 operations/600 seconds.",
+  "attempt_ids": [
+    "7612f2f54796e2c20939425cb969d934"
+  ],
+  "instance_token": "aa4d452e797b50c4304aecc897f04597",
+  "native_support_claim": "none; private diagnostic only",
+  "permitted_effects": [
+    "SP2-REMOTE-RELAY profile v2 on exactly the owned six-device five-link fixture in one owned disposable Packet Tracer 9.0.1.0858 lab",
+    "Apply the composed pre-client E5 projection (addressing, switching, BR1 helper, forward and return routes) with BR1-DEFAULT-PC-01 kept unbound",
+    "Read the BR1 helper, access and routed readiness, prove the Server-PT DHCP process disabled by reading it",
+    "Write and read named pool BR1_DATA while the process is disabled, then enable and read the process, reading both physical pools around enable",
+    "Read the Server-PT binding and require its planned address, mask and default gateway before any client effect",
+    "Activate only BR1-DEFAULT-PC-01 DHCP mode, read it passively every 2 s for at most 30 reads, then capture two spaced client, binding, named and serverPool samples and read-only terminal captures",
+    "No explicit dhcpRun, ping or warm-up; restore exact owned fixtures and retire only the recorded owned process cohort"
+  ],
+  "profile_id": "SP2-REMOTE-RELAY",
+  "profile_version": "2",
+  "question": "With the server's planned return hop observed and a bounded passive acquisition window, does the remote BR1 PC obtain an address, and are two stable usable bindings joined to physical named pool BR1_DATA rather than serverPool?",
+  "selected_clients": [
+    "BR1-DEFAULT-PC-01"
+  ],
+  "source_sha": "3541ff5b502e0dbf414d477cae9efc9e591b2136",
+  "source_tree": "3586174635021e92665ae12735bcf05ec1c676e1",
+  "stage": "SP2-REMOTE-RELAY",
+  "stop_rule": "Stop on wrong source, process, receiver, workspace, fixture or physical pool identity; unverified helper or server gateway, unready access or routed path, process not proven disabled, pre-bound client, unknown mutation outcome, budget or persistence failure, or unverified cleanup. No same-state retry or channel fallback.",
+  "targets": [
+    "HQ-DEFAULT-DNS-01",
+    "HQ-DEFAULT-ACCESS-SW-01",
+    "HQ-EDGE-RTR-01",
+    "BR1-DEFAULT-PC-01",
+    "BR1-DEFAULT-ACCESS-SW-01",
+    "BR1-EDGE-RTR-01"
+  ],
+  "tests_run": [
+    "Profile v2 RED regressions reproduced e4 causes and the unnoticed dropped server gateway at 81f7821cc2ef150283132d01e80689f36ae948d2 and pass at 3541ff5b502e0dbf414d477cae9efc9e591b2136",
+    "SP-2 remote stage 40 passed; affected SP-1/SP-2/Q3/DHCP/qualification/terminal/Voice/Printer/CP-SCALE 2730 passed, 4 skipped",
+    "Local full pytest 8519 passed, 6 skipped at 3541ff5b502e0dbf414d477cae9efc9e591b2136",
+    "Clean exact-commit delivery quality gate passed at 3541ff5b502e0dbf414d477cae9efc9e591b2136",
+    "Exact-SHA CI 36459607995 quality, docs and both Ubuntu pytest jobs passed; both Windows pytest jobs in progress at episode plan creation"
+  ]
+}

@@ -1,0 +1,66 @@
+[
+  {
+    "tool": "archive_episode.py",
+    "reference": "docs\\reference\\server-pt\\evidence\\sp2-generalized-dhcp-relay-01\\e4\\lead\\tools\\archive_episode.py.txt",
+    "reference_sha256": "b9e4f2f0a055bf533f04b942901ca683b10d7f37f73d6ce0598290ae37bd6936",
+    "sha256": "b9e4f2f0a055bf533f04b942901ca683b10d7f37f73d6ce0598290ae37bd6936",
+    "change": "none; byte copy",
+    "byte_identical": true
+  },
+  {
+    "tool": "close_episode.py",
+    "reference": "docs\\reference\\server-pt\\evidence\\sp2-generalized-dhcp-relay-01\\e4\\lead\\tools\\close_episode.py.txt",
+    "reference_sha256": "1c2e30c8cbc11dc733b60f0e668ebf3dba2ad1a5dc674af8e473fd1925f218c4",
+    "sha256": "1c2e30c8cbc11dc733b60f0e668ebf3dba2ad1a5dc674af8e473fd1925f218c4",
+    "change": "none; byte copy",
+    "byte_identical": true
+  },
+  {
+    "tool": "exit_census.py",
+    "reference": "docs\\reference\\server-pt\\evidence\\sp2-generalized-dhcp-relay-01\\e4\\lead\\tools\\exit_census.py.txt",
+    "reference_sha256": "1771dffc8126323c378b59d9152388e75df0b9d4bfcd5148cd7e70e03a25e408",
+    "sha256": "1771dffc8126323c378b59d9152388e75df0b9d4bfcd5148cd7e70e03a25e408",
+    "change": "none; byte copy",
+    "byte_identical": true
+  },
+  {
+    "tool": "launch_owned_lab.py",
+    "reference": "docs\\reference\\server-pt\\evidence\\sp2-generalized-dhcp-relay-01\\e4\\lead\\tools\\launch_owned_lab.py.txt",
+    "reference_sha256": "1e1e570c2f4b2ca872b3468e2593d270a36daa975797983f87451f9226726867",
+    "sha256": "1e1e570c2f4b2ca872b3468e2593d270a36daa975797983f87451f9226726867",
+    "change": "none; byte copy",
+    "byte_identical": true
+  },
+  {
+    "tool": "open_episode.py",
+    "reference": "docs\\reference\\server-pt\\evidence\\sp2-generalized-dhcp-relay-01\\e4\\lead\\tools\\open_episode.py.txt",
+    "reference_sha256": "f6d4e8622d0e0b4606fc0ceb12d90992b669643c1c37ec29cc14db9ab3f2aee7",
+    "sha256": "f6d4e8622d0e0b4606fc0ceb12d90992b669643c1c37ec29cc14db9ab3f2aee7",
+    "change": "none; byte copy",
+    "byte_identical": true
+  },
+  {
+    "tool": "preopen.py",
+    "reference": "docs\\reference\\server-pt\\evidence\\sp2-generalized-dhcp-relay-01\\e4\\lead\\tools\\preopen.py.txt",
+    "reference_sha256": "0c3be7d8f1389a7b7d630cc4269d3caaee542d02cf39f80fea1a2b73d05a886d",
+    "sha256": "0c3be7d8f1389a7b7d630cc4269d3caaee542d02cf39f80fea1a2b73d05a886d",
+    "change": "none; byte copy",
+    "byte_identical": true
+  },
+  {
+    "tool": "retire_owned_lab.py",
+    "reference": "docs\\reference\\server-pt\\evidence\\sp2-generalized-dhcp-relay-01\\e4\\lead\\tools\\retire_owned_lab.py.txt",
+    "reference_sha256": "8b006f06937900db66589ecbb49056b8c5607bd914e59e42feea15e2dd178c26",
+    "sha256": "8b006f06937900db66589ecbb49056b8c5607bd914e59e42feea15e2dd178c26",
+    "change": "none; byte copy",
+    "byte_identical": true
+  },
+  {
+    "tool": "run_qualification.py",
+    "reference": "docs\\reference\\server-pt\\evidence\\sp2-generalized-dhcp-relay-01\\e4\\lead\\tools\\run_qualification.py.txt",
+    "reference_sha256": "ebe8b8f5c87d5470e0005a5d2fb311a0d86eb3c8318b451e43d6c39575d30d60",
+    "sha256": "ebe8b8f5c87d5470e0005a5d2fb311a0d86eb3c8318b451e43d6c39575d30d60",
+    "change": "none; byte copy",
+    "byte_identical": true
+  }
+]
