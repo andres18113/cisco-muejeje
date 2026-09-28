@@ -668,3 +668,33 @@ strategies of one Server-PT authority. Acquisition evidence must allow a
 bounded window well beyond two seconds. Public support still requires the
 product route, multiple segments and sites, simultaneous clients and the
 routed service sequence.
+
+### Remote profile v3: the product order
+
+The public product sets a remote client's DHCP mode in E5, before E6 writes
+the pool and enables the process. Episode 5 used the reverse order, so it
+cannot show that a relayed client already in DHCP mode acquires after a later
+enable. Profile v3 changes only that order, and it observes each pre-effect
+condition. Before the mode effect, v3 requires:
+
+- a pre-mode scan that reads the named pool absent and `serverPool` observed,
+  with no row for the client's MAC in either;
+- the server's planned gateway, as in v2.
+
+After the mode effect and before the pool write, it requires:
+
+- the client read in DHCP mode and still unbound;
+- the process read disabled with only `serverPool`.
+
+Otherwise it stops before any E6 effect. E6 then receives the verified mode
+foundation together with its identifier. The pool, the enable, the passive
+acquisition window and the two samples are unchanged.
+
+Offline tests show that a client in mode before enable acquires only when the
+engine retries on enable. That is a simulation setting, not native evidence,
+so a retry-disabled control keeps both samples without support. Three new
+regressions stop on a named pool present before mode, a client bound before
+the pool and a process enabled before the pool; none applies the pool. All 43
+remote-stage tests pass. One episode on an owned lab measures the native
+answer; a negative result would put the product's mode-first order for
+remote clients in question.

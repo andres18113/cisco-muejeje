@@ -54,7 +54,7 @@ def test_remote_stage_binds_the_composed_fixture_and_budget():
     assert QualificationStage.SP2_REMOTE_RELAY in SP2_STAGES
     assert definition is not None and definition.executable
     assert definition.profile_id == "SP2-REMOTE-RELAY"
-    assert definition.profile_version == "2"
+    assert definition.profile_version == "3"
     assert definition.allowed_channels == ("file",)
     assert definition.selected_clients == ("BR1-DEFAULT-PC-01",)
     assert definition.planned_minimum_operations <= definition.budget.max_operations
@@ -340,6 +340,8 @@ def _run_remote(
         "dhcp_mode_acquires": True,
         "dhcp_pool_selection": "intended",
         "dhcp_intended_pool_name": "BR1_DATA",
+        # v3: the client is in DHCP mode before the process is enabled.
+        "dhcp_retry_on_server_enable": True,
         **(engine_config or {}),
     }
     engine = NodeEngine(tmp_path, **options)
@@ -397,7 +399,7 @@ def _run_remote(
         engine.close()
 
 
-def test_remote_coordinator_applies_pool_before_mode_and_retains_samples(
+def test_remote_coordinator_applies_mode_before_pool_and_retains_samples(
     tmp_path, monkeypatch
 ):
     """The real coordinator records the selected client and competing pool."""
@@ -408,9 +410,9 @@ def test_remote_coordinator_applies_pool_before_mode_and_retains_samples(
         measurement.causes,
     )
     assert [item["effect"] for item in run.snapshot["dhcp_timeline"]] == [
+        "clientMode",
         "addPool",
         "setEnable",
-        "clientMode",
     ]
     assert len(measurement.facts["samples"]) == 2
     assert run.record.restoration_proven is True
@@ -749,7 +751,10 @@ def test_lost_pool_response_quarantines_enable_and_client_mode(tmp_path, monkeyp
     )
     assert run.switching.lost
     assert run.record.primary_failure.startswith("outcome_unknown:")
-    assert [item["effect"] for item in run.snapshot["dhcp_timeline"]] == ["addPool"]
+    assert [item["effect"] for item in run.snapshot["dhcp_timeline"]] == [
+        "clientMode",
+        "addPool",
+    ]
     assert run.record.restoration_proven
 
 
@@ -762,28 +767,31 @@ def test_record_write_failure_blocks_enable_after_pool(tmp_path, monkeypatch):
     )
     run = _run_remote(tmp_path, monkeypatch, boundary_overrides={"record_store": store})
     assert "persistence:" in run.record.primary_failure
-    assert [item["effect"] for item in run.snapshot["dhcp_timeline"]] == ["addPool"]
+    assert [item["effect"] for item in run.snapshot["dhcp_timeline"]] == [
+        "clientMode",
+        "addPool",
+    ]
     assert "experiment:SP2_REMOTE:e6_enable" in store.writes
 
 
 def test_unobserved_pre_mode_pool_scan_blocks_client_activation(tmp_path, monkeypatch):
-    """An unreadable shared scan cannot be treated as an empty pool."""
+    """An unreadable shared scan cannot be treated as an empty pool.
+
+    In v3 the pre-mode scan is the first scan and precedes every effect.
+    """
     scans = 0
 
-    def lose_third_scan(script):
+    def lose_first_scan(script):
         nonlocal scans
         if "var __req=" not in script or "BR1_DATA" not in script:
             return False
         scans += 1
-        return scans == 3
+        return scans == 1
 
-    run = _run_remote(tmp_path, monkeypatch, lose_when=lose_third_scan)
-    assert run.switching.lost and scans == 3
+    run = _run_remote(tmp_path, monkeypatch, lose_when=lose_first_scan)
+    assert run.switching.lost and scans == 1
     assert run.record.primary_failure == "sp2_remote_pre_mode_pool_unobserved"
-    assert [item["effect"] for item in run.snapshot["dhcp_timeline"]] == [
-        "addPool",
-        "setEnable",
-    ]
+    assert run.snapshot["dhcp_timeline"] == []
 
 
 def test_unbound_fixture_cannot_trigger_terminal_router_reads(tmp_path, monkeypatch):
@@ -855,7 +863,10 @@ def test_receiver_replacement_after_pool_blocks_enable_and_owned_cleanup(
     )
     assert lifecycle.switched
     assert run.record.primary_failure
-    assert [item["effect"] for item in run.snapshot["dhcp_timeline"]] == ["addPool"]
+    assert [item["effect"] for item in run.snapshot["dhcp_timeline"]] == [
+        "clientMode",
+        "addPool",
+    ]
     assert not run.record.restoration_proven
     assert run.snapshot["devices"]
 
@@ -875,7 +886,8 @@ def test_operator_cancellation_before_pool_keeps_earlier_e5_and_cleans_up(
     run = _run_remote(tmp_path, monkeypatch, before_script=interrupt)
     assert cancelled
     assert run.record.primary_failure == "cancelled"
-    assert run.snapshot["dhcp_timeline"] == []
+    # v3: the client-mode effect precedes the interrupted pool write.
+    assert [item["effect"] for item in run.snapshot["dhcp_timeline"]] == ["clientMode"]
     assert run.record.restoration_proven
 
 
@@ -1444,7 +1456,12 @@ def test_slow_relayed_acquisition_is_observed_within_the_bounded_window(
     before the two separated samples; nothing else is sent to the client.
     """
     run = _run_remote(
-        tmp_path, monkeypatch, engine_config={"dhcp_mode_acquire_after_evals": 20}
+        tmp_path,
+        monkeypatch,
+        engine_config={
+            "dhcp_retry_on_server_enable": False,
+            "dhcp_mode_acquire_after_evals": 40,
+        },
     )
     measurement = run.measurement("M-SP2-REMOTE-POOL")
     assert measurement.conclusion is MeasurementConclusion.SUPPORTED_IN_SAMPLE, (
@@ -1463,7 +1480,12 @@ def test_acquisition_window_exhaustion_retains_samples_without_support(
 ):
     """No address inside the window is a retained finding, never a retry."""
     run = _run_remote(
-        tmp_path, monkeypatch, engine_config={"dhcp_mode_acquire_after_evals": 100000}
+        tmp_path,
+        monkeypatch,
+        engine_config={
+            "dhcp_retry_on_server_enable": False,
+            "dhcp_mode_acquire_after_evals": 100000,
+        },
     )
     measurement = run.measurement("M-SP2-REMOTE-POOL")
     assert measurement.conclusion is not MeasurementConclusion.SUPPORTED_IN_SAMPLE
@@ -1489,4 +1511,69 @@ def test_unobserved_server_gateway_stops_before_client_mode(tmp_path, monkeypatc
         item["effect"] for item in run.snapshot["dhcp_timeline"]
     ]
     assert measurement.facts["server_binding"]["device"] == "HQ-DEFAULT-DNS-01"
+    assert run.record.restoration_proven
+
+
+def _wrap_reader(monkeypatch, name, label, replace):
+    """Replace one coordinator reading at one labelled step, others real."""
+    from packet_tracer_mcp.application.use_cases import qualify_server_services as qss
+
+    real = getattr(qss, name)
+
+    def reader(execution, step, *args, **kwargs):
+        value = real(execution, step, *args, **kwargs)
+        return replace(value) if step == label else value
+
+    monkeypatch.setattr(qss, name, reader)
+
+
+def test_named_pool_present_before_mode_stops_before_client_mode(tmp_path, monkeypatch):
+    """v3 mode-first is observed: a named pool read present refuses mode."""
+    from dataclasses import replace
+
+    from packet_tracer_mcp.domain.enterprise.services.dhcp_lease_evidence import (
+        TERMINATION_NULL,
+    )
+
+    def present(scans):
+        return {
+            **scans,
+            "BR1_DATA": replace(
+                scans["BR1_DATA"], cause="", termination=TERMINATION_NULL
+            ),
+        }
+
+    _wrap_reader(monkeypatch, "_sp2_remote_scan", "before_mode", present)
+    run = _run_remote(tmp_path, monkeypatch)
+    assert run.record.primary_failure == "sp2_remote_named_pool_present_before_mode"
+    assert run.snapshot["dhcp_timeline"] == []
+    assert run.record.restoration_proven
+
+
+def test_client_bound_between_mode_and_pool_stops_before_pool(tmp_path, monkeypatch):
+    """An address seen after mode but before the pool cannot license E6."""
+    from dataclasses import replace
+
+    _wrap_reader(
+        monkeypatch,
+        "_sp2_remote_client",
+        "after_mode_before_pool",
+        lambda reading: replace(reading, ipv4="10.72.32.9"),
+    )
+    run = _run_remote(tmp_path, monkeypatch)
+    assert run.record.primary_failure == "sp2_remote_client_state_changed_before_pool"
+    assert [item["effect"] for item in run.snapshot["dhcp_timeline"]] == ["clientMode"]
+    assert run.record.restoration_proven
+
+
+def test_server_enabled_between_mode_and_pool_stops_before_pool(tmp_path, monkeypatch):
+    """A process read enabled before the pool write cannot license E6."""
+
+    def enabled(snapshot):
+        return {**snapshot, "raw": {**snapshot["raw"], "enabled": True}}
+
+    _wrap_reader(monkeypatch, "_sp2_remote_snapshot", "after_mode_before_pool", enabled)
+    run = _run_remote(tmp_path, monkeypatch)
+    assert run.record.primary_failure == "sp2_remote_server_state_changed_before_pool"
+    assert [item["effect"] for item in run.snapshot["dhcp_timeline"]] == ["clientMode"]
     assert run.record.restoration_proven

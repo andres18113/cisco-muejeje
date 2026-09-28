@@ -197,6 +197,7 @@ from ...domain.enterprise.services.dhcp_lease_evidence import (
     SERVED_INTENDED,
     SERVED_NATIVE,
     SERVED_NONE,
+    TERMINATION_POOL_ABSENT,
     AddressRange,
     CalibrationState,
     ClientAttribution,
@@ -7567,53 +7568,61 @@ def _sp2_remote_product(
     if verdict is None or not verdict.admitted or readiness.unplaced:
         return stopped("sp2_remote_access_or_routed_readiness_refused")
 
-    for name, projection, enabled in (
-        ("pool", d_dhcp_pool_only_plan, False),
-        ("enable", d_dhcp_enable_only_plan, True),
-    ):
-        plan, changes = projection(
-            contract.service_plan,
-            executed_configuration_action_ids=frozenset(foundations),
-        )
-        facts[f"e6_{name}_projection"] = {
-            "id": plan.id,
-            "semantic_hash": plan.semantic_hash,
-            "rewrites": [item.as_text() for item in changes],
-        }
-        if len(plan.actions) != 1 or len(plan.verification_expectations) != 1:
-            return stopped(f"sp2_remote_{name}_projection_not_exact")
-        if not execution.run.transition(f"experiment:SP2_REMOTE:e6_{name}"):
-            return stopped(f"persistence:sp2_remote_e6_{name}_not_announced")
-        with execution.ledger.effect_of(f"sp2:remote:product:e6_{name}"):
-            e6 = ServiceApplicator(service_runtime).apply(
-                plan,
-                actual_source_topology_hash=contract.manifest.physical_topology_hash,
-                actual_source_configuration_hash=contract.service_plan.source_configuration_hash,
-                foundational_statuses=foundations,
-                capabilities=contract.service_capabilities,
-                runtime_context=context,
-                deployment_manifest=contract.manifest,
-                operational_readiness=DIAGNOSTIC_TAKES_ITS_OWN_FORWARDING_EVIDENCE,
+    def apply_e6() -> str:
+        """Write and read the named pool, then enable and read the process."""
+        for name, projection, enabled in (
+            ("pool", d_dhcp_pool_only_plan, False),
+            ("enable", d_dhcp_enable_only_plan, True),
+        ):
+            plan, changes = projection(
+                contract.service_plan,
+                executed_configuration_action_ids=frozenset(foundations),
             )
-        facts[f"e6_{name}"] = _q3fl_rows(e6)
-        cause = _q3_service_result_cause(
-            e6,
-            {item.id for item in plan.actions},
-            expected_verification_ids={
-                item.id for item in plan.verification_expectations
-            },
-        ) or _d_dhcp_readback_cause(e6)
-        if cause:
-            return stopped(cause)
-        snapshot = _sp2_remote_snapshot(execution, f"after_{name}")
-        facts[f"after_{name}"] = snapshot
-        cause = _sp2_remote_physical_policy(snapshot, pool, enabled)
-        if cause:
-            return stopped(cause)
-        scan = _sp2_remote_scan(execution, f"after_{name}")
-        facts[f"after_{name}_scan"] = {
-            key: value.as_facts() for key, value in scan.items()
-        }
+            facts[f"e6_{name}_projection"] = {
+                "id": plan.id,
+                "semantic_hash": plan.semantic_hash,
+                "rewrites": [item.as_text() for item in changes],
+            }
+            if len(plan.actions) != 1 or len(plan.verification_expectations) != 1:
+                return f"sp2_remote_{name}_projection_not_exact"
+            if not execution.run.transition(f"experiment:SP2_REMOTE:e6_{name}"):
+                return f"persistence:sp2_remote_e6_{name}_not_announced"
+            with execution.ledger.effect_of(f"sp2:remote:product:e6_{name}"):
+                e6 = ServiceApplicator(service_runtime).apply(
+                    plan,
+                    actual_source_topology_hash=contract.manifest.physical_topology_hash,
+                    actual_source_configuration_hash=contract.service_plan.source_configuration_hash,
+                    foundational_statuses=foundations,
+                    capabilities=contract.service_capabilities,
+                    runtime_context=context,
+                    deployment_manifest=contract.manifest,
+                    operational_readiness=DIAGNOSTIC_TAKES_ITS_OWN_FORWARDING_EVIDENCE,
+                )
+            facts[f"e6_{name}"] = _q3fl_rows(e6)
+            cause = _q3_service_result_cause(
+                e6,
+                {item.id for item in plan.actions},
+                expected_verification_ids={
+                    item.id for item in plan.verification_expectations
+                },
+            ) or _d_dhcp_readback_cause(e6)
+            if cause:
+                return cause
+            snapshot = _sp2_remote_snapshot(execution, f"after_{name}")
+            facts[f"after_{name}"] = snapshot
+            cause = _sp2_remote_physical_policy(snapshot, pool, enabled)
+            if cause:
+                return cause
+            scan = _sp2_remote_scan(execution, f"after_{name}")
+            facts[f"after_{name}_scan"] = {
+                key: value.as_facts() for key, value in scan.items()
+            }
+        return ""
+
+    # Profile v3 (after e5): the product order. The selected PC enters DHCP
+    # mode while the process is still disabled and the named pool absent;
+    # the pool is then written and the process enabled. Only serverPool can
+    # be read before the pool exists.
     before_mode = _sp2_remote_client(execution, "before_mode")
     facts["before_mode"] = before_mode.__dict__
     if (
@@ -7626,10 +7635,18 @@ def _sp2_remote_product(
     facts["before_mode_scan"] = {
         key: value.as_facts() for key, value in prelease.items()
     }
-    if set(prelease) != {SP2_REMOTE_POOL, "serverPool"} or any(
-        not scan.observed for scan in prelease.values()
+    default_before = prelease.get("serverPool")
+    named_before = prelease.get(SP2_REMOTE_POOL)
+    if (
+        default_before is None
+        or not default_before.observed
+        or named_before is None
+        or not named_before.observed
     ):
         return stopped("sp2_remote_pre_mode_pool_unobserved")
+    # The named pool must be read absent: mode-first is an observed state.
+    if named_before.termination != TERMINATION_POOL_ABSENT or named_before.rows:
+        return stopped("sp2_remote_named_pool_present_before_mode")
     if any(
         scan.rows_with_normalized_mac(before_mode.mac)
         for scan in prelease.values()
@@ -7678,6 +7695,30 @@ def _sp2_remote_product(
     cause = _q3_e5_foundation_cause(
         mode_result, mode_foundations, {item.id for item in mode_plan.actions}
     )
+    if cause:
+        return stopped(cause)
+    # Before the pool write, re-read both sides: the client in DHCP mode and
+    # unbound, the process still disabled with only its stock pool.
+    after_mode = _sp2_remote_client(execution, "after_mode_before_pool")
+    facts["after_mode_before_pool"] = after_mode.__dict__
+    if (
+        not after_mode.observed
+        or after_mode.mode is not True
+        or after_mode.ipv4 not in ("", "0.0.0.0")
+    ):
+        return stopped("sp2_remote_client_state_changed_before_pool")
+    server_before_pool = _sp2_remote_snapshot(execution, "after_mode_before_pool")
+    facts["server_after_mode_before_pool"] = server_before_pool
+    if (
+        not server_before_pool["observed"]
+        or server_before_pool["raw"].get("enabled") is not False
+        or [row.get("name") for row in server_before_pool["raw"].get("pools", [])]
+        != ["serverPool"]
+    ):
+        return stopped("sp2_remote_server_state_changed_before_pool")
+    # E6 runs with the verified mode foundation, ID and status together.
+    foundations = {**foundations, **mode_foundations}
+    cause = apply_e6()
     if cause:
         return stopped(cause)
     # Passive, bounded wait for the relayed acquisition: client reads only,

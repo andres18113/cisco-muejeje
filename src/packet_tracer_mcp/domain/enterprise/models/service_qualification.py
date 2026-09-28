@@ -2438,7 +2438,9 @@ def _sp2_remote_relay() -> StageDefinition:
         profile_id="SP2-REMOTE-RELAY",
         # v2 (after e4): read the server's planned gateway before the mode
         # effect and wait passively, bounded, for the relayed acquisition.
-        profile_version="2",
+        # v3 (after e5): the product order, client DHCP mode before the
+        # named pool write and process enable.
+        profile_version="3",
         steps=(
             DiagnosticStageStep(
                 id="SP2-remote",
