@@ -327,11 +327,26 @@ def scans_by_pool(payload: object, pools: Sequence[str]) -> dict[str, LeaseScan]
     """Classify every requested pool of one calibration reading."""
     entries = payload.get("pools") if isinstance(payload, Mapping) else None
     found: dict[str, Mapping[str, Any]] = {}
+    duplicate: dict[str, list[Mapping[str, Any]]] = {}
     for item in entries if isinstance(entries, list) else ():
         if isinstance(item, Mapping) and isinstance(item.get("requested"), str):
-            found.setdefault(str(item["requested"]), item)
+            name = str(item["requested"])
+            if name in found:
+                duplicate.setdefault(name, [found[name]]).append(item)
+            else:
+                found[name] = item
     return {
-        name: classify_lease_scan(found.get(name), pool_name=name) for name in pools
+        name: (
+            LeaseScan(
+                name,
+                False,
+                "scan_pool_duplicate",
+                entries=tuple(dict(item) for item in duplicate[name]),
+            )
+            if name in duplicate
+            else classify_lease_scan(found.get(name), pool_name=name)
+        )
+        for name in pools
     }
 
 
@@ -492,6 +507,7 @@ class ClientReading:
     netmask: str = ""
     lease_time: str = ""
     cause: str = ""
+    raw_rows: tuple[Mapping[str, Any], ...] = ()
 
 
 def client_readings(
@@ -499,16 +515,25 @@ def client_readings(
 ) -> dict[str, ClientReading]:
     """Index one `dhcp_clients` reading by client, typing every field."""
     rows = payload.get("clients") if isinstance(payload, Mapping) else None
-    found: dict[str, Mapping[str, Any]] = {}
+    found: dict[str, list[Mapping[str, Any]]] = {}
     for item in rows if isinstance(rows, list) else ():
         if isinstance(item, Mapping) and isinstance(item.get("device"), str):
-            found.setdefault(str(item["device"]), item)
+            found.setdefault(str(item["device"]), []).append(item)
     result: dict[str, ClientReading] = {}
     for name in clients:
-        item = found.get(name)
-        if item is None:
+        matches = found.get(name, [])
+        if not matches:
             result[name] = ClientReading(name, False, cause="client_row_absent")
             continue
+        if len(matches) != 1:
+            result[name] = ClientReading(
+                name,
+                False,
+                cause="client_row_duplicate",
+                raw_rows=tuple(dict(row) for row in matches),
+            )
+            continue
+        [item] = matches
         if item.get("error"):
             result[name] = ClientReading(name, False, cause="client_read_error")
             continue

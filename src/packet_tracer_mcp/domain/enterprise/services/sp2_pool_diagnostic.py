@@ -11,7 +11,13 @@ from .dhcp_lease_evidence import (
     ROW_REPEATED,
     ROW_REPRESENTATION,
     ROW_WRONG_MAC,
+    TERMINATION_MALFORMED,
+    TERMINATION_NON_MONOTONE,
+    TERMINATION_NULL,
     TERMINATION_REPEAT,
+    TERMINATION_THROW,
+    TERMINATION_UNDEFINED,
+    TERMINATION_WINDOW,
     AddressRange,
     ClientReading,
     LeaseCalibration,
@@ -303,5 +309,184 @@ def assess_sp2_pool_identity(
             "physical_pool_rows_only:not_product_service_acceptance",
             "scan_window_and_termination_are_local_to_this_sample",
             "no_inference_about_dhcp_run_renewal_or_total_capacity",
+        ],
+    )
+
+
+def assess_sp2_remote_samples(
+    readings: Sequence[ClientReading],
+    bindings: Sequence[Mapping[str, object]],
+    named_scans: Sequence[LeaseScan],
+    native_scans: Sequence[LeaseScan],
+    *,
+    named_range: AddressRange,
+    expected_mask: str,
+    expected_gateway: str,
+    expected_dns: str,
+    expected_capacity: int,
+) -> Assessment:
+    """Assess stable remote usability with exact named rows, without end inference.
+
+    A matching physical row proves association for this sample. It does not
+    prove that the default pool has no later row or that the packet carried a
+    particular giaddr value. Those claims stay separate from usability.
+    """
+    if any(len(rows) != 2 for rows in (readings, bindings, named_scans, native_scans)):
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            causes=["two_samples_required"],
+            limitations=["packet_giaddr_not_observed"],
+        )
+    first, second = readings
+    positives = frozenset((ROW_EXACT, ROW_REPRESENTATION))
+    conflicts = frozenset((ROW_WRONG_MAC, ROW_MAC_ELSEWHERE, ROW_REPEATED))
+    named_rows = [
+        row_status(scan, reading, None)
+        for scan, reading in zip(named_scans, readings, strict=True)
+    ]
+    default_rows = [
+        row_status(scan, reading, None)
+        for scan, reading in zip(native_scans, readings, strict=True)
+    ]
+    causes: list[str] = []
+    contradictions: list[str] = []
+    negatives: list[str] = []
+    stable = (
+        first.observed
+        and second.observed
+        and first.client == second.client
+        and first.mode is True
+        and second.mode is True
+        and normalized_mac(first.mac) != ""
+        and normalized_mac(first.mac) == normalized_mac(second.mac)
+        and first.ipv4 == second.ipv4
+        and first.netmask == second.netmask == expected_mask
+        and named_range.contains(first.ipv4)
+    )
+    if not stable:
+        causes.append("client_binding_unstable_or_outside_policy")
+    for index, (reading, binding, named, native, named_row, default_row) in enumerate(
+        zip(
+            readings,
+            bindings,
+            named_scans,
+            native_scans,
+            named_rows,
+            default_rows,
+            strict=True,
+        ),
+        start=1,
+    ):
+        if named.pool == "serverPool" or named.pool != named_scans[0].pool:
+            contradictions.append(f"sample_{index}:named_pool_identity_mismatch")
+        if native.pool != "serverPool":
+            contradictions.append(f"sample_{index}:default_pool_identity_mismatch")
+        if named_row in conflicts or default_row in conflicts:
+            contradictions.append(f"sample_{index}:physical_identity_conflict")
+        if (
+            named.termination == TERMINATION_REPEAT
+            or native.termination == TERMINATION_REPEAT
+        ):
+            contradictions.append(f"sample_{index}:repeated_physical_row")
+        if named.capacity is None:
+            causes.append(f"sample_{index}:named_capacity_unobserved")
+        elif named.capacity != expected_capacity:
+            contradictions.append(f"sample_{index}:named_capacity_mismatch")
+        if named.capacity is not None and len(named.rows) > named.capacity:
+            contradictions.append(f"sample_{index}:named_rows_exceed_capacity")
+        if native.capacity is not None and len(native.rows) > native.capacity:
+            contradictions.append(f"sample_{index}:default_rows_exceed_capacity")
+        for pool_label, scan in (("named", named), ("default", native)):
+            mac = normalized_mac(reading.mac)
+            if mac and any(
+                row.ip != reading.ipv4
+                for row in scan.rows_with_normalized_mac(reading.mac)
+            ):
+                contradictions.append(
+                    f"sample_{index}:{pool_label}_mac_multiple_addresses"
+                )
+            if any(
+                normalized_mac(row.mac) != mac
+                for row in scan.rows_with_ip(reading.ipv4)
+            ):
+                contradictions.append(f"sample_{index}:{pool_label}_ip_multiple_macs")
+            if any(normalized_mac(row.mac) != mac for row in scan.rows):
+                causes.append(f"sample_{index}:unselected_{pool_label}_lease_row")
+        if named.termination not in {
+            TERMINATION_NULL,
+            TERMINATION_WINDOW,
+            TERMINATION_THROW,
+            TERMINATION_UNDEFINED,
+        }:
+            causes.append(f"sample_{index}:named_scan_incomplete")
+        if native.termination in {
+            TERMINATION_MALFORMED,
+            TERMINATION_NON_MONOTONE,
+        }:
+            causes.append(f"sample_{index}:default_scan_incomplete")
+        if default_row in positives:
+            if named_row in positives:
+                contradictions.append(f"sample_{index}:row_in_both_pools")
+            else:
+                negatives.append(f"sample_{index}:served_by_native_default")
+        if not named.observed or named_row not in positives:
+            causes.append(f"sample_{index}:named_row_not_exact")
+        if not native.observed:
+            causes.append(f"sample_{index}:default_scan_unobserved")
+        gateways = binding.get("gateway_reads")
+        observed_gateways = (
+            [
+                item.get("value")
+                for item in gateways
+                if isinstance(item, Mapping)
+                and item.get("api") is True
+                and item.get("error") == ""
+            ]
+            if isinstance(gateways, list)
+            else []
+        )
+        if not (
+            binding.get("device") == reading.client
+            and binding.get("found") is True
+            and binding.get("port_found") is True
+            and binding.get("error") == ""
+            and binding.get("ipv4") == reading.ipv4
+            and binding.get("netmask") == reading.netmask
+            and observed_gateways
+            and all(value == expected_gateway for value in observed_gateways)
+            and binding.get("dns_api") is True
+            and binding.get("dns_error") == ""
+            and binding.get("dns_server") == expected_dns
+        ):
+            causes.append(f"sample_{index}:gateway_or_resolver_unusable")
+    conclusion = (
+        MeasurementConclusion.CONTRADICTED
+        if contradictions
+        else MeasurementConclusion.NEGATIVE_OBSERVED
+        if negatives
+        else MeasurementConclusion.INCONCLUSIVE
+        if causes
+        else MeasurementConclusion.SUPPORTED_IN_SAMPLE
+    )
+    return Assessment(
+        conclusion,
+        facts={
+            "client": first.client,
+            "readings": [reading.__dict__ for reading in readings],
+            "bindings": [dict(binding) for binding in bindings],
+            "named_rows": named_rows,
+            "default_rows": default_rows,
+            "named_scans": [scan.as_facts() for scan in named_scans],
+            "default_scans": [scan.as_facts() for scan in native_scans],
+            "exclusive_serving": False,
+        },
+        causes=list(dict.fromkeys([*contradictions, *negatives, *causes])),
+        limitations=[
+            "relay_associated_selection_not_packet_giaddr_bytes",
+            "default_table_end_not_calibrated",
+            "named_table_end_not_calibrated",
+            "pre_mode_absence_not_proven_no_causal_acquisition_claim",
+            "exclusive_serving_not_established",
+            "native_capacity_not_established",
         ],
     )

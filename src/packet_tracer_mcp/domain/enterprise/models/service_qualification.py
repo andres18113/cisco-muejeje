@@ -93,6 +93,7 @@ class QualificationStage(StrEnum):
     SP1_ROUTED_W2 = "SP1-ROUTED-W2"
     #: A fresh SP-2 native hypothesis over the owned two-client fixture.
     SP2_NATIVE_POOL = "SP2-NATIVE-POOL"
+    SP2_REMOTE_RELAY = "SP2-REMOTE-RELAY"
 
 
 class ExecutionMode(StrEnum):
@@ -448,6 +449,7 @@ STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.SP1_ROUTED_W1: SP1_ROUTED_CEILING,
     QualificationStage.SP1_ROUTED_W2: SP1_ROUTED_CEILING,
     QualificationStage.SP2_NATIVE_POOL: (440, 1800),
+    QualificationStage.SP2_REMOTE_RELAY: (3200, 3600),
 }
 
 Q0_PC = "__MCP_E6Q_PC1"
@@ -1607,7 +1609,10 @@ Q3_NATIVE_STAGES = (
     QualificationStage.Q3_NATIVE_SERVE,
     QualificationStage.Q3_NATIVE_PRODUCT,
 )
-SP2_STAGES = (QualificationStage.SP2_NATIVE_POOL,)
+SP2_STAGES = (
+    QualificationStage.SP2_NATIVE_POOL,
+    QualificationStage.SP2_REMOTE_RELAY,
+)
 
 
 def _sp2_native_pool() -> StageDefinition:
@@ -2327,6 +2332,117 @@ def sp1_intent(
     return intent
 
 
+_SP2_REMOTE_FIXTURES = (
+    FixtureDevice("HQ-DEFAULT-DNS-01", "Server-PT"),
+    FixtureDevice("HQ-DEFAULT-ACCESS-SW-01", "IE-2000"),
+    FixtureDevice("HQ-EDGE-RTR-01", "1941"),
+    FixtureDevice("BR1-DEFAULT-PC-01", "PC-PT"),
+    FixtureDevice("BR1-DEFAULT-ACCESS-SW-01", "IE-2000"),
+    FixtureDevice("BR1-EDGE-RTR-01", "1941"),
+)
+_SP2_REMOTE_LINKS = (
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "GigabitEthernet1/1",
+        "BR1-EDGE-RTR-01",
+        "GigabitEthernet0/1",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "GigabitEthernet1/1",
+        "HQ-EDGE-RTR-01",
+        "GigabitEthernet0/1",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/1",
+        "BR1-DEFAULT-PC-01",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/1",
+        "HQ-DEFAULT-DNS-01",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "BR1-EDGE-RTR-01",
+        "GigabitEthernet0/0",
+        "HQ-EDGE-RTR-01",
+        "GigabitEthernet0/0",
+        "cross",
+    ),
+)
+
+
+def _sp2_remote_relay() -> StageDefinition:
+    """Bind one remote named-pool discriminator to an owned routed fixture."""
+    ceiling_operations, ceiling_seconds = STAGE_CEILINGS[
+        QualificationStage.SP2_REMOTE_RELAY
+    ]
+    return StageDefinition(
+        stage=QualificationStage.SP2_REMOTE_RELAY,
+        executable=True,
+        purpose=(
+            "Measure one remote PC's physical named-pool lease through an "
+            "attributed helper and observed forward and return path."
+        ),
+        fixtures=_SP2_REMOTE_FIXTURES,
+        links=_SP2_REMOTE_LINKS,
+        setup=(
+            PlannedStep("read:executable_build", 1),
+            PlannedStep("read:workspace_baseline", 1),
+            *(PlannedStep(f"create:{item.name}", 2) for item in _SP2_REMOTE_FIXTURES),
+            *(PlannedStep(f"create:link:{index}", 2) for index in range(1, 6)),
+            PlannedStep("read:fixture_identity", 1),
+        ),
+        experiments=(
+            ExperimentSpec(
+                id="M-SP2-REMOTE-POOL",
+                hypothesis=(
+                    "The selected remote PC has two stable usable bindings "
+                    "joined to physical BR1_DATA, with no competing row "
+                    "observed in the bounded serverPool scan, after helper "
+                    "and routed readiness."
+                ),
+                required=True,
+                procedure="SP2_REMOTE_PRODUCT",
+                planned_operations=3000,
+                operational_prerequisites=(DiagnosticPrecondition.SUBJECT_SESSION,),
+                capabilities=("server.dhcp_lease_table", "router.dhcp_relay"),
+            ),
+            ExperimentSpec(
+                id="M-SP2-REMOTE-FINAL",
+                hypothesis="Final router, server pool and client state are retained.",
+                required=True,
+                procedure="SP2_REMOTE_FINAL",
+                planned_operations=80,
+                operational_prerequisites=(DiagnosticPrecondition.SUBJECT_SESSION,),
+                terminal_observation=True,
+            ),
+        ),
+        reserve=(
+            *(PlannedStep(f"remove:{item.name}", 2) for item in _SP2_REMOTE_FIXTURES),
+            PlannedStep("read:restoration:1", 1),
+            PlannedStep("read:restoration:2", 1),
+            PlannedStep("release:run_bag", 1),
+        ),
+        budget=StageBudget(ceiling_operations, ceiling_seconds, reserve_seconds=420),
+        allowed_channels=("file",),
+        profile_id="SP2-REMOTE-RELAY",
+        profile_version="1",
+        steps=(
+            DiagnosticStageStep(
+                id="SP2-remote",
+                experiment_id="M-SP2-REMOTE-POOL",
+                effect="request",
+                also_experiments=("M-SP2-REMOTE-FINAL",),
+            ),
+        ),
+        selected_clients=("BR1-DEFAULT-PC-01",),
+    )
+
+
 #: The SP-1 stages; each exists only under campaign `SERVER-PT-SP1-ROUTED-01`.
 SP1_ROUTED_STAGES = (QualificationStage.SP1_ROUTED_W1, QualificationStage.SP1_ROUTED_W2)
 
@@ -2358,6 +2474,7 @@ STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
         (*SP1_HQ_CLIENTS, *SP1_BRANCH_CLIENTS),
     ),
     QualificationStage.SP2_NATIVE_POOL: _sp2_native_pool(),
+    QualificationStage.SP2_REMOTE_RELAY: _sp2_remote_relay(),
 }
 
 

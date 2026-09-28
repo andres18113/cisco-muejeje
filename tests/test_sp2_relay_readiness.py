@@ -354,3 +354,65 @@ def test_prelease_evidence_retains_overlapping_route_rows_once_per_router():
         "10.1.0.0/24",
         "10.1.0.100/32",
     }
+
+
+def test_connected_gateway_local_route_does_not_shadow_dhcp_client_prefix():
+    """IOS's L /32 for the router's own gateway is not a host forwarding path."""
+    connected = ObservedRoute(
+        code="C",
+        network="10.72.32.0",
+        prefix_length=29,
+        interface="GigabitEthernet0/1",
+    )
+    gateway_local = ObservedRoute(
+        code="L",
+        network="10.72.32.1",
+        prefix_length=32,
+        interface="GigabitEthernet0/1",
+    )
+    table = RouteTableReading(rows=(connected, gateway_local), header_seen=True)
+    assert (
+        network_route_coverage_cause(
+            table,
+            "10.72.32.0/29",
+            interface="GigabitEthernet0/1",
+            connected=True,
+            local_address="10.72.32.1",
+        )
+        == ""
+    )
+
+
+def test_another_local_host_route_still_shadows_a_dhcp_client_prefix():
+    """Only the selected gateway's own L row may be ignored."""
+    connected = ObservedRoute(
+        code="C",
+        network="10.72.32.0",
+        prefix_length=29,
+        interface="GigabitEthernet0/1",
+    )
+    gateway_local = ObservedRoute(
+        code="L",
+        network="10.72.32.1",
+        prefix_length=32,
+        interface="GigabitEthernet0/1",
+    )
+    competing_local = ObservedRoute(
+        code="L",
+        network="10.72.32.4",
+        prefix_length=32,
+        interface="GigabitEthernet0/1",
+    )
+    table = RouteTableReading(
+        rows=(connected, gateway_local, competing_local), header_seen=True
+    )
+    assert (
+        network_route_coverage_cause(
+            table,
+            "10.72.32.0/29",
+            interface="GigabitEthernet0/1",
+            connected=True,
+            local_address="10.72.32.1",
+        )
+        == "network_route_shadow"
+    )

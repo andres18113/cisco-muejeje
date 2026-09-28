@@ -149,6 +149,7 @@ def network_route_coverage_cause(
     next_hop: str = "",
     interface: str,
     connected: bool = False,
+    local_address: str = "",
 ) -> str:
     """Prove one observed route decision covers the whole DHCP segment.
 
@@ -188,7 +189,14 @@ def network_route_coverage_cause(
         return "network_route_selected_path_differs"
     selected_prefix = selected_networks[0].prefixlen
     if any(
-        route.prefixlen > selected_prefix and not follows(row)
+        route.prefixlen > selected_prefix
+        and not (
+            connected
+            and row.code == "L"
+            and row.network == local_address
+            and row.interface.casefold() == interface.casefold()
+        )
+        and not follows(row)
         for route, row in overlapping
     ):
         return "network_route_shadow"
@@ -327,6 +335,7 @@ def _direction(
             destination_network,
             interface=end.interface,
             connected=True,
+            local_address=end.ipv4,
         )
         if network_cause:
             return RoutedVerdict(

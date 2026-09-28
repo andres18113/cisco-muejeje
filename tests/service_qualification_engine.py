@@ -127,7 +127,8 @@ const config = Object.assign({
   dhcp_emit_events: true, dhcp_lease_time: '3600', dhcp_lease_time_ticks: false,
   dhcp_client_address_override: null, dhcp_client_mask_override: null,
   dhcp_default_pool: false,
-  dhcp_pool_selection: 'first', default_pool_change_on_enable: null,
+  dhcp_pool_selection: 'first', dhcp_intended_pool_name: 'MCP_E6Q_DHCP',
+  default_pool_change_on_enable: null,
   default_pool_drift_reads: 0, default_pool_realigns_on_address: false,
   dhcp_mode_acquires: false, dhcp_failure_address: '',
   dhcp_retry_on_server_enable: false,
@@ -570,13 +571,14 @@ const acquire = (dev, port) => {
   // Which pool a native server answers from is unqualified, so the stub
   // never hard-codes the intended one: the selection is configured.
   const names = state ? Object.keys(state.pools).sort() : [];
-  const other = names.filter((name) => name !== 'MCP_E6Q_DHCP')[0];
+  const intended = String(config.dhcp_intended_pool_name);
+  const other = names.filter((name) => name !== intended)[0];
   const order = config.dhcp_pool_selection === 'intended'
-    ? ['MCP_E6Q_DHCP']
+    ? [intended]
     : (config.dhcp_pool_selection === 'default'
       ? [other]
       : (config.dhcp_pool_selection === 'intended_then_default'
-        ? ['MCP_E6Q_DHCP', other] : [names[0]]));
+        ? [intended, other] : [names[0]]));
   for (const chosen of order) {
     const pool = state && chosen ? state.pools[chosen] : null;
     if (!state || !state.enabled || !pool) { continue; }
@@ -956,7 +958,7 @@ global.configurePcIp = (name, dhcp, ip, mask, gateway, dns, iface) => {
     if (config.dhcp_enable_on_server_address) { state.enabled = true; }
     const network = intToIp(ipToInt(ip) - (ipToInt(ip) % (4294967296 - ipToInt(mask))));
     for (const poolName of Object.keys(state.pools)) {
-      if (poolName === 'MCP_E6Q_DHCP') { continue; }
+      if (poolName === config.dhcp_intended_pool_name) { continue; }
       const pool = state.pools[poolName];
       pool.network = network; pool.mask = String(mask); pool.start = network;
       pool.end = intToIp(ipToInt(network) + Number(pool.max) - 1);

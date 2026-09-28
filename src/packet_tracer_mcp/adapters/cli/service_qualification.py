@@ -953,7 +953,10 @@ def fixture_plans(
                     "Native product switch ports lack exact-build evidence."
                 )
             ports[fixture.name] = set(observed.bindable_ports)
-        elif definition.stage in SP1_ROUTED_STAGES:
+        elif definition.stage in (
+            *SP1_ROUTED_STAGES,
+            QualificationStage.SP2_REMOTE_RELAY,
+        ):
             # Exact-build port evidence where the build has it; a model
             # without any (the 2911) keeps its catalogued ports, which are
             # the ones the product's own designer bound.
@@ -1437,6 +1440,7 @@ def production_boundaries(governed_root: Path) -> QualificationBoundaries:
         ),
         native_public_product_entry=_native_public_product_entry(governed_root),
         sp1_product_contract=sp1_routed_product_contract,
+        sp2_remote_relay_contract=sp2_remote_relay_contract,
         sp1_public_product_entry=_native_public_product_entry(
             governed_root, dhcp_authority=False
         ),

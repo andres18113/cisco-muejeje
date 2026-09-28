@@ -408,3 +408,117 @@ order; historical evidence remains unchanged.
 This fixes compiled action ordering only. Episode 2 already tested pool-first
 startup and still observed a physical `serverPool` lease. Named-pool service,
 relay selection, simultaneous capacity, and public admission remain unknown.
+
+## Continuation at dbbc029: remote discriminator and product closure (2026-09-27)
+
+This risk-L continuation starts from clean commit
+`dbbc0297630d400c1d7c9ce327176cbff5e32433`, tree
+`aebfa113b069ab1cbc8e76b129e04fb7f95aa8a2`, on
+`feature/server-pt-goal-foundations`. The parent mandate and SP2-01 through
+SP2-06 above remain the acceptance contract. No historical episode, FM-REF,
+SP-1 behavior or public capability record is reinterpreted by this delta.
+
+The next discriminator uses the existing six-device private contract to test
+whether a remote selected PC receives a usable physical `BR1_DATA` lease
+through the BR1 relay while `serverPool` remains a visible competitor. Register
+a dedicated private stage only after its exact fixture/port and composed
+intent/manifest/E5/E6 hashes, operation/time budget and protected finalization
+are checked. Its one lead owns the file-channel session, record and cleanup.
+The coordinator uses the current lifecycle, ledger, typed E5/E6 applicators,
+readback/runtime ports, probes and store. It applies the pre-client E5
+projection, observes access plus both routed directions and exact helper
+readback, proves the DHCP process disabled by reading it, applies the named
+pool before enable, then reads both pools around enable. Only then may it
+apply the deferred selected-PC mode projection. Two separated client binding,
+mode, IP, mask, MAC, gateway and resolver samples join exact physical pool
+rows. Incomplete table termination stays unknown; a positive can claim only
+relay-associated pool selection, not observed packet `giaddr`. A negative or
+unknown stops dependent effects and retains terminal observations.
+
+The stage has one bounded product procedure and one read-only terminal
+procedure. The budget is derived from actual nested access/routed probe calls,
+E5/E6 actions, snapshots, two samples, setup and cleanup; ordinary work may
+never consume protected finalization. Stateful substituted-boundary tests
+exercise admissible slow progress, operation and time exhaustion, early
+negative, read failure, record-write failure, cancellation and receiver loss.
+The stage was registered after initial successful and bounded-stop
+coordinator tests. LIVE remains unopened pending focused/broad verification,
+clean exact-SHA delivery and prospective episode authority.
+
+The resulting native observation drives the unchanged product requirements:
+segment authority and native pool policy stay fail-closed before effects;
+physical attribution, observed client address and cold HTTP order gate routed
+services; shared pool scans retain cross-client contradictions; and group
+work scales with selected clients plus topology and lease rows. Public
+capability entries are scoped to measured build, channel, placement, range,
+pool strategy and simultaneous demand only. Offline system loads of actual
+constructed 2/20/200/1000 clients measure work, bytes, time and memory but
+cannot establish native capacity. Unit tests cover policy, dependency and
+identity rules; integration tests cover real composition/applicators with
+substituted runtimes; system tests cover the four-input route and store;
+acceptance requires owned native evidence. Exact-SHA CI and independent audit
+remain delivery gates.
+
+### Routed gateway local-row correction
+
+The stateful remote coordinator run exposed a requirements/implementation gap
+in the pre-lease route gate: IOS emits an `L` host route for the selected
+router's own gateway inside its connected client prefix. Treating that row as
+a competing forwarding path rejects a valid whole-prefix observation. The
+coverage rule now exempts only that exact gateway IPv4 on the expected
+interface; another local host row or a more specific wrong route still
+refuses. A failing focused regression preceded the correction. This changes
+no SP-1 exact-client route rule or DHCP capability claim.
+
+### Remote procedure budget and evidence corrections
+
+The private remote procedure is capped at 3,000 product operations inside the
+3,200-operation stage. The 25 planned setup, 80 planned read-only terminal
+observation and 15 protected owned-cleanup operations retain independent
+allowance; a product run that consumes its cap stops with an explicit cause.
+The product time window ends at least 180 seconds before the ordinary phase
+ends, preserving the terminal's four bounded IOS captures, three probes
+and a 30-second authority/persistence margin;
+420 more seconds remain protected for owned cleanup. Theoretical simultaneous
+maximum IOS boot polling plus every readiness episode exceeds the successful
+product cap, so that trace must stop, not overdraw. Stateful coordinator tests
+cover both success and bounded exhaustion.
+
+Two-sample usability needs a physical named-row association and usable client
+binding in each sample. A malformed/repeated named scan or conflicting
+normalized MAC/IP rows cannot support the claim. A read failure in the
+pre-mode pool scan blocks client activation, while an uncalibrated cleanly
+observed pool end remains an explicit limitation. Terminal support requires
+four fresh complete uniquely attributed router captures, an observed server
+snapshot and client binding, after the subject session was established.
+
+### Exact private binding and observed identity
+
+Before fixture effects, the e3 coordinator recomputes the physical topology,
+manifest, E5 and E6 semantic hashes; compares exact device/link/port/selected
+service bindings; and checks build, source chain, catalog and the E5-required
+router/switch capability evidence. Ambient unrelated device capability fields
+are not promoted; the actual capability snapshot digest is retained in the
+record. A stale stored hash, wrong helper or missing route remains a refusal.
+
+Each client probe needs exactly one selected device and FastEthernet0 answer;
+duplicate/foreign answers are retained and unobserved. Indexed lease scans
+retain duplicate pool answers and refuse them. Two-sample attribution refuses
+malformed or repeated named rows, normalized IP/MAC conflicts, and rows above
+the physical configured capacity. Terminal support requires complete raw IOS
+captures with exact unique router identities plus the enabled named policy and
+a usable DHCP-mode client binding; an early negative retains its raw terminal
+facts without becoming support.
+
+### Controlled coordinator budget traces
+
+The e3 product cap comes from the registered experiment's planned operations,
+not an independently hardcoded allowance. In a substituted 250-operation
+stage with a 120-operation product allocation, the real coordinator counted
+23 setup, 120 product, 19 terminal and 14 finalization calls (178 total),
+recorded `budget:sp2_remote_product:operation_budget_exhausted`, and proved
+owned restoration. The 72 refused calls were never dispatched. At simulated
+elapsed 3,001 seconds in the registered 3,600-second stage, the product-only
+time cap recorded `budget:sp2_remote_product:time_budget_exhausted`; the
+terminal still ran and owned restoration was proved. These traces establish
+bounded stops and reserve separation, not native serving or capacity.
