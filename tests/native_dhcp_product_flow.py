@@ -57,12 +57,16 @@ def run_native_product(
     run_id: str,
     capability_catalog: Callable = packet_tracer_service_capabilities,
     state_samples: int = 3,
+    device_capability_catalog=None,
+    readiness=None,
+    channel: str = "file",
 ) -> ServiceStageResult:
     """Run the product use case against a seeded engine behind `transport`.
 
     Endpoint E5 actions and readbacks run the real generated JavaScript; other
     E5 foundations are recorded as applied. E6 runs entirely for real, with
     `state_samples` native state samples and no sleeping between them.
+    `readiness`, when given, answers routed forwarding and trunk continuity.
     """
     inventory = [item.model_dump(mode="json") for item in contract.inventory]
     real_e5 = PacketTracerEnterpriseConfigurationRuntime(
@@ -115,6 +119,16 @@ def run_native_product(
         def wait_for_voice_access_forwarding(self, expectations):
             return synthetic.wait_for_voice_access_forwarding(expectations)
 
+        def observe_routed_forwarding(self, devices, **bounds):
+            if readiness is None:
+                raise NotImplementedError("no routed observer in this flow")
+            return readiness.observe_routed_forwarding(devices, **bounds)
+
+        def observe_trunk_continuity(self, switches, vlan_id, **bounds):
+            if readiness is None:
+                raise NotImplementedError("no trunk observer in this flow")
+            return readiness.observe_trunk_continuity(switches, vlan_id, **bounds)
+
     real_e6 = PacketTracerEnterpriseServiceRuntime(
         lambda: inventory,
         transport.send_and_wait,
@@ -144,10 +158,11 @@ def run_native_product(
         record_store=ServiceRunRecordStore(tmp_path),
         environment_fingerprint=contract.manifest.environment_fingerprint,
         transport_selection=TransportSelection(
-            channel="file", fixed_at=datetime.now(UTC)
+            channel=channel, fixed_at=datetime.now(UTC)
         ),
         endpoint_observer=PacketTracerEndpointAddressObserver(transport.send_and_wait),
         capability_catalog=capability_catalog,
+        device_capability_catalog=device_capability_catalog,
         source_tree=SourceTreeIdentity(sha=SIM_SHA, tree=SIM_TREE, dirty=False),
         run_id=run_id,
     )

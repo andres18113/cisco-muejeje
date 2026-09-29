@@ -42,6 +42,7 @@ from ...domain.enterprise.models.execution import (
     satisfies_apply_dependency,
 )
 from ...domain.enterprise.models.service_plan import (
+    ConfigureServerDhcpPool,
     ServiceAction,
     ServiceCapabilityProfile,
     ServiceEvidenceKind,
@@ -1004,6 +1005,29 @@ class ServiceApplicator:
                 [],
             )
         native_group_json: dict[str, str] = {}
+        # The physical pools this plan writes to each DHCP host. A process with
+        # several pools shares its exclusions, so readers need the whole set.
+        host_pools: dict[str, list[dict]] = {}
+        for action in plan.actions:
+            if isinstance(action, ConfigureServerDhcpPool):
+                host_pools.setdefault(action.host_device_id, []).append(
+                    {
+                        "pool_name": action.effective_pool_name or action.pool_name,
+                        "excluded_ranges": [
+                            item.model_dump(mode="json")
+                            for item in action.excluded_ranges
+                        ],
+                    }
+                )
+        host_pools_json = {
+            host: json.dumps(
+                sorted(pools, key=lambda item: item["pool_name"]),
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            for host, pools in host_pools.items()
+            if len(pools) > 1
+        }
         # SP1-03 at dispatch: a client's cold HTTP-by-address requests, so its
         # later traffic can be held until each of them was actually sent.
         cold_by_client: dict[str, list[str]] = {}
@@ -1213,6 +1237,17 @@ class ServiceApplicator:
                 continue
             try:
                 runtime_expected = dict(expectation.expected)
+                if (
+                    expectation.kind
+                    in {
+                        ServiceVerificationKind.DHCP_LEASE,
+                        ServiceVerificationKind.DHCP_SERVER_STATE,
+                    }
+                    and expectation.host_device_id in host_pools_json
+                ):
+                    runtime_expected["host_pools_json"] = host_pools_json[
+                        expectation.host_device_id
+                    ]
                 if (
                     expectation.kind is ServiceVerificationKind.DHCP_LEASE
                     and runtime_expected.get("state_only") is True

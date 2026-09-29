@@ -698,3 +698,171 @@ the pool and a process enabled before the pool; none applies the pool. All 43
 remote-stage tests pass. One episode on an owned lab measures the native
 answer; a negative result would put the product's mode-first order for
 remote clients in question.
+
+## Episode 6 remote relay result (2026-09-28)
+
+Profile v3 executed `bef524dd` on Packet Tracer `9.0.1.0858` through the file
+channel in 280 operations, archived at `e6/` in commit `1c0d8a50`. The remote
+BR1 PC entered DHCP mode first and was then read in mode at `0.0.0.0` with the
+process disabled and only `serverPool` present. After `BR1_DATA` was written
+and the process enabled, the client read `10.72.32.2/29`, gateway
+`10.72.32.1` and resolver `10.72.0.2` on passive poll 4 (about 8 s). Two
+samples join an exact IP/MAC row in the physical `BR1_DATA` pool, and
+`serverPool` read empty. The claim is a sampled, relay-associated named-pool
+binding in the product's mode-first order. It does not observe `giaddr`,
+exclusive serving or capacity. Cleanup was verified clean.
+
+## Step 2 design delta: two physical pool strategies (2026-09-28)
+
+Evidence now supports two physical strategies on one Server-PT. A client
+segment that contains the server is served by the native `serverPool`
+(e1/e2, DHCP autonomy e8 to e10). A remote client segment reached through
+exactly one helper is served by a named pool for that segment (e5, e6). The
+public route must compose both on one host without either strategy breaking
+the other. Codex's read-only map at `1c0d8a50` confirmed these gaps.
+
+Decisions:
+
+1. **Strategy selection (compiler).** A `state_only` DHCP service selects its
+   strategy from placement. A local segment keeps the existing native binding
+   and its recorded scope. A remote segment compiles a named physical pool,
+   derived from the segment or given explicitly, together with its one exact
+   E5 helper. It is admitted only through a new exact record
+   `Server-PT:dhcp_relay_named_pool_binding` with the same provenance fields as
+   the native record. The default catalog does not carry that record, so the
+   public route refuses remote `state_only` before E5 until a private product
+   stage supplies a candidate. No default record is promoted.
+2. **Host-wide pool admission (compiler).** Before any effect, the pools of
+   one Server-PT must have distinct physical names, never the name
+   `serverPool` for a named pool, and disjoint networks. The process-wide
+   exclusion union must not intersect any pool's lease window. Violations
+   refuse the whole host's DHCP services with zero effects.
+3. **Native-first order (binding, reused at A9).** The native pool's
+   pristine-state transition requires one pool and no exclusions, so it runs
+   first on its host. Named pools follow in stable order. The native enable
+   waits for the last pool, and every non-native enable on that host also
+   waits for the native enable. A9 strips edges to omitted pools and omitted
+   enables before rebinding.
+4. **Mixed-process native checks (runtime).** After the native transition,
+   the native enable and server readback accept exactly the planned
+   additional physical pools and the planned exclusion union. An unplanned
+   pool or exclusion is still a conflict. The native mode guard stays for
+   local clients only; remote clients keep the ordinary E5 mode path.
+5. **Named-pool state verifier (runtime).** `state_only` on a named pool
+   reuses the usable-state loop. Each sample reads the server policy, the
+   client's fresh mode, address, mask and MAC, the intended pool row, and
+   every other physical pool on the process for competing rows of the
+   client's MAC or IP. Two stable joined samples produce the existing
+   `attributed_to_effective_server_pool` claim. A competing row contradicts,
+   and an unreadable competing pool leaves the claim inconclusive. The
+   apply-services lease gate is unchanged.
+6. **Readiness.** The E5 pre-DHCP routed gate and the E6 lease-bound gate
+   remain separate decisions.
+7. **Scale.** An offline 2/20/200/1000 harness drives the real compiler,
+   applicators, evaluator and store and reports constructed counts, scans,
+   bytes, time and memory. It is not native capacity.
+
+Holds: the native one/two-client scope and its `/24` literal stay; the relay
+record is absent from the default catalog; SP-3 to SP-5 remain excluded.
+Tests are written RED first per decision, from compiler to runtime.
+
+### Step 2 review corrections
+
+An adversarial Codex review of the working tree found three defects, each
+fixed from a failing regression:
+
+- **Transport scope.** A9 kept a run on the recorded file channel only when
+  the selected plan held the native pool. A named-only plan, including one
+  left after A9 drops an optional native service, could run over HTTP. A9 now
+  refuses any recorded pool binding, native or named, off the file channel.
+- **Unplanned pools.** Competition was read only from planned pools. A named
+  pool's server readback does not pin the process inventory, so a named
+  group sample now reads the inventory through the documented
+  `getPoolCount`/`getPoolAt` and scans every other pool, planned or not. An
+  unreadable or oversized inventory (over 64 pools) leaves competition
+  inconclusive. The native readback now also checks the companion names, not
+  only their count, so a native sample pins its inventory and scans only its
+  planned companions. A single-pool native snapshot is unchanged, and the
+  recorded e11 samples still replay to their verified rows.
+- **Scan cost.** Before any effect, one host is limited to 64 planned pools
+  and 1,024 planned lease rows, since every sample may scan every pool of the
+  process. These are offline budgets, not Packet Tracer capacity.
+
+A second review pass found two more, also fixed from failing regressions:
+
+- **Verifiable pool size.** A named pool above 255 leases could never show
+  its terminating null within the 256-read scan, so its evidence could not
+  complete. The compiler now refuses a named pool above 255 leases.
+- **Same-dispatch inventory.** A mixed native snapshot relied on the
+  inventory from the earlier server readback, so a pool added between the two
+  dispatches went unseen. The snapshot now reads the inventory itself and
+  requires it to equal the planned names.
+
+A third pass found the same race in the legacy single-pool native snapshot,
+which the verifier could still mark verified after a pool appeared. Every
+native snapshot now reads its inventory in the same dispatch and requires
+exactly the planned names. This is an explicit oracle delta: the recorded e11
+snapshots carry no inventory, so the current reader leaves them inconclusive
+as recorded; with the single-pool inventory the process had, every other
+decision and value replays unchanged. The archive itself is untouched.
+
+A fourth pass found that the named-pool writer could add a pool and
+process-wide exclusions without inspecting pools already on the process.
+Before any setter, it now reads every other pool through the documented
+inventory calls. It refuses on an unreadable inventory, an overlapping
+network, or a new exclusion inside another pool's lease window. In the
+offline fixture the stock `serverPool` realigns to 512 addresses from the
+server's network, which covers the branch exclusions, so a named-only plan
+there is refused unless that default is narrowed first. This is a real
+fail-closed outcome, and the stock pool's native window matters for relay
+placement.
+
+Passes five and six found four more pre-effect gaps, each fixed from a
+failing regression. The named writer now also refuses a new pool when the
+inventory already holds 64 pools, when an existing process-wide exclusion
+falls inside its lease window, or when another pool's stored lease range
+overlaps it, whatever that pool's declared network. A7 now refuses a
+supported native or relay binding whose build or Packet Tracer version
+differs from the deployed build, including in an injected catalog.
+Pass seven found that the pool budget ignored the stock `serverPool`: a
+named-only host with 64 planned pools passed admission and then stopped
+after partial writes. A host without a planned native pool now counts the
+stock pool against the 64-pool budget.
+Pass eight found that a named-pool scan cut short by a read error, or
+ending at its bound, could still attribute a client from one matching row.
+A named snapshot now reads one row past the pool's capacity and requires a
+clean terminating null; otherwise the group is inconclusive
+(`named_pool_scan_incomplete`). The native pool keeps its recorded
+contract, whose limitation already states that a positive row does not
+establish the table end.
+Pass nine found that a named pool smaller than its selected clients was
+written before its verifier refused it. The compiler now refuses a named
+state-only pool whose capacity is below its selected client count.
+
+### Step 2 offline results
+
+Unit and composition tests cover strategy selection, refusal by the default
+catalog, host conflicts and budgets, native-first ordering and A9 narrowing,
+companion stamping, and the local-only native mode guard. The public use case
+runs over the Node engine with an explicit per-client pool setting, which is
+a test scenario and not a selection rule. In that setup every local client
+joins `serverPool` and every relayed client its segment's named pool. A lease
+from the wrong pool, a competing row in a planned or unplanned pool, and a
+named-only plan on HTTP are each refused.
+
+The scale harness keeps the real E6 runtime and grouped verifier; router
+effects are recorded and routed readiness is rendered from the plan. One
+native HQ client plus relayed branches measured:
+
+| Clients | Services | Group scans | Dispatches per client | Response bytes | Record bytes | Seconds | Peak MiB |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2 | 2 | 4 | 16.0 | 14,249 | 132,407 | 0.37 | 1.7 |
+| 21 | 5 | 10 | 7.8 | 85,715 | 732,242 | 1.34 | 6.3 |
+| 201 | 5 | 10 | 6.2 | 755,708 | 5,057,260 | 9.23 | 38.7 |
+| 997 | 5 | 10 | 6.0 | 3,552,751 | 23,444,735 | 91.14 | 175.7 |
+
+Group scans follow services and samples, not clients. A 1,001-client plan is
+refused at A7 by the existing reporting budget of 1,000 clients, before any
+effect. None of this is native capacity, relay or selection evidence. The
+default catalog still has no relay record, so the public route refuses remote
+`state_only` until a recorded binding exists.

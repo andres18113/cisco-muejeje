@@ -71,6 +71,10 @@ Behaviour switches (`config`) select the engine facts under test:
   port (for example a link-local one), or empty to leave it unchanged;
 - `dhcp_pool_selection`: also `intended_then_default`, which falls back to
   the other pool when the intended one is full;
+- `dhcp_client_pools`: a map from client device name to the one pool it is
+  answered from, overriding `dhcp_pool_selection` for that client. It models
+  a local client and a relayed one on one server; it is a scenario, not a
+  measured selection rule;
 - `drop_product_claims_after_eval`: the product claim store vanishes after
   every evaluation, so a replay finds no claim and dispatches again -- the
   negative control of the same-action repeat;
@@ -579,7 +583,9 @@ const acquire = (dev, port) => {
   const names = state ? Object.keys(state.pools).sort() : [];
   const intended = String(config.dhcp_intended_pool_name);
   const other = names.filter((name) => name !== intended)[0];
-  const order = config.dhcp_pool_selection === 'intended'
+  const perClient = config.dhcp_client_pools && config.dhcp_client_pools[dev.name];
+  const order = perClient ? [perClient]
+    : config.dhcp_pool_selection === 'intended'
     ? [intended]
     : (config.dhcp_pool_selection === 'default'
       ? [other]

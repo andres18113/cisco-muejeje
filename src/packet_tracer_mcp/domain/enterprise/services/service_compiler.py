@@ -8,7 +8,7 @@ import json
 import re
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from itertools import pairwise
+from itertools import combinations, pairwise
 from typing import cast
 
 from ...models.plans import DevicePlan, TopologyPlan
@@ -35,6 +35,7 @@ from ..models.service_plan import (
     AddDnsRecord,
     CapabilityProvenance,
     ClientOperationCapability,
+    CompanionDhcpPool,
     ConfigureEmailClient,
     ConfigureNtpService,
     ConfigureServerDhcpPool,
@@ -153,20 +154,107 @@ def _token(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.casefold()).strip("-") or "service"
 
 
+NATIVE_POOL_NAME = "serverPool"
+RELAY_NAMED_POOL_BINDING_KEY = "Server-PT:dhcp_relay_named_pool_binding"
+#: Each lease sample may scan every pool of its process, so one host's planned
+#: pools and lease rows are bounded before effects. Offline budgets, not
+#: Packet Tracer capacity.
+MAX_HOST_DHCP_POOLS = 64
+MAX_HOST_DHCP_LEASE_ROWS = 1024
+#: A named pool's full table must end in a null row within the 256-read
+#: lease scan, so its verifiable size is one less than the scan.
+MAX_NAMED_POOL_LEASES = 255
+
+
+def _recorded_binding(record: object) -> bool:
+    """Accept only an exact-build, file-channel recorded binding."""
+    return (
+        isinstance(record, ClientOperationCapability)
+        and record.support is CapabilityStatus.SUPPORTED
+        and record.provenance is CapabilityProvenance.RECORDED_RUN
+        and bool(record.build)
+        and record.build == record.packet_tracer_version
+        and bool(record.executed_sha)
+        and record.transport == "file"
+        and bool(record.run_id)
+    )
+
+
+def dhcp_host_pool_conflicts(actions: list[ServiceAction]) -> list[str]:
+    """Return pools that cannot share one host's DHCP process.
+
+    Exclusions are process-wide in Packet Tracer, so one pool's exclusion
+    inside another pool's lease window would silently shrink that window.
+    """
+    conflicts: list[str] = []
+    by_host: dict[str, list[ConfigureServerDhcpPool]] = defaultdict(list)
+    for action in actions:
+        if isinstance(action, ConfigureServerDhcpPool):
+            by_host[action.host_device_id].append(action)
+    for host_id, pools in by_host.items():
+        # A process without a planned native pool still holds the stock
+        # serverPool, which occupies one inventory slot.
+        stock = not any(item.effective_pool_name == NATIVE_POOL_NAME for item in pools)
+        if len(pools) + stock > MAX_HOST_DHCP_POOLS:
+            conflicts.append(f"{host_id}:pool_budget")
+        if sum(item.max_users for item in pools) > MAX_HOST_DHCP_LEASE_ROWS:
+            conflicts.append(f"{host_id}:scan_budget")
+        for pool in pools:
+            if (
+                pool.effective_pool_name not in {"", NATIVE_POOL_NAME}
+                and pool.max_users > MAX_NAMED_POOL_LEASES
+            ):
+                conflicts.append(f"{pool.id}:pool_size")
+        for first, second in combinations(pools, 2):
+            first_name = first.effective_pool_name or first.pool_name
+            second_name = second.effective_pool_name or second.pool_name
+            if first_name == second_name:
+                conflicts.append(f"{first.id}~{second.id}:pool_name")
+                continue
+            if ipaddress.ip_network(f"{first.network}/{first.prefix}").overlaps(
+                ipaddress.ip_network(f"{second.network}/{second.prefix}")
+            ):
+                conflicts.append(f"{first.id}~{second.id}:network")
+                continue
+            for owner, other in ((first, second), (second, first)):
+                window = (
+                    int(ipaddress.ip_address(other.lease_start)),
+                    int(ipaddress.ip_address(other.lease_end)),
+                )
+                if any(
+                    int(ipaddress.ip_address(item.start)) <= window[1]
+                    and window[0] <= int(ipaddress.ip_address(item.end))
+                    for item in owner.excluded_ranges
+                ):
+                    conflicts.append(f"{owner.id}~{other.id}:exclusion")
+    return conflicts
+
+
 def bind_dhcp_process_start(actions: list[ServiceAction]) -> None:
     """Bind same-host pools before enable with linear dependency growth.
 
+    The native serverPool transition requires a pristine process, so its pool
+    is first on its host and every other enable waits for the native enable.
     Mutates only the pool and enable dependency lists. A narrowed plan can call
-    this again after removing omitted-pool edges; every surviving pool then
-    precedes the shared process start.
+    this again after removing edges to omitted actions; every surviving pool
+    then precedes the shared process start.
     """
     pools_by_host: dict[str, list[ConfigureServerDhcpPool]] = defaultdict(list)
     for action in actions:
         if isinstance(action, ConfigureServerDhcpPool):
             pools_by_host[action.host_device_id].append(action)
+    native_enable_by_host = {
+        action.host_device_id: action.id
+        for action in actions
+        if isinstance(action, EnableServerDhcp)
+        and action.effective_pool_name == NATIVE_POOL_NAME
+    }
     final_pool_by_host: dict[str, str] = {}
     for host_id, pools in pools_by_host.items():
-        ordered_pools = sorted(pools, key=lambda item: item.id)
+        ordered_pools = sorted(
+            pools,
+            key=lambda item: (item.effective_pool_name != NATIVE_POOL_NAME, item.id),
+        )
         for previous, current in pairwise(ordered_pools):
             current.depends_on = sorted(set(current.depends_on) | {previous.id})
             current.apply_dependencies = sorted(
@@ -180,9 +268,25 @@ def bind_dhcp_process_start(actions: list[ServiceAction]) -> None:
                 raise ConfigurationDependencyError(
                     "DHCP enable has no pool on its host.", [action.id]
                 )
-            action.depends_on = sorted(set(action.depends_on) | {final_pool})
+            required = {final_pool}
+            native_enable = native_enable_by_host.get(action.host_device_id)
+            if native_enable is not None and native_enable != action.id:
+                required.add(native_enable)
+            if action.native_policy is not None:
+                action.native_policy.companion_pools = [
+                    CompanionDhcpPool(
+                        pool_name=pool.effective_pool_name or pool.pool_name,
+                        excluded_ranges=list(pool.excluded_ranges),
+                    )
+                    for pool in sorted(
+                        pools_by_host[action.host_device_id],
+                        key=lambda item: item.effective_pool_name or item.pool_name,
+                    )
+                    if pool.effective_pool_name != NATIVE_POOL_NAME
+                ]
+            action.depends_on = sorted(set(action.depends_on) | required)
             action.apply_dependencies = sorted(
-                set(action.apply_dependencies) | {final_pool}
+                set(action.apply_dependencies) | required
             )
 
 
@@ -569,6 +673,15 @@ class ServiceCompiler:
                 first.depends_on.append(dependency.action_ids[-1])
             first.depends_on = sorted(set(first.depends_on))
 
+        for conflict in dhcp_host_pool_conflicts(actions):
+            issues.append(
+                _error(
+                    ConfigurationIssueCode.DHCP_POOL_INVALID,
+                    "DHCP pools on one host cannot share a physical name or "
+                    "network, or exclude another pool's leases: " + conflict,
+                    conflict.split("~", 1)[0],
+                )
+            )
         try:
             bind_dhcp_process_start(actions)
             actions = order_dependency_actions(actions)
@@ -1230,20 +1343,44 @@ class ServiceCompiler:
                 )
             )
             return []
+        client_segment = cast(SetEndpointDhcp, foundations[client_ids[0]]).segment_id
+        # Placement selects the physical strategy: a segment holding the server
+        # is served by the native serverPool, a relayed one by its named pool.
+        placed_remote = host_foundation.segment_id != client_segment
         native_record = capabilities.get("Server-PT:dhcp_native_default_binding")
         native_binding = (
             requirement.verification_mode == "state_only"
+            and not placed_remote
             and not requested.pool_name.strip()
-            and isinstance(native_record, ClientOperationCapability)
-            and native_record.support is CapabilityStatus.SUPPORTED
-            and native_record.provenance is CapabilityProvenance.RECORDED_RUN
-            and bool(native_record.build)
-            and native_record.build == native_record.packet_tracer_version
-            and bool(native_record.executed_sha)
-            and native_record.transport == "file"
-            and bool(native_record.run_id)
+            and _recorded_binding(native_record)
         )
-        if (
+        relay_binding = (
+            requirement.verification_mode == "state_only"
+            and placed_remote
+            and _recorded_binding(capabilities.get(RELAY_NAMED_POOL_BINDING_KEY))
+        )
+        if requirement.verification_mode == "state_only" and placed_remote:
+            if not relay_binding:
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.DHCP_RELAY_REQUIRED,
+                        "Remote state-only DHCP requires a recorded relay "
+                        "named-pool binding for this build.",
+                        service_id,
+                    )
+                )
+                return []
+            if max_users < len(client_ids):
+                # The grouped verifier needs a lease slot per selected client.
+                issues.append(
+                    _error(
+                        ConfigurationIssueCode.DHCP_POOL_INVALID,
+                        "Named DHCP pool capacity is below its selected clients.",
+                        service_id,
+                    )
+                )
+                return []
+        elif (
             requirement.verification_mode == "state_only"
             and requested.pool_name.strip()
         ):
@@ -1270,7 +1407,11 @@ class ServiceCompiler:
                 )
             )
             return []
-        if requirement.verification_mode == "state_only" and not native_binding:
+        if (
+            requirement.verification_mode == "state_only"
+            and not native_binding
+            and not relay_binding
+        ):
             issues.append(
                 _error(
                     ConfigurationIssueCode.DHCP_POOL_INVALID,
@@ -1477,7 +1618,9 @@ class ServiceCompiler:
         pool_name = requested.pool_name.strip() or re.sub(
             r"[^A-Za-z0-9]+", "_", first.segment_id.upper()
         ).strip("_")
-        if not _SAFE_DHCP_POOL_NAME.fullmatch(pool_name):
+        if not _SAFE_DHCP_POOL_NAME.fullmatch(pool_name) or (
+            relay_binding and pool_name == NATIVE_POOL_NAME
+        ):
             issues.append(
                 _error(
                     ConfigurationIssueCode.DHCP_POOL_INVALID,
@@ -1486,6 +1629,9 @@ class ServiceCompiler:
                 )
             )
             return []
+        physical_pool_name = (
+            NATIVE_POOL_NAME if native_binding else pool_name if relay_binding else ""
+        )
         common = dict(
             service_id=service_id,
             service_type=ServiceType.DHCP,
@@ -1500,7 +1646,7 @@ class ServiceCompiler:
             phase=ServicePhase.ENABLE,
             depends_on=[],
             interface=interface,
-            effective_pool_name="serverPool" if native_binding else "",
+            effective_pool_name=physical_pool_name,
             **common,
         )
         pool = ConfigureServerDhcpPool(
@@ -1509,7 +1655,7 @@ class ServiceCompiler:
             depends_on=[],
             interface=interface,
             pool_name=pool_name,
-            effective_pool_name="serverPool" if native_binding else "",
+            effective_pool_name=physical_pool_name,
             pool_name_explicit=bool(requested.pool_name.strip()),
             segment_id=first.segment_id,
             network=str(network.network_address),
@@ -2599,6 +2745,9 @@ class ServiceCompiler:
             # for the contract, so two plans that differ only by which
             # measurement is cited are the same plan.
             action.pop("content_source_record", None)
+            policy = action.get("native_policy")
+            if isinstance(policy, dict) and not policy.get("companion_pools"):
+                policy.pop("companion_pools", None)
             if action.get("shared_service_ids") in (
                 None,
                 [],

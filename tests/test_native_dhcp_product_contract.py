@@ -295,6 +295,10 @@ def test_group_trace_owner_is_the_client_that_reached_the_reader(
         "scan_error": "",
         "termination": "bound",
         "error": "",
+        # The snapshot reads its own pool inventory in the same dispatch.
+        "inventory": ["serverPool"],
+        "inventory_error": "",
+        "competing": [],
         "clients": [
             {
                 **item,

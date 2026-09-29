@@ -1548,6 +1548,28 @@ def apply_enterprise_services(
 
     # -- A7: compose, deriving policy once canonical identities exist ------
     capabilities = capability_catalog(manifest.backend_version)
+    # Recorded Server-PT DHCP bindings are exact-build evidence. A supplied
+    # catalog, including an injected one, cannot carry them across builds.
+    foreign_bindings = sorted(
+        key
+        for key in (
+            "Server-PT:dhcp_native_default_binding",
+            "Server-PT:dhcp_relay_named_pool_binding",
+        )
+        if getattr(capabilities.get(key), "support", None) is CapabilityStatus.SUPPORTED
+        and {
+            getattr(capabilities[key], "build", ""),
+            getattr(capabilities[key], "packet_tracer_version", ""),
+        }
+        != {manifest.backend_version}
+    )
+    if foreign_bindings:
+        return refuse(
+            "A7",
+            ServiceEntryRefusal.CAPABILITY_UNKNOWN,
+            "Recorded DHCP bindings do not match the deployed build: "
+            + ", ".join(foreign_bindings),
+        )
     run.record.capability_snapshot = CapabilitySnapshotSummary(
         packet_tracer_version=manifest.backend_version,
         catalog_hash=capability_snapshot_hash(capabilities),
@@ -1678,10 +1700,11 @@ def apply_enterprise_services(
     run.record.selected_action_ids = [item.id for item in selected_plan.actions]
     run.record.shared_content_bindings = shared_content_bindings
 
+    # Native and relayed named-pool bindings are both recorded on the file
+    # channel; either one selected keeps the run on that channel.
     if (
         any(
-            isinstance(item, ConfigureServerDhcpPool)
-            and item.effective_pool_name == "serverPool"
+            isinstance(item, ConfigureServerDhcpPool) and item.effective_pool_name
             for item in selected_plan.actions
         )
         and transport_selection.channel != NATIVE_DHCP_CHANNEL
@@ -1689,8 +1712,8 @@ def apply_enterprise_services(
         return refuse(
             "A9",
             ServiceEntryRefusal.SERVICE_PATH_UNSUPPORTED,
-            "Native Server-PT DHCP requires the measured file channel; "
-            "the selected transport is outside its recorded scope.",
+            "Recorded Server-PT DHCP bindings require the measured file "
+            "channel; the selected transport is outside their recorded scope.",
         )
 
     service_subject_ids = {
@@ -2549,11 +2572,16 @@ def _plan_for(
     for index, action in enumerate(actions):
         if not isinstance(action, (ConfigureServerDhcpPool, EnableServerDhcp)):
             continue
+        # Edges to an omitted same-host pool or enable belong to the process
+        # binding, which is recomputed below over the surviving actions.
         omitted_pools = {
             identifier
             for identifier in {*action.depends_on, *action.apply_dependencies}
             if identifier not in action_ids
-            and isinstance(source_actions.get(identifier), ConfigureServerDhcpPool)
+            and isinstance(
+                source_actions.get(identifier),
+                (ConfigureServerDhcpPool, EnableServerDhcp),
+            )
             and source_actions[identifier].host_device_id == action.host_device_id
         }
         actions[index] = action.model_copy(

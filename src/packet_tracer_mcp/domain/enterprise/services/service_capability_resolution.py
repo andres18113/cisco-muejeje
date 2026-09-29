@@ -67,6 +67,31 @@ def _native_binding(records: Mapping[str, object]) -> ClientOperationCapability 
     )
 
 
+_RELAY_BINDING_KEY = "Server-PT:dhcp_relay_named_pool_binding"
+
+
+def _relay_binding(records: Mapping[str, object]) -> ClientOperationCapability | None:
+    """Return only an exact recorded relay named-pool binding."""
+    value = records.get(_RELAY_BINDING_KEY)
+    return (
+        value
+        if isinstance(value, ClientOperationCapability)
+        and value.key == _RELAY_BINDING_KEY
+        and value.model == "Server-PT"
+        and value.operation == "dhcp_relay_named_pool_binding"
+        and value.support is CapabilityStatus.SUPPORTED
+        and value.provenance is CapabilityProvenance.RECORDED_RUN
+        and value.build == value.packet_tracer_version
+        and value.transport == "file"
+        and bool(value.build and value.executed_sha and value.run_id)
+        else None
+    )
+
+
+def _named_physical_pool(name: object) -> bool:
+    return isinstance(name, str) and bool(name) and name != "serverPool"
+
+
 @dataclass(frozen=True)
 class CapabilityResolution:
     """What the catalog says about one operation on one target model."""
@@ -126,6 +151,24 @@ def resolve_action_capability(
                 provenance=native.provenance.value,
                 source=native.source,
             )
+    relay = _relay_binding(records)
+    if (
+        relay is not None
+        and action.service_type is ServiceType.DHCP
+        and action.host_model == "Server-PT"
+        and isinstance(action, (ConfigureServerDhcpPool, EnableServerDhcp))
+        and _named_physical_pool(action.effective_pool_name)
+        and (
+            not isinstance(action, ConfigureServerDhcpPool)
+            or action.effective_pool_name == action.pool_name
+        )
+    ):
+        return CapabilityResolution(
+            key=key,
+            support=CapabilityStatus.SUPPORTED,
+            provenance=relay.provenance.value,
+            source=relay.source,
+        )
     operation = _operation(records, key)
     if operation is not None:
         return CapabilityResolution(
@@ -175,6 +218,26 @@ def resolve_verification_capability(
                 provenance=native.provenance.value,
                 source=native.source,
             )
+    relay = _relay_binding(records)
+    if (
+        relay is not None
+        and service.service_type is ServiceType.DHCP
+        and service.host_model == "Server-PT"
+        and _named_physical_pool(expectation.expected.get("effective_pool_name"))
+        and (
+            expectation.kind is ServiceVerificationKind.DHCP_SERVER_STATE
+            or (
+                expectation.kind is ServiceVerificationKind.DHCP_LEASE
+                and expectation.expected.get("state_only") is True
+            )
+        )
+    ):
+        return CapabilityResolution(
+            key=key,
+            support=CapabilityStatus.SUPPORTED,
+            provenance=relay.provenance.value,
+            source=relay.source,
+        )
     profile = profile_for(
         records, model=service.host_model, service_type=service.service_type
     )

@@ -421,7 +421,13 @@ class ConfigurationCompiler:
                 ):
                     continue
                 server = devices.get(service.host_device_id)
-                if server is None:
+                server_segment = endpoint_segments.get(service.host_device_id)
+                if server is None or (
+                    server_segment is not None
+                    and server_segment.name != service.segment_id
+                ):
+                    # A relayed client is served by a named pool; it keeps the
+                    # ordinary E5 mode path instead of native admission.
                     continue
                 inactive = tuple(
                     sorted(

@@ -446,8 +446,19 @@ class NativeDhcpClientPort(BaseModel):
     interface: str
 
 
+class CompanionDhcpPool(BaseModel):
+    """Another physical pool planned on the same DHCP process."""
+
+    pool_name: str
+    excluded_ranges: list[AddressRange] = Field(default_factory=list)
+
+
 class NativeDhcpPoolPolicy(BaseModel):
-    """Exact physical policy that must exist before enabling native DHCP."""
+    """Exact physical policy that must exist before enabling native DHCP.
+
+    `companion_pools` are the named pools the same plan writes to the process
+    after the native transition; their exclusions are process-wide.
+    """
 
     effective_pool_name: str
     network: str
@@ -460,6 +471,7 @@ class NativeDhcpPoolPolicy(BaseModel):
     excluded_ranges: list[AddressRange] = Field(default_factory=list)
     selected_clients: list[NativeDhcpClientPort] = Field(default_factory=list)
     inactive_clients: list[NativeDhcpClientPort] = Field(default_factory=list)
+    companion_pools: list[CompanionDhcpPool] = Field(default_factory=list)
 
 
 class EnableServerDhcp(BaseServiceAction):

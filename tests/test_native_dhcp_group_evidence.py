@@ -136,6 +136,10 @@ def _scan(group, readings: dict, rows: list[dict]) -> dict:
         "scan_error": "",
         "termination": "null",
         "error": "",
+        # The snapshot reads its own pool inventory in the same dispatch.
+        "inventory": ["serverPool"],
+        "inventory_error": "",
+        "competing": [],
         "clients": [
             _client(item, readings[_short(item["device_name"])]) for item in group
         ],
@@ -603,7 +607,29 @@ def test_episode_11_samples_replay_to_the_recorded_verified_rows(monkeypatch):
         **expectations["PC1"].expected,
         "native_selected_clients_json": json.dumps(group),
     }
-    bridge = _ScriptedBridge([sample["lease_snapshot"] for sample in trace])
+    # Explicit delta: the recorded snapshots predate the same-dispatch pool
+    # inventory, so the current reader leaves them inconclusive as recorded.
+    legacy = _runtime(
+        monkeypatch, _ScriptedBridge([sample["lease_snapshot"] for sample in trace])
+    )
+    legacy_row = legacy.verify(
+        expectations["PC1"].model_copy(update={"expected": expected})
+    )
+    assert legacy_row.status.value == "unknown"
+    assert legacy_row.cause == "competing_pool_unobserved"
+    # With the single-pool inventory the process actually had, every other
+    # decision and value replays unchanged.
+    bridge = _ScriptedBridge(
+        [
+            {
+                **sample["lease_snapshot"],
+                "inventory": ["serverPool"],
+                "inventory_error": "",
+                "competing": [],
+            }
+            for sample in trace
+        ]
+    )
     runtime = _runtime(monkeypatch, bridge)
 
     rows = {

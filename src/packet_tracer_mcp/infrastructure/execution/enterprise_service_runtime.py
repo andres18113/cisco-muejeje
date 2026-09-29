@@ -145,6 +145,8 @@ _DHCP_CLAIM_PREFIX = "dhcp_client:"
 
 #: One read cannot enumerate more rows than this even when a pool declares more.
 DHCP_LEASE_SCAN_LIMIT = 256
+#: Pools read from one DHCP process inventory; a larger process is unobserved.
+DHCP_POOL_INVENTORY_LIMIT = 64
 #: One native read cannot let an engine-supplied exclusion count control an
 #: unbounded loop. The product already admits at most 4096 DHCP users, while
 #: compact exclusion ranges normally make this ceiling much larger than needed.
@@ -153,6 +155,96 @@ _MAC_TEXT = re.compile(
     r"^(?:[0-9A-Fa-f]{4}\.){2}[0-9A-Fa-f]{4}$|"
     r"^(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$"
 )
+
+
+def _expected_host_pools(expected: dict[str, object]):
+    """Return the planned physical pools of one process, or None if invalid.
+
+    Absent means a single-pool plan and returns an empty list; a present but
+    malformed value is refused rather than read as a single pool.
+    """
+    raw = expected.get("host_pools_json")
+    if raw is None:
+        return []
+    try:
+        pools = json.loads(str(raw))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(pools, list) or any(
+        not isinstance(item, dict)
+        or set(item) != {"pool_name", "excluded_ranges"}
+        or not isinstance(item["pool_name"], str)
+        or not item["pool_name"]
+        or not isinstance(item["excluded_ranges"], list)
+        or any(
+            not isinstance(value, dict)
+            or set(value) != {"start", "end"}
+            or not all(isinstance(value[key], str) for key in ("start", "end"))
+            for value in item["excluded_ranges"]
+        )
+        for item in pools
+    ):
+        return None
+    if len({item["pool_name"] for item in pools}) != len(pools):
+        return None
+    return pools
+
+
+def _competing_pool_rows(
+    payload: dict, physical: str, fixed_competing: list[str] | None
+):
+    """Return every competing-pool lease row, or None when one is unreadable.
+
+    With `fixed_competing` None, competition is every pool of the observed
+    process inventory other than the intended one, planned or not; otherwise
+    it is exactly those pools, whose presence the same sample's server
+    readback established. An unreadable inventory, a pool named in it but not
+    returned, a scan error, a scan that reached its bound without a
+    terminating null, or a malformed row leaves competition unknown.
+    """
+    inventory = payload.get("inventory")
+    # A mixed native snapshot reads its own inventory in the same dispatch,
+    # so a pool added after the server readback is still seen.
+    if fixed_competing is not None and (
+        not isinstance(inventory, list)
+        or sorted(map(str, inventory)) != sorted([physical, *fixed_competing])
+    ):
+        return None
+    scans = payload.get("competing")
+    if (
+        payload.get("inventory_error") != ""
+        or not isinstance(inventory, list)
+        or not all(isinstance(name, str) and name for name in inventory)
+        or len(set(inventory)) != len(inventory)
+        or physical not in inventory
+        or not isinstance(scans, list)
+        or [item.get("pool_name") if isinstance(item, dict) else None for item in scans]
+        != [name for name in inventory if name != physical]
+    ):
+        return None
+    rows: list[dict] = []
+    for scan in scans:
+        found_rows = scan.get("rows")
+        if (
+            scan.get("found") is not True
+            or not isinstance(found_rows, list)
+            or scan.get("scan_error") != ""
+            or scan.get("termination") != "null"
+        ):
+            return None
+        for row in found_rows:
+            if (
+                not isinstance(row, dict)
+                or set(row) != {"ipAddress", "macAddress", "leaseTime", "port"}
+                or not all(
+                    isinstance(row.get(key), str)
+                    for key in ("ipAddress", "macAddress", "port")
+                )
+                or not _MAC_TEXT.fullmatch(row["macAddress"])
+            ):
+                return None
+            rows.append(row)
+    return rows
 
 
 def _expected_dhcp_allocation(expected: dict[str, object]):
@@ -1841,10 +1933,11 @@ class PacketTracerEnterpriseServiceRuntime:
         reader: str,
     ) -> list[str]:
         """Ensure one named pool without deleting or overwriting conflicts."""
-        if action.effective_pool_name:
+        if action.effective_pool_name == "serverPool":
             return PacketTracerEnterpriseServiceRuntime._native_pool_policy_lines(
                 row, action, reader
             )
+        named_binding = bool(action.effective_pool_name)
         interface = json.dumps(action.interface)
         pool_name = json.dumps(action.pool_name)
         wanted_ranges = [
@@ -1902,14 +1995,60 @@ class PacketTracerEnterpriseServiceRuntime:
             "v.start===__want.start&&v.end===__want.end&&v.max===__want.max;}",
             "function __has(xs,w){for(var i=0;i<xs.length;i++){"
             "if(xs[i].start===w.start&&xs[i].end===w.end){return true;}}return false;}",
-            "function __ok(v){if(!__base(v)){return false;}"
+            (
+                # A named binding shares its process with pools the plan may
+                # never name. Before any setter, every other pool must be
+                # readable, on a disjoint network, and clear of the new
+                # process-wide exclusions; null means unobserved.
+                "function __ip(a){var q=String(a).split('.');if(q.length!==4){return NaN;}"
+                "return ((+q[0])*16777216)+((+q[1])*65536)+((+q[2])*256)+(+q[3]);}"
+                "function __others(pre){try{var n=p.getPoolCount();"
+                "if(typeof n!=='number'||!isFinite(n)||n<0||Math.floor(n)!==n||n>"
+                + json.dumps(DHCP_POOL_INVENTORY_LIMIT)
+                + "){return null;}"
+                f"var wn=__ip({json.dumps(action.network)}),"
+                f"wb=wn+{2 ** (32 - action.prefix) - 1};"
+                "for(var i=0;i<n;i++){var o=p.getPoolAt(i);if(!o){return null;}"
+                "if(String(o.getDhcpPoolName())===__want.name){continue;}"
+                "var on=__ip(o.getNetworkAddress()),om=__ip(o.getSubnetMask()),"
+                "os=__ip(o.getStartIp()),oe=__ip(o.getEndIp());"
+                "if(isNaN(on)||isNaN(om)||isNaN(os)||isNaN(oe)){return null;}"
+                "var ob=on+(4294967295-om);"
+                "if(on<=wb&&wn<=ob){return true;}"
+                f"if(os<=__ip({json.dumps(action.lease_end)})&&"
+                f"__ip({json.dumps(action.lease_start)})<=oe){{return true;}}"
+                "for(var j=0;j<__ranges.length;j++){"
+                "if(__ip(__ranges[j].start)<=oe&&os<=__ip(__ranges[j].end)){return true;}}}"
+                # A new pool must leave the inventory readable, and no existing
+                # process-wide exclusion may fall inside its own lease window.
+                "if(!pre.exists&&n>="
+                + json.dumps(DHCP_POOL_INVENTORY_LIMIT)
+                + "){return true;}"
+                f"var ws=__ip({json.dumps(action.lease_start)}),"
+                f"we=__ip({json.dumps(action.lease_end)});"
+                "for(var x=0;x<pre.exclusions.length;x++){var e=pre.exclusions[x];"
+                "if(!__has(__ranges,e)&&__ip(e.start)<=we&&ws<=__ip(e.end)){return true;}}"
+                "return false;}catch(e){return null;}}"
+                if named_binding
+                else ""
+            )
+            + "function __ok(v){if(!__base(v)){return false;}"
             "for(var i=0;i<__want.exclusions.length;i++){"
             "if(!__has(v.exclusions,__want.exclusions[i])){return false;}}return true;}",
             f"try{{p=m&&m.getDhcpServerProcessByPortName({interface});}}catch(e){{p=null;}}",
             f'if(!p){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}else{{',
             "try{pv=__rd();r.pre_read=true;r.pre=__dg(pv);}catch(e){}",
             f'if(!r.pre_read){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}else{{',
-            "var pre=JSON.parse(pv);if(pre.exists&&!__base(pre)){"
+            "var pre=JSON.parse(pv);"
+            + (
+                "var __oc=__others(pre);if(__oc===null){"
+                f'r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}'
+                "else if(__oc){"
+                f'r.skip_reason="{_SKIP_POOL_CONFLICT}";}}else '
+                if named_binding
+                else ""
+            )
+            + "if(pre.exists&&!__base(pre)){"
             f'r.skip_reason="{_SKIP_POOL_CONFLICT}";}}else if(__ok(pre)){{'
             f'r.skip_reason="{_SKIP_ALREADY_SATISFIED}";}}else{{',
             "try{r.attempted=true;var pool=null;if(!pre.exists){"
@@ -1970,6 +2109,16 @@ class PacketTracerEnterpriseServiceRuntime:
                 row,
                 f'r.skip_reason="{_SKIP_FAMILY_NOT_IMPLEMENTED}";results.push(r);',
             ]
+        # Named companions follow the native transition on the same process,
+        # so the enable expects exactly their pools and the exclusion union.
+        process_exclusions = sorted(
+            {tuple(item) for item in exclusions}
+            | {
+                (item.start, item.end)
+                for companion in policy.companion_pools
+                for item in companion.excluded_ranges
+            }
+        )
         wanted = {
             "name": "serverPool",
             "network": policy.network,
@@ -1979,9 +2128,10 @@ class PacketTracerEnterpriseServiceRuntime:
             "start": policy.lease_start,
             "end": policy.lease_end,
             "max": policy.max_users,
-            "exclusions": exclusions,
+            "exclusions": [list(item) for item in process_exclusions],
             "enabled": False,
-            "pool_count": 1,
+            "pool_count": 1 + len(policy.companion_pools),
+            "companions": sorted(item.pool_name for item in policy.companion_pools),
         }
         after = {**wanted, "enabled": True}
         return [
@@ -1993,9 +2143,12 @@ class PacketTracerEnterpriseServiceRuntime:
             "function __same(a,b){for(var k in b){if(JSON.stringify(a[k])!=="
             "JSON.stringify(b[k])){return false;}}return true;}"
             "function __state(){var n=p.getPoolCount();"
-            "if(typeof n!=='number'||!isFinite(n)||Math.floor(n)!==n||n!==1){"
+            "if(typeof n!=='number'||!isFinite(n)||Math.floor(n)!==n||"
+            "n!==__want.pool_count){"
             "throw new Error('native_pool_count');}"
             "var q=p.getPool('serverPool');if(!q){throw new Error('native_pool_absent');}"
+            "var cs=[];for(var c=0;c<__want.companions.length;c++){"
+            "if(p.getPool(__want.companions[c])){cs.push(__want.companions[c]);}}"
             "var x=p.getExcludedAddressCount();"
             "if(typeof x!=='number'||!isFinite(x)||Math.floor(x)!==x||"
             "x!==__want.exclusions.length){"
@@ -2009,7 +2162,8 @@ class PacketTracerEnterpriseServiceRuntime:
             "network:String(q.getNetworkAddress()),mask:String(q.getSubnetMask()),"
             "gateway:String(q.getDefaultRouter()),dns:String(q.getDnsServerIp()),"
             "start:String(q.getStartIp()),end:String(q.getEndIp()),"
-            "max:q.getMaxUsers(),exclusions:xs,enabled:enabled,pool_count:n};}"
+            "max:q.getMaxUsers(),exclusions:xs,enabled:enabled,pool_count:n,"
+            "companions:cs};}"
             "function __port(name,iface){var dev=ipc.network().getDevice(name);"
             "if(!dev){return null;}var n=dev.getPortCount();"
             "if(typeof n!=='number'||n<0||n>32){return null;}"
@@ -2374,7 +2528,12 @@ class PacketTracerEnterpriseServiceRuntime:
             f"var p=m&&m.getDhcpServerProcessByPortName({interface});"
             f"var q=p&&p.getPool({physical_name});"
             f"var logical=p&&p.getPool({pool_name});"
-            "var pool_count=p?p.getPoolCount():null;var xs=[];"
+            "var pool_count=p?p.getPoolCount():null;var xs=[],pool_names=[];"
+            "if(p&&typeof pool_count==='number'&&pool_count>=0&&pool_count<="
+            + json.dumps(DHCP_POOL_INVENTORY_LIMIT)
+            + "){for(var pi=0;pi<pool_count;pi++){var pq=p.getPoolAt(pi);"
+            "if(!pq){throw new Error('pool_row');}"
+            "pool_names.push(String(pq.getDhcpPoolName()));}}"
             "if(p){var n=p.getExcludedAddressCount();"
             "if(typeof n!=='number'||!isFinite(n)||n<0||Math.floor(n)!==n||n>"
             + exclusion_limit_js
@@ -2386,14 +2545,14 @@ class PacketTracerEnterpriseServiceRuntime:
             "ev_valid=typeof eraw==='boolean';if(ev_valid){ev=eraw;}}"
             "var out={found:!!d,process_found:!!p,pool_found:!!q,"
             f"interface:{interface},pool_name:q?String(q.getDhcpPoolName()):'',"
-            "pool_count:pool_count,logical_pool_present:!!logical,"
+            "pool_count:pool_count,pool_names:pool_names,logical_pool_present:!!logical,"
             "enabled:ev,enabled_valid:ev_valid,network:q?String(q.getNetworkAddress()):'',"
             "mask:q?String(q.getSubnetMask()):'',gateway:q?String(q.getDefaultRouter()):'',"
             "dns:q?String(q.getDnsServerIp()):'',start:q?String(q.getStartIp()):'',"
             "end:q?String(q.getEndIp()):'',max:q?q.getMaxUsers():null,exclusions:xs,error:''};"
             "reportResult(JSON.stringify(out));}catch(e){reportResult(JSON.stringify({"
             f"found:false,process_found:false,pool_found:false,interface:{interface},"
-            f"pool_name:'',pool_count:null,logical_pool_present:false,enabled:null,enabled_valid:false,network:'',mask:'',gateway:'',dns:'',start:'',end:'',max:null,exclusions:[],error:{reader}(e)}}));}}"
+            f"pool_name:'',pool_count:null,pool_names:[],logical_pool_present:false,enabled:null,enabled_valid:false,network:'',mask:'',gateway:'',dns:'',start:'',end:'',max:null,exclusions:[],error:{reader}(e)}}));}}"
         )
         observation = self._observe(script, 5.0)
         if observation.kind is not BridgeObservationKind.PAYLOAD:
@@ -2429,6 +2588,8 @@ class PacketTracerEnterpriseServiceRuntime:
                     isinstance(payload.get("pool_count"), bool)
                     or not isinstance(payload.get("pool_count"), int)
                     or not isinstance(payload.get("logical_pool_present"), bool)
+                    or not isinstance(payload.get("pool_names"), list)
+                    or not all(isinstance(name, str) for name in payload["pool_names"])
                 )
             )
         ):
@@ -2570,6 +2731,29 @@ class PacketTracerEnterpriseServiceRuntime:
             and end >= lease_start
             for start, end in parsed_ranges
         )
+        host_pools = _expected_host_pools(expected)
+        if host_pools is None:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="dhcp_server_configuration_readback",
+                cause="dhcp_expected_host_pools_invalid",
+            )
+        # A native process shared with planned named pools holds exactly those
+        # pools and the union of their process-wide exclusions.
+        native_pool_count = len(host_pools) or 1
+        native_pool_names = sorted(
+            [item["pool_name"] for item in host_pools] or ["serverPool"]
+        )
+        native_exclusions = (
+            {
+                (item["start"], item["end"])
+                for pool in host_pools
+                for item in pool["excluded_ranges"]
+            }
+            if host_pools
+            else {(item["start"], item["end"]) for item in wanted_ranges}
+        )
         # The expected process state is part of the expectation, defaulting to
         # the enabled configuration every product plan asks for. A diagnostic
         # that configures a pool while the process is still disabled states
@@ -2599,10 +2783,12 @@ class PacketTracerEnterpriseServiceRuntime:
             and (
                 not native_binding
                 or (
-                    payload["pool_count"] == 1
+                    payload["pool_count"] == native_pool_count
+                    and sorted(payload["pool_names"]) == native_pool_names
                     and payload["logical_pool_present"] is False
-                    and len(ranges) == len(wanted_ranges)
-                    and all(item in wanted_ranges for item in ranges)
+                    and len(ranges) == len(native_exclusions)
+                    and {(item["start"], item["end"]) for item in ranges}
+                    == native_exclusions
                 )
             )
         )
@@ -3057,8 +3243,16 @@ class PacketTracerEnterpriseServiceRuntime:
             observed={"samples": sampled},
         )
 
-    def _native_group_snapshot(self, expectation, selected, bound):
-        """Read every selected port and the physical lease table once."""
+    def _native_group_snapshot(
+        self, expectation, selected, bound, physical, fixed_competing
+    ):
+        """Read every selected port and the intended and competing lease tables.
+
+        With `fixed_competing` None the process inventory is read and every
+        other observed pool is scanned, including pools the plan never names.
+        Otherwise the inventory must equal the intended pool plus exactly those
+        named pools; an empty list is the single-pool native process.
+        """
         server = json.dumps(expectation.host_device_name)
         interface = json.dumps(str(expectation.expected.get("server_interface") or ""))
         selected_json = json.dumps(selected)
@@ -3073,7 +3267,7 @@ class PacketTracerEnterpriseServiceRuntime:
             helper + f"try{{var sd=ipc.network().getDevice({server});"
             f"var sm=sd&&sd.getProcess('DhcpServerMain');"
             f"var sp=sm&&sm.getDhcpServerProcessByPortName({interface});"
-            "var pool=sp&&sp.getPool('serverPool');"
+            f"var pool=sp&&sp.getPool({json.dumps(physical)});"
             f"var group={selected_json},clients=[],rows=[],scanError='',"
             "termination='not_started';"
             "for(var i=0;i<group.length;i++){var item=group[i],"
@@ -3100,9 +3294,35 @@ class PacketTracerEnterpriseServiceRuntime:
             "macAddress:String(r.macAddress),leaseTime:r.leaseTime,"
             "port:String(r.port)});"
             f"}}catch(e){{scanError={reader}(e);termination='error';break;}}}}}}"
-            "reportResult(JSON.stringify({server_found:!!sd,process_found:!!sp,"
+            + (
+                "var inventory=[],inventoryError='',competing=[];"
+                + (
+                    "try{var pc=sp?sp.getPoolCount():0;"
+                    "if(typeof pc!=='number'||!isFinite(pc)||pc<0||"
+                    "Math.floor(pc)!==pc||"
+                    f"pc>{DHCP_POOL_INVENTORY_LIMIT}){{inventoryError='pool_count';}}"
+                    "else{for(var c=0;c<pc;c++){var iq=sp.getPoolAt(c);"
+                    "if(!iq){inventoryError='pool_row';break;}"
+                    "inventory.push(String(iq.getDhcpPoolName()));}}}"
+                    f"catch(e){{inventoryError={reader}(e);}}"
+                )
+                + "for(var c=0;c<inventory.length&&!inventoryError;c++){"
+                f"var cn=inventory[c];if(cn==={json.dumps(physical)}){{continue;}}"
+                "var cp=sp.getPool(cn),crows=[],cerr='',cterm=cp?'bound':'absent';"
+                f"if(cp){{for(var k=0;k<{DHCP_LEASE_SCAN_LIMIT};k++){{"
+                "try{var cr=cp.getLeaseAt(k);if(!cr){cterm='null';break;}"
+                "crows.push({ipAddress:String(cr.ipAddress),"
+                "macAddress:String(cr.macAddress),leaseTime:cr.leaseTime,"
+                "port:String(cr.port)});"
+                f"}}catch(e){{cerr={reader}(e);cterm='error';break;}}}}}}"
+                "competing.push({pool_name:cn,found:!!cp,rows:crows,"
+                "scan_error:cerr,termination:cterm});}"
+            )
+            + "reportResult(JSON.stringify({server_found:!!sd,process_found:!!sp,"
             "pool_found:!!pool,pool_name:pool?String(pool.getDhcpPoolName()):'',"
             "clients:clients,rows:rows,scan_error:scanError,"
+            + "inventory:inventory,inventory_error:inventoryError,"
+            "competing:competing,"
             "termination:termination,error:''}));}catch(e){"
             f"reportResult(JSON.stringify({{error:{reader}(e)}}));}}"
         )
@@ -3126,9 +3346,33 @@ class PacketTracerEnterpriseServiceRuntime:
         except (KeyError, ValueError, TypeError):
             selected = None
             inactive = None
+        # The native serverPool keeps its measured group bound; a relayed named
+        # pool is bounded by the lease scan. Every other physical pool of the
+        # process, and the stock default, is scanned for competing rows.
+        # A native serverPool keeps its measured group bound, and its
+        # per-sample server readback pins the exact pool inventory, so only its
+        # planned companions are scanned. A relayed named pool is bounded by
+        # the lease scan, and its readback does not pin the inventory, so its
+        # snapshot reads the whole inventory and scans every other pool.
+        physical = str(expected.get("effective_pool_name") or "")
+        named = physical != "serverPool"
+        group_cap = DHCP_LEASE_SCAN_LIMIT if named else 16
+        host_pools = _expected_host_pools(expected)
+        fixed_competing = (
+            None
+            if named or host_pools is None
+            else sorted(
+                item["pool_name"]
+                for item in host_pools
+                if item["pool_name"] != physical
+            )
+        )
+        competing: list[str] = list(fixed_competing or [])
         if (
             not isinstance(selected, list)
-            or not 1 <= len(selected) <= 16
+            or not 1 <= len(selected) <= group_cap
+            or host_pools is None
+            or not physical
             or not isinstance(inactive, list)
             or len(inactive) > 16
             # Inactive MAC history is kept per device, so a device named twice
@@ -3152,7 +3396,6 @@ class PacketTracerEnterpriseServiceRuntime:
             or len({(item["device_name"], item["interface"]) for item in selected})
             != len(selected)
             or expectation.id not in {item["expectation_id"] for item in selected}
-            or expected.get("effective_pool_name") != "serverPool"
             or expected.get("configure_only") is True
         ):
             return {
@@ -3169,7 +3412,7 @@ class PacketTracerEnterpriseServiceRuntime:
             allocation is None
             or isinstance(bound, bool)
             or not isinstance(bound, int)
-            or not 1 <= len(selected) <= bound <= 16
+            or not 1 <= len(selected) <= bound <= group_cap
         ):
             return {
                 expectation.id: self._observed(
@@ -3262,7 +3505,15 @@ class PacketTracerEnterpriseServiceRuntime:
                 inactive_macs[other["device_name"]] = mac
             if global_failure:
                 break
-            observation = self._native_group_snapshot(expectation, selected, bound)
+            # A named pool reads one row past its capacity, so a complete table
+            # always ends in a null; the native pool keeps its recorded bound.
+            observation = self._native_group_snapshot(
+                expectation,
+                selected,
+                bound + 1 if physical != "serverPool" else bound,
+                physical,
+                fixed_competing,
+            )
             if observation.kind is not BridgeObservationKind.PAYLOAD:
                 global_failure = (
                     self._transport_fact(observation),
@@ -3283,11 +3534,20 @@ class PacketTracerEnterpriseServiceRuntime:
                     payload.get(key) is True
                     for key in ("server_found", "process_found", "pool_found")
                 )
-                or payload.get("pool_name") != "serverPool"
+                or payload.get("pool_name") != physical
             ):
                 global_failure = (
                     ObservationFact.INCONCLUSIVE,
                     "native_group_subject_unobserved",
+                )
+                break
+            competing_rows = _competing_pool_rows(payload, physical, fixed_competing)
+            if competing_rows is not None and fixed_competing is None:
+                competing = [name for name in payload["inventory"] if name != physical]
+            if competing_rows is None:
+                global_failure = (
+                    ObservationFact.INCONCLUSIVE,
+                    "competing_pool_unobserved",
                 )
                 break
             clients = payload.get("clients")
@@ -3301,6 +3561,16 @@ class PacketTracerEnterpriseServiceRuntime:
                 or not isinstance(payload.get("scan_error"), str)
             ):
                 global_failure = (ObservationFact.MALFORMED, "native_group_scan_shape")
+                break
+            if physical != "serverPool" and (
+                payload.get("termination") != "null" or payload.get("scan_error")
+            ):
+                # Attribution in a named pool needs its whole table: an unread
+                # tail could hold another selected client's row.
+                global_failure = (
+                    ObservationFact.INCONCLUSIVE,
+                    "named_pool_scan_incomplete",
+                )
                 break
             if any(
                 not isinstance(row, dict)
@@ -3438,6 +3708,17 @@ class PacketTracerEnterpriseServiceRuntime:
                         sample,
                     )
                     continue
+                if any(
+                    _mac_identity(row["macAddress"]) == _mac_identity(client["mac"])
+                    or row["ipAddress"] == client["ipv4"]
+                    for row in competing_rows
+                ):
+                    failures[identifier] = (
+                        ObservationFact.CONTRADICTED,
+                        "competing_pool_row",
+                        sample,
+                    )
+                    continue
                 if joins[identifier] == "foreign":
                     failures[identifier] = (
                         ObservationFact.CONTRADICTED,
@@ -3504,8 +3785,9 @@ class PacketTracerEnterpriseServiceRuntime:
                     "client_ipv4": identity[0],
                     "client_netmask": identity[1],
                     "client_mac": identity[2],
-                    "effective_pool_name": "serverPool",
+                    "effective_pool_name": physical,
                     "requested_pool_name": str(expected.get("pool_name") or ""),
+                    "competing_pools_json": json.dumps(competing),
                     "stable_samples": stable[identifier],
                     "samples": len(history),
                     "local_failure_cause": local[1] if local else "",

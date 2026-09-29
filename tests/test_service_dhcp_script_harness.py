@@ -144,6 +144,11 @@ const serverProcess = {
   setEnable: (value) => {
     before('setEnable:' + value); state.server.enabled = !!value; after('setEnable');
   },
+  getPoolAt: (index) => {
+    before('getPoolAt:' + index);
+    const pool = state.server.pools[Object.keys(state.server.pools)[index]];
+    return pool ? poolObject(pool) : null;
+  },
   getPool: (name) => {
     before('getPool:' + name);
     const pool = state.server.pools[name];
