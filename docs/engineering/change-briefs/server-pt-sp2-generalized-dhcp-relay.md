@@ -874,3 +874,194 @@ refused at A7 by the existing reporting budget of 1,000 clients, before any
 effect. None of this is native capacity, relay or selection evidence. The
 default catalog still has no relay record, so the public route refuses remote
 `state_only` until a recorded binding exists.
+
+## Step 3 design: private mixed product stage (2026-09-28)
+
+Step 2 composes both physical strategies on one Server-PT, but no native run
+has driven the product through a local native pool, relayed named pools and
+the routed service sequence together. The public route also still refuses
+remote `state_only` DHCP because the default catalog has no relay record.
+Step 3 measures that composition once, privately, before any record is
+promoted.
+
+Stage `SP2-MIXED-PRODUCT` runs under the SP-2 campaign on build `9.0.1.0858`
+over the file channel only:
+
+- **Fixture.** The product designer's composition of one fixed intent: three
+  chained sites HQ, BR1 and BR2 with static routing; one Server-PT at HQ on
+  the HQ data segment `10.80.1.0/24` at `10.80.1.10`, hosting DHCP, DNS and
+  HTTP; five HQ PCs, three BR1 PCs and three BR2 PCs, all in DHCP mode. BR1
+  uses `10.80.16.0/28` and BR2 `10.80.33.64/27` with a start offset, so the
+  three pools differ in prefix, window and placement. The routers, switches,
+  ports and cables are whatever the designer composes; the stage lists them
+  and refuses any drift.
+- **Policy.** HQ is local, so the native `serverPool` serves it with five
+  leases from `.100`. BR1 and BR2 are remote, so each gets a named pool and
+  one helper on its branch gateway. BR2's relay path crosses two routers.
+- **Services.** Three `state_only` DHCP services, one DNS record and one HTTP
+  page, both run-derived, for all eleven clients: cold HTTP by address, then
+  resolver, DNS, the negative control and HTTP by name.
+- **Private candidates.** The relay record
+  `Server-PT:dhcp_relay_named_pool_binding` cites episodes 5 and 6. A native
+  scope candidate names exactly this network, server, gateway, resolver,
+  exclusions and at most five leases, while the default record stays
+  `192.0.2.0/24` with two. Device candidates give `supports_dhcp_relay` to the
+  1941 and 2911. None of them touches the default catalogs.
+- **Entry.** The stage calls the internal `apply_enterprise_services` with
+  those catalogs, as the Q3 private branch did, because the registered
+  four-input tool cannot take a service catalog. Its record carries the
+  injected-catalog limitation.
+- **Binding.** Before any effect the coordinator recomputes the topology,
+  manifest, E5 and E6 hashes, compares devices, links, ports and the selected
+  services, and checks the build, file channel, source identity and a digest
+  of the candidate rows. Any difference refuses.
+- **Acceptance.** `M-SP2-MIXED-PRODUCT` is supported only if the product
+  reports `VERIFIED`, completed and persisted, and for every client the lease
+  is verified and attributed to the intended physical pool (`serverPool` for
+  HQ, the segment's named pool otherwise), with gateway, resolver, HTTP by
+  address, DNS, negative control and HTTP by name verified. Every server
+  state row must verify, and every branch pre-lease and service routed group
+  must be admitted.
+- **Terminal.** `M-SP2-MIXED-FINAL` keeps router captures, every client
+  binding, the server's pool inventory and one bounded scan per pool.
+- **Budget.** Operation and time ceilings come from an offline run of the
+  real coordinator over a hybrid simulation: the Node engine answers the
+  DHCP server and client scripts, and the routed campus answers IOS, DNS and
+  HTTP from the leases the engine assigned. The stage has 3,200 operations
+  and 3,600 seconds with 420 reserved for finalization.
+
+A positive result is private candidate evidence. It justifies exact-scope
+catalog records for this build, channel, placement and policy only; no
+default record changes until then. A negative narrows the domain or names
+the next discriminator. The 36-client capacity episode is designed
+separately after this result.
+
+### Step 3 offline results
+
+The stage, its contract composer and its coordinator are implemented through
+the existing composition, lifecycle, ledger, runtimes and record stores. The
+designer composes the fixture as 18 devices and 17 links: a 1941 at HQ and
+BR2, a 2911 at BR1, an IE-2000 per site, the Server-PT and eleven PC-PT
+clients. The helpers are on BR1 `GigabitEthernet0/2` and BR2
+`GigabitEthernet0/1`. The contract pins the run-independent topology,
+configuration and manifest hashes and the digest of the whole private service
+catalog. It also recomputes the run's canonical intent, checks each physical
+pool per segment, both helpers, the candidate device evidence and the eleven
+clients' seven checks each.
+
+Offline, a hybrid simulation drives the real coordinator and the real
+product. The Node engine answers every endpoint script: the DHCP server and
+clients, and a new `dns_server_stub` knob for the server's DNS calls and name
+resolution. The routed campus answers every router and switch. A product
+script naming both sides fails the test. Results:
+
+- The positive trace verifies all eleven clients in their intended pools and
+  all seven checks, both pre-lease and both service routed groups, every
+  server state and the terminal. The product used 389 dispatches (198 to the
+  campus, 191 to the engine); the stage used 516 of 3,200 operations.
+- A relayed client answered from `serverPool` is not supported, and the
+  stage stops with `sp2_mixed_product_not_verified`.
+- A changed intent value or an extra service candidate stops before any
+  product dispatch.
+- A route missing from E5 readback stops the product with
+  `e5_contradiction`; no DHCP setter runs and the process stays disabled.
+- A return route lost after E6 starts blocks BR2's services and its routed
+  group, while every HQ and BR1 client still verifies.
+- A 300-operation grant stops ordinary work at its cap and still runs the
+  terminal and owned cleanup; a cancellation mid-product is recorded and
+  cleaned up; an unwritable product record refuses at A6 with nothing
+  configured.
+
+These results prove binding, composition, evidence handling and bounded
+stops, not native serving, relay or capacity.
+
+An adversarial review of the uncommitted stage found that the terminal
+counted client binding rows without checking them. The probe returns a row
+for every requested client even when its port lookup fails, so eleven rows
+did not prove eleven observations. The terminal now requires exactly one row
+per selected client, with the device and port found, no row error, and the
+resolver and at least one gateway getter answered. A regression with one
+failed port lookup reproduced the false support first.
+
+A second pass found three more terminal gaps, each reproduced by a stage
+regression before the correction. A pool absent at the final scan counted as
+scanned; an emptied binding row still passed; and a complete router capture
+without proven identity counted as that router's table. The terminal now
+reuses the remote stage's rule of one fresh, complete, uniquely attributed
+capture per router and query. It also requires the enabled process with
+exactly the three planned pools, a present scan of each, and every client's
+final address inside its planned pool with that pool's mask, gateway and
+resolver.
+
+### Native table-end correction (before episode 7)
+
+The third review pass on the terminal led to the archived native scans. On
+build `9.0.1.0858`, `DhcpPool.getLeaseAt(index)` never returned null in any
+SP-2 episode. Every index at or past a pool's row count threw
+`invalid vector subscript`: empty pools threw at index 0, and the one-lease
+`BR1_DATA` of e5 and e6 returned its row at index 0 and threw from index 1.
+Cisco's reference does not document out-of-range reads, and there is no
+lease-count getter.
+
+Step 2's pass-8 rule required a terminating null before a named pool could
+attribute a client, and competing pools needed one too. The Node engine
+returns null, so every offline test passed, but natively every relayed and
+every mixed local client would have stayed inconclusive. A mixed
+public-route regression with the engine set to the native end reproduced
+this: all six clients were `unknown`.
+
+The product's group snapshot now reads exactly that throw text as the end
+of a table, and only when the next index throws the same way. The mission
+allows this: an uncalibrated end must not block a narrower usability claim,
+so the verified row names the limitation
+`lease_table_end_by_out_of_range_throw`. Any other error, a row after the
+throw, or a categorized error text still leaves the table unread and the
+claim inconclusive, as a second regression shows. The terminal applies the
+same rule to its final scans: rows contiguous from index 0, exactly one per
+client's final address, within capacity, and only nulls or the measured
+throw after them. The mixed stage tests now run with the native end.
+
+A fourth review pass found two more gaps, each reproduced first. The scan
+script caught a throw from reading a returned row's fields in the same place
+as a throw from the index call, so a last row whose MAC getter threw the end
+text read as an empty tail: a competing pool then looked empty while it held
+a row, and BR1 clients verified over it. Only the index call can now end a
+table; any field failure leaves it unread. The terminal also joined leases by
+address alone. It now reads each client's MAC in the same terminal and
+requires every pool's rows to join its clients one to one by address and
+MAC, with repeated or malformed scans refused.
+
+A fifth pass found three more, each reproduced first. The E6 plan was
+checked only against its own hash, so a changed service value with a
+recomputed hash passed binding. The coordinator now also pins a normalized
+plan hash, 6e978c7e..., in which only the run-derived marker, its digest,
+the host name and derived action identities are abstracted. Three different
+run identities normalize to that same value. The shared lease-calibration
+probe caught a failure to read a returned row's fields together with a
+failing index call, so the terminal could not tell them apart. It now
+records ield_throw for a field failure, which the classifier still treats
+as an error. The terminal also reads two indices past a full pool and
+requires every later index to end by a null or the measured index throw.
+Finally, the product ran without its own cap and could consume the required
+terminal's allowance. It now runs under the ledger's ordinary limit of its
+2,800 planned operations, leaving 240 seconds, as the remote stage does. A
+300-operation grant stops the product and still completes the terminal.
+
+A sixth pass found that the terminal did not require the final client
+readings to be in DHCP mode, so a client switched to static addressing after
+verification, keeping its address and lease, could still support the
+terminal. Every final reading must now be in DHCP mode; a regression with
+one client's mode read as off reproduced it first.
+
+### Capacity design defect: trunk evidence for a hierarchical single segment
+
+Composing the 36-client demand as one branch data segment exposed a designer
+defect. Thirty-six users need two access switches, so the site becomes
+hierarchical and every access uplink to the distribution pair is a trunk.
+The planner asked for trunk evidence only when a site has more than one
+segment, so it chose the 2950T-24, whose trunk support is `UNKNOWN`, and E5
+then refuses those trunks as capability-unknown before any client can be
+reached. A site that needs more access switches than a flat design allows
+now chooses among trunk-evidenced models whenever one fits, exactly as a
+multi-segment site already does. A site that fits one switch is unchanged.
+A failing composition regression preceded the correction.

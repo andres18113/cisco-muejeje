@@ -194,6 +194,7 @@ from ...infrastructure.persistence.service_run_record_store import (
 from ..mcp import service_tools
 from .server_pt_campaign_archive import archive_or_stop, ledger_admit, ledger_result
 from .sp1_routed_qualification import sp1_routed_product_contract
+from .sp2_mixed_qualification import sp2_mixed_product_contract
 
 #: Service runtime timings for a qualification fetch; see the module docstring.
 HTTP_TIMEOUT_SECONDS = 8.0
@@ -956,6 +957,7 @@ def fixture_plans(
         elif definition.stage in (
             *SP1_ROUTED_STAGES,
             QualificationStage.SP2_REMOTE_RELAY,
+            QualificationStage.SP2_MIXED_PRODUCT,
         ):
             # Exact-build port evidence where the build has it; a model
             # without any (the 2911) keeps its catalogued ports, which are
@@ -1441,6 +1443,7 @@ def production_boundaries(governed_root: Path) -> QualificationBoundaries:
         native_public_product_entry=_native_public_product_entry(governed_root),
         sp1_product_contract=sp1_routed_product_contract,
         sp2_remote_relay_contract=sp2_remote_relay_contract,
+        sp2_mixed_product_contract=sp2_mixed_product_contract,
         sp1_public_product_entry=_native_public_product_entry(
             governed_root, dhcp_authority=False
         ),

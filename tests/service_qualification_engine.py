@@ -75,6 +75,15 @@ Behaviour switches (`config`) select the engine facts under test:
   answered from, overriding `dhcp_pool_selection` for that client. It models
   a local client and a relayed one on one server; it is a scenario, not a
   measured selection rule;
+- `dhcp_table_end`: what `getLeaseAt` answers past a pool's rows: `null`,
+  `throw` (an unexplained error), `repeat`, or `native`, the
+  `invalid vector subscript` throw every SP-2 episode recorded on 9.0.1.0858;
+- `dhcp_lease_field_throws`: a pool name whose last lease row throws that
+  same text from its MAC getter, a row-read failure that is not a table end;
+- `dns_server_stub`: a Server-PT answers the product's `DnsServer` enable and
+  A-record calls, and a client's hostname ping or fetch resolves only through
+  the enabled server at its own resolver address. Routing is not modelled:
+  the routed campus of a hybrid test owns that;
 - `drop_product_claims_after_eval`: the product claim store vanishes after
   every evaluation, so a replay finds no claim and dispatches again -- the
   negative control of the same-action repeat;
@@ -158,6 +167,7 @@ const config = Object.assign({
   stp_forward_delay: 15, stp_rows: {}, stp_extra_rows: [],
   light_status: 2, light_status_return: 'number', port_number_http: 80,
   port_number_https: 443, port_number_return: 'number',
+  dns_server_stub: false,
 }, JSON.parse(process.argv[2] || '{}'));
 
 // What a non-boolean reader returns. Packet Tracer is free to answer with
@@ -250,6 +260,22 @@ const byAddress = (address) => {
   return null;
 };
 
+// `dns_server_stub`: a Server-PT answers the product's DnsServer calls, and a
+// client resolves a name only through the enabled server at its own resolver
+// address. Without the knob the engine keeps having no DNS server at all.
+const dnsState = (dev) => {
+  if (!dev.dns) { dev.dns = {enabled: false, records: {}}; }
+  return dev.dns;
+};
+const resolveName = (dev, name) => {
+  const resolver = dev && dev.ports[0] ? dev.ports[0].dns : '';
+  if (!config.dns_server_stub || !resolver) { return ''; }
+  const server = devices.find((item) => item.model === 'Server-PT' && item.dns &&
+    item.dns.enabled && item.ports.some((p) => p.ip === resolver));
+  return server ? (server.dns.records[String(name).toLowerCase()] || '') : '';
+};
+const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
+
 const deliver = (event) => {
   for (const r of registrations.slice()) {
     if (r.active && r.uuid === event.uuid && r.event === event.event) {
@@ -334,7 +360,8 @@ const makeClient = (owner) => {
     getLastPageContent: () => c.page,
     go: (url) => {
       const host = String(url).replace(/^https?:\/\//, '').split('/')[0];
-      const server = byAddress(host);
+      const target = IPV4.test(host) ? host : resolveName(owner, host);
+      const server = target ? byAddress(target) : null;
       let served = false;
       if (server && server.model === 'Server-PT' && !config.serve_nothing) {
         const web = serverState(server);
@@ -463,8 +490,17 @@ const dhcpPool = (dev, pool) => ({
     }
   },
   getLeaseAt: (index) => {
+    if (index === pool.leases.length - 1
+        && config.dhcp_lease_field_throws === pool.name) {
+      const row = pool.leases[index];
+      return {ipAddress: row.ipAddress, leaseTime: row.leaseTime, port: row.port,
+        get macAddress() { throw new Error('invalid vector subscript'); }};
+    }
     if (index < pool.leases.length) { return pool.leases[index]; }
     if (config.dhcp_table_end === 'throw') { throw new Error('lease table end'); }
+    if (config.dhcp_table_end === 'native') {
+      throw new Error('invalid vector subscript');
+    }
     if (config.dhcp_table_end === 'repeat' && pool.leases.length) {
       return pool.leases[pool.leases.length - 1];
     }
@@ -654,6 +690,19 @@ const processFor = (dev, name) => {
   if (name === 'DnsClient' && dev.model !== '2960-24TT') {
     return {getServerIp: () => (dev.ports[0] && dev.ports[0].dns) || config.unset_dns};
   }
+  if (dev.model === 'Server-PT' && name === 'DnsServer' && config.dns_server_stub) {
+    const dns = dnsState(dev);
+    return {
+      isEnabled: () => dns.enabled,
+      setEnable: (value) => { dns.enabled = !!value; },
+      getARecordWithAddress: (host, address) => (
+        dns.records[String(host).toLowerCase()] === String(address)),
+      addARecordToNameServerDb: (host, address) => {
+        dns.records[String(host).toLowerCase()] = String(address);
+        return true;
+      },
+    };
+  }
   if (dev.model === 'Server-PT' && name === 'HttpServer') { return httpServer(dev); }
   if (dev.model === 'Server-PT' && name === 'HttpsServer') { return httpsServer(dev); }
   if (dev.model === 'Server-PT' && name === 'DhcpServerMain') {
@@ -735,7 +784,14 @@ const terminalRespond = (dev, command) => {
   if (text === '') { return ''; }
   if (/^ping\s+\S+$/.test(text)) {
     if (config.ping_unsupported) { return '% Invalid input detected.\n'; }
-    return pingBlock(text.split(/\s+/)[1]);
+    const target = text.split(/\s+/)[1];
+    if (config.dns_server_stub && !IPV4.test(target)) {
+      const resolved = resolveName(dev, target);
+      return resolved ? pingBlock(resolved)
+        : 'Ping request could not find host ' + target +
+          '. Please check the name and try again.\n';
+    }
+    return pingBlock(target);
   }
   if (text === 'show spanning-tree') {
     if (config.stp_unsupported) { return '% Invalid input detected.\n'; }

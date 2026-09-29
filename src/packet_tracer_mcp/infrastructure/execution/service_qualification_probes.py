@@ -1511,14 +1511,20 @@ class PacketTracerQualificationProbes:
             "try{var __mx=__q.getMaxUsers();__e.max_type=typeof __mx;if(typeof __mx"
             "==='number'&&isFinite(__mx)){__e.max=__mx;}}catch(__x){"
             "__e.max_type='throw';}for(var __j=0;__j<__w;__j++){var __it={index:__j,"
-            "return_kind:'',error:'',row:null};try{var __r=__q.getLeaseAt(__j);"
+            # Only the index call can report `throw`; a returned row whose
+            # fields fail to read is `field_throw`, never a table end.
+            "return_kind:'',error:'',row:null},__r=null,__rd=false;"
+            "try{__r=__q.getLeaseAt(__j);__rd=true;}catch(__x){"
+            "__it.return_kind='throw';__it.error=__er(__x);}if(__rd){"
             "if(__r===null){__it.return_kind='null';}else if(__r===undefined){"
             "__it.return_kind='undefined';}else{__it.return_kind=typeof __r;"
-            "if(typeof __r==='object'){var __row={};for(var __k=0;__k<__fields.length;"
+            "if(typeof __r==='object'){try{var __row={};"
+            "for(var __k=0;__k<__fields.length;"
             "__k++){var __f=__fields[__k],__v=__r[__f];__row[__f+'_type']=typeof __v;"
             "__row[__f]=(__f==='leaseTime'&&typeof __v==='number'&&isFinite(__v))"
-            "?__v:String(__v).substring(0,64);}__it.row=__row;}}}catch(__x){"
-            "__it.return_kind='throw';__it.error=__er(__x);}__e.entries.push(__it);}}"
+            "?__v:String(__v).substring(0,64);}__it.row=__row;}catch(__x){"
+            "__it.return_kind='field_throw';__it.error=__er(__x);__it.row=null;}}}}"
+            "__e.entries.push(__it);}}"
             "__out.push(__e);}reportResult(JSON.stringify({device:__dn,interface:__if,"
             "found:!!__d,process_found:!!__p,pools:__out,error:''}));",
         )

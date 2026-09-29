@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import Enum, StrEnum
@@ -29,7 +29,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from .capabilities import CapabilityStatus
+from .configuration import AddressRange
 from .execution import DirtyState
+from .service_plan import (
+    CapabilityProvenance,
+    ClientOperationCapability,
+    NativeDhcpPolicyScope,
+)
 
 #: The exact four-component build form. It is the same bounded rule the product
 #: environment reader applies; a shorter or suffixed value is not an exact build.
@@ -94,6 +101,9 @@ class QualificationStage(StrEnum):
     #: A fresh SP-2 native hypothesis over the owned two-client fixture.
     SP2_NATIVE_POOL = "SP2-NATIVE-POOL"
     SP2_REMOTE_RELAY = "SP2-REMOTE-RELAY"
+    #: The product route over one Server-PT serving a local native pool and
+    #: two relayed named pools, then routed DNS and HTTP for every client.
+    SP2_MIXED_PRODUCT = "SP2-MIXED-PRODUCT"
 
 
 class ExecutionMode(StrEnum):
@@ -450,6 +460,7 @@ STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.SP1_ROUTED_W2: SP1_ROUTED_CEILING,
     QualificationStage.SP2_NATIVE_POOL: (440, 1800),
     QualificationStage.SP2_REMOTE_RELAY: (3200, 3600),
+    QualificationStage.SP2_MIXED_PRODUCT: (3200, 3600),
 }
 
 Q0_PC = "__MCP_E6Q_PC1"
@@ -1618,6 +1629,7 @@ Q3_NATIVE_STAGES = (
 SP2_STAGES = (
     QualificationStage.SP2_NATIVE_POOL,
     QualificationStage.SP2_REMOTE_RELAY,
+    QualificationStage.SP2_MIXED_PRODUCT,
 )
 
 
@@ -2453,6 +2465,459 @@ def _sp2_remote_relay() -> StageDefinition:
     )
 
 
+# -- SP-2 mixed product ----------------------------------------------------------
+
+SP2_MIXED_SERVER = "HQ-DEFAULT-DNS-01"
+#: The selected clients per site. HQ shares the server's segment, so the
+#: native pool serves it; each branch is reached through its gateway's relay.
+SP2_MIXED_SITE_CLIENTS: dict[str, tuple[str, ...]] = {
+    "HQ": tuple(f"HQ-DEFAULT-PC-{index:02d}" for index in range(1, 6)),
+    "BR1": tuple(f"BR1-DEFAULT-PC-{index:02d}" for index in range(1, 4)),
+    "BR2": tuple(f"BR2-DEFAULT-PC-{index:02d}" for index in range(1, 4)),
+}
+SP2_MIXED_CLIENTS = tuple(
+    name for names in SP2_MIXED_SITE_CLIENTS.values() for name in names
+)
+#: Fixture choices, not recovered Final-Muejeje facts. The three pools differ
+#: in prefix length, lease window and placement.
+SP2_MIXED_HQ_SUBNET = "10.80.1.0/24"
+SP2_MIXED_HQ_GATEWAY = "10.80.1.1"
+SP2_MIXED_SERVER_IPV4 = "10.80.1.10"
+
+
+@dataclass(frozen=True)
+class Sp2MixedRunParameters:
+    """The page marker and host name one mixed run derives from its run id."""
+
+    marker: str
+    hostname: str
+
+
+def sp2_mixed_run_parameters(run_id: str) -> Sp2MixedRunParameters:
+    """Return the run's page marker and DNS host name, derived purely.
+
+    The composer that writes the intent and the coordinator that checks it
+    derive the same values, so one run's page or record cannot satisfy
+    another run's expectations.
+    """
+    if not run_id:
+        raise ValueError("An SP-2 mixed run needs its run id.")
+    digest = hashlib.sha256(run_id.encode("utf-8")).hexdigest()
+    return Sp2MixedRunParameters(
+        marker=f"SP2_MIXED_{digest[:12]}",
+        hostname=f"www.sp2-{digest[12:18]}.lab.example",
+    )
+
+
+def sp2_mixed_topology_intent() -> dict[str, Any]:
+    """Return the mixed intent without services: three chained sites.
+
+    HQ holds the Server-PT on its data segment with five DHCP clients; each
+    branch holds three DHCP clients on its own data segment. Static routing
+    and `internet_required` make every site router part of the design.
+    """
+
+    def users(count: int) -> dict[str, Any]:
+        return {"role": "user_pc", "count": count, "addressing_preference": "dhcp"}
+
+    def data(subnet: str, gateway: str, hosts: int) -> dict[str, Any]:
+        return {
+            "role": "data",
+            "hosts": hosts,
+            "dhcp": True,
+            "subnet": subnet,
+            "gateway": gateway,
+        }
+
+    hq, br1, br2 = (len(SP2_MIXED_SITE_CLIENTS[site]) for site in ("HQ", "BR1", "BR2"))
+    return {
+        "name": "SP2-MIXED",
+        "address_space": "10.80.0.0/16",
+        "internet_required": True,
+        "routing_preference": "static",
+        "sites": [
+            {
+                "name": "HQ",
+                "type": "hq",
+                "address_block": "10.80.0.0/20",
+                "segments": [data(SP2_MIXED_HQ_SUBNET, SP2_MIXED_HQ_GATEWAY, hq + 2)],
+                "endpoints": [
+                    users(hq),
+                    {
+                        "role": "dns_server",
+                        "count": 1,
+                        "addressing_preference": "static",
+                        "segment_role": "data",
+                        "metadata": {"ipv4": SP2_MIXED_SERVER_IPV4},
+                    },
+                ],
+                "uplinks": [{"target_site_id": "br1", "media": "ethernet"}],
+            },
+            {
+                "name": "BR1",
+                "type": "branch",
+                "address_block": "10.80.16.0/20",
+                "segments": [data("10.80.16.0/28", "10.80.16.1", br1 + 1)],
+                "endpoints": [users(br1)],
+                "uplinks": [{"target_site_id": "br2", "media": "ethernet"}],
+            },
+            {
+                "name": "BR2",
+                "type": "branch",
+                "address_block": "10.80.32.0/20",
+                "segments": [data("10.80.33.64/27", "10.80.33.65", br2 + 1)],
+                "endpoints": [users(br2)],
+            },
+        ],
+    }
+
+
+def sp2_mixed_intent(
+    hostname: str,
+    marker: str,
+    *,
+    server_id: str,
+    server_address: str,
+    client_ids: Mapping[str, Sequence[str]],
+) -> dict[str, Any]:
+    """Return the complete mixed intent: topology, DHCP, DNS and HTTP.
+
+    `client_ids` maps each site name to its selected client device ids. This
+    is the one canonical form the composer writes and the coordinator requires.
+    """
+    intent = sp2_mixed_topology_intent()
+    everyone = [item for site in ("HQ", "BR1", "BR2") for item in client_ids[site]]
+    pools: dict[str, dict[str, Any]] = {
+        "HQ": {"interface": "FastEthernet0", "start_offset": 99},
+        "BR1": {},
+        "BR2": {"start_offset": 10},
+    }
+    for site in intent["sites"]:
+        name = site["name"]
+        services: list[dict[str, Any]] = []
+        if name == "HQ":
+            services += [
+                {
+                    "name": "sp2-dns",
+                    "service_type": "dns",
+                    "host_device_id": server_id,
+                    "address": server_address,
+                    "dns_records": [{"hostname": hostname, "address": server_address}],
+                    "client_device_ids": list(everyone),
+                },
+                {
+                    "name": "sp2-web",
+                    "service_type": "http",
+                    "host_device_id": server_id,
+                    "address": server_address,
+                    "hostname": hostname,
+                    "http_content": marker,
+                    "client_device_ids": list(everyone),
+                },
+            ]
+        services.append(
+            {
+                "name": f"{name.lower()}-dhcp",
+                "service_type": "dhcp",
+                "host_device_id": server_id,
+                "segment_id": f"{name.lower()}-data",
+                "client_device_ids": list(client_ids[name]),
+                "verification_mode": "state_only",
+                "dhcp_pool": {"dns_server": server_address, **pools[name]},
+            }
+        )
+        site["services"] = services
+    return intent
+
+
+SP2_CANDIDATE_LABEL = "SERVER-PT-SP2-GENERALIZED-DHCP-RELAY-01"
+SP2_RELAY_BINDING_KEY = "Server-PT:dhcp_relay_named_pool_binding"
+SP2_NATIVE_BINDING_KEY = "Server-PT:dhcp_native_default_binding"
+#: What the mixed candidates extrapolate from: episode 6 of this campaign for
+#: the relayed named pool, and the recorded native binding's run for the pool
+#: on the server's own segment. Neither measured this fixture.
+SP2_RELAY_CANDIDATE_BASIS = (
+    "bef524dd9b76865372866d049c81dc297628d7d3",
+    "2026-09-28T20-25-07Z-17680441",
+)
+SP2_NATIVE_CANDIDATE_BASIS = (
+    "e8c810192b44d75340ffa6ad81c16473eb060fd2",
+    "2026-09-26T13-08-43Z-a18db0b4",
+)
+
+
+def sp2_mixed_service_candidates(build: str) -> dict[str, ClientOperationCapability]:
+    """Return the two private candidate records the mixed stage runs with.
+
+    The relay record admits a relayed named pool; the native record admits
+    exactly this fixture's local pool of five leases. Both are hypotheses
+    for one private run, never catalog entries: their sources say so, and
+    only native evidence from that run can justify a recorded scope.
+    """
+    hq = len(SP2_MIXED_SITE_CLIENTS["HQ"])
+    common = {
+        "model": "Server-PT",
+        "support": CapabilityStatus.SUPPORTED,
+        "provenance": CapabilityProvenance.RECORDED_RUN,
+        "packet_tracer_version": build,
+        "build": build,
+        "transport": "file",
+    }
+    return {
+        SP2_RELAY_BINDING_KEY: ClientOperationCapability(
+            key=SP2_RELAY_BINDING_KEY,
+            operation="dhcp_relay_named_pool_binding",
+            source=(
+                f"candidate:{SP2_CANDIDATE_LABEL}: relayed named pool per remote "
+                "segment, extrapolated from the one-client e5/e6 diagnostics; "
+                "product route unmeasured"
+            ),
+            executed_sha=SP2_RELAY_CANDIDATE_BASIS[0],
+            run_id=SP2_RELAY_CANDIDATE_BASIS[1],
+            **common,
+        ),
+        SP2_NATIVE_BINDING_KEY: ClientOperationCapability(
+            key=SP2_NATIVE_BINDING_KEY,
+            operation="dhcp_native_default_binding",
+            source=(
+                f"candidate:{SP2_CANDIDATE_LABEL}: native serverPool with "
+                f"{hq} leases on {SP2_MIXED_HQ_SUBNET}, extrapolated from the "
+                "recorded one/two-client binding; unmeasured"
+            ),
+            executed_sha=SP2_NATIVE_CANDIDATE_BASIS[0],
+            run_id=SP2_NATIVE_CANDIDATE_BASIS[1],
+            native_policy_scope=NativeDhcpPolicyScope(
+                network="10.80.1.0",
+                netmask="255.255.255.0",
+                server_address=SP2_MIXED_SERVER_IPV4,
+                gateway=SP2_MIXED_HQ_GATEWAY,
+                dns_server=SP2_MIXED_SERVER_IPV4,
+                first_lease="10.80.1.100",
+                latest_start="10.80.1.100",
+                last_lease=f"10.80.1.{99 + hq}",
+                max_users=hq,
+                max_exclusion_ranges=2,
+                excluded_ranges=[
+                    AddressRange(start=SP2_MIXED_HQ_GATEWAY, end=SP2_MIXED_HQ_GATEWAY),
+                    AddressRange(
+                        start=SP2_MIXED_SERVER_IPV4, end=SP2_MIXED_SERVER_IPV4
+                    ),
+                ],
+            ),
+            **common,
+        ),
+    }
+
+
+#: The planned worst cases of the two mixed measurements. The offline stage
+#: test runs the real coordinator and product under a hybrid simulation and
+#: asserts the product's dispatches fit this. The terminal is two registered
+#: reads per router with twelve calls each, one client binding read, one
+#: server pool inventory and one bounded scan of every pool.
+SP2_MIXED_PRODUCT_OPERATIONS = 2800
+SP2_MIXED_FINAL_OPERATIONS = 90
+
+_SP2_MIXED_FIXTURES = (
+    FixtureDevice("BR1-EDGE-RTR-01", "2911"),
+    FixtureDevice("BR2-EDGE-RTR-01", "1941"),
+    FixtureDevice("HQ-EDGE-RTR-01", "1941"),
+    FixtureDevice("BR1-DEFAULT-ACCESS-SW-01", "IE-2000"),
+    FixtureDevice("BR2-DEFAULT-ACCESS-SW-01", "IE-2000"),
+    FixtureDevice("HQ-DEFAULT-ACCESS-SW-01", "IE-2000"),
+    FixtureDevice("HQ-DEFAULT-DNS-01", "Server-PT"),
+    FixtureDevice("BR1-DEFAULT-PC-01", "PC-PT"),
+    FixtureDevice("BR1-DEFAULT-PC-02", "PC-PT"),
+    FixtureDevice("BR1-DEFAULT-PC-03", "PC-PT"),
+    FixtureDevice("BR2-DEFAULT-PC-01", "PC-PT"),
+    FixtureDevice("BR2-DEFAULT-PC-02", "PC-PT"),
+    FixtureDevice("BR2-DEFAULT-PC-03", "PC-PT"),
+    FixtureDevice("HQ-DEFAULT-PC-01", "PC-PT"),
+    FixtureDevice("HQ-DEFAULT-PC-02", "PC-PT"),
+    FixtureDevice("HQ-DEFAULT-PC-03", "PC-PT"),
+    FixtureDevice("HQ-DEFAULT-PC-04", "PC-PT"),
+    FixtureDevice("HQ-DEFAULT-PC-05", "PC-PT"),
+)
+_SP2_MIXED_LINKS = (
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/1",
+        "BR1-DEFAULT-PC-01",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/2",
+        "BR1-DEFAULT-PC-02",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/3",
+        "BR1-DEFAULT-PC-03",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "GigabitEthernet1/1",
+        "BR1-EDGE-RTR-01",
+        "GigabitEthernet0/2",
+    ),
+    FixtureLink(
+        "BR1-EDGE-RTR-01",
+        "GigabitEthernet0/0",
+        "BR2-EDGE-RTR-01",
+        "GigabitEthernet0/0",
+        "cross",
+    ),
+    FixtureLink(
+        "BR1-EDGE-RTR-01",
+        "GigabitEthernet0/1",
+        "HQ-EDGE-RTR-01",
+        "GigabitEthernet0/0",
+        "cross",
+    ),
+    FixtureLink(
+        "BR2-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/1",
+        "BR2-DEFAULT-PC-01",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "BR2-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/2",
+        "BR2-DEFAULT-PC-02",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "BR2-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/3",
+        "BR2-DEFAULT-PC-03",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "BR2-DEFAULT-ACCESS-SW-01",
+        "GigabitEthernet1/1",
+        "BR2-EDGE-RTR-01",
+        "GigabitEthernet0/1",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/1",
+        "HQ-DEFAULT-PC-01",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/2",
+        "HQ-DEFAULT-PC-02",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/3",
+        "HQ-DEFAULT-PC-03",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/4",
+        "HQ-DEFAULT-PC-04",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/5",
+        "HQ-DEFAULT-PC-05",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/6",
+        "HQ-DEFAULT-DNS-01",
+        "FastEthernet0",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "GigabitEthernet1/1",
+        "HQ-EDGE-RTR-01",
+        "GigabitEthernet0/1",
+    ),
+)
+
+
+def _sp2_mixed_product() -> StageDefinition:
+    """Run the mixed DHCP, DNS and HTTP intent once through the product."""
+    ceiling_operations, ceiling_seconds = STAGE_CEILINGS[
+        QualificationStage.SP2_MIXED_PRODUCT
+    ]
+    return StageDefinition(
+        stage=QualificationStage.SP2_MIXED_PRODUCT,
+        executable=True,
+        purpose=(
+            "Apply local native and relayed named DHCP pools on one Server-PT "
+            "through the product and verify each client's attributed lease, "
+            "cold HTTP by address, DNS and HTTP by name."
+        ),
+        fixtures=_SP2_MIXED_FIXTURES,
+        links=_SP2_MIXED_LINKS,
+        setup=(
+            PlannedStep("read:executable_build", 1),
+            PlannedStep("read:workspace_baseline", 1),
+            *(PlannedStep(f"create:{item.name}", 2) for item in _SP2_MIXED_FIXTURES),
+            *(
+                PlannedStep(f"create:link:{index}", 2)
+                for index in range(1, len(_SP2_MIXED_LINKS) + 1)
+            ),
+            PlannedStep("read:fixture_identity", 1),
+        ),
+        experiments=(
+            ExperimentSpec(
+                id="M-SP2-MIXED-PRODUCT",
+                hypothesis=(
+                    "Every selected client holds a usable lease attributed to "
+                    "its intended physical pool, native locally and named "
+                    "through its relay, and then reaches the server by "
+                    "address, by DNS and by host name."
+                ),
+                required=True,
+                procedure="SP2_MIXED_PRODUCT",
+                planned_operations=SP2_MIXED_PRODUCT_OPERATIONS,
+                capabilities=("sp2.mixed_dhcp_routed_product",),
+            ),
+            ExperimentSpec(
+                id="M-SP2-MIXED-FINAL",
+                hypothesis=(
+                    "Router tables, client bindings and every physical pool "
+                    "are observed before cleanup."
+                ),
+                required=True,
+                procedure="SP2_MIXED_FINAL",
+                planned_operations=SP2_MIXED_FINAL_OPERATIONS,
+                terminal_observation=True,
+            ),
+        ),
+        reserve=(
+            *(PlannedStep(f"remove:{item.name}", 2) for item in _SP2_MIXED_FIXTURES),
+            PlannedStep("read:restoration:1", 1),
+            PlannedStep("read:restoration:2", 1),
+            PlannedStep("release:run_bag", 1),
+        ),
+        budget=StageBudget(ceiling_operations, ceiling_seconds, reserve_seconds=420),
+        allowed_channels=("file",),
+        profile_id="SP2-MIXED-PRODUCT",
+        profile_version="1",
+        steps=(
+            DiagnosticStageStep(
+                id="SP2-mixed",
+                experiment_id="M-SP2-MIXED-PRODUCT",
+                effect="request",
+                also_experiments=("M-SP2-MIXED-FINAL",),
+            ),
+        ),
+        selected_clients=SP2_MIXED_CLIENTS,
+    )
+
+
 #: The SP-1 stages; each exists only under campaign `SERVER-PT-SP1-ROUTED-01`.
 SP1_ROUTED_STAGES = (QualificationStage.SP1_ROUTED_W1, QualificationStage.SP1_ROUTED_W2)
 
@@ -2485,6 +2950,7 @@ STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     ),
     QualificationStage.SP2_NATIVE_POOL: _sp2_native_pool(),
     QualificationStage.SP2_REMOTE_RELAY: _sp2_remote_relay(),
+    QualificationStage.SP2_MIXED_PRODUCT: _sp2_mixed_product(),
 }
 
 

@@ -596,6 +596,60 @@ def test_a_relay_record_from_another_build_refuses_before_effects(tmp_path):
     assert transport.dispatches == 0
 
 
+def test_the_measured_out_of_range_throw_ends_every_table(tmp_path):
+    """PT 9.0.1.0858 throws past a pool's last row; it never returned null.
+
+    Every SP-2 episode (e1-e6) read `invalid vector subscript` at the index
+    equal to the row count. With that native end, the relayed and local
+    clients still verify, each naming how its tables ended.
+    """
+    plans, _physical, result, _snapshot = _run(
+        tmp_path, "sp2-native-table-end", dhcp_table_end="native"
+    )
+
+    assert result.service_result is not None, (
+        result.refusal_code,
+        result.blocked_reason,
+    )
+    typed = _leases(plans, result.service_result.verification_results)
+    assert {name: row.status.value for name, row in typed.items()} == {
+        f"{site}-DEFAULT-PC-0{n}": "verified"
+        for site in ("HQ", "BR1", "BR2")
+        for n in (1, 2)
+    }
+    for row in typed.values():
+        assert "lease_table_end_by_out_of_range_throw" in row.limitations, row
+
+
+def test_a_row_field_failure_is_never_a_table_end(tmp_path):
+    """A row whose MAC getter throws the end text leaves its table unread.
+
+    Otherwise a competing pool would read as empty while it holds a row, and
+    every client scanned against it would verify over an unread lease.
+    """
+    plans, _physical, result, _snapshot = _run(
+        tmp_path,
+        "sp2-row-field-failure",
+        dhcp_table_end="native",
+        dhcp_lease_field_throws="BR2_DATA",
+    )
+
+    typed = _leases(plans, result.service_result.verification_results)
+    assert typed and all(row.status.value != "verified" for row in typed.values()), {
+        name: row.status.value for name, row in typed.items()
+    }
+
+
+def test_an_unexplained_throw_is_not_a_table_end(tmp_path):
+    """Any other error past the rows leaves the tables unread."""
+    plans, _physical, result, _snapshot = _run(
+        tmp_path, "sp2-unexplained-throw", dhcp_table_end="throw"
+    )
+
+    typed = _leases(plans, result.service_result.verification_results)
+    assert typed and all(row.status.value != "verified" for row in typed.values())
+
+
 class _TruncatedScanTransport(NodeEngineTransport):
     """Report the BR1 intended-pool scan as cut short by a read error."""
 

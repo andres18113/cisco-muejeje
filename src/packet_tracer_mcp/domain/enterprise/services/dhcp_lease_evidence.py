@@ -50,6 +50,12 @@ TERMINATION_MALFORMED = "malformed"
 TERMINATION_POOL_ABSENT = "pool_absent"
 TERMINATION_UNOBSERVED = "unobserved"
 _CLEAN = frozenset({TERMINATION_NULL})
+#: What `DhcpPool.getLeaseAt(index)` threw on Packet Tracer 9.0.1.0858 for
+#: every index at or past a pool's row count, in every SP-2 episode (e1-e6).
+#: Cisco's reference leaves out-of-range reads undocumented and no read ever
+#: returned null, so the product reads only this exact text, repeated at the
+#: next index, as the end of a table; any other error leaves the table unread.
+NATIVE_LEASE_TABLE_END_ERROR = "invalid vector subscript"
 
 #: What one clean state of a pool was, by its observed rows and capacity.
 STATE_EMPTY = "empty"

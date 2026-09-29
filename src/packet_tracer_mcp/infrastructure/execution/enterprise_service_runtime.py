@@ -67,6 +67,9 @@ from ...domain.enterprise.models.service_runtime import (
     RuntimeObservationStep,
     RuntimeServiceVerification,
 )
+from ...domain.enterprise.services.dhcp_lease_evidence import (
+    NATIVE_LEASE_TABLE_END_ERROR,
+)
 from ...domain.enterprise.services.native_dhcp_policy import native_policy_network
 from .command_dispatch import PAGER_GUARD_JS
 from .runtime_inventory import normalize_runtime_inventory
@@ -190,6 +193,11 @@ def _expected_host_pools(expected: dict[str, object]):
     return pools
 
 
+#: How a fully read lease table ends: a null, or the out-of-range throw
+#: measured on 9.0.1.0858 and confirmed at the next index.
+_TABLE_ENDS = frozenset({"null", "end_throw"})
+
+
 def _competing_pool_rows(
     payload: dict, physical: str, fixed_competing: list[str] | None
 ):
@@ -200,7 +208,8 @@ def _competing_pool_rows(
     it is exactly those pools, whose presence the same sample's server
     readback established. An unreadable inventory, a pool named in it but not
     returned, a scan error, a scan that reached its bound without a
-    terminating null, or a malformed row leaves competition unknown.
+    terminating null or the measured out-of-range throw, or a malformed row
+    leaves competition unknown.
     """
     inventory = payload.get("inventory")
     # A mixed native snapshot reads its own inventory in the same dispatch,
@@ -229,7 +238,7 @@ def _competing_pool_rows(
             scan.get("found") is not True
             or not isinstance(found_rows, list)
             or scan.get("scan_error") != ""
-            or scan.get("termination") != "null"
+            or scan.get("termination") not in _TABLE_ENDS
         ):
             return None
         for row in found_rows:
@@ -3294,9 +3303,20 @@ class PacketTracerEnterpriseServiceRuntime:
             "found:!!dev,port_found:!!port,mode:null,mode_type:'error',"
             "ipv4:'',netmask:'',mac:'',"
             f"error:{reader}(e)}});}}}}"
+            f"var endText={json.dumps(NATIVE_LEASE_TABLE_END_ERROR)};"
+            # The measured end: this exact throw, and the same at the next
+            # index. Anything else leaves the table unread.
+            "function tableEnd(p,k){try{p.getLeaseAt(k);}catch(x){"
+            f"return {reader}(x)===endText;}}return false;}}"
             f"if(pool){{termination='bound';for(var j=0;j<{bound_json};j++){{"
-            "try{var r=pool.getLeaseAt(j);if(!r){termination='null';break;}"
-            "rows.push({ipAddress:String(r.ipAddress),"
+            # Only the index call can end the table; reading a returned
+            # row's fields is a separate step whose failure never does.
+            "var r=null;try{r=pool.getLeaseAt(j);}"
+            f"catch(e){{scanError={reader}(e);termination='error';"
+            "if(scanError===endText&&tableEnd(pool,j+1)){"
+            "scanError='';termination='end_throw';}break;}"
+            "if(!r){termination='null';break;}"
+            "try{rows.push({ipAddress:String(r.ipAddress),"
             "macAddress:String(r.macAddress),leaseTime:r.leaseTime,"
             "port:String(r.port)});"
             f"}}catch(e){{scanError={reader}(e);termination='error';break;}}}}}}"
@@ -3316,8 +3336,12 @@ class PacketTracerEnterpriseServiceRuntime:
                 f"var cn=inventory[c];if(cn==={json.dumps(physical)}){{continue;}}"
                 "var cp=sp.getPool(cn),crows=[],cerr='',cterm=cp?'bound':'absent';"
                 f"if(cp){{for(var k=0;k<{DHCP_LEASE_SCAN_LIMIT};k++){{"
-                "try{var cr=cp.getLeaseAt(k);if(!cr){cterm='null';break;}"
-                "crows.push({ipAddress:String(cr.ipAddress),"
+                "var cr=null;try{cr=cp.getLeaseAt(k);}"
+                f"catch(e){{cerr={reader}(e);cterm='error';"
+                "if(cerr===endText&&tableEnd(cp,k+1)){cerr='';cterm='end_throw';}"
+                "break;}"
+                "if(!cr){cterm='null';break;}"
+                "try{crows.push({ipAddress:String(cr.ipAddress),"
                 "macAddress:String(cr.macAddress),leaseTime:cr.leaseTime,"
                 "port:String(cr.port)});"
                 f"}}catch(e){{cerr={reader}(e);cterm='error';break;}}}}}}"
@@ -3454,6 +3478,7 @@ class PacketTracerEnterpriseServiceRuntime:
         global_failure: tuple[ObservationFact, str] | None = None
         global_detail = ""
         sample = 0
+        table_end_by_throw = False
         for sample_index in range(self._dhcp_state_max_samples):
             if sample_index:
                 self._sleep(self._dhcp_state_interval)
@@ -3512,7 +3537,8 @@ class PacketTracerEnterpriseServiceRuntime:
             if global_failure:
                 break
             # A named pool reads one row past its capacity, so a complete table
-            # always ends in a null; the native pool keeps its recorded bound.
+            # ends in a null or the measured throw; the native pool keeps its
+            # recorded bound.
             observation = self._native_group_snapshot(
                 expectation,
                 selected,
@@ -3563,13 +3589,20 @@ class PacketTracerEnterpriseServiceRuntime:
                 or len(clients) != len(selected)
                 or not isinstance(rows, list)
                 or len(rows) > bound
-                or payload.get("termination") not in {"bound", "null", "error"}
+                or payload.get("termination")
+                not in {"bound", "null", "error", "end_throw"}
                 or not isinstance(payload.get("scan_error"), str)
             ):
                 global_failure = (ObservationFact.MALFORMED, "native_group_scan_shape")
                 break
+            if payload.get("termination") == "end_throw" or any(
+                isinstance(item, dict) and item.get("termination") == "end_throw"
+                for item in payload.get("competing") or []
+            ):
+                table_end_by_throw = True
             if physical != "serverPool" and (
-                payload.get("termination") != "null" or payload.get("scan_error")
+                payload.get("termination") not in _TABLE_ENDS
+                or payload.get("scan_error")
             ):
                 # Attribution in a named pool needs its whole table: an unread
                 # tail could hold another selected client's row.
@@ -3809,6 +3842,11 @@ class PacketTracerEnterpriseServiceRuntime:
                 limitations=(
                     "autonomous_state_not_explicit_dhcpRun_causality",
                     "positive_row_does_not_establish_table_end",
+                    *(
+                        ("lease_table_end_by_out_of_range_throw",)
+                        if table_end_by_throw
+                        else ()
+                    ),
                 )
                 if fact is ObservationFact.OBSERVED
                 else (),
