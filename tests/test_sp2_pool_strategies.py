@@ -458,6 +458,55 @@ def test_native_readback_checks_companion_names_not_only_their_count(names, veri
     assert (result.status.value == "verified") is verified, result.cause
 
 
+@pytest.mark.parametrize(
+    ("companion_label", "present", "verified"),
+    [
+        (False, False, True),
+        (False, True, False),
+        (True, True, True),
+        (True, False, False),
+    ],
+)
+def test_native_logical_label_is_present_only_as_a_planned_companion(
+    companion_label, present, verified
+):
+    """A pool named like the native label is stale unless it is planned."""
+    import json
+
+    from packet_tracer_mcp.infrastructure.execution.enterprise_service_runtime import (
+        PacketTracerEnterpriseServiceRuntime,
+    )
+
+    expectation, answer = _native_server_expectation(
+        lambda pools: [item["pool_name"] for item in pools]
+    )
+    label = expectation.expected["pool_name"]
+    if companion_label:
+        pools = json.loads(expectation.expected["host_pools_json"])
+        renamed = next(item for item in pools if item["pool_name"] != "serverPool")
+        renamed["pool_name"] = label
+        pools.sort(key=lambda item: item["pool_name"])
+        expectation = expectation.model_copy(
+            update={
+                "expected": {
+                    **expectation.expected,
+                    "host_pools_json": json.dumps(
+                        pools, sort_keys=True, separators=(",", ":")
+                    ),
+                }
+            }
+        )
+        answer["pool_names"] = sorted(item["pool_name"] for item in pools)
+    answer["logical_pool_present"] = present
+    runtime = PacketTracerEnterpriseServiceRuntime(
+        lambda: [], lambda _script, _timeout: json.dumps(answer)
+    )
+
+    result = runtime._verify_dhcp_server_state(expectation)
+
+    assert (result.status.value == "verified") is verified, result.cause
+
+
 def test_named_pool_size_stays_within_the_verifiable_scan():
     """A named pool must fit the lease scan with room for its terminating null."""
     from packet_tracer_mcp.domain.enterprise.services.service_compiler import (

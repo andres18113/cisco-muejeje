@@ -155,6 +155,54 @@ def test_mixed_strategies_verify_every_client_in_its_own_physical_pool(tmp_path)
     assert snapshot["dhcp_runs"] == []
 
 
+def test_a_companion_named_like_the_native_logical_pool_still_verifies(tmp_path):
+    """The native logical name is free for a planned companion's physical pool.
+
+    The native service's requested name is only a label; `serverPool` serves
+    it. A relayed pool explicitly given that label is a distinct planned
+    physical pool, and the pinned process inventory already refuses any
+    other pool of that name.
+    """
+    plans = compose_mixed(mixed_dhcp_payload()[0], mixed_records())
+    [native] = [
+        item
+        for item in plans.services.actions
+        if isinstance(item, ConfigureServerDhcpPool)
+        and item.effective_pool_name == "serverPool"
+    ]
+    payload, _ids = mixed_dhcp_payload(pool_names={"br1-data": native.pool_name})
+
+    plans, physical, result, _snapshot = _run(
+        tmp_path, "sp2-mixed-logical-name", payload=payload
+    )
+
+    assert physical["br1-data"] == native.pool_name
+    assert result.service_result is not None, (
+        result.refusal_code,
+        result.blocked_reason,
+    )
+    rows = result.service_result.verification_results
+    typed = _leases(plans, rows)
+    assert {name: row.status.value for name, row in typed.items()} == {
+        f"{site}-DEFAULT-PC-0{n}": "verified"
+        for site in ("HQ", "BR1", "BR2")
+        for n in (1, 2)
+    }
+    server_state = [
+        row
+        for row in rows
+        if row.expectation_id
+        in {
+            item.id
+            for item in plans.services.verification_expectations
+            if item.kind is ServiceVerificationKind.DHCP_SERVER_STATE
+        }
+    ]
+    assert server_state and all(
+        row.status.value == "verified" for row in server_state
+    ), [(row.expectation_id, row.cause) for row in server_state]
+
+
 @pytest.mark.parametrize("wrong", ["serverPool", "other_named"])
 def test_a_relayed_client_answered_from_a_competing_pool_is_not_verified(
     tmp_path, wrong

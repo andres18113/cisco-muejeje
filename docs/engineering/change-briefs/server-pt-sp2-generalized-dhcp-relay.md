@@ -838,6 +838,14 @@ establish the table end.
 Pass nine found that a named pool smaller than its selected clients was
 written before its verifier refused it. The compiler now refuses a named
 state-only pool whose capacity is below its selected client count.
+A tenth pass, on the committed Step 2 diff, found that a relayed pool
+explicitly named like the native service's logical label (for example
+`HQ_DATA`) was admitted and written, after which the native readback, which
+treats any pool of that label as stale, refused the verified process. The
+readback now accepts that label exactly when it is a planned companion; the
+pinned inventory comparison still refuses any unplanned pool of that name.
+A mixed public-route regression and a four-case readback unit reproduced it
+first.
 
 ### Step 2 offline results
 

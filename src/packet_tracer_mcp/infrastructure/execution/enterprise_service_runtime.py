@@ -2754,6 +2754,12 @@ class PacketTracerEnterpriseServiceRuntime:
             if host_pools
             else {(item["start"], item["end"]) for item in wanted_ranges}
         )
+        # The native service's requested name is only a label. A pool of that
+        # name is stale unless it is a planned companion, which the exact
+        # inventory comparison below already pins.
+        logical_companion = str(expected.get("pool_name") or "") in {
+            name for name in native_pool_names if name != "serverPool"
+        }
         # The expected process state is part of the expectation, defaulting to
         # the enabled configuration every product plan asks for. A diagnostic
         # that configures a pool while the process is still disabled states
@@ -2785,7 +2791,7 @@ class PacketTracerEnterpriseServiceRuntime:
                 or (
                     payload["pool_count"] == native_pool_count
                     and sorted(payload["pool_names"]) == native_pool_names
-                    and payload["logical_pool_present"] is False
+                    and payload["logical_pool_present"] is logical_companion
                     and len(ranges) == len(native_exclusions)
                     and {(item["start"], item["end"]) for item in ranges}
                     == native_exclusions
