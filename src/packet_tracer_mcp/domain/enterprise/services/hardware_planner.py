@@ -441,35 +441,13 @@ class HardwarePlanner:
         zones = {zone.zone_id: zone for zone in iter_zone_plans(site)}
         counter = 0
         count_planner = SwitchCountPlanner()
-        requires_trunk = len(site.segments) > 1
-        if not requires_trunk:
-            # One segment still needs trunks when its access switches outgrow
-            # a flat design: each then uplinks to the distribution layer over
-            # a trunk, which E5 refuses on a model without trunk evidence.
-            counts = [
-                choice.count
-                for capacity in site.capacity_requirements
-                if (
-                    choice := count_planner.choose(
-                        capacity.required_access_ports,
-                        capacity.required_poe_ports,
-                        capacity.required_uplink_ports,
-                        switch_candidates,
-                    )
-                )
-                is not None
-            ]
-            requires_trunk = (
-                HardwareHierarchyPlanner.choose(sum(counts), policy.hierarchy)
-                is not HierarchyMode.FLAT
-            )
         for capacity in site.capacity_requirements:
             choice = count_planner.choose(
                 capacity.required_access_ports,
                 capacity.required_poe_ports,
                 capacity.required_uplink_ports,
                 switch_candidates,
-                requires_trunk=requires_trunk,
+                requires_trunk=len(site.segments) > 1,
             )
             block = AccessBlockPlan(
                 site_id=site.site_id,
