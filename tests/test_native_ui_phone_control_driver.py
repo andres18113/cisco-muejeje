@@ -39,6 +39,21 @@ def _write_receipt_atomic(path: Path, payload: dict[str, object]) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _await_provider_request(root: Path, pattern: str) -> tuple[Path, dict]:
+    """Wait within the existing bound for complete readable request bytes."""
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        for request_path in root.glob(pattern):
+            try:
+                request = json.loads(request_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(request, dict):
+                return request_path, request
+        time.sleep(0.005)
+    raise AssertionError("No complete provider request arrived within the deadline.")
+
+
 def _expectation(expected_result=CallExpectationResult.ESTABLISHED):
     return CallExpectation(
         id="call/qualification/established",
@@ -59,16 +74,7 @@ def _expectation(expected_result=CallExpectationResult.ESTABLISHED):
 
 def _serve_one_receipt(root: Path, *, mutate=None):
     def worker():
-        deadline = time.monotonic() + 2
-        request_path = None
-        while time.monotonic() < deadline:
-            matches = list(root.glob("*.request.json"))
-            if matches:
-                request_path = matches[0]
-                break
-            time.sleep(0.005)
-        assert request_path is not None
-        request = json.loads(request_path.read_text(encoding="utf-8"))
+        request_path, request = _await_provider_request(root, "*.request.json")
         positive = bool(request["destination_phone_id"])
         source_states = (
             ["idle", "dialing", "ringing", "connected", "disconnected", "idle"]
@@ -130,16 +136,9 @@ def _serve_one_receipt(root: Path, *, mutate=None):
 
 def _serve_readiness(root: Path, *, mutate=None):
     def worker():
-        deadline = time.monotonic() + 2
-        request_path = None
-        while time.monotonic() < deadline:
-            matches = list(root.glob("*.readiness.request.json"))
-            if matches:
-                request_path = matches[0]
-                break
-            time.sleep(0.005)
-        assert request_path is not None
-        request = json.loads(request_path.read_text(encoding="utf-8"))
+        request_path, request = _await_provider_request(
+            root, "*.readiness.request.json"
+        )
         receipt = {
             "schema": request["schema"],
             "provider_id": request["provider_id"],
@@ -331,3 +330,36 @@ def test_native_ui_driver_readiness_is_a_fresh_correlated_handshake(
     assert ready is (not defect)
     assert list(tmp_path.glob("*.readiness.request.json")) == []
     assert list(tmp_path.glob("*.readiness.receipt.json")) == []
+
+
+@pytest.mark.parametrize("transient", ["permission", "partial_json"])
+def test_simulated_readiness_provider_waits_for_complete_readable_request(
+    tmp_path, monkeypatch, transient
+):
+    """A published path can still be locked or have incomplete request bytes."""
+    original_read = Path.read_text
+    reads = 0
+
+    def read_after_publication(path, *args, **kwargs):
+        nonlocal reads
+        if path.parent == tmp_path and path.name.endswith(".readiness.request.json"):
+            reads += 1
+            if reads == 1:
+                if transient == "permission":
+                    raise PermissionError("writer still holds the request")
+                raise json.JSONDecodeError("request bytes incomplete", "", 0)
+        return original_read(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_after_publication)
+    thread = _serve_readiness(tmp_path)
+    driver = PacketTracerNativeUiCallDriver(
+        exchange_dir=tmp_path,
+        physical_phone_names={},
+        timeout_seconds=2,
+    )
+    ready = driver.probe_readiness("9.0.1.0858", "b" * 64)
+    thread.join(timeout=2)
+
+    assert not thread.is_alive()
+    assert ready is True
+    assert reads >= 2

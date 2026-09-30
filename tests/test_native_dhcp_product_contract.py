@@ -293,7 +293,7 @@ def test_group_trace_owner_is_the_client_that_reached_the_reader(
         "pool_found": True,
         "pool_name": "serverPool",
         "scan_error": "",
-        "termination": "bound",
+        "termination": "null",
         "error": "",
         # The snapshot reads its own pool inventory in the same dispatch.
         "inventory": ["serverPool"],
@@ -323,6 +323,16 @@ def test_group_trace_owner_is_the_client_that_reached_the_reader(
             for index in range(2)
         ],
     }
+    # This boundary substitutes a complete current snapshot, not an archive.
+    payload["entries"] = [
+        {"index": index, "return_kind": "object", "error": "", "row": row}
+        for index, row in enumerate(payload["rows"])
+    ] + [
+        {"index": index, "return_kind": "null", "error": "", "row": None}
+        for index in (2, 3)
+    ]
+    payload["window"] = 4
+    payload["row_indices"] = [0, 1]
     if bad_duplicate:
         payload["clients"][1]["ipv4"] = "192.0.2.100"
         payload["clients"][1]["netmask"] = "255.255.0.0"

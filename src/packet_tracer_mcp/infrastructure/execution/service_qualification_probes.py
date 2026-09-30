@@ -60,6 +60,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from typing import Any
 
 from ...application.ports.service_qualification import DispatchOutcome
@@ -68,6 +69,7 @@ from ...domain.enterprise.services.service_qualification_evidence import (
     ProbeReading,
     QueueReceipt,
 )
+from .dhcp_lease_reader import LeaseReaderContext, decode_scan
 
 DispatchAndWait = Callable[[str, float], DispatchOutcome]
 Send = Callable[[str], bool]
@@ -424,8 +426,10 @@ class PacketTracerQualificationProbes:
         dispatch_and_wait: DispatchAndWait,
         send: Send,
         timeout_seconds: float = 10.0,
+        lease_reader_context: LeaseReaderContext | None = None,
     ) -> None:
         """Bind the probes to one run and one fixed, counted channel."""
+        self._lease_reader_context = lease_reader_context
         self._run = json.dumps(run_id)
         self._nonce = json.dumps(nonce)
         self._marker_root = "MCPQ-" + nonce[:16]
@@ -1468,7 +1472,7 @@ class PacketTracerQualificationProbes:
     #: The largest explicit index window one calibration may request per pool.
     #: It bounds the native loop before the script exists; it is not a claim
     #: about how many leases a pool holds.
-    LEASE_CALIBRATION_MAX_WINDOW = 16
+    LEASE_CALIBRATION_MAX_WINDOW = 258
 
     def read_dhcp_lease_calibration(
         self,
@@ -1496,7 +1500,9 @@ class PacketTracerQualificationProbes:
             ):
                 raise ValueError("lease calibration window out of bounds")
             requested.append([name, window])
-        return self._read(
+        if len(requested) > 64 or sum(window for _name, window in requested) > 1152:
+            raise ValueError("lease calibration work out of bounds")
+        reading = self._read(
             "dhcp_lease_calibration",
             f"var __dn={json.dumps(server)};var __if={json.dumps(interface)};"
             f"var __req={json.dumps(requested)};var __d=ipc.network().getDevice(__dn);"
@@ -1528,6 +1534,19 @@ class PacketTracerQualificationProbes:
             "__out.push(__e);}reportResult(JSON.stringify({device:__dn,interface:__if,"
             "found:!!__d,process_found:!!__p,pools:__out,error:''}));",
         )
+
+        if not reading.observed:
+            return reading
+        payload = dict(reading.payload)
+        pools = payload.get("pools")
+        if isinstance(pools, list):
+            payload["pools"] = [
+                decode_scan(pool, self._lease_reader_context)
+                if isinstance(pool, dict)
+                else pool
+                for pool in pools
+            ]
+        return replace(reading, payload=payload)
 
     def register_dhcp_observers(
         self, clients: Sequence[tuple[str, str]]

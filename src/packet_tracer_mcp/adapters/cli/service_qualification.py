@@ -147,6 +147,7 @@ from ...infrastructure.catalog.measured_port_inventories import (
 from ...infrastructure.catalog.service_capabilities import (
     packet_tracer_service_capabilities,
 )
+from ...infrastructure.execution.dhcp_lease_reader import reader_context
 from ...infrastructure.execution.endpoint_address_observer import (
     PacketTracerEndpointAddressObserver,
 )
@@ -1081,6 +1082,7 @@ def _configuration_runtime(
         # phase's remaining time.
         clock=bound.clock,
         sleeper=bound.capped_sleep,
+        wait_allowance=bound.remaining_seconds,
     )
 
 
@@ -1099,6 +1101,9 @@ def _service_runtime(
         convergence_interval_seconds=HTTP_TIMEOUT_SECONDS,
         clock=bound.clock,
         sleeper=bound.capped_sleep,
+        lease_reader_context=reader_context(
+            getattr(bound, "observation_context", None)
+        ),
     )
 
 
@@ -1416,6 +1421,7 @@ def production_boundaries(governed_root: Path) -> QualificationBoundaries:
         probes=lambda bound, run_id, nonce: PacketTracerQualificationProbes(
             run_id=run_id,
             nonce=nonce,
+            lease_reader_context=reader_context(bound.observation_context),
             dispatch_and_wait=bound.dispatch_and_wait,
             send=bound.send,
         ),

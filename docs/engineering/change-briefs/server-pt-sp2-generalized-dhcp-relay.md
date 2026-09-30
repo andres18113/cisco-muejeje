@@ -1065,3 +1065,344 @@ reached. A site that needs more access switches than a flat design allows
 now chooses among trunk-evidenced models whenever one fits, exactly as a
 multi-segment site already does. A site that fits one switch is unchanged.
 A failing composition regression preceded the correction.
+
+
+## Recovery continuation v1 (2026-09-29, risk L)
+
+Authority: `SERVER-PT-SP2-RECOVERY-CONTINUATION-02` v1.0.0 from the
+operator-supplied recovery assignment, extending the unchanged parent mandate.
+Starting checkout is `Cisco-MCP-server-services-goal-foundations`, branch
+`feature/server-pt-goal-foundations`, commit
+`d03fb1cfaf913f2097510f2677a3b96c618b0463`, tree
+`e822e1cceb8a4617af09d1f8bdaa95a6af333d57`; the tree and index were clean.
+The active AGENTS.md, CLAUDE.md, engineering standard, parent assignment and
+current brief were read. Interactive loader verification remains pending.
+
+The intended outcome and SP2-01 through SP2-06 above remain required. This is
+active implementation, not phase acceptance. One integration writer and one
+LIVE owner work here; three read-only investigations cover trunk provenance,
+lease-end semantics, and the adjacent SP-1 terminal observation.
+
+### Recovery design and verification plan
+
+1. Reproduce C31 commissioning failures. Forward-revert the scoped planner and
+   test delta of `82c70970`, retaining history and the other SP-2 changes. Its
+   single-segment trunk ranking is withdrawn pending a compatibility solution;
+   the earlier paragraph describing delivery is superseded by this decision.
+   Preserve C31's exact reviewed models, links, inputs and guard. Prove new
+   36-client hardware suitability through existing legitimate composition/model
+   inputs or a versioned profile, with no campaign-name or client-count exception.
+2. Inspect original preliminary trunk evidence via the commissioning store.
+   Verify raw readbacks, source/build/model/interface, result meaning, integrity
+   and cleanup before scoped reuse. Configured trunk capability, forwarding,
+   and redundant-path behavior are separate claims. Historical records and
+   consumed grants remain immutable.
+3. Qualify the native scan-end convention through maintained composition for
+   the exact source/build/file channel/reader contract. Infrastructure decodes
+   native strings into evidence semantics; domain predicates consume those
+   semantics. Retain physical pool, ordered rows, first failure and confirming
+   observation plus provenance. Empty/one/multiple/full scans and stateful
+   negatives cover field failures, other errors, malformed/duplicate/conflicting
+   rows, cap exhaustion and a row after an alleged end. Unknown contexts refuse.
+4. Reproduce and narrowly fix invalid SP-1 terminal row counting. Inspect
+   accepted original fields to distinguish terminal and acceptance consequences.
+   Keep static SP-1 independent of DHCP-mode requirements; rerun coexistence.
+5. Validate focused regressions, full affected commissioning/SP-1/DHCP/Voice/
+   Printer/CP-SCALE suites, then full local pytest with a test-only bridge token,
+   quality/docs/namespace/whitespace and clean exact-commit delivery checks.
+   Publish fast-forward and inspect every exact-SHA CI job before new LIVE.
+6. Recompute fresh mixed/capacity contracts, durable helpers, hashes and episode
+   arguments from the executed source. Verify current ledger and ownership;
+   reserve terminal/cleanup before activation. Measure simultaneous physical
+   pools and 36 usable attributed leases, cold HTTP by IP, resolver/DNS and
+   hostname services. Budgets follow compiled plans, scans and polling; the
+   120-second lease window must be evaluated against measured workload.
+7. Integrate only observed support into scope-bound default records and exercise
+   the registered four-input public route. Independent review and complete
+   requirement/evidence dispositions are required for READY_FOR_REVIEW.
+
+Unit levels cover scan decoding/predicates and policy; integration levels cover
+real generated scripts, composition, terminal and persistence; system levels
+cover coordinator/public-route behavior and full offline scale; native acceptance
+covers measured lease capacity, attribution and services. No applicable level is
+waived. No LIVE is admitted on a failing execution baseline. SP-3 through SP-5,
+main merge, Final-Muejeje construction, foreign resources and historical edits
+remain outside this continuation.
+
+
+### Recovery findings and dispositions
+
+Containment commit `472fe973` forward-reverts `82c70970`; the rejected commit
+remains in history. Commissioning reproduced 19 failures and 18 passes at the
+reviewed source, then the rollback passed 44 commissioning/hardware tests.
+A versioned profile now replaces that temporary containment: `segment-count-v1`
+reconstructs commissioning inputs; default `site-hierarchy-v2` ranks suitable
+trunk-evidenced hardware for new hierarchical workloads. Manifest-bound
+composition recognizes v1 only when its complete physical hash matches the
+persisted manifest. Explicit policies never fall back. The same planner and
+compiler implement both; public target and capability guards remain active.
+
+The original attempt `5b09a9c35fd572f00945bdb18040d2fb` bundle was reconstructed
+with all 13 fields equal. Intent `9d353bfc...`, topology `fcff5b9d...`, physical
+`753cf2ec...` and configuration `35618f4d...` remain pinned by regressions.
+The store's complete 301-file C31 index verified with zero discrepancies.
+Preliminary raw digest is
+`cafe7c331d7a1353bec79f3799efb4135bf52774e3ef19afb374aa6b2f5ba2aa`.
+Source `633e25e9`, tree `711244a1`, CI `35938917658`, PT `9.0.1.0858`/file
+bind the original administrative Fa0/1 trunk readback, restoration to access,
+deletion and two empty inventories. Setup raw additionally shows configured
+2950 Gig0/1 and Gig0/2 trunks. All ten trunk forwarding verifications failed
+with empty forwarding VLANs; four VLAN reads verified and 14 selected mutations
+were applied. This supports configuration only. No forwarding, redundant-path
+or generic catalog promotion follows. Existing scoped setup evidence remains
+build-bound. Original cleanup removed 35 devices, restored twice and recorded
+owned process exit; the spent old campaign remains BLOCKED and is not reopened.
+
+The SP-1 terminal counted missing-device rows as observations. Four stage
+regressions reproduced support with a missing device, empty address, failed DNS
+or duplicate client row. The prospective predicate requires exact unique client
+identities and successful valid static address/mask, resolver and agreeing
+successful gateway observations. It preserves isolated failed HostIp getters
+when HostIpProcess answers, and requires no DHCP mode or lease fields. Review
+also reproduced dotted hostmasks incorrectly accepted as netmasks; two negative
+controls now enforce the actual contiguous netmask. The hybrid fixture now
+projects actual campus state into its endpoint reader rather than accepting
+empty bindings. Product acceptance remains independent of terminal inventory.
+Original accepted e3/e4/e5 fields verified for 2/2, 6/6 and 6/6 clients; complete
+archive file sets and hashes (103/103/126 files) verified. Their product claims
+remain intact. Historical nonaccepted e1's weaker terminal is retained unchanged.
+No uncovered native SP-1 behavior requires a new run.
+
+The old native table-end paragraph is superseded: e1/e5/e6 raw archive manifests
+verified, but their executed producer merged index and field exceptions. Those
+bytes are an empirical lead, not independent qualification of the current
+field-separated reader. Infrastructure now reads every bounded index, records
+raw object/null/undefined/index-throw/field-throw results, and decodes the exact
+native exception only for an explicitly observed clean source SHA/tree,
+`9.0.1.0858`, file channel and `getLeaseAt-index-and-fields-v2` reader. Current
+same-run prefix observations retain first and confirming indexes and execution
+provenance; they establish neither universal absence, exhaustion nor renewal.
+Unknown contexts do not inherit the convention. Domain/application decisions
+consume semantic outcomes rather than vendor text. Raw shared traces and final
+LeaseScan facts preserve observations and decoder refusals.
+
+Generated-script regressions cover unknown context and a row after an alleged
+null/throw. Review reproduced three native evaluator bypasses and three terminal
+bypasses; all now preserve decoder refusal. Further controls cover independently
+conflicting MAC/IP identities and strict repeated confirmation. Native group
+and terminal read bounds accommodate the selected 36-index workload; public
+native capability policy bounds remain independently recorded. Existing raw
+scripted fixtures are adapted to emit actual indexed/type-bearing observations,
+not predecoded rows. Offline substituted evidence never promotes native support.
+
+Current status remains ACTIVE_CONTINUATION_NOT_PHASE_ACCEPTANCE. Mixed/capacity
+LIVE, public default scope integration, final full suite/exact-SHA CI and complete
+requirement dispositions remain required before READY_FOR_REVIEW.
+
+
+### Additional causal corrections and verification accounting
+
+Independent review reproduced backend refusal being erased by domain null
+calibration, and contradictory null/throw entries carrying a row. Six focused
+regressions (including overflowing numeric lease time) now keep calibration and
+attribution inconclusive, preserve raw entries, and reject incoherent return
+fields. Invalid rows do not enter the derived valid-row projection. A foreign
+backend cannot inherit the convention merely by returning the same version text.
+A stateful competing-pool getter regression also proved that the requested name
+was being substituted for the returned object's identity; the snapshot now reads
+the actual physical name and refuses a mismatch.
+
+Qualification configuration waits omitted the existing caller wait allowance.
+Their fallback used real eight-second waits even after the phase allowance was
+spent. The ledger now exposes remaining seconds and composition passes that
+control into nested waiters. A regression failed with 11 extra observations at
+an exhausted budget, then passed with one bounded observation. The real hostname
+verifier stops after its last failed read and preserves nine cleanup operations
+and three seconds. Test transport views delegate the same control. This is
+finite phase-budget wiring, not a timeout increase or simulation acceleration.
+The focused stage run passed 91 tests; final affected/full verification follows.
+
+Retaining fixed 258-index competing windows caused the 21-client record to exceed
+its unchanged 40,000-bytes/client budget (2,299,942 bytes). Competing windows now
+use observed configuration capacity plus two actual confirmation reads, capped
+at the existing scan ceiling plus two. Configuration is not a lease count.
+Malformed/unreadable capacity remains non-authorizing; source/build/reader and
+raw index evidence still determine the observed prefix claim. Shared trace
+storage retains raw indexed fields and valid-row index references, shares
+execution provenance, and omits redundant decoded row copies and empty derived
+success diagnostics. It does not remove errors or recreate missing historical
+observations. The 21-client control passed at 837,632 bytes with 10 group scans,
+164 dispatches and 85,770 response bytes; all four loads will be remeasured.
+
+The modern reader refuses old e11 snapshots lacking new index observations,
+while the regression preserves original verified results and original client
+fields. No historical observation is synthesized to make those snapshots pass
+the prospective contract. Known selected-client contradictions and first local
+failures remain independently retained when a later shared scan refuses.
+
+The first affected run was intentionally interrupted for budget-wiring diagnosis;
+a later run was interrupted by the daemon restart after partial progress. Neither
+is a complete verification result. The isolated scale failure above was reproduced
+and corrected without increasing its budget. One earlier test process reported a
+Windows access violation; the required fresh full result remains the baseline.
+No new LIVE episode has been allocated or executed. The verified campaign ledger
+still holds 1,183 committed operations and 2,319.580361 seconds, with no open
+phase/episode, 17,817 ordinary operations and 18,680.419639 ordinary seconds left.
+
+An offline design-only recomposition of 36 BR1 clients plus five HQ and three BR2
+clients produced 54 devices, 55 links, 133 E5 actions, 10 E6 actions and 357 E6
+expectations. Access 2960-24TT and distribution 3560-24PS trunks use existing
+supported evidence. These counts prove a legitimate compiled hardware input,
+not fixture authority, native forwarding, serving capacity or product acceptance.
+The durable capacity contract and its final allocations remain prospective.
+
+
+### Complete recovery baseline: three causal fixture failures
+
+The complete Windows run finished with 8,651 passed, six skipped, three failed
+and three existing warnings in 1,572.88 seconds. All four SP-2 scale loads
+passed, but this red full result grants no LIVE baseline. The three failures
+were reproduced together (three failed in 3.50 seconds) before correction.
+The Fastloop experimental simulation reconstructed default v2 while consuming
+the frozen v1 commissioning bundle/manifest; it now explicitly composes v1 and
+asserts exact physical identity before loading that manifest. The native serve
+positive stub used the generic `lease table end` exception; the positive now
+uses the exact scoped native exception, and a separate generic-error negative
+keeps the valid row and assigned address while refusing serving. The incomplete
+index test now asserts backend scan refusal and preserved raw error/rows instead
+of expecting a refused scan to be observed. No product predicate is relaxed.
+
+The red full run measured the following offline substituted orchestration
+costs; these are neither native capacity nor relay evidence:
+
+| Constructed clients | Pools/groups | Group scans | Dispatches | Response bytes | Record bytes | Seconds | Peak MiB |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2 | 2 | 4 | 32 | 14,305 | 141,211 | 0.38 | 1.7 |
+| 21 | 5 | 10 | 164 | 85,771 | 837,632 | 1.09 | 6.6 |
+| 201 | 5 | 10 | 1,244 | 755,764 | 5,824,713 | 7.61 | 40.9 |
+| 997 | 5 | 10 | 6,020 | 3,552,807 | 27,165,772 | 74.54 | 187.5 |
+
+The six skips are two unavailable Windows symlink privileges, two absent
+ignored legacy voice artifacts, and two opt-in native-window tests because
+`PT_MCP_NATIVE_WINDOW_TESTS` is unset. The three warnings are the pre-existing
+class-scoped fixture instance-method deprecation. A fresh complete green run,
+clean delivery and exact-SHA CI remain required before e7 allocation.
+
+
+The three corrections passed all six focused cases in 5.62 seconds and both
+complete affected files (106 tests in 31.62 seconds). A fresh complete suite
+is running against those unchanged Python bytes. Self-review preserves the
+exact manifest fallback, explicit profile choice, raw index/field evidence
+and decoder refusal; no new product control was weakened.
+
+### Prospective capacity and public integration design (risk L)
+
+The selected capacity fixture will hold 36 local HQ clients on
+`10.80.1.0/26`, 13 remote BR1 clients on `10.80.16.0/27` and five remote BR2
+clients on `10.80.33.64/27`, simultaneously on one Server-PT. Local native
+`serverPool` will use `.16` through `.51`, gateway `.1`, server/resolver `.10`;
+BR1 and BR2 use separate named pools. This satisfies the original local 36
+requirement and exercises the selected 13/5 independent pool demands. These
+are chosen fixture policies, not recovered Final-Muejeje DHCP facts.
+
+Topology and E5-only design recomposition succeeds: 64 devices, 65 links,
+153 E5 actions and 153 expectations; topology
+`ef36487fe87642d286c8d11ba4beb35536c2c1edd8438f1b61368bf4bac69b34`,
+manifest `e35d69a9e846c0a37908f50114d0208f58f9e8da7b66cdbbb89d28c8fcb37143`,
+E5 `69bcf483ff9448be1f5a51eee76059c285ae63dd08b75191cfbbcf42723639db`.
+The selected clients imply 437 E6 expectations if the unchanged eight checks
+per client and five server checks compile. That E6 count/hash is prospective
+and must be verified after implementation. HQ access uses 2960-24TT with
+3560-24PS distribution; BR1's flat 2950 has no trunk requirement. Setup needs
+261 operations and fixture cleanup 131 before lifecycle work.
+
+A separate versioned capacity stage will use the existing mixed composer,
+coordinator, applicators, terminal and persistence, with separately pinned
+fixture/plan identity. The existing eleven-client profile and historical
+archives remain reconstructible. Native IPv4 structural validity and finite
+work limits will admit a /26 and 36 only as structure; default support still
+requires a separately measured grant. Tests will pair new composition and
+zero-effect refusal with unchanged historical native/commissioning inputs.
+
+Budget design will follow the final compiled actions, readiness and scans,
+plus the actual polling schedule. The existing thirteen sample cycles and
+twelve ten-second waits do not constitute a hard 120-second wall deadline.
+Shared sample timings and a finite wall limit derived from bounded read work
+will reject late results without increasing all timeouts or accelerating the
+simulation. Stage and episode allocations must additionally reserve terminal,
+cleanup and lifecycle work before activation; final values remain prospective
+until final compiled/hybrid measurements and current ledger verification.
+
+Public records will preserve the old `192.0.2.0/24` one/two-client grant and
+its original serialized provenance. New independently keyed records will bind
+the complete native-plus-named host policy set to one observed cohort, including
+build/file channel, reader contract, server/interface, placement, physical pool
+names, address bounds, exclusions and demand bounds. One host cannot combine
+independent grants into an unmeasured pool set. A pure selector shared by
+compiler/admission/resolver will refuse absent, foreign, ambiguous or changed
+bindings before effects and retain selected grant hashes/provenance once in
+the durable record. Router relay evidence will remain constrained to actually
+observed model/interface/helper/segment scope. Private candidates do not become
+public entries through their earlier basis SHA/run. Actual native evidence must
+precede any default promotion and the registered four-input/default-catalog
+route must then pass the complete selected-client checks.
+
+
+### Complete rerun exposes a simulated native-UI publication race
+
+The fresh complete suite passed the three corrected cases, with 8,654 passed,
+six skipped and one failure in 1,145.65 seconds. The additional warning records
+an unhandled fake-provider thread exception: the readiness request path was
+visible while its writer still held it, and the simulated provider's one-shot
+read raised Windows `PermissionError`. The driver returned false and retained
+its fail-closed handshake. This red result is not a LIVE baseline.
+
+Before correction, deterministic fixture regressions will inject a first-read
+permission error and partial JSON, then require the same fresh correlated
+handshake within the unchanged two-second bound. The fake provider will poll
+read-only for complete readable bytes until that existing deadline. No timeout,
+receipt identity/freshness predicate or production native-UI code is relaxed.
+
+
+Both deterministic publication-race regressions failed first (two failed and
+two worker-thread warnings in 10.32 seconds), then passed in 0.41 seconds after
+the bounded read-only fixture correction. The complete native-UI driver file
+passed all 15 cases in 7.57 seconds. Its readiness and call fake providers now
+share the same complete-request wait; production behavior and deadlines remain
+unchanged. The full suite will run again from these exact Python bytes.
+
+
+### Explicit operator restriction on phone validation
+
+The operator reiterated during this continuation that phone validation uses
+only `show power inline`; phone UI validation is prohibited. No native phone
+UI, native call or phone-control validation is part of SP-2 or will be started
+or extended. The publication-race correction above is an inherited offline
+fake-provider unit fixture in the complete suite, with no phone, UI, Packet
+Tracer or native call interaction. It is not evidence of phone behavior. Any
+later relevant handoff must preserve the operator's `show power inline` limit.
+
+
+### Recovery checkpoint: complete green local baseline
+
+The fresh complete v3 run exited zero: 8,657 passed, six skipped, three existing
+fixture-deprecation warnings in 1,188.21 seconds. XML reports 8,663 cases,
+zero failures and zero errors. Former commissioning/native scan cases and the
+deterministic fake-provider race cases all passed. Skip categories remain the
+two unavailable Windows symlink privileges, two absent ignored historical voice
+artifacts, and two opt-in native-window tests; no new SP-2 test was skipped.
+The unchanged Python snapshot was retained throughout this run.
+
+Final actual SP-2 orchestration samples still constructed 2/21/201/997 clients.
+Group scans, dispatches, response/record bytes and peak memory equal the table
+above; final elapsed times were 0.34/1.19/5.63/58.95 seconds respectively. These
+remain explicitly substituted offline costs, with no native capacity claim.
+The full provisional quality gate passed after the final fixture correction;
+namespace inventory and docs passed, with only existing documentation links.
+Self-review and the bounded independent reviews found no additional important
+recovery defect. Clean delivery and exact-SHA CI are next required gates.
+
+This green recovery checkpoint is not SP-2 acceptance. No new episode has yet
+been allocated or executed. Fresh mixed evidence, 36-client capacity, measured
+scope-bound default records and registered public-route acceptance remain
+required, with the phone-validation restriction above in force.

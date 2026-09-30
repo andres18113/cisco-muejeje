@@ -442,7 +442,7 @@ def campus_payload(
     return base
 
 
-def compose_campus(payload: dict[str, Any]) -> CampusPlans:
+def compose_campus(payload: dict[str, Any], *, planning_policy=None) -> CampusPlans:
     """Compose, compile and bind one campus exactly as the product will."""
     from service_entry_fixture import (
         BACKEND_VERSION,
@@ -459,7 +459,7 @@ def compose_campus(payload: dict[str, Any]) -> CampusPlans:
     )
     from packet_tracer_mcp.domain.enterprise.models.intent import EnterpriseIntent
 
-    topology, inventory = deployed_topology(payload)
+    topology, inventory = deployed_topology(payload, planning_policy=planning_policy)
     manifest = build_deployment_manifest(
         topology,
         inventory,

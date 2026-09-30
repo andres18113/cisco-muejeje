@@ -193,7 +193,7 @@ def test_product_native_dhcp_state_gates_cold_http(
             scans = [
                 script
                 for _kind, script in transport.calls
-                if "pool.getLeaseAt(j)" in script
+                if "var group=" in script and "__leaseScan" in script
             ]
             assert len(scans) == (1 if duplicate_address else 3 if skip_second else 2)
             if ready:

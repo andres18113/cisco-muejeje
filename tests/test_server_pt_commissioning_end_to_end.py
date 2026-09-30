@@ -43,6 +43,10 @@ from packet_tracer_mcp.domain.enterprise.models.cold_http_acceptance import (
 )
 from packet_tracer_mcp.domain.enterprise.models.deployment import EnvironmentFingerprint
 from packet_tracer_mcp.domain.enterprise.models.intent import EnterpriseIntent
+from packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
+    HardwarePlanningPolicy,
+    TrunkRequirementProfile,
+)
 from packet_tracer_mcp.domain.models.plans import TopologyPlan
 from packet_tracer_mcp.infrastructure.catalog.server_pt_commissioning_evidence import (
     scoped_setup_evidence,
@@ -186,7 +190,12 @@ def test_empty_commissioning_reaches_the_product_and_all_30_clients(
         services=True,
     )
     assert composed.valid, composed.issues
-    plans = compose_campus(campus_payload(30, marker=MARKER))
+    plans = compose_campus(
+        campus_payload(30, marker=MARKER),
+        planning_policy=HardwarePlanningPolicy(
+            trunk_requirement_profile=TrunkRequirementProfile.SEGMENT_COUNT_V1
+        ),
+    )
     assert plans.manifest.physical_topology_hash == bundle.physical_topology_hash
     plans.manifest = setup.physical.manifest
     plans.intent_json = bundle.intent_json
@@ -262,7 +271,12 @@ def test_empty_commissioning_reaches_the_product_and_all_30_clients(
 
 def test_acceptance_does_not_start_http_without_the_l2_setup_effects(tmp_path: Path):
     """The external boundary begins with no VLAN or trunk foundation."""
-    plans = compose_campus(campus_payload(30, marker=MARKER))
+    plans = compose_campus(
+        campus_payload(30, marker=MARKER),
+        planning_policy=HardwarePlanningPolicy(
+            trunk_requirement_profile=TrunkRequirementProfile.SEGMENT_COUNT_V1
+        ),
+    )
     harness = build_scalable_harness(
         tmp_path, 30, plans=plans, foundation_action_ids=set()
     )

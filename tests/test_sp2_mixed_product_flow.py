@@ -261,16 +261,29 @@ class _CompetingRowTransport(NodeEngineTransport):
             return outcome
         for scan in competing:
             if scan.get("pool_name") == self.pool:
-                scan["rows"].append(
+                row = {
+                    "ipAddress": client["ipv4"] if self.same_address else "10.99.0.9",
+                    "macAddress": client["mac"],
+                    "leaseTime": 3600,
+                    "port": client["interface"],
+                }
+                row.update(
                     {
-                        "ipAddress": client["ipv4"]
-                        if self.same_address
-                        else "10.99.0.9",
-                        "macAddress": client["mac"],
-                        "leaseTime": 3600,
-                        "port": client["interface"],
+                        key + "_type": "number" if key == "leaseTime" else "string"
+                        for key in list(row)
                     }
                 )
+                # Replace an existing row so this wrong-pool control retains
+                # its declared capacity and both observed confirmation indexes.
+                entry = next(
+                    (
+                        item
+                        for item in scan["entries"]
+                        if item["return_kind"] == "object"
+                    ),
+                    scan["entries"][0],
+                )
+                entry.update(return_kind="object", error="", row=row)
                 self.planted += 1
         return BridgeDispatchOutcome(
             dispatch=outcome.dispatch,
@@ -406,7 +419,7 @@ def test_an_unplanned_pool_row_is_scanned_as_competition(tmp_path):
             + _NARROW_STOCK_POOL
             + "p.addPool('ROGUE');"
             "var q=p.getPool('ROGUE');q.setNetworkMask('10.201.0.0','255.255.255.0');"
-            "q.setStartIp('10.201.0.2');q.setEndIp('10.201.0.2');"
+            "q.setStartIp('10.201.0.2');q.setEndIp('10.201.0.2');q.setMaxUsers(1);"
             "reportResult('ok');"
         )
         return _seed_before_e6(

@@ -59,6 +59,10 @@ from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     DiagnosticLifecycleObservation,
     RepositoryIdentity,
 )
+from packet_tracer_mcp.domain.enterprise.services.hardware_planner import (
+    HardwarePlanningPolicy,
+    TrunkRequirementProfile,
+)
 from packet_tracer_mcp.infrastructure.execution.server_pt_campaign_authority import (
     ExactCiEvidence,
 )
@@ -1112,7 +1116,13 @@ def test_an_experimental_setup_seals_and_measures_through_the_same_product(
         deployment_manifest=setup.physical.manifest,
         services=True,
     )
-    plans = compose_campus(campus_payload(30, marker=MARKER))
+    plans = compose_campus(
+        campus_payload(30, marker=MARKER),
+        planning_policy=HardwarePlanningPolicy(
+            trunk_requirement_profile=TrunkRequirementProfile.SEGMENT_COUNT_V1
+        ),
+    )
+    assert plans.manifest.physical_topology_hash == bundle.physical_topology_hash
     plans.manifest = setup.physical.manifest
     plans.intent_json = bundle.intent_json
     plans.configuration_plan = composed.configuration

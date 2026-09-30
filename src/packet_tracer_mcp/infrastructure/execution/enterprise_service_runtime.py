@@ -17,7 +17,7 @@ import re
 import threading
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum, StrEnum
 from ipaddress import ip_address, ip_network
 from math import isfinite
@@ -67,11 +67,9 @@ from ...domain.enterprise.models.service_runtime import (
     RuntimeObservationStep,
     RuntimeServiceVerification,
 )
-from ...domain.enterprise.services.dhcp_lease_evidence import (
-    NATIVE_LEASE_TABLE_END_ERROR,
-)
 from ...domain.enterprise.services.native_dhcp_policy import native_policy_network
 from .command_dispatch import PAGER_GUARD_JS
+from .dhcp_lease_reader import LEASE_SCAN_SCRIPT, LeaseReaderContext, decode_scan
 from .runtime_inventory import normalize_runtime_inventory
 from .secret_resolver import EvidenceSanitizer
 from .transport_outcome import BridgeDispatchOutcome
@@ -199,7 +197,11 @@ _TABLE_ENDS = frozenset({"null", "end_throw"})
 
 
 def _competing_pool_rows(
-    payload: dict, physical: str, fixed_competing: list[str] | None
+    payload: dict,
+    physical: str,
+    fixed_competing: list[str] | None,
+    *,
+    require_complete: bool = True,
 ):
     """Return every competing-pool lease row, or None when one is unreadable.
 
@@ -237,8 +239,8 @@ def _competing_pool_rows(
         if (
             scan.get("found") is not True
             or not isinstance(found_rows, list)
-            or scan.get("scan_error") != ""
-            or scan.get("termination") not in _TABLE_ENDS
+            or (require_complete and scan.get("scan_error") != "")
+            or (require_complete and scan.get("termination") not in _TABLE_ENDS)
         ):
             return None
         for row in found_rows:
@@ -254,6 +256,47 @@ def _competing_pool_rows(
                 return None
             rows.append(row)
     return rows
+
+
+def _lease_snapshot_trace(payload: dict, first_snapshot: dict | None = None) -> dict:
+    """Retain each raw index once, with shared reader provenance per snapshot.
+
+    `rows` is a derived projection of entries selected by `row_indices`, so
+    persisting both repeats field values. Competing scans refer to the same
+    snapshot context; their physical names, windows and raw entries remain.
+    """
+    facts = dict(payload)
+    facts.pop("rows", None)
+    if facts.get("scan_error") == "":
+        facts.pop("scan_error", None)
+    facts["competing_window_basis"] = "min_configured_capacity_and_scan_cap_plus_two"
+    if first_snapshot is not None and payload.get(
+        "reader_provenance"
+    ) == first_snapshot.get("reader_provenance"):
+        facts.pop("reader_provenance", None)
+        facts["reader_provenance_ref"] = "samples[0].lease_snapshot"
+    if isinstance(payload.get("competing"), list):
+        competing = []
+        for scan in payload["competing"]:
+            if not isinstance(scan, dict):
+                competing.append(scan)
+                continue
+            recorded = dict(scan)
+            recorded.pop("rows", None)
+            if recorded.get("scan_error") == "":
+                recorded.pop("scan_error", None)
+            # These are derivable from ordered inventory and the shared window
+            # contract. Actual pool names, capacities and all index reads stay.
+            recorded.pop("requested", None)
+            recorded.pop("window_basis", None)
+            if recorded.get("capacity_error") == "":
+                recorded.pop("capacity_error", None)
+            if scan.get("reader_provenance") == payload.get("reader_provenance"):
+                # The snapshot context applies to every matching physical scan.
+                recorded.pop("reader_provenance", None)
+            competing.append(recorded)
+        facts["competing"] = competing
+    return facts
 
 
 def _expected_dhcp_allocation(expected: dict[str, object]):
@@ -975,6 +1018,7 @@ class PacketTracerEnterpriseServiceRuntime:
         web_late_read_offset: float | None = None,
         budget_reader: Callable[[], tuple[int, float]] | None = None,
         owned_release: (Callable[[str], AbstractContextManager[None]] | None) = None,
+        lease_reader_context: LeaseReaderContext | None = None,
     ) -> None:
         """Bind the runtime to one inventory reader and one command channel.
 
@@ -1011,6 +1055,7 @@ class PacketTracerEnterpriseServiceRuntime:
         that dispatch against it without reading any script. When it refuses,
         the release is reported as failed and ownership as unresolved.
         """
+        self._lease_reader_context = lease_reader_context
         self._sanitizer = EvidenceSanitizer()
         self._query_inventory = query_inventory
         self._send_and_wait = send_and_wait
@@ -3303,60 +3348,62 @@ class PacketTracerEnterpriseServiceRuntime:
             "found:!!dev,port_found:!!port,mode:null,mode_type:'error',"
             "ipv4:'',netmask:'',mac:'',"
             f"error:{reader}(e)}});}}}}"
-            f"var endText={json.dumps(NATIVE_LEASE_TABLE_END_ERROR)};"
-            # The measured end: this exact throw, and the same at the next
-            # index. Anything else leaves the table unread.
-            "function tableEnd(p,k){try{p.getLeaseAt(k);}catch(x){"
-            f"return {reader}(x)===endText;}}return false;}}"
-            f"if(pool){{termination='bound';for(var j=0;j<{bound_json};j++){{"
-            # Only the index call can end the table; reading a returned
-            # row's fields is a separate step whose failure never does.
-            "var r=null;try{r=pool.getLeaseAt(j);}"
-            f"catch(e){{scanError={reader}(e);termination='error';"
-            "if(scanError===endText&&tableEnd(pool,j+1)){"
-            "scanError='';termination='end_throw';}break;}"
-            "if(!r){termination='null';break;}"
-            "try{rows.push({ipAddress:String(r.ipAddress),"
-            "macAddress:String(r.macAddress),leaseTime:r.leaseTime,"
-            "port:String(r.port)});"
-            f"}}catch(e){{scanError={reader}(e);termination='error';break;}}}}}}"
-            + (
-                "var inventory=[],inventoryError='',competing=[];"
-                + (
-                    "try{var pc=sp?sp.getPoolCount():0;"
-                    "if(typeof pc!=='number'||!isFinite(pc)||pc<0||"
-                    "Math.floor(pc)!==pc||"
-                    f"pc>{DHCP_POOL_INVENTORY_LIMIT}){{inventoryError='pool_count';}}"
-                    "else{for(var c=0;c<pc;c++){var iq=sp.getPoolAt(c);"
-                    "if(!iq){inventoryError='pool_row';break;}"
-                    "inventory.push(String(iq.getDhcpPoolName()));}}}"
-                    f"catch(e){{inventoryError={reader}(e);}}"
-                )
-                + "for(var c=0;c<inventory.length&&!inventoryError;c++){"
-                f"var cn=inventory[c];if(cn==={json.dumps(physical)}){{continue;}}"
-                "var cp=sp.getPool(cn),crows=[],cerr='',cterm=cp?'bound':'absent';"
-                f"if(cp){{for(var k=0;k<{DHCP_LEASE_SCAN_LIMIT};k++){{"
-                "var cr=null;try{cr=cp.getLeaseAt(k);}"
-                f"catch(e){{cerr={reader}(e);cterm='error';"
-                "if(cerr===endText&&tableEnd(cp,k+1)){cerr='';cterm='end_throw';}"
-                "break;}"
-                "if(!cr){cterm='null';break;}"
-                "try{crows.push({ipAddress:String(cr.ipAddress),"
-                "macAddress:String(cr.macAddress),leaseTime:cr.leaseTime,"
-                "port:String(cr.port)});"
-                f"}}catch(e){{cerr={reader}(e);cterm='error';break;}}}}}}"
-                "competing.push({pool_name:cn,found:!!cp,rows:crows,"
-                "scan_error:cerr,termination:cterm});}"
-            )
-            + "reportResult(JSON.stringify({server_found:!!sd,process_found:!!sp,"
+            + "var __leaseError="
+            + reader
+            + ";"
+            + LEASE_SCAN_SCRIPT
+            + "var entries=pool?__leaseScan(pool,"
+            + bound_json
+            + "):[];"
+            + "var inventory=[],inventoryError='',competing=[];"
+            + "try{var pc=sp?sp.getPoolCount():0;"
+            "if(typeof pc!=='number'||!isFinite(pc)||pc<0||Math.floor(pc)!==pc||"
+            "pc>"
+            + json.dumps(DHCP_POOL_INVENTORY_LIMIT)
+            + "){inventoryError='pool_count';}"
+            "else{for(var c=0;c<pc;c++){var iq=sp.getPoolAt(c);"
+            "if(!iq){inventoryError='pool_row';break;}"
+            "inventory.push(String(iq.getDhcpPoolName()));}}}"
+            "catch(e){inventoryError=" + reader + "(e);}"
+            "for(var c=0;c<inventory.length&&!inventoryError;c++){var cn=inventory[c];"
+            "if(cn===" + json.dumps(physical) + "){continue;}"
+            "var cp=sp.getPool(cn),capacity=null,capacityError='';"
+            "try{capacity=cp?cp.getMaxUsers():null;}catch(x){capacityError="
+            + reader
+            + "(x);}"
+            "var capacityValid=typeof capacity==='number'&&isFinite(capacity)&&"
+            "capacity>=0&&Math.floor(capacity)===capacity;"
+            "var cw=capacityValid?Math.min(capacity,"
+            + json.dumps(DHCP_LEASE_SCAN_LIMIT)
+            + ")+2:0;"
+            # Configuration supplies a bounded observation window, never a
+            # lease count. Two later indexes remain actual independent reads.
+            "competing.push({requested:cn,pool_name:cp?String(cp.getDhcpPoolName()):'',"
+            "found:!!cp,capacity:capacity,capacity_type:typeof capacity,"
+            "capacity_error:capacityError,window_basis:'configured_capacity_plus_two',"
+            "window:cw,entries:cp&&capacityValid?__leaseScan(cp,cw):[],"
+            "scan_error:capacityValid?'':'competing_pool_capacity_invalid'});}"
+            "reportResult(JSON.stringify({server_found:!!sd,process_found:!!sp,"
             "pool_found:!!pool,pool_name:pool?String(pool.getDhcpPoolName()):'',"
-            "clients:clients,rows:rows,scan_error:scanError,"
-            + "inventory:inventory,inventory_error:inventoryError,"
-            "competing:competing,"
-            "termination:termination,error:''}));}catch(e){"
-            f"reportResult(JSON.stringify({{error:{reader}(e)}}));}}"
+            "clients:clients,entries:entries,window:" + bound_json + ",scan_error:'',"
+            "inventory:inventory,inventory_error:inventoryError,competing:competing,"
+            "error:''}));}catch(e){reportResult(JSON.stringify({error:"
+            + reader
+            + "(e)}));}"
         )
-        return self._observe(script, self._mail_timeout)
+        observation = self._observe(script, self._mail_timeout)
+        if observation.kind is not BridgeObservationKind.PAYLOAD:
+            return observation
+        payload = dict(observation.payload or {})
+        payload.update(decode_scan(payload, self._lease_reader_context))
+        if isinstance(payload.get("competing"), list):
+            payload["competing"] = [
+                decode_scan(item, self._lease_reader_context)
+                if isinstance(item, dict)
+                else item
+                for item in payload["competing"]
+            ]
+        return replace(observation, payload=payload)
 
     def _verify_native_dhcp_group(self, expectation):
         """Verify selected clients from shared, fresh group scans.
@@ -3386,7 +3433,7 @@ class PacketTracerEnterpriseServiceRuntime:
         # snapshot reads the whole inventory and scans every other pool.
         physical = str(expected.get("effective_pool_name") or "")
         named = physical != "serverPool"
-        group_cap = DHCP_LEASE_SCAN_LIMIT if named else 16
+        group_cap = DHCP_LEASE_SCAN_LIMIT
         host_pools = _expected_host_pools(expected)
         fixed_competing = (
             None
@@ -3542,7 +3589,7 @@ class PacketTracerEnterpriseServiceRuntime:
             observation = self._native_group_snapshot(
                 expectation,
                 selected,
-                bound + 1 if physical != "serverPool" else bound,
+                bound + 2,
                 physical,
                 fixed_competing,
             )
@@ -3557,7 +3604,9 @@ class PacketTracerEnterpriseServiceRuntime:
                 {
                     "server_policy_json": server.observed.get("native_policy_json", ""),
                     "inactive_clients": dict(inactive_macs),
-                    "lease_snapshot": payload,
+                    "lease_snapshot": _lease_snapshot_trace(
+                        payload, history[0]["lease_snapshot"] if history else None
+                    ),
                 }
             )
             if (
@@ -3576,12 +3625,17 @@ class PacketTracerEnterpriseServiceRuntime:
             competing_rows = _competing_pool_rows(payload, physical, fixed_competing)
             if competing_rows is not None and fixed_competing is None:
                 competing = [name for name in payload["inventory"] if name != physical]
-            if competing_rows is None:
-                global_failure = (
-                    ObservationFact.INCONCLUSIVE,
-                    "competing_pool_unobserved",
+            competing_complete = competing_rows is not None
+            if not competing_complete:
+                # Positive counterevidence survives an unread tail. It never
+                # authorizes absence or serving: completeness still gates
+                # every positive below, after local contradictions are saved.
+                competing_rows = (
+                    _competing_pool_rows(
+                        payload, physical, fixed_competing, require_complete=False
+                    )
+                    or []
                 )
-                break
             clients = payload.get("clients")
             rows = payload.get("rows")
             if (
@@ -3600,17 +3654,6 @@ class PacketTracerEnterpriseServiceRuntime:
                 for item in payload.get("competing") or []
             ):
                 table_end_by_throw = True
-            if physical != "serverPool" and (
-                payload.get("termination") not in _TABLE_ENDS
-                or payload.get("scan_error")
-            ):
-                # Attribution in a named pool needs its whole table: an unread
-                # tail could hold another selected client's row.
-                global_failure = (
-                    ObservationFact.INCONCLUSIVE,
-                    "named_pool_scan_incomplete",
-                )
-                break
             if any(
                 not isinstance(row, dict)
                 or set(row) != {"ipAddress", "macAddress", "leaseTime", "port"}
@@ -3780,6 +3823,24 @@ class PacketTracerEnterpriseServiceRuntime:
             if conflict is not None:
                 global_failure = (ObservationFact.CONTRADICTED, conflict[0])
                 global_detail = conflict[1]
+                break
+            if not competing_complete:
+                global_failure = (
+                    ObservationFact.INCONCLUSIVE,
+                    "competing_pool_unobserved",
+                )
+                break
+            if payload.get("termination") not in _TABLE_ENDS or payload.get(
+                "scan_error"
+            ):
+                # Attribution in a named pool needs its whole table: an unread
+                # tail could hold another selected client's row.
+                global_failure = (
+                    ObservationFact.INCONCLUSIVE,
+                    "named_pool_scan_incomplete"
+                    if named
+                    else "native_pool_scan_incomplete",
+                )
                 break
             if all(
                 identifier in failures or count >= 2

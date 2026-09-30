@@ -128,7 +128,32 @@ def _short(device_name: str) -> str:
 
 def _scan(group, readings: dict, rows: list[dict]) -> dict:
     """Build one grouped scan payload; readings are keyed by short name."""
+    entries = [
+        {
+            "index": index,
+            "return_kind": "object",
+            "error": "",
+            "row": {
+                **row,
+                **{
+                    key + "_type": "number"
+                    if type(value) in (int, float)
+                    else "string"
+                    if isinstance(value, str)
+                    else "undefined"
+                    for key, value in row.items()
+                },
+            },
+        }
+        for index, row in enumerate(rows)
+    ]
+    entries += [
+        {"index": index, "return_kind": "null", "error": "", "row": None}
+        for index in range(len(rows), len(rows) + 2)
+    ]
     return {
+        "entries": entries,
+        "window": len(entries),
         "server_found": True,
         "process_found": True,
         "pool_found": True,
@@ -463,8 +488,9 @@ def test_row_at_an_unparseable_address_is_not_a_selected_conflict(monkeypatch):
 
     rows = _verify_group(_runtime(monkeypatch, bridge), expectations)
 
-    assert rows["PC1"].status is ActionExecutionStatus.VERIFIED, rows["PC1"].cause
-    assert rows["PC2"].cause == "native_client_outside_policy"
+    assert all(row.status is ActionExecutionStatus.UNKNOWN for row in rows.values())
+    assert rows["PC1"].cause == "native_pool_scan_incomplete"
+    assert rows["PC2"].observed["local_failure_cause"] == "native_client_outside_policy"
 
 
 def test_unset_macs_of_unassigned_clients_are_not_a_duplicate(monkeypatch):
@@ -583,11 +609,10 @@ EPISODE_11_RECORD = (
 )
 
 
-def test_episode_11_samples_replay_to_the_recorded_verified_rows(monkeypatch):
-    """The accepted LIVE readings still verify both clients exactly as recorded.
+def test_episode_11_results_stay_immutable_without_requalifying_old_scans(monkeypatch):
+    """Preserve accepted results while refusing missing prospective index evidence.
 
-    This re-evaluates archived readings with later code; it is not a new LIVE
-    observation, and the archive is only read.
+    The immutable archive is read only; no missing observations are recreated.
     """
     record = json.loads(EPISODE_11_RECORD.read_text(encoding="utf-8"))
     archived = {
@@ -643,22 +668,18 @@ def test_episode_11_samples_replay_to_the_recorded_verified_rows(monkeypatch):
         )
     }
 
-    assert bridge.scans == []
-    for identifier, row in rows.items():
-        stored = archived[identifier]
-        assert row.status.value == stored["status"] == "verified"
-        assert row.cause == stored["cause"] == ""
-        for key in (
-            "client_ipv4",
-            "client_netmask",
-            "client_mac",
-            "stable_samples",
-            "samples",
-            "group_trace_ref",
-        ):
-            assert row.observed[key] == stored["observed"][key], key
-        assert [item["join"] for item in _readings(row)[1:]] == ["exact", "exact"]
-        assert _readings(row)[0]["reading"] == "unassigned"
+    # New prospective index evidence is absent in the original producer.
+    # The modern reader refuses it, while immutable original conclusions and
+    # client fields retain their original accepted meaning.
+    assert bridge.scans
+    assert all(row.status is ActionExecutionStatus.UNKNOWN for row in rows.values())
+    assert {row.cause for row in rows.values()} == {"native_pool_scan_incomplete"}
+    for stored in archived.values():
+        assert stored["status"] == "verified"
+        assert stored["cause"] == ""
+        assert stored["observed"]["client_ipv4"]
+        assert stored["observed"]["client_mac"]
+        assert stored["observed"]["stable_samples"] == 2
 
 
 # -- R2: one shared index per fresh scan -------------------------------------
@@ -795,9 +816,25 @@ def test_index_preserves_row_multiplicity_and_conflicting_evidence(
 
         rows_by_name = _verify_group(_runtime(monkeypatch, bridge), expectations)
 
-        assert rows_by_name["PC1"].status is ActionExecutionStatus.VERIFIED
-        assert rows_by_name["PC2"].status is status
-        assert rows_by_name["PC2"].cause.startswith(cause)
+        assert all(
+            row.status is ActionExecutionStatus.UNKNOWN for row in rows_by_name.values()
+        )
+        assert rows_by_name["PC1"].cause == "native_pool_scan_incomplete"
+        if extra != "duplicate_exact":
+            assert rows_by_name["PC2"].observed["local_failure_cause"].startswith(cause)
+        trace = json.loads(rows_by_name["PC1"].observed["group_trace_json"])
+        snapshot = trace[0]["lease_snapshot"]
+        assert len(snapshot["row_indices"]) == 3
+        assert (
+            len(
+                [
+                    entry
+                    for entry in snapshot["entries"]
+                    if entry["return_kind"] == "object"
+                ]
+            )
+            == 3
+        )
 
 
 # -- R3: unreadable is not observed changed ----------------------------------

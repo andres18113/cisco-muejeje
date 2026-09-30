@@ -124,7 +124,7 @@ def test_serve_profile_requires_stability_and_binds_one_client() -> None:
     assert step_selection_refusals(definition, ["NATIVE-serve"])
 
 
-@pytest.mark.parametrize("table_end", ["null", "throw"])
+@pytest.mark.parametrize("table_end", ["null", "native"])
 def test_native_serve_attributes_autonomous_client_to_physical_pool(
     tmp_path, table_end
 ) -> None:
@@ -788,7 +788,9 @@ def test_native_serve_refuses_row_from_misidentified_physical_pool(tmp_path) -> 
         engine.close()
 
 
-@pytest.mark.parametrize("fault", ["first_index_throw", "capacity_unreadable"])
+@pytest.mark.parametrize(
+    "fault", ["first_index_throw", "capacity_unreadable", "generic_end_throw"]
+)
 def test_native_serve_keeps_assigned_client_with_incomplete_native_scan_unknown(
     tmp_path, fault
 ) -> None:
@@ -802,6 +804,7 @@ def test_native_serve_keeps_assigned_client_with_incomplete_native_scan_unknown(
         dhcp_native_max_behavior="resize",
         dhcp_mode_acquires=True,
         dhcp_pool_selection="default",
+        dhcp_table_end="throw" if fault == "generic_end_throw" else "null",
     )
 
     class IncompleteNative(_RetainingReapplicationTransport):
@@ -821,7 +824,7 @@ def test_native_serve_keeps_assigned_client_with_incomplete_native_scan_unknown(
                                 "error": "getLeaseAt failed",
                                 "row": None,
                             }
-                        else:
+                        elif fault == "capacity_unreadable":
                             item["max"] = None
                             item["max_type"] = "throw"
                 return replace(outcome, body=json.dumps(body))
@@ -846,7 +849,18 @@ def test_native_serve_keeps_assigned_client_with_incomplete_native_scan_unknown(
         assert serving.conclusion is MeasurementConclusion.INCONCLUSIVE
         assert len(serving.facts["samples"]) == 13
         assert serving.facts["samples"][-1]["client"]["ipv4"] == "192.0.2.100"
-        assert serving.facts["samples"][-1]["native"]["observed"] is True
+        scan = serving.facts["samples"][-1]["native"]
+        assert scan["observed"] is (fault == "capacity_unreadable")
+        if fault != "capacity_unreadable":
+            expected_error = (
+                "getLeaseAt failed"
+                if fault == "first_index_throw"
+                else "lease table end"
+            )
+            assert scan["cause"] == "backend_scan_refused"
+            assert scan["end_observation"]["scan_error"] == expected_error
+            assert any(row["error"] == expected_error for row in scan["entries"])
+            assert len(scan["rows"]) == (0 if fault == "first_index_throw" else 1)
         assert serving.facts["samples"][-1]["ready"] is False
         assert result.record.restoration_proven
     finally:

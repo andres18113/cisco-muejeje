@@ -50,13 +50,6 @@ TERMINATION_MALFORMED = "malformed"
 TERMINATION_POOL_ABSENT = "pool_absent"
 TERMINATION_UNOBSERVED = "unobserved"
 _CLEAN = frozenset({TERMINATION_NULL})
-#: What `DhcpPool.getLeaseAt(index)` threw on Packet Tracer 9.0.1.0858 for
-#: every index at or past a pool's row count, in every SP-2 episode (e1-e6).
-#: Cisco's reference leaves out-of-range reads undocumented and no read ever
-#: returned null, so the product reads only this exact text, repeated at the
-#: next index, as the end of a table; any other error leaves the table unread.
-NATIVE_LEASE_TABLE_END_ERROR = "invalid vector subscript"
-
 #: What one clean state of a pool was, by its observed rows and capacity.
 STATE_EMPTY = "empty"
 STATE_ONE_ROW = "one_row_not_full"
@@ -115,6 +108,8 @@ class LeaseScan:
     termination: str = TERMINATION_UNOBSERVED
     first_null: int | None = None
     entries: tuple[Mapping[str, Any], ...] = ()
+    reader_provenance: Mapping[str, Any] = field(default_factory=dict)
+    end_observation: Mapping[str, Any] = field(default_factory=dict)
     _by_ip: Mapping[str, tuple[LeaseRow, ...]] = field(
         default_factory=dict, repr=False, compare=False
     )
@@ -128,7 +123,11 @@ class LeaseScan:
     @property
     def clean(self) -> bool:
         """Whether the scan ended at a null with nothing after it in the window."""
-        return self.observed and self.termination in _CLEAN
+        return (
+            self.observed
+            and self.termination in _CLEAN
+            and not self.end_observation.get("scan_error")
+        )
 
     def rows_with_ip(self, ip: str) -> tuple[LeaseRow, ...]:
         """Return every row carrying one address."""
@@ -163,6 +162,8 @@ class LeaseScan:
                 for row in self.rows
             ],
             "entries": [dict(item) for item in self.entries],
+            "reader_provenance": dict(self.reader_provenance),
+            "end_observation": dict(self.end_observation),
         }
 
 
@@ -218,13 +219,15 @@ def _row(index: int, value: Any) -> LeaseRow | None:
         return None
     if not isinstance(port, str) or not port:
         return None
-    if (
-        isinstance(lease, bool)
-        or not isinstance(lease, (int, float))
-        or not math.isfinite(float(lease))
-    ):
+    if isinstance(lease, bool) or not isinstance(lease, (int, float)):
         return None
-    return LeaseRow(index, ip, mac, float(lease), port)
+    try:
+        lease_seconds = float(lease)
+    except OverflowError:
+        return None
+    if not math.isfinite(lease_seconds) or lease_seconds < 0:
+        return None
+    return LeaseRow(index, ip, mac, lease_seconds, port)
 
 
 def classify_lease_scan(entry: object, *, pool_name: str) -> LeaseScan:
@@ -318,13 +321,19 @@ def classify_lease_scan(entry: object, *, pool_name: str) -> LeaseScan:
     return _indexed(
         LeaseScan(
             pool=pool_name,
-            observed=True,
+            observed=not bool(entry.get("scan_error")),
+            cause="backend_scan_refused" if entry.get("scan_error") else "",
             capacity=capacity,
             window=window,
             rows=tuple(rows),
             termination=termination,
             first_null=first_null,
             entries=entries,
+            reader_provenance=entry.get("reader_provenance") or {},
+            end_observation={
+                key: entry.get(key)
+                for key in ("first_end_index", "confirming_index", "scan_error")
+            },
         )
     )
 

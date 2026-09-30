@@ -129,11 +129,18 @@ def run_native_product(
                 raise NotImplementedError("no trunk observer in this flow")
             return readiness.observe_trunk_continuity(switches, vlan_id, **bounds)
 
+    from packet_tracer_mcp.infrastructure.execution.dhcp_lease_reader import (
+        LeaseReaderContext,
+    )
+
     real_e6 = PacketTracerEnterpriseServiceRuntime(
         lambda: inventory,
         transport.send_and_wait,
         dispatch_and_wait=transport.dispatch_and_wait,
         convergence_interval_seconds=0.0,
+        lease_reader_context=LeaseReaderContext(
+            SIM_SHA, SIM_TREE, "9.0.1.0858", channel
+        ),
         sleeper=lambda _seconds: None,
         http_timeout_seconds=1.0,
     )

@@ -50,7 +50,10 @@ from ...domain.enterprise.models.voice_plan import (
     VoicePlan,
 )
 from ...domain.enterprise.services.enterprise_designer import EnterpriseDesigner
-from ...domain.enterprise.services.hardware_planner import HardwarePlanningPolicy
+from ...domain.enterprise.services.hardware_planner import (
+    HardwarePlanningPolicy,
+    TrunkRequirementProfile,
+)
 from ...domain.enterprise.services.service_policy import derive_service_policy
 from ...domain.enterprise.services.traffic_attribution import (
     attribute_enterprise_traffic,
@@ -202,6 +205,37 @@ def compose_enterprise_reference(
             issues=[f"E5 compile: {issue.message}" for issue in compiled.issues]
             or ["E5 compilation produced no topology."],
         )
+    # A persisted physical identity can select the previous planning profile.
+    # Both profiles use the same planner and compiler. Only an exact complete
+    # physical hash match permits reconstruction; explicit policies never fall
+    # back, and new workloads keep the current trunk-aware profile.
+    if (
+        policy is None
+        and deployment_manifest is not None
+        and compiled.plan.physical_identity_hash
+        != deployment_manifest.physical_topology_hash
+    ):
+        previous_hardware = plan_enterprise_hardware(
+            enterprise,
+            packet_tracer_version=packet_tracer_version,
+            capability_catalog=capability_catalog,
+            policy=HardwarePlanningPolicy(
+                trunk_requirement_profile=TrunkRequirementProfile.SEGMENT_COUNT_V1
+            ),
+        )
+        previous = compile_enterprise_topology(
+            enterprise,
+            previous_hardware.plan,
+            catalog.compilation_profile(),
+            catalog.cable_for,
+        )
+        if (
+            previous.is_valid
+            and previous.plan is not None
+            and previous.plan.physical_identity_hash
+            == deployment_manifest.physical_topology_hash
+        ):
+            hardware, compiled = previous_hardware, previous
     topology = compiled.plan
     # Resuelto sobre los modelos realmente desplegados. Un modelo sin
     # evidencia no queda fuera del mapa: entra con todo en UNKNOWN, que es

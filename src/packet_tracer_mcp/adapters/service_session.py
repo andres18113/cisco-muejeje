@@ -33,6 +33,7 @@ from ..domain.enterprise.models.configuration_runtime import RuntimeConfiguratio
 from ..domain.enterprise.models.deployment import EnvironmentFingerprint
 from ..domain.enterprise.models.service_entry import ServiceEffectClosure
 from ..domain.enterprise.models.service_run_record import SourceTreeIdentity
+from ..infrastructure.execution.dhcp_lease_reader import reader_context
 from ..infrastructure.execution.endpoint_address_observer import (
     PacketTracerEndpointAddressObserver,
 )
@@ -120,6 +121,22 @@ def compose_service_session(
         if bounds.owned_release is not None:
             service_bounds["owned_release"] = bounds.owned_release
 
+        environment = (
+            observe_environment(channel)
+            if transport.ready
+            else EnvironmentFingerprint()
+        )
+        source = observe_source_tree()
+        context = reader_context(
+            {
+                "backend": environment.backend,
+                "source_sha": source.sha,
+                "source_tree": source.tree,
+                "clean": source.dirty is False,
+                "build": environment.backend_version,
+                "channel": channel,
+            }
+        )
         endpoint_reader = PacketTracerEndpointAddressObserver(bound_send_and_wait)
         # One resolver per invocation: admission and the runtime resolve
         # through the same instance, and nothing outlives the call.
@@ -136,6 +153,7 @@ def compose_service_session(
             bound_send_and_wait,
             dispatch_and_wait=bound_dispatch_and_wait,
             secret_resolver=secret_resolver,
+            lease_reader_context=context,
             **service_bounds,
         )
 
@@ -150,11 +168,6 @@ def compose_service_session(
             selected_names = normalized
             return configuration_runtime.inventory()
 
-        environment = (
-            observe_environment(channel)
-            if transport.ready
-            else EnvironmentFingerprint()
-        )
         return ServiceInvocationBinding(
             runtimes=ServiceStageRuntimes(
                 configuration=configuration_runtime,
@@ -163,7 +176,7 @@ def compose_service_session(
             record_store=record_store_factory(),
             environment_fingerprint=environment,
             transport_selection=transport,
-            source_tree=observe_source_tree(),
+            source_tree=source,
             endpoint_observer=endpoint_reader,
             inventory_reader=inventory_reader,
             secret_resolver=secret_resolver,

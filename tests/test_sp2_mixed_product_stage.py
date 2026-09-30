@@ -112,8 +112,10 @@ class _HybridView:
         self.before_call = before_call
         #: When set, every router answer names two candidate owners.
         self.ambiguous = ambiguous
+        self.observation_context = bound.observation_context
         self.clock = bound.clock
         self.capped_sleep = bound.capped_sleep
+        self.remaining_seconds = bound.remaining_seconds
 
     def _send(self, method, script, *args):
         names = set(_NAME.findall(script))

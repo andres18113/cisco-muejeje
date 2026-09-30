@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from math import ceil
 
 from ..models.capabilities import (
@@ -45,6 +46,13 @@ class HierarchyPolicy:
     max_access_switches_per_distribution: int = 8
 
 
+class TrunkRequirementProfile(StrEnum):
+    """Versioned trunk requirements for reconstructible physical plans."""
+
+    SEGMENT_COUNT_V1 = "segment-count-v1"
+    SITE_HIERARCHY_V2 = "site-hierarchy-v2"
+
+
 @dataclass(frozen=True)
 class HardwarePlanningPolicy:
     """Planner-wide choices: resiliency, access homogeneity and hierarchy."""
@@ -57,6 +65,9 @@ class HardwarePlanningPolicy:
     #: viabilidad, así que pedir un switch como router no lo cuela. Vacío = sin
     #: preferencia, que es el comportamiento anterior byte a byte.
     preferred_router_model: str = ""
+    trunk_requirement_profile: TrunkRequirementProfile = (
+        TrunkRequirementProfile.SITE_HIERARCHY_V2
+    )
 
 
 _DEFAULT_POLICY = HardwarePlanningPolicy()
@@ -441,13 +452,36 @@ class HardwarePlanner:
         zones = {zone.zone_id: zone for zone in iter_zone_plans(site)}
         counter = 0
         count_planner = SwitchCountPlanner()
+        requires_trunk = len(site.segments) > 1
+        if (
+            not requires_trunk
+            and policy.trunk_requirement_profile
+            is TrunkRequirementProfile.SITE_HIERARCHY_V2
+        ):
+            counts = [
+                choice.count
+                for capacity in site.capacity_requirements
+                if (
+                    choice := count_planner.choose(
+                        capacity.required_access_ports,
+                        capacity.required_poe_ports,
+                        capacity.required_uplink_ports,
+                        switch_candidates,
+                    )
+                )
+                is not None
+            ]
+            requires_trunk = (
+                HardwareHierarchyPlanner.choose(sum(counts), policy.hierarchy)
+                is not HierarchyMode.FLAT
+            )
         for capacity in site.capacity_requirements:
             choice = count_planner.choose(
                 capacity.required_access_ports,
                 capacity.required_poe_ports,
                 capacity.required_uplink_ports,
                 switch_candidates,
-                requires_trunk=len(site.segments) > 1,
+                requires_trunk=requires_trunk,
             )
             block = AccessBlockPlan(
                 site_id=site.site_id,

@@ -135,7 +135,23 @@ class _SwitchingTransport:
         return self._pick().send_and_wait(script, timeout)
 
     def dispatch_and_wait(self, script, timeout):
-        return self._pick().dispatch_and_wait(script, timeout)
+        target = self._pick()
+        if target is self.engine and "gateway_reads:__gws" in script:
+            # Project actual simulated campus state into the endpoint reader.
+            for name, binding in self.campus.bindings.items():
+                values = [
+                    name,
+                    False,
+                    binding["ip"],
+                    binding["mask"],
+                    binding["gateway"],
+                    binding["dns"],
+                    "FastEthernet0",
+                ]
+                self.engine.engine.evaluate(
+                    "configurePcIp(" + ",".join(json.dumps(v) for v in values) + ");"
+                )
+        return target.dispatch_and_wait(script, timeout)
 
 
 class _CampusView:
@@ -144,8 +160,10 @@ class _CampusView:
     def __init__(self, bound, switching: _SwitchingTransport) -> None:
         self._bound = bound
         self._switching = switching
+        self.observation_context = bound.observation_context
         self.clock = bound.clock
         self.capped_sleep = bound.capped_sleep
+        self.remaining_seconds = bound.remaining_seconds
 
     def _via_campus(self, name, *args):
         self._switching.target = self._switching.campus
@@ -793,3 +811,44 @@ def test_an_intent_with_another_wan_subnet_is_refused_before_any_effect(
     assert record.primary_failure == "sp1_intent_values_differ_from_run"
     assert LAST["switching"].campus_calls == 0
     assert snapshot["devices"] == []
+
+
+@pytest.mark.parametrize("failure", ["device", "address", "dns", "duplicate"])
+def test_terminal_requires_valid_binding_observations(
+    tmp_path, capsys, monkeypatch, failure
+):
+    """Failed terminal fields cannot change independent accepted product checks."""
+    from packet_tracer_mcp.infrastructure.execution.service_qualification_probes import (
+        PacketTracerQualificationProbes,
+    )
+
+    original = PacketTracerQualificationProbes.read_client_bindings
+
+    def corrupt(self, clients):
+        reading = original(self, clients)
+        rows = reading.payload["clients"]
+        if failure == "device":
+            rows[0].update(found=False, port_found=False, error="device absent")
+        elif failure == "address":
+            rows[0]["ipv4"] = ""
+        elif failure == "dns":
+            rows[0].update(dns_api=False, dns_server="", dns_error="unreadable")
+        else:
+            rows[0] = dict(rows[1])
+        return reading
+
+    monkeypatch.setattr(
+        PacketTracerQualificationProbes, "read_client_bindings", corrupt
+    )
+    _code, _summary, record, _snapshot, _store, _terminal = _run(
+        tmp_path, capsys, monkeypatch, "SP1-ROUTED-W2"
+    )
+    measurements = _measured(record)
+    assert measurements["M-SP1-ROUTED-PRODUCT"].conclusion is (
+        MeasurementConclusion.SUPPORTED_IN_SAMPLE
+    )
+    assert measurements["M-SP1-ROUTED-FINAL"].conclusion is (
+        MeasurementConclusion.INCONCLUSIVE
+    )
+    assert measurements["M-SP1-ROUTED-FINAL"].facts["client_bindings"]
+    assert record.restoration_proven

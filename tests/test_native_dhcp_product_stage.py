@@ -393,6 +393,9 @@ def test_production_product_runtimes_supply_inner_inventory(tmp_path):
         def clock(self):
             return 0.0
 
+        def remaining_seconds(self):
+            return 0.0
+
         def capped_sleep(self, _seconds):
             raise AssertionError("inventory must not sleep")
 
@@ -440,6 +443,7 @@ def test_product_stage_ios_batch_indexes_inner_fixture_inventory(tmp_path):
             dispatch_and_wait = transport.dispatch_and_wait
             clock = staticmethod(lambda: 0.0)
             capped_sleep = staticmethod(lambda _seconds: None)
+            remaining_seconds = staticmethod(lambda: 60.0)
 
         inner = (
             production_boundaries(tmp_path)

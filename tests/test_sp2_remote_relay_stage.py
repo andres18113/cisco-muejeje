@@ -225,8 +225,10 @@ class _HybridView:
     def __init__(self, bound, switching):
         self.bound = bound
         self.switching = switching
+        self.observation_context = bound.observation_context
         self.clock = bound.clock
         self.capped_sleep = bound.capped_sleep
+        self.remaining_seconds = bound.remaining_seconds
 
     def _send(self, method, script, *args):
         endpoint = (

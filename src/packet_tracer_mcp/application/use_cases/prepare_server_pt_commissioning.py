@@ -12,6 +12,10 @@ from ...domain.enterprise.models.configuration import (
     ConfigurationPlan,
 )
 from ...domain.enterprise.scenarios.server_pt_campus import server_pt_campus_intent
+from ...domain.enterprise.services.hardware_planner import (
+    HardwarePlanningPolicy,
+    TrunkRequirementProfile,
+)
 from ...domain.enterprise.services.service_policy import derive_service_policy
 from .compile_configuration import compile_enterprise_configuration
 from .compose_enterprise_reference import compose_enterprise_reference
@@ -134,7 +138,13 @@ def prepare_server_pt_commissioning(
     if build != SERVER_PT_BUILD:
         raise ValueError("Server-PT commissioning requires the exact measured build")
     intent = server_pt_campus_intent(clients, marker, sites=sites)
-    composed = compose_enterprise_reference(intent, packet_tracer_version=build)
+    composed = compose_enterprise_reference(
+        intent,
+        packet_tracer_version=build,
+        policy=HardwarePlanningPolicy(
+            trunk_requirement_profile=TrunkRequirementProfile.SEGMENT_COUNT_V1
+        ),
+    )
     if not composed.valid or not all(
         (composed.enterprise, composed.topology, composed.traffic)
     ):

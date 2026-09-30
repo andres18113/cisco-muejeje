@@ -43,6 +43,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum, StrEnum
+from ipaddress import IPv4Address, IPv4Network
 from typing import Any
 
 from ...domain.enterprise.models.capabilities import DeviceCapabilities
@@ -196,7 +197,6 @@ from ...domain.enterprise.services.configuration_compiler import (
     configuration_plan_semantic_hash,
 )
 from ...domain.enterprise.services.dhcp_lease_evidence import (
-    NATIVE_LEASE_TABLE_END_ERROR,
     NO_BACKGROUND_PROOF,
     NOT_DORA,
     ROW_EXACT,
@@ -696,6 +696,7 @@ class LedgeredTransport:
         clock: Callable[[], float],
     ) -> None:
         """Bind the fixed transport to its ledger, clock and sleeper."""
+        self.observation_context: Mapping[str, object] | None = None
         self._ledger = ledger
         self._transport = transport
         self._sleep = sleep
@@ -704,6 +705,10 @@ class LedgeredTransport:
     def clock(self) -> float:
         """Return the invocation's monotonic time, for runtimes that poll."""
         return self._clock()
+
+    def remaining_seconds(self) -> float:
+        """Return the current purpose's finite remaining wall-clock allowance."""
+        return self._ledger.allowance()[1]
 
     def capped_sleep(self, seconds: float) -> None:
         """Sleep for a runtime's poll, capped by the phase's remaining time."""
@@ -2226,6 +2231,14 @@ def _admitted(
             )
         )
 
+    bound.observation_context = {
+        "backend": "packet_tracer",
+        "source_sha": record.source.executed_sha,
+        "source_tree": record.source.executed_tree,
+        "clean": record.source.clean,
+        "build": record.environment.observed_build,
+        "channel": request.channel,
+    }
     nonce = boundaries.new_nonce()
     hold = hold if hold is not None else _CampaignHold()
     execution = _Execution(
@@ -7048,6 +7061,87 @@ def _sp1_client_checks(
     return checks
 
 
+def _sp1_terminal_bindings_observed(bindings: object, clients: Sequence[str]) -> bool:
+    """Require successful static address, gateway and resolver observations."""
+    expected = set(clients)
+    if (
+        len(expected) != len(clients)
+        or not isinstance(bindings, list)
+        or len(bindings) != len(clients)
+    ):
+        return False
+
+    def concrete_ipv4(value: object) -> bool:
+        if not isinstance(value, str):
+            return False
+        try:
+            address = IPv4Address(value)
+        except ValueError:
+            return False
+        return not address.is_unspecified and not address.is_multicast
+
+    seen: set[str] = set()
+    for row in bindings:
+        if not isinstance(row, Mapping):
+            return False
+        name = row.get("device")
+        if not isinstance(name, str) or name not in expected or name in seen:
+            return False
+        seen.add(name)
+        if not (
+            row.get("found") is True
+            and row.get("port_found") is True
+            and row.get("error") == ""
+            and concrete_ipv4(row.get("ipv4"))
+            and row.get("dns_api") is True
+            and row.get("dns_error") == ""
+            and concrete_ipv4(row.get("dns_server"))
+        ):
+            return False
+        mask = row.get("netmask")
+        if not isinstance(mask, str):
+            return False
+        try:
+            IPv4Address(mask)
+            network = IPv4Network("0.0.0.0/" + mask)
+            if str(network.netmask) != mask:
+                return False
+        except ValueError:
+            return False
+        gateways = row.get("gateway_reads")
+        if not isinstance(gateways, list):
+            return False
+        processes: set[str] = set()
+        answered: list[str] = []
+        for reading in gateways:
+            if not isinstance(reading, Mapping):
+                return False
+            process = reading.get("process")
+            if (
+                not isinstance(process, str)
+                or process not in {"HostIp", "HostIpProcess"}
+                or process in processes
+                or type(reading.get("found")) is not bool
+                or type(reading.get("api")) is not bool
+                or not isinstance(reading.get("error"), str)
+            ):
+                return False
+            processes.add(process)
+            if reading["api"] is True and reading["error"] == "":
+                if reading["found"] is not True or not concrete_ipv4(
+                    reading.get("value")
+                ):
+                    return False
+                answered.append(reading["value"])
+        if (
+            processes != {"HostIp", "HostIpProcess"}
+            or not answered
+            or len(set(answered)) != 1
+        ):
+            return False
+    return seen == expected
+
+
 def _run_sp1_routed_product(execution: _Execution) -> None:
     """Run the SP-1 routed intent through the registered product tool."""
     contract = execution.product_contract
@@ -7096,8 +7190,7 @@ def _run_sp1_routed_product(execution: _Execution) -> None:
                     row.get("executed") and row.get("output_complete")
                     for row in routers
                 )
-                and isinstance(bindings, list)
-                and len(bindings) == len(clients)
+                and _sp1_terminal_bindings_observed(bindings, clients)
             )
             execution.conclude(
                 "M-SP1-ROUTED-FINAL",
@@ -7670,6 +7763,7 @@ def _sp2_mixed_scan_complete(
     found = [(row.ip, normalized_mac(row.mac)) for row in scan.rows]
     return bool(
         scan.observed
+        and not scan.end_observation.get("scan_error")
         and scan.termination in {TERMINATION_NULL, TERMINATION_THROW}
         and scan.capacity is not None
         and count <= scan.capacity
@@ -7682,7 +7776,8 @@ def _sp2_mixed_scan_complete(
             item.get("return_kind") == "null"
             or (
                 item.get("return_kind") == "throw"
-                and item.get("error") == NATIVE_LEASE_TABLE_END_ERROR
+                and item.get("end_semantics") == "observed_native_index_end"
+                and bool(scan.reader_provenance)
             )
             for item in entries[count:]
         )
@@ -9915,6 +10010,29 @@ def _sp2_read_binding(
     }
 
 
+def _sp2_first_probe_read(scan: LeaseScan) -> bool:
+    """Observe an index-only error for the explicitly bounded first probe.
+
+    The owned diagnostic separately proves every client unbound. Index
+    errors may motivate that one investigation, but grant neither absence,
+    calibration, serving nor a second client's activation. Field failures
+    and malformed observations do not qualify for this exception.
+    """
+    return scan.clean or (
+        scan.cause in {"", "backend_scan_refused"}
+        and bool(scan.entries)
+        and all(
+            type(item.get("index")) is int
+            and item["index"] == index
+            and item.get("return_kind") == "throw"
+            and isinstance(item.get("error"), str)
+            and bool(item["error"])
+            and item.get("row") is None
+            for index, item in enumerate(scan.entries)
+        )
+    )
+
+
 def _sp2_native_dhcp(
     execution: _Execution,
     state: _Q3FlState,
@@ -9985,8 +10103,16 @@ def _sp2_native_dhcp(
         if (
             named_before is None
             or default_before is None
-            or not named_before.observed
-            or not default_before.observed
+            or not (
+                _sp2_first_probe_read(named_before)
+                if ordinal == 0
+                else named_before.observed
+            )
+            or not (
+                _sp2_first_probe_read(default_before)
+                if ordinal == 0
+                else default_before.observed
+            )
         ):
             reason = "sp2_preclient_pool_scan_unobserved"
         elif ordinal == 0 and (named_before.rows or default_before.rows):

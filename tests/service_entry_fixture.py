@@ -132,13 +132,13 @@ def intent_json(**kwargs: Any) -> str:
     return json.dumps(intent_payload(**kwargs))
 
 
-def deployed_topology(payload: dict[str, Any] | None = None):
+def deployed_topology(payload: dict[str, Any] | None = None, *, planning_policy=None):
     """Compose to E4 and build the inventory a real deployment would expose."""
     intent = EnterpriseIntent.model_validate_json(
         json.dumps(payload or intent_payload())
     )
     composed = compose_enterprise_reference(
-        intent, packet_tracer_version=BACKEND_VERSION
+        intent, packet_tracer_version=BACKEND_VERSION, policy=planning_policy
     )
     assert composed.topology is not None, composed.issues
     inventory = [
