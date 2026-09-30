@@ -143,6 +143,7 @@ from ...domain.enterprise.models.service_qualification import (
     SP1_ROUTERS,
     SP1_WEB_SERVER,
     SP2_CANDIDATE_LABEL,
+    SP2_CAPACITY_SITE_CLIENTS,
     SP2_MIXED_SERVER,
     SP2_MIXED_SITE_CLIENTS,
     SP2_REMOTE_ACQUISITION_MAX_POLLS,
@@ -1058,6 +1059,7 @@ class QualificationBoundaries:
     #: native product ones above; nothing about them is SP-1 specific.
     sp2_remote_relay_contract: Callable[[str, str], Q3ProductContract] | None = None
     sp2_mixed_product_contract: Callable[[str, str], Q3ProductContract] | None = None
+    sp2_capacity_product_contract: Callable[[str, str], Q3ProductContract] | None = None
     sp1_product_contract: (
         Callable[[str, str, tuple[str, ...]], Q3ProductContract] | None
     ) = None
@@ -1261,6 +1263,10 @@ _DIAGNOSTIC_BOUNDARIES[QualificationStage.SP2_MIXED_PRODUCT] = (
     "native_product_record_store_factory",
     "native_product_endpoint_observer",
     "diagnostic_lifecycle",
+)
+_DIAGNOSTIC_BOUNDARIES[QualificationStage.SP2_CAPACITY_PRODUCT] = (
+    *_DIAGNOSTIC_BOUNDARIES[QualificationStage.SP2_MIXED_PRODUCT][1:],
+    "sp2_capacity_product_contract",
 )
 _DIAGNOSTIC_BOUNDARIES[QualificationStage.Q3_NATIVE_PRODUCT] = (
     "native_product_contract",
@@ -1549,11 +1555,19 @@ def _with_campaign_claim(
                 ],
                 claim_release=hold.finalize(),
             )
-    elif definition.stage is QualificationStage.SP2_MIXED_PRODUCT:
+    elif definition.stage in (
+        QualificationStage.SP2_MIXED_PRODUCT,
+        QualificationStage.SP2_CAPACITY_PRODUCT,
+    ):
+        factory = (
+            boundaries.sp2_capacity_product_contract
+            if definition.stage is QualificationStage.SP2_CAPACITY_PRODUCT
+            else boundaries.sp2_mixed_product_contract
+        )
         if (
             not boundaries.q3_required_build
             or request.packet_tracer_build != boundaries.q3_required_build
-            or boundaries.sp2_mixed_product_contract is None
+            or factory is None
         ):
             return _refused(
                 [
@@ -1566,9 +1580,7 @@ def _with_campaign_claim(
                 claim_release=hold.finalize(),
             )
         try:
-            product_contract = boundaries.sp2_mixed_product_contract(
-                request.packet_tracer_build, run_id
-            )
+            product_contract = factory(request.packet_tracer_build, run_id)
         except Exception as exc:
             return _refused(
                 [
@@ -2282,7 +2294,10 @@ def _admitted(
             _run_d_web(execution)
         elif definition.stage is QualificationStage.SP2_REMOTE_RELAY:
             _run_sp2_remote_relay(execution)
-        elif definition.stage is QualificationStage.SP2_MIXED_PRODUCT:
+        elif definition.stage in (
+            QualificationStage.SP2_MIXED_PRODUCT,
+            QualificationStage.SP2_CAPACITY_PRODUCT,
+        ):
             _run_sp2_mixed_product(execution)
         elif definition.stage in (*Q3_FL_STAGES, *SP2_STAGES):
             _run_q3_fastloop(execution)
@@ -7386,6 +7401,21 @@ SP2_MIXED_BUILD = "9.0.1.0858"
 SP2_MIXED_NORMALIZED_SERVICES_SHA256 = (
     "6e978c7eecaee52becfddcaf94a3f90ee5eeed7193cd176e91198c181e916d7a"
 )
+SP2_CAPACITY_TOPOLOGY_SHA256 = (
+    "ef36487fe87642d286c8d11ba4beb35536c2c1edd8438f1b61368bf4bac69b34"
+)
+SP2_CAPACITY_CONFIGURATION_SHA256 = (
+    "7ccda09a418d755c49f2d14f29c54f660b74f051a7c4b8b3a2715d6223b88b96"
+)
+SP2_CAPACITY_MANIFEST_SHA256 = (
+    "e35d69a9e846c0a37908f50114d0208f58f9e8da7b66cdbbb89d28c8fcb37143"
+)
+SP2_CAPACITY_SERVICE_CAPABILITIES_SHA256 = (
+    "71e1945a5f0fe63428429e31e84a4047ef363af950db15e4bf07d6cbc7dca7cd"
+)
+SP2_CAPACITY_NORMALIZED_SERVICES_SHA256 = (
+    "09feeeb4d926ba06155297ec243dcdd73b1f5ae21b0d34dc772f8f79ae17fbeb"
+)
 _SP2_SERVICE_ID = re.compile(r"svc/[a-z0-9-]+/[0-9a-f]{16}")
 SP2_MIXED_ROUTERS = ("HQ-EDGE-RTR-01", "BR1-EDGE-RTR-01", "BR2-EDGE-RTR-01")
 #: Each site's segment and the physical pool the strategy assigns to it: the
@@ -7417,7 +7447,7 @@ SP2_MIXED_ROUTED_PAIRS = {("br1-data", "hq-data"), ("br2-data", "hq-data")}
 
 
 def _sp2_mixed_normalized_services_hash(
-    contract: Q3ProductContract, run_id: str
+    contract: Q3ProductContract, run_id: str, *, capacity: bool = False
 ) -> str:
     """Hash the E6 plan with only its run-derived values abstracted.
 
@@ -7425,7 +7455,7 @@ def _sp2_mixed_normalized_services_hash(
     every derived action identity its order of first appearance, so every
     other action and expectation value is bound to the reviewed plan.
     """
-    parameters = sp2_mixed_run_parameters(run_id)
+    parameters = sp2_mixed_run_parameters(run_id, capacity=capacity)
     plan = contract.service_plan.model_dump(mode="json")
     plan.pop("semantic_hash", None)
     text = json.dumps(plan, sort_keys=True, separators=(",", ":"))
@@ -7463,33 +7493,55 @@ def _sp2_mixed_contract_mismatch(
 ) -> str:
     """Name why a composed mixed contract is not this stage's exact run."""
     definition = execution.definition
+    capacity = definition.stage is QualificationStage.SP2_CAPACITY_PRODUCT
+    topology_hash = (
+        SP2_CAPACITY_TOPOLOGY_SHA256 if capacity else SP2_MIXED_TOPOLOGY_SHA256
+    )
+    manifest_hash = (
+        SP2_CAPACITY_MANIFEST_SHA256 if capacity else SP2_MIXED_MANIFEST_SHA256
+    )
+    configuration_hash = (
+        SP2_CAPACITY_CONFIGURATION_SHA256
+        if capacity
+        else SP2_MIXED_CONFIGURATION_SHA256
+    )
+    service_hash = (
+        SP2_CAPACITY_NORMALIZED_SERVICES_SHA256
+        if capacity
+        else SP2_MIXED_NORMALIZED_SERVICES_SHA256
+    )
+    capability_hash = (
+        SP2_CAPACITY_SERVICE_CAPABILITIES_SHA256
+        if capacity
+        else SP2_MIXED_SERVICE_CAPABILITIES_SHA256
+    )
     if (
-        contract.topology.physical_topology_hash != SP2_MIXED_TOPOLOGY_SHA256
+        contract.topology.physical_topology_hash != topology_hash
         or compute_topology_hashes(contract.topology).physical_topology_hash
-        != SP2_MIXED_TOPOLOGY_SHA256
-        or contract.manifest.physical_topology_hash != SP2_MIXED_TOPOLOGY_SHA256
+        != topology_hash
+        or contract.manifest.physical_topology_hash != topology_hash
     ):
         return "sp2_mixed_topology_hash_changed"
     if (
-        contract.manifest.semantic_hash != SP2_MIXED_MANIFEST_SHA256
-        or deployment_manifest_semantic_hash(contract.manifest)
-        != SP2_MIXED_MANIFEST_SHA256
+        contract.manifest.semantic_hash != manifest_hash
+        or deployment_manifest_semantic_hash(contract.manifest) != manifest_hash
     ):
         return "sp2_mixed_manifest_hash_changed"
     if (
-        contract.configuration_plan.semantic_hash != SP2_MIXED_CONFIGURATION_SHA256
+        contract.configuration_plan.semantic_hash != configuration_hash
         or configuration_plan_semantic_hash(contract.configuration_plan)
-        != SP2_MIXED_CONFIGURATION_SHA256
-        or contract.configuration_plan.source_topology_hash != SP2_MIXED_TOPOLOGY_SHA256
-        or contract.service_plan.source_configuration_hash
-        != SP2_MIXED_CONFIGURATION_SHA256
+        != configuration_hash
+        or contract.configuration_plan.source_topology_hash != topology_hash
+        or contract.service_plan.source_configuration_hash != configuration_hash
         or ServiceCompiler._semantic_hash(contract.service_plan)
         != contract.service_plan.semantic_hash
     ):
         return "sp2_mixed_plan_hash_changed"
     if (
-        _sp2_mixed_normalized_services_hash(contract, execution.record.run_id)
-        != SP2_MIXED_NORMALIZED_SERVICES_SHA256
+        _sp2_mixed_normalized_services_hash(
+            contract, execution.record.run_id, capacity=capacity
+        )
+        != service_hash
     ):
         return "sp2_mixed_service_plan_changed"
     if contract.manifest.deployment_id != f"qualification/{execution.record.run_id}":
@@ -7531,14 +7583,13 @@ def _sp2_mixed_contract_mismatch(
     # The candidates: exactly the two private service records over one
     # pinned catalog, and relay evidence for exactly the branch routers.
     try:
-        candidates = sp2_mixed_service_candidates(SP2_MIXED_BUILD)
+        candidates = sp2_mixed_service_candidates(SP2_MIXED_BUILD, capacity=capacity)
         if (
             any(
                 contract.service_capabilities.get(key) != value
                 for key, value in candidates.items()
             )
-            or _sp2_capability_digest(contract.service_capabilities)
-            != SP2_MIXED_SERVICE_CAPABILITIES_SHA256
+            or _sp2_capability_digest(contract.service_capabilities) != capability_hash
         ):
             return "sp2_mixed_service_candidates_changed"
         catalog = contract.device_capability_catalog
@@ -7577,7 +7628,7 @@ def _sp2_mixed_contract_mismatch(
         for item in contract.configuration_plan.actions
         if isinstance(item, SetEndpointStaticAddress)
     }
-    parameters = sp2_mixed_run_parameters(execution.record.run_id)
+    parameters = sp2_mixed_run_parameters(execution.record.run_id, capacity=capacity)
     try:
         canonical = sp2_mixed_intent(
             parameters.hostname,
@@ -7586,8 +7637,11 @@ def _sp2_mixed_contract_mismatch(
             server_address=addresses[SP2_MIXED_SERVER],
             client_ids={
                 site: [ids[name] for name in names]
-                for site, names in SP2_MIXED_SITE_CLIENTS.items()
+                for site, names in (
+                    SP2_CAPACITY_SITE_CLIENTS if capacity else SP2_MIXED_SITE_CLIENTS
+                ).items()
             },
+            capacity=capacity,
         )
         if json.loads(contract.intent_json) != canonical:
             return "sp2_mixed_intent_values_differ_from_run"
@@ -7808,6 +7862,12 @@ def _run_sp2_mixed_product(execution: _Execution) -> None:
     contract = execution.product_contract
     boundaries = execution.run.boundaries
     definition = execution.definition
+    capacity = definition.stage is QualificationStage.SP2_CAPACITY_PRODUCT
+    label = "CAPACITY" if capacity else "MIXED"
+    product_id = f"M-SP2-{label}-PRODUCT"
+    final_id = f"M-SP2-{label}-FINAL"
+    product_procedure = f"SP2_{label}_PRODUCT"
+    final_procedure = f"SP2_{label}_FINAL"
     if contract is None:
         execution.stop("sp2_mixed_contract_absent")
         return
@@ -7832,15 +7892,15 @@ def _run_sp2_mixed_product(execution: _Execution) -> None:
     }
 
     def terminal() -> None:
-        ids = ("M-SP2-MIXED-FINAL",)
-        if not execution.begin_terminal(ids, "SP2_MIXED_FINAL"):
+        ids = (final_id,)
+        if not execution.begin_terminal(ids, final_procedure):
             return
         with execution.procedure(ids):
             reader = boundaries.native_product_runtimes(
                 execution.bound, contract.inventory
             ).configuration
             capture = getattr(reader, "capture_routed_text", None)
-            with execution.ledger.purpose_of("sp2:mixed:final:routers"):
+            with execution.ledger.purpose_of(f"sp2:{label.lower()}:final:routers"):
                 routers = (
                     list(
                         capture(
@@ -7852,14 +7912,14 @@ def _run_sp2_mixed_product(execution: _Execution) -> None:
                     if callable(capture)
                     else []
                 )
-            with execution.ledger.purpose_of("sp2:mixed:final:clients"):
+            with execution.ledger.purpose_of(f"sp2:{label.lower()}:final:clients"):
                 binding_read = execution.probes.read_client_bindings(clients)
             bindings = (
                 binding_read.payload.get("clients")
                 if binding_read.observed and isinstance(binding_read.payload, dict)
                 else None
             )
-            with execution.ledger.purpose_of("sp2:mixed:final:client-macs"):
+            with execution.ledger.purpose_of(f"sp2:{label.lower()}:final:client-macs"):
                 client_read = execution.probes.read_dhcp_clients(
                     tuple((name, "FastEthernet0") for name in clients)
                 )
@@ -7868,11 +7928,11 @@ def _run_sp2_mixed_product(execution: _Execution) -> None:
                 if client_read.observed and isinstance(client_read.payload, Mapping)
                 else {}
             )
-            with execution.ledger.purpose_of("sp2:mixed:final:server"):
+            with execution.ledger.purpose_of(f"sp2:{label.lower()}:final:server"):
                 server_read = execution.probes.read_dhcp_server_baseline(
                     SP2_MIXED_SERVER, "FastEthernet0"
                 )
-            with execution.ledger.purpose_of("sp2:mixed:final:leases"):
+            with execution.ledger.purpose_of(f"sp2:{label.lower()}:final:leases"):
                 lease_read = execution.probes.read_dhcp_lease_calibration(
                     SP2_MIXED_SERVER,
                     "FastEthernet0",
@@ -7913,7 +7973,7 @@ def _run_sp2_mixed_product(execution: _Execution) -> None:
                 )
             )
             execution.conclude(
-                "M-SP2-MIXED-FINAL",
+                final_id,
                 Assessment(
                     MeasurementConclusion.SUPPORTED_IN_SAMPLE
                     if complete
@@ -7949,14 +8009,14 @@ def _run_sp2_mixed_product(execution: _Execution) -> None:
                     ],
                 ),
             )
-        execution.finish("SP2_MIXED_FINAL")
+        execution.finish(final_procedure)
 
-    execution.register_terminal(("M-SP2-MIXED-FINAL",), "SP2_MIXED_FINAL", terminal)
+    execution.register_terminal((final_id,), final_procedure, terminal)
     if not _diagnostic_start(execution):
         return
-    ids = ("M-SP2-MIXED-PRODUCT",)
-    if not execution.selected("SP2-mixed") or not execution.begin(
-        ids, "SP2_MIXED_PRODUCT"
+    ids = (product_id,)
+    if not execution.selected(f"SP2-{label.lower()}") or not execution.begin(
+        ids, product_procedure
     ):
         return
     accepted = False
@@ -7967,22 +8027,22 @@ def _run_sp2_mixed_product(execution: _Execution) -> None:
         ),
         execution.procedure(ids),
     ):
-        with execution.ledger.purpose_of("sp2:mixed:build"):
+        with execution.ledger.purpose_of(f"sp2:{label.lower()}:build"):
             build = boundaries.build_reader(execution.bound.send_and_wait).read()
         observed_build = execution.record.environment.observed_build
         if not build.available or build.version != observed_build:
             execution.conclude(
-                "M-SP2-MIXED-PRODUCT",
+                product_id,
                 Assessment(
                     MeasurementConclusion.INCONCLUSIVE,
                     facts={"fresh_build": build.version if build.available else ""},
                     causes=["sp2_mixed_build_unobserved_or_mismatched"],
                 ),
             )
-            execution.finish("SP2_MIXED_PRODUCT")
+            execution.finish(product_procedure)
             execution.stop("sp2_mixed_build_unobserved_or_mismatched")
             return
-        if not execution.run.transition("experiment:SP2_MIXED_PRODUCT:started"):
+        if not execution.run.transition(f"experiment:{product_procedure}:started"):
             execution.stop("persistence:sp2_mixed_product_not_announced")
             return
 
@@ -8001,7 +8061,9 @@ def _run_sp2_mixed_product(execution: _Execution) -> None:
             ),
             services=_Q3ServiceRuntime(inner.services, contract.inventory),
         )
-        with execution.ledger.effect_of("sp2:mixed:apply-enterprise-services"):
+        with execution.ledger.effect_of(
+            f"sp2:{label.lower()}:apply-enterprise-services"
+        ):
             product = apply_enterprise_services(
                 contract.intent_json,
                 deployment_id=contract.manifest.deployment_id,
@@ -8088,7 +8150,7 @@ def _run_sp2_mixed_product(execution: _Execution) -> None:
             )
         )
         execution.conclude(
-            "M-SP2-MIXED-PRODUCT",
+            product_id,
             Assessment(
                 MeasurementConclusion.SUPPORTED_IN_SAMPLE
                 if accepted
@@ -8118,7 +8180,7 @@ def _run_sp2_mixed_product(execution: _Execution) -> None:
                         }
                     ),
                     "service_candidate_keys": sorted(
-                        sp2_mixed_service_candidates(SP2_MIXED_BUILD)
+                        sp2_mixed_service_candidates(SP2_MIXED_BUILD, capacity=capacity)
                     ),
                     "service_capabilities_sha256": _sp2_capability_digest(
                         contract.service_capabilities
@@ -8138,7 +8200,7 @@ def _run_sp2_mixed_product(execution: _Execution) -> None:
                 ],
             ),
         )
-    execution.finish("SP2_MIXED_PRODUCT")
+    execution.finish(product_procedure)
     if not accepted:
         execution.stop("sp2_mixed_product_not_verified")
 

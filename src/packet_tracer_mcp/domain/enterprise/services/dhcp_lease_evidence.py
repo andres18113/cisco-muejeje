@@ -37,6 +37,24 @@ _IPV4 = re.compile(
 #: The dotted MAC text Packet Tracer's port getter returns.
 _MAC_TEXT = re.compile(r"[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}")
 
+
+def is_dhcp_fallback_address(ipv4: str, netmask: str) -> bool:
+    """Recognize a valid APIPA/16 address pair without claiming a DHCP lease.
+
+    Mode, identity and intended-pool attribution remain separate observations.
+    This address pair can be pending acquisition only with a valid DHCP-on
+    client; it never contributes a usable or stable intended lease sample.
+    """
+    return (
+        isinstance(ipv4, str)
+        and isinstance(netmask, str)
+        and netmask == "255.255.0.0"
+        and ipv4.startswith("169.254.")
+        and _IPV4.fullmatch(ipv4) is not None
+        and ipv4 not in {"169.254.0.0", "169.254.255.255"}
+    )
+
+
 #: How one scan ended.
 TERMINATION_NULL = "null"
 #: `undefined` is not `null`. The probe keeps them apart and so does the

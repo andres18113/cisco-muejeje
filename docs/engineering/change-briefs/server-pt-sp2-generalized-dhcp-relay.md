@@ -1374,13 +1374,16 @@ unchanged. The full suite will run again from these exact Python bytes.
 
 ### Explicit operator restriction on phone validation
 
-The operator reiterated during this continuation that phone validation uses
-only `show power inline`; phone UI validation is prohibited. No native phone
-UI, native call or phone-control validation is part of SP-2 or will be started
-or extended. The publication-race correction above is an inherited offline
-fake-provider unit fixture in the complete suite, with no phone, UI, Packet
-Tracer or native call interaction. It is not evidence of phone behavior. Any
-later relevant handoff must preserve the operator's `show power inline` limit.
+The operator requested a read-only CP-SCALE review to clarify the earlier
+power-command statement. Historical full phone functionality used API/IOS
+IP/interface/DHCP and binding observations plus complete fresh attributed
+`SHOW_EPHONE` registration/extension evidence after forwarding readiness.
+`show power inline` is the power authority; it is not complete phone-function
+validation. Historical calls remained unqualified. Phone UI validation remains
+outside SP-2; no phone effects, native calls or phone-control validation will be
+started here. The publication-race correction above is only an inherited
+offline fake-provider unit fixture, with no phone/UI/PT interaction or phone
+behavior evidence. Relevant handoffs retain this clarified distinction.
 
 
 ### Recovery checkpoint: complete green local baseline
@@ -1406,3 +1409,600 @@ This green recovery checkpoint is not SP-2 acceptance. No new episode has yet
 been allocated or executed. Fresh mixed evidence, 36-client capacity, measured
 scope-bound default records and registered public-route acceptance remain
 required, with the phone-validation restriction above in force.
+
+
+## Episode 7 closure and next causal source boundary (risk L)
+
+Recovered checkpoint `032d422a036c5999f0127a4b71dc945a7376a2bc`, tree
+`add28d80e1983ddbe846fd733fc644b080571bc5`, passed the clean delivery gate,
+namespace, docs and whitespace and was published normally. Exact-SHA CI
+`36661748379` passed all six jobs. Windows 3.11/3.13 each passed 8,657 with
+six skips and three warnings (1,471.46/1,294.68 seconds); Ubuntu 3.11/3.13
+passed 8,641 with 22 skips and three warnings (761.11/754.94 seconds). CI
+Windows skips are the machine-local D-DHCP record, two absent historical voice
+artifacts, two opt-in native-window tests and the absent docs extra. Ubuntu
+adds 16 Windows-only checks (three receiver and thirteen process-census cases).
+The dedicated docs job passed. Local skip categories above remain distinct.
+
+Fresh e7 preparation retained a durable maker and nine hash-verified helpers,
+corrected operator scope, complete CI metadata/logs, actual compiled hashes and
+exclusive identities. It prospectively allocated 3,210 operations/4,200 seconds
+only after clean exact-source and empty process/mailbox/lock admission. Owned
+PID 2100 launched with a proven blank disposable document. Attempt
+`a06b0134ff1d31156d482762f3df0c3e` executed the unchanged private mixed profile.
+All 18 devices/17 links were created; product configuration held 51 actions and
+93 service expectations with ten readiness observations. No phone work ran.
+
+Product persisted status is FAILED, qualification outcome is STOPPED, and both acceptance measurements (product and terminal) concluded INCONCLUSIVE. The originating action is
+native HQ enable `svc/enable-server-dhcp/0c4671f01c7fd697`: accepted/correlated,
+setter not attempted, covered footprint, `not_attempted:refused:pool_conflict`.
+BR1/BR2 enables were dependency-blocked; their disabled-policy/lease failures
+are downstream and establish no serving. All selected clients were DHCP-on
+with APIPA/16 addresses, zero gateway/resolver; the final process held the three
+planned disabled pools and four exclusions. Recomposition matched every native
+policy field and companion against the generated desired state. Guard-time
+pre-client fields were not retained, only digests, so the originating APIPA
+branch is a strong evidence-bound inference, not a reconstructed observation.
+
+Qualification used 408 operations/684.375 seconds (435.512 seconds of local
+process observation), restored fixtures, and finalized without secondary error,
+residue or persistence failure. Maintained retirement exited only owned PID
+2100. Final process/mailbox/lock census was empty. The closed ledger totals
+1,591 operations/3,426.06543 seconds with no open episode; ordinary remaining
+17,409 operations/17,573.93457 seconds. No e7 mutation will be replayed.
+
+The immutable e7 archive has 166 files, exact file set and every hash verified.
+MANIFEST SHA-256 is
+`7336fd2bad09ef51a7c7f7ef503d3e946e950db05bc967d14d517d399fa16ffd`;
+qualification digest `c0d72a33b78e6de0c9408cd4daf748a399de44b7f2d4b34ba3d47455c6089268`,
+product digest `6f41e2680f1d55bd4c3ef7a0345afab9ecd9d35407d15d5496fde4bb323fdf04`.
+Empty terminal prefix observations remain raw evidence; they do not qualify
+selected serving, full-table convention, multiple active pools or capacity.
+No default support record is promoted from this episode.
+
+### Causal correction design before implementation
+
+An independent actual generated-script stub with the exact disabled three-pool
+policy reproduced unassigned 0/0 -> one enable/success; DHCP-on APIPA/16 -> zero
+enables/pool_conflict; foreign assigned address -> zero enables/refusal. The
+prospective startup predicate will distinguish a known DHCP-on pending/APIPA
+state from a usable lease and allow ordinary server startup only with the exact
+planned disabled policy and known client state. It will preserve refusal for
+static, assigned in-policy/foreign, malformed and unreadable clients. Client
+and policy refusal causes will be distinct and raw pre/post client and server
+state will be retained prospectively. APIPA never satisfies usable DHCP or
+service acceptance. RED stateful generated-script regressions precede the fix.
+
+A separate independent SP2-04 audit reproduced false refusals for equivalent
+48-bit MAC spellings. The existing group positive oracle wrongly required
+literal equality; grouped and single-client joins/stability will instead use
+valid nonempty normalized identities while retaining original readings and
+observed values. Dot/colon/dash/case positives and representation-change stable
+samples must pass; malformed/empty identities, normalized collisions, wrong
+ports/IPs and first/later contradictions must remain refused. This correction
+changes prospective decisions only and leaves all archives immutable.
+
+After focused and affected verification, the complete source must again pass
+local/clean-delivery/exact-SHA CI before the next freshly bound owned episode.
+The capacity and public-scope designs above remain required; the private mixed
+failure is a discriminator, not phase completion or a new permission request.
+
+
+### Incomplete worker handoff at the next source boundary
+
+The completion worker is handing ownership back to the coordinator because its
+context is nearing exhaustion. This is not phase completion, a permission
+request, or a change to the continuing operator mandate. Current branch remains
+`feature/server-pt-goal-foundations`, committed HEAD `032d422a...`, tree
+`add28d80...`. That checkpoint is cleanly published with exact six-job CI
+success; current corrections below are uncommitted and have no new full-suite
+or delivery/CI baseline. Preserve them and the sealed e7 archive.
+
+Current dirty maintained paths are this brief, domain
+`models/configuration_runtime.py`, infrastructure
+`execution/enterprise_service_runtime.py`, and
+`tests/test_native_dhcp_group_evidence.py` /
+`tests/test_service_dhcp_script_harness.py`; the e7 archive directory is also
+untracked. Exact current Python SHA-256 values and a fresh operational census
+are recorded in `data/services/sp2-governed/continuation-2026-09-30.json`.
+
+Completed prospective fixes and focused evidence:
+
+- MAC joins/stability now reuse valid normalized identities across group and
+  single-client paths while preserving raw tuples and derived `client_mac`.
+  Seven maintained group RED cases failed in 1.82 seconds; five single-reader
+  cases failed before the fix. The resulting twelve positives passed in
+  1.96 seconds. Existing normalized collision negatives still require the
+  complete affected-file run. No full pass is claimed for these changes.
+- Generated native startup admits known DHCP-on APIPA/16 as pending, never as
+  a usable lease, only under the exact disabled planned pool policy. It now
+  separates `native_client_precondition` from `pool_conflict` and retains raw
+  pre/post server/client observations. Eight focused startup positive/negative
+  cases passed in 0.71 seconds after their prior RED. The raw observations
+  travel through optional `RuntimeActionMutation.observation_details`, with a
+  serializer omitting empty details to avoid widening legacy record bytes.
+  Details are not read by the mutation classifier.
+
+Concrete remaining correction work BEFORE the next source baseline:
+
+1. Add RED and fix APIPA acquisition in group and single-client paths. A valid
+   DHCP-on APIPA first sample must stay pending with zero stability, then two
+   later usable attributed samples may verify. Persistent APIPA must never
+   verify. Preserve MAC/address/counterpool censuses and malformed/static/
+   foreign refusals; do not increase polling cadence/timeouts or accept late
+   evidence. Current group sticky `native_client_outside_policy` and single
+   immediate APIPA contradiction are still present.
+2. Add RED and fix late client-local competing-pool evidence after an earlier
+   local unreadable sample. The first cause/sample stays, later derived MAC/IP
+   contradiction/sample must persist, and an independent PC1 remains accepted.
+   The current sticky-failure `continue` skips this classification. Cover
+   equivalent forms, disjoint controls, positive rows in unread tails and
+   retained JSON facts. Raw rows alone are not the final classification.
+3. The new startup helper currently coerces IP/mask/MAC getters with `String`
+   and catches with hardcoded `__er`. Add malformed getter-type RED (numeric
+   twelve-digit MAC would otherwise become valid bare text), retain raw values
+   and their types, require strings for pending eligibility, and use the
+   selected category/text reader for error privacy. These new-code findings
+   are open; do not call this candidate ready.
+4. Review/test present raw-detail retention/redaction and empty-field legacy
+   serialization/persistence, including the unchanged scale byte budget.
+   Also reproduce the existing native enable already-satisfied producer path
+   against `_allowed_skips`: it currently lacks that skip. A premature added
+   allowance was removed; write the causal RED before deciding its correction.
+5. Finish the capacity/profile, work-derived wall bounds/sample timing, full
+   same-host scope selector/provenance, default recorded support and registered
+   four-input public acceptance designs above. None is implemented yet. The
+   local 36 + remote 13/5 simultaneous native target remains unmeasured.
+
+Focused logs are `%TEMP%/sp2-mac-normalization-red.log`,
+and `sp2-start-and-single-mac-red.log`;
+final focused passing outputs were observed directly. Recovery full v3
+log/XML/exit remain `%TEMP%/sp2-recovery-full-v3.*`; delivery and all four
+exact-SHA CI logs are retained under e7 lead/archive. Do not rerun unchanged
+broad reviews; every remaining concrete finding needs its owning causal test,
+focused/affected validation and then one complete fresh baseline/clean delivery
+and exact-SHA CI before new LIVE.
+
+Fresh handoff census at 2026-09-30T04:42:24Z confirms no Packet Tracer process,
+mailbox file or campaign lock; campaign index has no discrepancies and no
+open episode. Ledger remains 1,591 operations/3,426.06543 seconds, ordinary
+17,409 operations/17,573.93457 seconds. Future effects remain authorized only
+for newly bound owned disposable SP-2 scope; no e7 replay, main merge,
+SP-3..SP-5, Final-Muejeje, foreign resources or phone effects. The corrected
+CP-SCALE power-versus-functional distinction above remains in force.
+
+
+### Continuation ownership and causal design (risk L)
+
+The coordinator transferred sole integration-writer and LIVE ownership to the
+continuation worker after the previous worker released both. Starting committed
+identity remains `032d422a036c5999f0127a4b71dc945a7376a2bc`, tree
+`add28d80e1983ddbe846fd733fc644b080571bc5`, on the same feature branch. The
+five dirty maintained paths and sealed untracked e7 archive are preserved.
+The active instructions, complete engineering standard, both assignments,
+current brief and durable handoff were read; interactive loader remains pending.
+
+The next change closes the inherited prospective causal findings. Group and
+single-client acquisition must classify a valid DHCP-on APIPA/16 reading as
+pending with zero stable usable samples. Only two subsequent exact attributed
+usable readings may verify. Persistent APIPA remains unassigned; static,
+malformed, foreign and contradictory observations remain non-authorizing. All
+fresh group identity/address/competing-pool censuses continue and remain durable.
+
+Client-local counterevidence is classified for every later readable sample even
+when the first local failure is sticky. Preserve that first cause and sample;
+record each later local contradiction with its cause/sample separately. A
+competing row matching a client's valid MAC or assigned address is local to that
+client unless it also proves a genuine selected-peer/shared identity conflict.
+An unread competing tail still prevents positive acceptance while preserving
+positive counterevidence. Index shared counterpool rows once per sample.
+
+Generated startup must retain primitive raw getter values and explicit types,
+require string IP/mask/MAC values for pending eligibility, and classify errors
+with the selected text/category reader. Unknown or malformed raw values cannot
+acquire authority through string coercion. Tests exercise the actual generated
+script with independent stateful stubs, both privacy modes, exact-policy no-op,
+raw-detail redaction/persistence and unchanged empty-detail serialization.
+
+RED regressions precede each owning fix, then both affected files and dependent
+service/commissioning/coexistence suites run before one complete local baseline.
+New LIVE still requires clean exact delivery, docs/namespace/whitespace,
+publication and all exact-SHA CI jobs. No existing deadline, historical archive,
+spent accounting or measured support is relaxed. Capacity and registered public
+acceptance remain required after these corrections.
+
+
+### Prospective causal verification dispositions
+
+Acquisition APIPA reproduced four failures (group and single pending/expiry)
+with nine negative/startup controls already passing, then all thirteen focused
+cases passed. Pending fallback contributes zero usable stability; two later
+exact usable reads are required. Six late MAC/IP/equivalent counterpool cases
+failed before classification, with two disjoint controls passing; all eight
+then passed, including unread-tail counterevidence and retained shared raw
+references. Empty later-contradiction fields are omitted from positive results.
+
+Actual startup scripts reproduced numeric-MAC admission, raw getter coercion
+and category/text privacy errors; corrected raw primitive/type eligibility and
+selected reader passed fifteen focused controls. The committed pre-fix
+`_allowed_skips` method was executed in memory against the current actual
+producer: the exact already-enabled policy became an invalid unknown row.
+The inherited allowance now passes the maintained exact-policy no-op regression.
+This supersedes the incomplete handoff wording that claimed the allowance had
+been removed: actual dirty bytes already contained it before ownership transfer.
+
+The actual durable record round trip preserves sanitized received raw details
+and deep snapshot isolation; empty details preserve the legacy mutation shape.
+The six-file affected run passed 327 cases in 22.04 seconds. Independent focused
+review then found successful IP/mask readings erased by a later MAC exception.
+Four actual Node regressions failed first in both privacy modes; each field is
+now saved immediately with explicit failed-field/type markers. All 112 harness
+cases then passed in 7.70 seconds. This source still lacks a new complete local,
+clean delivery and exact-SHA CI baseline; no new LIVE has been started.
+
+
+### Capacity profile and finite acquisition work (risk L)
+
+The maintained private capacity constructor now recomposes the selected 36-local
+plus 13/5-remote fixture, independently from the unchanged mixed profile. Its
+actual outputs are 64 devices, 65 links, 153 E5 actions/checks, ten E6 actions and
+437 E6 expectations. Physical, manifest and E5 hashes match the prospective
+values above. Normalized capacity E6 is
+`0a28305599ba8f2c2a7d24c3850371c97de4badfd07ab745c9231740f44571f8`;
+private capability digest is
+`71e1945a5f0fe63428429e31e84a4047ef363af950db15e4bf07d6cbc7dca7cd`.
+`data/services/sp2-governed/capacity-design-v1.json` keeps the dirty source hashes
+and full prospective plans; its explicit offline label grants no native claim.
+
+Structural native policy now accepts a valid finite IPv4 allocation up to the
+256-index work ceiling, including the required /26 and 36 clients. Measured
+admission remains separately scope-bound; inactive observations retain their
+16-client bound. The original default native record's exact serialized SHA-256
+is `af10ea312b2c491ec919f67aeca9c279ec2920fbbd52e3bb7e5c8852ff7911cf`,
+unchanged with max two on `192.0.2.0/24`. Structural capacity is not promotion.
+The old mixed topology and its 18/17/93 counts remain reconstructible.
+
+The separately identified `SP2-CAPACITY-PRODUCT` v1 runs through the same
+composer/coordinator/runtimes, with pinned fixture/plan/catalog identities.
+Its prospective joint ceiling is 6,000 operations/10,800 seconds, including
+5,500 product operations, 90 terminal operations and protected cleanup of
+131 operations/5,400 seconds. Setup is 261 operations, so declared work sums
+to 5,982 with 18 operation headroom. No old stage or spent allowance changes.
+This is a finite experimental cutoff, not funding for every independent maximum
+reader/helper tail at once. Phase admission and child read/wait caps enforce it;
+an exhausted ordinary allowance stops with retained inconclusive evidence and
+protected finalization, never a late positive or fabricated completion.
+
+Independent budget derivation used the actual qualifier bindings: physical
+observation ten seconds/mutation fifteen gives setup 3,255 and cleanup 1,630
+seconds of core timeout envelopes. Cleanup additionally has 131 lifecycle
+pairings/262 helpers, each helper separately bounded to thirty seconds by the
+absolute phase deadline. The loose combined cleanup envelope is 9,490 seconds
+before small local overhead, exceeding the finite joint reserve. The reserve
+therefore allows 3,770 seconds of control work after core physical work; it does
+not promise every helper's maximum. Slow or uncertain cleanup is recorded and
+uses only already-authorized bounded owned-cohort retirement, never foreign
+resources. Terminal has 76 core operations (72 router calls plus four bulk
+reads) inside 90, and a 160-second core timeout envelope. Actual deployment
+shape, current ledger and lifecycle allocations must be rechecked before LIVE.
+
+Native acquisition retains thirteen samples and twelve ten-second waits.
+Group work is thirteen times (five-second server read plus eight-second shared
+snapshot plus five seconds per inactive client), plus 120 seconds of waits:
+289 seconds per group with no inactive clients. Three groups have 78 bridge
+reads and 867 seconds of loose envelopes. Each snapshot scans the three actual
+pool windows (38/15/7 indexes); 39 maximum snapshots mean 2,340 in-engine index
+reads, not bridge operations. Single-client bounds additionally include its
+client and attribution reads. Current phase allowance caps each window and child
+read; wait cadence is retained, and late positive server/client/pool readings
+are non-authorizing. Shared sample timings and raw late snapshots are retained.
+
+Actual readiness derives five access groups, one four-switch continuity group
+and two routed groups with two/three routers per phase. Independent loose
+per-reader maxima across both phases are 14,036 calls and 1,320 seconds;
+per-client E6 core maximum is 1,227 operations and a loose 7,742-second envelope
+under the qualifier's existing eight-second inspection cadence. Those independent
+maxima exceed the joint stage cap and are not added into a completion guarantee.
+The maintained registered public acceptance binding must record its actual
+cadence separately; it may use the existing bounded native session while keeping
+the real four tool arguments and default service/device catalogs.
+
+Capacity composition RED had two failures and six valid negative controls;
+eleven focused capacity/unchanged-mixed composition cases then passed. The new
+stage initially exposed missing 2950/3560 ports and a /24-only simulated native
+coupling assumption in the Node fixture. Its candidate fixture now supplies
+literal model ports and subnet-based hypothetical coupling, explicitly not a
+measured native algorithm. The real hybrid coordinator/product then passed all
+54 client checks, final three-pool census and cleanup with 297 campus calls,
+838 engine product calls, 1,586 stage operations and thirty simulated seconds.
+This trace is substituted offline work only; native capacity, actual elapsed
+cost and public support remain unmeasured. Controlled budget/tampering tests and
+the full dependent/local/clean-CI baseline still precede a fresh native episode.
+
+
+### Capacity discovery: selected L2 foundations are missing from E5 closure
+
+The first hybrid capacity result was inspected before treating its pass as a
+native preparation baseline. Its service effect scope excludes the HQ trunk
+configuration actions, while the old campus fixture starts from all compiled
+trunks. The new owned native fixture starts blank, so that substituted initial
+state masks a prospective failure. This is an SP2-03/36-client path-closure
+implementation defect, not a reason to promote capability or weaken readiness.
+
+Before correction, add a pure real-composition scope regression for every trunk
+end of the selected HQ VLAN component, including its cyclic routed host leg.
+Also add an independent initially unconfigured campus control that changes VLAN,
+access and trunk state only from actually dispatched IOS payloads. Both ends and
+actual allowed VLANs must be configured before mode/lease/service admission; an
+ignored trunk-end setter must block dependents. A local-only selection must not
+apply unrelated branch/transit foundations. Ordinary path configuration is not
+forwarding proof: the existing attributed continuity/routed observations still
+decide readiness, including blocked redundant links.
+
+Domain path indexes own the exact paired-link trunk IDs, indexed/cached once per
+component. Application closes selected local L2 components and routed cyclic L2
+legs through the existing E5 dependency graph. No alternative planner or service
+engine is added. A9 eligibility, retention, immutable histories and unselected
+components remain outside effects. Focused new regressions and affected SP-1/
+campus path/coexistence tests precede the complete source baseline.
+
+
+### Distinct configured-trunk contract for prospective cyclic service paths
+
+Closing the actual L2 effects exposed two correctly STP-blocked trunk ends.
+The legacy per-port `TRUNK` predicate requires every intended VLAN to forward,
+so it contradicts a valid cyclic component before service continuity admission.
+The originating design must distinguish configuration from component forwarding.
+The legacy predicate, C31 inputs/hashes/results and strict forwarding kind stay.
+
+A new typed `TRUNK_CONFIGURATION` expectation will require a fresh complete
+uniquely attributed exact-interface trunking row, intended allowed VLANs and
+active VLANs. Its field claims cover configuration only; raw forwarding VLANs
+remain in its typed convergence observations, including empty/unreadable values.
+It cannot authorize client modes, leases or service requests. Those still need
+fresh attributed component forwarding evidence over the actual selected paths.
+Unknown/missing configuration, wrong VLAN/interface/owner and no viable current
+forwarding path remain refused or blocked.
+
+The composition policy chooses this distinct kind only for cyclic VLAN
+components in prospective service composition under the already selected v2
+planning profile. Generic E5 defaults to the strict per-port predicate. The
+exact-manifest v1 reconstruction carries its selected profile through policy
+composition and retains strict kinds and its unchanged configuration identity.
+This uses existing legitimate composition/version inputs; there is no campaign
+name, client-count or model exception, generic blocked-link permission, default
+capability promotion or historical reinterpretation.
+
+RED module contracts cover blocked configuration versus strict forwarding,
+allowed/active/freshness/owner negatives and exact raw-field retention. Real
+capacity compiler tests cover explicit component/VLAN/interface assignment;
+unconfigured-campus positive and ignored-end negatives cover the mandatory
+forwarding gate. Frozen commissioning reconstruction and affected SP-1/static
+campus/CP-SCALE contracts are required before the complete fresh baseline.
+Capacity E5/E6/catalog hashes are re-pinned from the final maintained composition;
+the earlier candidate-only artifact is retained as superseded preparation.
+
+
+### Acquisition getter type correction
+
+Two actual generated-reader regressions reproduced a numeric client MAC
+`123456789012` becoming valid bare text through `String()` and then falsely
+verifying against a textual pool row, in both single and grouped acquisition.
+Startup typing alone does not protect a later observation. Before source
+freeze, the existing acquisition/inactive/attribution producers must preserve
+raw MAC values; typed validation rejects non-string identity without inventing
+normalization authority. Malformed observations remain raw diagnostic evidence
+and never usable joins. Valid string spellings and positive scale shapes remain
+unchanged. This is a demonstrated SP2-04 implementation defect; no historical
+archive is rewritten and no additional native support follows from the tests.
+
+
+### Final prospective L2/type dispositions before source freeze
+
+Full and local-only capacity scope regressions failed before the L2 closure
+correction, and the initially unconfigured campus failed before actual trunk
+configuration. The independent campus now starts with blank VLAN/access/trunk
+state and parses only dispatched IOS payloads against physical link metadata.
+Ignored trunk state remains non-authorizing. The distinct configured-trunk
+reader passed eight explicit configuration/scope/authority controls while the
+legacy per-port forwarding negative stayed strict. A further v1 service
+reconstruction test preserves its strict kind and original configuration hash;
+the original C31 bundle was compared as UTF-8 and all thirteen fields are equal.
+
+The final capacity E5 hash is
+`7ccda09a418d755c49f2d14f29c54f660b74f051a7c4b8b3a2715d6223b88b96`,
+normalized E6 is
+`09feeeb4d926ba06155297ec243dcdd73b1f5ae21b0d34dc772f8f79ae17fbeb`.
+The earlier hashes are superseded prospective preparation only, never native
+archives. `capacity-design-v2.json` retains the final candidate plans and
+explicit dirty/offline source label; v1 preparation is preserved. Actual counts
+remain 64/65/153/10/437 and the default native record bytes remain unchanged.
+The complete initially unconfigured hybrid capacity now has 317 campus calls,
+838 engine product calls, 1,606 stage operations and thirty simulated seconds.
+Small ordinary-budget and wrong-profile controls both pass with terminal/owned
+cleanup preserved; neither supplies native acceptance.
+
+Numeric client-MAC coercion failed in both actual generated acquisition paths,
+then the raw-MAC correction passed twelve focused identity/state cases. A
+follow-up causal shared-census case failed because rejecting that MAC erased an
+independently valid duplicate IP; the raw malformed MAC remains a local unknown
+while its valid address remains in the shared census. The resulting thirty-three
+MAC/APIPA/counterpool cases pass, with first local cause and raw frames retained.
+No empty diagnostic field is added to positive clients. Final lint/format,
+dependent suites, full local suite and clean published exact-SHA CI still gate
+any new native effect. No native capacity or default public grant is claimed.
+
+
+### Dependent baseline failures and originating corrections
+
+The first complete affected run has 1,705 passed and seven failures in 478.11
+seconds, with frozen Python hashes unchanged. Five commissioning failures share
+one origin: its scoped trunk evidence can make v2 and v1 produce the same exact
+physical shape, so the current-hash fast path incorrectly retains v2 verification
+semantics. Exact-manifest reconstruction must also test v1 on such a tie and
+conservatively preserve v1 when its complete physical hash matches; explicit
+planning policies remain authoritative and never fall back. No campaign/model/
+client-count exception or expected commissioning hash is changed.
+
+The 21-client offline record is 845,208 bytes, exceeding its unchanged 840,000
+byte gate after new raw/timing diagnostics. Preserve all observations and the
+resource threshold. Equal raw indexed lease entries from separate fresh samples
+may be stored once with an explicit per-sample content reference and equality
+hash; physical pool, window, termination, indexes, source context and fresh
+client readings remain per sample. Changed or unread/malformed entries are kept
+verbatim. The evaluator still processes each actual fresh answer before the
+storage projection; no observation is manufactured by the reference. A raw
+round-trip/refusal regression and the actual unchanged scale gate verify this.
+
+The final failure is a maintained diagnostic phrase: the 17-client public input
+still refuses before effects, now at measured scope rather than the old structural
+16 bound. Restore `does not admit` with explicit recorded-policy wording while
+retaining structural/recorded separation and the zero-effect criterion.
+Provisional main-relative quality gate, namespace, docs and whitespace passed;
+e7 remains exactly 166 files with every hash and manifest digest verified.
+No complete local/clean-CI/native source baseline is claimed from this red run.
+
+
+### Complete prospective baseline exposes a static HTTP scope regression
+
+Sole writer and LIVE ownership transferred to the current continuation worker
+on unchanged committed `032d422a...` / `add28d80...`. The fresh complete frozen
+run exited one: 8,688 passed, 61 failed, six skipped, three warnings and six
+setup errors in 1,770.60 seconds. XML contains 8,761 cases. All 24 checkpoint
+Python byte hashes still match at termination. Its full log, XML and exit are
+`%TEMP%/sp2-finish-full-v2.*`; this is a complete RED baseline, not LIVE
+admission. Provisional quality, namespace, docs and whitespace passed; sealed
+e7 still has exactly 166 files, all hashes and its pinned manifest unchanged.
+
+All 67 red outcomes share static campus HTTP acceptance preparation refusing
+new trunk E5 effects outside its unchanged acceptance profile. Missing grants,
+records and scope are downstream fixture failures. The new configuration claim
+was selected for every v2 service composition, including static HTTP whose
+accepted contract already establishes its L2 setup separately. Independently,
+routed cyclic legs added trunk effects without consulting the selected typed
+configuration claim. These are prospective implementation/design defects; the
+old acceptance profile and grants must not be broadened to obtain green.
+
+Before correction, explicit regressions will require static HTTP to retain its
+strict original trunk verification and E5 effect scope, and the routed index's
+legacy default to retain its original cyclic-leg scope. The new component
+configuration mode is selected only by a derived delegated Server-PT DHCP
+policy under the v2 planning profile. Routed indexing receives the exact
+configured-trunk action IDs from that plan and intersects them with each
+selected component. New capacity still configures all ten HQ trunk ends before
+its existing attributed forwarding gate admits modes, leases or services.
+No campaign-name, client-count or model exception is introduced. Existing
+capacity full/local-only, initially blank, ignored-end, frozen C31 and static/
+routed coexistence controls remain required, followed by all four failed files,
+affected suites and a new complete source baseline.
+
+
+### Prospective episode preparation, seal and public-cohort audit dispositions
+
+Read-only continuation audits re-read the actual default/compiler/A9/registered
+route and all nine retained e7 helpers. Their hashes and the original charter
+match. e7's maker cannot be reused unchanged: episode/auth/provisional IDs,
+private mixed hashes, selected count, allocation and old verification results
+are hardcoded. Its archive lookup and description are also mixed-only and
+would omit a capacity product record. New retained successors must derive the
+actual registered stage, recompute all plan/catalog hashes and verify the next
+ledger episode, fresh source/tree, complete six-job CI and actual source gates.
+Opening's assigned episode and actual source must match prepared IDs before
+launch. Qualification, close and archive identities must agree. Pre-open
+census must also prove no campaign lock, not only no process/mailbox files.
+The direct read-only store audit currently verifies every indexed byte and
+finds episodes 1--7 closed, no open episode, 1,591 operations/3,426.06543 seconds
+committed and 17,409 operations/17,573.93457 seconds ordinary remaining. This
+observation grants no future allocation; recheck before each new episode.
+
+To execute sequential distinct questions on the same clean source, each new
+episode will first seal a complete immutable snapshot under the explicitly
+ignored governed evidence store. The seal verifies the complete file set and
+every SHA-256, source/tree, helper provenance, qualification/product records,
+closed ledger, owned exit record and fresh empty process/mailbox/lock census.
+It is not an untracked-source exception. The next episode still rechecks clean
+Git, current source/tree, exact CI, import/process/cohort and current ledger.
+Later publication copies each sealed tree byte-for-byte into the requested
+docs archive and proves equal file set, every file hash and manifest digest.
+The native observation remains attributed to its executed episode SHA; the
+archive publication commit does not change that identity. Earlier helpers,
+archives and consumed grants remain unchanged. Capacity successor archive
+uses its actual M-SP2-CAPACITY-PRODUCT/FINAL IDs and 54 simultaneous clients.
+
+The public audit confirms independent per-service bindings cannot establish
+one complete same-host pool cohort. A separately keyed cohort model must leave
+the old ClientOperationCapability/native record bytes intact. One pure domain
+selector matches the complete derived host policy, placement, selected demands,
+relay scope and build/file/reader against a measured complete-cohort record;
+never union independently measured partial grants. Compilation derives all
+policies before this admission. Carry the single selected host grant ID/hash,
+complete policy hash and exact action/expectation references through A7/A9,
+service resolution, E5/E6 and the durable capability snapshot, once per host.
+Empty selections omit new fields and retain legacy hashes/shapes. A9 projections
+must match the same measured complete policy or refuse before effects.
+
+Global supports_dhcp_relay remains UNKNOWN. The same action-specific predicate
+must verify the selected cohort and exact attributed model/interface/helper/
+segment evidence at both public E5 admission and the configuration applicator;
+direct E5 without that selected authority stays refused. Missing, ambiguous,
+candidate/foreign/tampered records, changed host/pool/window/exclusion/demand,
+unmeasured pool union, wrong relay and narrowed incomplete cohorts require
+zero-effect regressions. Default entries are populated only from sufficient
+new native observations. Final acceptance must invoke the real registered
+four-input handler with default service AND device catalogs in a newly governed
+native session. Private stages and substituted registered-tool tests remain
+separate evidence and cannot complete that acceptance.
+
+
+The explicit new static HTTP and legacy routed-index regressions plus the
+original scalable preparation case reproduced three failures in 6.48 seconds.
+After the narrow owning correction, 14 focused cases passed in 2.10 seconds.
+The four complete RED files and configured-trunk/capacity/SP-1 path/admission/
+readiness/hardware suites then passed 177 cases in 47.69 seconds, with zero
+XML failures/errors. Exact command and preserved RED/affected log/XML/exit
+bytes are retained in the ignored governed source-verification store. The new
+capacity full/local-only closure, initially unconfigured positive and ignored
+trunk negative passed; the unchanged C31 exact strict reconstructions passed.
+Focused Ruff passes and all four newly edited Python paths remain CRLF.
+The next complete suite remains mandatory before clean delivery/CI or LIVE.
+
+
+### Corrected complete source and actual offline scale verification
+
+The fresh complete corrected run exited zero: 8,757 passed, six skipped and
+three existing fixture-deprecation warnings in 1,296.11 seconds. XML has 8,763
+cases and zero failures/errors. All 24 frozen candidate Python hashes match at
+termination. Skips are two unavailable Windows symlink privileges, two absent
+ignored historical voice artifacts and two opt-in native-window checks; no SP2
+case is skipped. Local interpreter is this checkout's Python 3.12.10 virtual
+environment and package origin. No Packet Tracer episode was opened.
+
+The four unchanged scale cases also passed, in 64.84 seconds. Transparent
+wrappers returned original values and caused no additional backend effects;
+actual records, their hashes, raw lookup metrics, full log/XML and the bounded
+runner are retained under `data/services/sp2-governed/source-verification/`.
+The original timer/tracemalloc envelope measures runtime/applicator/persistence
+after real plan construction; it excludes Node process memory. These are
+substituted offline costs and establish no native capacity or relay behavior.
+
+| Actual clients | Services | Group scans | Dispatches | Response bytes | Record bytes | Seconds | Peak MiB |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2 | 2 | 4 | 32 | 14,305 | 143,492 | 0.41 | 1.8 |
+| 21 | 5 | 10 | 164 | 85,771 | 784,443 | 1.13 | 6.5 |
+| 201 | 5 | 10 | 1,244 | 757,916 | 5,351,206 | 6.86 | 40.1 |
+| 997 | 5 | 10 | 6,020 | 3,559,991 | 24,607,704 | 47.60 | 184.3 |
+
+| Actual clients | Pool scans decoded | Raw index observations | Intended rows indexed | Counterpool rows indexed | MAC join/stability comparisons | Identity/address census readings each |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2 | 8 | 24 | 4 | 4 | 6 | 4 |
+| 21 | 50 | 310 | 42 | 168 | 63 | 42 |
+| 201 | 50 | 2,110 | 402 | 1,608 | 603 | 402 |
+| 997 | 50 | 10,070 | 1,994 | 7,976 | 2,991 | 1,994 |
+
+At the observed two/five groups, intended indexing and client census each visit
+two readings per client, and exact MAC joins plus stability compare three per
+client. Counterpool work follows the selected host's pools and fresh groups.
+Every unchanged dispatch/response/record threshold passes, including the
+21-client record below 840,000 bytes. Actual constructed populations remain
+2/21/201/997 for requested targets 2/20/200/1000. Clean exact delivery and all
+six CI jobs still precede fresh native mixed/capacity/public acceptance.

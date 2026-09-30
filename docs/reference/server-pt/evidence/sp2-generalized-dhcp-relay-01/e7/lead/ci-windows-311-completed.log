@@ -1,0 +1,587 @@
+pytest (windows-latest, 3.11)	Set up job	﻿2026-09-30T02:51:31.0813072Z Current runner version: '2.337.0'
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1123338Z ##[group]Runner Image Provisioner
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1125615Z Hosted Compute Agent
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1126724Z Version: 20260828.587
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1127816Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1129134Z Build Date: 2026-08-28T16:44:25Z
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1131245Z Worker ID: {da7d23b1-8ebe-4655-9d40-2eeaa8d1fbcc}
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1146198Z Azure Region: westus
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1147521Z ##[endgroup]
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1149971Z ##[group]Operating System
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1151071Z Microsoft Windows Server 2025
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1152209Z 10.0.26100
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1153440Z Datacenter
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1154419Z ##[endgroup]
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1155337Z ##[group]Runner Image
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1156364Z Image: windows-2025-vs2026
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1157837Z Version: 20260922.246.2
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1159811Z Included Software: https://github.com/actions/runner-images/blob/win25-vs2026/20260922.246/images/windows/Windows2025-VS2026-Readme.md
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1163422Z Image Release: https://github.com/actions/runner-images/releases/tag/win25-vs2026%2F20260922.246
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1165188Z ##[endgroup]
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1167337Z ##[group]GITHUB_TOKEN Permissions
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1170550Z Contents: read
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1171568Z Metadata: read
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1172508Z ##[endgroup]
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1176465Z Secret source: Actions
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1178047Z Cache mode: write
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.1179343Z Prepare workflow directory
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.2903041Z Prepare all required actions
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.2971398Z Getting action download info
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.6744833Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:31.8612907Z Download action repository 'actions/setup-python@v5' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+pytest (windows-latest, 3.11)	Set up job	2026-09-30T02:51:32.1828932Z Complete job name: pytest (windows-latest, 3.11)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	﻿2026-09-30T02:51:32.3803096Z ##[group]Run actions/checkout@v4
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3804769Z with:
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3805250Z   fetch-depth: 0
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3805757Z   persist-credentials: false
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3806693Z   repository: andres18113/cisco-muejeje
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3813153Z   token: ***
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3813858Z   ssh-strict: true
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3814500Z   ssh-user: git
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3815117Z   clean: true
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3815839Z   sparse-checkout-cone-mode: true
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3816675Z   fetch-tags: false
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3817379Z   show-progress: true
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3818017Z   lfs: false
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3818593Z   submodules: false
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3819238Z   set-safe-directory: true
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3820472Z   allow-unsafe-pr-checkout: false
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3821927Z env:
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3823026Z   PT_MCP_BRIDGE_TOKEN: ci-token-long-enough-to-be-considered-valid-0123456789
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.3824442Z ##[endgroup]
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.6112360Z Syncing repository: andres18113/cisco-muejeje
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.6115796Z ##[group]Getting Git version info
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.6117008Z Working directory is 'D:\a\cisco-muejeje\cisco-muejeje'
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:32.7422816Z [command]"C:\Program Files\Git\bin\git.exe" version
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:33.2316933Z git version 2.55.0.windows.5
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:33.2408494Z ##[endgroup]
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:33.2430649Z Temporarily overriding HOME='D:\a\_temp\b9369c2e-0d37-4f28-be33-ec5cad047cdc' before making global git config changes
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:33.2433918Z Adding repository directory to the temporary git global config as a safe directory
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:33.2445777Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\cisco-muejeje\cisco-muejeje
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:33.4056407Z Deleting the contents of 'D:\a\cisco-muejeje\cisco-muejeje'
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:33.4063427Z ##[group]Initializing the repository
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:33.4073515Z [command]"C:\Program Files\Git\bin\git.exe" init D:\a\cisco-muejeje\cisco-muejeje
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:33.6421812Z Initialized empty Git repository in D:/a/cisco-muejeje/cisco-muejeje/.git/
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:33.6486786Z [command]"C:\Program Files\Git\bin\git.exe" remote add origin https://github.com/andres18113/cisco-muejeje
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:33.7268602Z ##[endgroup]
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:33.7271866Z ##[group]Disabling automatic garbage collection
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:33.7284226Z [command]"C:\Program Files\Git\bin\git.exe" config --local gc.auto 0
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:33.7876295Z ##[endgroup]
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:33.7878708Z ##[group]Setting up auth
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:33.7896410Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:33.8463519Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:36.1412911Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:36.3215101Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:38.2422468Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:38.3894746Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:40.1981398Z [command]"C:\Program Files\Git\bin\git.exe" config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:40.3785740Z ##[endgroup]
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:40.3802545Z ##[group]Fetching the repository
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:40.3808980Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --prune --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/*
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.3279620Z From https://github.com/andres18113/cisco-muejeje
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.3280961Z  * [new branch]      feature/iot-connectivity -> origin/feature/iot-connectivity
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.3282004Z  * [new branch]      feature/server-pt-goal-foundations -> origin/feature/server-pt-goal-foundations
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.3284382Z  * [new branch]      feature/server-pt-s0-observation-integrity -> origin/feature/server-pt-s0-observation-integrity
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.3285760Z  * [new branch]      feature/server-pt-s1-product-entry -> origin/feature/server-pt-s1-product-entry
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.3286913Z  * [new branch]      feature/server-pt-s2-mail -> origin/feature/server-pt-s2-mail
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.3287888Z  * [new branch]      feature/server-pt-s3-dhcp -> origin/feature/server-pt-s3-dhcp
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.3289275Z  * [new branch]      feature/server-pt-s4a-qualification-runner -> origin/feature/server-pt-s4a-qualification-runner
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.3290334Z  * [new branch]      main       -> origin/main
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.3348271Z [command]"C:\Program Files\Git\bin\git.exe" branch --list --remote origin/feature/server-pt-goal-foundations
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.3716375Z   origin/feature/server-pt-goal-foundations
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.3767592Z [command]"C:\Program Files\Git\bin\git.exe" rev-parse refs/remotes/origin/feature/server-pt-goal-foundations
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.4058105Z 032d422a036c5999f0127a4b71dc945a7376a2bc
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.4103424Z ##[endgroup]
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.4104139Z ##[group]Determining the checkout info
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.4106133Z ##[endgroup]
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.4116592Z [command]"C:\Program Files\Git\bin\git.exe" sparse-checkout disable
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.4776282Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all extensions.worktreeConfig
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.5176924Z ##[group]Checking out the ref
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:46.5193142Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force -B feature/server-pt-goal-foundations refs/remotes/origin/feature/server-pt-goal-foundations
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.8056782Z Updating files:   4% (157/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.8168369Z Updating files:   5% (187/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.8332313Z Updating files:   6% (224/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.8459262Z Updating files:   7% (262/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.8564489Z Updating files:   8% (299/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.8668729Z Updating files:   9% (336/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.8800420Z Updating files:  10% (374/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.8890162Z Updating files:  11% (411/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.8986665Z Updating files:  12% (448/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.9073759Z Updating files:  13% (486/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.9178215Z Updating files:  14% (523/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.9267824Z Updating files:  15% (560/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.9353110Z Updating files:  16% (598/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.9445713Z Updating files:  17% (635/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.9534921Z Updating files:  18% (672/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.9617074Z Updating files:  19% (710/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.9706899Z Updating files:  20% (747/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.9796551Z Updating files:  21% (784/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.9898109Z Updating files:  22% (822/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:47.9986413Z Updating files:  23% (859/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.0081932Z Updating files:  24% (896/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.0168746Z Updating files:  25% (934/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.0262714Z Updating files:  26% (971/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.0360970Z Updating files:  27% (1008/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.0449459Z Updating files:  28% (1046/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.0558953Z Updating files:  29% (1083/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.0649650Z Updating files:  30% (1120/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.0750417Z Updating files:  31% (1158/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.0837668Z Updating files:  32% (1195/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.0963273Z Updating files:  33% (1232/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.1052044Z Updating files:  34% (1270/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.1137142Z Updating files:  35% (1307/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.1224098Z Updating files:  36% (1344/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.1323443Z Updating files:  37% (1382/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.1415381Z Updating files:  38% (1419/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.1513269Z Updating files:  39% (1456/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.1598776Z Updating files:  40% (1494/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.1688477Z Updating files:  41% (1531/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.1778992Z Updating files:  42% (1568/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.1863689Z Updating files:  43% (1606/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.1948627Z Updating files:  44% (1643/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.2039635Z Updating files:  45% (1680/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.2140459Z Updating files:  46% (1718/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.2247075Z Updating files:  47% (1755/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.2340847Z Updating files:  48% (1792/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.2437764Z Updating files:  49% (1830/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.2525681Z Updating files:  50% (1867/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.2629319Z Updating files:  51% (1904/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.2718416Z Updating files:  52% (1942/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.2812585Z Updating files:  53% (1979/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.2923669Z Updating files:  54% (2016/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.3010297Z Updating files:  55% (2054/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.3089154Z Updating files:  56% (2091/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.3205861Z Updating files:  57% (2128/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.3316894Z Updating files:  58% (2166/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.3412028Z Updating files:  59% (2203/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.3511796Z Updating files:  60% (2240/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.3597529Z Updating files:  61% (2278/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.3691065Z Updating files:  62% (2315/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.3774960Z Updating files:  63% (2352/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.3877562Z Updating files:  64% (2390/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.3966174Z Updating files:  65% (2427/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.4057780Z Updating files:  66% (2464/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.4142826Z Updating files:  67% (2502/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.4271014Z Updating files:  68% (2539/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.4366599Z Updating files:  69% (2576/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.4459676Z Updating files:  70% (2614/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.4544891Z Updating files:  71% (2651/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.4639605Z Updating files:  72% (2688/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.4722030Z Updating files:  73% (2726/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.4810835Z Updating files:  74% (2763/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.4955110Z Updating files:  75% (2800/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.5096129Z Updating files:  76% (2838/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.5207632Z Updating files:  77% (2875/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.5342936Z Updating files:  78% (2912/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.5500547Z Updating files:  79% (2950/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.5610698Z Updating files:  80% (2987/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.5737156Z Updating files:  81% (3024/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.5857900Z Updating files:  82% (3062/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.5979313Z Updating files:  83% (3099/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.6030478Z Updating files:  84% (3136/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.6173922Z Updating files:  84% (3145/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.6306675Z Updating files:  85% (3174/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.6433492Z Updating files:  86% (3211/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.6538872Z Updating files:  87% (3248/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.6649054Z Updating files:  88% (3286/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.6787303Z Updating files:  89% (3323/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.6917941Z Updating files:  90% (3360/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.7028571Z Updating files:  91% (3398/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.7145992Z Updating files:  92% (3435/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.7253525Z Updating files:  93% (3472/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.7368230Z Updating files:  94% (3510/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.7487347Z Updating files:  95% (3547/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.7609763Z Updating files:  96% (3584/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.7741913Z Updating files:  97% (3622/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.7848282Z Updating files:  98% (3659/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.7988649Z Updating files:  99% (3696/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.7989178Z Updating files: 100% (3733/3733)
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.7989595Z Updating files: 100% (3733/3733), done.
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.8183575Z Switched to a new branch 'feature/server-pt-goal-foundations'
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.8250396Z branch 'feature/server-pt-goal-foundations' set up to track 'origin/feature/server-pt-goal-foundations'.
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.8348938Z ##[endgroup]
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.8792202Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.9081804Z 032d422a036c5999f0127a4b71dc945a7376a2bc
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.9131850Z ##[group]Removing auth
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.9140764Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:48.9465947Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:49.5276052Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:49.5566063Z http.https://github.com/.extraheader
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:49.5612798Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all http.https://github.com/.extraheader
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:49.5939500Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:50.1930361Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:50.2292232Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+pytest (windows-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:50.8279932Z ##[endgroup]
+pytest (windows-latest, 3.11)	Run actions/setup-python@v5	﻿2026-09-30T02:51:50.8832319Z ##[group]Run actions/setup-python@v5
+pytest (windows-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:50.8832833Z with:
+pytest (windows-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:50.8833102Z   python-version: 3.11
+pytest (windows-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:50.8833415Z   check-latest: false
+pytest (windows-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:50.8837672Z   token: ***
+pytest (windows-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:50.8838017Z   update-environment: true
+pytest (windows-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:50.8838392Z   allow-prereleases: false
+pytest (windows-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:50.8838774Z   freethreaded: false
+pytest (windows-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:50.8839066Z env:
+pytest (windows-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:50.8839516Z   PT_MCP_BRIDGE_TOKEN: ci-token-long-enough-to-be-considered-valid-0123456789
+pytest (windows-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:50.8840189Z ##[endgroup]
+pytest (windows-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:51.0573190Z ##[group]Installed versions
+pytest (windows-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:51.0774587Z (node:8168) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+pytest (windows-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:51.0775864Z (Use `node --trace-deprecation ...` to show where the warning was created)
+pytest (windows-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:51.0776689Z Successfully set up CPython (3.11.9)
+pytest (windows-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:51.0777436Z ##[endgroup]
+pytest (windows-latest, 3.11)	Create checkout-local environment	﻿2026-09-30T02:51:51.1108502Z ##[group]Run python -m venv .venv
+pytest (windows-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:51.1108917Z ^[[36;1mpython -m venv .venv^[[0m
+pytest (windows-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:51.1711888Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+pytest (windows-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:51.1712431Z env:
+pytest (windows-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:51.1712844Z   PT_MCP_BRIDGE_TOKEN: ci-token-long-enough-to-be-considered-valid-0123456789
+pytest (windows-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:51.1713470Z   pythonLocation: C:\hostedtoolcache\windows\Python\3.11.9\x64
+pytest (windows-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:51.1714089Z   PKG_CONFIG_PATH: C:\hostedtoolcache\windows\Python\3.11.9\x64/lib/pkgconfig
+pytest (windows-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:51.1714673Z   Python_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+pytest (windows-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:51.1715202Z   Python2_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+pytest (windows-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:51.1715720Z   Python3_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+pytest (windows-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:51.1716134Z ##[endgroup]
+pytest (windows-latest, 3.11)	Install (Windows)	﻿2026-09-30T02:51:58.4028016Z ##[group]Run .\.venv\Scripts\python.exe -m pip install --upgrade pip
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:51:58.4028650Z ^[[36;1m.\.venv\Scripts\python.exe -m pip install --upgrade pip^[[0m
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:51:58.4029112Z ^[[36;1m.\.venv\Scripts\python.exe -m pip install -e ".[test,quality]"^[[0m
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:51:58.4102289Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:51:58.4102634Z env:
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:51:58.4102958Z   PT_MCP_BRIDGE_TOKEN: ci-token-long-enough-to-be-considered-valid-0123456789
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:51:58.4103446Z   pythonLocation: C:\hostedtoolcache\windows\Python\3.11.9\x64
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:51:58.4103901Z   PKG_CONFIG_PATH: C:\hostedtoolcache\windows\Python\3.11.9\x64/lib/pkgconfig
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:51:58.4104345Z   Python_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:51:58.4104738Z   Python2_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:51:58.4105127Z   Python3_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:51:58.4105449Z ##[endgroup]
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:51:59.7244346Z Requirement already satisfied: pip in d:\a\cisco-muejeje\cisco-muejeje\.venv\lib\site-packages (24.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:00.2565435Z Collecting pip
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:00.5340980Z   Downloading pip-26.2.1-py3-none-any.whl.metadata (4.6 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:00.5796114Z Downloading pip-26.2.1-py3-none-any.whl (1.8 MB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:00.7892988Z    ---------------------------------------- 1.8/1.8 MB 10.5 MB/s eta 0:00:00
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:00.8549061Z Installing collected packages: pip
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:00.8551146Z   Attempting uninstall: pip
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:00.8585886Z     Found existing installation: pip 24.0
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:00.9968105Z     Uninstalling pip-24.0:
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:01.0212298Z       Successfully uninstalled pip-24.0
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:02.3817303Z Successfully installed pip-26.2.1
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:04.6613417Z Obtaining file:///D:/a/cisco-muejeje/cisco-muejeje
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:04.6657361Z   Installing build dependencies: started
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:10.6184916Z   Installing build dependencies: finished with status 'done'
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:10.6202029Z   Checking if build backend supports build_editable: started
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:10.6992298Z   Checking if build backend supports build_editable: finished with status 'done'
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:10.7019906Z   Getting requirements to build editable: started
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:10.9947278Z   Getting requirements to build editable: finished with status 'done'
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:10.9976644Z   Installing backend dependencies: started
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:12.8488391Z   Installing backend dependencies: finished with status 'done'
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:12.8510031Z   Preparing editable metadata (pyproject.toml): started
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:13.1742789Z   Preparing editable metadata (pyproject.toml): finished with status 'done'
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:13.5237365Z Collecting mcp<2,>=1.13 (from mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:13.7720173Z   Downloading mcp-1.30.0-py3-none-any.whl.metadata (9.3 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:14.0184446Z Collecting pydantic<3,>=2.11 (from packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:14.0396443Z   Downloading pydantic-2.13.5-py3-none-any.whl.metadata (110 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:14.5582719Z Collecting ruff==0.16.7 (from packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:14.5816526Z   Downloading ruff-0.16.7-py3-none-win_amd64.whl.metadata (21 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:14.6651801Z Collecting pytest>=8 (from packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:14.6865581Z   Downloading pytest-9.1.1-py3-none-any.whl.metadata (7.6 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:14.7656811Z Collecting anyio>=4.5 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:14.7870471Z   Downloading anyio-4.15.1-py3-none-any.whl.metadata (4.7 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:14.8526535Z Collecting httpx-sse>=0.4 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:14.8748918Z   Downloading httpx_sse-0.4.3-py3-none-any.whl.metadata (9.7 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:14.9506516Z Collecting httpx<1.0.0,>=0.27.1 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:14.9943472Z   Downloading httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.0776876Z Collecting jsonschema>=4.20.0 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.0996054Z   Downloading jsonschema-4.26.0-py3-none-any.whl.metadata (7.6 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.1744270Z Collecting pydantic-settings>=2.5.2 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.1962325Z   Downloading pydantic_settings-2.15.0-py3-none-any.whl.metadata (3.9 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.2708043Z Collecting pyjwt>=2.10.1 (from pyjwt[crypto]>=2.10.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.2914427Z   Downloading pyjwt-2.15.1-py3-none-any.whl.metadata (3.5 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.3694482Z Collecting python-multipart>=0.0.9 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.3907673Z   Downloading python_multipart-0.0.32-py3-none-any.whl.metadata (2.1 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.5136781Z Collecting pywin32>=310 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.5373684Z   Downloading pywin32-312-cp311-cp311-win_amd64.whl.metadata (11 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.6570866Z Collecting sse-starlette>=1.6.1 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.6779073Z   Downloading sse_starlette-3.5.0-py3-none-any.whl.metadata (15 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.7663299Z Collecting starlette>=0.27 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.7872714Z   Downloading starlette-1.7.0-py3-none-any.whl.metadata (6.6 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.8652136Z Collecting typing-extensions>=4.9.0 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.8860499Z   Downloading typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.9602586Z Collecting typing-inspection>=0.4.1 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:15.9858810Z   Downloading typing_inspection-0.4.4-py3-none-any.whl.metadata (2.6 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:16.0650804Z Collecting uvicorn>=0.31.1 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:16.0860525Z   Downloading uvicorn-0.54.0-py3-none-any.whl.metadata (6.6 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:16.1599504Z Collecting certifi (from httpx<1.0.0,>=0.27.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:16.1815741Z   Downloading certifi-2026.7.22-py3-none-any.whl.metadata (2.5 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:16.2516539Z Collecting httpcore==1.* (from httpx<1.0.0,>=0.27.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:16.2723685Z   Downloading httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:16.3407796Z Collecting idna (from httpx<1.0.0,>=0.27.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:16.3614488Z   Downloading idna-3.20-py3-none-any.whl.metadata (7.2 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:16.4219189Z Collecting h11>=0.16 (from httpcore==1.*->httpx<1.0.0,>=0.27.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:16.4427036Z   Downloading h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:16.5115684Z Collecting python-dotenv>=1.0.0 (from mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:16.5326253Z   Downloading python_dotenv-1.2.3-py3-none-any.whl.metadata (29 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:16.6102836Z Collecting typer>=0.16.0 (from mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:16.6315305Z   Downloading typer-0.27.2-py3-none-any.whl.metadata (16 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:16.6956097Z Collecting annotated-types>=0.6.0 (from pydantic<3,>=2.11->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:16.7165354Z   Downloading annotated_types-0.8.0-py3-none-any.whl.metadata (15 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:17.5278328Z Collecting pydantic-core==2.46.5 (from pydantic<3,>=2.11->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:17.5488907Z   Downloading pydantic_core-2.46.5-cp311-cp311-win_amd64.whl.metadata (6.7 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:17.6198384Z Collecting attrs>=22.2.0 (from jsonschema>=4.20.0->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:17.6410943Z   Downloading attrs-26.1.0-py3-none-any.whl.metadata (8.8 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:17.7058545Z Collecting jsonschema-specifications>=2023.03.6 (from jsonschema>=4.20.0->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:17.7268781Z   Downloading jsonschema_specifications-2025.9.1-py3-none-any.whl.metadata (2.9 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:17.7973588Z Collecting referencing>=0.28.4 (from jsonschema>=4.20.0->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:17.8183090Z   Downloading referencing-0.37.0-py3-none-any.whl.metadata (2.8 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:18.1860302Z Collecting rpds-py>=0.25.0 (from jsonschema>=4.20.0->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:18.2084511Z   Downloading rpds_py-2026.6.3-cp311-cp311-win_amd64.whl.metadata (4.2 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:18.4699373Z Collecting cryptography>=3.4.0 (from pyjwt[crypto]>=2.10.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:18.4933224Z   Downloading cryptography-50.0.1-cp311-abi3-win_amd64.whl.metadata (4.3 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:18.6939278Z Collecting cffi>=2.0.0 (from cryptography>=3.4.0->pyjwt[crypto]>=2.10.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:18.7165756Z   Downloading cffi-2.1.1-cp311-cp311-win_amd64.whl.metadata (2.6 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:18.7843239Z Collecting pycparser (from cffi>=2.0.0->cryptography>=3.4.0->pyjwt[crypto]>=2.10.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:18.8050812Z   Downloading pycparser-3.0-py3-none-any.whl.metadata (8.2 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:18.8731514Z Collecting colorama>=0.4 (from pytest>=8->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:18.8945592Z   Downloading colorama-0.4.6-py2.py3-none-any.whl.metadata (17 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:18.9575015Z Collecting iniconfig>=1.0.1 (from pytest>=8->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:18.9795841Z   Downloading iniconfig-2.3.0-py3-none-any.whl.metadata (2.5 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.0077169Z Collecting packaging>=22 (from pytest>=8->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.0109085Z   Using cached packaging-26.3-py3-none-any.whl.metadata (3.5 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.0200691Z Collecting pluggy<2,>=1.5 (from pytest>=8->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.0227778Z   Using cached pluggy-1.6.0-py3-none-any.whl.metadata (4.8 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.0783292Z Collecting pygments>=2.7.2 (from pytest>=8->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.0998165Z   Downloading pygments-2.21.0-py3-none-any.whl.metadata (2.5 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.1812161Z Collecting shellingham>=1.3.0 (from typer>=0.16.0->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.2027415Z   Downloading shellingham-1.5.4-py2.py3-none-any.whl.metadata (3.5 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.3751116Z Collecting rich>=13.8.0 (from typer>=0.16.0->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.3984689Z   Downloading rich-15.0.0-py3-none-any.whl.metadata (18 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.4682270Z Collecting annotated-doc>=0.0.2 (from typer>=0.16.0->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.4892539Z   Downloading annotated_doc-0.0.5-py3-none-any.whl.metadata (6.5 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.5736353Z Collecting markdown-it-py>=2.2.0 (from rich>=13.8.0->typer>=0.16.0->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.5949576Z   Downloading markdown_it_py-4.2.0-py3-none-any.whl.metadata (7.4 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.6628940Z Collecting mdurl~=0.1 (from markdown-it-py>=2.2.0->rich>=13.8.0->typer>=0.16.0->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.6844746Z   Downloading mdurl-0.1.2-py3-none-any.whl.metadata (1.6 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.7574029Z Collecting click>=7.0 (from uvicorn>=0.31.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.7787805Z   Downloading click-8.5.0-py3-none-any.whl.metadata (2.6 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.8223237Z Downloading ruff-0.16.7-py3-none-win_amd64.whl (10.6 MB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:19.9848849Z    ---------------------------------------- 10.6/10.6 MB 73.8 MB/s  0:00:00
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.0058706Z Downloading mcp-1.30.0-py3-none-any.whl (234 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.0448560Z Downloading httpx-0.28.1-py3-none-any.whl (73 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.0863487Z Downloading httpcore-1.0.9-py3-none-any.whl (78 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.1282753Z Downloading pydantic-2.13.5-py3-none-any.whl (472 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.1739910Z Downloading pydantic_core-2.46.5-cp311-cp311-win_amd64.whl (2.0 MB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.2110782Z    ---------------------------------------- 2.0/2.0 MB 57.4 MB/s  0:00:00
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.2318264Z Downloading annotated_types-0.8.0-py3-none-any.whl (13 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.2707495Z Downloading anyio-4.15.1-py3-none-any.whl (132 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.3133580Z Downloading h11-0.16.0-py3-none-any.whl (37 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.3509920Z Downloading httpx_sse-0.4.3-py3-none-any.whl (9.0 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.3895980Z Downloading idna-3.20-py3-none-any.whl (69 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.4347830Z Downloading jsonschema-4.26.0-py3-none-any.whl (90 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.4711305Z Downloading attrs-26.1.0-py3-none-any.whl (67 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.5090683Z Downloading jsonschema_specifications-2025.9.1-py3-none-any.whl (18 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.5485271Z Downloading pydantic_settings-2.15.0-py3-none-any.whl (69 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.5913692Z Downloading pyjwt-2.15.1-py3-none-any.whl (33 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.6326279Z Downloading cryptography-50.0.1-cp311-abi3-win_amd64.whl (3.8 MB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.6811037Z    ---------------------------------------- 3.8/3.8 MB 76.2 MB/s  0:00:00
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.7029714Z Downloading cffi-2.1.1-cp311-cp311-win_amd64.whl (185 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.7437467Z Downloading pytest-9.1.1-py3-none-any.whl (386 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.7674093Z Using cached pluggy-1.6.0-py3-none-any.whl (20 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.7881382Z Downloading colorama-0.4.6-py2.py3-none-any.whl (25 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.8265547Z Downloading iniconfig-2.3.0-py3-none-any.whl (7.5 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.8486956Z Using cached packaging-26.3-py3-none-any.whl (129 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.8994986Z Downloading pygments-2.21.0-py3-none-any.whl (1.3 MB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.9290928Z    ---------------------------------------- 1.3/1.3 MB 30.9 MB/s  0:00:00
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.9500579Z Downloading python_dotenv-1.2.3-py3-none-any.whl (22 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:20.9929422Z Downloading python_multipart-0.0.32-py3-none-any.whl (30 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.0342135Z Downloading pywin32-312-cp311-cp311-win_amd64.whl (6.9 MB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.1006597Z    ---------------------------------------- 6.9/6.9 MB 105.8 MB/s  0:00:00
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.1217790Z Downloading referencing-0.37.0-py3-none-any.whl (26 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.1607512Z Downloading rpds_py-2026.6.3-cp311-cp311-win_amd64.whl (223 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.2040218Z Downloading sse_starlette-3.5.0-py3-none-any.whl (17 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.2419101Z Downloading starlette-1.7.0-py3-none-any.whl (78 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.2831913Z Downloading typer-0.27.2-py3-none-any.whl (123 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.3259216Z Downloading annotated_doc-0.0.5-py3-none-any.whl (5.3 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.3639437Z Downloading rich-15.0.0-py3-none-any.whl (310 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.4152137Z Downloading markdown_it_py-4.2.0-py3-none-any.whl (91 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.4540784Z Downloading mdurl-0.1.2-py3-none-any.whl (10.0 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.4996770Z Downloading shellingham-1.5.4-py2.py3-none-any.whl (9.8 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.5360716Z Downloading typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.5756451Z Downloading typing_inspection-0.4.4-py3-none-any.whl (14 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.6131928Z Downloading uvicorn-0.54.0-py3-none-any.whl (87 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.6525967Z Downloading click-8.5.0-py3-none-any.whl (125 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.6928622Z Downloading certifi-2026.7.22-py3-none-any.whl (136 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.7323793Z Downloading pycparser-3.0-py3-none-any.whl (48 kB)
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.9332151Z Building wheels for collected packages: packet-tracer-mcp
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:21.9403227Z   Building editable for packet-tracer-mcp (pyproject.toml): started
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:22.0178877Z   Building editable for packet-tracer-mcp (pyproject.toml): finished with status 'done'
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:22.0224404Z   Created wheel for packet-tracer-mcp: filename=packet_tracer_mcp-0.8.0-py3-none-any.whl size=3681 sha256=8aa56295c49d6321dce40fde7bb624bdb4667bb86515131925ef683bc0df9579
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:22.0226577Z   Stored in directory: C:\Users\runneradmin\AppData\Local\Temp\pip-ephem-wheel-cache-8vwu4qdk\wheels\46\d1\73\d9e98d8364beb148ed75e8b8660b639ec1d10eeb0d55b35446
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:22.0259193Z Successfully built packet-tracer-mcp
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:22.1287632Z Installing collected packages: typing-extensions, shellingham, ruff, rpds-py, pywin32, python-multipart, python-dotenv, pyjwt, pygments, pycparser, pluggy, packaging, mdurl, iniconfig, idna, httpx-sse, h11, colorama, click, certifi, attrs, annotated-types, annotated-doc, uvicorn, typing-inspection, referencing, pytest, pydantic-core, markdown-it-py, httpcore, cffi, anyio, starlette, rich, pydantic, jsonschema-specifications, httpx, cryptography, typer, sse-starlette, pydantic-settings, jsonschema, mcp, packet-tracer-mcp
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:28.1431768Z 
+pytest (windows-latest, 3.11)	Install (Windows)	2026-09-30T02:52:28.1459798Z Successfully installed annotated-doc-0.0.5 annotated-types-0.8.0 anyio-4.15.1 attrs-26.1.0 certifi-2026.7.22 cffi-2.1.1 click-8.5.0 colorama-0.4.6 cryptography-50.0.1 h11-0.16.0 httpcore-1.0.9 httpx-0.28.1 httpx-sse-0.4.3 idna-3.20 iniconfig-2.3.0 jsonschema-4.26.0 jsonschema-specifications-2025.9.1 markdown-it-py-4.2.0 mcp-1.30.0 mdurl-0.1.2 packaging-26.3 packet-tracer-mcp-0.8.0 pluggy-1.6.0 pycparser-3.0 pydantic-2.13.5 pydantic-core-2.46.5 pydantic-settings-2.15.0 pygments-2.21.0 pyjwt-2.15.1 pytest-9.1.1 python-dotenv-1.2.3 python-multipart-0.0.32 pywin32-312 referencing-0.37.0 rich-15.0.0 rpds-py-2026.6.3 ruff-0.16.7 shellingham-1.5.4 sse-starlette-3.5.0 starlette-1.7.0 typer-0.27.2 typing-extensions-4.16.0 typing-inspection-0.4.4 uvicorn-0.54.0
+pytest (windows-latest, 3.11)	Run tests (Windows)	﻿2026-09-30T02:52:28.5869373Z ##[group]Run .\.venv\Scripts\python.exe -m pytest -q -rs
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:52:28.5869888Z ^[[36;1m.\.venv\Scripts\python.exe -m pytest -q -rs^[[0m
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:52:28.5944164Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:52:28.5963284Z env:
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:52:28.5963912Z   PT_MCP_BRIDGE_TOKEN: ci-token-long-enough-to-be-considered-valid-0123456789
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:52:28.5964698Z   pythonLocation: C:\hostedtoolcache\windows\Python\3.11.9\x64
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:52:28.5965309Z   PKG_CONFIG_PATH: C:\hostedtoolcache\windows\Python\3.11.9\x64/lib/pkgconfig
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:52:28.5965779Z   Python_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:52:28.5966210Z   Python2_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:52:28.5966640Z   Python3_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:52:28.5966981Z ##[endgroup]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:53:09.8408001Z ........................................................................ [  0%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:53:09.9458948Z ........................................................................ [  1%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:53:10.0244319Z ........................................................................ [  2%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:53:16.5990472Z ........................................................................ [  3%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:53:21.8563991Z ........................................................................ [  4%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:53:46.0518916Z ........................................................................ [  4%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:53:49.0293707Z ........................................................................ [  5%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:53:54.1204037Z ........................................................................ [  6%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:54:11.4210948Z ........................................................................ [  7%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:54:26.7816750Z ........................................................................ [  8%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:54:41.0371797Z ........................................................................ [  9%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:54:44.9236625Z ........................................................................ [  9%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:54:45.1893189Z ........................................................................ [ 10%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:54:45.3079886Z ........................................................................ [ 11%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:54:51.5942741Z ........................................................................ [ 12%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:55:37.1959956Z ........................................................................ [ 13%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:55:56.6278309Z ........................................................................ [ 14%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:56:05.9452960Z ........................................................................ [ 14%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:56:13.8341526Z ........................................................................ [ 15%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:56:39.2483436Z ........................................................................ [ 16%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:57:00.2771786Z ........................................................................ [ 17%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:57:22.1117323Z ........................................................................ [ 18%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:58:05.9830627Z ........................................................................ [ 19%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:58:27.8726791Z ........................................................................ [ 19%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:58:34.5038296Z ........................................................................ [ 20%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:58:46.0300103Z ........................................................................ [ 21%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:58:47.6260596Z ........................................................................ [ 22%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:58:48.4666968Z ............................................s........................... [ 23%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:58:57.5222770Z ........................................................................ [ 24%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:02.7284907Z ........................................................................ [ 24%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:06.1091356Z ........................................................................ [ 25%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:06.2082609Z ........................................................................ [ 26%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:11.2017056Z ........................................................................ [ 27%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:14.3108162Z ........................................................................ [ 28%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:14.3902383Z ........................................................................ [ 29%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:14.5050860Z ........................................................................ [ 29%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:16.0876829Z ........................................................................ [ 30%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:16.3672871Z ........................................................................ [ 31%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:17.9383904Z ........................................................................ [ 32%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:18.3485348Z ........................................................................ [ 33%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:20.6575977Z ........................................................................ [ 34%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:23.0479355Z ........................................................................ [ 34%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:28.6044409Z ........................................................................ [ 35%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:30.8111419Z ........................................................................ [ 36%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:34.6498662Z ........................................................................ [ 37%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:35.0341293Z ........................................................................ [ 38%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:35.9489238Z ........................................................................ [ 39%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T02:59:49.3717132Z ........................................................................ [ 39%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:00:14.5868094Z ........................................................................ [ 40%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:00:18.1736900Z ........................................................................ [ 41%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:00:19.2562899Z ........................................................................ [ 42%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:00:39.0351016Z ........................................................................ [ 43%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:00:39.6121104Z ........................................................................ [ 44%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:00:40.0878605Z ........................................................................ [ 44%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:01:33.3628214Z ........................................................................ [ 45%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:01:34.3582670Z ........................................................................ [ 46%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:01:40.8432000Z ........................................................................ [ 47%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:02:19.6141034Z ........................................................................ [ 48%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:02:48.8549941Z ........................................................................ [ 49%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:15.1849800Z ........................................................................ [ 49%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:15.2627728Z ........................................................................ [ 50%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:16.0305223Z ........................................................................ [ 51%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:16.4597902Z ........................................................................ [ 52%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:16.7587966Z ........................................................................ [ 53%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:18.1267859Z ........................................................................ [ 54%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:19.9407158Z ........................................................................ [ 54%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:20.0458358Z ........................................................................ [ 55%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:21.5887450Z ........................................................................ [ 56%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:22.3341492Z ........................................................................ [ 57%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:22.4380058Z ........................................................................ [ 58%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:22.5314442Z ........................................................................ [ 59%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:22.6194639Z ........................................................................ [ 59%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:24.1406841Z ........s............................................................... [ 60%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:24.2301939Z ...............................s........................................ [ 61%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:24.3299345Z ........................................................................ [ 62%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:24.4182955Z ........................................................................ [ 63%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:24.5129694Z ........................................................................ [ 63%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:26.2769175Z ........................................................................ [ 64%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:38.3043327Z ........................................................................ [ 65%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:03:56.7267928Z ........................................................................ [ 66%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:04:03.1363389Z ........................................................................ [ 67%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:04:03.5507954Z ........................................................................ [ 68%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:04:09.1667736Z ........................................................................ [ 68%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:04:22.2128712Z ........................................................................ [ 69%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:04:33.6301321Z ........................................................................ [ 70%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:04:57.2323987Z ........................................................................ [ 71%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:05:04.2408572Z ........................................................................ [ 72%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:05:13.9499924Z ........................................................................ [ 73%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:05:19.5202841Z ........................................................................ [ 73%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:05:31.7675021Z ........................................................................ [ 74%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:05:54.7487873Z ..ss.................................................................... [ 75%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:06:03.6798049Z .....................................s.................................. [ 76%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:06:05.3992289Z ........................................................................ [ 77%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:06:12.9997560Z ........................................................................ [ 78%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:06:21.0421971Z ........................................................................ [ 78%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:06:24.1024936Z ........................................................................ [ 79%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:06:43.6849631Z ........................................................................ [ 80%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:06:56.5726697Z ........................................................................ [ 81%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:07:02.1970907Z ........................................................................ [ 82%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:07:02.2755218Z ........................................................................ [ 83%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:07:05.7421808Z ........................................................................ [ 83%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:07:14.4527650Z ........................................................................ [ 84%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:07:17.2184819Z ........................................................................ [ 85%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:07:17.2970280Z ........................................................................ [ 86%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:07:17.3757036Z ........................................................................ [ 87%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:07:30.1949455Z ........................................................................ [ 88%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:07:34.7149626Z ........................................................................ [ 88%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:10:46.2908485Z ........................................................................ [ 89%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:12:48.5026407Z ........................................................................ [ 90%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:15:28.5482371Z ........................................................................ [ 91%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:15:44.8070155Z ........................................................................ [ 92%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:16:04.1043177Z ........................................................................ [ 93%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:16:07.1690812Z ........................................................................ [ 93%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:16:07.2515864Z ........................................................................ [ 94%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:16:07.3336329Z ........................................................................ [ 95%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:16:53.0059312Z ........................................................................ [ 96%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:16:57.5124278Z ........................................................................ [ 97%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:16:57.6347986Z ........................................................................ [ 98%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:16:57.7591364Z ........................................................................ [ 98%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:16:57.8958457Z ........................................................................ [ 99%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1306184Z .......................                                                  [100%]
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1307109Z ============================== warnings summary ===============================
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1308599Z tests/test_e95_interface_routing_semantics.py::TestTheReferenceIsUnchanged::test_the_reference_still_emits_no_bandwidth_anywhere
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1310268Z tests/test_e95_productive_pipeline.py::TestTheCompilerReachesLinkPerformance::test_the_reference_still_compiles_after_the_wiring
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1311901Z tests/test_e95_productive_pipeline.py::TestUnknownProfileNeverMutates::test_an_unknown_profile_produces_zero_link_mode_mutations
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1313830Z   D:\a\cisco-muejeje\cisco-muejeje\.venv\Lib\site-packages\_pytest\fixtures.py:1313: PytestRemovedIn10Warning: Class-scoped fixture defined as instance method is deprecated.
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1315380Z   Instance attributes set in this fixture will NOT be visible to test methods,
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1316218Z   as each test gets a new instance while the fixture runs only once per class.
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1316998Z   Use @classmethod decorator and set attributes on cls instead.
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1318370Z   See https://docs.pytest.org/en/stable/deprecations.html#class-scoped-fixture-as-instance-method
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1319405Z     fixturefunc = resolve_fixture_function(fixturedef, request)
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1319889Z 
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1320245Z -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1321041Z =========================== short test summary info ===========================
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1322010Z SKIPPED [1] tests\test_dhcp_native_default_sequence.py:110: the D-DHCP record is machine-local
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1323535Z SKIPPED [1] tests\test_positive_voice_ab_evidence_ledger.py:131: no retained raw run is present in this checkout
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1325302Z SKIPPED [1] tests\test_positive_voice_dhcp_pool_observer.py:562: the ignored qualification artefact is absent here
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1326661Z SKIPPED [1] tests\test_server_pt_fastloop_retirement.py:2332: opt-in: set PT_MCP_NATIVE_WINDOW_TESTS=1 on Windows
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1327977Z SKIPPED [1] tests\test_server_pt_fastloop_retirement.py:2405: opt-in: set PT_MCP_NATIVE_WINDOW_TESTS=1 on Windows
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1329748Z SKIPPED [1] tests\test_server_pt_published_sources.py:188: the documentation extra (`.[docs]`) is not installed here
+pytest (windows-latest, 3.11)	Run tests (Windows)	2026-09-30T03:17:05.1330791Z 8657 passed, 6 skipped, 3 warnings in 1471.46s (0:24:31)
+pytest (windows-latest, 3.11)	Post Run actions/setup-python@v5	﻿2026-09-30T03:17:06.9627493Z Post job cleanup.
+pytest (windows-latest, 3.11)	Post Run actions/setup-python@v5	2026-09-30T03:17:07.1399095Z (node:2152) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+pytest (windows-latest, 3.11)	Post Run actions/setup-python@v5	2026-09-30T03:17:07.1400898Z (Use `node --trace-deprecation ...` to show where the warning was created)
+pytest (windows-latest, 3.11)	Post Run actions/checkout@v4	﻿2026-09-30T03:17:07.1836752Z Post job cleanup.
+pytest (windows-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:17:07.4254734Z [command]"C:\Program Files\Git\bin\git.exe" version
+pytest (windows-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:17:07.4611344Z git version 2.55.0.windows.5
+pytest (windows-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:17:07.4693495Z Temporarily overriding HOME='D:\a\_temp\f0f7089d-6f36-4224-8431-6545b5d9d44f' before making global git config changes
+pytest (windows-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:17:07.4694906Z Adding repository directory to the temporary git global config as a safe directory
+pytest (windows-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:17:07.4707457Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\cisco-muejeje\cisco-muejeje
+pytest (windows-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:17:07.5169554Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+pytest (windows-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:17:07.5594491Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+pytest (windows-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:17:08.2544814Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+pytest (windows-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:17:08.2949133Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+pytest (windows-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:17:08.9841695Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+pytest (windows-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:17:09.0320807Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+pytest (windows-latest, 3.11)	Complete job	﻿2026-09-30T03:17:09.7497627Z Cleaning up orphan processes
+pytest (windows-latest, 3.11)	Complete job	2026-09-30T03:17:09.8411724Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

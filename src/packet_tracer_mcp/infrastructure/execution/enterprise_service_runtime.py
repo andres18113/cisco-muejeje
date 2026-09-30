@@ -12,11 +12,12 @@ lives in the domain, not here.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import threading
 from collections.abc import Callable, Sequence
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, replace
 from enum import Enum, StrEnum
 from ipaddress import ip_address, ip_network
@@ -66,6 +67,10 @@ from ...domain.enterprise.models.service_runtime import (
     ObservationFact,
     RuntimeObservationStep,
     RuntimeServiceVerification,
+)
+from ...domain.enterprise.services.dhcp_lease_evidence import (
+    is_dhcp_fallback_address,
+    normalized_mac,
 )
 from ...domain.enterprise.services.native_dhcp_policy import native_policy_network
 from .command_dispatch import PAGER_GUARD_JS
@@ -154,7 +159,7 @@ DHCP_POOL_INVENTORY_LIMIT = 64
 DHCP_EXCLUSION_SCAN_LIMIT = 4096
 _MAC_TEXT = re.compile(
     r"^(?:[0-9A-Fa-f]{4}\.){2}[0-9A-Fa-f]{4}$|"
-    r"^(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$"
+    r"^(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$|^[0-9A-Fa-f]{12}$"
 )
 
 
@@ -258,6 +263,31 @@ def _competing_pool_rows(
     return rows
 
 
+def _reference_equal_scan_entries(
+    current: dict, previous: dict, reference: str
+) -> None:
+    """Store equal indexed raw content once after both fresh scans were decoded.
+
+    A reference never establishes scan completion. Each scan keeps its own
+    physical pool, window, end observations and decoder outcome. Changed or
+    non-authorizing entries remain present in full.
+    """
+    entries = current.get("entries")
+    if (
+        current.get("termination") in _TABLE_ENDS
+        and previous.get("termination") in _TABLE_ENDS
+        and not current.get("scan_error")
+        and not previous.get("scan_error")
+        and isinstance(entries, list)
+        and entries == previous.get("entries")
+    ):
+        current["entries_sha256"] = hashlib.sha256(
+            json.dumps(entries, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        current["entries_ref"] = reference
+        current.pop("entries")
+
+
 def _lease_snapshot_trace(payload: dict, first_snapshot: dict | None = None) -> dict:
     """Retain each raw index once, with shared reader provenance per snapshot.
 
@@ -275,7 +305,19 @@ def _lease_snapshot_trace(payload: dict, first_snapshot: dict | None = None) -> 
     ) == first_snapshot.get("reader_provenance"):
         facts.pop("reader_provenance", None)
         facts["reader_provenance_ref"] = "samples[0].lease_snapshot"
+    if first_snapshot is not None:
+        _reference_equal_scan_entries(
+            facts, first_snapshot, "samples[0].lease_snapshot.entries"
+        )
     if isinstance(payload.get("competing"), list):
+        previous_by_pool: dict[str, tuple[int, dict] | None] = {}
+        if first_snapshot is not None:
+            for index, previous in enumerate(first_snapshot.get("competing") or []):
+                name = previous.get("pool_name") if isinstance(previous, dict) else None
+                if isinstance(name, str) and name:
+                    previous_by_pool[name] = (
+                        None if name in previous_by_pool else (index, previous)
+                    )
         competing = []
         for scan in payload["competing"]:
             if not isinstance(scan, dict):
@@ -294,6 +336,17 @@ def _lease_snapshot_trace(payload: dict, first_snapshot: dict | None = None) -> 
             if scan.get("reader_provenance") == payload.get("reader_provenance"):
                 # The snapshot context applies to every matching physical scan.
                 recorded.pop("reader_provenance", None)
+            name = scan.get("pool_name")
+            previous_entry = (
+                previous_by_pool.get(name) if isinstance(name, str) else None
+            )
+            if previous_entry is not None:
+                previous_index, previous = previous_entry
+                _reference_equal_scan_entries(
+                    recorded,
+                    previous,
+                    f"samples[0].lease_snapshot.competing[{previous_index}].entries",
+                )
             competing.append(recorded)
         facts["competing"] = competing
     return facts
@@ -370,17 +423,32 @@ def _is_ipv4_text(text: str) -> bool:
 
 
 def _mac_identity(text: str) -> str | None:
-    """Return the 48-bit value a valid MAC spelling names, or None.
+    """Return one valid, nonempty 48-bit value without changing its raw form.
 
-    `_MAC_TEXT` admits dotted, colon and dash spellings in either case, so
-    conflict checks compare this value. An unset or invalid MAC names no
-    identity: it is that client's own policy failure, never a shared one. An
-    exact lease join still compares the spelling itself and never becomes
-    easier to satisfy through this value.
+    Joins, stability and conflict checks use the same identity. Dotted,
+    delimited, bare and case-equivalent readings remain original in results.
+    An unset or invalid MAC names no identity and cannot join another absence.
     """
-    if not _MAC_TEXT.fullmatch(text):
+    if not isinstance(text, str):
         return None
-    return re.sub(r"[.:-]", "", text).upper()
+    return normalized_mac(text).upper() or None
+
+
+def _same_mac(left: str, right: str) -> bool:
+    """Match two valid identities; two missing values never form a match."""
+    value = _mac_identity(left)
+    return value is not None and value == _mac_identity(right)
+
+
+def _same_client_identity(
+    previous: tuple[str, str, str] | None, current: tuple[str, str, str]
+) -> bool:
+    """Compare an address/mask/MAC binding while retaining original spelling."""
+    return bool(
+        previous is not None
+        and previous[:2] == current[:2]
+        and _same_mac(previous[2], current[2])
+    )
 
 
 def _selected_identity_conflict(
@@ -447,6 +515,7 @@ _SKIP_OWN_CLAIM_REPLAYED = "own_claim_replayed"
 _SKIP_ACCOUNT_IDENTITY_MISMATCH = "account_identity_mismatch"
 _SKIP_SUBJECT_CLAIM_UNREADABLE = "subject_claim_unreadable"
 _SKIP_POOL_CONFLICT = "pool_conflict"
+_SKIP_NATIVE_CLIENT_PRECONDITION = "native_client_precondition"
 _SKIP_DHCP_MODE_NOT_ENABLED = "dhcp_mode_not_enabled"
 _SKIP_DHCP_MODE_INVALID = "dhcp_mode_invalid"
 _SKIP_DHCP_MODE_GETTER_ERROR = "dhcp_mode_getter_error"
@@ -459,6 +528,7 @@ _REFUSALS = frozenset(
         _SKIP_ACCOUNT_IDENTITY_MISMATCH,
         _SKIP_SUBJECT_CLAIM_UNREADABLE,
         _SKIP_POOL_CONFLICT,
+        _SKIP_NATIVE_CLIENT_PRECONDITION,
         _SKIP_DHCP_MODE_NOT_ENABLED,
         _SKIP_DHCP_MODE_INVALID,
         _SKIP_DHCP_MODE_GETTER_ERROR,
@@ -1019,6 +1089,7 @@ class PacketTracerEnterpriseServiceRuntime:
         budget_reader: Callable[[], tuple[int, float]] | None = None,
         owned_release: (Callable[[str], AbstractContextManager[None]] | None) = None,
         lease_reader_context: LeaseReaderContext | None = None,
+        wait_allowance: Callable[[], float] | None = None,
     ) -> None:
         """Bind the runtime to one inventory reader and one command channel.
 
@@ -1067,6 +1138,8 @@ class PacketTracerEnterpriseServiceRuntime:
         self._interval = convergence_interval_seconds
         self._dhcp_state_interval = 10.0
         self._dhcp_state_max_samples = 13
+        self._dhcp_state_wait_allowance = wait_allowance
+        self._dhcp_read_deadline: float | None = None
         self._clock = clock
         self._sleep = sleeper
         self._web_schedule = (
@@ -1346,6 +1419,39 @@ class PacketTracerEnterpriseServiceRuntime:
         batch_id: str,
         note: str,
     ) -> RuntimeActionMutation:
+        """Keep correlated startup getter data apart from classifier facts."""
+        mutation = self._row_mutation_facts(action, row, batch_id, note)
+        if (
+            isinstance(action, EnableServerDhcp)
+            and action.native_policy is not None
+            and isinstance(row, dict)
+            and isinstance(row.get("startup_observations"), dict)
+        ):
+            details = row["startup_observations"]
+            if set(details) == {"pre", "post"} and len(json.dumps(details)) <= 65_536:
+                mutation.observation_details = self._redact_observation_details(details)
+        return mutation
+
+    def _redact_observation_details(self, value):
+        """Redact structured diagnostics without trimming observed values."""
+        if isinstance(value, str):
+            return self._sanitizer.redact(value)
+        if isinstance(value, dict):
+            return {
+                key: self._redact_observation_details(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [self._redact_observation_details(item) for item in value]
+        return value
+
+    def _row_mutation_facts(
+        self,
+        action: ServiceAction,
+        row: dict | None,
+        batch_id: str,
+        note: str,
+    ) -> RuntimeActionMutation:
         """Derive one action's facts from its reported row.
 
         A row that is absent or inadmissible is row 7, not row 15: this
@@ -1584,10 +1690,12 @@ class PacketTracerEnterpriseServiceRuntime:
         if isinstance(action, EnableServerDhcp):
             return frozenset(
                 {
+                    _SKIP_ALREADY_SATISFIED,
                     _SKIP_PRECONDITION_UNOBSERVED,
                     _SKIP_DHCP_ENABLE_INVALID,
                     _SKIP_DHCP_ENABLE_GETTER_ERROR,
                     _SKIP_POOL_CONFLICT,
+                    _SKIP_NATIVE_CLIENT_PRECONDITION,
                 }
             )
         if isinstance(action, ConfigureServerDhcpPool):
@@ -1663,6 +1771,7 @@ class PacketTracerEnterpriseServiceRuntime:
         elif row["skip_reason"] in {
             _SKIP_ACCOUNT_IDENTITY_MISMATCH,
             _SKIP_POOL_CONFLICT,
+            _SKIP_NATIVE_CLIENT_PRECONDITION,
             _SKIP_DHCP_MODE_NOT_ENABLED,
         }:
             # Unlike the other refusals, this one IS a completed pre-read: it
@@ -2223,18 +2332,38 @@ class PacketTracerEnterpriseServiceRuntime:
             "if(typeof n!=='number'||n<0||n>32){return null;}"
             "for(var i=0;i<n;i++){var p=dev.getPortAt(i);"
             "if(p&&String(p.getName())===iface){return p;}}return null;}"
-            "function __clients(){for(var i=0;i<__selected.length;i++){"
-            "var p=__port(__selected[i][0],__selected[i][1]);"
-            "if(!p||p.isDhcpClientOn()!==true){return false;}"
-            "var ip=String(p.getIpAddress()),mask=String(p.getSubnetMask());"
-            "if((ip!==''&&ip!=='0.0.0.0')||"
-            "(mask!==''&&mask!=='0.0.0.0')){return false;}}"
-            "for(var j=0;j<__inactive.length;j++){"
-            "var q=__port(__inactive[j][0],__inactive[j][1]);"
-            "if(!q||q.isDhcpClientOn()!==false){return false;}"
-            "var a=String(q.getIpAddress()),m=String(q.getSubnetMask());"
-            "if((a!==''&&a!=='0.0.0.0')||"
-            "(m!==''&&m!=='0.0.0.0')){return false;}}return true;}"
+            "var __macPattern=new RegExp(" + json.dumps(_MAC_TEXT.pattern) + ");"
+            "function __apipa(a,m){if(m!=='255.255.0.0'){return false;}"
+            "var v=a.split('.');if(v.length!==4||v[0]!=='169'||v[1]!=='254'){return false;}"
+            "for(var i=0;i<4;i++){if(!/^[0-9]{1,3}$/.test(v[i])){return false;}"
+            "var n=Number(v[i]);if(n<0||n>255||String(n)!==v[i]){return false;}}"
+            "return a!=='169.254.0.0'&&a!=='169.254.255.255';}"
+            "function __raw(v){var t=v===null?'null':typeof v;"
+            "return {kind:t,value:t==='string'||t==='boolean'||t==='null'||"
+            "(t==='number'&&isFinite(v))?v:null};}"
+            "function __clients(){var rows=[],ok=true;"
+            "for(var section=0;section<2;section++){var names=section===0?__selected:__inactive;"
+            "for(var i=0;i<names.length;i++){var x={device:names[i][0],interface:names[i][1],"
+            "selected:section===0,port_found:false,mode:null,mode_type:'unobserved',"
+            "ipv4:null,ipv4_type:'unobserved',netmask:null,netmask_type:'unobserved',"
+            "mac:null,mac_type:'unobserved',state:'unknown',error:''};var field='';"
+            "try{var c=__port(x.device,x.interface);"
+            "if(c){x.port_found=true;field='mode';var mode=c.isDhcpClientOn();x.mode_type=typeof mode;"
+            "x.mode=__raw(mode).value;field='ipv4';var a=__raw(c.getIpAddress());"
+            "x.ipv4=a.value;x.ipv4_type=a.kind;field='netmask';var s=__raw(c.getSubnetMask());"
+            "x.netmask=s.value;x.netmask_type=s.kind;field='mac';var m=__raw(c.getMacAddress());"
+            "x.mac=m.value;x.mac_type=m.kind;"
+            "var clear=(x.ipv4===''||x.ipv4==='0.0.0.0')&&(x.netmask===''||x.netmask==='0.0.0.0');"
+            "if(x.mode_type==='boolean'&&x.ipv4_type==='string'&&"
+            "x.netmask_type==='string'&&x.mac_type==='string'&&__macPattern.test(x.mac)){"
+            "if(x.selected&&x.mode===true&&clear){x.state='pending';}"
+            "else if(x.selected&&x.mode===true&&__apipa(x.ipv4,x.netmask)){x.state='apipa';}"
+            "else if(!x.selected&&x.mode===false&&clear){x.state='inactive';}"
+            "else{x.state='client_conflict';}}}}catch(e){if(field){"
+            "x[field+'_type']='error';x.failed_field=field;}x.error=" + reader + "(e);}"
+            "if(x.state!=='pending'&&x.state!=='apipa'&&x.state!=='inactive'){ok=false;}"
+            "rows.push(x);}}return {ok:ok,rows:rows};}"
+            "var __beforeClients=null,__afterClients=null;"
             "try{p=m&&m.getDhcpServerProcessByPortName(__if);}catch(e){p=null;}"
             f'if(!p){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}else{{',
             "try{pv=__state();r.pre_read=true;r.pre=__dg(JSON.stringify(pv));}"
@@ -2242,14 +2371,19 @@ class PacketTracerEnterpriseServiceRuntime:
             f'if(!r.pre_read){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}'
             "else if(__same(pv,__after)){"
             f'r.skip_reason="{_SKIP_ALREADY_SATISFIED}";}}'
-            "else if(!__same(pv,__want)||!__clients()){"
-            f'r.skip_reason="{_SKIP_POOL_CONFLICT}";}}else{{',
+            "else if(!__same(pv,__want)){"
+            f'r.skip_reason="{_SKIP_POOL_CONFLICT}";}}else{{'
+            "__beforeClients=__clients();if(!__beforeClients.ok){"
+            f'r.skip_reason="{_SKIP_NATIVE_CLIENT_PRECONDITION}";}}else{{',
             "try{r.attempted=true;p.setEnable(true);}"
-            f"catch(e){{r.call_error={reader}(e);}}}}"
+            f"catch(e){{r.call_error={reader}(e);}}}}}}"
             "try{qv=__state();r.post_read=true;r.post=__dg(JSON.stringify(qv));}"
             "catch(e){}"
             "if(r.post_read){r.ok=__same(qv,__after);}"
             "if(r.pre_read&&r.post_read){r.changed=JSON.stringify(pv)!==JSON.stringify(qv);}",
+            "if(!__beforeClients){__beforeClients=__clients();}"
+            "__afterClients=__clients();r.startup_observations={pre:{server:pv,clients:__beforeClients.rows},"
+            "post:{server:qv,clients:__afterClients.rows}};"
             "}results.push(r);",
         ]
 
@@ -2924,7 +3058,7 @@ class PacketTracerEnterpriseServiceRuntime:
             "mode_value_valid:modevalid,dhcp_mode:mode,"
             "ipv4:addressable?String(p.getIpAddress()):'',"
             "netmask:addressable?String(p.getSubnetMask()):'',"
-            "mac:macable?String(p.getMacAddress()):'',"
+            "mac:macable?p.getMacAddress():'',"
             "lease_time:data?String(data.getLeaseTimeStr()):'',error:''}));}catch(e){"
             "reportResult(JSON.stringify({found:false,port_found:false,"
             f"interface:{interface},mode_channel:false,address_channel:false,mac_channel:false,mode_value_valid:false,"
@@ -2967,6 +3101,11 @@ class PacketTracerEnterpriseServiceRuntime:
                 observation=ObservationFact.MALFORMED,
                 method="dhcp_client_readback",
                 cause=f"dhcp_client_shape:{shape or 'dhcp_mode'}",
+                observed={
+                    "client_readback_json": json.dumps(
+                        payload, sort_keys=True, separators=(",", ":")
+                    )
+                },
             )
         if payload["error"]:
             return self._observed(
@@ -3050,6 +3189,14 @@ class PacketTracerEnterpriseServiceRuntime:
                 observation=ObservationFact.MALFORMED,
                 method="dhcp_client_readback",
                 cause="dhcp_client_identity_invalid",
+                observed=observed,
+            )
+        if is_dhcp_fallback_address(payload["ipv4"], payload["netmask"]):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.INCONCLUSIVE,
+                method="dhcp_client_readback",
+                cause="acquisition_not_observed",
                 observed=observed,
             )
         compatible = address in network and address not in {
@@ -3147,11 +3294,60 @@ class PacketTracerEnterpriseServiceRuntime:
         saw_incomplete = False
         sampled = 0
         inactive_macs: dict[str, str] = {}
+        window = self._dhcp_sampling_window(
+            [5.0, self._mail_timeout, 5.0, *([5.0] * len(inactive))]
+        )
+        if window is None:
+            return self._observed(
+                expectation,
+                observation=ObservationFact.MALFORMED,
+                method="native_dhcp_usable_state",
+                cause="native_state_sampling_contract_invalid",
+            )
+        started = window["started_at_seconds"]
+        deadline = started + window["wall_limit_seconds"]
+
+        def sample_observed():
+            return {
+                "samples": sampled,
+                "sampling_window_json": json.dumps(
+                    window, sort_keys=True, separators=(",", ":")
+                ),
+            }
+
+        def late_read(elapsed, timeout):
+            if self._clock() > deadline:
+                return "native_state_window_elapsed"
+            return "native_state_read_late" if elapsed > timeout else ""
+
+        def elapsed_result(cause):
+            return self._observed(
+                expectation,
+                observation=ObservationFact.INCONCLUSIVE,
+                method="native_dhcp_usable_state",
+                cause=cause,
+                observed=sample_observed(),
+            )
+
         for index in range(self._dhcp_state_max_samples):
             if index:
+                if self._clock() + self._dhcp_state_interval >= deadline:
+                    return elapsed_result("native_state_window_elapsed")
                 self._sleep(self._dhcp_state_interval)
+            if self._clock() >= deadline:
+                return elapsed_result("native_state_window_elapsed")
             sampled += 1
-            server = self._verify_dhcp_server_state(server_expectation)
+            timing = {"sample": sampled, "started_seconds": self._clock() - started}
+            window["samples"].append(timing)
+            read_started = self._clock()
+            with self._dhcp_sampling_read(deadline):
+                server = self._verify_dhcp_server_state(server_expectation)
+            timing["server_seconds"] = self._clock() - read_started
+            if reason := late_read(timing["server_seconds"], 5.0):
+                timing["server_policy_json"] = server.observed.get(
+                    "native_policy_json", ""
+                )
+                return elapsed_result(reason)
             if server.status is not ActionExecutionStatus.VERIFIED:
                 return self._observed(
                     expectation,
@@ -3162,14 +3358,22 @@ class PacketTracerEnterpriseServiceRuntime:
                     ),
                     method="native_dhcp_usable_state",
                     cause=f"native_server_policy:{server.cause or server.observation.value}",
-                    observed={"samples": sampled},
+                    observed=sample_observed(),
                 )
             for other in inactive:
-                inactive_state, observed_mac, _reason = (
-                    self._native_inactive_client_state(
-                        other["device_name"], other["interface"]
+                read_started = self._clock()
+                with self._dhcp_sampling_read(deadline):
+                    inactive_state, observed_mac, _reason = (
+                        self._native_inactive_client_state(
+                            other["device_name"], other["interface"]
+                        )
                     )
+                inactive_seconds = self._clock() - read_started
+                timing["inactive_seconds"] = (
+                    timing.get("inactive_seconds", 0.0) + inactive_seconds
                 )
+                if reason := late_read(inactive_seconds, 5.0):
+                    return elapsed_result(reason)
                 prior_mac = inactive_macs.get(other["device_name"])
                 if inactive_state == "contradicted" or (
                     inactive_state == "clear"
@@ -3181,7 +3385,7 @@ class PacketTracerEnterpriseServiceRuntime:
                         observation=ObservationFact.CONTRADICTED,
                         method="native_dhcp_usable_state",
                         cause="native_inactive_client_changed",
-                        observed={"samples": sampled},
+                        observed=sample_observed(),
                     )
                 if inactive_state != "clear":
                     return self._observed(
@@ -3189,17 +3393,23 @@ class PacketTracerEnterpriseServiceRuntime:
                         observation=ObservationFact.INCONCLUSIVE,
                         method="native_dhcp_usable_state",
                         cause="native_inactive_client_unobserved",
-                        observed={"samples": sampled},
+                        observed=sample_observed(),
                     )
                 inactive_macs[other["device_name"]] = observed_mac
-            client = self._verify_dhcp_lease(client_expectation)
+            read_started = self._clock()
+            with self._dhcp_sampling_read(deadline):
+                client = self._verify_dhcp_lease(client_expectation)
+            timing["client_seconds"] = self._clock() - read_started
+            if reason := late_read(timing["client_seconds"], self._mail_timeout):
+                timing["client_reading"] = dict(client.observed)
+                return elapsed_result(reason)
             if client.observation is ObservationFact.CONTRADICTED:
                 return self._observed(
                     expectation,
                     observation=ObservationFact.CONTRADICTED,
                     method="native_dhcp_usable_state",
                     cause=f"native_client_state:{client.cause}",
-                    observed={"samples": sampled},
+                    observed=sample_observed(),
                 )
             if client.observation in {
                 ObservationFact.MALFORMED,
@@ -3207,11 +3417,15 @@ class PacketTracerEnterpriseServiceRuntime:
                 ObservationFact.NOT_OBSERVED,
                 ObservationFact.ACCEPTANCE_UNKNOWN,
             }:
+                timing["client_reading"] = dict(client.observed)
                 saw_incomplete = True
                 consecutive = 0
                 continue
             current = client.observed
-            if current.get("ipv4") in {"", "0.0.0.0"}:
+            if (
+                current.get("ipv4") in {"", "0.0.0.0"}
+                or client.cause == "acquisition_not_observed"
+            ):
                 consecutive = 0
                 continue
             if (
@@ -3227,34 +3441,42 @@ class PacketTracerEnterpriseServiceRuntime:
                     observation=ObservationFact.INCONCLUSIVE,
                     method="native_dhcp_usable_state",
                     cause="native_client_state_unattributable",
-                    observed={"samples": sampled},
+                    observed=sample_observed(),
                 )
             identity = (
                 str(current["ipv4"]),
                 str(current["netmask"]),
                 str(current["mac"]),
             )
-            attributed = self._verify_dhcp_lease_attributed(expectation)
+            read_started = self._clock()
+            with self._dhcp_sampling_read(deadline):
+                attributed = self._verify_dhcp_lease_attributed(expectation)
+            timing["attribution_seconds"] = self._clock() - read_started
+            if reason := late_read(timing["attribution_seconds"], 5.0):
+                timing["attribution_reading"] = dict(attributed.observed)
+                return elapsed_result(reason)
             if attributed.observation is ObservationFact.CONTRADICTED:
                 return self._observed(
                     expectation,
                     observation=ObservationFact.CONTRADICTED,
                     method="native_dhcp_usable_state",
                     cause=f"native_pool_row:{attributed.cause}",
-                    observed={"samples": sampled},
+                    observed=sample_observed(),
                 )
             joined = (
                 attributed.status is ActionExecutionStatus.VERIFIED
                 and attributed.observed.get("ipv4") == identity[0]
                 and attributed.observed.get("netmask") == identity[1]
-                and attributed.observed.get("mac") == identity[2]
+                and _same_mac(attributed.observed.get("mac"), identity[2])
                 and attributed.observed.get("matching_row_observed") is True
             )
             if not joined:
                 assigned_unattributed = True
                 consecutive = 0
                 continue
-            consecutive = consecutive + 1 if prior == identity else 1
+            consecutive = (
+                consecutive + 1 if _same_client_identity(prior, identity) else 1
+            )
             prior = identity
             if consecutive >= 2:
                 return self._observed(
@@ -3280,7 +3502,7 @@ class PacketTracerEnterpriseServiceRuntime:
                             inactive_macs, sort_keys=True
                         ),
                         "stable_samples": consecutive,
-                        "samples": sampled,
+                        **sample_observed(),
                     },
                     limitations=(
                         "autonomous_state_not_explicit_dhcpRun_causality",
@@ -3300,7 +3522,7 @@ class PacketTracerEnterpriseServiceRuntime:
                 if assigned_unattributed or saw_incomplete or consecutive
                 else "native_client_unassigned_in_window"
             ),
-            observed={"samples": sampled},
+            observed=sample_observed(),
         )
 
     def _native_group_snapshot(
@@ -3342,7 +3564,7 @@ class PacketTracerEnterpriseServiceRuntime:
             "found:!!dev,port_found:!!port,mode:mode,mode_type:typeof mode,"
             "ipv4:port?String(port.getIpAddress()):'',"
             "netmask:port?String(port.getSubnetMask()):'',"
-            "mac:port?String(port.getMacAddress()):'',error:''});}"
+            "mac:port?port.getMacAddress():'',error:''});}"
             "catch(e){clients.push({expectation_id:item.expectation_id,"
             "device_name:item.device_name,interface:item.interface,"
             "found:!!dev,port_found:!!port,mode:null,mode_type:'error',"
@@ -3404,6 +3626,54 @@ class PacketTracerEnterpriseServiceRuntime:
                 for item in payload["competing"]
             ]
         return replace(observation, payload=payload)
+
+    def _dhcp_sampling_window(self, read_timeouts: Sequence[float]) -> dict | None:
+        """Bound the unchanged sample/wait schedule by its actual read work.
+
+        The caller's remaining phase time additionally caps this window. It
+        cannot admit a dispatch; the transport's ledger retains that authority.
+        """
+        count = self._dhcp_state_max_samples
+        interval = self._dhcp_state_interval
+        if (
+            isinstance(count, bool)
+            or not isinstance(count, int)
+            or not 1 <= count <= 13
+            or not isfinite(interval)
+            or interval < 0
+            or any(not isfinite(value) or value <= 0 for value in read_timeouts)
+        ):
+            return None
+        work = count * sum(read_timeouts) + (count - 1) * interval
+        limit = work
+        if self._dhcp_state_wait_allowance is not None:
+            try:
+                allowance = self._dhcp_state_wait_allowance()
+                limit = (
+                    min(work, max(0.0, allowance))
+                    if not isinstance(allowance, bool) and isfinite(allowance)
+                    else 0.0
+                )
+            except (TypeError, ValueError, RuntimeError):
+                limit = 0.0
+        return {
+            "started_at_seconds": self._clock(),
+            "work_limit_seconds": work,
+            "wall_limit_seconds": limit,
+            "max_samples": count,
+            "interval_seconds": interval,
+            "samples": [],
+        }
+
+    @contextmanager
+    def _dhcp_sampling_read(self, deadline: float):
+        """Cap one read by the remaining acquisition window and restore scope."""
+        previous = self._dhcp_read_deadline
+        self._dhcp_read_deadline = deadline
+        try:
+            yield
+        finally:
+            self._dhcp_read_deadline = previous
 
     def _verify_native_dhcp_group(self, expectation):
         """Verify selected clients from shared, fresh group scans.
@@ -3518,6 +3788,7 @@ class PacketTracerEnterpriseServiceRuntime:
         # A client's first local failure is sticky, with the sample it was
         # observed in. It never removes the client from later global checks.
         failures: dict[str, tuple[ObservationFact, str, int]] = {}
+        later_local_contradictions: dict[str, list[dict]] = {}
         readings: dict[str, list[dict]] = {
             item["expectation_id"]: [] for item in selected
         }
@@ -3526,15 +3797,58 @@ class PacketTracerEnterpriseServiceRuntime:
         global_detail = ""
         sample = 0
         table_end_by_throw = False
+        window = self._dhcp_sampling_window(
+            [5.0, self._mail_timeout, *([5.0] * len(inactive))]
+        )
+        if window is None:
+            return {
+                identifier: self._observed(
+                    item,
+                    observation=ObservationFact.MALFORMED,
+                    method="native_dhcp_group_state",
+                    cause="native_group_sampling_contract_invalid",
+                )
+                for identifier, item in expectations.items()
+            }
+        started = window["started_at_seconds"]
+        deadline = started + window["wall_limit_seconds"]
         for sample_index in range(self._dhcp_state_max_samples):
             if sample_index:
+                if self._clock() + self._dhcp_state_interval >= deadline:
+                    global_failure = (
+                        ObservationFact.INCONCLUSIVE,
+                        "native_group_window_elapsed",
+                    )
+                    break
                 self._sleep(self._dhcp_state_interval)
-            sample = sample_index + 1
-            server = self._verify_dhcp_server_state(
-                expectation.model_copy(
-                    update={"expected": {**expected, "enabled": True}}
+            if self._clock() >= deadline:
+                global_failure = (
+                    ObservationFact.INCONCLUSIVE,
+                    "native_group_window_elapsed",
                 )
-            )
+                break
+            sample = sample_index + 1
+            timing = {"sample": sample, "started_seconds": self._clock() - started}
+            window["samples"].append(timing)
+            read_started = self._clock()
+            with self._dhcp_sampling_read(deadline):
+                server = self._verify_dhcp_server_state(
+                    expectation.model_copy(
+                        update={"expected": {**expected, "enabled": True}}
+                    )
+                )
+            timing["server_seconds"] = self._clock() - read_started
+            if self._clock() > deadline or timing["server_seconds"] > 5.0:
+                timing["server_policy_json"] = server.observed.get(
+                    "native_policy_json", ""
+                )
+                global_failure = (
+                    ObservationFact.INCONCLUSIVE,
+                    "native_group_window_elapsed"
+                    if self._clock() > deadline
+                    else "native_group_read_late",
+                )
+                break
             if server.status is not ActionExecutionStatus.VERIFIED:
                 global_failure = (
                     ObservationFact.CONTRADICTED
@@ -3554,9 +3868,20 @@ class PacketTracerEnterpriseServiceRuntime:
                         "native_inactive_shape",
                     )
                     break
-                state, mac, reason = self._native_inactive_client_state(
-                    other["device_name"], other["interface"]
-                )
+                read_started = self._clock()
+                with self._dhcp_sampling_read(deadline):
+                    state, mac, reason = self._native_inactive_client_state(
+                        other["device_name"], other["interface"]
+                    )
+                if self._clock() > deadline or self._clock() - read_started > 5.0:
+                    global_failure = (
+                        ObservationFact.INCONCLUSIVE,
+                        "native_group_window_elapsed"
+                        if self._clock() > deadline
+                        else "native_group_read_late",
+                    )
+                    global_detail = other["device_name"]
+                    break
                 old_mac = inactive_macs.get(other["device_name"])
                 # Only a fresh clear reading can show a changed MAC, and only
                 # by a different 48-bit value, not another spelling. An
@@ -3586,13 +3911,16 @@ class PacketTracerEnterpriseServiceRuntime:
             # A named pool reads one row past its capacity, so a complete table
             # ends in a null or the measured throw; the native pool keeps its
             # recorded bound.
-            observation = self._native_group_snapshot(
-                expectation,
-                selected,
-                bound + 2,
-                physical,
-                fixed_competing,
-            )
+            read_started = self._clock()
+            with self._dhcp_sampling_read(deadline):
+                observation = self._native_group_snapshot(
+                    expectation,
+                    selected,
+                    bound + 2,
+                    physical,
+                    fixed_competing,
+                )
+            timing["snapshot_seconds"] = self._clock() - read_started
             if observation.kind is not BridgeObservationKind.PAYLOAD:
                 global_failure = (
                     self._transport_fact(observation),
@@ -3609,6 +3937,17 @@ class PacketTracerEnterpriseServiceRuntime:
                     ),
                 }
             )
+            if (
+                self._clock() > deadline
+                or timing["snapshot_seconds"] > self._mail_timeout
+            ):
+                global_failure = (
+                    ObservationFact.INCONCLUSIVE,
+                    "native_group_window_elapsed"
+                    if self._clock() > deadline
+                    else "native_group_read_late",
+                )
+                break
             if (
                 payload.get("error")
                 or not all(
@@ -3636,6 +3975,14 @@ class PacketTracerEnterpriseServiceRuntime:
                     )
                     or []
                 )
+            # Index counterevidence once per shared scan. An earlier local
+            # failure cannot remove a readable client from these lookups.
+            competing_macs = {
+                identity
+                for row in competing_rows
+                if (identity := _mac_identity(row["macAddress"])) is not None
+            }
+            competing_addresses = {row["ipAddress"] for row in competing_rows}
             clients = payload.get("clients")
             rows = payload.get("rows")
             if (
@@ -3687,8 +4034,7 @@ class PacketTracerEnterpriseServiceRuntime:
                     or bool(client.get("error"))
                     or client.get("mode_type") != "boolean"
                     or not all(
-                        isinstance(client.get(key), str)
-                        for key in ("ipv4", "netmask", "mac")
+                        isinstance(client.get(key), str) for key in ("ipv4", "netmask")
                     )
                 ):
                     readings[identifier].append(
@@ -3704,6 +4050,18 @@ class PacketTracerEnterpriseServiceRuntime:
                     )
                     continue
                 readable[identifier] = client
+                if not isinstance(client.get("mac"), str):
+                    # A malformed MAC names no identity and cannot join, but
+                    # the independently successful IP read remains in the
+                    # shared address census and raw snapshot.
+                    failures.setdefault(
+                        identifier,
+                        (
+                            ObservationFact.INCONCLUSIVE,
+                            "native_client_identity_unobserved",
+                            sample,
+                        ),
+                    )
             # Every authoritative reading takes part in the shared identity
             # checks, whatever that client's own sticky result already is. A
             # degraded address is that client's own policy failure; it names
@@ -3729,7 +4087,10 @@ class PacketTracerEnterpriseServiceRuntime:
                 exact = 0
                 join = ""
                 for row in rows_by_address.get(client["ipv4"], ()):
-                    if row["macAddress"] == client["mac"] and row["port"] == interface:
+                    if (
+                        _same_mac(row["macAddress"], client["mac"])
+                        and row["port"] == interface
+                    ):
                         exact += 1
                     elif owners.get(_mac_identity(row["macAddress"]), set()) - {
                         identifier
@@ -3743,7 +4104,11 @@ class PacketTracerEnterpriseServiceRuntime:
             for identifier, client in readable.items():
                 reading = {
                     "sample": sample,
-                    "reading": "assigned"
+                    "reading": "pending_apipa"
+                    if client.get("mode") is True
+                    and _mac_identity(client["mac"]) is not None
+                    and is_dhcp_fallback_address(client["ipv4"], client["netmask"])
+                    else "assigned"
                     if identifier in assigned
                     else "address_invalid"
                     if identifier in addressed
@@ -3755,6 +4120,18 @@ class PacketTracerEnterpriseServiceRuntime:
                 if identifier in joins:
                     reading["join"] = joins[identifier]
                 readings[identifier].append(reading)
+                local = failures.get(identifier)
+                if (
+                    local is not None
+                    and sample >= local[2]
+                    and (
+                        _mac_identity(client["mac"]) in competing_macs
+                        or client["ipv4"] in competing_addresses
+                    )
+                ):
+                    later_local_contradictions.setdefault(identifier, []).append(
+                        {"sample": sample, "cause": "competing_pool_row"}
+                    )
             for item in selected:
                 identifier = item["expectation_id"]
                 client = readable.get(identifier)
@@ -3769,6 +4146,22 @@ class PacketTracerEnterpriseServiceRuntime:
                     continue
                 if identifier not in addressed:
                     stable[identifier] = 0
+                    continue
+                if _mac_identity(
+                    client["mac"]
+                ) is not None and is_dhcp_fallback_address(
+                    client["ipv4"], client["netmask"]
+                ):
+                    stable[identifier] = 0
+                    if (
+                        _mac_identity(client["mac"]) in competing_macs
+                        or client["ipv4"] in competing_addresses
+                    ):
+                        failures[identifier] = (
+                            ObservationFact.CONTRADICTED,
+                            "competing_pool_row",
+                            sample,
+                        )
                     continue
                 saw_address[identifier] = True
                 try:
@@ -3790,10 +4183,9 @@ class PacketTracerEnterpriseServiceRuntime:
                         sample,
                     )
                     continue
-                if any(
-                    _mac_identity(row["macAddress"]) == _mac_identity(client["mac"])
-                    or row["ipAddress"] == client["ipv4"]
-                    for row in competing_rows
+                if (
+                    _mac_identity(client["mac"]) in competing_macs
+                    or client["ipv4"] in competing_addresses
                 ):
                     failures[identifier] = (
                         ObservationFact.CONTRADICTED,
@@ -3815,7 +4207,7 @@ class PacketTracerEnterpriseServiceRuntime:
                 identity = (client["ipv4"], client["netmask"], client["mac"])
                 stable[identifier] = (
                     stable[identifier] + 1
-                    if identities.get(identifier) == identity
+                    if _same_client_identity(identities.get(identifier), identity)
                     else 1
                 )
                 identities[identifier] = identity
@@ -3892,6 +4284,17 @@ class PacketTracerEnterpriseServiceRuntime:
                     "samples": len(history),
                     "local_failure_cause": local[1] if local else "",
                     "local_failure_sample": local[2] if local else 0,
+                    **(
+                        {
+                            "local_contradictions_json": json.dumps(
+                                later_local_contradictions[identifier],
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            )
+                        }
+                        if identifier in later_local_contradictions
+                        else {}
+                    ),
                     "global_failure_sample": global_sample,
                     "global_failure_detail": global_detail,
                     "client_readings_json": json.dumps(
@@ -3899,6 +4302,15 @@ class PacketTracerEnterpriseServiceRuntime:
                     ),
                     "group_trace_json": trace_json if identifier == leader else "",
                     "group_trace_ref": leader,
+                    **(
+                        {
+                            "group_window_json": json.dumps(
+                                window, sort_keys=True, separators=(",", ":")
+                            )
+                        }
+                        if identifier == leader
+                        else {}
+                    ),
                 },
                 limitations=(
                     "autonomous_state_not_explicit_dhcpRun_causality",
@@ -3936,7 +4348,7 @@ class PacketTracerEnterpriseServiceRuntime:
             "port_found:!!p,mode:mode,mode_type:typeof mode,"
             "ipv4:p?String(p.getIpAddress()):'',"
             "netmask:p?String(p.getSubnetMask()):'',"
-            "mac:p?String(p.getMacAddress()):'',error:''}));}"
+            "mac:p?p.getMacAddress():'',error:''}));}"
             "catch(e){reportResult(JSON.stringify({device:name,interface:want,"
             "found:!!d,port_found:!!p,mode:null,mode_type:'error',"
             "ipv4:'',netmask:'',mac:'',error:'read_error'}));}"
@@ -4029,7 +4441,7 @@ class PacketTracerEnterpriseServiceRuntime:
             f"}}catch(e){{scan_error={reader}(e);termination='error';break;}}}}"
             "}reportResult(JSON.stringify({client_found:!!cd,port_found:!!cp,"
             "interface:want,ipv4:cp?String(cp.getIpAddress()):'',"
-            "netmask:cp?String(cp.getSubnetMask()):'',mac:cp?String(cp.getMacAddress()):'',"
+            "netmask:cp?String(cp.getSubnetMask()):'',mac:cp?cp.getMacAddress():'',"
             f"server_found:!!sd,process_found:!!sp,pool_found:!!pool,pool_name:pool?String(pool.getDhcpPoolName()):'',"
             "rows:rows,repeated:repeated,scan_error:scan_error,"
             f"scan_bound:{bound_js},rows_scanned:rows.length,termination:termination,error:''}}));}}catch(e){{"
@@ -4200,13 +4612,13 @@ class PacketTracerEnterpriseServiceRuntime:
         exact = [
             row
             for row in same_ip
-            if row["macAddress"] == payload["mac"]
+            if _same_mac(row["macAddress"], payload["mac"])
             and row["port"] == expected.get("interface")
         ]
         conflicts = [
             row
             for row in same_ip
-            if row["macAddress"] != payload["mac"]
+            if not _same_mac(row["macAddress"], payload["mac"])
             or row["port"] != expected.get("interface")
         ]
         truncated = declared > bound or termination == "bound"
@@ -5734,6 +6146,8 @@ class PacketTracerEnterpriseServiceRuntime:
         subject at all. Collapsing them into `{}` was what made a failed read
         indistinguishable from a device that reported nothing.
         """
+        if self._dhcp_read_deadline is not None:
+            timeout = max(0.0, min(timeout, self._dhcp_read_deadline - self._clock()))
         if self._sanitizer.holds_values:
             js = (
                 _ERROR_CATEGORY_HELPER

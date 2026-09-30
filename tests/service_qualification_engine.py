@@ -242,6 +242,10 @@ const PORTS = {
   'Server-PT': ['FastEthernet0'],
   '2960-24TT': Array.from({length: 24}, (_, i) => 'FastEthernet0/' + (i + 1))
     .concat(['GigabitEthernet0/1', 'GigabitEthernet0/2']),
+  '2950T-24': Array.from({length: 24}, (_, i) => 'FastEthernet0/' + (i + 1))
+    .concat(['GigabitEthernet0/1', 'GigabitEthernet0/2']),
+  '3560-24PS': Array.from({length: 24}, (_, i) => 'FastEthernet0/' + (i + 1))
+    .concat(['GigabitEthernet0/1', 'GigabitEthernet0/2']),
   'IE-2000': Array.from({length: 8}, (_, i) => 'FastEthernet1/' + (i + 1))
     .concat(['GigabitEthernet1/1', 'GigabitEthernet1/2']),
   // The SP-1 edge routers: only the Ethernet ports the product binds.
@@ -451,7 +455,8 @@ const dhcpPool = (dev, pool) => ({
     }
     if (pool.name === 'serverPool'
         && config.dhcp_native_start_behavior === 'coupled_candidate') {
-      const broadcast = intToIp(ipToInt(pool.network) + 255);
+      // Candidate subnet-aligned coupling, not a measured native algorithm.
+      const broadcast = intToIp((ipToInt(pool.network) | ~ipToInt(pool.mask)) >>> 0);
       pool.end = broadcast;
       pool.max = ipToInt(broadcast) - ipToInt(pool.start) + 1;
     }

@@ -67,6 +67,7 @@ from .configuration_validator import validate_configuration_actions
 from .link_performance_integration import LinkPerformanceIntegration, resolve_link_media
 from .link_performance_planner import LinkPerformancePlanner
 from .segment_assignment import SegmentAssignmentPolicy
+from .service_path_closure import PathTopology
 
 _RESERVED_VLANS = {1002, 1003, 1004, 1005}
 #: Categorias cuyo modo de enlace se configura por IOS. Los endpoints quedan
@@ -523,6 +524,9 @@ class ConfigurationCompiler:
         expectations = self._expectations(
             actions,
             delegated_dhcp_segment_ids=set(policy.delegated_dhcp_segment_ids),
+            component_trunk_verification=(
+                policy.trunk_verification_mode == "component_configuration"
+            ),
         )
         for action in actions:
             action.apply_dependencies = list(action.depends_on)
@@ -1885,8 +1889,25 @@ class ConfigurationCompiler:
         actions: list[ConfigurationAction],
         *,
         delegated_dhcp_segment_ids: set[str] | None = None,
+        component_trunk_verification: bool = False,
     ) -> list[VerificationExpectation]:
         delegated_dhcp_segment_ids = delegated_dhcp_segment_ids or set()
+        component_vlans_by_trunk: dict[str, set[int]] = {}
+        if component_trunk_verification:
+            topology = PathTopology(actions)
+            for action in actions:
+                if isinstance(action, ConfigureTrunk):
+                    for vlan in action.allowed_vlans:
+                        component = topology.component_of(vlan, action.device_id)
+                        if component is not None and len(component.links) >= len(
+                            component.switch_device_ids
+                        ):
+                            for identifier in topology.component_trunk_action_ids(
+                                component
+                            ):
+                                component_vlans_by_trunk.setdefault(
+                                    identifier, set()
+                                ).add(vlan)
         expectations: list[VerificationExpectation] = []
         for action in actions:
             kind: VerificationKind
@@ -1912,12 +1933,21 @@ class ConfigurationCompiler:
                 if action.voice_vlan_id is not None:
                     expected["voice_vlan_id"] = action.voice_vlan_id
             elif isinstance(action, ConfigureTrunk):
-                kind = VerificationKind.TRUNK
+                kind = (
+                    VerificationKind.TRUNK_CONFIGURATION
+                    if action.id in component_vlans_by_trunk
+                    else VerificationKind.TRUNK
+                )
                 query = "show_interfaces_trunk"
                 expected = {
                     "interface": action.interface,
                     "allowed_vlans": action.allowed_vlans,
                 }
+                if kind is VerificationKind.TRUNK_CONFIGURATION:
+                    expected["component_vlans"] = sorted(
+                        component_vlans_by_trunk[action.id]
+                    )
+                    expected["source_link_id"] = action.source_link_id
             elif isinstance(
                 action, (ConfigureRoutedInterface, ConfigureSvi, ConfigureSubinterface)
             ):

@@ -74,7 +74,7 @@ from .configuration_dependencies import (
     order_dependency_actions,
 )
 from .native_dhcp_policy import (
-    MAX_NATIVE_CLIENTS,
+    MAX_NATIVE_INACTIVE_CLIENTS,
     native_policy_network,
     native_policy_within_scope,
 )
@@ -1433,7 +1433,7 @@ class ServiceCompiler:
             if native_binding
             else []
         )
-        if native_binding and len(inactive_client_ids) > MAX_NATIVE_CLIENTS:
+        if native_binding and len(inactive_client_ids) > MAX_NATIVE_INACTIVE_CLIENTS:
             issues.append(
                 _error(
                     ConfigurationIssueCode.DHCP_POOL_INVALID,
@@ -1610,7 +1610,7 @@ class ServiceCompiler:
             issues.append(
                 _error(
                     ConfigurationIssueCode.DHCP_POOL_INVALID,
-                    "Native Server-PT binding is outside its recorded policy scope.",
+                    "Native Server-PT binding does not admit this recorded policy scope.",
                     service_id,
                 )
             )

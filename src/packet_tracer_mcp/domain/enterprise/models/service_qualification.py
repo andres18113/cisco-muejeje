@@ -104,6 +104,7 @@ class QualificationStage(StrEnum):
     #: The product route over one Server-PT serving a local native pool and
     #: two relayed named pools, then routed DNS and HTTP for every client.
     SP2_MIXED_PRODUCT = "SP2-MIXED-PRODUCT"
+    SP2_CAPACITY_PRODUCT = "SP2-CAPACITY-PRODUCT"
 
 
 class ExecutionMode(StrEnum):
@@ -461,6 +462,7 @@ STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.SP2_NATIVE_POOL: (440, 1800),
     QualificationStage.SP2_REMOTE_RELAY: (3200, 3600),
     QualificationStage.SP2_MIXED_PRODUCT: (3200, 3600),
+    QualificationStage.SP2_CAPACITY_PRODUCT: (6000, 10800),
 }
 
 Q0_PC = "__MCP_E6Q_PC1"
@@ -1630,6 +1632,7 @@ SP2_STAGES = (
     QualificationStage.SP2_NATIVE_POOL,
     QualificationStage.SP2_REMOTE_RELAY,
     QualificationStage.SP2_MIXED_PRODUCT,
+    QualificationStage.SP2_CAPACITY_PRODUCT,
 )
 
 
@@ -2478,6 +2481,16 @@ SP2_MIXED_SITE_CLIENTS: dict[str, tuple[str, ...]] = {
 SP2_MIXED_CLIENTS = tuple(
     name for names in SP2_MIXED_SITE_CLIENTS.values() for name in names
 )
+#: A separately identified simultaneous workload. The original mixed fixture
+#: remains reconstructible and has no inherited capacity or acceptance claim.
+SP2_CAPACITY_SITE_CLIENTS: dict[str, tuple[str, ...]] = {
+    "HQ": tuple(f"HQ-DEFAULT-PC-{index:02d}" for index in range(1, 37)),
+    "BR1": tuple(f"BR1-DEFAULT-PC-{index:02d}" for index in range(1, 14)),
+    "BR2": tuple(f"BR2-DEFAULT-PC-{index:02d}" for index in range(1, 6)),
+}
+SP2_CAPACITY_CLIENTS = tuple(
+    name for names in SP2_CAPACITY_SITE_CLIENTS.values() for name in names
+)
 #: Fixture choices, not recovered Final-Muejeje facts. The three pools differ
 #: in prefix length, lease window and placement.
 SP2_MIXED_HQ_SUBNET = "10.80.1.0/24"
@@ -2493,7 +2506,9 @@ class Sp2MixedRunParameters:
     hostname: str
 
 
-def sp2_mixed_run_parameters(run_id: str) -> Sp2MixedRunParameters:
+def sp2_mixed_run_parameters(
+    run_id: str, *, capacity: bool = False
+) -> Sp2MixedRunParameters:
     """Return the run's page marker and DNS host name, derived purely.
 
     The composer that writes the intent and the coordinator that checks it
@@ -2504,12 +2519,12 @@ def sp2_mixed_run_parameters(run_id: str) -> Sp2MixedRunParameters:
         raise ValueError("An SP-2 mixed run needs its run id.")
     digest = hashlib.sha256(run_id.encode("utf-8")).hexdigest()
     return Sp2MixedRunParameters(
-        marker=f"SP2_MIXED_{digest[:12]}",
+        marker=f"SP2_{'CAPACITY' if capacity else 'MIXED'}_{digest[:12]}",
         hostname=f"www.sp2-{digest[12:18]}.lab.example",
     )
 
 
-def sp2_mixed_topology_intent() -> dict[str, Any]:
+def sp2_mixed_topology_intent(*, capacity: bool = False) -> dict[str, Any]:
     """Return the mixed intent without services: three chained sites.
 
     HQ holds the Server-PT on its data segment with five DHCP clients; each
@@ -2529,9 +2544,10 @@ def sp2_mixed_topology_intent() -> dict[str, Any]:
             "gateway": gateway,
         }
 
-    hq, br1, br2 = (len(SP2_MIXED_SITE_CLIENTS[site]) for site in ("HQ", "BR1", "BR2"))
+    clients = SP2_CAPACITY_SITE_CLIENTS if capacity else SP2_MIXED_SITE_CLIENTS
+    hq, br1, br2 = (len(clients[site]) for site in ("HQ", "BR1", "BR2"))
     return {
-        "name": "SP2-MIXED",
+        "name": "SP2-CAPACITY" if capacity else "SP2-MIXED",
         "address_space": "10.80.0.0/16",
         "internet_required": True,
         "routing_preference": "static",
@@ -2540,7 +2556,13 @@ def sp2_mixed_topology_intent() -> dict[str, Any]:
                 "name": "HQ",
                 "type": "hq",
                 "address_block": "10.80.0.0/20",
-                "segments": [data(SP2_MIXED_HQ_SUBNET, SP2_MIXED_HQ_GATEWAY, hq + 2)],
+                "segments": [
+                    data(
+                        "10.80.1.0/26" if capacity else SP2_MIXED_HQ_SUBNET,
+                        SP2_MIXED_HQ_GATEWAY,
+                        hq + 2,
+                    )
+                ],
                 "endpoints": [
                     users(hq),
                     {
@@ -2557,7 +2579,13 @@ def sp2_mixed_topology_intent() -> dict[str, Any]:
                 "name": "BR1",
                 "type": "branch",
                 "address_block": "10.80.16.0/20",
-                "segments": [data("10.80.16.0/28", "10.80.16.1", br1 + 1)],
+                "segments": [
+                    data(
+                        "10.80.16.0/27" if capacity else "10.80.16.0/28",
+                        "10.80.16.1",
+                        br1 + 1,
+                    )
+                ],
                 "endpoints": [users(br1)],
                 "uplinks": [{"target_site_id": "br2", "media": "ethernet"}],
             },
@@ -2579,16 +2607,17 @@ def sp2_mixed_intent(
     server_id: str,
     server_address: str,
     client_ids: Mapping[str, Sequence[str]],
+    capacity: bool = False,
 ) -> dict[str, Any]:
     """Return the complete mixed intent: topology, DHCP, DNS and HTTP.
 
     `client_ids` maps each site name to its selected client device ids. This
     is the one canonical form the composer writes and the coordinator requires.
     """
-    intent = sp2_mixed_topology_intent()
+    intent = sp2_mixed_topology_intent(capacity=capacity)
     everyone = [item for site in ("HQ", "BR1", "BR2") for item in client_ids[site]]
     pools: dict[str, dict[str, Any]] = {
-        "HQ": {"interface": "FastEthernet0", "start_offset": 99},
+        "HQ": {"interface": "FastEthernet0", "start_offset": 15 if capacity else 99},
         "BR1": {},
         "BR2": {"start_offset": 10},
     }
@@ -2646,7 +2675,9 @@ SP2_NATIVE_CANDIDATE_BASIS = (
 )
 
 
-def sp2_mixed_service_candidates(build: str) -> dict[str, ClientOperationCapability]:
+def sp2_mixed_service_candidates(
+    build: str, *, capacity: bool = False
+) -> dict[str, ClientOperationCapability]:
     """Return the two private candidate records the mixed stage runs with.
 
     The relay record admits a relayed named pool; the native record admits
@@ -2654,7 +2685,8 @@ def sp2_mixed_service_candidates(build: str) -> dict[str, ClientOperationCapabil
     for one private run, never catalog entries: their sources say so, and
     only native evidence from that run can justify a recorded scope.
     """
-    hq = len(SP2_MIXED_SITE_CLIENTS["HQ"])
+    hq = len((SP2_CAPACITY_SITE_CLIENTS if capacity else SP2_MIXED_SITE_CLIENTS)["HQ"])
+    first = 16 if capacity else 100
     common = {
         "model": "Server-PT",
         "support": CapabilityStatus.SUPPORTED,
@@ -2681,20 +2713,21 @@ def sp2_mixed_service_candidates(build: str) -> dict[str, ClientOperationCapabil
             operation="dhcp_native_default_binding",
             source=(
                 f"candidate:{SP2_CANDIDATE_LABEL}: native serverPool with "
-                f"{hq} leases on {SP2_MIXED_HQ_SUBNET}, extrapolated from the "
+                f"{hq} leases on {'10.80.1.0/26' if capacity else SP2_MIXED_HQ_SUBNET}, "
+                "extrapolated from the "
                 "recorded one/two-client binding; unmeasured"
             ),
             executed_sha=SP2_NATIVE_CANDIDATE_BASIS[0],
             run_id=SP2_NATIVE_CANDIDATE_BASIS[1],
             native_policy_scope=NativeDhcpPolicyScope(
                 network="10.80.1.0",
-                netmask="255.255.255.0",
+                netmask="255.255.255.192" if capacity else "255.255.255.0",
                 server_address=SP2_MIXED_SERVER_IPV4,
                 gateway=SP2_MIXED_HQ_GATEWAY,
                 dns_server=SP2_MIXED_SERVER_IPV4,
-                first_lease="10.80.1.100",
-                latest_start="10.80.1.100",
-                last_lease=f"10.80.1.{99 + hq}",
+                first_lease=f"10.80.1.{first}",
+                latest_start=f"10.80.1.{first}",
+                last_lease=f"10.80.1.{first + hq - 1}",
                 max_users=hq,
                 max_exclusion_ranges=2,
                 excluded_ranges=[
@@ -2716,6 +2749,8 @@ def sp2_mixed_service_candidates(build: str) -> dict[str, ClientOperationCapabil
 #: server pool inventory and one bounded scan of every pool.
 SP2_MIXED_PRODUCT_OPERATIONS = 2800
 SP2_MIXED_FINAL_OPERATIONS = 90
+SP2_CAPACITY_PRODUCT_OPERATIONS = 5500
+SP2_CAPACITY_FINAL_OPERATIONS = 90
 
 _SP2_MIXED_FIXTURES = (
     FixtureDevice("BR1-EDGE-RTR-01", "2911"),
@@ -2845,34 +2880,510 @@ _SP2_MIXED_LINKS = (
 )
 
 
-def _sp2_mixed_product() -> StageDefinition:
+#: Pinned physical inputs of the independently bounded capacity profile.
+#: Derived from the reviewed maintained composition, never from LIVE inventory.
+_SP2_CAPACITY_FIXTURES = (
+    FixtureDevice("BR1-DEFAULT-ACCESS-SW-01", "2950T-24"),
+    FixtureDevice("BR1-EDGE-RTR-01", "2911"),
+    FixtureDevice("BR2-DEFAULT-ACCESS-SW-01", "IE-2000"),
+    FixtureDevice("BR2-EDGE-RTR-01", "1941"),
+    FixtureDevice("HQ-DEFAULT-ACCESS-SW-01", "2960-24TT"),
+    FixtureDevice("HQ-DEFAULT-ACCESS-SW-02", "2960-24TT"),
+    FixtureDevice("HQ-DIST-SW-01", "3560-24PS"),
+    FixtureDevice("HQ-DIST-SW-02", "3560-24PS"),
+    FixtureDevice("HQ-EDGE-RTR-01", "1941"),
+    FixtureDevice("HQ-DEFAULT-DNS-01", "Server-PT"),
+    *(FixtureDevice(name, "PC-PT") for name in SP2_CAPACITY_CLIENTS),
+)
+_SP2_CAPACITY_LINKS = (
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "GigabitEthernet0/1",
+        "HQ-DIST-SW-01",
+        "GigabitEthernet0/1",
+        "cross",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "GigabitEthernet0/2",
+        "HQ-DIST-SW-02",
+        "GigabitEthernet0/1",
+        "cross",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-02",
+        "GigabitEthernet0/1",
+        "HQ-DIST-SW-01",
+        "GigabitEthernet0/2",
+        "cross",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-02",
+        "GigabitEthernet0/2",
+        "HQ-DIST-SW-02",
+        "GigabitEthernet0/2",
+        "cross",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "GigabitEthernet0/1",
+        "BR1-EDGE-RTR-01",
+        "GigabitEthernet0/2",
+        "straight",
+    ),
+    FixtureLink(
+        "BR2-DEFAULT-ACCESS-SW-01",
+        "GigabitEthernet1/1",
+        "BR2-EDGE-RTR-01",
+        "GigabitEthernet0/1",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DIST-SW-01",
+        "FastEthernet0/1",
+        "HQ-EDGE-RTR-01",
+        "GigabitEthernet0/1",
+        "straight",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/1",
+        "BR1-DEFAULT-PC-01",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/2",
+        "BR1-DEFAULT-PC-12",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/10",
+        "BR1-DEFAULT-PC-02",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/11",
+        "BR1-DEFAULT-PC-03",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/12",
+        "BR1-DEFAULT-PC-04",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/13",
+        "BR1-DEFAULT-PC-05",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/14",
+        "BR1-DEFAULT-PC-06",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/15",
+        "BR1-DEFAULT-PC-07",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/16",
+        "BR1-DEFAULT-PC-08",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/17",
+        "BR1-DEFAULT-PC-09",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/18",
+        "BR1-DEFAULT-PC-10",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/19",
+        "BR1-DEFAULT-PC-11",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR1-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/20",
+        "BR1-DEFAULT-PC-13",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR2-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/1",
+        "BR2-DEFAULT-PC-01",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR2-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/2",
+        "BR2-DEFAULT-PC-02",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR2-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/3",
+        "BR2-DEFAULT-PC-03",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR2-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/4",
+        "BR2-DEFAULT-PC-04",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR2-DEFAULT-ACCESS-SW-01",
+        "FastEthernet1/5",
+        "BR2-DEFAULT-PC-05",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/1",
+        "HQ-DEFAULT-PC-01",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/2",
+        "HQ-DEFAULT-PC-12",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/3",
+        "HQ-DEFAULT-PC-18",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/4",
+        "HQ-DEFAULT-PC-19",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/5",
+        "HQ-DEFAULT-PC-20",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/6",
+        "HQ-DEFAULT-PC-21",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/7",
+        "HQ-DEFAULT-PC-22",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/8",
+        "HQ-DEFAULT-PC-23",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/9",
+        "HQ-DEFAULT-PC-24",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/10",
+        "HQ-DEFAULT-PC-02",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/11",
+        "HQ-DEFAULT-PC-03",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/12",
+        "HQ-DEFAULT-PC-04",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/13",
+        "HQ-DEFAULT-PC-05",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/14",
+        "HQ-DEFAULT-PC-06",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/15",
+        "HQ-DEFAULT-PC-07",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/16",
+        "HQ-DEFAULT-PC-08",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/17",
+        "HQ-DEFAULT-PC-09",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/18",
+        "HQ-DEFAULT-PC-10",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/19",
+        "HQ-DEFAULT-PC-11",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/20",
+        "HQ-DEFAULT-PC-13",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/21",
+        "HQ-DEFAULT-PC-14",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/22",
+        "HQ-DEFAULT-PC-15",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/23",
+        "HQ-DEFAULT-PC-16",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-01",
+        "FastEthernet0/24",
+        "HQ-DEFAULT-PC-17",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-02",
+        "FastEthernet0/1",
+        "HQ-DEFAULT-PC-25",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-02",
+        "FastEthernet0/2",
+        "HQ-DEFAULT-PC-36",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-02",
+        "FastEthernet0/10",
+        "HQ-DEFAULT-PC-26",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-02",
+        "FastEthernet0/11",
+        "HQ-DEFAULT-PC-27",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-02",
+        "FastEthernet0/12",
+        "HQ-DEFAULT-PC-28",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-02",
+        "FastEthernet0/13",
+        "HQ-DEFAULT-PC-29",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-02",
+        "FastEthernet0/14",
+        "HQ-DEFAULT-PC-30",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-02",
+        "FastEthernet0/15",
+        "HQ-DEFAULT-PC-31",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-02",
+        "FastEthernet0/16",
+        "HQ-DEFAULT-PC-32",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-02",
+        "FastEthernet0/17",
+        "HQ-DEFAULT-PC-33",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-02",
+        "FastEthernet0/18",
+        "HQ-DEFAULT-PC-34",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-02",
+        "FastEthernet0/19",
+        "HQ-DEFAULT-PC-35",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "HQ-DIST-SW-02", "FastEthernet0/1", "HQ-DIST-SW-01", "FastEthernet0/2", "cross"
+    ),
+    FixtureLink(
+        "HQ-DEFAULT-ACCESS-SW-02",
+        "FastEthernet0/20",
+        "HQ-DEFAULT-DNS-01",
+        "FastEthernet0",
+        "straight",
+    ),
+    FixtureLink(
+        "BR1-EDGE-RTR-01",
+        "GigabitEthernet0/0",
+        "BR2-EDGE-RTR-01",
+        "GigabitEthernet0/0",
+        "cross",
+    ),
+    FixtureLink(
+        "BR1-EDGE-RTR-01",
+        "GigabitEthernet0/1",
+        "HQ-EDGE-RTR-01",
+        "GigabitEthernet0/0",
+        "cross",
+    ),
+)
+
+
+def _sp2_mixed_product(*, capacity: bool = False) -> StageDefinition:
     """Run the mixed DHCP, DNS and HTTP intent once through the product."""
-    ceiling_operations, ceiling_seconds = STAGE_CEILINGS[
-        QualificationStage.SP2_MIXED_PRODUCT
-    ]
+    stage = (
+        QualificationStage.SP2_CAPACITY_PRODUCT
+        if capacity
+        else QualificationStage.SP2_MIXED_PRODUCT
+    )
+    label = "CAPACITY" if capacity else "MIXED"
+    fixtures = _SP2_CAPACITY_FIXTURES if capacity else _SP2_MIXED_FIXTURES
+    links = _SP2_CAPACITY_LINKS if capacity else _SP2_MIXED_LINKS
+    ceiling_operations, ceiling_seconds = STAGE_CEILINGS[stage]
     return StageDefinition(
-        stage=QualificationStage.SP2_MIXED_PRODUCT,
+        stage=stage,
         executable=True,
         purpose=(
             "Apply local native and relayed named DHCP pools on one Server-PT "
             "through the product and verify each client's attributed lease, "
             "cold HTTP by address, DNS and HTTP by name."
         ),
-        fixtures=_SP2_MIXED_FIXTURES,
-        links=_SP2_MIXED_LINKS,
+        fixtures=fixtures,
+        links=links,
         setup=(
             PlannedStep("read:executable_build", 1),
             PlannedStep("read:workspace_baseline", 1),
-            *(PlannedStep(f"create:{item.name}", 2) for item in _SP2_MIXED_FIXTURES),
+            *(PlannedStep(f"create:{item.name}", 2) for item in fixtures),
             *(
                 PlannedStep(f"create:link:{index}", 2)
-                for index in range(1, len(_SP2_MIXED_LINKS) + 1)
+                for index in range(1, len(links) + 1)
             ),
             PlannedStep("read:fixture_identity", 1),
         ),
         experiments=(
             ExperimentSpec(
-                id="M-SP2-MIXED-PRODUCT",
+                id=f"M-SP2-{label}-PRODUCT",
                 hypothesis=(
                     "Every selected client holds a usable lease attributed to "
                     "its intended physical pool, native locally and named "
@@ -2880,41 +3391,57 @@ def _sp2_mixed_product() -> StageDefinition:
                     "address, by DNS and by host name."
                 ),
                 required=True,
-                procedure="SP2_MIXED_PRODUCT",
-                planned_operations=SP2_MIXED_PRODUCT_OPERATIONS,
-                capabilities=("sp2.mixed_dhcp_routed_product",),
+                procedure=f"SP2_{label}_PRODUCT",
+                planned_operations=(
+                    SP2_CAPACITY_PRODUCT_OPERATIONS
+                    if capacity
+                    else SP2_MIXED_PRODUCT_OPERATIONS
+                ),
+                capabilities=(
+                    "sp2.capacity_dhcp_routed_product"
+                    if capacity
+                    else "sp2.mixed_dhcp_routed_product",
+                ),
             ),
             ExperimentSpec(
-                id="M-SP2-MIXED-FINAL",
+                id=f"M-SP2-{label}-FINAL",
                 hypothesis=(
                     "Router tables, client bindings and every physical pool "
                     "are observed before cleanup."
                 ),
                 required=True,
-                procedure="SP2_MIXED_FINAL",
-                planned_operations=SP2_MIXED_FINAL_OPERATIONS,
+                procedure=f"SP2_{label}_FINAL",
+                planned_operations=(
+                    SP2_CAPACITY_FINAL_OPERATIONS
+                    if capacity
+                    else SP2_MIXED_FINAL_OPERATIONS
+                ),
                 terminal_observation=True,
             ),
         ),
         reserve=(
-            *(PlannedStep(f"remove:{item.name}", 2) for item in _SP2_MIXED_FIXTURES),
+            *(PlannedStep(f"remove:{item.name}", 2) for item in fixtures),
             PlannedStep("read:restoration:1", 1),
             PlannedStep("read:restoration:2", 1),
             PlannedStep("release:run_bag", 1),
         ),
-        budget=StageBudget(ceiling_operations, ceiling_seconds, reserve_seconds=420),
+        budget=StageBudget(
+            ceiling_operations,
+            ceiling_seconds,
+            reserve_seconds=5400 if capacity else 420,
+        ),
         allowed_channels=("file",),
-        profile_id="SP2-MIXED-PRODUCT",
+        profile_id=f"SP2-{label}-PRODUCT",
         profile_version="1",
         steps=(
             DiagnosticStageStep(
-                id="SP2-mixed",
-                experiment_id="M-SP2-MIXED-PRODUCT",
+                id=f"SP2-{label.lower()}",
+                experiment_id=f"M-SP2-{label}-PRODUCT",
                 effect="request",
-                also_experiments=("M-SP2-MIXED-FINAL",),
+                also_experiments=(f"M-SP2-{label}-FINAL",),
             ),
         ),
-        selected_clients=SP2_MIXED_CLIENTS,
+        selected_clients=SP2_CAPACITY_CLIENTS if capacity else SP2_MIXED_CLIENTS,
     )
 
 
@@ -2951,6 +3478,7 @@ STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.SP2_NATIVE_POOL: _sp2_native_pool(),
     QualificationStage.SP2_REMOTE_RELAY: _sp2_remote_relay(),
     QualificationStage.SP2_MIXED_PRODUCT: _sp2_mixed_product(),
+    QualificationStage.SP2_CAPACITY_PRODUCT: _sp2_mixed_product(capacity=True),
 }
 
 

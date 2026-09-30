@@ -6,6 +6,7 @@ the inactive-client reader receive scripted payloads per sample, and the server
 policy reader, a separate observation with its own tests, reports VERIFIED.
 """
 
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -246,6 +247,241 @@ def _readings(row) -> list[dict]:
     return json.loads(row.observed["client_readings_json"])
 
 
+@pytest.mark.parametrize("changed", [False, True])
+def test_shared_trace_retains_fresh_equal_entries_by_content_reference(
+    monkeypatch, changed
+):
+    """Equal content may be stored once; changed rows remain complete observations."""
+    expectations, group = _group_expectations()
+    readings = {"PC1": _assigned("PC1", 0), "PC2": _assigned("PC2", 1)}
+    first = _scan(
+        group, readings, [_row(_address(0), MAC["PC1"]), _row(_address(1), MAC["PC2"])]
+    )
+    second = _scan(
+        group, readings, [_row(_address(0), MAC["PC1"]), _row(_address(1), MAC["PC2"])]
+    )
+    if changed:
+        second["entries"][0]["row"]["leaseTime"] = 3599
+    results = _verify_group(
+        _runtime(monkeypatch, _ScriptedBridge([first, second])), expectations
+    )
+
+    assert {row.status for row in results.values()} == {ActionExecutionStatus.VERIFIED}
+    trace = json.loads(results["PC1"].observed["group_trace_json"])
+    initial, current = [sample["lease_snapshot"] for sample in trace]
+    if changed:
+        assert current["entries"][0]["row"]["leaseTime"] == 3599
+        assert "entries_ref" not in current
+    else:
+        assert "entries" not in current
+        assert current["entries_ref"] == "samples[0].lease_snapshot.entries"
+        serialized = json.dumps(
+            initial["entries"], sort_keys=True, separators=(",", ":")
+        )
+        assert (
+            current["entries_sha256"] == hashlib.sha256(serialized.encode()).hexdigest()
+        )
+    assert current["window"] == initial["window"]
+    assert current["termination"] == initial["termination"] == "null"
+    assert current["clients"] == initial["clients"]
+
+
+def _apipa_scan(group, *, mode=True, mask="255.255.0.0", mac=MAC["PC2"]):
+    """Keep an independent usable peer while PC2 has a link-local fallback."""
+    scan = _scan(
+        group,
+        {"PC1": _assigned("PC1", 0), "PC2": ("169.254.162.213", mac, mode)},
+        [_row(_address(0), MAC["PC1"])],
+    )
+    scan["clients"][1]["netmask"] = mask
+    return scan
+
+
+def test_group_apipa_is_pending_before_two_usable_attributed_samples(monkeypatch):
+    """A DHCP fallback is not a permanent foreign-lease contradiction."""
+    expectations, group = _group_expectations()
+    usable = _scan(
+        group,
+        {"PC1": _assigned("PC1", 0), "PC2": _assigned("PC2", 1)},
+        [_row(_address(0), MAC["PC1"]), _row(_address(1), MAC["PC2"])],
+    )
+    bridge = _ScriptedBridge([_apipa_scan(group), usable, usable])
+
+    results = _verify_group(_runtime(monkeypatch, bridge), expectations)
+
+    assert {row.status for row in results.values()} == {ActionExecutionStatus.VERIFIED}
+    pc2 = results["PC2"]
+    assert pc2.observed["samples"] == 3
+    assert pc2.observed["stable_samples"] == 2
+    assert pc2.observed["local_failure_sample"] == 0
+    assert _readings(pc2)[0]["reading"] == "pending_apipa"
+    trace = json.loads(results["PC1"].observed["group_trace_json"])
+    assert len(trace) == 3
+    assert trace[0]["lease_snapshot"]["clients"][1]["ipv4"] == "169.254.162.213"
+    assert trace[0]["lease_snapshot"]["clients"][1]["netmask"] == "255.255.0.0"
+
+
+def test_group_persistent_apipa_exhausts_pending_window_without_usable_stability(
+    monkeypatch,
+):
+    """An APIPA address never supplies a usable sample or opens services."""
+    expectations, group = _group_expectations()
+    scan = _apipa_scan(group)
+    bridge = _ScriptedBridge([scan, scan, scan])
+
+    results = _verify_group(_runtime(monkeypatch, bridge), expectations)
+
+    assert results["PC1"].status is ActionExecutionStatus.VERIFIED
+    pc2 = results["PC2"]
+    assert pc2.status is ActionExecutionStatus.FAILED
+    assert pc2.cause == "native_client_unassigned_in_window"
+    assert pc2.observed["stable_samples"] == 0
+    assert pc2.observed["samples"] == 3
+    assert pc2.observed["local_failure_sample"] == 0
+    assert {item["reading"] for item in _readings(pc2)} == {"pending_apipa"}
+
+
+@pytest.mark.parametrize(
+    "change", [{"mode": False}, {"mask": "255.255.255.0"}, {"mac": "123"}]
+)
+def test_group_invalid_or_static_apipa_stays_a_local_failure(monkeypatch, change):
+    """Pending eligibility still requires a valid DHCP identity and /16 mask."""
+    expectations, group = _group_expectations()
+    scan = _apipa_scan(group, **change)
+    bridge = _ScriptedBridge([scan, scan, scan])
+
+    results = _verify_group(_runtime(monkeypatch, bridge), expectations)
+
+    assert results["PC1"].status is ActionExecutionStatus.VERIFIED
+    assert results["PC2"].status is ActionExecutionStatus.FAILED
+    assert results["PC2"].observed["local_failure_sample"] == 1
+
+
+def test_pending_apipa_still_participates_in_shared_mac_census(monkeypatch):
+    """Pending addressing must not hide a selected peer's duplicate identity."""
+    expectations, group = _group_expectations()
+    scan = _apipa_scan(group, mac="00:01:00:01:00:01")
+
+    results = _verify_group(
+        _runtime(monkeypatch, _ScriptedBridge([scan])), expectations
+    )
+
+    assert {row.cause for row in results.values()} == {
+        "native_selected_identity_duplicate"
+    }
+    assert {row.observed["global_failure_sample"] for row in results.values()} == {1}
+
+
+def test_malformed_mac_getter_does_not_hide_an_observed_duplicate_client_address(
+    monkeypatch,
+):
+    """A malformed MAC supplies no identity but does not erase a valid IP read."""
+    expectations, group = _group_expectations()
+    scan = _scan(
+        group,
+        {"PC1": _assigned("PC1", 0), "PC2": (_address(0), 123456789012, True)},
+        [_row(_address(0), MAC["PC1"])],
+    )
+
+    results = _verify_group(
+        _runtime(monkeypatch, _ScriptedBridge([scan, scan, scan])), expectations
+    )
+
+    assert {row.status for row in results.values()} == {ActionExecutionStatus.FAILED}
+    assert {row.cause for row in results.values()} == {
+        "native_selected_identity_duplicate"
+    }
+    assert (
+        results["PC2"].observed["local_failure_cause"]
+        == "native_client_identity_unobserved"
+    )
+    assert results["PC2"].observed["local_failure_sample"] == 1
+
+
+def _with_competing_pool(scan, rows, *, unread_tail=False):
+    """Supply ordered raw index observations from one separate physical pool."""
+    counter = _scan([], {}, rows)
+    counter.update(pool_name="OTHER", found=True, capacity=1, capacity_type="number")
+    if unread_tail:
+        counter["entries"][-1].update(
+            return_kind="field_throw", error="field read failed", row=None
+        )
+    scan.update(inventory=["serverPool", "OTHER"], competing=[counter])
+    return scan
+
+
+@pytest.mark.parametrize("match", ["mac", "ipv4", "equivalent_mac", "disjoint"])
+@pytest.mark.parametrize("unread_tail", [False, True])
+def test_later_local_competing_evidence_survives_first_unreadable_sample(
+    monkeypatch, match, unread_tail
+):
+    """The first local cause stays while later counterpool facts are classified."""
+    expectations, group = _group_expectations()
+    pools = json.dumps(
+        [
+            {"pool_name": "serverPool", "excluded_ranges": []},
+            {"pool_name": "OTHER", "excluded_ranges": []},
+        ]
+    )
+    expectations = {
+        name: item.model_copy(
+            update={"expected": {**item.expected, "host_pools_json": pools}}
+        )
+        for name, item in expectations.items()
+    }
+    native_rows = [_row(_address(0), MAC["PC1"]), _row(_address(1), MAC["PC2"])]
+    first = _with_competing_pool(
+        _scan(group, {"PC1": _assigned("PC1", 0), "PC2": UNREADABLE}, native_rows),
+        [],
+    )
+    counter_ip = _address(1) if match == "ipv4" else "10.99.0.9"
+    counter_mac = {
+        "mac": MAC["PC2"],
+        "ipv4": FOREIGN_MAC,
+        "equivalent_mac": "00:02:00:02:00:02",
+        "disjoint": FOREIGN_MAC,
+    }[match]
+    second = _with_competing_pool(
+        _scan(
+            group,
+            {"PC1": _assigned("PC1", 0), "PC2": _assigned("PC2", 1)},
+            native_rows,
+        ),
+        [_row(counter_ip, counter_mac)],
+        unread_tail=unread_tail,
+    )
+    bridge = _ScriptedBridge([first, second])
+
+    results = _verify_group(_runtime(monkeypatch, bridge), expectations)
+
+    pc2 = results["PC2"]
+    assert pc2.observed["local_failure_cause"] == "native_client_identity_unobserved"
+    assert pc2.observed["local_failure_sample"] == 1
+    assert _readings(pc2)[1]["join"] == "exact"
+    if match == "disjoint":
+        assert "local_contradictions_json" not in pc2.observed
+    else:
+        facts = json.loads(pc2.observed["local_contradictions_json"])
+        assert facts == [{"sample": 2, "cause": "competing_pool_row"}]
+    if unread_tail:
+        assert {row.cause for row in results.values()} == {"competing_pool_unobserved"}
+        assert results["PC1"].status is ActionExecutionStatus.UNKNOWN
+    else:
+        assert results["PC1"].status is ActionExecutionStatus.VERIFIED
+        assert pc2.status is ActionExecutionStatus.UNKNOWN
+        assert pc2.cause == "native_client_identity_unobserved"
+    # Persisted typed fields and the one shared raw snapshot can be audited
+    # together without duplicating the competing rows in each client result.
+    persisted = pc2.model_dump(mode="json")
+    assert persisted["observed"] == pc2.observed
+    trace = json.loads(results["PC1"].observed["group_trace_json"])
+    counter = trace[1]["lease_snapshot"]["competing"][0]
+    assert counter["pool_name"] == "OTHER"
+    assert counter["entries"][0]["row"]["ipAddress"] == counter_ip
+    assert counter["entries"][0]["row"]["macAddress"] == counter_mac
+    assert pc2.observed["group_trace_ref"] == results["PC1"].expectation_id
+
+
 # -- R1: a local failure never hides a later global conflict -------------------
 
 
@@ -413,23 +649,57 @@ def test_row_spelling_a_peer_mac_differently_is_still_a_selected_conflict(
     assert {row.cause for row in rows.values()} == {"native_selected_lease_conflict"}
 
 
-def test_exact_join_still_requires_the_same_mac_spelling(monkeypatch):
-    """Canonical identity widens conflicts only; it never creates an exact row."""
+@pytest.mark.parametrize(
+    ("client_mac", "row_mac"),
+    [
+        ("0002.0002.0002", "00:02:00:02:00:02"),
+        ("00AA.00BB.00CC", "00aa.00bb.00cc"),
+        ("00aa.00bb.00cc", "00:AA:00:BB:00:CC"),
+        ("00-AA-00-BB-00-CC", "00aa.00bb.00cc"),
+        ("00:aa:00:bb:00:cc", "00-AA-00-BB-00-CC"),
+        ("00aa00bb00cc", "00AA.00BB.00CC"),
+    ],
+)
+def test_exact_join_accepts_equivalent_valid_mac_spellings(
+    monkeypatch, client_mac, row_mac
+):
+    """One valid 48-bit identity joins without changing original observations."""
     expectations, group = _group_expectations()
     pc1 = _assigned("PC1", 0)
-    pc2 = _assigned("PC2", 1)
+    pc2 = _assigned("PC2", 1, mac=client_mac)
     scan = _scan(
         group,
         {"PC1": pc1, "PC2": pc2},
-        [_row(pc1[0], MAC["PC1"]), _row(pc2[0], "00:02:00:02:00:02")],
+        [_row(pc1[0], MAC["PC1"]), _row(pc2[0], row_mac)],
     )
     bridge = _ScriptedBridge([scan, scan, scan])
 
     rows = _verify_group(_runtime(monkeypatch, bridge), expectations)
 
-    assert rows["PC1"].status is ActionExecutionStatus.VERIFIED
-    assert rows["PC2"].status is ActionExecutionStatus.FAILED
-    assert rows["PC2"].cause == "foreign_lease_row"
+    assert {row.status for row in rows.values()} == {ActionExecutionStatus.VERIFIED}
+    assert rows["PC2"].observed["client_mac"] == client_mac
+    assert all(item["mac"] == client_mac for item in _readings(rows["PC2"]))
+
+
+def test_equivalent_mac_representation_changes_keep_group_stability(monkeypatch):
+    """Representation changes preserve identity and retain each raw reading."""
+    expectations, group = _group_expectations()
+    pc1 = _assigned("PC1", 0)
+    spellings = ["00AA.00BB.00CC", "00:aa:00:bb:00:cc", "00-AA-00-BB-00-CC"]
+    scans = [
+        _scan(
+            group,
+            {"PC1": pc1, "PC2": _assigned("PC2", 1, mac=mac)},
+            [_row(pc1[0], MAC["PC1"]), _row(_address(1), mac)],
+        )
+        for mac in spellings
+    ]
+    rows = _verify_group(_runtime(monkeypatch, _ScriptedBridge(scans)), expectations)
+
+    assert rows["PC2"].status is ActionExecutionStatus.VERIFIED, rows["PC2"].cause
+    assert rows["PC2"].observed["stable_samples"] == 2
+    assert rows["PC2"].observed["client_mac"] == spellings[1]
+    assert [item["mac"] for item in _readings(rows["PC2"])] == spellings[:2]
 
 
 def test_unset_macs_of_addressed_clients_stay_local_failures(monkeypatch):

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
 
 from .deployment import EnvironmentFingerprint
 from .evidence import EvidenceRecord
@@ -273,6 +273,19 @@ class RuntimeActionMutation(BaseModel):
     #: both used to lose this one. `decide_mutation` never reads it: a
     #: producer's diagnostic classifies nothing and authorizes nothing.
     call_error: str = ""
+    #: Optional raw getter observations, kept apart from the mutation facts.
+    #: They diagnose prerequisites but never classify or authorize a mutation.
+    observation_details: dict[str, object] = Field(default_factory=dict)
+
+    @model_serializer(mode="wrap")
+    def serialize_observation_details(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, object]:
+        """Retain present observations without adding empty legacy fields."""
+        data = handler(self)
+        if not self.observation_details:
+            data.pop("observation_details", None)
+        return data
 
 
 class MutationResidue(StrEnum):

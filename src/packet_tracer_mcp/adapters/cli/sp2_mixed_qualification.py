@@ -30,6 +30,7 @@ from ...domain.enterprise.models.intent import EnterpriseIntent
 from ...domain.enterprise.models.service_plan import ServiceCapabilityRecords
 from ...domain.enterprise.models.service_qualification import (
     SP2_CANDIDATE_LABEL,
+    SP2_CAPACITY_SITE_CLIENTS,
     SP2_MIXED_SERVER,
     SP2_MIXED_SITE_CLIENTS,
     sp2_mixed_intent,
@@ -89,10 +90,12 @@ def sp2_mixed_device_evidence(build: str) -> tuple[dict[str, Any], ...]:
     )
 
 
-def sp2_mixed_service_capabilities(build: str) -> ServiceCapabilityRecords:
+def sp2_mixed_service_capabilities(
+    build: str, *, capacity: bool = False
+) -> ServiceCapabilityRecords:
     """Return a private copy of the default records plus the two candidates."""
     records = dict(packet_tracer_service_capabilities(build))
-    records.update(sp2_mixed_service_candidates(build))
+    records.update(sp2_mixed_service_candidates(build, capacity=capacity))
     return records
 
 
@@ -110,12 +113,14 @@ def _composed(intent: dict[str, Any], build: str, catalog, **kwargs: Any):
     return composition
 
 
-def sp2_mixed_product_contract(build: str, run_id: str) -> Q3ProductContract:
+def sp2_mixed_product_contract(
+    build: str, run_id: str, *, capacity: bool = False
+) -> Q3ProductContract:
     """Compose the mixed product plans for one run, with private candidates."""
     if not run_id:
         raise ValueError("SP-2 mixed needs a run id.")
     catalog = sp2_mixed_device_catalog(build) or capability_catalog_for(build)
-    base = sp2_mixed_topology_intent()
+    base = sp2_mixed_topology_intent(capacity=capacity)
     topology = _composed(base, build, catalog).topology
     ports: dict[str, set[str]] = {item.id: set() for item in topology.devices}
     for link in topology.links:
@@ -146,21 +151,22 @@ def sp2_mixed_product_contract(build: str, run_id: str) -> Q3ProductContract:
         if isinstance(item, SetEndpointStaticAddress)
     }
     ids = {item.name: item.id for item in topology.devices}
-    wanted = [name for names in SP2_MIXED_SITE_CLIENTS.values() for name in names]
+    clients = SP2_CAPACITY_SITE_CLIENTS if capacity else SP2_MIXED_SITE_CLIENTS
+    wanted = [name for names in clients.values() for name in names]
     if any(name not in ids for name in wanted) or SP2_MIXED_SERVER not in addresses:
         raise ValueError("SP-2 mixed clients or server are not in the composition.")
-    parameters = sp2_mixed_run_parameters(run_id)
+    parameters = sp2_mixed_run_parameters(run_id, capacity=capacity)
     intent = sp2_mixed_intent(
         parameters.hostname,
         parameters.marker,
         server_id=ids[SP2_MIXED_SERVER],
         server_address=addresses[SP2_MIXED_SERVER],
         client_ids={
-            site: [ids[name] for name in names]
-            for site, names in SP2_MIXED_SITE_CLIENTS.items()
+            site: [ids[name] for name in names] for site, names in clients.items()
         },
+        capacity=capacity,
     )
-    service_capabilities = sp2_mixed_service_capabilities(build)
+    service_capabilities = sp2_mixed_service_capabilities(build, capacity=capacity)
     final = _composed(
         intent,
         build,
@@ -190,3 +196,8 @@ def sp2_mixed_product_contract(build: str, run_id: str) -> Q3ProductContract:
             sp2_mixed_device_evidence(build) if device_catalog is not None else ()
         ),
     )
+
+
+def sp2_capacity_product_contract(build: str, run_id: str) -> Q3ProductContract:
+    """Compose the separately scoped 36-local plus 13/5-remote hypothesis."""
+    return sp2_mixed_product_contract(build, run_id, capacity=True)

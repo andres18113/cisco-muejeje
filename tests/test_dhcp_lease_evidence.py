@@ -23,6 +23,28 @@ NATIVE_RANGE = ev.AddressRange("192.0.2.0", "192.0.3.255")
 MASK = "255.255.255.0"
 
 
+@pytest.mark.parametrize(
+    ("ipv4", "mask", "pending"),
+    [
+        ("169.254.0.1", "255.255.0.0", True),
+        ("169.254.255.254", "255.255.0.0", True),
+        ("169.254.0.0", "255.255.0.0", False),
+        ("169.254.255.255", "255.255.0.0", False),
+        ("169.254.999.1", "255.255.0.0", False),
+        ("169.254.162.213", MASK, False),
+        ("169.254.016.1", "255.255.0.0", False),
+        ("192.0.2.100", "255.255.0.0", False),
+        (123456789012, "255.255.0.0", False),
+        ("169.254.162.213", None, False),
+    ],
+)
+def test_dhcp_fallback_address_is_only_a_valid_nonterminal_apipa_pair(
+    ipv4, mask, pending
+):
+    """Fallback recognition supplies no mode, identity or lease attribution."""
+    assert ev.is_dhcp_fallback_address(ipv4, mask) is pending
+
+
 def _entry(index, row=None, *, kind=None, error=""):
     if error:
         return {"index": index, "return_kind": "throw", "error": error, "row": None}

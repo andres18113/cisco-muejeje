@@ -189,6 +189,9 @@ def compose_enterprise_reference(
         capability_catalog=capability_catalog,
         policy=policy,
     )
+    selected_trunk_profile = (
+        policy or HardwarePlanningPolicy()
+    ).trunk_requirement_profile
 
     catalog = PacketTracerTopologyCatalogAdapter()
     compiled = compile_enterprise_topology(
@@ -208,12 +211,16 @@ def compose_enterprise_reference(
     # A persisted physical identity can select the previous planning profile.
     # Both profiles use the same planner and compiler. Only an exact complete
     # physical hash match permits reconstruction; explicit policies never fall
-    # back, and new workloads keep the current trunk-aware profile.
+    # back. Service composition also checks a physical tie: later scoped
+    # hardware evidence cannot silently change a frozen verification contract.
     if (
         policy is None
         and deployment_manifest is not None
-        and compiled.plan.physical_identity_hash
-        != deployment_manifest.physical_topology_hash
+        and (
+            compiled.plan.physical_identity_hash
+            != deployment_manifest.physical_topology_hash
+            or services
+        )
     ):
         previous_hardware = plan_enterprise_hardware(
             enterprise,
@@ -236,6 +243,7 @@ def compose_enterprise_reference(
             == deployment_manifest.physical_topology_hash
         ):
             hardware, compiled = previous_hardware, previous
+            selected_trunk_profile = TrunkRequirementProfile.SEGMENT_COUNT_V1
     topology = compiled.plan
     # Resuelto sobre los modelos realmente desplegados. Un modelo sin
     # evidencia no queda fuera del mapa: entra con todo en UNKNOWN, que es
@@ -277,6 +285,15 @@ def compose_enterprise_reference(
         topology=topology,
     )
     resolved_policy = derived_policy.policy
+    if (
+        services
+        and configuration_policy is None
+        and resolved_policy.delegated_dhcp_segment_ids
+        and selected_trunk_profile is TrunkRequirementProfile.SITE_HIERARCHY_V2
+    ):
+        resolved_policy = resolved_policy.model_copy(
+            update={"trunk_verification_mode": "component_configuration"}
+        )
     if not derived_policy.is_valid:
         return EnterpriseReferenceComposition(
             enterprise=enterprise,

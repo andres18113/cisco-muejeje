@@ -11,22 +11,31 @@ import json
 import os
 import shutil
 import subprocess
+from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
 from packet_tracer_mcp.domain.enterprise.models.configuration import AddressRange
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
+    ActionApplicationResult,
     ActionExecutionStatus,
+    ConfigurationApplicationResult,
+    ConfigurationApplicationStatus,
+    RuntimeActionMutation,
     decide_mutation,
+    sanitized_mutation_snapshot,
 )
 from packet_tracer_mcp.domain.enterprise.models.execution import (
     DispatchFact,
     FootprintFact,
     PostconditionFact,
     ResultFact,
+    TransitionFact,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     AcquireDhcpLease,
+    CompanionDhcpPool,
     ConfigureServerDhcpPool,
     EnableServerDhcp,
     NativeDhcpClientPort,
@@ -36,6 +45,9 @@ from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ServiceType,
     ServiceVerificationExpectation,
     ServiceVerificationKind,
+)
+from packet_tracer_mcp.domain.enterprise.models.service_run_record import (
+    ServiceRunRecord,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_runtime import ObservationFact
 from packet_tracer_mcp.infrastructure.execution import (
@@ -49,6 +61,9 @@ from packet_tracer_mcp.infrastructure.execution.enterprise_service_runtime impor
 )
 from packet_tracer_mcp.infrastructure.execution.transport_outcome import (
     BridgeDispatchOutcome,
+)
+from packet_tracer_mcp.infrastructure.persistence.service_run_record_store import (
+    ServiceRunRecordStore,
 )
 
 SERVER = "SRV"
@@ -1935,3 +1950,408 @@ def test_generated_corpus_uses_only_the_reviewed_non_destructive_dhcp_surface(en
         "ipconfig /renew",
     ):
         assert forbidden not in corpus
+
+
+def _planned_disabled_native_start(item, *, companions=True):
+    """Seed an independently specified disabled process and its client."""
+    item.state["server"]["enabled"] = False
+    item.state["server"]["pools"] = {
+        "serverPool": {
+            "name": "serverPool",
+            "network": "192.0.2.0",
+            "mask": "255.255.255.0",
+            "gateway": "192.0.2.1",
+            "dns": "192.0.2.10",
+            "start": "192.0.2.100",
+            "end": "192.0.2.100",
+            "max": 1,
+            "leases": [],
+        }
+    }
+    item.state["server"]["exclusions"] = [
+        {"start": "192.0.2.1", "end": "192.0.2.1"},
+        {"start": "192.0.2.10", "end": "192.0.2.10"},
+    ]
+    action = _native_one_user_enable()
+    if companions:
+        for index, name in enumerate(("BR_ONE", "BR_TWO")):
+            prefix = f"198.18.{index + 1}"
+            item.state["server"]["pools"][name] = {
+                "name": name,
+                "network": prefix + ".0",
+                "mask": "255.255.255.240",
+                "gateway": prefix + ".1",
+                "dns": "192.0.2.10",
+                "start": prefix + ".2",
+                "end": prefix + ".4",
+                "max": 3,
+                "leases": [],
+            }
+        action.native_policy.companion_pools = [
+            CompanionDhcpPool(pool_name=name) for name in ("BR_ONE", "BR_TWO")
+        ]
+    return action
+
+
+@pytest.mark.parametrize("companions", [False, True])
+def test_native_start_admits_known_dhcp_pending_apipa_and_preserves_raw_state(
+    engine, companions
+):
+    """APIPA is a pending DHCP client, never a usable attributed lease."""
+    item = engine()
+    action = _planned_disabled_native_start(item, companions=companions)
+    item.state["client"]["port"].update(
+        mode=True, ip="169.254.162.213", mask="255.255.0.0"
+    )
+    item.sync()
+
+    [result] = _runtime(item).apply_actions([action])
+
+    assert result.attempted is True, result.cause
+    assert result.postcondition is PostconditionFact.SATISFIED
+    assert item.log.count("setEnable:true") == 1
+    assert item.state["server"]["enabled"] is True
+    assert item.state["client"]["port"]["ip"] == "169.254.162.213"
+    details = result.observation_details
+    assert details["pre"]["server"]["enabled"] is False
+    assert details["post"]["server"]["enabled"] is True
+    assert details["pre"]["clients"][0]["ipv4"] == "169.254.162.213"
+    assert details["pre"]["clients"][0]["netmask"] == "255.255.0.0"
+
+
+@pytest.mark.parametrize(
+    ("mode", "ip", "mask", "behavior"),
+    [
+        (False, "169.254.162.213", "255.255.0.0", "value"),
+        (True, "198.51.100.9", "255.255.255.0", "value"),
+        (True, "192.0.2.100", "255.255.255.0", "value"),
+        (True, "169.254.162.213", "255.255.255.0", "value"),
+        (True, "169.254.999.1", "255.255.0.0", "value"),
+        (True, "0.0.0.0", "0.0.0.0", "throw"),
+    ],
+)
+def test_native_start_refuses_assigned_static_malformed_or_unknown_client(
+    engine, mode, ip, mask, behavior
+):
+    """A precise policy cannot repair an inadmissible selected client state."""
+    item = engine()
+    action = _planned_disabled_native_start(item)
+    item.state["client"]["port"].update(
+        mode=mode, ip=ip, mask=mask, mode_behavior=behavior
+    )
+    item.sync()
+
+    [result] = _runtime(item).apply_actions([action])
+
+    assert result.attempted is False
+    assert result.cause == "native_client_precondition"
+    assert not any(call.startswith("setEnable:") for call in item.log)
+    assert result.observation_details["pre"]["clients"]
+
+
+@pytest.mark.parametrize(
+    ("client_mac", "row_mac"),
+    [
+        ("0011.2233.4455", "00:11:22:33:44:55"),
+        ("00AA.00BB.00CC", "00aa.00bb.00cc"),
+        ("00aa.00bb.00cc", "00:AA:00:BB:00:CC"),
+        ("00-AA-00-BB-00-CC", "00aa.00bb.00cc"),
+        ("00aa00bb00cc", "00AA.00BB.00CC"),
+    ],
+)
+def test_single_native_usable_lease_joins_valid_equivalent_mac_forms(
+    engine, client_mac, row_mac
+):
+    """The single-client reader joins a value and preserves its original form."""
+    item = engine()
+    _prime_native_usable(item)
+    item.state["client"]["port"]["mac"] = client_mac
+    item.state["server"]["pools"]["serverPool"]["leases"][0]["macAddress"] = row_mac
+    item.sync()
+    runtime = _runtime(item)
+    runtime._dhcp_state_interval = 0.0
+    runtime._dhcp_state_max_samples = 3
+
+    result = runtime.verify(_native_state_expectation())
+
+    assert result.status is ActionExecutionStatus.VERIFIED, result.cause
+    assert result.observed["client_mac"] == client_mac
+    assert result.observed["stable_samples"] == 2
+    assert item.state["client"]["runs"] == 0
+
+
+def test_single_native_apipa_waits_for_two_later_usable_attributed_reads(engine):
+    """The actual client getter's fallback stays pending during acquisition."""
+    item = engine()
+    _prime_native_usable(item)
+    item.state["client"]["port"].update(ip="169.254.162.213", mask="255.255.0.0")
+    item.state["server"]["pools"]["serverPool"]["leases"] = []
+    item.sync()
+    runtime = _runtime(item)
+    runtime._dhcp_state_interval = 0.0
+    runtime._dhcp_state_max_samples = 3
+    waits = []
+
+    def acquire_after_pending(seconds):
+        waits.append(seconds)
+        if len(waits) == 1:
+            _prime_native_usable(item)
+
+    runtime._sleep = acquire_after_pending
+
+    result = runtime.verify(_native_state_expectation())
+
+    assert result.status is ActionExecutionStatus.VERIFIED, result.cause
+    assert result.observed["samples"] == 3
+    assert result.observed["stable_samples"] == 2
+    assert len(waits) == 2
+    assert item.state["client"]["runs"] == 0
+
+
+def test_single_native_persistent_apipa_never_becomes_a_usable_lease(engine):
+    """All finite pending samples expire without pool attribution."""
+    item = engine()
+    _prime_native_usable(item)
+    item.state["client"]["port"].update(ip="169.254.162.213", mask="255.255.0.0")
+    item.state["server"]["pools"]["serverPool"]["leases"] = []
+    item.sync()
+    runtime = _runtime(item)
+    runtime._dhcp_state_interval = 0.0
+    runtime._dhcp_state_max_samples = 3
+
+    result = runtime.verify(_native_state_expectation())
+
+    assert result.status is ActionExecutionStatus.FAILED
+    assert result.cause == "native_client_unassigned_in_window"
+    assert result.observed["samples"] == 3
+    assert item.state["client"]["runs"] == 0
+
+
+@pytest.mark.parametrize(
+    "change",
+    [{"mode": False}, {"mask": "255.255.255.0"}, {"mac": "123"}],
+)
+def test_single_native_invalid_or_static_apipa_cannot_wait_as_known_pending(
+    engine, change
+):
+    """Only a valid DHCP-on fallback can use the existing acquisition window."""
+    item = engine()
+    _prime_native_usable(item)
+    item.state["client"]["port"].update(
+        {"ip": "169.254.162.213", "mask": "255.255.0.0", **change}
+    )
+    item.sync()
+    runtime = _runtime(item)
+    runtime._dhcp_state_interval = 0.0
+    runtime._dhcp_state_max_samples = 3
+
+    result = runtime.verify(_native_state_expectation())
+
+    assert result.status is not ActionExecutionStatus.VERIFIED
+    assert result.observed["samples"] <= 3
+    assert item.state["client"]["runs"] == 0
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "kind"),
+    [
+        ("mac", 123456789012, "number"),
+        ("ip", 0, "number"),
+        ("mask", None, "null"),
+        ("mac", False, "boolean"),
+    ],
+)
+def test_native_start_does_not_coerce_malformed_getters_into_admission(
+    engine, field, value, kind
+):
+    """Raw primitive values and types survive a zero-effect client refusal."""
+    item = engine()
+    action = _planned_disabled_native_start(item)
+    item.state["client"]["port"].update(
+        mode=True, ip="169.254.162.213", mask="255.255.0.0"
+    )
+    item.state["client"]["port"][field] = value
+    item.sync()
+
+    [result] = _runtime(item).apply_actions([action])
+
+    assert result.attempted is False, result.cause
+    assert result.cause == "native_client_precondition"
+    assert not any(call.startswith("setEnable:") for call in item.log)
+    output_field = "ipv4" if field == "ip" else "netmask" if field == "mask" else field
+    for phase in ("pre", "post"):
+        raw = result.observation_details[phase]["clients"][0]
+        assert raw[output_field] == value
+        assert raw[output_field + "_type"] == kind
+
+
+@pytest.mark.parametrize("has_secret", [False, True])
+def test_native_start_client_errors_follow_the_selected_privacy_reader(
+    engine, has_secret
+):
+    """Resolved secrets restrict generated client-error observations to categories."""
+    item = engine()
+    action = _planned_disabled_native_start(item)
+    item.state["client"]["port"]["mode_behavior"] = "throw"
+    item.sync()
+    runtime = _runtime(item)
+    if has_secret:
+        runtime._sanitizer.remember("unrelated-secret")
+
+    [result] = runtime.apply_actions([action])
+
+    assert result.attempted is False
+    expected_error = "engine_error:Error" if has_secret else "mode read failed"
+    for phase in ("pre", "post"):
+        assert (
+            result.observation_details[phase]["clients"][0]["error"] == expected_error
+        )
+
+
+@pytest.mark.parametrize("getter", ["getSubnetMask:client", "getMacAddress"])
+@pytest.mark.parametrize("has_secret", [False, True])
+def test_native_start_keeps_each_observed_field_before_a_later_getter_error(
+    engine, getter, has_secret
+):
+    """An exception in a later field cannot erase earlier successful reads."""
+    item = engine()
+    action = _planned_disabled_native_start(item)
+    item.state["client"]["port"].update(ip="169.254.162.213", mask="255.255.0.0")
+    item.state["throw_before"] = [getter]
+    item.sync()
+    runtime = _runtime(item)
+    if has_secret:
+        runtime._sanitizer.remember("unrelated-secret")
+
+    [result] = runtime.apply_actions([action])
+
+    assert result.attempted is False
+    assert result.cause == "native_client_precondition"
+    assert not any(call.startswith("setEnable:") for call in item.log)
+    failed_field = "netmask" if getter == "getSubnetMask:client" else "mac"
+    for phase in ("pre", "post"):
+        raw = result.observation_details[phase]["clients"][0]
+        assert raw["ipv4"] == "169.254.162.213"
+        assert raw["ipv4_type"] == "string"
+        assert raw["failed_field"] == failed_field
+        assert raw[failed_field + "_type"] == "error"
+        if failed_field == "mac":
+            assert raw["netmask"] == "255.255.0.0"
+            assert raw["netmask_type"] == "string"
+        assert raw["error"] == (
+            "engine_error:Error" if has_secret else "stub before: " + getter
+        )
+
+
+def test_native_enable_matching_complete_policy_is_an_observed_noop(engine):
+    """The producer's already-satisfied reason is a valid exact-policy readback."""
+    item = engine()
+    action = _planned_disabled_native_start(item)
+    item.state["server"]["enabled"] = True
+    item.sync()
+
+    [result] = _runtime(item).apply_actions([action])
+
+    assert result.attempted is False
+    assert result.cause == ""
+    assert result.postcondition is PostconditionFact.SATISFIED
+    assert result.transition is TransitionFact.UNCHANGED
+    assert result.footprint is FootprintFact.COVERED
+    assert not any(call.startswith("setEnable:") for call in item.log)
+    assert result.observation_details["pre"]["server"]["enabled"] is True
+    assert result.observation_details["post"]["server"]["enabled"] is True
+
+
+def test_native_startup_observations_are_redacted_and_persisted_as_received(
+    engine, tmp_path
+):
+    """The generated raw diagnostics survive the actual durable record path."""
+    item = engine()
+    action = _planned_disabled_native_start(item)
+    secret = "169.254.162.213"
+    item.state["client"]["port"].update(ip=secret, mask="255.255.0.0")
+    item.sync()
+    runtime = _runtime(item)
+    runtime._sanitizer.remember(secret)
+
+    [mutation] = runtime.apply_actions([action])
+    snapshot = sanitized_mutation_snapshot(mutation)
+    record = ServiceRunRecord(
+        run_id="raw-startup",
+        deployment_id="raw-startup",
+        created_at=datetime.now(UTC),
+        configuration_result=ConfigurationApplicationResult(
+            config_plan_id="raw-startup",
+            config_semantic_hash="raw-startup",
+            source_topology_hash="raw-startup",
+            status=ConfigurationApplicationStatus.APPLIED,
+            action_results=[
+                ActionApplicationResult(
+                    action_id=action.id,
+                    status=ActionExecutionStatus.APPLIED,
+                    received_mutation=snapshot,
+                )
+            ],
+        ),
+    )
+    store = ServiceRunRecordStore(tmp_path / "records")
+    path = Path(store.complete(record))
+    loaded = store.load(record.deployment_id, record.run_id)
+
+    assert secret not in path.read_text(encoding="utf-8")
+    received = loaded.configuration_result.action_results[0].received_mutation
+    assert received.observation_details == snapshot.observation_details
+    assert received.observation_details["pre"]["clients"][0]["ipv4"] == "[redacted]"
+    assert received.observation_details["pre"]["clients"][0]["ipv4_type"] == "string"
+    mutation.observation_details["pre"]["clients"][0]["ipv4"] = "changed afterwards"
+    assert snapshot.observation_details["pre"]["clients"][0]["ipv4"] == "[redacted]"
+
+
+def test_empty_startup_observations_preserve_legacy_serialized_mutation_shape():
+    """Ordinary mutations and positive scale rows gain no empty diagnostic field."""
+    legacy = RuntimeActionMutation(action_id="legacy", applied=True)
+
+    dumped = legacy.model_dump(mode="json")
+    assert "observation_details" not in dumped
+    assert "observation_details" not in json.loads(legacy.model_dump_json())
+    assert (
+        RuntimeActionMutation.model_validate(dumped).model_dump(mode="json") == dumped
+    )
+
+
+@pytest.mark.parametrize("grouped", [False, True])
+def test_numeric_client_mac_cannot_verify_against_a_textual_pool_identity(
+    engine, grouped
+):
+    """A malformed native getter cannot acquire identity by string coercion."""
+    item = engine()
+    _prime_native_usable(item)
+    numeric_mac = 123456789012
+    item.state["client"]["port"]["mac"] = numeric_mac
+    item.state["server"]["pools"]["serverPool"]["leases"][0]["macAddress"] = str(
+        numeric_mac
+    )
+    item.sync()
+    expectation = _native_state_expectation()
+    if grouped:
+        expectation.expected["native_inactive_clients_json"] = "[]"
+        expectation.expected["native_selected_clients_json"] = json.dumps(
+            [
+                {
+                    "expectation_id": expectation.id,
+                    "device_name": CLIENT,
+                    "interface": INTERFACE,
+                }
+            ]
+        )
+    runtime = _runtime(item)
+    runtime._dhcp_state_interval = 0.0
+    runtime._dhcp_state_max_samples = 2
+
+    result = runtime.verify(expectation)
+
+    assert result.status is not ActionExecutionStatus.VERIFIED
+    assert item.state["client"]["runs"] == 0
+    if grouped:
+        trace = json.loads(result.observed["group_trace_json"])
+        assert trace[0]["lease_snapshot"]["clients"][0]["mac"] == numeric_mac

@@ -54,6 +54,7 @@ from ...domain.enterprise.models.configuration import (
     ConfigureDhcpRelay,
     SetEndpointDhcp,
     SetEndpointStaticAddress,
+    VerificationKind,
 )
 from ...domain.enterprise.models.configuration_runtime import (
     ActionApplicationResult,
@@ -826,6 +827,31 @@ def _e5_closure(
         requirements_by_device[device_id][0].configuration_action_id
         for device_id in devices
     } | set(extra_action_ids)
+    # Same-segment clients may cross an L2 component without producing a
+    # routed path. Their paired trunk ends are effect foundations too.
+    topology = PathTopology(configuration_plan.actions)
+    prospective_component_actions = {
+        item.action_id
+        for item in configuration_plan.verification_expectations
+        if item.kind is VerificationKind.TRUNK_CONFIGURATION
+    }
+    segments = {
+        device_id: requirements_by_device[device_id][0].segment_id
+        for device_id in devices
+    }
+    for service in services:
+        for client_id in service.client_device_ids:
+            path = classify_path(
+                topology,
+                client_device_id=client_id,
+                host_device_id=service.host_device_id,
+                segments=segments,
+            )
+            if path.kind is PathKind.L2_MULTI_ACCESS and path.component is not None:
+                seeds |= (
+                    topology.component_trunk_action_ids(path.component)
+                    & prospective_component_actions
+                )
     by_id = {item.id: item for item in configuration_plan.actions}
     missing = sorted(identifier for identifier in seeds if identifier not in by_id)
     if missing:
@@ -2754,6 +2780,11 @@ def _path_admission(
         requirements.setdefault(item.device_id, []).append(item)
     actions = {item.id: item for item in configuration_plan.actions}
     topology = PathTopology(configuration_plan.actions)
+    component_configuration_action_ids = {
+        item.action_id
+        for item in configuration_plan.verification_expectations
+        if item.kind is VerificationKind.TRUNK_CONFIGURATION
+    }
     delegated_claims: dict[str, set[tuple[str, str]]] = {}
     for service in services:
         if service.service_type is not ServiceType.DHCP:
@@ -2874,7 +2905,13 @@ def _path_admission(
                         continue
                     relay = candidates[0]
                 if index is None:
-                    index = RoutedPlanIndex(configuration_plan.actions, links)
+                    index = RoutedPlanIndex(
+                        configuration_plan.actions,
+                        links,
+                        component_configuration_action_ids=(
+                            component_configuration_action_ids
+                        ),
+                    )
                 derived = derive_routed_path(index, client=client, host=host)
                 if not derived.admitted:
                     unsupported.append(f"{service.id}:{client_id}:{derived.reason}")

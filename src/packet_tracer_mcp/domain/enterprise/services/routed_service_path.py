@@ -165,10 +165,23 @@ class EndpointAddress:
 class RoutedPlanIndex:
     """The compiled facts routed paths need, indexed once per plan pair."""
 
-    def __init__(self, actions: Iterable[object], links: Iterable[object]) -> None:
-        """Index gateways, transits, routes, switch ports and physical links."""
+    def __init__(
+        self,
+        actions: Iterable[object],
+        links: Iterable[object],
+        *,
+        component_configuration_action_ids: Iterable[str] = (),
+    ) -> None:
+        """Index paths and their explicitly selected component configuration effects.
+
+        The default preserves the legacy cyclic-leg effect scope. Current
+        forwarding evidence remains separate from these configuration effects.
+        """
         materialized = list(actions)
         self.topology = PathTopology(materialized)
+        self._component_configuration_action_ids = frozenset(
+            component_configuration_action_ids
+        )
         self.gateways: dict[str, list[object]] = {}
         self.transits_by_address: dict[str, list[object]] = {}
         self.transits_by_segment: dict[str, list[object]] = {}
@@ -283,7 +296,16 @@ class RoutedPlanIndex:
             return f"gateway_switch_not_joined:{attachment.segment_id}"
         cyclic = len(component.links) >= len(component.switch_device_ids)
         trunks: tuple[str, ...] = ()
-        if not cyclic:
+        if cyclic:
+            # Only the selected configuration contract adds component effects.
+            # The later continuity read still decides the forwarding path.
+            trunks = tuple(
+                sorted(
+                    self.topology.component_trunk_action_ids(component)
+                    & self._component_configuration_action_ids
+                )
+            )
+        else:
             trunks = self._tree_path_trunks(
                 component, access.switch_device_id, attachment.switch_device_id
             )

@@ -1,0 +1,509 @@
+pytest (ubuntu-latest, 3.11)	Set up job	﻿2026-09-30T02:51:28.8279096Z Current runner version: '2.337.0'
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8302227Z ##[group]Runner Image Provisioner
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8303039Z Hosted Compute Agent
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8303710Z Version: 20260828.587
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8304331Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8304977Z Build Date: 2026-08-28T16:44:25Z
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8305524Z Worker ID: {b2f83f14-2c91-4e6d-bab9-28b84545855a}
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8306185Z Azure Region: westcentralus
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8306707Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8307994Z ##[group]Operating System
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8308536Z Ubuntu
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8308970Z 24.04.5
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8309483Z LTS
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8309943Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8310724Z ##[group]Runner Image
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8311307Z Image: ubuntu-24.04
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8311780Z Version: 20260920.314.1
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8312700Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260920.314/images/ubuntu/Ubuntu2404-Readme.md
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8314478Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260920.314
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8315274Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8316150Z ##[group]GITHUB_TOKEN Permissions
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8317868Z Contents: read
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8318469Z Metadata: read
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8319014Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8320841Z Secret source: Actions
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8321744Z Cache mode: write
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8322374Z Prepare workflow directory
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8857921Z Prepare all required actions
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:28.8897516Z Getting action download info
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:29.1340370Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:29.6879455Z Download action repository 'actions/setup-python@v5' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+pytest (ubuntu-latest, 3.11)	Set up job	2026-09-30T02:51:30.4761651Z Complete job name: pytest (ubuntu-latest, 3.11)
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	﻿2026-09-30T02:51:30.5363077Z ##[group]Run actions/checkout@v4
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5363810Z with:
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5364038Z   fetch-depth: 0
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5364281Z   persist-credentials: false
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5364546Z   repository: andres18113/cisco-muejeje
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5366859Z   token: ***
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5367089Z   ssh-strict: true
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5367314Z   ssh-user: git
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5367525Z   clean: true
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5367760Z   sparse-checkout-cone-mode: true
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5368022Z   fetch-tags: false
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5368252Z   show-progress: true
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5368480Z   lfs: false
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5368718Z   submodules: false
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5368947Z   set-safe-directory: true
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5369203Z   allow-unsafe-pr-checkout: false
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5369611Z env:
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5369940Z   PT_MCP_BRIDGE_TOKEN: ci-token-long-enough-to-be-considered-valid-0123456789
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.5370307Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6190231Z Syncing repository: andres18113/cisco-muejeje
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6191900Z ##[group]Getting Git version info
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6192310Z Working directory is '/home/runner/work/cisco-muejeje/cisco-muejeje'
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6192946Z [command]/usr/bin/git version
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6272549Z git version 2.55.0
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6290008Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6303979Z Temporarily overriding HOME='/home/runner/work/_temp/237b99c2-e02b-406f-ae23-5733e3dfbf41' before making global git config changes
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6305105Z Adding repository directory to the temporary git global config as a safe directory
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6308510Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/cisco-muejeje/cisco-muejeje
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6358742Z Deleting the contents of '/home/runner/work/cisco-muejeje/cisco-muejeje'
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6365603Z ##[group]Initializing the repository
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6367561Z [command]/usr/bin/git init /home/runner/work/cisco-muejeje/cisco-muejeje
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6459958Z hint: Using 'master' as the name for the initial branch. This default branch name
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6461616Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6462665Z hint: to use in all of your new repositories, which will suppress this warning,
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6463787Z hint: call:
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6464340Z hint:
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6464977Z hint: 	git config --global init.defaultBranch <name>
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6465623Z hint:
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6466215Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6467077Z hint: 'development'. The just-created branch can be renamed via this command:
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6467803Z hint:
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6468288Z hint: 	git branch -m <name>
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6468837Z hint:
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6469710Z hint: Disable this message with "git config set advice.defaultBranchName false"
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6470861Z Initialized empty Git repository in /home/runner/work/cisco-muejeje/cisco-muejeje/.git/
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6473036Z [command]/usr/bin/git remote add origin https://github.com/andres18113/cisco-muejeje
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6519565Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6520241Z ##[group]Disabling automatic garbage collection
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6523485Z [command]/usr/bin/git config --local gc.auto 0
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6552143Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6552769Z ##[group]Setting up auth
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6562406Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6589049Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6914473Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.6947779Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.7142273Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.7174045Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.7370472Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.7406849Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.7407498Z ##[group]Fetching the repository
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:30.7414892Z [command]/usr/bin/git -c protocol.version=2 fetch --prune --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/*
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7655201Z From https://github.com/andres18113/cisco-muejeje
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7655955Z  * [new branch]      feature/iot-connectivity -> origin/feature/iot-connectivity
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7656781Z  * [new branch]      feature/server-pt-goal-foundations -> origin/feature/server-pt-goal-foundations
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7657660Z  * [new branch]      feature/server-pt-s0-observation-integrity -> origin/feature/server-pt-s0-observation-integrity
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7658549Z  * [new branch]      feature/server-pt-s1-product-entry -> origin/feature/server-pt-s1-product-entry
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7659284Z  * [new branch]      feature/server-pt-s2-mail -> origin/feature/server-pt-s2-mail
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7659976Z  * [new branch]      feature/server-pt-s3-dhcp -> origin/feature/server-pt-s3-dhcp
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7660796Z  * [new branch]      feature/server-pt-s4a-qualification-runner -> origin/feature/server-pt-s4a-qualification-runner
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7661489Z  * [new branch]      main       -> origin/main
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7668204Z [command]/usr/bin/git branch --list --remote origin/feature/server-pt-goal-foundations
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7694671Z   origin/feature/server-pt-goal-foundations
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7702472Z [command]/usr/bin/git rev-parse refs/remotes/origin/feature/server-pt-goal-foundations
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7726399Z 032d422a036c5999f0127a4b71dc945a7376a2bc
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7729761Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7730379Z ##[group]Determining the checkout info
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7731022Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7735345Z [command]/usr/bin/git sparse-checkout disable
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7791208Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7817869Z ##[group]Checking out the ref
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:34.7821009Z [command]/usr/bin/git checkout --progress --force -B feature/server-pt-goal-foundations refs/remotes/origin/feature/server-pt-goal-foundations
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:35.6315340Z Switched to a new branch 'feature/server-pt-goal-foundations'
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:35.6701019Z branch 'feature/server-pt-goal-foundations' set up to track 'origin/feature/server-pt-goal-foundations'.
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:35.6763296Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:35.6766312Z [command]/usr/bin/git log -1 --format=%H
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:35.6789331Z 032d422a036c5999f0127a4b71dc945a7376a2bc
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:35.6803067Z ##[group]Removing auth
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:35.6806082Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:35.6833084Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:35.7024999Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:35.7049497Z http.https://github.com/.extraheader
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:35.7055653Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:35.7412144Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:35.7607282Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:35.7635700Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+pytest (ubuntu-latest, 3.11)	Run actions/checkout@v4	2026-09-30T02:51:35.7825484Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Run actions/setup-python@v5	﻿2026-09-30T02:51:35.8038289Z ##[group]Run actions/setup-python@v5
+pytest (ubuntu-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:35.8038651Z with:
+pytest (ubuntu-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:35.8038888Z   python-version: 3.11
+pytest (ubuntu-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:35.8039082Z   check-latest: false
+pytest (ubuntu-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:35.8041164Z   token: ***
+pytest (ubuntu-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:35.8041367Z   update-environment: true
+pytest (ubuntu-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:35.8041580Z   allow-prereleases: false
+pytest (ubuntu-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:35.8041787Z   freethreaded: false
+pytest (ubuntu-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:35.8041965Z env:
+pytest (ubuntu-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:35.8042238Z   PT_MCP_BRIDGE_TOKEN: ci-token-long-enough-to-be-considered-valid-0123456789
+pytest (ubuntu-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:35.8042566Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:35.9083145Z ##[group]Installed versions
+pytest (ubuntu-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:35.9260686Z (node:2169) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+pytest (ubuntu-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:35.9261569Z (Use `node --trace-deprecation ...` to show where the warning was created)
+pytest (ubuntu-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:35.9261989Z Successfully set up CPython (3.11.16)
+pytest (ubuntu-latest, 3.11)	Run actions/setup-python@v5	2026-09-30T02:51:35.9262387Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Create checkout-local environment	﻿2026-09-30T02:51:35.9406422Z ##[group]Run python -m venv .venv
+pytest (ubuntu-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:35.9406737Z ^[[36;1mpython -m venv .venv^[[0m
+pytest (ubuntu-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:35.9935455Z shell: /usr/bin/bash -e {0}
+pytest (ubuntu-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:35.9935766Z env:
+pytest (ubuntu-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:35.9936072Z   PT_MCP_BRIDGE_TOKEN: ci-token-long-enough-to-be-considered-valid-0123456789
+pytest (ubuntu-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:35.9936495Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.16/x64
+pytest (ubuntu-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:35.9936858Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib/pkgconfig
+pytest (ubuntu-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:35.9937208Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+pytest (ubuntu-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:35.9937521Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+pytest (ubuntu-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:35.9937818Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+pytest (ubuntu-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:35.9938353Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib
+pytest (ubuntu-latest, 3.11)	Create checkout-local environment	2026-09-30T02:51:35.9938618Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	﻿2026-09-30T02:51:42.7617440Z ##[group]Run .venv/bin/python -m pip install --upgrade pip
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:42.7617835Z ^[[36;1m.venv/bin/python -m pip install --upgrade pip^[[0m
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:42.7618171Z ^[[36;1m.venv/bin/python -m pip install -e ".[test,quality]"^[[0m
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:42.7673781Z shell: /usr/bin/bash -e {0}
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:42.7674002Z env:
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:42.7674285Z   PT_MCP_BRIDGE_TOKEN: ci-token-long-enough-to-be-considered-valid-0123456789
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:42.7674665Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.16/x64
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:42.7675004Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib/pkgconfig
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:42.7675338Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:42.7675643Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:42.7675944Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:42.7676250Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:42.7676508Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:43.1623210Z Requirement already satisfied: pip in ./.venv/lib/python3.11/site-packages (24.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:43.3109481Z Collecting pip
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:43.3858182Z   Downloading pip-26.2.1-py3-none-any.whl.metadata (4.6 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:43.4480598Z Downloading pip-26.2.1-py3-none-any.whl (1.8 MB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:43.7198187Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.8/1.8 MB 6.8 MB/s eta 0:00:00
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:43.7532619Z Installing collected packages: pip
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:43.7533732Z   Attempting uninstall: pip
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:43.7547314Z     Found existing installation: pip 24.0
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:43.7828572Z     Uninstalling pip-24.0:
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:43.7874939Z       Successfully uninstalled pip-24.0
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:44.6779322Z Successfully installed pip-26.2.1
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:45.6115481Z Obtaining file:///home/runner/work/cisco-muejeje/cisco-muejeje
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:45.6128054Z   Installing build dependencies: started
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:47.3956970Z   Installing build dependencies: finished with status 'done'
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:47.3961460Z   Checking if build backend supports build_editable: started
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:47.4253018Z   Checking if build backend supports build_editable: finished with status 'done'
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:47.4258864Z   Getting requirements to build editable: started
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:47.5318581Z   Getting requirements to build editable: finished with status 'done'
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:47.5327750Z   Installing backend dependencies: started
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:48.0120712Z   Installing backend dependencies: finished with status 'done'
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:48.0126512Z   Preparing editable metadata (pyproject.toml): started
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:48.1996911Z   Preparing editable metadata (pyproject.toml): finished with status 'done'
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:48.3039079Z Collecting mcp<2,>=1.13 (from mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:48.3889403Z   Downloading mcp-1.30.0-py3-none-any.whl.metadata (9.3 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:48.5283146Z Collecting pydantic<3,>=2.11 (from packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:48.5476281Z   Downloading pydantic-2.13.5-py3-none-any.whl.metadata (110 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:48.8580036Z Collecting ruff==0.16.7 (from packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:48.8826227Z   Downloading ruff-0.16.7-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (20 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:48.9179301Z Collecting pytest>=8 (from packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:48.9367912Z   Downloading pytest-9.1.1-py3-none-any.whl.metadata (7.6 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:48.9674342Z Collecting anyio>=4.5 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:48.9860574Z   Downloading anyio-4.15.1-py3-none-any.whl.metadata (4.7 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.0103050Z Collecting httpx-sse>=0.4 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.0292688Z   Downloading httpx_sse-0.4.3-py3-none-any.whl.metadata (9.7 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.0807699Z Collecting httpx<1.0.0,>=0.27.1 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.1002677Z   Downloading httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.1309723Z Collecting jsonschema>=4.20.0 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.1680328Z   Downloading jsonschema-4.26.0-py3-none-any.whl.metadata (7.6 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.1990731Z Collecting pydantic-settings>=2.5.2 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.2323284Z   Downloading pydantic_settings-2.15.0-py3-none-any.whl.metadata (3.9 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.2641467Z Collecting pyjwt>=2.10.1 (from pyjwt[crypto]>=2.10.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.2842237Z   Downloading pyjwt-2.15.1-py3-none-any.whl.metadata (3.5 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.3147009Z Collecting python-multipart>=0.0.9 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.3352133Z   Downloading python_multipart-0.0.32-py3-none-any.whl.metadata (2.1 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.3644132Z Collecting sse-starlette>=1.6.1 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.3836040Z   Downloading sse_starlette-3.5.0-py3-none-any.whl.metadata (15 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.4181816Z Collecting starlette>=0.27 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.4370580Z   Downloading starlette-1.7.0-py3-none-any.whl.metadata (6.6 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.4721441Z Collecting typing-extensions>=4.9.0 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.4924435Z   Downloading typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.5297722Z Collecting typing-inspection>=0.4.1 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.5493994Z   Downloading typing_inspection-0.4.4-py3-none-any.whl.metadata (2.6 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.5820216Z Collecting uvicorn>=0.31.1 (from mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.6018586Z   Downloading uvicorn-0.54.0-py3-none-any.whl.metadata (6.6 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.6362156Z Collecting certifi (from httpx<1.0.0,>=0.27.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.6550070Z   Downloading certifi-2026.7.22-py3-none-any.whl.metadata (2.5 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.6823061Z Collecting httpcore==1.* (from httpx<1.0.0,>=0.27.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.7037838Z   Downloading httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.7448081Z Collecting idna (from httpx<1.0.0,>=0.27.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.7703903Z   Downloading idna-3.20-py3-none-any.whl.metadata (7.2 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.7949777Z Collecting h11>=0.16 (from httpcore==1.*->httpx<1.0.0,>=0.27.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.8139476Z   Downloading h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.8424455Z Collecting python-dotenv>=1.0.0 (from mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.8609558Z   Downloading python_dotenv-1.2.3-py3-none-any.whl.metadata (29 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.8925386Z Collecting typer>=0.16.0 (from mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.9118788Z   Downloading typer-0.27.2-py3-none-any.whl.metadata (16 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.9410653Z Collecting annotated-types>=0.6.0 (from pydantic<3,>=2.11->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:49.9612689Z   Downloading annotated_types-0.8.0-py3-none-any.whl.metadata (15 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:50.4430138Z Collecting pydantic-core==2.46.5 (from pydantic<3,>=2.11->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:50.4622841Z   Downloading pydantic_core-2.46.5-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.6 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:50.4936969Z Collecting attrs>=22.2.0 (from jsonschema>=4.20.0->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:50.5123971Z   Downloading attrs-26.1.0-py3-none-any.whl.metadata (8.8 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:50.5374029Z Collecting jsonschema-specifications>=2023.03.6 (from jsonschema>=4.20.0->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:50.5560300Z   Downloading jsonschema_specifications-2025.9.1-py3-none-any.whl.metadata (2.9 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:50.5882880Z Collecting referencing>=0.28.4 (from jsonschema>=4.20.0->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:50.6069053Z   Downloading referencing-0.37.0-py3-none-any.whl.metadata (2.8 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:50.8046650Z Collecting rpds-py>=0.25.0 (from jsonschema>=4.20.0->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:50.8239884Z   Downloading rpds_py-2026.6.3-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.1 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:50.9610735Z Collecting cryptography>=3.4.0 (from pyjwt[crypto]>=2.10.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:50.9802009Z   Downloading cryptography-50.0.1-cp311-abi3-manylinux_2_34_x86_64.whl.metadata (4.3 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.0905811Z Collecting cffi>=2.0.0 (from cryptography>=3.4.0->pyjwt[crypto]>=2.10.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.1096680Z   Downloading cffi-2.1.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.5 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.1345317Z Collecting pycparser (from cffi>=2.0.0->cryptography>=3.4.0->pyjwt[crypto]>=2.10.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.1530377Z   Downloading pycparser-3.0-py3-none-any.whl.metadata (8.2 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.1772735Z Collecting iniconfig>=1.0.1 (from pytest>=8->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.1962454Z   Downloading iniconfig-2.3.0-py3-none-any.whl.metadata (2.5 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.2032566Z Collecting packaging>=22 (from pytest>=8->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.2044083Z   Using cached packaging-26.3-py3-none-any.whl.metadata (3.5 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.2086925Z Collecting pluggy<2,>=1.5 (from pytest>=8->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.2097883Z   Using cached pluggy-1.6.0-py3-none-any.whl.metadata (4.8 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.2363469Z Collecting pygments>=2.7.2 (from pytest>=8->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.2550430Z   Downloading pygments-2.21.0-py3-none-any.whl.metadata (2.5 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.2881040Z Collecting shellingham>=1.3.0 (from typer>=0.16.0->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.3069066Z   Downloading shellingham-1.5.4-py2.py3-none-any.whl.metadata (3.5 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.3409592Z Collecting rich>=13.8.0 (from typer>=0.16.0->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.3596754Z   Downloading rich-15.0.0-py3-none-any.whl.metadata (18 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.3876045Z Collecting annotated-doc>=0.0.2 (from typer>=0.16.0->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.4081638Z   Downloading annotated_doc-0.0.5-py3-none-any.whl.metadata (6.5 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.4437420Z Collecting markdown-it-py>=2.2.0 (from rich>=13.8.0->typer>=0.16.0->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.4624121Z   Downloading markdown_it_py-4.2.0-py3-none-any.whl.metadata (7.4 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.4951351Z Collecting mdurl~=0.1 (from markdown-it-py>=2.2.0->rich>=13.8.0->typer>=0.16.0->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.5139616Z   Downloading mdurl-0.1.2-py3-none-any.whl.metadata (1.6 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.5444162Z Collecting click>=7.0 (from uvicorn>=0.31.1->mcp<2,>=1.13->mcp[cli]<2,>=1.13->packet-tracer-mcp==0.8.0)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.5631495Z   Downloading click-8.5.0-py3-none-any.whl.metadata (2.6 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.6337940Z Downloading ruff-0.16.7-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (10.4 MB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.9147147Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 10.4/10.4 MB 41.4 MB/s  0:00:00
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.9342711Z Downloading mcp-1.30.0-py3-none-any.whl (234 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.9551260Z Downloading httpx-0.28.1-py3-none-any.whl (73 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:51.9790711Z Downloading httpcore-1.0.9-py3-none-any.whl (78 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.0004165Z Downloading pydantic-2.13.5-py3-none-any.whl (472 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.0213220Z Downloading pydantic_core-2.46.5-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.1 MB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.0328004Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.1/2.1 MB 185.1 MB/s  0:00:00
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.0513200Z Downloading annotated_types-0.8.0-py3-none-any.whl (13 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.0713071Z Downloading anyio-4.15.1-py3-none-any.whl (132 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.0917228Z Downloading h11-0.16.0-py3-none-any.whl (37 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.1131632Z Downloading httpx_sse-0.4.3-py3-none-any.whl (9.0 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.1487358Z Downloading idna-3.20-py3-none-any.whl (69 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.1694553Z Downloading jsonschema-4.26.0-py3-none-any.whl (90 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.1901499Z Downloading attrs-26.1.0-py3-none-any.whl (67 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.2104676Z Downloading jsonschema_specifications-2025.9.1-py3-none-any.whl (18 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.2327518Z Downloading pydantic_settings-2.15.0-py3-none-any.whl (69 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.2530583Z Downloading pyjwt-2.15.1-py3-none-any.whl (33 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.2741512Z Downloading cryptography-50.0.1-cp311-abi3-manylinux_2_34_x86_64.whl (4.7 MB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.3114096Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.7/4.7 MB 128.1 MB/s  0:00:00
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.3304905Z Downloading cffi-2.1.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (217 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.3631122Z Downloading pytest-9.1.1-py3-none-any.whl (386 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.3665217Z Using cached pluggy-1.6.0-py3-none-any.whl (20 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.3850461Z Downloading iniconfig-2.3.0-py3-none-any.whl (7.5 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.3875585Z Using cached packaging-26.3-py3-none-any.whl (129 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.4079136Z Downloading pygments-2.21.0-py3-none-any.whl (1.3 MB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.4306126Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.3/1.3 MB 53.0 MB/s  0:00:00
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.4505948Z Downloading python_dotenv-1.2.3-py3-none-any.whl (22 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.4713691Z Downloading python_multipart-0.0.32-py3-none-any.whl (30 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.4927593Z Downloading referencing-0.37.0-py3-none-any.whl (26 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.5129004Z Downloading rpds_py-2026.6.3-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (371 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.5346523Z Downloading sse_starlette-3.5.0-py3-none-any.whl (17 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.5560974Z Downloading starlette-1.7.0-py3-none-any.whl (78 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.5790634Z Downloading typer-0.27.2-py3-none-any.whl (123 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.6029519Z Downloading annotated_doc-0.0.5-py3-none-any.whl (5.3 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.6235496Z Downloading rich-15.0.0-py3-none-any.whl (310 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.6449396Z Downloading markdown_it_py-4.2.0-py3-none-any.whl (91 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.6654819Z Downloading mdurl-0.1.2-py3-none-any.whl (10.0 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.6861525Z Downloading shellingham-1.5.4-py2.py3-none-any.whl (9.8 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.7066058Z Downloading typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.7276917Z Downloading typing_inspection-0.4.4-py3-none-any.whl (14 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.7480976Z Downloading uvicorn-0.54.0-py3-none-any.whl (87 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.7687477Z Downloading click-8.5.0-py3-none-any.whl (125 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.7922400Z Downloading certifi-2026.7.22-py3-none-any.whl (136 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.8127325Z Downloading pycparser-3.0-py3-none-any.whl (48 kB)
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.8865188Z Building wheels for collected packages: packet-tracer-mcp
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.8871426Z   Building editable for packet-tracer-mcp (pyproject.toml): started
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.9141959Z   Building editable for packet-tracer-mcp (pyproject.toml): finished with status 'done'
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.9146328Z   Created wheel for packet-tracer-mcp: filename=packet_tracer_mcp-0.8.0-py3-none-any.whl size=3665 sha256=b2e9d302d47cb5c8f4f60e8b9e62681d8ae93b48470b34e865af4bb5cf825565
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.9147902Z   Stored in directory: /tmp/pip-ephem-wheel-cache-5zce7gcb/wheels/c9/ea/df/85e5369c528043225de2fd6b336256ce7f869f95caa000eaf7
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.9157379Z Successfully built packet-tracer-mcp
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:52.9634347Z Installing collected packages: typing-extensions, shellingham, ruff, rpds-py, python-multipart, python-dotenv, pyjwt, pygments, pycparser, pluggy, packaging, mdurl, iniconfig, idna, httpx-sse, h11, click, certifi, attrs, annotated-types, annotated-doc, uvicorn, typing-inspection, referencing, pytest, pydantic-core, markdown-it-py, httpcore, cffi, anyio, starlette, rich, pydantic, jsonschema-specifications, httpx, cryptography, typer, sse-starlette, pydantic-settings, jsonschema, mcp, packet-tracer-mcp
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:55.2301872Z 
+pytest (ubuntu-latest, 3.11)	Install (Ubuntu)	2026-09-30T02:51:55.2319708Z Successfully installed annotated-doc-0.0.5 annotated-types-0.8.0 anyio-4.15.1 attrs-26.1.0 certifi-2026.7.22 cffi-2.1.1 click-8.5.0 cryptography-50.0.1 h11-0.16.0 httpcore-1.0.9 httpx-0.28.1 httpx-sse-0.4.3 idna-3.20 iniconfig-2.3.0 jsonschema-4.26.0 jsonschema-specifications-2025.9.1 markdown-it-py-4.2.0 mcp-1.30.0 mdurl-0.1.2 packaging-26.3 packet-tracer-mcp-0.8.0 pluggy-1.6.0 pycparser-3.0 pydantic-2.13.5 pydantic-core-2.46.5 pydantic-settings-2.15.0 pygments-2.21.0 pyjwt-2.15.1 pytest-9.1.1 python-dotenv-1.2.3 python-multipart-0.0.32 referencing-0.37.0 rich-15.0.0 rpds-py-2026.6.3 ruff-0.16.7 shellingham-1.5.4 sse-starlette-3.5.0 starlette-1.7.0 typer-0.27.2 typing-extensions-4.16.0 typing-inspection-0.4.4 uvicorn-0.54.0
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	﻿2026-09-30T02:51:55.3544849Z ##[group]Run .venv/bin/python -m pytest -q -rs
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:51:55.3545175Z ^[[36;1m.venv/bin/python -m pytest -q -rs^[[0m
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:51:55.3600502Z shell: /usr/bin/bash -e {0}
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:51:55.3600712Z env:
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:51:55.3600986Z   PT_MCP_BRIDGE_TOKEN: ci-token-long-enough-to-be-considered-valid-0123456789
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:51:55.3601369Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.16/x64
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:51:55.3601707Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib/pkgconfig
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:51:55.3602047Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:51:55.3602346Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:51:55.3602634Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:51:55.3602936Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:51:55.3603190Z ##[endgroup]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:52:19.7536297Z ........................................................................ [  0%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:52:19.8067384Z ........................................................................ [  1%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:52:19.8447493Z ........................................................................ [  2%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:52:21.1854611Z ........................................................................ [  3%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:52:22.4424105Z ........................................................................ [  4%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:52:44.3452365Z ........................................................................ [  4%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:52:46.5668640Z ........................................................................ [  5%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:52:47.8102384Z ........................................................................ [  6%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:52:50.7631082Z ........................................................................ [  7%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:52:53.5354244Z ........................................................................ [  8%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:52:56.0104475Z ........................................................................ [  9%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:52:56.8710664Z ........................................................................ [  9%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:52:57.0347519Z ........................................................................ [ 10%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:52:57.1016601Z ........................................................................ [ 11%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:52:59.6819015Z ........................................................................ [ 12%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:53:25.7745255Z ........................................................................ [ 13%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:53:40.3575454Z ........................................................................ [ 14%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:53:47.1882858Z ........................................................................ [ 14%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:53:52.5049295Z ........................................................................ [ 15%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:54:12.5892127Z ........................................................................ [ 16%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:54:20.3232337Z ........................................................................ [ 17%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:54:34.9215586Z ........................................................................ [ 18%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:02.5317884Z ........................................................................ [ 19%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:17.0956147Z ........................................................................ [ 19%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:21.5827243Z ........................................................................ [ 20%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:29.8075183Z ........................................................................ [ 21%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:30.3068276Z ........................................................................ [ 22%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:30.5119738Z ............................................s........................... [ 23%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:34.2482650Z ........................................................................ [ 24%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:36.6823473Z ........................................................................ [ 24%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:38.5542130Z ........................................................................ [ 25%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:38.6010743Z ........................................................................ [ 26%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:39.9512912Z ........................................................................ [ 27%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:42.2800787Z ........................................................................ [ 28%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:42.3106127Z ........................................................................ [ 29%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:42.3743439Z ........................................................................ [ 29%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:43.3235490Z ........................................................................ [ 30%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:43.4684862Z ........................................................................ [ 31%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:43.9817183Z ........................................................................ [ 32%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:44.1604771Z ........................................................................ [ 33%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:46.2474665Z ........................................................................ [ 34%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:48.4855018Z ........................................................................ [ 34%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:53.9216095Z ........................................................................ [ 35%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:54.4813938Z ........................................................................ [ 36%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:57.3642234Z ........................................................................ [ 37%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:57.6359760Z ........................................................................ [ 38%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:55:57.8303927Z ........................................................................ [ 39%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:56:09.6176150Z ........................................................................ [ 39%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:56:34.7225855Z ........................................................................ [ 40%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:56:36.9349586Z ........................................................................ [ 41%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:56:37.7358996Z ........................................................................ [ 42%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:56:50.7799120Z ........................................................................ [ 43%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:56:51.3143110Z ........................................................................ [ 44%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:56:51.4033891Z ........................................................................ [ 44%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:56:53.1759963Z ........................................................................ [ 45%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:56:53.3311669Z ........................................................................ [ 46%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:56:53.9744527Z ........................................................................ [ 47%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:19.4838860Z ........................................................................ [ 48%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:33.6380048Z ........................................................................ [ 49%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:39.0910141Z ........................................................................ [ 49%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:39.1228684Z ........................................................................ [ 50%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:39.8029754Z ........................................................................ [ 51%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:40.0119328Z ........................................................................ [ 52%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:40.1232785Z ........................................................................ [ 53%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:40.7536196Z ........................................................................ [ 54%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:41.3065663Z ........................................................................ [ 54%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:41.3449498Z ........................................................................ [ 55%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:42.3310741Z ........................................................................ [ 56%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:42.7803233Z ........................................................................ [ 57%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:42.8315897Z ........................................................................ [ 58%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:42.8726763Z ........................................................................ [ 59%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:42.9118836Z ........................................................................ [ 59%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:43.8602265Z ........s............................................................... [ 60%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:43.8981363Z ...............................s........................................ [ 61%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:43.9475062Z ........................................................................ [ 62%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:43.9900539Z ........................................................................ [ 63%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:44.0375510Z ........................................................................ [ 63%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:44.4141024Z ........................................................................ [ 64%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:48.9481881Z ........................................................................ [ 65%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:50.5353982Z ........................................................................ [ 66%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:52.2754779Z ........................................................................ [ 67%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:52.3520369Z ...sss.................................................................. [ 68%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:55.1395878Z ........................................................................ [ 68%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:57:58.7200494Z ........................................................................ [ 69%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:01.9600781Z ........................................................................ [ 70%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:05.5151374Z ........................................................................ [ 71%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:06.0360847Z ........................................................................ [ 72%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:07.2763103Z ........................................................................ [ 73%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:07.9969431Z ........................................................................ [ 73%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:08.8230558Z ........................................................................ [ 74%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:18.0015472Z ..ss.................................................................... [ 75%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:19.4320963Z .....................................s.................................. [ 76%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:19.7802279Z ........................................................................ [ 77%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:21.6676697Z ........................................................................ [ 78%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:23.8141187Z ........................................................................ [ 78%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:24.5722938Z ........................................................................ [ 79%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:29.2728587Z ........................................................................ [ 80%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:33.7364343Z ........................................................................ [ 81%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:36.7730577Z ........................................................................ [ 82%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:36.8059186Z ........................................................................ [ 83%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:38.0579435Z ........................................................................ [ 83%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:40.9775747Z ........................................................................ [ 84%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:41.5732462Z ........................................................................ [ 85%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:41.6078511Z ........................................................................ [ 86%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:41.6435413Z ........................................................................ [ 87%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:45.6700938Z ........................................................................ [ 88%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T02:58:46.8659180Z ........................................................................ [ 88%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:01:49.6708413Z ........................................................................ [ 89%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:02:42.4130667Z ........................................................................ [ 90%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:03:53.4453366Z ........................................................................ [ 91%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:03:57.0914470Z ........................................................................ [ 92%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:01.6814783Z ........................................................................ [ 93%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:02.9797860Z ........................................................................ [ 93%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:03.0147533Z ........................................................................ [ 94%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:03.0495815Z ........................................................................ [ 95%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:34.9342593Z ........................................................................ [ 96%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:36.4665850Z ........................................................................ [ 97%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:36.5277789Z ........................................................................ [ 98%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:36.5920049Z ........................................................................ [ 98%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:36.6641506Z ..............................................................ssssssssss [ 99%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1396596Z sss....................                                                  [100%]
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1397167Z =============================== warnings summary ===============================
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1398076Z tests/test_e95_interface_routing_semantics.py::TestTheReferenceIsUnchanged::test_the_reference_still_emits_no_bandwidth_anywhere
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1399205Z tests/test_e95_productive_pipeline.py::TestTheCompilerReachesLinkPerformance::test_the_reference_still_compiles_after_the_wiring
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1400675Z tests/test_e95_productive_pipeline.py::TestUnknownProfileNeverMutates::test_an_unknown_profile_produces_zero_link_mode_mutations
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1402062Z   /home/runner/work/cisco-muejeje/cisco-muejeje/.venv/lib/python3.11/site-packages/_pytest/fixtures.py:1313: PytestRemovedIn10Warning: Class-scoped fixture defined as instance method is deprecated.
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1403206Z   Instance attributes set in this fixture will NOT be visible to test methods,
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1403967Z   as each test gets a new instance while the fixture runs only once per class.
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1404486Z   Use @classmethod decorator and set attributes on cls instead.
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1405148Z   See https://docs.pytest.org/en/stable/deprecations.html#class-scoped-fixture-as-instance-method
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1405787Z     fixturefunc = resolve_fixture_function(fixturedef, request)
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1406097Z 
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1406326Z -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1406826Z =========================== short test summary info ============================
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1407392Z SKIPPED [1] tests/test_dhcp_native_default_sequence.py:110: the D-DHCP record is machine-local
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1408156Z SKIPPED [1] tests/test_positive_voice_ab_evidence_ledger.py:131: no retained raw run is present in this checkout
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1408986Z SKIPPED [1] tests/test_positive_voice_dhcp_pool_observer.py:562: the ignored qualification artefact is absent here
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1409747Z SKIPPED [1] tests/test_receiver_continuity.py:332: the Win32 process reads exist only on Windows
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1410442Z SKIPPED [1] tests/test_receiver_continuity.py:353: the Win32 process reads exist only on Windows
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1411123Z SKIPPED [1] tests/test_receiver_continuity.py:381: the Win32 process reads exist only on Windows
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1412100Z SKIPPED [1] tests/test_server_pt_fastloop_retirement.py:2332: opt-in: set PT_MCP_NATIVE_WINDOW_TESTS=1 on Windows
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1412905Z SKIPPED [1] tests/test_server_pt_fastloop_retirement.py:2405: opt-in: set PT_MCP_NATIVE_WINDOW_TESTS=1 on Windows
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1413854Z SKIPPED [1] tests/test_server_pt_published_sources.py:188: the documentation extra (`.[docs]`) is not installed here
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1414533Z SKIPPED [1] tests/test_windows_process_census.py:160: Win32 ctypes only
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1415036Z SKIPPED [3] tests/test_windows_process_census.py:172: Win32 ctypes only
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1415526Z SKIPPED [1] tests/test_windows_process_census.py:181: Win32 ctypes only
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1416018Z SKIPPED [1] tests/test_windows_process_census.py:189: Win32 ctypes only
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1416517Z SKIPPED [1] tests/test_windows_process_census.py:224: Win32 ctypes only
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1417017Z SKIPPED [1] tests/test_windows_process_census.py:232: Win32 ctypes only
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1417509Z SKIPPED [3] tests/test_windows_process_census.py:241: Win32 ctypes only
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1417986Z SKIPPED [1] tests/test_windows_process_census.py:275: Win32 ctypes only
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1418469Z SKIPPED [1] tests/test_windows_process_census.py:315: Win32 ctypes only
+pytest (ubuntu-latest, 3.11)	Run tests (Ubuntu)	2026-09-30T03:04:40.1418923Z 8641 passed, 22 skipped, 3 warnings in 761.11s (0:12:41)
+pytest (ubuntu-latest, 3.11)	Post Run actions/setup-python@v5	﻿2026-09-30T03:04:41.2480610Z Post job cleanup.
+pytest (ubuntu-latest, 3.11)	Post Run actions/setup-python@v5	2026-09-30T03:04:41.3425631Z (node:11806) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+pytest (ubuntu-latest, 3.11)	Post Run actions/setup-python@v5	2026-09-30T03:04:41.3426544Z (Use `node --trace-deprecation ...` to show where the warning was created)
+pytest (ubuntu-latest, 3.11)	Post Run actions/checkout@v4	﻿2026-09-30T03:04:41.3586211Z Post job cleanup.
+pytest (ubuntu-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:04:41.4292485Z [command]/usr/bin/git version
+pytest (ubuntu-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:04:41.4328094Z git version 2.55.0
+pytest (ubuntu-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:04:41.4360830Z Temporarily overriding HOME='/home/runner/work/_temp/3e77524e-44f1-4767-bf58-37ca55c3b4b3' before making global git config changes
+pytest (ubuntu-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:04:41.4362166Z Adding repository directory to the temporary git global config as a safe directory
+pytest (ubuntu-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:04:41.4364151Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/cisco-muejeje/cisco-muejeje
+pytest (ubuntu-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:04:41.4397588Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+pytest (ubuntu-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:04:41.4430176Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+pytest (ubuntu-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:04:41.4642860Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+pytest (ubuntu-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:04:41.4677507Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+pytest (ubuntu-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:04:41.4898530Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+pytest (ubuntu-latest, 3.11)	Post Run actions/checkout@v4	2026-09-30T03:04:41.4936227Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+pytest (ubuntu-latest, 3.11)	Complete job	﻿2026-09-30T03:04:41.5284776Z Cleaning up orphan processes
+pytest (ubuntu-latest, 3.11)	Complete job	2026-09-30T03:04:41.5543925Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

@@ -238,6 +238,16 @@ class PathTopology:
         materialized = list(actions)
         self.placements = access_placements_by_endpoint(materialized)
         self.links = compiled_trunk_links(materialized)
+        self._trunk_action_ids_by_link: dict[str, set[str]] = {}
+        for action in materialized:
+            if _declared_type(action) == TRUNK_ACTION_TYPE:
+                link_id = str(getattr(action, "source_link_id", "") or "")
+                action_id = str(getattr(action, "id", "") or "")
+                if link_id and action_id:
+                    self._trunk_action_ids_by_link.setdefault(link_id, set()).add(
+                        action_id
+                    )
+        self._component_trunk_ids: dict[tuple, frozenset[str]] = {}
         self.vlans = vlan_devices(materialized)
         self.gateways = tuple(
             GatewayInterface(
@@ -262,6 +272,21 @@ class PathTopology:
         if vlan_id not in self._components:
             self._components[vlan_id] = self._build_components(vlan_id)
         return self._components[vlan_id].get(switch_device_id)
+
+    def component_trunk_action_ids(self, component: L2Component) -> frozenset[str]:
+        """Return both configured ends of every paired link of one VLAN component.
+
+        These are effect foundations, not an assumption about which redundant
+        links will forward. The attributed readiness observation decides that.
+        Each component is indexed once, independent of its selected client count.
+        """
+        if component.key not in self._component_trunk_ids:
+            self._component_trunk_ids[component.key] = frozenset(
+                identifier
+                for link in component.links
+                for identifier in self._trunk_action_ids_by_link.get(link.link_id, ())
+            )
+        return self._component_trunk_ids[component.key]
 
     def _build_components(self, vlan_id: int) -> dict[str, L2Component]:
         members = self.vlans.get(vlan_id, set())

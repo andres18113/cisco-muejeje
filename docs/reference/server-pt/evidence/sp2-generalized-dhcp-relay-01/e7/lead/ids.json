@@ -1,0 +1,14 @@
+{
+  "attempt_id": "a06b0134ff1d31156d482762f3df0c3e",
+  "authorization_id": "SERVER-PT-SP2-E7-a06b0134ff1d31156d482762f3df0c3e",
+  "build": "9.0.1.0858",
+  "channel": "file",
+  "charter": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\docs\\reference\\server-pt\\assignments\\Prompt_SP2_Generalized_DHCP_Relay.md",
+  "episode": 7,
+  "head": "032d422a036c5999f0127a4b71dc945a7376a2bc",
+  "instance_token": "c78964542e8dff146e1caa27abf058e0",
+  "profile_id": "SP2-MIXED-PRODUCT",
+  "profile_version": "1",
+  "stage": "SP2-MIXED-PRODUCT",
+  "tree": "add28d80e1983ddbe846fd733fc644b080571bc5"
+}

@@ -1,0 +1,205 @@
+"""Prepare exclusive e7 identities after exact-source local and CI verification.
+
+This helper creates preparation files only. It opens no ledger allocation and
+contacts no Packet Tracer process. Usage: make_episode7.py <lead> <ci-json>.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import secrets
+import subprocess
+from datetime import UTC, datetime
+from pathlib import Path
+
+from packet_tracer_mcp.adapters.cli.sp2_mixed_qualification import (
+    sp2_mixed_product_contract,
+)
+from packet_tracer_mcp.application.use_cases.qualify_server_services import (
+    SP2_MIXED_CONFIGURATION_SHA256,
+    SP2_MIXED_MANIFEST_SHA256,
+    SP2_MIXED_NORMALIZED_SERVICES_SHA256,
+    SP2_MIXED_SERVICE_CAPABILITIES_SHA256,
+    SP2_MIXED_TOPOLOGY_SHA256,
+    _sp2_capability_digest,
+    _sp2_mixed_normalized_services_hash,
+)
+from packet_tracer_mcp.application.use_cases.server_pt_campaign import SP2_CAMPAIGN
+from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
+    stage_definition,
+)
+from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
+    ImportIsolationPreflight,
+)
+
+ROOT = Path(
+    r"C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP-server-services-goal-foundations"
+).resolve()
+MANDATE = (
+    ROOT / "docs/reference/server-pt/assignments/Prompt_SP2_Generalized_DHCP_Relay.md"
+)
+BUILD = "9.0.1.0858"
+STAGE = "SP2-MIXED-PRODUCT"
+
+
+def git(*args: str) -> str:
+    """Read one bounded value from the governed source tree."""
+    return subprocess.run(
+        ["git", *args], cwd=ROOT, check=True, capture_output=True, text=True, timeout=15
+    ).stdout.strip()
+
+
+def save(path: Path, value: object) -> None:
+    """Create an exclusive preparation file; never replace an earlier identity."""
+    with path.open("x", encoding="utf-8") as stream:
+        json.dump(value, stream, indent=2, sort_keys=True)
+        stream.write("\n")
+
+
+def main() -> None:
+    """Validate actual provenance before producing the prospective episode."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("lead", type=Path)
+    parser.add_argument("ci_json", type=Path)
+    args = parser.parse_args()
+    lead, ci_path = args.lead.resolve(), args.ci_json.resolve()
+    if not lead.is_relative_to(ROOT / "data/services/sp2-governed"):
+        raise RuntimeError("episode_path_outside_governed_root")
+    if not ci_path.is_relative_to(lead) or ci_path.stat().st_size > 2_000_000:
+        raise RuntimeError("ci_input_outside_episode_or_over_budget")
+    if any((lead / name).exists() for name in ("ids.json", "episode-plan.json")):
+        raise RuntimeError("preparation_identity_already_exists")
+    if not ImportIsolationPreflight(ROOT).ensure_isolated().isolated:
+        raise RuntimeError("preparation_import_identity_unestablished")
+    head, tree = git("rev-parse", "HEAD"), git("rev-parse", "HEAD^{tree}")
+    if git("status", "--porcelain=v1") or git("branch", "--show-current") != (
+        "feature/server-pt-goal-foundations"
+    ):
+        raise RuntimeError("preparation_source_not_clean_feature_commit")
+    if hashlib.sha256(MANDATE.read_bytes()).hexdigest() != SP2_CAMPAIGN.charter_sha256:
+        raise RuntimeError("charter_bytes_changed")
+    ci = json.loads(ci_path.read_text(encoding="utf-8"))
+    expected_jobs = {
+        "quality",
+        "docs",
+        *(
+            f"pytest ({platform}, {version})"
+            for platform in ("windows-latest", "ubuntu-latest")
+            for version in ("3.11", "3.13")
+        ),
+    }
+    jobs = ci.get("jobs", [])
+    if (
+        ci.get("headSha") != head
+        or ci.get("status") != "completed"
+        or ci.get("conclusion") != "success"
+        or {job.get("name") for job in jobs} != expected_jobs
+        or any(
+            job.get("status") != "completed" or job.get("conclusion") != "success"
+            for job in jobs
+        )
+    ):
+        raise RuntimeError("exact_source_ci_not_complete_and_green")
+    definition = stage_definition(STAGE)
+    if definition is None or (definition.profile_id, definition.profile_version) != (
+        STAGE,
+        "1",
+    ):
+        raise RuntimeError("mixed_profile_identity_changed")
+    attempt, token = secrets.token_hex(16), secrets.token_hex(16)
+    provisional_run = "prospective-e7-" + attempt
+    contract = sp2_mixed_product_contract(BUILD, provisional_run)
+    bindings = {
+        "topology": contract.topology.physical_topology_hash,
+        "manifest": contract.manifest.semantic_hash,
+        "e5": contract.configuration_plan.semantic_hash,
+        "normalized_e6": _sp2_mixed_normalized_services_hash(contract, provisional_run),
+        "service_catalog": _sp2_capability_digest(contract.service_capabilities),
+    }
+    if bindings != {
+        "topology": SP2_MIXED_TOPOLOGY_SHA256,
+        "manifest": SP2_MIXED_MANIFEST_SHA256,
+        "e5": SP2_MIXED_CONFIGURATION_SHA256,
+        "normalized_e6": SP2_MIXED_NORMALIZED_SERVICES_SHA256,
+        "service_catalog": SP2_MIXED_SERVICE_CAPABILITIES_SHA256,
+    }:
+        raise RuntimeError("mixed_compiled_bindings_changed")
+    if (
+        len(contract.topology.devices) != 18
+        or len(contract.topology.links) != 17
+        or len(definition.selected_clients) != 11
+        or definition.planned_minimum_operations != 3002
+    ):
+        raise RuntimeError("mixed_work_or_fixture_counts_changed")
+    ids = {
+        "episode": 7,
+        "head": head,
+        "tree": tree,
+        "attempt_id": attempt,
+        "instance_token": token,
+        "authorization_id": "SERVER-PT-SP2-E7-" + attempt,
+        "charter": str(MANDATE),
+        "stage": STAGE,
+        "profile_id": definition.profile_id,
+        "profile_version": definition.profile_version,
+        "build": BUILD,
+        "channel": "file",
+    }
+    plan = {
+        "source_sha": head,
+        "source_tree": tree,
+        "stage": STAGE,
+        "profile_id": definition.profile_id,
+        "profile_version": definition.profile_version,
+        "attempt_ids": [attempt],
+        "instance_token": token,
+        "targets": list(definition.fixture_names),
+        "selected_clients": list(definition.selected_clients),
+        "allocated_operations": 3210,
+        "allocated_seconds": 4200,
+        "allocation_arithmetic": (
+            "Stage 3200 operations/3600 seconds: 73 setup + 2800 product + "
+            "90 terminal + 39 cleanup = 3002 minimum; cleanup protects 420 "
+            "seconds and product leaves 240 ordinary seconds for terminal. "
+            "Episode adds 10 operations/600 seconds for lifecycle; campaign "
+            "separately protects 1000 operations/600 seconds."
+        ),
+        "binding_hashes": bindings,
+        "native_support_claim": "none; private candidate discriminator",
+        "question": (
+            "Does one Server-PT simultaneously serve five local native and "
+            "three clients in each of two remote named pools, with exact "
+            "usable lease identity, cold IP HTTP, resolver/DNS and hostname "
+            "HTTP, while retaining the field-separated indexed end convention?"
+        ),
+        "permitted_effects": [
+            "One owned disposable exact-build file-channel lab with 18 devices/17 links.",
+            "Maintained 51-action E5 and 10-action E6 product over all eleven clients.",
+            "Current indexed lease scans with raw field types, first/confirming indexes and source context.",
+            "Read-only terminal observations, exact-owned fixture cleanup and cohort retirement.",
+        ],
+        "stop_rule": (
+            "Stop on source/process/receiver/fixture/policy mismatch, unknown "
+            "mutation outcome, unreadable or contradictory evidence, budget "
+            "or persistence failure. Finalize without mutation replay or "
+            "channel fallback. No phone effects or native phone UI/call validation."
+        ),
+        "tests_run": [
+            "Complete local Windows suite: 8657 passed, 6 skipped, 3 warnings, 1188.21 seconds.",
+            "Clean exact-commit quality gate --base cisco/main --delivery-commit HEAD passed.",
+            "Namespace, docs and whitespace passed; only known documentation links.",
+            "Exact-source six-job CI " + str(ci["databaseId"]) + " succeeded.",
+        ],
+        "exact_ci_file": ci_path.name,
+        "exact_ci_sha256": hashlib.sha256(ci_path.read_bytes()).hexdigest(),
+        "prepared_at_utc": datetime.now(UTC).isoformat(),
+    }
+    save(lead / "ids.json", ids)
+    save(lead / "episode-plan.json", plan)
+    print(json.dumps({"prepared": True, "head": head, "tree": tree, "episode": 7}))
+
+
+if __name__ == "__main__":
+    main()

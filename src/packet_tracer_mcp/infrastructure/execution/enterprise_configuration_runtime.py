@@ -2327,7 +2327,11 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 [
                     expectation
                     for expectation in expectations
-                    if expectation.kind is VerificationKind.TRUNK
+                    if expectation.kind
+                    in (
+                        VerificationKind.TRUNK,
+                        VerificationKind.TRUNK_CONFIGURATION,
+                    )
                 ]
             )
         }
@@ -2337,7 +2341,10 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 results.append(self._verify_hostname(expectation))
             elif expectation.kind is VerificationKind.VLAN:
                 results.append(self._verify_vlan(expectation))
-            elif expectation.kind is VerificationKind.TRUNK:
+            elif expectation.kind in (
+                VerificationKind.TRUNK,
+                VerificationKind.TRUNK_CONFIGURATION,
+            ):
                 results.append(trunk_results[expectation.id])
             elif expectation.kind is VerificationKind.L3_INTERFACE:
                 results.append(self._verify_l3(expectation, ios_cache))
@@ -2803,7 +2810,11 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 RuntimeVerification(
                     expectation_id=expectation.id,
                     status=status,
-                    evidence_method="fresh_show_interfaces_trunk",
+                    evidence_method=(
+                        "fresh_show_interfaces_trunk_configuration"
+                        if expectation.kind is VerificationKind.TRUNK_CONFIGURATION
+                        else "fresh_show_interfaces_trunk"
+                    ),
                     fresh_evidence=authoritative,
                     fields=fields,
                     message=self._trunk_observation_message(
@@ -2867,6 +2878,34 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 if row is not None and row.status.casefold() == "trunking"
                 else FieldVerificationStatus.FAILED
             )
+        fields = {
+            "interface": interface_status,
+            "status": operational_status,
+            "allowed_vlans": vlan_field("allowed_vlans"),
+            "active_vlans": vlan_field("active_vlans"),
+        }
+        configured = expectation.kind is VerificationKind.TRUNK_CONFIGURATION
+        component_vlans = expectation.expected.get("component_vlans")
+        source_link = expectation.expected.get("source_link_id")
+        scope_valid = (
+            isinstance(component_vlans, list)
+            and bool(component_vlans)
+            and all(
+                type(value) is int and 1 <= value <= 4094 for value in component_vlans
+            )
+            and len(set(component_vlans)) == len(component_vlans)
+            and set(component_vlans).issubset(expected_vlans)
+            and isinstance(source_link, str)
+            and bool(source_link)
+        )
+        if configured:
+            fields["declared_component_scope"] = (
+                FieldVerificationStatus.VERIFIED
+                if scope_valid
+                else FieldVerificationStatus.UNOBSERVABLE
+            )
+        else:
+            fields["forwarding_vlans"] = vlan_field("forwarding_vlans")
         return {
             "authoritative": authoritative,
             "executed": bool(show.executed),
@@ -2898,13 +2937,17 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 if row is not None and row.forwarding_vlans is not None
                 else None
             ),
-            "fields": {
-                "interface": interface_status,
-                "status": operational_status,
-                "allowed_vlans": vlan_field("allowed_vlans"),
-                "active_vlans": vlan_field("active_vlans"),
-                "forwarding_vlans": vlan_field("forwarding_vlans"),
-            },
+            "fields": fields,
+            **(
+                {
+                    "verification_scope": "configured_trunk",
+                    "component_vlans": component_vlans,
+                    "source_link_id": source_link,
+                    "component_scope_valid": scope_valid,
+                }
+                if configured
+                else {}
+            ),
         }
 
     @staticmethod
@@ -2931,7 +2974,7 @@ class PacketTracerEnterpriseConfigurationRuntime:
     def _trunk_transition_payload(
         observed: dict[str, object],
     ) -> dict[str, object]:
-        return {
+        payload = {
             key: observed.get(key)
             for key in (
                 "authoritative",
@@ -2951,6 +2994,11 @@ class PacketTracerEnterpriseConfigurationRuntime:
                 "forwarding_vlans",
             )
         }
+        if observed.get("verification_scope") == "configured_trunk":
+            payload["verification_scope"] = "configured_trunk"
+            for key in ("component_vlans", "source_link_id", "component_scope_valid"):
+                payload[key] = observed.get(key)
+        return payload
 
     @staticmethod
     def _trunk_observation_status(

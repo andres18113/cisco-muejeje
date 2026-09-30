@@ -16,13 +16,15 @@ import re
 from dataclasses import dataclass, replace
 from types import SimpleNamespace
 
-from campus_product_simulation import CampusPlans
+from campus_product_simulation import CampusPlans, TrunkEnd
 from cold_http_acceptance_harness import FakeClock
+from routed_product_simulation import _IOS_CALL
 from service_entry_fixture import IsolationPreflight
 
 from packet_tracer_mcp.adapters.cli import service_qualification
 from packet_tracer_mcp.adapters.cli.service_qualification import _request
 from packet_tracer_mcp.adapters.cli.sp2_mixed_qualification import (
+    sp2_capacity_product_contract,
     sp2_mixed_product_contract,
 )
 from packet_tracer_mcp.application.use_cases.qualify_server_services import (
@@ -30,6 +32,7 @@ from packet_tracer_mcp.application.use_cases.qualify_server_services import (
 )
 from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
 from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
+    SP2_CAPACITY_SITE_CLIENTS,
     SP2_MIXED_CLIENTS,
     SP2_MIXED_FINAL_OPERATIONS,
     SP2_MIXED_PRODUCT_OPERATIONS,
@@ -64,10 +67,12 @@ POOLS = {"HQ": "serverPool", "BR1": "BR1_DATA", "BR2": "BR2_DATA"}
 _NAME = re.compile(r'"((?:HQ|BR1|BR2)-[A-Z0-9-]+)"')
 
 
-def _client_pools() -> dict[str, str]:
+def _client_pools(*, capacity: bool = False) -> dict[str, str]:
     return {
         name: POOLS[site]
-        for site, names in SP2_MIXED_SITE_CLIENTS.items()
+        for site, names in (
+            SP2_CAPACITY_SITE_CLIENTS if capacity else SP2_MIXED_SITE_CLIENTS
+        ).items()
         for name in names
     }
 
@@ -93,6 +98,68 @@ class _SwitchingTransport:
     def dispatch_and_wait(self, script, timeout):
         outcome = self.target.dispatch_and_wait(script, timeout)
         return self.rewrite(script, outcome) if self.rewrite else outcome
+
+
+class _InitiallyUnconfiguredL2Campus(_RelayCampus):
+    """Start blank and derive switch state only from dispatched IOS commands."""
+
+    def __init__(self, *args, physical_links, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.ignored_trunk_switch = ""
+        self.switch_modes = {}
+        self.physical_peers = {}
+        self.applied_switch_payloads = []
+        for link in physical_links:
+            self.physical_peers[(link.device_a, link.port_a)] = (
+                link.device_b,
+                link.port_b,
+                link.id,
+            )
+            self.physical_peers[(link.device_b, link.port_b)] = (
+                link.device_a,
+                link.port_a,
+                link.id,
+            )
+        for switch in self.network.switches.values():
+            switch.vlans.clear()
+            switch.access.clear()
+            switch.trunks.clear()
+
+    def send(self, script):
+        for device_json, payload_json in _IOS_CALL.findall(script):
+            name, payload = json.loads(device_json), json.loads(payload_json)
+            owner = self.network.switches.get(name)
+            if owner is None:
+                continue
+            self.applied_switch_payloads.append((name, payload))
+            current = ""
+            for raw in payload.splitlines():
+                command = raw.strip()
+                if command.startswith("vlan "):
+                    owner.vlans.add(int(command.split()[-1]))
+                elif command.startswith("interface "):
+                    current = command.removeprefix("interface ")
+                elif command == "switchport mode access" and current:
+                    self.switch_modes[(name, current)] = "access"
+                elif command.startswith("switchport access vlan ") and current:
+                    owner.access[current] = int(command.split()[-1])
+                elif command == "switchport mode trunk" and current:
+                    if name == self.ignored_trunk_switch:
+                        continue
+                    self.switch_modes[(name, current)] = "trunk"
+                    peer = self.physical_peers.get((name, current))
+                    if peer is not None:
+                        owner.trunks[current] = TrunkEnd(
+                            current, peer[0], peer[1], peer[2], frozenset({1})
+                        )
+                elif command.startswith("switchport trunk allowed vlan ") and current:
+                    if current in owner.trunks:
+                        owner.trunks[current].allowed = frozenset(
+                            int(value) for value in command.split()[-1].split(",")
+                        )
+                elif command in {"exit", "end"}:
+                    current = ""
+        return super().send(script)
 
 
 class _HybridView:
@@ -197,9 +264,15 @@ def _run(
     operation_ceiling=None,
     rewrite=None,
     ambiguous_terminal_routers=False,
+    stage=STAGE,
+    run_id=RUN_ID,
 ):
     require_node()
-    definition = stage_definition(STAGE)
+    definition = stage_definition(stage)
+    capacity = stage == "SP2-CAPACITY-PRODUCT"
+    constructor = (
+        sp2_capacity_product_contract if capacity else sp2_mixed_product_contract
+    )
     if operation_ceiling is not None:
         # A controlled smaller grant: the same stage with the product
         # allowance that remains after setup, terminal and owned cleanup.
@@ -211,7 +284,11 @@ def _run(
         )
         definition = replace(
             definition,
-            budget=StageBudget(operation_ceiling, 3600, reserve_seconds=420),
+            budget=StageBudget(
+                operation_ceiling,
+                definition.budget.max_seconds,
+                reserve_seconds=definition.budget.reserve_seconds,
+            ),
             experiments=(
                 replace(definition.experiments[0], planned_operations=planned),
                 definition.experiments[1],
@@ -219,13 +296,11 @@ def _run(
         )
         monkeypatch.setitem(
             STAGE_CEILINGS,
-            QualificationStage.SP2_MIXED_PRODUCT,
-            (operation_ceiling, 3600),
+            QualificationStage(stage),
+            (operation_ceiling, definition.budget.max_seconds),
         )
-        monkeypatch.setitem(
-            STAGE_DEFINITIONS, QualificationStage.SP2_MIXED_PRODUCT, definition
-        )
-    contract = sp2_mixed_product_contract(BUILD, RUN_ID)
+        monkeypatch.setitem(STAGE_DEFINITIONS, QualificationStage(stage), definition)
+    contract = constructor(BUILD, run_id)
     plans = CampusPlans(
         payload=json.loads(contract.intent_json),
         intent_json=contract.intent_json,
@@ -244,8 +319,14 @@ def _run(
         if item.action_type.value == "set_endpoint_static"
         and item.device_name == SERVER
     )
-    campus = _RelayCampus(
-        tmp_path / "campus", plans, clock, dns_server=server_address, records={}
+    campus_factory = _InitiallyUnconfiguredL2Campus if capacity else _RelayCampus
+    campus = campus_factory(
+        tmp_path / "campus",
+        plans,
+        clock,
+        dns_server=server_address,
+        records={},
+        **({"physical_links": contract.topology.links} if capacity else {}),
     )
     if campus_config:
         campus_config(campus)
@@ -257,7 +338,7 @@ def _run(
         "dhcp_native_max_behavior": "resize_candidate",
         "dhcp_mode_acquires": True,
         "dhcp_retry_on_server_enable": True,
-        "dhcp_client_pools": _client_pools(),
+        "dhcp_client_pools": _client_pools(capacity=capacity),
         "dns_server_stub": True,
         # Measured on 9.0.1.0858 (e1-e6): a read past the rows throws.
         "dhcp_table_end": "native",
@@ -292,17 +373,19 @@ def _run(
             switching,
             clock=clock,
             sleep=clock.sleep,
-            new_run_id=lambda _moment: RUN_ID,
+            new_run_id=lambda _moment: run_id,
             native_product_runtimes=native_runtimes,
             native_product_import_preflight=lambda: IsolationPreflight(),
             **(
-                {"sp2_mixed_product_contract": contract_factory}
-                if contract_factory is not None
-                else {}
+                {
+                    "sp2_capacity_product_contract"
+                    if capacity
+                    else "sp2_mixed_product_contract": contract_factory or constructor
+                }
             ),
             **(boundary_overrides or {}),
         )
-        request = _request(request_args(STAGE) + authorization_args(STAGE))
+        request = _request(request_args(stage) + authorization_args(stage))
         try:
             result = qualify_server_services(
                 request,

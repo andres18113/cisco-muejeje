@@ -1,0 +1,70 @@
+[
+  {
+    "byte_identical": false,
+    "delta": "Mixed-stage measurement ids and README; also seals the product run record named by M-SP2-MIXED-PRODUCT under product/. README now distinguishes current indexed prefix observations from universal table/exclusivity/renewal claims.",
+    "previous_sha256": "414af3ddc472657a0f687733accff682910b298b913f82ce9e4a40f05815da5a",
+    "reference": "docs\\reference\\server-pt\\evidence\\sp2-generalized-dhcp-relay-01\\e6\\lead\\tools\\archive_episode.py.txt",
+    "reference_sha256": "b9e4f2f0a055bf533f04b942901ca683b10d7f37f73d6ce0598290ae37bd6936",
+    "sha256": "54f1379db4355cedaeaaa6ada90f9444eabfe002423fd2022f6ba5964392e5ac",
+    "tool": "archive_episode.py"
+  },
+  {
+    "byte_identical": true,
+    "reference": "docs\\reference\\server-pt\\evidence\\sp2-generalized-dhcp-relay-01\\e6\\lead\\tools\\close_episode.py.txt",
+    "reference_sha256": "1c2e30c8cbc11dc733b60f0e668ebf3dba2ad1a5dc674af8e473fd1925f218c4",
+    "sha256": "1c2e30c8cbc11dc733b60f0e668ebf3dba2ad1a5dc674af8e473fd1925f218c4",
+    "tool": "close_episode.py"
+  },
+  {
+    "byte_identical": true,
+    "reference": "docs\\reference\\server-pt\\evidence\\sp2-generalized-dhcp-relay-01\\e6\\lead\\tools\\exit_census.py.txt",
+    "reference_sha256": "1771dffc8126323c378b59d9152388e75df0b9d4bfcd5148cd7e70e03a25e408",
+    "sha256": "1771dffc8126323c378b59d9152388e75df0b9d4bfcd5148cd7e70e03a25e408",
+    "tool": "exit_census.py"
+  },
+  {
+    "byte_identical": true,
+    "reference": "docs\\reference\\server-pt\\evidence\\sp2-generalized-dhcp-relay-01\\e6\\lead\\tools\\launch_owned_lab.py.txt",
+    "reference_sha256": "1e1e570c2f4b2ca872b3468e2593d270a36daa975797983f87451f9226726867",
+    "sha256": "1e1e570c2f4b2ca872b3468e2593d270a36daa975797983f87451f9226726867",
+    "tool": "launch_owned_lab.py"
+  },
+  {
+    "byte_identical": true,
+    "reference": "docs\\reference\\server-pt\\evidence\\sp2-generalized-dhcp-relay-01\\e6\\lead\\tools\\open_episode.py.txt",
+    "reference_sha256": "f6d4e8622d0e0b4606fc0ceb12d90992b669643c1c37ec29cc14db9ab3f2aee7",
+    "sha256": "f6d4e8622d0e0b4606fc0ceb12d90992b669643c1c37ec29cc14db9ab3f2aee7",
+    "tool": "open_episode.py"
+  },
+  {
+    "byte_identical": true,
+    "reference": "docs\\reference\\server-pt\\evidence\\sp2-generalized-dhcp-relay-01\\e6\\lead\\tools\\preopen.py.txt",
+    "reference_sha256": "0c3be7d8f1389a7b7d630cc4269d3caaee542d02cf39f80fea1a2b73d05a886d",
+    "sha256": "0c3be7d8f1389a7b7d630cc4269d3caaee542d02cf39f80fea1a2b73d05a886d",
+    "tool": "preopen.py"
+  },
+  {
+    "byte_identical": true,
+    "reference": "docs\\reference\\server-pt\\evidence\\sp2-generalized-dhcp-relay-01\\e6\\lead\\tools\\retire_owned_lab.py.txt",
+    "reference_sha256": "8b006f06937900db66589ecbb49056b8c5607bd914e59e42feea15e2dd178c26",
+    "sha256": "8b006f06937900db66589ecbb49056b8c5607bd914e59e42feea15e2dd178c26",
+    "tool": "retire_owned_lab.py"
+  },
+  {
+    "byte_identical": true,
+    "reference": "docs\\reference\\server-pt\\evidence\\sp2-generalized-dhcp-relay-01\\e6\\lead\\tools\\run_qualification.py.txt",
+    "reference_sha256": "ebe8b8f5c87d5470e0005a5d2fb311a0d86eb3c8318b451e43d6c39575d30d60",
+    "sha256": "ebe8b8f5c87d5470e0005a5d2fb311a0d86eb3c8318b451e43d6c39575d30d60",
+    "tool": "run_qualification.py"
+  },
+  {
+    "byte_identical": false,
+    "created_at_source_commit": "032d422a036c5999f0127a4b71dc945a7376a2bc",
+    "created_for": "SERVER-PT-SP2-RECOVERY-CONTINUATION-02",
+    "delta": "New durable preparation helper; requires complete exact-source six-job CI and exclusive new identity files. No ledger/PT effects.",
+    "reference": null,
+    "reference_sha256": null,
+    "sha256": "25c008a9c052d22403a87eda9678527bcf10ea56f2a31bc831e24bf21be9d7e5",
+    "tool": "make_episode7.py"
+  }
+]

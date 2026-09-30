@@ -212,6 +212,11 @@ class ConfigurationPolicy(BaseModel):
     delegated_dhcp_server_device_ids: dict[str, str] = Field(default_factory=dict)
     native_vlan_id: int | None = None
     dns_server: str | None = None
+    #: A component configuration claim still needs operational continuity
+    #: before service client effects. Generic E5 retains per-port forwarding.
+    trunk_verification_mode: Literal[
+        "per_port_forwarding", "component_configuration"
+    ] = "per_port_forwarding"
     #: Compile one static IPv4 route per site router and remote gateway
     #: segment. Derived from the intent's `routing_preference == "static"`;
     #: off by default, so no existing plan gains a route.
@@ -487,6 +492,7 @@ class VerificationKind(StrEnum):
     VLAN = "vlan"
     ACCESS_PORT = "access_port"
     TRUNK = "trunk"
+    TRUNK_CONFIGURATION = "trunk_configuration"
     L3_INTERFACE = "l3_interface"
     DHCP_POOL = "dhcp_pool"
     DHCP_RELAY = "dhcp_relay"

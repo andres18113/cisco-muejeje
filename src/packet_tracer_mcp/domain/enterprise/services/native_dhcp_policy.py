@@ -6,7 +6,9 @@ from ipaddress import IPv4Address, IPv4Network, ip_address, ip_network
 
 from ..models.service_plan import NativeDhcpPolicyScope
 
-MAX_NATIVE_CLIENTS = 16
+#: Structural work ceiling, independent of any measured capability grant.
+MAX_NATIVE_CLIENTS = 256
+MAX_NATIVE_INACTIVE_CLIENTS = 16
 MAX_NATIVE_EXCLUSIONS = 16
 
 
@@ -22,7 +24,11 @@ def native_policy_network(
     excluded_ranges: list[tuple[str, str]],
     selected_count: int,
 ) -> IPv4Network | None:
-    """Return the admitted /24 or None; this is scope, not backend proof."""
+    """Return a finite valid IPv4 policy, independently of measured admission.
+
+    A structurally valid policy still needs `native_policy_within_scope` or
+    the recorded whole-host selector before product effects are authorized.
+    """
     try:
         subnet = ip_network(f"{network}/{netmask}", strict=True)
         first = ip_address(lease_start)
@@ -36,13 +42,15 @@ def native_policy_network(
         return None
     if (
         not isinstance(subnet, IPv4Network)
-        or subnet.prefixlen != 24
+        or not 1 <= subnet.prefixlen <= 30
         or not all(
             isinstance(value, IPv4Address)
             for value in (first, last, gateway_address, dns_address)
         )
         or isinstance(max_users, bool)
         or not isinstance(max_users, int)
+        or isinstance(selected_count, bool)
+        or not isinstance(selected_count, int)
         or not 1 <= selected_count <= max_users <= MAX_NATIVE_CLIENTS
         or len(exclusions) > MAX_NATIVE_EXCLUSIONS
         or first not in subnet
