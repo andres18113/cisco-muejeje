@@ -1,9 +1,9 @@
 ---
 change_id: SERVER-SERVICE-QUALIFICATION-ARCHITECTURE-01
-version: 1.1.0
-date: 2026-09-30
+version: 1.2.0
+date: 2026-10-01
 risk: L
-status: APPROVED_FOR_IMPLEMENTATION
+status: READY_FOR_REVIEW
 checkout: Cisco-MCP-server-services-goal-foundations
 branch: feature/server-pt-goal-foundations
 starting_commit: ece5fca0cf9b997aed185b86367cd00fa6e9cd6c
@@ -409,3 +409,135 @@ product workflows (exact manifest store, fresh public binding, private
 6. Full suite, Ruff and format through the quality gate, namespace inventory,
    MkDocs, whitespace; commit; clean delivery gate; exact-SHA CI; independent
    review (QR08).
+
+## Implementation record
+
+Added in version 1.2.0, after implementation. It records what was built and
+the evidence for each requirement. Where it differs from the v1.1.0 plan, this
+section governs and says why.
+
+### Commits and environment
+
+| Commit | Tree | Content |
+| --- | --- | --- |
+| `5b3991ab289bf60f21ded464633d69f0cc0953d9` | `05075905d66d120aab1b0853c074dadbda21c945` | Phase A: the AST move into the declared owners, the façade, and the migration of private test imports and patches. |
+| `46ad16f91cc7d2badd11bd643dde5ea23658a744` | `e47ffcbcc1354706b931ce068dda6205c774e795` | Phase B: phase decomposition, `ExecutionAuthority`, `STAGE_HANDLERS`, the shared product helpers, the path-admission and plan-identity seams, `sp2_remote_acquired`, the architecture and seam tests, and the docs navigation and QA link. |
+
+The commit that adds this section changes only this brief. Every measurement
+below was taken at `46ad16f9` in this checkout with `.\.venv\Scripts\python.exe`,
+whose editable installation resolves inside it, against
+`cisco/main` = `6263344e31ba3b0de6539d652f2cd06fc73a3562`. The evidence files
+are under `data/services/qualification-refactor/`, which is gitignored and local
+to this checkout; they are not part of any commit.
+
+### Ownership and renames
+
+The implementation follows the target layout table above without deviation.
+All 67 owners and renames it names resolve in their declared modules.
+`_Q3FlState` extends `DhcpObservationState`. `apply_enterprise_services.py`
+keeps no private copy of path admission and binds the owner's objects.
+`ServiceCompiler._semantic_hash` remains as a method that delegates to
+`service_plan_semantic_hash`. `sp2_pool_diagnostic.sp2_remote_acquired` is the
+acquisition predicate extracted from the relay poll loop.
+`test_server_service_qualification_architecture.py` holds the owner map and
+checks it, so the table is not repeated here.
+
+The move was checked unit by unit with an AST comparison against the starting
+blob (`phase-a-move-proof.txt`). Of 217 moved units, 207 are identical after the
+listed renames. Eight differ only by an added docstring. The remaining two,
+`_Q3FlClient` and `_Q3FlState`, carry the reviewed split of `_Q3FlState`'s
+shared fields into `DhcpObservationState`.
+
+### Size metrics
+
+Measured with `ast` from the Git blobs at `ece5fca` and `46ad16f9`. "After"
+counts the façade, the 24 package files and the two new domain predicate
+modules, 27 files in all. It excludes `service_path_admission.py`, which moved
+from `apply_enterprise_services.py` rather than from this module. Including it
+would add 239 lines and its 172-line `path_admission`, moved unchanged.
+
+| Measure | Before (one module) | After |
+| --- | --- | --- |
+| Physical lines | 11,667 | 13,590 across 27 files (façade 194) |
+| Top-level classes / functions | 24 / 146 | 37 / 226 |
+| Classes / functions including nested | 26 / 238 | 37 / 317 |
+| Longest function | 521 (`_run_q3_native_serve`) | 134 (`workflows/fastloop.py:_q3fl_dhcp`) |
+| Largest class | 439 (`_Execution`) | 365 (`Execution`) |
+| Functions over 200 lines | 9 | 0 |
+| Functions over 100 lines | 23 | 13 |
+
+Physical size is still only screening evidence. QR04 is accepted on ownership
+and dependency evidence, not on these counts. The two largest modules,
+`workflows/fastloop.py` (1,892 lines) and `workflows/native_pool.py` (1,457),
+each hold one workflow family: Q3-FL with the SP-2 native pool, and the five
+Q3-NATIVE stages. Each stays one module by design choice, under the standard's
+rule against size-only fragmentation. A reviewer may challenge that choice.
+
+### Dispositions
+
+1. **Declarative Q2 has no handler.** The plan's interface item said the table
+   would reproduce the former fallback that routed declarative Q2 to the Q3
+   handler. The former chain's final `else` ran `_run_q3` for Q3 and for any
+   stage that no earlier branch named. However, `request_refusals` refuses every
+   stage whose definition is not executable, before any record or channel
+   exists, so no declarative stage could reach that dispatch. `STAGE_HANDLERS`
+   therefore maps exactly the executable stages.
+   `test_every_executable_stage_has_exactly_the_former_handler` asserts that its
+   key set equals both the executable stages and the starting handlers, and
+   that each key is bound to its former function. Observable behavior is
+   unchanged. If a stage later became executable without a handler, the lookup
+   would raise inside the guarded workflow call and finalize with a primary
+   `exception:KeyError` rather than silently run Q3. The architecture test fails
+   before that can happen.
+2. **Two trace fields are normalized.** `duration_ms` is wall-clock elapsed
+   time. `device_capabilities_sha256` hashes a list built from a set, so its
+   order follows the process's string-hash randomization. Two captures of the
+   starting commit, `cA` and `cB`, differ in exactly these two fields and no
+   other. Every comparison normalizes these two fields and nothing else.
+3. **The SP-2 product reference selector defect is untouched.**
+   `_native_product_record_path` in `adapters/cli/service_qualification.py`
+   (:1281–1290) still recognizes only `M-NATIVE-PRODUCT` and
+   `M-SP1-ROUTED-PRODUCT`. This refactor does not modify `adapters/`. The
+   defect remains tracked under "Known outstanding integration issue" and
+   needs its own causal fix.
+4. **The historical SP-2 source freeze is unchanged.**
+   `data/services/sp2-governed/source-freeze-v2.json` pins the starting
+   module's SHA-256, `2cc67972…`, taken over its CRLF checkout bytes. It no
+   longer matches the façade and is not rewritten. The next SP-2 continuation
+   needs a fresh freeze of the refactored tree. The operator tooling's hash
+   constants and its two private helpers stay importable from the old path as
+   the same objects.
+
+### Acceptance traceability
+
+Trace files are named by capture: `cA` and `cB` are the two baseline captures
+of `ece5fca`, and `pA` and `pB` are the captures after phase A and phase B. The
+traced scope is 71 qualification test files, 1,846 nodes, 63,982 counted
+dispatches and 299 completed records. Each phase comparison against `cA` shows
+0 behavioral differences. Its only node differences are six renamed or added
+parametrizations in `test_transport_mutation_containment.py`.
+
+| ID | Evidence | Result |
+| --- | --- | --- |
+| QR01 | `phase-a-vs-baseline.txt` and `phase-b-vs-baseline.txt` compare every write-ahead transition and whether it persisted, every completed record as canonical JSON (including primary and secondary failures, terminal readings and cleanup), and every exit code and compact summary. The coordinator, authority-loss, cancellation, persistence and cleanup suites (`test_service_qualification_coordinator`, `test_diagnostic_residual_corrections`, `test_diagnostic_focused_corrections` and `test_sample_episode_phase_boundaries`) ran in the full suite. | Met offline: 0 differences, and the suites pass. |
+| QR02 | The same comparisons cover all 63,982 counted dispatches (method, script hash, requested timeout, ledger purpose, phase and result hash) and every ledger wait (requested and allowed seconds). `test_q3_fastloop_coordinator`, `test_native_dhcp_product_stage`, `test_sp2_remote_relay_stage`, `test_sp2_capacity_profile` and the native and capacity contracts ran in the full suite. | Met offline: identical sequences, and the suites pass. |
+| QR03 | `test_the_facade_exports_every_starting_name_as_its_canonical_object` covers the starting public names and the two operator-tooling helpers. `test_the_facade_keeps_the_public_entry_signature` and `test_cold_http_consumes_the_ledger_owners_not_the_facade` cover the entry and the cold-HTTP consumer. The CLI, SP-1 and SP-2 composition suites ran in the full suite. The traces show identical exit codes and summaries. | Met. |
+| QR04 | `test_the_package_has_the_declared_owners`, `test_the_package_graph_is_acyclic_and_respects_the_declared_edges` (with its negative control `test_the_checker_sees_each_forbidden_edge`), `test_only_the_coordinator_constructs_the_invocation_context`, `test_every_executable_stage_has_exactly_the_former_handler`, `test_the_facade_holds_no_workflow_implementation` and `test_no_module_aliasing_machinery`. | Met. |
+| QR05 | `test_domain_predicates_import_no_application_or_infrastructure`. Pure-predicate tests consume their domain owners with unchanged assertions (`test_service_qualification_contracts`, `test_sp1_terminal_binding_evidence` and `test_dhcp_lease_reader_context`). `test_a_relayed_acquisition_needs_an_observed_non_fallback_address` covers `sp2_remote_acquired`. | Met. |
+| QR06 | Twelve of the 13 modified test files change only their import and patch targets, the names they call and the formatting that follows; the thirteenth is the containment classification below. Every changed assertion line is the same comparison under the owner's name: 8 lines in 3 files, and none elsewhere. The Codex adversarial review counted 1,337 migrated assertions intact. The mutation-footprint classification adds the server-service qualification root to the orchestration layer. It names exactly `workflows/dhcp_diagnostics.py`, `workflows/fastloop.py` and `workflows/native_pool.py`, each with its reason, in place of the former module, and grants no package-wide exemption. `test_every_exempted_module_exists_and_says_why` covers it. | Met. |
+| QR07 | Per-node dispatch counts are identical in the traces. The constructed-population, scan-sharing, CP-SCALE, DHCP, Voice and Printer contract suites and the historical archive replay (`test_sp1_routed_archive_replay`) ran in the full suite. The quality gate verified the registered evidence archives. `test_plan_identity_is_the_reviewed_remote_relay_hash` and `test_path_admission_admits_the_one_relayed_remote_path` pin the moved algorithms to recorded outputs. Disposition 4 covers the source freeze. | Met offline. |
+| QR08 | Full suite at `46ad16f9`: 8,804 passed, 6 skipped and 3 warnings, exit 0, in 22 min 26 s (`full-suite-46ad16f.txt`). The baseline was 8,757/6/3. The 47 added tests are 45 new architecture and seam tests and a net 2 containment parametrizations. `quality_gate.py --base cisco/main` in worktree mode, `namespace_inventory.py`, the MkDocs build and `git diff --check ece5fca HEAD` passed. The MkDocs warnings predate this change. The Codex standard review found no actionable regressions, and the adversarial review approved with no material findings (`codex-review-46ad16f.md` and `codex-adversarial-review-46ad16f.md`). | Offline part met. The delivery gate, exact-SHA CI and independent review are pending. |
+
+A commit cannot record its own delivery gate or CI result. The clean
+`--delivery-commit` gate and the exact-SHA CI of the commit that adds this
+section are therefore reported in the delivery handoff, not here.
+
+### Limitations and status
+
+- Equivalence is offline only. No Packet Tracer LIVE run verified the
+  refactored tree, and none was authorized.
+- SP-2 public and native product acceptance remains pending and unfulfilled.
+  The e8 record remains a failed observation.
+- The self-review and both Codex reviews are not independent approval.
+
+Status: `READY_FOR_REVIEW`. Only an independent reviewer accepts the refactor.
