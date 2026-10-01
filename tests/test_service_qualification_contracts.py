@@ -20,8 +20,6 @@ from packet_tracer_mcp.application.use_cases.qualify_server_services import (
     LedgerPhase,
     OperationLedger,
     OperationRefused,
-    _q3_e5_foundation_cause,
-    _q3_service_result_cause,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration import (
     SetEndpointDhcp,
@@ -77,6 +75,10 @@ from packet_tracer_mcp.domain.enterprise.models.service_runtime import (
     RuntimeServiceVerification,
     ServiceApplicationResult,
     ServiceVerificationResult,
+)
+from packet_tracer_mcp.domain.enterprise.services.qualification_product_evidence import (
+    e5_foundation_cause,
+    service_result_cause,
 )
 from packet_tracer_mcp.domain.enterprise.services.service_qualification_evidence import (
     NO_QUALIFIED_NEGATIVE_OBSERVABLE,
@@ -1972,7 +1974,7 @@ VERIFIED_FOUNDATIONS = {"cfg/a": ActionExecutionStatus.VERIFIED}
 def test_a_complete_verified_e5_founds_the_server_mutation():
     """Every row decided, every foundation VERIFIED: E6 may run."""
     assert (
-        _q3_e5_foundation_cause(
+        e5_foundation_cause(
             _e5_result(_e5_row("a"), _e5_row("b")),
             VERIFIED_FOUNDATIONS,
             {"a", "b"},
@@ -2046,7 +2048,7 @@ def test_nothing_less_than_a_complete_verified_e5_admits_a_server_mutation(
     label, result, foundations, expected
 ):
     """An unknown, contradicted or blocked foundation grants no permission."""
-    assert _q3_e5_foundation_cause(result, foundations, {"a", "b"}) == expected, label
+    assert e5_foundation_cause(result, foundations, {"a", "b"}) == expected, label
 
 
 def _decided_service_row(action_id: str, **changes) -> ActionApplicationResult:
@@ -2094,13 +2096,13 @@ def _service_result(*rows, verifications=()) -> ServiceApplicationResult:
 def test_q3_accepts_only_the_exact_complete_decided_service_result():
     """F4-close: identities and canonical decisions are the continuation gate."""
     rows = (_decided_service_row("a"), _decided_service_row("b"))
-    assert _q3_service_result_cause(_service_result(*rows), {"a", "b"}) == ""
+    assert service_result_cause(_service_result(*rows), {"a", "b"}) == ""
 
-    assert _q3_service_result_cause(_service_result(rows[0]), {"a", "b"}) == (
+    assert service_result_cause(_service_result(rows[0]), {"a", "b"}) == (
         "outcome_unknown:q3_product_incomplete_result_set"
     )
     assert (
-        _q3_service_result_cause(_service_result(rows[0], rows[0], rows[1]), {"a", "b"})
+        service_result_cause(_service_result(rows[0], rows[0], rows[1]), {"a", "b"})
         == "outcome_unknown:q3_product_incomplete_result_set"
     )
 
@@ -2120,7 +2122,7 @@ def test_q3_blocks_an_unacknowledged_effect_even_when_attempted_is_unknown():
     )
 
     assert (
-        _q3_service_result_cause(_service_result(unresolved), {"a"})
+        service_result_cause(_service_result(unresolved), {"a"})
         == "outcome_unknown:q3_product_service"
     )
 
@@ -2140,6 +2142,4 @@ def test_q3_blocks_a_contradictory_product_verification():
         ],
     )
 
-    assert _q3_service_result_cause(result, {"a"}) == (
-        "contradiction:q3_product_readback"
-    )
+    assert service_result_cause(result, {"a"}) == ("contradiction:q3_product_readback")

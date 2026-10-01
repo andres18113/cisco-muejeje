@@ -33,15 +33,27 @@ from service_qualification_engine import (
 )
 
 from packet_tracer_mcp.adapters.cli.service_qualification import fixture_plans
-from packet_tracer_mcp.application.use_cases import (
-    qualify_server_services as coordinator,
+from packet_tracer_mcp.application.server_service_qualification import (
+    execution as qualification_execution,
+)
+from packet_tracer_mcp.application.server_service_qualification import (
+    finalization,
+    record_lifecycle,
+)
+from packet_tracer_mcp.application.server_service_qualification.dhcp_observations import (
+    _snapshot_facts,
+)
+from packet_tracer_mcp.application.server_service_qualification.workflows import (
+    https_page,
+    original_dhcp,
 )
 from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
     apply_enterprise_services,
 )
 from packet_tracer_mcp.application.use_cases.qualify_server_services import (
     IsolationObservation,
-    _snapshot_facts,
+    LedgeredTransport,
+    OperationLedger,
     qualify_server_services,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
@@ -684,7 +696,7 @@ def _q1_executor(h: _Harness, max_operations: int = 60, **overrides):
     boundaries = h.boundaries(**overrides)
     devices, links = fixture_plans(Q1)
     request = _q1_request()
-    record = coordinator._initial_record(
+    record = record_lifecycle.initial_record(
         request,
         Q1,
         boundaries,
@@ -694,19 +706,19 @@ def _q1_executor(h: _Harness, max_operations: int = 60, **overrides):
         ),
         frozenset(Q1.experimental_capabilities),
     )
-    run = coordinator._Run(record, boundaries, boundaries.record_store.begin(record))
-    ledger = coordinator.OperationLedger(
+    run = record_lifecycle.Run(
+        record, boundaries, boundaries.record_store.begin(record)
+    )
+    ledger = OperationLedger(
         max_operations=max_operations, max_seconds=600, clock=boundaries.clock
     )
     run.ledger = ledger
-    bound = coordinator.LedgeredTransport(
-        ledger, h.transport, boundaries.sleep, boundaries.clock
-    )
+    bound = LedgeredTransport(ledger, h.transport, boundaries.sleep, boundaries.clock)
     assert ServiceEnvironmentReader(bound.send_and_wait).read().version == SIM_BUILD
     physical = boundaries.physical_runtime(bound.send_and_wait)
     baseline = physical.observe_workspace()
     ledger.reserve(Q1.reserve_operations, Q1.budget.reserve_seconds)
-    execution = coordinator._Execution(
+    execution = qualification_execution.Execution(
         run=run,
         nonce="5" * 32,
         definition=Q1,
@@ -719,8 +731,8 @@ def _q1_executor(h: _Harness, max_operations: int = 60, **overrides):
         capabilities=frozenset(Q1.experimental_capabilities),
         probes=boundaries.probes(bound, record.run_id, "5" * 32),
     )
-    coordinator._run_q1(execution)
-    coordinator._finalize(execution)
+    https_page.run_q1(execution)
+    finalization.finalize(execution)
     return record, ledger
 
 
@@ -1141,7 +1153,7 @@ def _q3_executor(h: _Harness, max_operations: int = 60, **overrides):
     boundaries = h.boundaries(**overrides)
     devices, links = fixture_plans(Q3)
     request = _q3_request()
-    record = coordinator._initial_record(
+    record = record_lifecycle.initial_record(
         request,
         Q3,
         boundaries,
@@ -1152,19 +1164,19 @@ def _q3_executor(h: _Harness, max_operations: int = 60, **overrides):
         frozenset(Q3.experimental_capabilities),
     )
     record.environment.observed_build = SIM_BUILD
-    run = coordinator._Run(record, boundaries, boundaries.record_store.begin(record))
-    ledger = coordinator.OperationLedger(
+    run = record_lifecycle.Run(
+        record, boundaries, boundaries.record_store.begin(record)
+    )
+    ledger = OperationLedger(
         max_operations=max_operations, max_seconds=1200, clock=boundaries.clock
     )
     run.ledger = ledger
-    bound = coordinator.LedgeredTransport(
-        ledger, h.transport, boundaries.sleep, boundaries.clock
-    )
+    bound = LedgeredTransport(ledger, h.transport, boundaries.sleep, boundaries.clock)
     assert ServiceEnvironmentReader(bound.send_and_wait).read().version == SIM_BUILD
     physical = boundaries.physical_runtime(bound.send_and_wait)
     baseline = physical.observe_workspace()
     ledger.reserve(Q3.reserve_operations, Q3.budget.reserve_seconds)
-    execution = coordinator._Execution(
+    execution = qualification_execution.Execution(
         run=run,
         nonce="7" * 32,
         definition=Q3,
@@ -1178,8 +1190,8 @@ def _q3_executor(h: _Harness, max_operations: int = 60, **overrides):
         probes=boundaries.probes(bound, record.run_id, "7" * 32),
         product_contract=boundaries.q3_product_contract(SIM_BUILD, "file"),
     )
-    coordinator._run_q3(execution)
-    coordinator._finalize(execution)
+    original_dhcp.run_q3(execution)
+    finalization.finalize(execution)
     return record, ledger
 
 

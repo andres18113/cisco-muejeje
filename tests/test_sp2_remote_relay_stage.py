@@ -469,7 +469,7 @@ def test_stale_plan_hash_cannot_bind_a_changed_helper():
     from dataclasses import replace
     from types import SimpleNamespace
 
-    from packet_tracer_mcp.application.use_cases.qualify_server_services import (
+    from packet_tracer_mcp.application.server_service_qualification.workflows.sp2_remote_relay import (
         _sp2_remote_contract_mismatch,
     )
 
@@ -631,7 +631,7 @@ def test_remote_contract_binds_build_and_capability_snapshots():
     from dataclasses import replace
     from types import SimpleNamespace
 
-    from packet_tracer_mcp.application.use_cases.qualify_server_services import (
+    from packet_tracer_mcp.application.server_service_qualification.workflows.sp2_remote_relay import (
         _sp2_remote_contract_mismatch,
     )
 
@@ -657,9 +657,13 @@ def test_remote_contract_binds_build_and_capability_snapshots():
 
 def test_terminal_router_rows_require_fresh_exact_unique_identity():
     """Stale or foreign terminal text cannot support a final observation."""
-    from packet_tracer_mcp.application.use_cases import qualify_server_services
+    from packet_tracer_mcp.domain.enterprise.services import (
+        qualification_terminal_evidence,
+    )
 
-    check = getattr(qualify_server_services, "_sp2_remote_terminal_rows_complete", None)
+    check = getattr(
+        qualification_terminal_evidence, "terminal_router_rows_complete", None
+    )
     assert callable(check)
     routers = ("BR1-EDGE-RTR-01", "HQ-EDGE-RTR-01")
     rows = [
@@ -1021,7 +1025,7 @@ def test_required_static_route_evidence_cannot_be_removed_with_catalog():
     from dataclasses import replace
     from types import SimpleNamespace
 
-    from packet_tracer_mcp.application.use_cases.qualify_server_services import (
+    from packet_tracer_mcp.application.server_service_qualification.workflows.sp2_remote_relay import (
         _sp2_remote_contract_mismatch,
     )
 
@@ -1086,11 +1090,11 @@ def test_duplicate_client_probe_rows_refuse_and_keep_both_answers():
 
 def test_terminal_state_requires_named_pool_enabled_and_client_dhcp_mode():
     """A shaped final snapshot with a disabled server or static PC is inconclusive."""
-    from packet_tracer_mcp.application.use_cases import qualify_server_services
-
-    check = getattr(
-        qualify_server_services, "_sp2_remote_terminal_state_complete", None
+    from packet_tracer_mcp.application.server_service_qualification.workflows import (
+        sp2_remote_relay,
     )
+
+    check = getattr(sp2_remote_relay, "_sp2_remote_terminal_state_complete", None)
     assert callable(check)
     contract = sp2_remote_relay_contract(BUILD, RUN_ID)
     [pool] = [
@@ -1152,7 +1156,7 @@ def test_remote_client_reader_refuses_an_extra_foreign_row():
     from contextlib import nullcontext
     from types import SimpleNamespace
 
-    from packet_tracer_mcp.application.use_cases.qualify_server_services import (
+    from packet_tracer_mcp.application.server_service_qualification.workflows.sp2_remote_relay import (
         _sp2_remote_client,
     )
 
@@ -1187,7 +1191,7 @@ def test_remote_client_reader_requires_exact_interface_echo():
     from contextlib import nullcontext
     from types import SimpleNamespace
 
-    from packet_tracer_mcp.application.use_cases.qualify_server_services import (
+    from packet_tracer_mcp.application.server_service_qualification.workflows.sp2_remote_relay import (
         _sp2_remote_client,
     )
 
@@ -1220,7 +1224,7 @@ def test_recomputed_topology_hash_refuses_changed_device_id():
     from dataclasses import replace
     from types import SimpleNamespace
 
-    from packet_tracer_mcp.application.use_cases.qualify_server_services import (
+    from packet_tracer_mcp.application.server_service_qualification.workflows.sp2_remote_relay import (
         _sp2_remote_contract_mismatch,
     )
     from packet_tracer_mcp.domain.enterprise.services.topology_identity import (
@@ -1252,7 +1256,7 @@ def test_recomputed_manifest_hash_refuses_changed_binding():
     from dataclasses import replace
     from types import SimpleNamespace
 
-    from packet_tracer_mcp.application.use_cases.qualify_server_services import (
+    from packet_tracer_mcp.application.server_service_qualification.workflows.sp2_remote_relay import (
         _sp2_remote_contract_mismatch,
     )
 
@@ -1518,7 +1522,9 @@ def test_unobserved_server_gateway_stops_before_client_mode(tmp_path, monkeypatc
 
 def _wrap_reader(monkeypatch, name, label, replace):
     """Replace one coordinator reading at one labelled step, others real."""
-    from packet_tracer_mcp.application.use_cases import qualify_server_services as qss
+    from packet_tracer_mcp.application.server_service_qualification.workflows import (
+        sp2_remote_relay as qss,
+    )
 
     real = getattr(qss, name)
 

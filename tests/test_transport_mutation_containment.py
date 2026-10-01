@@ -253,12 +253,26 @@ PAYLOAD_BUILDERS_AND_PROSE = {
         "names dhcpRun only as replay-policy evidence; dispatch lives in the "
         "classified service runtime"
     ),
-    "application/use_cases/qualify_server_services.py": (
+    "application/server_service_qualification/workflows/dhcp_diagnostics.py": (
         "the D-DHCP procedures name configurePcIp, addPool, setNetworkMask, "
         "setDefaultRouter and setEnable only as the native call footprint of "
         "the interval each pair of readings brackets. The stage dispatches "
         "nothing itself: every effect goes through the classified "
         "configuration and service runtimes, via the product applicators"
+    ),
+    "application/server_service_qualification/workflows/native_pool.py": (
+        "the native pool stages name setStartIp, setMaxUsers, "
+        "setDefaultRouter, setDnsServerIp and setEnable only as the ledger "
+        "purpose of the probe each one brackets, and dhcpRun only in a "
+        "limitation. Every probe is dispatched by the classified "
+        "server-services qualification probes, and every product effect by "
+        "the classified configuration runtime via the product applicator"
+    ),
+    "application/server_service_qualification/workflows/fastloop.py": (
+        "Q3-FL names configurePcIp only in the label of the reviewed "
+        "native-default intervention its readings bracket. Client DHCP mode "
+        "is applied by the classified configuration runtime, via the "
+        "product applicator"
     ),
     "domain/enterprise/models/service_qualification.py": (
         "the D-DHCP hypothesis names configurePcIp as the one call the "
@@ -293,9 +307,15 @@ _ORCHESTRATION_CALLS = {
 #: crea y borra un router de verdad y aun así no llama a ninguna primitiva de
 #: mutación -- así que sin esta segunda regla la partición tenía un agujero del
 #: tamaño de `application/`.
-# Both application slices require runtime mediation. CP-SCALE was extracted
-# from tools in M2; it is not a new transport dispatcher or an exempt family.
-_ORCHESTRATION_LAYER = ("application/use_cases/", "application/cp_scale_live/")
+# Every application slice requires runtime mediation. CP-SCALE was extracted
+# from tools in M2, and the server-service qualification slice from
+# use_cases; neither is a transport dispatcher or an exempt family, and
+# each module in them that names a mutating API is classified above.
+_ORCHESTRATION_LAYER = (
+    "application/use_cases/",
+    "application/cp_scale_live/",
+    "application/server_service_qualification/",
+)
 
 # These are runtimes whose bounded contract is itself a composition boundary,
 # rather than application policy. Each must also be a named containment family
@@ -495,7 +515,7 @@ def test_cp_scale_cleanup_is_mediated_application_orchestration_not_dispatch():
     assert module.startswith(_ORCHESTRATION_LAYER)
 
 
-def test_an_orchestrator_outside_both_application_roots_is_rejected(
+def test_an_orchestrator_outside_the_application_roots_is_rejected(
     tmp_path, monkeypatch
 ):
     """An orchestrator outside the application roots fails the layer rule."""

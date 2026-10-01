@@ -617,7 +617,9 @@ def test_a_failing_terminal_reader_keeps_the_error_and_still_cleans_up(
     stage, monkeypatch
 ):
     """R3: a defect in the last reading is secondary to what stopped the run."""
-    from packet_tracer_mcp.application.use_cases import qualify_server_services as uc
+    from packet_tracer_mcp.application.server_service_qualification.workflows import (
+        web_diagnostics as uc,
+    )
 
     def explode(_execution, _state):
         raise RuntimeError("terminal_reader_defect")
@@ -646,7 +648,9 @@ def test_a_cancelled_run_declares_its_terminal_reading_not_taken(
     tmp_path, capsys, monkeypatch
 ):
     """R3: cancellation stops work; it does not restart or re-dispatch any."""
-    from packet_tracer_mcp.application.use_cases import qualify_server_services as uc
+    from packet_tracer_mcp.application.server_service_qualification.workflows import (
+        web_diagnostics as uc,
+    )
 
     def interrupt(_execution, _state):
         raise KeyboardInterrupt
@@ -1255,7 +1259,9 @@ def test_first_terminal_cancellation_still_finalizes_releases_and_persists(
     stage, tmp_path, monkeypatch
 ):
     """CA-03: the first Ctrl-C from W5 cannot bypass bounded finalization."""
-    from packet_tracer_mcp.application.use_cases import qualify_server_services as uc
+    from packet_tracer_mcp.application.server_service_qualification.workflows import (
+        web_diagnostics as uc,
+    )
 
     injected: list[str] = []
     original_switch_ports = uc._d_web_switch_ports
@@ -1546,7 +1552,9 @@ def test_finalization_reports_a_local_observation_deadline_overrun(
     stage, tmp_path, monkeypatch
 ):
     """CA-01: a successful late helper is reported and authorizes no cleanup."""
-    from packet_tracer_mcp.application.use_cases import qualify_server_services as uc
+    from packet_tracer_mcp.application.server_service_qualification.workflows import (
+        web_diagnostics as uc,
+    )
 
     clock = FakeClock()
     final_deadline = float(D_WEB.budget.max_seconds)

@@ -18,11 +18,11 @@ from packet_tracer_mcp.adapters.cli.service_qualification import (
 from packet_tracer_mcp.application.ports.service_run_record import (
     RunRecordPersistenceError,
 )
+from packet_tracer_mcp.application.server_service_qualification.product_support import (
+    ExactInventoryConfigurationRuntime,
+)
 from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
     ServiceStageRuntimes,
-)
-from packet_tracer_mcp.application.use_cases.qualify_server_services import (
-    _Q3ConfigurationRuntime,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration import (
     CreateVlan,
@@ -218,7 +218,7 @@ def _run(
         )
     if inject_partial_product:
         qualifier = import_module(
-            "packet_tracer_mcp.application.use_cases.qualify_server_services"
+            "packet_tracer_mcp.application.server_service_qualification.workflows.native_product"
         )
         real_apply = qualifier.apply_enterprise_services
 
@@ -451,7 +451,7 @@ def test_product_stage_ios_batch_indexes_inner_fixture_inventory(tmp_path):
             .configuration
         )
         inner._ios_readiness = lambda _name: True
-        stage_runtime = _Q3ConfigurationRuntime(inner, contract.inventory)
+        stage_runtime = ExactInventoryConfigurationRuntime(inner, contract.inventory)
         assert len(stage_runtime.inventory()) == 4
         assert inner._targets == {}
         vlan = next(

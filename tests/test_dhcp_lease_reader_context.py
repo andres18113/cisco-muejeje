@@ -124,11 +124,11 @@ def test_conflicting_identity_rows_never_authorize_a_prefix():
 @pytest.mark.parametrize("failure", ["index", "lease_time", "field_type"])
 def test_terminal_preserves_decoder_refusal(failure):
     """Raw classification cannot erase a backend's invalid observation."""
-    from packet_tracer_mcp.application.use_cases.qualify_server_services import (
-        _sp2_mixed_scan_complete,
-    )
     from packet_tracer_mcp.domain.enterprise.services.dhcp_lease_evidence import (
         classify_lease_scan,
+    )
+    from packet_tracer_mcp.domain.enterprise.services.qualification_terminal_evidence import (
+        sp2_mixed_scan_complete,
     )
     from packet_tracer_mcp.infrastructure.execution.dhcp_lease_reader import decode_scan
 
@@ -164,7 +164,7 @@ def test_terminal_preserves_decoder_refusal(failure):
     decoded = decode_scan(raw, None)
     assert decoded["scan_error"]
     scan = classify_lease_scan(decoded, pool_name="serverPool")
-    assert not _sp2_mixed_scan_complete(scan, [("192.0.2.100", "001122334455")])
+    assert not sp2_mixed_scan_complete(scan, [("192.0.2.100", "001122334455")])
 
 
 @pytest.mark.parametrize(
@@ -407,7 +407,7 @@ def test_non_object_tail_cannot_carry_a_hidden_lease_row(kind):
 @pytest.mark.parametrize("kind", ["field_throw", "object", "undefined"])
 def test_first_diagnostic_probe_does_not_accept_field_or_shape_failures(kind):
     """The bounded first-probe exception is limited to observed index errors."""
-    from packet_tracer_mcp.application.use_cases.qualify_server_services import (
+    from packet_tracer_mcp.application.server_service_qualification.workflows.fastloop import (
         _sp2_first_probe_read,
     )
     from packet_tracer_mcp.domain.enterprise.services.dhcp_lease_evidence import (

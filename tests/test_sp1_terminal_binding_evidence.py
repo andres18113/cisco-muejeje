@@ -2,8 +2,8 @@
 
 import pytest
 
-from packet_tracer_mcp.application.use_cases.qualify_server_services import (
-    _sp1_terminal_bindings_observed,
+from packet_tracer_mcp.domain.enterprise.services.qualification_terminal_evidence import (
+    sp1_terminal_bindings_observed,
 )
 
 
@@ -39,7 +39,7 @@ def _binding():
 
 def test_static_terminal_preserves_independent_getter_failure():
     """A clean gateway alias suffices without a DHCP-mode or lease field."""
-    assert _sp1_terminal_bindings_observed([_binding()], ["PC1"])
+    assert sp1_terminal_bindings_observed([_binding()], ["PC1"])
 
 
 @pytest.mark.parametrize(
@@ -67,11 +67,11 @@ def test_invalid_static_terminal_field_is_not_an_observation(key, value):
     """Malformed or missing fields never count as a successful returned row."""
     row = _binding()
     row[key] = value
-    assert not _sp1_terminal_bindings_observed([row], ["PC1"])
+    assert not sp1_terminal_bindings_observed([row], ["PC1"])
 
 
 def test_conflicting_successful_gateway_answers_remain_unobserved():
     """An observed disagreement cannot be hidden by choosing one process."""
     row = _binding()
     row["gateway_reads"][0].update(found=True, api=True, error="", value="192.0.2.9")
-    assert not _sp1_terminal_bindings_observed([row], ["PC1"])
+    assert not sp1_terminal_bindings_observed([row], ["PC1"])
